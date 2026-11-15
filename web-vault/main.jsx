@@ -304,7 +304,7 @@ function App() {
       {!desk && (route === "feed" && !readsInNapplet(route, other) || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
       {!desk && <TabBar ctx={ctx} route={tabOf(route, other)} pubkey={session.pubkey} />}
       <FloatingPlayer />
-      {isDashboardOpen() && <VaultDashboard ctx={ctx} />}
+      {isDashboardOpen() && <VaultDashboard ctx={ctx} napplet={desk && nappletsOn()} />}
       <AuthPrompt />
       {tour && <WelcomeTour onDone={() => { markTourDone(session.pubkey); setTour(false) }} />}
       {!BOX && <NotifyAsk busy={tour} />}

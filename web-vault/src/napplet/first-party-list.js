@@ -15,6 +15,7 @@ export const LIVE_VAULT_DTAG = "nv-live-vault"
 export const WOT_MINI_DTAG = "nv-wot-mini"
 export const MESSAGES_PEEK_DTAG = "nv-messages-peek"
 export const MY_DEVICES_DTAG = "nv-my-devices"
+export const DASHBOARD_DTAG = "nv-dashboard"
 
 export const FIRST_PARTY_LIST = [
   { dTag: EMOJI_DTAG, title: "Emoji", file: "emoji", domains: ["identity", "relay", "resource", "storage", "inc", "intent", "theme"], intents: ["emoji/pick"],
@@ -48,6 +49,10 @@ export const FIRST_PARTY_LIST = [
     summary: "Your chats, unread first, each with its last line. The shell reads them; this card sees names and last lines only." },
   { dTag: MY_DEVICES_DTAG, title: "My devices", file: "my-devices", pane: true, widget: ["S", "M", "L"], card: "my-devices", domains: ["intent", "inc", "theme"], intents: [],
     summary: "Which of your own devices are on the mesh, and when each one last was." },
+  // One plan step 9: the Vault Dashboard (DashboardPane.jsx), drawn from what the shell reads with the sheet's own hooks
+  // (dashboard-answer.js); pairing, the Clear cache ask, files and the clipboard stay the shell's.
+  { dTag: DASHBOARD_DTAG, title: "Vault Dashboard", file: "dashboard", pane: true, domains: ["intent", "inc", "theme"], intents: [],
+    summary: "Your vault's health: is it safe, who can reach you, what it holds, keeping it full, and its activity." },
   { dTag: "nv-note-drafts", title: "Note Drafts", file: "note-drafts", domains: ["identity", "storage", "outbox", "theme"], intents: [], sample: true,
     summary: "A sample: write a note, it saves as you type." },
 ]

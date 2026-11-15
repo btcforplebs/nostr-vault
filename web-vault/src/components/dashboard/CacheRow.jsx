@@ -12,20 +12,30 @@ export const CLEAR_TEXT = "Removes the copies of other people's contact lists ke
 export const MEDIA_NOTE = "Other people's images and videos are kept by your browser: clear them in its settings for this site."
 export const cacheDetail = n => (n > 0 ? `${n.toLocaleString()} follows' contact lists, kept for quick loading` : "Nothing kept")
 
-export function CacheRow({ me, store = wotStore(me) }) {
+/** The cache's count and Clear (after the ask). Shared with the Dashboard napplet. */
+export function useCache(me, store = wotStore(me)) {
   const [n, setN] = useState(null)
-  const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
   useEffect(() => { let live = true; store.count().then(c => { if (live) setN(c) }); return () => { live = false } }, [me])
   const clear = async () => {
-    setAsking(false); setBusy(true)
+    setBusy(true)
     await store.clear()
     setN(await store.count()); setBusy(false); setDone(true)
   }
+  return { n, busy, done, clear }
+}
+
+/** The row's words: counting, cleared, or what it keeps. */
+export const cacheLine = (n, done) => (n === null ? "Counting…" : done && !n ? "Cleared. They download again when needed." : cacheDetail(n))
+
+export function CacheRow({ me, store = wotStore(me) }) {
+  const { n, busy, done, clear: wipe } = useCache(me, store)
+  const [asking, setAsking] = useState(false)
+  const clear = () => { setAsking(false); return wipe() }
   return (
     <>
-      <Row icon="stack" title="Cache" detail={n === null ? "Counting…" : done && !n ? "Cleared. They download again when needed." : cacheDetail(n)}>
+      <Row icon="stack" title="Cache" detail={cacheLine(n, done)}>
         <RowButton title="Clear cache" busy={busy} disabled={busy || !n} onClick={() => setAsking(true)} />
       </Row>
       <div class="dash-row dash-note small muted">{MEDIA_NOTE}</div>

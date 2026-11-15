@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vault Dashboard</title>
+<style>
+  /* The Vault Dashboard's body (plan NV_WEB_ONE_PLAN.md step 9): the shell draws the sheet, its title, Back and Done.
+     The section styles are the sheet's own (styles/dashboard.css), on the shell's theme tokens. */
+  :root { color-scheme: dark; --bg: #000; --s1: #1c1c1e; --s2: #2c2c2e; --text: #fff; --text-2: rgb(255 255 255 / .60); --text-3: rgb(255 255 255 / .38);
+    --hair: rgb(255 255 255 / .12); --accent: #e67326; --font: -apple-system, system-ui, sans-serif; --mono: ui-monospace, monospace; --t-body: 15px/1.35 var(--font); --t-foot: 13px/1.3 var(--font); }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: var(--t-body); -webkit-font-smoothing: antialiased; }
+  body { overflow-y: auto; overscroll-behavior: contain; }
+  #dash { display: grid; gap: 24px; align-content: start; padding: 8px 16px 32px; }
+  /* The app's own button rules (styles/app.css), which the sheet's buttons sit on. */
+  button { font: var(--t-sub, 600 14px/1.3 var(--font)); font-weight: 600; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--hair); background: var(--s2); color: var(--text); cursor: pointer; transition: transform var(--press, .1s), opacity var(--press, .1s); }
+  button:active:not(:disabled) { transform: scale(.96); }
+  button:disabled { background: var(--s3, var(--s2)); border-color: transparent; color: var(--text-3); cursor: default; }
+  button.small { min-height: 34px; padding: 0 14px; font: var(--t-foot); font-weight: 600; }
+  button.dash-row { border-radius: 0; }
+  .dash-row.link { color: inherit; }
+  .md-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--text-3); }
+  .md-dot.online, .md-dot.connected { background: #34c759; } .md-dot.offline { background: #ff9f0a; }
+  .pair-actions { display: flex; gap: 10px; padding: 12px 14px; }
+  .list-wipe-actions .primary { background: var(--accent); color: var(--on-accent, #fff); border-color: var(--accent); }
+  .list-wipe-actions button { border-radius: 999px; padding: 6px 14px; border: 1px solid var(--hair); background: var(--s2); color: var(--text); cursor: pointer; }
+  .storage-kept.on { color: #30d158; }
+  .storage-note p { margin: 2px 0; }
+  .segmented { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--s2); }
+  .segmented button { flex: 1; border: 0; border-radius: 8px; padding: 6px; background: none; color: var(--text-2); cursor: pointer; }
+  .segmented button.on { background: var(--s1); color: var(--text); font-weight: 600; }
+  .muted { color: var(--text-2); } .small { font-size: 12px; }
+  .dash-back { justify-self: start; }
+  .dash-link { background: none; border: 0; padding: 6px 2px; color: var(--accent); font: var(--t-body); cursor: pointer; text-decoration: none; }
+  .dash-section { display: grid; gap: 8px; }
+  .dash-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 4px; }
+  .dash-head h3 { margin: 0; font: 600 15px/1.3 var(--font); color: var(--text-2); }
+  .dash-detail { font: var(--t-foot); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .dash-card { background: var(--s1); border: 1px solid var(--hair); border-radius: 14px; overflow: hidden; }
+  .dash-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 11px 14px; color: var(--text);
+    background: none; border: 0; font: inherit; text-align: left; text-decoration: none; }
+  .dash-card > * + * { border-top: 1px solid var(--hair); }
+  .dash-row.link { cursor: pointer; }
+  .dash-row.link:hover { background: var(--s2); }
+  .dash-icon { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--s2); color: var(--text-2); }
+  .dash-icon.done { background: color-mix(in srgb, #30d158 18%, transparent); color: #30d158; }
+  .dash-icon.todo { background: color-mix(in srgb, #ff9f0a 18%, transparent); color: #ff9f0a; font: 800 15px/1 var(--font); }
+  .dash-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+  .dash-title { font: 600 15px/1.3 var(--font); }
+  .dash-sub { font: 12px/1.35 var(--font); color: var(--text-2); }
+  .dash-value { color: var(--text-2); font: 15px var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .dash-fix { color: #ff9f0a; font: 600 13px var(--font); }
+  .dash-chevron { flex: none; color: var(--text-2); opacity: .6; transition: transform .15s; }
+  .dash-chevron.open { transform: rotate(90deg); }
+  .dash-button { flex: none; border-radius: 999px; padding: 6px 14px; border: 1px solid var(--hair); background: var(--s2); color: var(--accent); font: 600 13px var(--font); cursor: pointer; }
+  .dash-button:disabled { opacity: .5; cursor: default; }
+  .dash-progress { width: 100%; height: 4px; margin-top: 4px; accent-color: var(--accent); }
+  .dash-note { font: 13px/1.4 var(--font); color: var(--text-2); min-height: 0; }
+  .dash-note.error { color: #ff9f0a; }
+  .dash-note .storage-note p { margin: 2px 0; }
+  .dash-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--hair); border-top-color: var(--text-2); animation: dash-spin .8s linear infinite; }
+  @keyframes dash-spin { to { transform: rotate(360deg); } }
+  .dash-breakdown { display: grid; gap: 6px; padding: 0 14px 12px 56px; }
+  .dash-line { display: flex; justify-content: space-between; gap: 8px; font: 13px var(--font); }
+  .dash-line span:last-child { color: var(--text-2); font-variant-numeric: tabular-nums; }
+  /* Status card. */
+  .dash-status { display: flex; align-items: center; gap: 14px; padding: 16px; background: var(--s1); border: 1px solid var(--hair); border-radius: 14px; }
+  .dash-status-title { font: 700 17px/1.25 var(--font); }
+  .dash-dot { position: relative; flex: none; width: 32px; height: 32px; display: grid; place-items: center; }
+  .dash-dot::before { content: ""; position: absolute; width: 28px; height: 28px; border-radius: 50%; background: color-mix(in srgb, #33d980 18%, transparent); animation: dash-halo 2.4s ease-in-out infinite alternate; }
+  .dash-dot i { position: relative; width: 12px; height: 12px; border-radius: 50%; background: #33d980; }
+  @keyframes dash-halo { to { transform: scale(1.25); } }
+  @media (prefers-reduced-motion: reduce) { .dash-dot::before { animation: none; } }
+  .dash-menu { position: relative; }
+  .dash-more { width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--s2); color: var(--text-2); display: grid; place-items: center; cursor: pointer; }
+  .dash-menu-list { position: absolute; right: 0; top: 40px; z-index: 2; min-width: 140px; padding: 4px; background: var(--s2); border: 1px solid var(--hair); border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / .35); }
+  .dash-menu-list button { display: block; width: 100%; padding: 9px 12px; border: 0; border-radius: 8px; background: none; color: var(--text); text-align: left; font: var(--t-body); cursor: pointer; }
+  .dash-menu-list button:hover { background: var(--s1); }
+  /* In your vault: the storage bar. */
+  .dash-storage { display: grid; gap: 12px; padding: 14px; }
+  .dash-bar { display: flex; gap: 2px; height: 10px; border-radius: 999px; overflow: hidden; background: var(--s2); }
+  .dash-bar i { display: block; min-width: 3px; }
+  .dash-legend { display: flex; gap: 16px; font: 12px var(--font); }
+  .dash-legend span { display: grid; grid-template-columns: auto 1fr; column-gap: 5px; align-items: center; }
+  .dash-legend b { width: 7px; height: 7px; border-radius: 50%; }
+  .dash-legend em { grid-column: 2; font-style: normal; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .dash-bar .data, .dash-legend .data { background: #7b5cff; }
+  .dash-bar .media, .dash-legend .media { background: #0a84ff; }
+  /* Relay activity. */
+  .dash-act-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; font: 700 12px/1 var(--mono); letter-spacing: .04em; color: var(--text-2); }
+  .dash-spacer { flex: 1; }
+  .dash-pill { padding: 3px 8px; border-radius: 999px; font: 700 11px/1.2 var(--font); letter-spacing: 0; }
+  .dash-pill.good { background: color-mix(in srgb, #30d158 20%, transparent); color: #30d158; }
+  .dash-pill.headsUp { background: color-mix(in srgb, #ff9f0a 20%, transparent); color: #ff9f0a; }
+  .dash-pill.problem { background: color-mix(in srgb, #ff453a 20%, transparent); color: #ff453a; }
+  .dash-act-item { display: grid; grid-template-columns: 8px 1fr auto; gap: 10px; align-items: baseline; padding: 9px 14px; font: 13px/1.4 var(--font); }
+  .dash-act-item i { width: 8px; height: 8px; border-radius: 50%; background: #30d158; }
+  .dash-act-item.headsUp i { background: #ff9f0a; } .dash-act-item.problem i { background: #ff453a; }
+  .dash-act-item time { color: var(--text-2); font: 11px var(--font); white-space: nowrap; }
+  .dash-act-empty { display: grid; gap: 4px; padding: 16px 14px; font: 13px var(--font); color: var(--text-2); }
+  .dash-act-empty b { color: var(--text); }
+  .dash-window { display: grid; gap: 14px; }
+  .dash-banner { display: grid; gap: 4px; padding: 14px; border-radius: 14px; background: color-mix(in srgb, #30d158 12%, var(--s1)); }
+  .dash-banner.headsUp { background: color-mix(in srgb, #ff9f0a 12%, var(--s1)); }
+  .dash-banner.problem { background: color-mix(in srgb, #ff453a 12%, var(--s1)); }
+  .dash-banner span { color: var(--text-2); font: 13px var(--font); }
+  .dash-actions { display: flex; gap: 10px; }
+  /* The list wipe alarm (ListWipeBanner.jsx): orange like the iPhone's. */
+  .list-wipe { display: grid; gap: 10px; }
+  .list-wipe-card { border: 1px solid rgba(255, 159, 10, 0.45); background: rgba(255, 159, 10, 0.1); border-radius: 12px; padding: 12px 14px; }
+  .list-wipe-line { margin: 0 0 4px; font-weight: 600; }
+  .list-wipe-actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  /* Import notes' history-relays choice (KeepFullSection): a tick and its sentence, under the Import row. */
+  .dash-check { align-items: flex-start; gap: 10px; min-height: 0; padding-top: 0; font: 13px/1.4 var(--font); color: var(--text-2); cursor: pointer; }
+  .dash-check input { flex: none; width: 18px; height: 18px; margin: 1px 0 0 32px; accent-color: var(--accent); }
+  .dash-check:has(input:disabled) { opacity: .6; cursor: default; }
+  .dash-check-text { display: flex; flex-direction: column; gap: 2px; }
+  .dash-check-title { font-size: 14px; font-weight: 500; color: var(--text); }
+  .dash-check-text small { font-size: 12px; color: var(--text-2); }
+  .dash-check-text a { color: var(--accent); text-decoration: underline; }
+</style>
+</head>
+<body>
+<div id="dash" aria-busy="true"><div class="dash-row dash-note"><span class="dash-spin" aria-hidden="true"></span><span class="dash-text">Reading your vault…</span></div></div>
+<script>
+/*@nv-theme*/
+  const n = window.napplet || {}
+  nvTheme(n)
+  const $ = id => document.getElementById(id)
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+  const ask = (what, payload = {}) => n.intent ? n.intent.invoke(`napplet:dashboard/${what}`, { payload }).then(r => (r && r.ok ? r.data : null)).catch(() => null) : Promise.resolve(null)
+  // The Dashboard as a napplet (plan step 9). The shell reads the vault with the sheet's own rules and answers
+  // napplet:dashboard/state with words, numbers and states only; a row opens a page by its name (dashboard/go), a
+  // button runs a job by its name (dashboard/run). Pairing, the Clear cache ask, files and the clipboard are the
+  // shell's. View All is drawn here.
+  const ICONS = {
+    key: "M15 7a4 4 0 1 1-4 4l-7 7v3h3v-2h2v-2h2l1-1a4 4 0 0 1 3-9z",
+    people: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8",
+    zip: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M10 9h1M10 12h1M10 15h1",
+    crowd: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9",
+    hand: "M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8a8 8 0 0 0 16 0v-2a2 2 0 0 0-4 0",
+    note: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h8",
+    article: "M4 4h16v16H4zM8 8h8M8 12h8M8 16h5",
+    highlight: "M9 11l-6 6v3h9l3-3M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4",
+    heart: "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z",
+    bolt: "M13 2L3 14h9l-1 8 10-12h-9z",
+    envelope: "M4 4h16v16H4zM4 6l8 7 8-7",
+    person: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+    more: "M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
+    photo: "M3 5h18v14H3zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM21 15l-5-5L5 19",
+    down: "M12 3v12M7 10l5 5 5-5M4 21h16",
+    stack: "M3 7h18v12H3zM6 4h12",
+    up: "M12 21V9M7 14l5-5 5 5M4 3h16",
+    antenna: "M5 12a7 7 0 0 1 14 0M8.5 12a3.5 3.5 0 0 1 7 0M12 12v9",
+    shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4",
+    server: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01",
+    check: "M20 6L9 17l-5-5",
+  }
+  const SVG = "http://www.w3.org/2000/svg"
+  function svg(d, size = 16, cls = "") {
+    const s = document.createElementNS(SVG, "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("width", size); s.setAttribute("height", size)
+    s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", cls ? "3" : "2"); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true")
+    if (cls) s.setAttribute("class", cls)
+    const p = document.createElementNS(SVG, "path"); p.setAttribute("d", d); s.append(p); return s
+  }
+  const chevron = (open = false) => svg("M9 6l6 6-6 6", 12, `dash-chevron${open ? " open" : ""}`)
+  function rowIcon(icon, state = "info") {
+    const s = el("span", `dash-icon ${state}`); s.setAttribute("aria-hidden", "true")
+    if (state === "done") s.append(svg(ICONS.check)); else if (state === "todo") s.append(el("b", "", "!")); else s.append(svg(ICONS[icon] || ICONS.more))
+    return s
+  }
+  function section(title, detail, kids, label) {
+    const s = el("section", "dash-section"); s.setAttribute("aria-label", label || title)
+    const head = el("div", "dash-head"); head.append(el("h3", "", title)); if (detail) head.append(el("span", "dash-detail", detail))
+    const card = el("div", "dash-card"); card.append(...kids.filter(Boolean))
+    s.append(head, card); return s
+  }
+  const text = (title, detail, progress) => {
+    const t = el("span", "dash-text"); t.append(el("span", "dash-title", title)); if (detail) t.append(el("span", "dash-sub", detail))
+    if (progress != null) { const p = el("progress", "dash-progress"); p.max = 1; p.value = progress; t.append(p) }
+    return t
+  }
+  /** A row; with `go` the whole row opens that page (a to-do row says Fix); `end` sits at its end. */
+  function row({ icon, title, detail, state = "info", go, end, progress }) {
+    const r = el(go ? "button" : "div", go ? "dash-row link" : "dash-row")
+    if (go) { r.type = "button"; r.onclick = () => ask("go", { to: go }) }
+    r.append(rowIcon(icon, state), text(title, detail, progress))
+    if (end) r.append(end)
+    if (go && state === "todo") r.append(el("span", "dash-fix", "Fix"))
+    if (go) r.append(chevron())
+    return r
+  }
+  function btn(title, { busy = false, disabled = false, onClick, cls = "dash-button small" } = {}) {
+    const b = el("button", cls, busy ? "…" : title); b.type = "button"; b.disabled = busy || disabled; if (busy) b.setAttribute("aria-busy", "true"); b.onclick = onClick; return b
+  }
+  function setting(icon, title, value, go) {
+    const r = el("button", "dash-row link"); r.type = "button"; r.onclick = () => ask("go", { to: go })
+    r.append(rowIcon(icon), text(title)); if (value != null) r.append(el("span", "dash-value", String(value))); r.append(chevron()); return r
+  }
+  const opened = new Set()
+  function expanding(id, { icon, title, value, detail, lines }) {
+    const w = el("div", "dash-expand"), can = lines.length > 0, open = can && opened.has(id)
+    const label = [rowIcon(icon), text(title, detail), el("span", "dash-value", value)]
+    const ch = el("span"); ch.style.visibility = can ? "visible" : "hidden"; ch.append(chevron(open)); label.push(ch)
+    const r = el(can ? "button" : "div", can ? "dash-row link" : "dash-row"); r.append(...label)
+    if (can) { r.type = "button"; r.setAttribute("aria-expanded", String(open)); r.onclick = () => { open ? opened.delete(id) : opened.add(id); draw() } }
+    w.append(r)
+    if (open) { const b = el("div", "dash-breakdown"); for (const l of lines) { const x = el("div", "dash-line"); x.append(el("span", "", l.title), el("span", "", l.value)); b.append(x) } w.append(b) }
+    return w
+  }
+  const time = at => new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+  function item(it) { const r = el("div", `dash-act-item ${it.level}`); const i = el("i"); i.setAttribute("aria-hidden", "true"); const t = el("time", "", time(it.at)); r.append(i, el("span", "", it.text), t); return r }
+  const emptyAct = () => { const e = el("div", "dash-act-empty"); e.append(el("b", "", "Nothing to report yet"), el("span", "", "Vault activity and any problems will show up here.")); return e }
+  let menu = false
+
+  function status(s) {
+    const c = el("div", "dash-status")
+    const dot = el("span", "dash-dot running"); dot.setAttribute("aria-hidden", "true"); dot.append(el("i"))
+    const t = el("span", "dash-text"); t.append(el("span", "dash-status-title", s.title), el("span", "dash-sub", s.line), el("span", "dash-sub", s.note))
+    const m = el("span", "dash-menu"), more = el("button", "dash-more"); more.type = "button"; more.setAttribute("aria-label", "Vault controls"); more.setAttribute("aria-haspopup", "menu"); more.setAttribute("aria-expanded", String(menu))
+    more.append(svg(ICONS.more)); more.onclick = () => { menu = !menu; draw() }; m.append(more)
+    if (menu) { const l = el("div", "dash-menu-list"); l.setAttribute("role", "menu"); const r = el("button", "", "Restart"); r.setAttribute("role", "menuitem"); r.onclick = () => ask("run", { job: "restart" }); l.append(r); m.append(l) }
+    c.append(dot, t, m); return c
+  }
+  function devices(d) {
+    const kids = []
+    if (!d.rows) { const r = el("div", "dash-row"); r.append(el("span", "dash-sub", "Checking the mesh…")); kids.push(r) }
+    else if (!d.rows.length) { const r = el("div", "dash-row"); r.append(el("span", "dash-sub", "No devices linked yet. Link your phone, or your mobile or desktop vault, to this browser vault.")); kids.push(r) }
+    else for (const x of d.rows) { const r = el("div", "dash-row"), dot = el("span", `md-dot ${x.state}`); dot.setAttribute("role", "img"); dot.setAttribute("aria-label", x.state); r.append(dot, text(x.title, x.line)); kids.push(r) }
+    const acts = el("div", "pair-actions")
+    acts.append(btn("Show my code", { cls: "dash-button", onClick: () => ask("pair", { mode: "show" }) }), btn("Scan a code", { cls: "dash-button", onClick: () => ask("pair", { mode: "scan" }) }))
+    kids.push(acts)
+    return section("Your devices", d.detail, kids)
+  }
+  function wipes(list) {
+    if (!list.length) return null
+    const s = el("section", "dash-section list-wipe"); s.setAttribute("aria-label", "Lists that lost entries")
+    for (const a of list) {
+      const c = el("div", "list-wipe-card"); c.setAttribute("role", "alert")
+      c.append(el("p", "list-wipe-line", a.line), el("p", "muted small", a.text))
+      const acts = el("div", "list-wipe-actions")
+      if (a.recover) acts.append(btn("Recover", { cls: "primary", onClick: () => ask("go", { to: `recover:${a.id}` }) }))
+      acts.append(btn("Keep the new list", { cls: "", onClick: () => ask("keep", { id: a.id }) }))
+      c.append(acts); s.append(c)
+    }
+    return s
+  }
+  function contents(c) {
+    const kids = []
+    const st = el("div", "dash-storage"); st.setAttribute("role", "img"); st.setAttribute("aria-label", `Storage: ${c.parts.map(p => `${p.title} ${p.size}`).join(", ")}`)
+    const bar = el("div", "dash-bar"); for (const p of c.parts) if (p.pct > 0) { const i = el("i", p.cls); i.style.width = `${p.pct}%`; bar.append(i) }
+    const leg = el("div", "dash-legend"); for (const p of c.parts) { const s = el("span"); s.append(el("b", p.cls), p.title, el("em", "", p.size)); leg.append(s) }
+    st.append(bar, leg); kids.push(st)
+    for (const g of c.groups) kids.push(expanding(`g:${g.id}`, g))
+    if (c.status) { const r = el("div", "dash-row dash-note"); if (c.status.counting) { const sp = el("span", "dash-spin"); sp.setAttribute("aria-hidden", "true"); r.append(sp) } r.append(el("span", "dash-text", c.status.text)); if (!c.status.counting) r.append(btn("Try again", { onClick: () => ask("run", { job: "retry" }) })); kids.push(r) }
+    kids.push(expanding("media", { icon: "photo", title: "Media files", value: c.media.value, detail: c.media.detail, lines: c.media.lines }))
+    kids.push(row({ icon: "stack", title: "Cache", detail: c.cache.line, end: btn("Clear cache", { busy: c.cache.busy, disabled: !c.cache.can, onClick: () => ask("cache") }) }))
+    kids.push(el("div", "dash-row dash-note small muted", c.mediaNote))
+    const note = el("div", "dash-row dash-note"), sn = el("div", "storage-note"); sn.append(el("p", "muted small", c.storage.line))
+    if (c.storage.safari) sn.append(el("p", "storage-safari small", c.storage.safari))
+    if (c.storage.kept !== null) sn.append(el("p", `storage-kept small ${c.storage.kept ? "on" : ""}`, c.storage.kept ? "Kept on this browser" : "This browser may clear it"))
+    note.append(sn); kids.push(note)
+    return section("In your vault", c.detail, kids)
+  }
+  function still(s) {
+    if (!s) return null
+    const kids = s.rows.map(j => row({ icon: "down", title: j.title, detail: j.detail, state: j.state, end: btn(j.button, { cls: "dash-button small", disabled: j.disabled, onClick: () => ask("still", { name: j.name }) }) }))
+    if (s.note) { const r = el("div", "dash-row dash-note", s.note); r.setAttribute("role", "status"); kids.push(r) }
+    return section("Still to bring in", "", kids)
+  }
+  function keep(k) {
+    const kids = []
+    const imp = k.import
+    kids.push(row({ icon: "down", title: "Import notes", detail: imp.detail, progress: imp.progress, end: imp.skippable ? btn("Skip", { onClick: () => ask("run", { job: "skip" }) }) : btn("Import", { busy: imp.busy, disabled: imp.disabled, onClick: () => ask("run", { job: "import" }) }) }))
+    const lab = el("label", "dash-row dash-check"), box = el("input"); box.type = "checkbox"; box.checked = k.history.on; box.disabled = k.history.disabled
+    box.onchange = () => ask("history", { on: box.checked })
+    const t = el("span", "dash-check-text"), small = el("small"), a = el("a", "", k.history.detail[1]); a.href = "#"; a.onclick = e => { e.preventDefault(); ask("go", { to: "lazarus" }) }
+    small.append(k.history.detail[0], a, k.history.detail[2]); t.append(el("span", "dash-check-title", k.history.title), small); lab.append(box, t); kids.push(lab)
+    kids.push(row({ icon: "stack", title: "Back up media", detail: k.media.detail, end: btn("Back up", { busy: k.media.busy, disabled: k.media.disabled, onClick: () => ask("run", { job: "media" }) }) }))
+    kids.push(row({ icon: "up", title: "Export notes", detail: k.export.detail, end: btn("Export", { busy: k.export.busy, disabled: k.export.disabled, onClick: () => ask("run", { job: "export" }) }) }))
+    kids.push(setting("zip", "Restore from a backup", null, "restore"))
+    if (k.status) { const r = el("div", `dash-row dash-note${k.status.error ? " error" : ""}`, k.status.text); r.setAttribute("role", "status"); kids.push(r) }
+    kids.push(el("div", "dash-row dash-note small muted", k.note))
+    return section("Keep it full", "", kids)
+  }
+  function actHead(a, end) {
+    const h = el("div", "dash-act-head"); h.append(el("span", "", "RELAY ACTIVITY"), el("span", `dash-pill ${a.health}`, a.pill), el("span", "dash-spacer")); if (end) h.append(end); return h
+  }
+  function activity(a) {
+    const s = el("section", "dash-section dash-activity"); s.setAttribute("aria-label", "Vault activity")
+    const c = el("div", "dash-card"), all = el("button", "dash-link", "View All"); all.type = "button"; all.onclick = () => { view = "activity"; draw(); scrollTo(0, 0) }
+    c.append(actHead(a, all)); if (a.items.length) c.append(...a.items.slice(-3).map(item)); else c.append(emptyAct())
+    s.append(c); return s
+  }
+  let view = "dashboard", filter = "all"
+  function activityWindow(a) {
+    const w = el("div", "dash-window")
+    const back = el("button", "dash-link dash-back", "‹ Dashboard"); back.type = "button"; back.onclick = () => { view = "dashboard"; draw() }
+    const ban = el("div", `dash-banner ${a.health}`); ban.append(el("b", "", a.banner), el("span", "", a.bannerDetail))
+    const seg = el("div", "segmented"); seg.setAttribute("role", "tablist"); seg.setAttribute("aria-label", "Show")
+    for (const [id, label] of [["all", "Everything"], ["attention", "Needs attention"]]) { const b = el("button", filter === id ? "on" : "", label); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(filter === id)); b.onclick = () => { filter = id; draw() }; seg.append(b) }
+    const shown = (filter === "attention" ? a.items.filter(i => i.level !== "good") : a.items).slice().reverse()
+    const card = el("div", "dash-card")
+    if (shown.length) card.append(...shown.map(item)); else if (filter === "attention") { const e = el("div", "dash-act-empty"); e.append(el("b", "", "Nothing needs attention")); card.append(e) } else card.append(emptyAct())
+    const acts = el("div", "dash-actions")
+    acts.append(btn("Copy", { cls: "dash-button", disabled: !a.items.length, onClick: () => ask("report", { how: "copy" }) }), btn("Export report", { cls: "dash-button", disabled: !a.items.length, onClick: () => ask("report", { how: "export" }) }))
+    const logs = el("button", "dash-link", "Open full logs"); logs.type = "button"; logs.onclick = () => ask("go", { to: "logs" })
+    w.append(back, ban, seg, card, acts, el("p", "muted small", "Copies leave out keys, IDs, IP addresses and file paths."), logs)
+    return w
+  }
+  let data = null
+  function draw() {
+    const d = data, root = $("dash")
+    root.setAttribute("aria-busy", String(!d))
+    if (!d) return
+    if (view === "activity") { root.replaceChildren(activityWindow(d.activity)); return }
+    const parts = [
+      status(d.status), devices(d.devices), wipes(d.wipes),
+      section("Is it safe?", d.safety.detail, d.safety.rows.map(r => row({ ...r, end: r.button ? btn(r.button.title, { busy: r.button.busy, onClick: () => ask("run", { job: r.button.job }) }) : null }))),
+      section("Who can reach you", "", d.reach.map(r => row(r))),
+      contents(d.contents), still(d.still), keep(d.keep),
+      section("Vault settings", "", [setting("antenna", "Relays", d.settings.relays, "relays"), setting("shield", "Who Can Reach You", d.settings.hops, "mesh"), setting("server", "Media Servers", d.settings.servers, "media-servers")]),
+      activity(d.activity),
+      section("Advanced", "", [expanding("relay", { icon: "server", title: "Relay details", value: "", lines: [{ title: "Running for", value: d.advanced.running }, ...(d.advanced.startedIn ? [{ title: "Started in", value: d.advanced.startedIn }] : []), { title: "Runs in", value: "This browser tab" }] }),
+        setting("antenna", "Mesh settings", null, "mesh"), setting("photo", "Media servers", null, "media-servers")]),
+    ]
+    root.replaceChildren(...parts.filter(Boolean))
+  }
+  // Draws only when the answer changed: a redraw under the pointer would lose a click.
+  let drawn = null
+  const look = () => ask("state").then(d => { if (!d) return; const k = JSON.stringify(d); if (k !== drawn) { drawn = k; data = d; draw() } })
+  look()
+  setInterval(look, 30000) // "Up 2h 5m" and "Last saved 3 minutes ago" move on
+  if (n.inc && n.inc.on) n.inc.on("nv.dashboard.changed", look)
+  addEventListener("pointerdown", e => { if (menu && !e.target.closest(".dash-menu")) { menu = false; draw() } })
+</script>
+</body>
+</html>
