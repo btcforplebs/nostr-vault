@@ -23,6 +23,18 @@ struct AccentPalette {
     let light: Color
     let dark: Color
     let onAccent: Color
+    /// The page and its two lower steps (`Color.surface0/2/3`): in Light a
+    /// near-neutral paper with `paperTint` of the picked colour mixed in, so
+    /// the page leans toward the accent; Dark keeps Apple's greys untouched.
+    let surface0: Color
+    let surface2: Color
+    let surface3: Color
+
+    /// How much of the picked colour goes into the Light page (sRGB mix).
+    /// With the default orange this lands on the warm paper (about F6F0EC).
+    static let paperTint = 0.05
+    /// The Light bases before the tint: page, field-in-card, overlay.
+    static let paperBases: (s0: UInt32, s2: UInt32, s3: UInt32) = (0xF7F7F6, 0xF0EFEC, 0xE2E0DC)
 
     static let defaultHex = "#e67326"
 
@@ -65,7 +77,10 @@ struct AccentPalette {
         if pick == defaultHex {
             // The orange keeps its hand-tuned ramp exactly.
             let t = AppTheme.orange
-            return AccentPalette(primary: t.primaryColor, light: t.lightColor, dark: t.darkColor, onAccent: .white)
+            return AccentPalette(primary: t.primaryColor, light: t.lightColor, dark: t.darkColor, onAccent: .white,
+                                 surface0: paper(paperBases.s0, pick, darkHex: 0x000000),
+                                 surface2: paper(paperBases.s2, pick, darkHex: 0x2C2C2E),
+                                 surface3: paper(paperBases.s3, pick, darkHex: 0x3A3A3C))
         }
         let rgb = AccentMath.rgb(pick)
         let darkText = AccentMath.readable(rgb, on: AccentMath.cardDark, min: 4.5, dir: 1)
@@ -76,8 +91,17 @@ struct AccentPalette {
                          dark: AccentMath.color(AccentMath.shade(darkText, 0.08))),
             dark: Color(light: AccentMath.color(AccentMath.shade(lightText, -0.1)),
                         dark: AccentMath.color(AccentMath.shade(darkText, -0.12))),
-            onAccent: Color(light: AccentMath.labelOn(lightText), dark: AccentMath.labelOn(darkText))
+            onAccent: Color(light: AccentMath.labelOn(lightText), dark: AccentMath.labelOn(darkText)),
+            surface0: paper(paperBases.s0, pick, darkHex: 0x000000),
+            surface2: paper(paperBases.s2, pick, darkHex: 0x2C2C2E),
+            surface3: paper(paperBases.s3, pick, darkHex: 0x3A3A3C)
         )
+    }
+
+    /// A Light surface: the base with `paperTint` of the pick mixed in.
+    static func paper(_ base: UInt32, _ pick: String, darkHex: UInt32) -> Color {
+        Color(light: AccentMath.color(AccentMath.mix(paperHex: base, pick: pick, amount: paperTint)),
+              dark: Color(hex: darkHex))
     }
 
     /// A colour from the wheel as "#rrggbb" (sRGB).
@@ -159,6 +183,14 @@ enum AccentMath {
             if contrast(next, bg) >= min { return next }
         }
         return dir < 0 ? (0, 0, 0) : white
+    }
+
+    /// `amount` of the picked colour mixed into a paper base, in sRGB, rounded to bytes.
+    static func mix(paperHex base: UInt32, pick: String, amount: Double) -> RGB {
+        let b: RGB = (Double((base >> 16) & 0xFF), Double((base >> 8) & 0xFF), Double(base & 0xFF))
+        let c = rgb(pick)
+        func m(_ x: Double, _ y: Double) -> Double { (x * (1 - amount) + y * amount).rounded() }
+        return (m(b.r, c.r), m(b.g, c.g), m(b.b, c.b))
     }
 
     static func shade(_ c: RGB, _ dL: Double) -> RGB {
