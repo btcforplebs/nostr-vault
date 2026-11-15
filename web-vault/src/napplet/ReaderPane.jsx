@@ -29,7 +29,20 @@ import { NOTE_SENT_EVENT, actionState, compose as composeFull, loadSent, onActio
 import { onZapTotals, wantTotals, zapTotal } from "../net/zaps.js"
 import { displayEmoji, likeWithFeedback, pickFor } from "../components/ReactionButton.jsx"
 import { STATS_TOPIC, statsOf } from "./note-stats.js"
+import { mineIntents } from "./reader-mine.js"
+import { npubEncode } from "nostr-tools/nip19"
+import { getProfile, fetchProfiles } from "../net/profiles.js"
+import { fetchFollowers, keptFollowers } from "../net/followers.js"
+import { fetchShop } from "../net/profile-tabs.js"
+import { priceLabel } from "../readers/market.js"
+import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
+import { EditProfile } from "../screens/EditProfile.jsx"
+import { ShareProfileSheet } from "../components/ShareProfile.jsx"
+import { ListingView } from "../readers/MarketplaceScreen.jsx"
 import "./napplet.css"
+
+/** Tells the Reader your profile may have changed (saved, or the follower count came in): it asks profile/mine again. */
+export const MINE_TOPIC = "nv.profile.changed"
 
 const READY_WAIT_MS = 5000
 const whenReady = async m => { await Promise.race([m.napplet.ready, new Promise(r => setTimeout(r, READY_WAIT_MS))]); return m.napplet }
@@ -115,6 +128,26 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
       preview: loadPreview,
     })
     live.current.me = wire.me
+    // Your own profile in the Reader (plan step 5, reader-mine.js): what only the shell holds, and its own screens.
+    const mineChanged = () => bus.emit(wire.me, MINE_TOPIC, {})
+    live.current.mineChanged = mineChanged
+    let askedFollowers = false
+    const offMine = mineIntents({
+      bus,
+      profile: async () => {
+        const me = liveCtx.session.pubkey
+        if (!getProfile(me)) await fetchProfiles(liveCtx.vault, [me], uniq([...liveCtx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {})
+        if (!askedFollowers && keptFollowers(me) == null) { askedFollowers = true; fetchFollowers(me, mineChanged).catch(() => {}) }
+        return { me, npub: npubEncode(me), profile: getProfile(me), follows: liveCtx.account.follows.length, followers: keptFollowers(me) ?? null, readOnly: !!liveCtx.signer?.readOnly }
+      },
+      shop: () => fetchShop(liveCtx.session.pubkey, uniq([...liveCtx.account.relays.write, ...DEFAULT_RELAYS])),
+      priceOf: priceLabel,
+      onEdit: () => setSheet({ kind: "edit" }),
+      onShare: () => setSheet({ kind: "share" }),
+      onListing: listing => setSheet({ kind: "listing", listing }),
+      onPage: to => { location.hash = to },
+      copy: text => navigator.clipboard.writeText(text),
+    })
     // Your Like and the zap totals, pushed to the Reader as they change (note-stats.js), for the notes it asked about.
     const push = id => { if (watched.has(id)) bus.emit(wire.me, STATS_TOPIC, statsNow(id)) }
     const offStats = [onActionState(push), onZapTotals(push)]
@@ -135,7 +168,7 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
         if (openIdRef.current) bus.emit(wire.me, OPEN_TOPIC, { id: openIdRef.current })
       } catch (e) { if (!gone) setNote(`The Reader couldn't open: ${e?.message ?? e}`) }
     })()
-    return () => { removeEventListener(READER_CMD_EVENT, rowCmd); removeEventListener(NOTE_SENT_EVENT, sentNote); gone = true; offStats.forEach(f => f()); wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
+    return () => { removeEventListener(READER_CMD_EVENT, rowCmd); removeEventListener(NOTE_SENT_EVENT, sentNote); gone = true; offStats.forEach(f => f()); offMine(); wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
   }, [ctx.session.pubkey, ctx.vault, ctx.signer, grants])
 
   // The note open beside the list, marked in it (nv.note.open); "" when the side pane closes.
@@ -161,6 +194,10 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
       {sheet?.kind === "menu" && <MenuSheet ctx={ctx} note={sheet.note} onClose={() => setSheet(null)}
         onDeleted={id => { const l = live.current; if (l?.reader) l.bus.invoke(l.me, { archetype: "note", action: "removed", payload: { id } }) }} />}
       {sheet?.kind === "article" && <div class="reader-article screen"><ArticleReader event={sheet.event} ctx={ctx} onBack={() => setSheet(null)} /></div>}
+      {/* Your profile's own screens (reader-mine.js), over the Reader as an article is: Edit Profile signs in the shell. */}
+      {sheet?.kind === "edit" && <div class="reader-article screen"><EditProfile ctx={ctx} onClose={() => { setSheet(null); live.current?.mineChanged?.() }} /></div>}
+      {sheet?.kind === "listing" && <div class="reader-article screen"><ListingView ctx={ctx} listing={sheet.listing} onBack={() => setSheet(null)} /></div>}
+      {sheet?.kind === "share" && <ShareProfileSheet pubkey={ctx.session.pubkey} own onClose={() => setSheet(null)} />}
       {sheet?.kind === "media" && <MediaLightbox items={sheet.items} author={sheet.author} start={sheet.start} onClose={() => setSheet(null)} />}
       {composing && <ComposeSheet aside={composeAside} onClose={() => live.current?.closeCompose()} onMount={el => live.current?.mountCompose(el)} />}
     </main>

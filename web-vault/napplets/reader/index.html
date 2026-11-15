@@ -96,6 +96,26 @@
   .prof h2 { margin: 0; font-size: 19px; }
   .prof p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); margin: 10px 0 0; }
   .muted { color: var(--muted); font-size: 13px; }
+  /* Your own profile (plan step 5): the site's ProfileHeader, drawn here. */
+  .mine { border-bottom: 1px solid var(--hair); padding-bottom: 12px; }
+  .mine .banner { height: 150px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 45%, var(--s2)), var(--s1)); overflow: hidden; }
+  .mine .banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .mine .id { display: flex; gap: 12px; align-items: flex-end; padding: 0 14px; margin-top: -36px; }
+  .mine .id .av { width: 76px; height: 76px; font-size: 26px; border: 3px solid var(--bg); }
+  .mine h2 { margin: 0; font-size: 21px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .you { font-size: 10px; font-weight: 800; letter-spacing: .06em; padding: 2px 6px; border-radius: 999px; background: var(--accent); color: var(--on-badge); }
+  .mine .about { margin: 10px 14px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 14px 0; }
+  .chips button { min-height: 30px; font-size: 13px; padding: 0 10px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .counts { display: flex; gap: 16px; margin: 10px 14px 0; color: var(--muted); font-size: 14px; }
+  .counts b { color: var(--text); }
+  .mine .btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 14px 0; }
+  .tabs { position: sticky; top: 52px; z-index: 1; display: flex; gap: 2px; overflow-x: auto; padding: 8px 10px; background: var(--bg); border-bottom: 1px solid var(--hair); }
+  .tabs button { border: 0; background: none; color: var(--muted); min-height: 32px; padding: 0 12px; white-space: nowrap; }
+  .tabs button.on { background: var(--s2); color: var(--text); font-weight: 650; }
+  .shop { display: grid; grid-template-columns: 72px 1fr; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--hair); cursor: pointer; }
+  .shop img { width: 72px; height: 72px; border-radius: 10px; object-fit: cover; background: var(--s2); }
+  .shop b { display: block; } .shop .price { color: var(--accent); font-weight: 650; font-size: 13px; }
   .empty, .more { text-align: center; padding: 22px 14px; color: var(--muted); }
   /* Room under the last note: the app's tab bar floats over the bottom of this frame on a phone. */
   #foot { padding-bottom: 120px; }
@@ -759,6 +779,7 @@ async function showThread(id, given) {
 }
 
 async function showProfile(pk) {
+  if (pk === me && me) return showMine()
   want(pk); $("title").dataset.pk = pk; $("title").textContent = nameOf(pk)
   const head = el("section", "prof"), top = el("div", "top"), av = avatar(pk), name = el("h2"); name.dataset.pk = pk; paintWho(name)
   top.append(av, el("div")); top.lastChild.append(name, el("div", "muted", `${pk.slice(0, 12)}…`)); head.append(top)
@@ -770,6 +791,108 @@ async function showProfile(pk) {
   $("list").replaceChildren(head, ...mergeNotes([], evs).map(ev => card(ev)))
   $("list").setAttribute("aria-busy", "false")
   $("foot").textContent = evs.length ? "" : "No notes from them yet."
+}
+
+
+// ---- your own profile (plan step 5) ----
+// The header comes from the shell (napplet:profile/mine: your names, pictures, counts, whether this sign-in can sign);
+// your notes are read here, as every list (outbox: the vault first, then relays). Edit Profile, Share, Wallet,
+// Settings and Web of Trust are the site's own screens, opened by intent: no key or kind 0 is ever signed here.
+const MINE_TABS = [["notes", "Notes"], ["replies", "Replies"], ["media", "Media"], ["reposts", "Reposts"], ["articles", "Articles"], ["tagged", "Mentions"], ["shop", "Shop"]]
+let mineTab = "notes", mine = { own: [], until: null, more: true, articles: null, tagged: null, shop: null }
+const ask = (what, payload = {}) => (n.intent?.invoke(what, { payload }) ?? Promise.resolve(null)).then(r => (r?.ok ? (r.data ?? true) : null)).catch(() => null)
+const hasMedia = ev => tokenize(ev.content).some(p => p.t === "image" || p.t === "video")
+/** The tab's rows from what is loaded (the site's splitProfileNotes rule: a repost's media is someone else's). */
+function mineRows(tab) {
+  const own = mine.own
+  if (tab === "notes") return own.filter(e => e.kind === 1 && !parentOf(e))
+  if (tab === "replies") return own.filter(e => e.kind === 1 && parentOf(e))
+  if (tab === "media") return own.filter(e => e.kind === 1 && hasMedia(e))
+  if (tab === "reposts") return own.filter(e => e.kind === 6)
+  if (tab === "articles") return mine.articles ?? []
+  if (tab === "tagged") return (mine.tagged ?? []).filter(e => e.pubkey !== me)
+  return []
+}
+async function mineOlder() {
+  if (!mine.more) return
+  const page = await q([{ kinds: [1, 6], authors: [me], limit: PAGE, ...(mine.until ? { until: mine.until } : {}) }])
+  const before = mine.own.length
+  mine.own = mergeNotes(mine.own, page.filter(e => e.pubkey === me), 2000)
+  mine.until = mine.own.length ? mine.own[mine.own.length - 1].created_at - 1 : null
+  if (mine.own.length === before) mine.more = false
+}
+function mineHeader(d) {
+  const h = el("section", "mine")
+  const banner = el("div", "banner"); if (d.banner) { const i = el("img"); i.alt = ""; banner.append(i); picture(i, d.banner) }
+  const id = el("div", "id"), av = el("span", "av", (d.name || "?").slice(0, 1).toUpperCase()); if (d.picture) picture(av, d.picture)
+  const names = el("div"), h2 = el("h2"); h2.append(el("span", "", d.name || `${d.npub.slice(0, 16)}…`), el("span", "you", "YOU"))
+  names.append(h2); if (d.nip05) names.append(el("div", "muted", d.nip05))
+  id.append(av, names); h.append(banner, id)
+  if (d.about) h.append(el("p", "about", d.about))
+  const chips = el("div", "chips")
+  const chip = (text, title, run) => { const b = el("button", "", text); b.type = "button"; b.title = title; b.onclick = () => run(b); chips.append(b); return b }
+  const copied = (b, what, text) => ask("napplet:profile/copy", { what }).then(ok => { b.textContent = ok ? "Copied" : "Couldn't copy"; setTimeout(() => { b.textContent = text }, 2000) })
+  if (d.lud16) { const t = `⚡ ${d.lud16}`; chip(t, "Copy lightning address", b => copied(b, "ln", t)) }
+  if (d.website) chip(d.website.replace(/^https?:\/\//, "").replace(/\/$/, ""), d.website, () => openLink(d.website))
+  const np = `${d.npub.slice(0, 12)}…${d.npub.slice(-7)}`; chip(np, "Copy npub", b => copied(b, "npub", np))
+  h.append(chips)
+  const counts = el("div", "counts"), num = v => (v == null ? "—" : v.toLocaleString())
+  for (const [v, label] of [[d.following, "Following"], [d.followers, "Followers"]]) { const s = el("span"); s.append(el("b", "", num(v)), ` ${label}`); counts.append(s) }
+  h.append(counts)
+  const btns = el("div", "btns")
+  const btn = (text, run, cls = "") => { const b = el("button", cls, text); b.type = "button"; b.onclick = run; btns.append(b) }
+  if (d.canEdit) btn("Edit Profile", () => ask("napplet:profile/edit"), "primary")
+  btn("Web of Trust", () => ask("napplet:page/open", { page: "wot" }))
+  btn("Share", () => ask("napplet:profile/share"))
+  btn("Wallet", () => ask("napplet:page/open", { page: "wallet" }))
+  btn("Settings", () => ask("napplet:page/open", { page: "settings" }))
+  h.append(btns)
+  return h
+}
+function mineTabs() {
+  const bar = el("div", "tabs"); bar.setAttribute("role", "tablist"); bar.setAttribute("aria-label", "Profile")
+  for (const [id, label] of MINE_TABS) {
+    const b = el("button", id === mineTab ? "on" : "", label); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(id === mineTab))
+    b.onclick = () => { mineTab = id; drawMine() }
+    bar.append(b)
+  }
+  return bar
+}
+let mineHead = null
+async function drawMine() {
+  if (view.kind !== "profile" || view.pubkey !== me) return
+  const tab = mineTab
+  if (tab === "articles" && !mine.articles) mine.articles = mergeNotes([], await q([{ kinds: [30023], authors: [me], limit: 50 }]))
+  if (tab === "tagged" && !mine.tagged) mine.tagged = mergeNotes([], await q([{ kinds: [1], "#p": [me], limit: PAGE }]))
+  if (tab === "shop" && !mine.shop) mine.shop = (await ask("napplet:profile/shop")) || []
+  if (tab !== mineTab || view.kind !== "profile" || view.pubkey !== me) return
+  const rows = tab === "shop" ? mine.shop.map(shopRow) : mineRows(tab).map(ev => card(ev))
+  $("list").replaceChildren(...[mineHead, mineTabs(), ...rows].filter(Boolean))
+  $("list").setAttribute("aria-busy", "false")
+  const foot = $("foot"); foot.replaceChildren()
+  const noteTab = !["articles", "tagged", "shop"].includes(tab)
+  if (noteTab && mine.more) {
+    const b = el("button", "", rows.length ? "Older notes" : "Look further back"); b.type = "button"
+    b.onclick = async () => { b.disabled = true; await mineOlder(); drawMine() }
+    foot.append(b)
+  } else if (!rows.length) foot.textContent = tab === "shop" ? "You haven't listed anything yet" : tab === "tagged" ? "No one has mentioned you yet." : `No ${MINE_TABS.find(t => t[0] === tab)[1].toLowerCase()} yet.`
+}
+function shopRow(l) {
+  const a = el("article", "shop"), img = el("img"); img.alt = ""; if (l.image) picture(img, l.image)
+  const col = el("div"); col.append(el("b", "", l.title), el("span", "price", l.auction ? `Auction · ${l.price}` : l.price))
+  if (l.summary) col.append(el("div", "muted", l.summary.slice(0, 140)))
+  a.append(img, col); a.onclick = () => ask("napplet:profile/listing", { id: l.id })
+  return a
+}
+async function mineHeadNow() { const d = await ask("napplet:profile/mine"); if (d) mineHead = mineHeader(d); return d }
+async function showMine() {
+  $("title").textContent = "Profile"
+  if (!mineHead) $("list").replaceChildren()
+  mine = { own: [], until: null, more: true, articles: null, tagged: null, shop: null }
+  await Promise.all([mineHeadNow(), mineOlder()])
+  // An empty first tab looks a little further back by itself, as the site's does.
+  for (let i = 0; i < 3 && mine.more && !mineRows(mineTab).length; i++) await mineOlder()
+  drawMine()
 }
 
 async function start() {
@@ -793,6 +916,8 @@ async function start() {
   n.inc?.on?.("nv.note.stats", e => showStats(e?.payload))
   n.inc?.on?.("nv.key.cmd", e => rowCmd(e?.payload?.cmd))
   n.inc?.on?.("nv.note.open", e => markOpen(e?.payload?.id))
+  // Your profile saved, or its follower count came in: the header again, the tab as it was.
+  n.inc?.on?.("nv.profile.changed", () => { if (view.kind === "profile" && view.pubkey === me) mineHeadNow().then(drawMine) })
   n.inc?.on?.("nv.compose.sent", e => {
     const ev = e?.payload?.event
     if (!ev || !HEX.test(ev.id ?? "")) return

@@ -6,6 +6,7 @@ import { npubEncode } from "nostr-tools/nip19"
 import { Dialog } from "./Moderation.jsx"
 import { QrCode } from "../screens/WalletReceive.jsx"
 import { useProfile } from "./useProfile.js"
+import "../styles/profile.css"
 
 /** The page a profile is shared as. */
 export const profileLink = pubkey => `https://nostrvault.app/p/${npubEncode(pubkey)}`
