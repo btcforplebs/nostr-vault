@@ -107,5 +107,7 @@ test("Apps page: in the Vault menu only while the napplet switch is on; #/apps r
   const read = p => fs.readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
   assert.match(read("src/screens/VaultPagesMenu.jsx"), /nappletsOn\(\) \|\| current === APPS_PAGE\.id/)
   assert.match(read("main.jsx"), /route === "apps" && <NappletShell/)
-  assert.match(read("src/desktop/DesktopShell.jsx"), /view\.route === "apps" \? <NappletShell/)
+  // Desktop with side columns: #/apps opens + Add (plan step 3); a narrow desktop window keeps the page.
+  assert.match(read("src/desktop/DesktopShell.jsx"), /view\.route === "apps" \? \(space \? null : <NappletShell/)
+  assert.match(read("src/desktop/DesktopShell.jsx"), /const toAdd = space && view\.route === "apps"/)
 })

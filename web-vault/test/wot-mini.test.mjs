@@ -111,7 +111,8 @@ test("the dock draws the panels from the registry, WoT mini between Live Vault a
   const src = f => readFileSync(new URL(`../src/desktop/space/${f}`, import.meta.url), "utf8")
   assert.match(src("panels.js"), /live-vault[\s\S]*wot-mini[\s\S]*messages/)
   // In the user's order (space-layout.js), over the registry's panels.
-  assert.match(src("SpaceDock.jsx"), /new Map\(PANELS\.map\(p => \[p\.id, p\]\)\)/)
-  assert.match(src("SpaceDock.jsx"), /shownPanels\(layout, PANEL_IDS\)[\s\S]*<Panel ctx=\{ctx\} open=\{open && !editing\} tools=\{tools\} \/>/)
+  // Both side columns draw them through CardColumn.jsx (plan step 3).
+  assert.match(src("CardColumn.jsx"), /new Map\(PANELS\.map\(p => \[p\.id, p\]\)\)/)
+  assert.match(src("CardColumn.jsx"), /columnCards\(layout, side, canDraw\)[\s\S]*<Panel ctx=\{ctx\} open=\{open && !editing\} tools=\{tools\} \/>/)
   assert.match(src("WotMini.jsx"), /href=\{`#\/wot\/\$\{pk\}`\}/, "a face opens their card in the left column")
 })

@@ -19,6 +19,10 @@ import { noteById } from "./noteIndex.js"
 import { Sidebar } from "./Sidebar.jsx"
 import { SplitPane } from "./SplitPane.jsx"
 import { SpaceDock, useSpaceFolded } from "./space/SpaceDock.jsx"
+import { LeftDock, useLeftShown } from "./space/LeftDock.jsx"
+import { AddSheet } from "./space/AddSheet.jsx"
+import { PANEL_NAMES } from "./space/CardColumn.jsx"
+import { useLayout } from "./space/layout-store.js"
 import { PeekCard } from "./PeekCard.jsx"
 import { ContextMenu } from "./ContextMenu.jsx"
 import { MagicPasteIcon } from "../components/MagicPasteIcon.jsx"
@@ -41,6 +45,23 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const [spaceFolded, setSpaceFolded] = useSpaceFolded(me)
   const [help, setHelp] = useState(false)
   const space = mode !== "single" // Your space needs the room: from 1024px
+  // The side columns (plan NV_WEB_ONE_PLAN.md step 3): Edit in Your space edits both; the left one, under the menu,
+  // only at full width and only once it has a card (or while editing). `adding`: the column + Add's sheet adds to.
+  const canLeft = mode === "full"
+  const [editing, setEditing] = useState(false)
+  const [adding, setAdding] = useState(null)
+  const [layout, change] = useLayout(me)
+  const leftOn = useLeftShown(me, editing) && canLeft
+  const edit = on => { setEditing(on); if (on && spaceFolded) setSpaceFolded(false) }
+  // The Apps page is + Add now, where there are side columns: #/apps opens it (the phone and a narrow window keep it).
+  const toAdd = space && view.route === "apps"
+  useEffect(() => {
+    if (!toAdd) return
+    history.replaceState(history.state, "", lastList || "#/feed")
+    dispatchEvent(new HashChangeEvent("hashchange"))
+    edit(true)
+    setAdding("right")
+  }, [toAdd])
   const other = view.route === "profile" && HEX.test(view.arg) && view.arg !== me
   const side = sideOf(view.route, other)
   const note = HEX.test(view.params.get("note") ?? "") ? view.params.get("note") : null
@@ -99,12 +120,13 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const page = view.route === "settings" ? <SettingsScreen key={view.arg} ctx={ctx} page={view.arg} />
     : view.route === "accounts" ? <AccountsScreen ctx={ctx} />
     : view.route === "wallet" ? <WalletScreen />
-    : view.route === "apps" ? <NappletShell ctx={ctx} showSwitch={false} vaultMenu />
+    : view.route === "apps" ? (space ? null : <NappletShell ctx={ctx} showSwitch={false} vaultMenu />)
     : null
   return (
-    <div class={`desk ${mode}${space ? (spaceFolded ? " space folded" : " space") : ""}`}>
+    <div class={`desk ${mode}${space ? (spaceFolded ? " space folded" : " space") : ""}${leftOn ? " left-on" : ""}`}>
       <div class="desk-left">
       <Sidebar ctx={ctx} side={side} rail />
+      {leftOn && <LeftDock ctx={ctx} editing={editing} onEdit={edit} onAdd={setAdding} />}
       <section class="desk-main">
         {view.route === "wot" ? <div class="desk-full">{nappletsOn() ? <WotPane ctx={ctx} open={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? null : /^[0-9a-f]{64}$/.test(view.arg) ? view.arg : null} root={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? view.arg : null} /> : <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : undefined} />}</div>
           : page ? <div class="desk-page" key={view.path}>{page}</div>
@@ -113,7 +135,8 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
         <Current note={note} dm={dm} />
       </section>
       </div>
-      {space && <SpaceDock ctx={ctx} folded={spaceFolded} onFold={setSpaceFolded} />}
+      {space && <SpaceDock ctx={ctx} folded={spaceFolded} onFold={v => { setSpaceFolded(v); if (v) setEditing(false) }} editing={editing} onEdit={edit} onAdd={setAdding} canLeft={canLeft} />}
+      {adding && space && <AddSheet ctx={ctx} layout={layout} change={change} side={adding} canLeft={canLeft} names={PANEL_NAMES} onClose={() => setAdding(null)} />}
       {composing && <ComposeDialog ctx={ctx} onClose={closeCompose} />}
       {help && <ShortcutSheet onClose={() => setHelp(false)} />}
       <PeekCard ctx={ctx} />
