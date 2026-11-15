@@ -96,6 +96,8 @@
   .prof h2 { margin: 0; font-size: 19px; }
   .prof p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); margin: 10px 0 0; }
   .muted { color: var(--muted); font-size: 13px; }
+  .sect { margin: 0; padding: 14px 14px 2px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .sect-note { margin: 0; padding: 0 14px 10px; border-bottom: 1px solid var(--hair); }
   /* Your own profile (plan step 5): the site's ProfileHeader, drawn here. */
   .mine { border-bottom: 1px solid var(--hair); padding-bottom: 12px; }
   .mine .banner { height: 150px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 45%, var(--s2)), var(--s1)); overflow: hidden; }
@@ -675,6 +677,7 @@ async function render() {
   if (view.kind === "thread") return showThread(view.id, view.event)
   if (view.kind === "profile") return showProfile(view.pubkey)
   if (view.kind === "tag") return showTag(view.tag)
+  if (view.kind === "bookmarks") return showBookmarks()
 }
 
 // A #tag's notes, as the shell gives them: your vault first, then relays, and only people in your web (the shell's
@@ -794,6 +797,27 @@ async function showProfile(pk) {
 }
 
 
+// ---- your bookmarks (plan step 6a) ----
+// The shell reads your bookmark list (its private part opened by your signer, never here) and hands over the signed
+// notes it names (napplet:bookmarks/list); a note's ⋯ menu has Remove Bookmark, and a change comes as nv.bookmarks.changed.
+async function showBookmarks() {
+  $("title").textContent = "Bookmarks"
+  const d = await (n.intent?.invoke("napplet:bookmarks/list", { payload: {} }) ?? Promise.resolve(null)).then(r => (r?.ok ? r.data : null)).catch(() => null)
+  if (view.kind !== "bookmarks") return
+  $("list").setAttribute("aria-busy", "false")
+  const foot = $("foot"); foot.replaceChildren()
+  if (!d) { $("list").replaceChildren(); foot.textContent = "Couldn't read your bookmarks."; return }
+  const missing = () => el("p", "muted empty", "A bookmarked note no relay had.")
+  const rows = d.public.map(ev => (ev ? card(ev) : missing()))
+  if (d.private.length) {
+    rows.push(el("h3", "sect", "Private bookmarks"), el("p", "muted sect-note", "Only you can see these. They are shown here as they are; change them in the app that made them."))
+    rows.push(...d.private.map(ev => (ev ? card(ev) : missing())))
+  }
+  $("list").replaceChildren(...rows)
+  if (!d.public.length && !d.private.length) foot.textContent = "No bookmarks yet. Use Bookmark in a note's ⋯ menu to keep it here."
+  if (d.privateNote) foot.append(el("p", "muted", `Your private bookmarks weren't read (${d.privateNote}).`))
+}
+
 // ---- your own profile (plan step 5) ----
 // The header comes from the shell (napplet:profile/mine: your names, pictures, counts, whether this sign-in can sign);
 // your notes are read here, as every list (outbox: the vault first, then relays). Edit Profile, Share, Wallet,
@@ -903,6 +927,7 @@ async function start() {
     const p = d?.payload ?? {}
     if (d.archetype === "note" && d.action !== "removed" && HEX.test(p.id ?? "")) { if (p.side === true) { document.body.classList.add("side"); stack = []; return go({ kind: "thread", id: p.id }, false) } go({ kind: "thread", id: p.id }, view.kind !== "feed" || stack.length > 0) }
     else if (d.archetype === "profile" && HEX.test(p.pubkey ?? "")) go({ kind: "profile", pubkey: p.pubkey }, view.kind !== "feed" || stack.length > 0)
+    else if (d.archetype === "feed" && p.list === "bookmarks") { stack = []; go({ kind: "bookmarks" }, false) }
     else if (d.archetype === "feed" && typeof p.tag === "string" && /^[\p{L}\p{N}_]{1,64}$/u.test(p.tag)) go({ kind: "tag", tag: p.tag.toLowerCase() })
     else if (d.archetype === "feed") { stack = []; go({ kind: "feed" }, false) }
     else if (d.archetype === "note" && d.action === "removed" && HEX.test(p.id ?? "")) {
@@ -917,6 +942,7 @@ async function start() {
   n.inc?.on?.("nv.key.cmd", e => rowCmd(e?.payload?.cmd))
   n.inc?.on?.("nv.note.open", e => markOpen(e?.payload?.id))
   // Your profile saved, or its follower count came in: the header again, the tab as it was.
+  n.inc?.on?.("nv.bookmarks.changed", () => { if (view.kind === "bookmarks") showBookmarks() })
   n.inc?.on?.("nv.profile.changed", () => { if (view.kind === "profile" && view.pubkey === me) mineHeadNow().then(drawMine) })
   n.inc?.on?.("nv.compose.sent", e => {
     const ev = e?.payload?.event

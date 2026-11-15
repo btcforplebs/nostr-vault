@@ -69,9 +69,12 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
 
   // Your own profile, with napplets on (plan step 5): the Feed's Reader, opened to it (reader-mine.js), so it is one frame.
   const mine = nappletsOn() && view.route === "profile" && !other
+  // Bookmarks too (plan step 6a): the Reader's Bookmarks list (reader-bookmarks.js).
+  const marks = nappletsOn() && view.route === "bookmarks"
+  const inReader = mine || marks
   // Feed and Search stay mounted once opened, so going back to them keeps the list, its results and where you were.
-  const [kept, setKept] = useState({ feed: view.route === "feed" || mine, search: view.route === "search" })
-  useEffect(() => { const k = mine ? "feed" : view.route; if ((k === "feed" || k === "search") && !kept[k]) setKept(was => ({ ...was, [k]: true })) }, [view.route, mine])
+  const [kept, setKept] = useState({ feed: view.route === "feed" || inReader, search: view.route === "search" })
+  useEffect(() => { const k = inReader ? "feed" : view.route; if ((k === "feed" || k === "search") && !kept[k]) setKept(was => ({ ...was, [k]: true })) }, [view.route, inReader])
   // The screen a person was opened from names the crumb back to it.
   const from = useRef("search")
   if (!other && LABEL[view.route]) from.current = view.route
@@ -88,8 +91,10 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
 
   // The Reader's tapped note: its thread beside the list, as a classic row's (plan step 2).
   const openBeside = id => { location.hash = withParam(withParam(location.hash || "#/feed", "dm", null), "note", id); return true }
-  const listKey = other ? `person:${view.arg}` : mine ? "feed" : view.route
-  const readerOpen = mine ? { archetype: "profile", action: "open", payload: { pubkey: me } } : readerOpenFor("feed", "", hash)
+  const listKey = other ? `person:${view.arg}` : inReader ? "feed" : view.route
+  const readerOpen = mine ? { archetype: "profile", action: "open", payload: { pubkey: me } }
+    : marks ? { archetype: "feed", action: "open", payload: { list: "bookmarks" } }
+    : readerOpenFor("feed", "", hash)
   const list = (
     <>
       {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpen} beside={openBeside} openId={note ?? ""} fullCompose /> : <FeedScreen ctx={ctx} />}</div>}

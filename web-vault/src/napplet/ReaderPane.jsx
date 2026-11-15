@@ -30,6 +30,9 @@ import { onZapTotals, wantTotals, zapTotal } from "../net/zaps.js"
 import { displayEmoji, likeWithFeedback, pickFor } from "../components/ReactionButton.jsx"
 import { STATS_TOPIC, statsOf } from "./note-stats.js"
 import { mineIntents } from "./reader-mine.js"
+import { bookmarkIntents } from "./reader-bookmarks.js"
+import { loadBookmarks, onBookmarks, entries as bookmarkEntries } from "../net/bookmarks.js"
+import { fetchEntries } from "../net/bookmark-notes.js"
 import { npubEncode } from "nostr-tools/nip19"
 import { getProfile, fetchProfiles } from "../net/profiles.js"
 import { fetchFollowers, keptFollowers } from "../net/followers.js"
@@ -132,6 +135,16 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
     const mineChanged = () => bus.emit(wire.me, MINE_TOPIC, {})
     live.current.mineChanged = mineChanged
     let askedFollowers = false
+    // Your bookmarks in the Reader (plan step 6a, reader-bookmarks.js): the list opened here, signed notes handed over.
+    const offBookmarks = bookmarkIntents({
+      bus, me: wire.me, verify: verifyEvent, onChange: onBookmarks,
+      read: async () => {
+        const s = await loadBookmarks(liveCtx)
+        const relays = uniq([...liveCtx.account.relays.read, ...DEFAULT_RELAYS])
+        const [pub, priv] = await Promise.all([fetchEntries(liveCtx, bookmarkEntries(s.event?.tags ?? []), relays), fetchEntries(liveCtx, [...s.privateSet], relays)])
+        return { public: pub, private: priv, privateNote: s.privateNote }
+      },
+    })
     const offMine = mineIntents({
       bus,
       profile: async () => {
@@ -168,7 +181,7 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
         if (openIdRef.current) bus.emit(wire.me, OPEN_TOPIC, { id: openIdRef.current })
       } catch (e) { if (!gone) setNote(`The Reader couldn't open: ${e?.message ?? e}`) }
     })()
-    return () => { removeEventListener(READER_CMD_EVENT, rowCmd); removeEventListener(NOTE_SENT_EVENT, sentNote); gone = true; offStats.forEach(f => f()); offMine(); wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
+    return () => { removeEventListener(READER_CMD_EVENT, rowCmd); removeEventListener(NOTE_SENT_EVENT, sentNote); gone = true; offStats.forEach(f => f()); offMine(); offBookmarks(); wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
   }, [ctx.session.pubkey, ctx.vault, ctx.signer, grants])
 
   // The note open beside the list, marked in it (nv.note.open); "" when the side pane closes.
