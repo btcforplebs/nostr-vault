@@ -33,9 +33,9 @@ import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.TertiaryText
 
 /**
- * Settings > Appearance > Accent: the eight ready-made colours and a preview
- * of the pick in both modes (twin of AccentSettingsSection.swift; Android has
- * no colour wheel yet).
+ * Settings > Appearance > Accent: the eight ready-made colours, a colour
+ * wheel for any other pick (AccentWheel.kt) and a preview of the pick in both
+ * modes (twin of AccentSettingsSection.swift).
  */
 @Composable
 fun AccentPresetRow(setting: String, onPick: (String) -> Unit) {
@@ -61,6 +61,7 @@ fun AccentPresetRow(setting: String, onPick: (String) -> Unit) {
             }
         }
     }
+    AccentCustomRow(picked, onPick)
     Spacer(Modifier.height(10.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         AccentPreview(setting, light = false, Modifier.weight(1f))
@@ -77,7 +78,7 @@ fun AccentPresetRow(setting: String, onPick: (String) -> Unit) {
 
 /** One mode's look, drawn with that mode's fixed values whatever mode the app is in. */
 @Composable
-private fun AccentPreview(setting: String, light: Boolean, modifier: Modifier) {
+internal fun AccentPreview(setting: String, light: Boolean, modifier: Modifier) {
     val ramp = AccentPalette.ramp(setting, light)
     val page = if (light) Color(0xFFF6F1EB) else Color.Black
     val ink = if (light) Color.Black else Color.White
