@@ -37,5 +37,6 @@ struct PrivacySettingsView: View {
                 Text("Off, a locked Fanfares article opens when you tap Already unlocked?")
             }
         }
+        .warmFormBackground()
     }
 }

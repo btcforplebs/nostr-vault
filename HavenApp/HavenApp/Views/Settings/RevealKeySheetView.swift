@@ -93,6 +93,7 @@ struct RevealKeySheetView: View {
                     }
                 }
             }
+            .warmFormBackground()
             .navigationTitle("Reveal Private Key")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

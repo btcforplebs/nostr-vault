@@ -198,6 +198,7 @@ struct AppearanceSettingsView: View {
                 }
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         .sheet(isPresented: $showEmojiPicker) {
             EmojiPickerView(onSelectEmoji: { emoji in

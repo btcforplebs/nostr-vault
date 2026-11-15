@@ -58,6 +58,7 @@ struct PushNotificationSettingsView: View {
 
             Section {} // spacer for tab bar
         }
+        .warmFormBackground()
         .padding(.bottom, 60)
     }
 }

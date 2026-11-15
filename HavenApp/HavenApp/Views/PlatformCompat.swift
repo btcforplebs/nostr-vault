@@ -72,6 +72,16 @@ extension Color {
         #endif
     }
 
+    /// The page behind a grouped form: warm paper in Light, the system's
+    /// grouped background in Dark (see `warmFormBackground()`).
+    static var warmFormPage: Color {
+        #if os(iOS)
+        Color(light: .surface0, dark: Color(UIColor.systemGroupedBackground))
+        #else
+        Color(light: .surface0, dark: Color(NSColor.windowBackgroundColor))
+        #endif
+    }
+
     @MainActor
     static var platformSecondaryGroupedBackground: Color {
         if ConfigService.shared.config.useOLED {
@@ -311,6 +321,16 @@ extension View {
         } else {
             self
         }
+    }
+
+    /// Settings forms and grouped lists: the warm paper page (light `surface0`)
+    /// instead of the system's cool grey grouped background in Light. Dark
+    /// keeps the system's grouped page exactly (black, or the lifted grey in a
+    /// sheet); rows keep the system cell colour, white in Light like `surface1`.
+    func warmFormBackground() -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .background(Color.warmFormPage)
     }
 
 }

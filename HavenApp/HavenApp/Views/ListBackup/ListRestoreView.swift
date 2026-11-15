@@ -49,6 +49,7 @@ struct ListRestoreView: View {
                     }
                 }
             }
+            .warmFormBackground()
             .formStyle(.grouped)
             .navigationTitle("Restore \(name)")
             #if os(iOS)

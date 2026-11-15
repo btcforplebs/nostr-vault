@@ -127,6 +127,7 @@ struct ConnectSignerSheetView: View {
                     }
                 }
             }
+            .warmFormBackground()
             .navigationTitle("Connect Signer")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -69,6 +69,7 @@ struct BlockedSettingsView: View {
                 }
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in
             privateRevision += 1

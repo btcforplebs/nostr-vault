@@ -21,6 +21,7 @@ struct FipsMeshDeviceView: View {
                 content(device)
             }
         }
+        .warmFormBackground()
         .listStyle(.insetGrouped)
         .tint(Color.havenPurple)
         .navigationTitle(device?.displayName ?? "Device")

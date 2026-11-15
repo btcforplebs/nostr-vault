@@ -65,6 +65,7 @@ struct YourDevicesSettingsView: View {
                 Text("Advanced")
             }
         }
+        .warmFormBackground()
         .listStyle(.insetGrouped)
         .tint(Color.havenPurple)
         .onAppear { mesh.refresh() }
@@ -154,6 +155,7 @@ struct YourDevicesSettingsView: View {
                 Text(Self.connectFooter + " Rename or remove a device under Mesh, below.")
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         .onAppear { mesh.loadOwnNpub() }
     }

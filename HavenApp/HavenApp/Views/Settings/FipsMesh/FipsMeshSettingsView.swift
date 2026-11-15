@@ -23,6 +23,7 @@ struct FipsMeshSettingsView: View {
             FipsMeshShareSection()
             advancedSection
         }
+        .warmFormBackground()
         .listStyle(.insetGrouped)
         .tint(Color.havenPurple)
         .navigationTitle("Mesh")

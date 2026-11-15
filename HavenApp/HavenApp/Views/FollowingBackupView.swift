@@ -178,6 +178,7 @@ struct FollowingBackupSettingsView: View {
                 }
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -542,6 +543,7 @@ struct Kind3EventDetailView: View {
                 }
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         .navigationTitle("Contact List Backup")
         #if os(iOS)
@@ -681,6 +683,7 @@ struct SnapshotDetailView: View {
                 }
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         .navigationTitle("Snapshot Backup")
         #if os(iOS)

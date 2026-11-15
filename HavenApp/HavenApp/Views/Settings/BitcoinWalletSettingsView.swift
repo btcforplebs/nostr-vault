@@ -90,6 +90,7 @@ struct BitcoinWalletSettingsView: View {
                 Text("Bitcoin")
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

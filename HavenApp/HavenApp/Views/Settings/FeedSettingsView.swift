@@ -75,6 +75,7 @@ struct FeedSettingsView: View {
                 Text("Clears the posts loaded on this device and loads your feed again from its relays. To check for new posts, pull down on the feed.")
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

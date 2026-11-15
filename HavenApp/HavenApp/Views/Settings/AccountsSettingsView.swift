@@ -52,6 +52,7 @@ struct AccountsSettingsView: View {
             }
 
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

@@ -32,6 +32,7 @@ struct ImportSettingsView: View {
                 Text("Import pulls from the relays with Import on, in Settings > Relays.")
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

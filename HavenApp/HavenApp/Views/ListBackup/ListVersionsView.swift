@@ -40,6 +40,7 @@ struct ListVersionsView: View {
                 Text("Restoring signs the old version again as a new list. Your vault keeps the one it replaces.")
             }
         }
+        .warmFormBackground()
         .formStyle(.grouped)
         .navigationTitle(ListBackupFormat.title(key))
         .sheet(item: $restoring) { old in ListRestoreView(old: old) }

@@ -81,6 +81,7 @@ struct MacRelayDomainSettingsView: View {
                 Text("To keep the tunnel running in the background, use `brew services start cloudflared` or add it to your login items.")
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
     }
 

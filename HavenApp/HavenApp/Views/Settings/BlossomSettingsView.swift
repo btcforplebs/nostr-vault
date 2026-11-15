@@ -260,6 +260,7 @@ struct BlossomSettingsView: View {
             }
             #endif
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

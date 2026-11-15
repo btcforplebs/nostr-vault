@@ -116,6 +116,7 @@ struct BackupSettingsView: View {
                 }
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

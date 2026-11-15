@@ -40,6 +40,7 @@ struct ProofOfWorkSettingsView: View {
                 Text("Direct Messages")
             }
         }
+        .warmFormBackground()
         #if os(iOS)
         .navigationTitle("Proof of Work")
         .navigationBarTitleDisplayMode(.inline)
