@@ -101,6 +101,9 @@
   #sbar input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--s2); border: 1px solid var(--hair); border-radius: 999px; padding: 0 14px; min-height: 38px; }
   #sbar .stabs { display: flex; gap: 2px; } #sbar .stabs button { border: 0; background: none; color: var(--muted); min-height: 32px; padding: 0 12px; }
   #sbar .stabs button.on { background: var(--s2); color: var(--text); font-weight: 650; }
+  #vbar { position: sticky; top: 52px; z-index: 2; display: flex; gap: 8px; align-items: center; padding: 10px 14px; background: var(--bg); border-bottom: 1px solid var(--hair); }
+  #vbar input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--s2); border: 1px solid var(--hair); border-radius: 999px; padding: 0 14px; min-height: 38px; }
+  .vlink { display: flex; align-items: center; } .vlink .person { flex: 1; min-width: 0; } .vlink > button:last-child { margin-right: 14px; min-height: 30px; font-size: 13px; }
   #sbar .fbtn.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
   .fmenu { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--hair); border-radius: 12px; background: var(--s1); }
   .chiprow { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 14px 10px; }
@@ -166,6 +169,7 @@
 <header><button id="back" class="ghost" hidden aria-label="Back">‹ Back</button><h1 id="title">Following</h1><button id="pick" class="ghost" aria-haspopup="menu" aria-expanded="false" aria-label="Choose a feed">▾</button><button id="new" class="primary">Post</button></header>
 <div id="picker" role="menu" hidden></div>
 <div id="sbar" hidden></div>
+<div id="vbar" role="search" hidden></div>
 <button id="fresh" class="primary" hidden></button>
 <main id="list" role="feed" aria-busy="true"></main>
 <div id="foot" class="more"></div>
@@ -713,6 +717,8 @@ async function render() {
   $("back").hidden = !stack.length
   $("pick").hidden = view.kind !== "feed"; closePicker()
   $("sbar").hidden = view.kind !== "search"
+  if (view.kind === "vault") { vsearching = false; vsec = "all"; if (vinput) vinput.value = ""; vadopt = true } // the shell's search, if kept, comes back
+  $("vbar").hidden = true
   $("list").replaceChildren(); $("foot").textContent = "Loading…"; $("list").setAttribute("aria-busy", "true")
   if (view.kind === "feed") return showFeed()
   if (view.kind === "thread") return showThread(view.id, view.event)
@@ -864,12 +870,15 @@ async function showVault(again = false) {
   // A state with nothing yet answers ok with no data: that is "not yet", not a page.
   const got = await vask("state"), d = got && typeof got === "object" ? got : null
   if (view.kind !== "vault") return
-  const key = JSON.stringify([d, vfilterOpen])
+  if (d && vadopt) { vadopt = false; if (d.search?.text && !vsearching) { vsearching = true; vaultBar(); vinput.value = d.search.text } } // typed before, on coming back
+  $("vbar").hidden = !vsearching
+  const key = JSON.stringify([d, vfilterOpen, vsearching, vsec])
   if (again && key === vdrawn) return
   vdrawn = key
   const out = []
   const foot = $("foot"); foot.replaceChildren()
   if (!d) { $("list").replaceChildren(); foot.textContent = "Reading your vault…"; return }
+  if (vsearching) return showVaultSearch(d.search, foot)
   const modes = el("div", "vmodes"); modes.setAttribute("role", "tablist"); modes.setAttribute("aria-label", "Vault")
   for (const m of d.modes) {
     const b = el("button", m.id === d.mode ? "on" : "", m.title); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(m.id === d.mode)); b.title = m.fresh ? `${m.title}: new` : m.title
@@ -882,6 +891,7 @@ async function showVault(again = false) {
   const cur = d.filters.find(x => x.on)
   if (d.filters.length) { const fb = el("button", cur ? "on" : "", `Filter: ${cur ? cur.title : d.allTitle}`); fb.type = "button"; fb.setAttribute("aria-expanded", String(vfilterOpen)); fb.onclick = () => { vfilterOpen = !vfilterOpen; showVault() }; tools.append(fb) }
   tools.append(el("span", "grow"))
+  const sb = el("button", "", "Search"); sb.type = "button"; sb.title = "Search your Vault"; sb.onclick = () => { vsearching = true; vaultBar(); $("vbar").hidden = false; vinput.focus(); showVault() }; tools.append(sb)
   const dash = el("button", "", "Dashboard"); dash.type = "button"; dash.title = "Vault Dashboard"; dash.onclick = () => vask("dashboard"); tools.append(dash)
   out.push(tools)
   if (vfilterOpen && d.filters.length) {
@@ -900,6 +910,66 @@ async function showVault(again = false) {
   if (!d.loaded || (!d.rows.length && !d.ready)) foot.textContent = "Reading your vault…"
   else if (!d.rows.length && !d.more) foot.textContent = d.empty
   else if (d.more) { const b = el("button", "", d.busy ? "Loading…" : "Older"); b.type = "button"; b.disabled = d.busy; b.onclick = () => { b.disabled = true; vask("more") }; foot.append(b) }
+}
+
+// The Vault's search (plan step 8b): this browser's relay only, with the screen's rules (useVaultSearch). Words go to
+// the shell 300 ms after the last key (vault/find), Return at once; results come back in vault/state as `search`:
+// people and hashtags as strings, notes, articles and media as the signed events. A row opens by the id handed out
+// (vault/open), a link through link/open. The field is built once and kept out of the list, as Search's is.
+let vsearching = false, vadopt = false, vinput = null, vtimer = null, vsec = "all", vquery = ""
+const VPREVIEW = 5
+function vaultBar() {
+  if (vinput) return
+  vinput = el("input"); vinput.type = "search"; vinput.placeholder = "Search your Vault"; vinput.setAttribute("aria-label", "Search your Vault")
+  vinput.autocapitalize = "off"; vinput.spellcheck = false; vinput.enterKeyHint = "search"
+  vinput.oninput = () => { clearTimeout(vtimer); const v = vinput.value; vtimer = setTimeout(() => vask("find", { text: v }), v.trim() ? 300 : 0) }
+  vinput.onkeydown = e => {
+    if (e.key === "Enter") { e.preventDefault(); clearTimeout(vtimer); vask("find", { text: vinput.value, now: true }) }
+    else if (e.key === "Escape") { e.preventDefault(); closeVaultSearch() }
+  }
+  const done = el("button", "", "Done"); done.type = "button"; done.onclick = closeVaultSearch
+  $("vbar").append(vinput, done)
+}
+function closeVaultSearch() { clearTimeout(vtimer); vsearching = false; vsec = "all"; if (vinput) vinput.value = ""; $("vbar").hidden = true; vask("find", { text: "" }); showVault() }
+function vsearchRow(sec, r) {
+  if (sec.kind === "events") return card(r)
+  if (sec.kind === "people") return personBtn(r, () => vask("open", { id: r.id }))
+  const w = el("div", "vlink"); w.append(personBtn({ name: r.title || r.host, sub: r.host, picture: "" }, () => openLink(r.url)))
+  if (r.note) { const b = el("button", "", "Note"); b.type = "button"; b.title = "The note with this link"; b.onclick = () => vask("open", { id: r.note }); w.append(b) }
+  return w
+}
+function showVaultSearch(s, foot) {
+  const out = [], msg = (title, detail) => { const e = el("div", "empty"); e.append(el("p", "", title), el("p", "muted", detail)); return e }
+  $("list").setAttribute("aria-busy", String(!!s?.busy))
+  if (s?.query !== vquery) { vquery = s?.query ?? ""; vsec = "all" }
+  const secs = s?.sections
+  if (!secs) {
+    if (s?.busy) foot.textContent = "Searching your Vault…"
+    else out.push(s?.short ? msg("Type at least two letters.", "") : msg("Search your Vault", "Notes, people, hashtags, links, articles and media stored in this browser's relay."))
+    $("list").replaceChildren(...out); return
+  }
+  const total = secs.reduce((n, x) => n + x.count, 0)
+  if (total) {
+    const tabs = el("div", "vmodes"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Results")
+    for (const [id, label] of [["all", `All ${total}`], ...secs.map(x => [x.id, `${x.title} ${x.count}`])]) {
+      const b = el("button", vsec === id ? "on" : "", label); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(vsec === id)); b.onclick = () => { vsec = id; showVault() }; tabs.append(b)
+    }
+    out.push(tabs)
+  }
+  if (s.busy) foot.textContent = "Searching your Vault…"
+  else if (s.cut) out.push(el("p", "muted sect-note", "Your Vault has more matches than shown, so older items may be missing. Add a word to narrow it."))
+  if (!total) { if (!s.busy) out.push(msg("Nothing in your Vault matches", `“${s.query}”`)); $("list").replaceChildren(...out); return }
+  for (const sec of secs.filter(x => vsec === "all" || x.id === vsec)) {
+    const all = vsec === "all" && sec.count > VPREVIEW
+    const act = all ? el("button", "", `See all ${sec.count}`) : null
+    if (act) { act.type = "button"; act.onclick = () => { vsec = sec.id; showVault(); scrollTo(0, 0) } }
+    out.push(slabel(sec.title, act))
+    const rows = vsec === "all" ? sec.rows.slice(0, VPREVIEW) : sec.rows
+    if (sec.kind === "tags") out.push(chips(rows, r => `#${r.tag}`, r => vask("open", { id: r.id })))
+    else out.push(...rows.map(r => vsearchRow(sec, r)))
+    if (vsec !== "all" && sec.count > sec.rows.length) out.push(el("p", "muted sect-note", `Showing the newest ${sec.rows.length} of ${sec.count}.`))
+  }
+  $("list").replaceChildren(...out)
 }
 
 // ---- search (plan step 7) ----

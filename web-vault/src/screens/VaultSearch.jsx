@@ -18,16 +18,15 @@ import { Spinner } from "../components/Loading.jsx"
 export const PREVIEW = 5
 export const SECTION_CAP = 200
 
-export function VaultSearch({ ctx, onClose }) {
-  const { vault, account, session } = ctx
+/** The Vault search's data (shared with the Reader, reader-vault.js): what is typed, what was found, busy. Typing waits
+ *  300 ms; `now` (Return) searches at once, and the pause after it doesn't walk the stores a second time. */
+export function useVaultSearch(ctx) {
+  const { vault, account } = ctx
   const [text, setText] = useState("")
   const [found, setFound] = useState(null) // { query, ...results }
   const [busy, setBusy] = useState(false)
-  const [section, setSection] = useState("all")
   const { blocked } = useBlocks(ctx)
   const live = useRef("")
-  const input = useRef()
-  useEffect(() => { input.current?.focus() }, [])
 
   const run = async q => {
     live.current = q
@@ -35,12 +34,22 @@ export function VaultSearch({ ctx, onClose }) {
     setBusy(true)
     const r = await searchVault([vault.outbox, vault.inbox, vault.feed], q, { follows: account.follows, blocked, decode }).catch(() => null)
     if (live.current !== q) return // the field has moved on
-    setFound(r && { query: q, ...r }); setBusy(false); setSection("all")
+    setFound(r && { query: q, ...r }); setBusy(false)
     if (r?.people.length) fetchProfiles(vault, r.people.slice(0, 40), uniq([...account.relays.read, ...DEFAULT_RELAYS])).catch(() => {})
   }
   // A short pause, so typing doesn't walk the stores per key; Return searches at once.
-  useEffect(() => { const t = setTimeout(() => run(text.trim()), 300); return () => clearTimeout(t) }, [text])
+  useEffect(() => { const q = text.trim(); if (q === live.current) return; const t = setTimeout(() => run(q), 300); return () => clearTimeout(t) }, [text])
   const now = q => { setText(q); run(q.trim()) }
+  return { text, setText, now, found, busy }
+}
+
+export function VaultSearch({ ctx, onClose }) {
+  const { session, account } = ctx
+  const { text, setText, now, found, busy } = useVaultSearch(ctx)
+  const [section, setSection] = useState("all")
+  useEffect(() => setSection("all"), [found])
+  const input = useRef()
+  useEffect(() => { input.current?.focus() }, [])
 
   const trusted = pk => pk === session.pubkey || account.follows.includes(pk)
   const counts = found ? Object.fromEntries(SECTIONS.map(s => [s.id, found[s.id].length])) : {}

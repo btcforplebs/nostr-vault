@@ -5,9 +5,12 @@
 // a row's id; the shell opens what it kept. Media stays the Media napplet's page (the shell routes there).
 //   napplet:vault/state {}                -> { data } (vaultAnswer)
 //   napplet:vault/mode { mode } / vault/filter { id } / vault/more {} / vault/open { id } / vault/dashboard {}
+//   napplet:vault/find { text, now? }     -> the Vault's search (step 8b, VaultSearch.jsx useVaultSearch: this browser's
+//                                            relay only); its results come in vault/state as `search`, opened by id
 // A change comes as inc nv.vault.changed. The Reader's only.
 import { READER_DTAG as READER } from "./first-party-list.js"
 import { MODES, FILTERS, CLEARABLE, ALL_TITLE, previewOf } from "../net/vault-lists.js"
+import { SECTIONS } from "../net/vault-search.js"
 
 export const VAULT_TOPIC = "nv.vault.changed"
 export const EVENT_MODES = new Set(["notes", "articles", "highlights"])
@@ -28,6 +31,48 @@ export function emptyText(mode, filter, followersCount = 0) {
     case "followers": return filter === "outside" ? "No followers from outside your web." : followersCount ? "No followers in your web yet. The filter lists the ones outside it." : "No followers found on your relays yet."
     default: return ""
   }
+}
+
+/** Rows in one search section, as the screen's SECTION_CAP (VaultSearch.jsx). */
+export const SEARCH_CAP = 200
+const TAG = /^[\p{L}\p{N}_]{1,64}$/u
+const HEX = /^[0-9a-f]{64}$/
+const hostOf = url => { try { return new URL(url).hostname } catch { return "" } }
+
+/**
+ * The Vault search (useVaultSearch's { text, found, busy }) -> { data, routes }: people as strings (a picture only from
+ * someone you trust, `trusted`), notes, articles and media as the signed events, hashtags and links as strings. A person
+ * opens their profile, a hashtag its feed, a link's note its thread, each by an id handed out here. `h`: { profileOf, npubOf }.
+ */
+export function vaultSearchAnswer(s, trusted, h, routes = new Map()) {
+  const text = String(s?.text ?? "")
+  const f = s?.found
+  const data = { text, busy: !!s?.busy, short: text.trim().length === 1, query: f ? String(f.query) : "", cut: !!f?.cut, sections: null }
+  if (!f) return { data, routes }
+  data.sections = SECTIONS.map(sec => {
+    const all = f[sec.id] ?? []
+    let kind = "events", rows
+    if (sec.id === "people") {
+      kind = "people"
+      rows = all.filter(pk => HEX.test(pk)).slice(0, SEARCH_CAP).map(pk => {
+        routes.set(pk, `#/profile/${pk}`)
+        const p = h.profileOf(pk), npub = h.npubOf(pk), nip05 = typeof p?.nip05 === "string" ? p.nip05.replace(/^_@/, "") : ""
+        return { id: pk, name: nameOf(p) || `${npub.slice(0, 16)}…`, sub: String(nip05 || `${npub.slice(0, 12)}…${npub.slice(-6)}`).slice(0, 120), about: typeof p?.about === "string" ? cut(p.about.trim()) : "", picture: trusted(pk) ? https(p?.picture) : "" }
+      })
+    } else if (sec.id === "hashtags") {
+      kind = "tags"
+      rows = all.filter(t => TAG.test(t)).slice(0, SEARCH_CAP).map(t => { routes.set(`tag:${t}`, `#/feed?tag=${encodeURIComponent(t.toLowerCase())}`); return { id: `tag:${t}`, tag: t } })
+    } else if (sec.id === "links") {
+      kind = "links"
+      rows = all.filter(l => /^https?:\/\//i.test(l?.url ?? "")).slice(0, SEARCH_CAP).map(l => {
+        const note = HEX.test(l.noteId ?? "") ? `note:${l.noteId}` : ""
+        if (note) routes.set(note, `#/thread/${l.noteId}`)
+        return { url: String(l.url).slice(0, 2048), title: String(l.title ?? "").slice(0, 200), host: hostOf(l.url), note }
+      })
+    } else rows = all.slice(0, SEARCH_CAP)
+    return { id: sec.id, title: sec.title, kind, count: all.length, rows }
+  }).filter(x => x.count)
+  return { data, routes }
 }
 
 /**
@@ -62,6 +107,7 @@ export function vaultAnswer(v, h) {
     out = rows.map(f => { routes.set(f.pubkey, `#/profile/${f.pubkey}`); return { id: f.pubkey, ...face(f.pubkey), name: nameOf(h.profileOf(f.pubkey)) || `${f.pubkey.slice(0, 8)}…`, sub: `followed you ${ago(f.at, h.now)} ago` } })
   } else out = []
   const filters = FILTERS[v.mode] ?? []
+  const search = v.search && (v.search.text || v.search.found) ? vaultSearchAnswer(v.search, v.trusted, h, routes).data : null
   return {
     routes,
     data: {
@@ -72,6 +118,7 @@ export function vaultAnswer(v, h) {
       more: v.shown < v.items.length || !!(v.older?.own || v.older?.inbound),
       count: v.mode === "followers" ? v.items.length : null, outsideFollowers: v.mode === "followers" && v.filter === "outside",
       empty: emptyText(v.mode, v.filter, v.followers?.length ?? 0),
+      search,
     },
   }
 }
@@ -107,6 +154,12 @@ export function vaultIntents({ bus, pipe, openHash, openDashboard }) {
       return { ok: true }
     }),
     reader("dashboard", () => { openDashboard(); return { ok: true } }),
+    reader("find", p => {
+      if (!pipe.ctl?.find) return { ok: false, error: "the Vault isn't open" }
+      if (typeof p.text !== "string") return { ok: false, error: "text is a string" }
+      pipe.ctl.find(p.text.slice(0, 500), !!p.now)
+      return { ok: true }
+    }),
   ]
   return () => offs.forEach(off => off())
 }
