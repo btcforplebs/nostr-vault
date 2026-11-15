@@ -23,6 +23,8 @@ struct MediaGridItem: View {
     @State private var isPushingToMirrors = false
     @State private var onPhone = false
     @ObservedObject private var backupStore = BlossomBackupStore.shared
+    /// Set by `.mediaViewer`: the viewer zooms out of this tile and back in.
+    @Environment(\.mediaZoomNamespace) private var zoomNamespace
 
     var body: some View {
         Color.clear
@@ -67,6 +69,7 @@ struct MediaGridItem: View {
             )
             .background(Color.black.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .mediaZoomSource(item.url, namespace: zoomNamespace)
             .contentShape(Rectangle())
             .scaleEffect(isHovered ? 1.04 : 1.0)
             .zIndex(isHovered ? 1.0 : 0.0)

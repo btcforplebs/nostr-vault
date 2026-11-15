@@ -78,6 +78,30 @@ extension ProfileContent {
         }
     }
 
+    /// The feed's viewer on `item`, paging across this profile's media tab,
+    /// with the vault badge under the buttons. No Delete here, as before.
+    func mediaViewerItem(for item: MediaItem) -> IdentifiableURL {
+        let media = displayMedia
+        let byURL = Dictionary(media.map { ($0.url, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<URL>()
+        let urls = media.map(\.url).filter { seen.insert($0).inserted }
+        let extras = MediaViewerExtras(
+            mimeHint: { byURL[$0]?.mimeType },
+            meshNote: { url in
+                byURL[url].flatMap { item in item.pubkey.map { MeshMediaNote(author: $0, tags: item.tags ?? []) } }
+            },
+            customPage: { url in
+                guard let item = byURL[url], item.type == .audio || item.type == .unknown else { return nil }
+                return AnyView(MediaItemRenderer(mediaItem: item))
+            },
+            badge: { url in AnyView(SourceIndicatorView(url: url)) },
+            onPage: { url in
+                if let item = byURL[url] { selectedMedia = item }
+            }
+        )
+        return IdentifiableURL(url: item.url, allURLs: urls, extras: extras)
+    }
+
     @ViewBuilder
     func mediaViewerContent(for item: MediaItem) -> some View {
         ZStack {

@@ -7,10 +7,13 @@ struct IdentifiableURL: Identifiable {
     /// The full set of media in the note this URL came from, in display order.
     /// Defaults to just `[url]` so single-media call sites are unchanged.
     let allURLs: [URL]
+    /// What the opening screen adds to the viewer; nil from the feed.
+    var extras: MediaViewerExtras? = nil
 
-    init(url: URL, allURLs: [URL]? = nil) {
+    init(url: URL, allURLs: [URL]? = nil, extras: MediaViewerExtras? = nil) {
         self.url = url
         self.allURLs = (allURLs?.isEmpty == false ? allURLs! : [url])
+        self.extras = extras
     }
 }
 
@@ -21,6 +24,7 @@ struct IdentifiableURL: Identifiable {
 struct FeedMediaPager: View {
     let urls: [URL]
     let selected: URL
+    var extras: MediaViewerExtras? = nil
     var onDismiss: (() -> Void)? = nil
     /// The page now showing, so the zoom can close into that photo's spot.
     var onPage: ((URL) -> Void)? = nil
@@ -31,9 +35,11 @@ struct FeedMediaPager: View {
     /// seconds, and the preloads below run for as long as the pager is open.
     private let meshNote = MeshMediaTap.note
 
-    init(urls: [URL], selected: URL, onDismiss: (() -> Void)? = nil, onPage: ((URL) -> Void)? = nil) {
+    init(urls: [URL], selected: URL, extras: MediaViewerExtras? = nil,
+         onDismiss: (() -> Void)? = nil, onPage: ((URL) -> Void)? = nil) {
         self.urls = urls.isEmpty ? [selected] : urls
         self.selected = selected
+        self.extras = extras
         self.onDismiss = onDismiss
         self.onPage = onPage
         _selection = State(initialValue: selected)
@@ -42,7 +48,7 @@ struct FeedMediaPager: View {
     var body: some View {
         #if os(iOS)
         if urls.count <= 1 {
-            FeedMediaViewer(url: selected, onDismiss: onDismiss)
+            FeedMediaViewer(url: selected, extras: extras, onDismiss: onDismiss)
         } else {
             ZStack {
                 // Each page draws its own black, which fades as it is pulled
@@ -50,7 +56,8 @@ struct FeedMediaPager: View {
                 if !zoomPresented { Color.black.ignoresSafeArea() }
                 TabView(selection: $selection) {
                     ForEach(urls, id: \.absoluteString) { url in
-                        FeedMediaViewer(url: url, enableDragDismiss: true, isOnScreen: url == selection, onDismiss: onDismiss)
+                        FeedMediaViewer(url: url, enableDragDismiss: true, isOnScreen: url == selection,
+                                        extras: extras, onDismiss: onDismiss)
                             .tag(url)
                     }
                 }
@@ -68,7 +75,7 @@ struct FeedMediaPager: View {
             }
         }
         #else
-        FeedMediaViewer(url: selected, onDismiss: onDismiss)
+        FeedMediaViewer(url: selected, extras: extras, onDismiss: onDismiss)
         #endif
     }
 

@@ -254,10 +254,13 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
         }
         .overlay(fullScreenOverlay)
         #else
-        .fullScreenCover(isPresented: isPresentingViewer) {
-            if let item = selectedMedia {
-                mediaViewerContent(for: item)
-            }
+        // A media tile opens the feed's viewer (`.mediaViewer` above): zoom
+        // out of the tile, same buttons and player.
+        .onChange(of: selectedMedia) { _, item in
+            if let item, showingMediaUrl == nil { showingMediaUrl = mediaViewerItem(for: item) }
+        }
+        .onChange(of: showingMediaUrl == nil) { _, closed in
+            if closed, selectedMedia != nil { selectedMedia = nil }
         }
         #endif
     }
