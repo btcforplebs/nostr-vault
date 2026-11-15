@@ -8,7 +8,8 @@ import { FeedScreen } from "../screens/FeedScreen.jsx"
 import { SettingsScreen } from "../screens/SettingsScreen.jsx"
 // Every other screen comes as its own chunk, when it is first shown (screens/lazy.jsx), the same wrappers the phone
 // layout uses: the boot bundle carries the desktop layout and the Feed, not Compose's editors or the Vault's gallery.
-import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, NappletShell, ReaderPane, WotPane, MessagesPane } from "../screens/lazy-screens.js"
+import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, NappletShell, ReaderPane, WotPane, MessagesPane, SettingsPane } from "../screens/lazy-screens.js"
+import { drawsHere as settingsInNapplet } from "../napplet/settings-answer.js"
 import { nappletsOn } from "../napplet/flag.js"
 import { readerOpenFor } from "../napplet/reader-intents.js"
 import { NAPPLET_KEY_EVENT, READER_CMD_EVENT, ROW_CMDS } from "../napplet/napplet-keys.js"
@@ -136,7 +137,9 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
 
   const full = view.route === "wot" || view.route === "relay"
   // Settings, Accounts and Wallet: one page across the main area, the phone's own screen with its ‹ Settings button.
-  const page = view.route === "settings" ? <SettingsScreen key={view.arg} ctx={ctx} page={view.arg} />
+  // With napplets on, the Settings list and its plain preference pages are the Settings napplet (plan step 10a).
+  const page = view.route === "settings" && nappletsOn() && settingsInNapplet(view.arg) ? <SettingsPane key="settings-napplet" ctx={ctx} page={view.arg ?? ""} />
+    : view.route === "settings" ? <SettingsScreen key={view.arg} ctx={ctx} page={view.arg} />
     : view.route === "accounts" ? <AccountsScreen ctx={ctx} />
     : view.route === "wallet" ? <WalletScreen />
     : view.route === "apps" ? (space ? null : <NappletShell ctx={ctx} showSwitch={false} vaultMenu />)
@@ -148,7 +151,8 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
       {leftOn && <LeftDock ctx={ctx} editing={editing} onEdit={edit} onAdd={setAdding} />}
       <section class="desk-main">
         {view.route === "wot" ? <div class="desk-full">{nappletsOn() ? <WotPane ctx={ctx} open={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? null : /^[0-9a-f]{64}$/.test(view.arg) ? view.arg : null} root={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? view.arg : null} /> : <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : undefined} />}</div>
-          : page ? <div class="desk-page" key={view.path}>{page}</div>
+          // The Settings napplet stays up from page to page (it draws the page in the address); other pages start fresh.
+          : page ? <div class="desk-page" key={page.type === SettingsPane ? "settings-napplet" : view.path}>{page}</div>
           : full ? null /* the Dashboard: main.jsx keeps the relay screen mounted and lays it over this area */
           : <SplitPane list={list} detail={detail} onBack={closeDetail} beside={nappletsOn() && view.route === "feed"} />}
         <Current note={note} dm={dm} />

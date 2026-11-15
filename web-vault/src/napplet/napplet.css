@@ -58,3 +58,8 @@
 .note-menu-sheet { display: grid; gap: 4px; min-width: min(320px, 80vw); }
 .note-menu-sheet button { text-align: left; min-height: 44px; }
 .note-menu-sheet .danger { color: var(--red); }
+
+/* Settings as a napplet (one plan step 10a): it fills the desktop page and scrolls itself, with no frame around it. */
+.settings-napplet { height: 100%; display: flex; flex-direction: column; padding: 0; max-width: none; }
+.settings-napplet > .napplet-host { flex: 1; min-height: 0; padding: 0; }
+.settings-napplet > .napplet-host .napplet-frame { border: 0; border-radius: 0; background: transparent; }

@@ -37,5 +37,7 @@ export const WotPane = lazyScreen("WotPane", () => import("../napplet/WotPane.js
 // Messages as the Messages napplet when the switch is on (plan P7).
 export const MessagesPane = lazyScreen("MessagesPane", () => import("../napplet/MessagesPane.jsx"))
 export const MediaPane = lazyScreen("MediaPane", () => import("../napplet/MediaPane.jsx"))
+// Settings' list and plain preference pages as the Settings napplet when the switch is on (one plan step 10a).
+export const SettingsPane = lazyScreen("SettingsPane", () => import("../napplet/SettingsPane.jsx"))
 // Compose's emoji panel when napplets are on (src/napplet/flag.js, plan P2): the napplet runtime, only when opened.
 export const ComposeEmoji = lazyScreen("ComposeEmoji", () => import("../napplet/ComposeEmoji.jsx"), { fallback: () => null, failed: () => null })

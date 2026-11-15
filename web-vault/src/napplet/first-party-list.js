@@ -16,6 +16,7 @@ export const WOT_MINI_DTAG = "nv-wot-mini"
 export const MESSAGES_PEEK_DTAG = "nv-messages-peek"
 export const MY_DEVICES_DTAG = "nv-my-devices"
 export const DASHBOARD_DTAG = "nv-dashboard"
+export const SETTINGS_DTAG = "nv-settings"
 
 export const FIRST_PARTY_LIST = [
   { dTag: EMOJI_DTAG, title: "Emoji", file: "emoji", domains: ["identity", "relay", "resource", "storage", "inc", "intent", "theme"], intents: ["emoji/pick"],
@@ -53,6 +54,10 @@ export const FIRST_PARTY_LIST = [
   // (dashboard-answer.js); pairing, the Clear cache ask, files and the clipboard stay the shell's.
   { dTag: DASHBOARD_DTAG, title: "Vault Dashboard", file: "dashboard", pane: true, domains: ["intent", "inc", "theme"], intents: [],
     summary: "Your vault's health: is it safe, who can reach you, what it holds, keeping it full, and its activity." },
+  // One plan step 10a: the Settings list and its plain preference pages (SettingsPane.jsx); the shell reads and writes
+  // each preference with the page's own module (settings-answer.js). Trust pages and list editors stay the shell's.
+  { dTag: SETTINGS_DTAG, title: "Settings", file: "settings", pane: true, domains: ["intent", "inc", "theme"], intents: [],
+    summary: "The Settings list, and Feed, Media & Cache, Privacy and Notifications preferences." },
   { dTag: "nv-note-drafts", title: "Note Drafts", file: "note-drafts", domains: ["identity", "storage", "outbox", "theme"], intents: [], sample: true,
     summary: "A sample: write a note, it saves as you type." },
 ]

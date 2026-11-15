@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings</title>
+<style>
+  /* Settings as a napplet (plan NV_WEB_ONE_PLAN.md step 10a): the list and the plain preference pages. The styles are
+     the app's own (styles/app.css, styles/settings.css) for these classes, on the shell's theme tokens. */
+  :root { color-scheme: dark; --bg: #000; --s1: #1c1c1e; --s2: #2c2c2e; --s3: #3a3a3c; --text: #fff; --text-2: rgb(255 255 255 / .60); --text-3: rgb(255 255 255 / .38);
+    --hair: rgb(255 255 255 / .12); --strong: rgb(255 255 255 / .5); --accent: #e67326; --online: #30d158; --danger: #ff453a; --seg-on: #636366; --gutter: 16px; --radius: 14px;
+    --font: -apple-system, system-ui, sans-serif; --mono: ui-monospace, monospace; --t-body: 15px/1.35 var(--font); --t-foot: 13px/1.3 var(--font); --t-sub: 14px/1.3 var(--font); --t-headline: 600 17px/1.3 var(--font); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: var(--t-body); -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-decoration: none; }
+  :focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+  button, a.button, .post-button, .chip {
+    font: var(--t-sub); font-weight: 600; min-height: 44px; padding: 0 18px; border-radius: 999px;
+    border: 1px solid var(--hair); background: var(--s2); color: var(--text); cursor: pointer;
+    transition: transform var(--press), opacity var(--press);
+  }
+  button:active:not(:disabled), .post-button:active, .chip:active { transform: scale(.96); }
+  button.primary, a.button.primary { background: var(--accent-grad); border-color: transparent; color: var(--on-accent); font-weight: 700; }
+  a.button { display: inline-flex; align-items: center; text-decoration: none; }
+  button:disabled { background: var(--s3); border-color: transparent; color: var(--text-3); cursor: default; }
+  button.small { min-height: 34px; padding: 0 14px; font: var(--t-foot); font-weight: 600; }
+  .muted { color: var(--text-2); } .small { font: var(--t-foot); } .mono { font: 12px var(--mono); }
+  .screen-head { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between;
+    padding: max(8px, env(safe-area-inset-top)) var(--gutter) 8px; margin-top: calc(-1 * max(12px, env(safe-area-inset-top))); }
+  .screen-head h2 { margin: 0; font: var(--t-headline); padding: 8px 16px; border-radius: 999px;
+    background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
+  .screen-head > .button.small, .screen-head > button.small { flex: none; white-space: nowrap; }
+  .screen-head > h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .screen-head > span:empty { display: none; }
+  .screen-head:has(> span:empty) > h2 { margin-right: auto; }
+  .screen-head > h2.sr-only { padding: 0; border: 0; }
+  .screen-head button.small { background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+  .section-label { padding: 12px var(--gutter) 8px; font: 600 11px/1.2 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+  button.person-row:hover { border-color: var(--accent-line); }
+  .card { background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); margin: 0 var(--gutter) 12px; padding: 16px; }
+  .card h3 { margin: 0 0 4px; font: var(--t-headline); }
+  .card > .muted.small { margin: 0 0 10px; }
+  .card .k { font: 600 11px/1.2 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); } .dot.on { background: var(--online); box-shadow: 0 0 8px color-mix(in srgb, var(--online) 60%, transparent); }
+  .card .fips-address { margin: 6px 0 4px; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--hair);
+    color: var(--text); font: 13px/1.4 var(--mono); word-break: break-all; user-select: all; }
+  .card textarea { width: 100%; margin-top: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--hair); border-radius: 8px; padding: 10px; font: 13px var(--mono); }
+  .card textarea:focus { outline: none; border-color: var(--strong); }
+  .card .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  .card pre { white-space: pre-wrap; font: 11px var(--mono); color: var(--text-2); margin: 0; }
+  .card > button { margin-top: 12px; }
+  .storage-note p { margin: 0; }
+  .card .storage-note { margin-top: 10px; }
+  .storage-note .storage-kept { margin-top: 4px; font-weight: 600; color: var(--text-2); }
+  .storage-note .storage-kept.on { color: var(--online); }
+  .storage-note .storage-safari { margin-top: 4px; color: var(--text); }
+  .settings-group { margin-bottom: 8px; }
+  .settings-rows { margin: 0 var(--gutter); background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); overflow: hidden; }
+  .settings-row { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 14px; color: var(--text); font: var(--t-body); }
+  .settings-row + .settings-row { border-top: 1px solid var(--hair); }
+  .settings-row.static { margin: 0 var(--gutter) 8px; background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); }
+  .settings-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; color: #fff; flex: none; }
+  .settings-icon.big { width: 44px; height: 44px; border-radius: 10px; background: var(--accent-pale); color: var(--accent); }
+  .settings-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .settings-title.mono { font: 13px var(--mono); }
+  .settings-chevron { color: var(--text-3); flex: none; }
+  .settings-tags { display: flex; gap: 6px; flex: none; }
+  .settings-note { margin: 0 var(--gutter) 12px; }
+  .settings .screen-head .button.small { min-height: 34px; padding: 0 12px; }
+  .settings .section-label { padding: 20px calc(var(--gutter) + 16px) 8px; font: 600 15px/1.3 var(--font); letter-spacing: 0; text-transform: none; color: var(--text-2); }
+  .settings .settings-rows { border: 0; border-radius: 22px; }
+  .settings .settings-rows .settings-row { position: relative; min-height: 52px; padding: 8px 16px; gap: 14px; }
+  .settings .settings-rows .settings-row + .settings-row { border-top: 0; }
+  .settings .settings-rows .settings-row + .settings-row::before { content: ""; position: absolute; top: 0; right: 0; left: 58px; border-top: 1px solid var(--hair); }
+  .settings .settings-rows .settings-icon { width: 30px; height: 30px; border-radius: 7px; }
+  .settings .settings-row.static { border: 0; border-radius: 22px; }
+  .relay-card-head { display: flex; align-items: center; gap: 12px; }
+  .relay-card-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
+  .relay-card-title { font: var(--t-headline); }
+  .relay-card-text .mono { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .relay-card-state { display: inline-flex; align-items: center; gap: 6px; color: var(--online); font: 600 15px var(--font); flex: none; }
+  .relay-card-state .dot { width: 8px; height: 8px; }
+  .settings-about { text-align: center; display: grid; gap: 4px; justify-items: center; margin: 0 var(--gutter) 12px; padding: 8px 16px; } /* no card, as the phone's clear row */
+  .settings-about hr { width: 100%; border: 0; border-top: 1px solid var(--hair); margin: 8px 0; }
+  .settings-app { font: var(--t-headline); }
+  .settings-support { font: 600 15px var(--font); }
+  .settings-about p { margin: 0; }
+  .settings-npub { min-height: 0; padding: 8px; border-radius: 4px; background: var(--s2); font: 10px var(--mono); word-break: break-all; white-space: normal; max-width: 100%; }
+  .settings-log { max-height: 60vh; overflow: auto; }
+  .screen-head.vault-head:has(.vault-menu-list) { z-index: 7; }
+  .settings-note.row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .notify-switch { cursor: pointer; }
+  .notify-type .settings-title { padding-left: 12px; }
+  .seg-pill { display: inline-flex; flex: none; gap: 2px; padding: 2px; border-radius: 9px; background: var(--s2); }
+  .seg-pill button { min-width: 52px; min-height: 32px; padding: 0 12px; border: 0; border-radius: 7px; background: none;
+    color: var(--text); font: 500 14px var(--font); box-shadow: none; }
+  .seg-pill button.on { background: var(--seg-on); box-shadow: 0 1px 3px rgb(0 0 0 / .3); font-weight: 600; } /* iOS selected segment */
+  .seg-pill button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .seg-pill button:active { transform: none; }
+  .seg-pill button:disabled { color: var(--text-3); cursor: default; }
+  .card .danger-zone { margin-top: 18px; color: var(--danger); }
+  button.default-reaction { width: calc(100% - 2 * var(--gutter)); border: 0; text-align: left; justify-content: flex-start; box-shadow: none; cursor: pointer; }
+  button.default-reaction:active { transform: none; }
+  .setting-info { display: inline-flex; vertical-align: middle; margin-left: 4px; }
+  .setting-info-btn { display: inline-grid; place-items: center; width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0;
+    border-radius: 50%; background: none; color: var(--text-3); }
+  .setting-info-btn:hover, .setting-info-btn[aria-expanded="true"] { color: var(--text); background: var(--s2); }
+  .setting-info-pop { position: fixed; z-index: 60; display: grid; gap: 4px; padding: 12px 14px; border-radius: 12px; background: var(--s2);
+    border: 1px solid var(--hair); box-shadow: 0 8px 24px rgb(0 0 0 / .45); font: var(--t-foot); color: var(--text-2); white-space: normal; text-transform: none; letter-spacing: 0; }
+  .setting-info-pop b { color: var(--text); font-weight: 600; }
+  .notify-types-head { display: flex; align-items: center; }
+  body { overflow-y: auto; overscroll-behavior: contain; }
+  /* The desktop's bar (styles/desktop.css): the title as plain text on the left, ‹ Settings on a page, no Close. */
+  .screen { padding: 0 0 16px; max-width: 640px; margin: 0 auto; }
+  .screen-head { min-height: 52px; margin: 0 0 10px; padding: 8px 12px 8px var(--gutter); gap: 8px; flex-wrap: nowrap; justify-content: flex-start;
+    background: rgb(var(--bar-rgb, 0 0 0) / .82); -webkit-backdrop-filter: var(--glass-blur, blur(20px)); backdrop-filter: var(--glass-blur, blur(20px)); border-bottom: 1px solid var(--hair); }
+  .screen-head h2 { min-width: 0; margin-right: auto; padding: 0; border: 0; border-radius: 0; background: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+    font: var(--t-headline); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .screen-head button.small { flex: none; min-height: 32px; padding: 0 12px; background: var(--s1); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  main { padding-bottom: 32px; }
+  .settings-row { width: 100%; border: 0; border-radius: 0; background: none; text-align: left; cursor: pointer; font: inherit; min-height: 52px; }
+  .settings-row.static { cursor: default; }
+  .settings-npub { cursor: pointer; }
+  .about-link { background: none; border: 0; min-height: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+<main class="screen settings" id="page" aria-busy="true"></main>
+<script>
+/*@nv-theme*/
+  const n = window.napplet || {}
+  nvTheme(n)
+  const $ = id => document.getElementById(id)
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+  const ask = (what, payload = {}) => n.intent ? n.intent.invoke(`napplet:settings/${what}`, { payload }).then(r => (r && r.ok ? r.data : null)).catch(() => null) : Promise.resolve(null)
+  // Settings (plan step 10a). The shell reads each preference with the page's own module and answers
+  // napplet:settings/state with the page in the address: words, rows and values only. A row opens by its id
+  // (settings/go); a change goes back by name (settings/set); the shell writes it and the page is asked for again.
+  const SVG = "http://www.w3.org/2000/svg"
+  function svg(d, size, w, cls) {
+    const s = document.createElementNS(SVG, "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("width", size); s.setAttribute("height", size)
+    s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", w); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true")
+    if (cls) s.setAttribute("class", cls)
+    const p = document.createElementNS(SVG, "path"); p.setAttribute("d", d); s.append(p); return s
+  }
+  const chevron = () => svg("M9 6l6 6-6 6", 12, 3, "settings-chevron")
+  const icon = (d, color) => { const s = el("span", "settings-icon"); s.style.background = color; s.append(svg(d, 16, 1.9)); return s }
+  let pop = null // the (i) bubble showing: { topic, top, left, width }
+  function infoBtn(t, id) {
+    if (!t) return null
+    const w = el("span", "setting-info"), b = el("button", "setting-info-btn"); b.type = "button"; b.setAttribute("aria-label", `About ${t.title}`); b.setAttribute("aria-expanded", String(pop?.id === id))
+    const c = document.createElementNS(SVG, "svg"); c.setAttribute("viewBox", "0 0 24 24"); c.setAttribute("width", 15); c.setAttribute("height", 15); c.setAttribute("fill", "none"); c.setAttribute("stroke", "currentColor"); c.setAttribute("stroke-width", 2); c.setAttribute("stroke-linecap", "round"); c.setAttribute("aria-hidden", "true")
+    c.innerHTML = '<circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7.5h.01"></path>'
+    b.append(c)
+    b.onclick = e => { e.preventDefault(); e.stopPropagation(); if (pop?.id === id) pop = null; else { const r = b.getBoundingClientRect(), width = Math.min(300, innerWidth - 24); pop = { id, top: r.bottom + 6, left: Math.max(12, Math.min(r.left - 12, innerWidth - width - 12)), width } } draw() }
+    w.append(b)
+    if (pop?.id === id) { const p = el("span", "setting-info-pop"); p.setAttribute("role", "note"); p.style.top = `${pop.top}px`; p.style.left = `${pop.left}px`; p.style.width = `${pop.width}px`; p.append(el("b", "", t.title), t.text); w.append(p) }
+    return w
+  }
+  addEventListener("pointerdown", e => { if (pop && !e.target.closest(".setting-info")) { pop = null; draw() } })
+  addEventListener("keydown", e => { if (e.key === "Escape" && pop) { pop = null; draw() } })
+  addEventListener("scroll", () => { if (pop) { pop = null; draw() } }, true)
+  const title = (text, info, id) => { const t = el("span", "settings-title"); t.append(text); const i = infoBtn(info, id); if (i) t.append(i); return t }
+  function linkRow(r) {
+    const b = el("button", "settings-row"); b.type = "button"; b.onclick = () => ask("go", { to: r.id })
+    if (r.icon) b.append(icon(r.icon, r.color))
+    b.append(el("span", "settings-title", r.title)); if (r.side) b.append(el("span", "muted small", r.side)); b.append(chevron()); return b
+  }
+  function group(label, kids, note, info, id) {
+    const s = el("section", "settings-group"), l = el("div", "section-label", label); const i = infoBtn(info, id); if (i) l.append(i)
+    const rows = el("div", "settings-rows"); rows.append(...kids.filter(Boolean)); s.append(l, rows)
+    if (note) s.append(el("p", "settings-note muted small", note))
+    return s
+  }
+  function toggle(text, info, id, on, onChange, disabled = false) {
+    const l = el("label", "settings-row static notify-switch"), i = el("input"); i.type = "checkbox"; i.setAttribute("role", "switch"); i.checked = on; i.disabled = disabled
+    if (onChange) i.onchange = () => onChange(i.checked)
+    l.append(title(text, info, id), i); return l
+  }
+  // The desktop's bar: the list has no Close (the sections bar is the way out); a page keeps ‹ Settings.
+  function head(d) {
+    const h = el("header", "screen-head")
+    if (d.page) { const b = el("button", "small", "‹ Settings"); b.type = "button"; b.onclick = () => ask("go", { to: "list" }); h.append(b) }
+    h.append(el("h2", "", d.title)); return h
+  }
+  function list(d) {
+    const out = []
+    if (d.box) out.push(group("This Box", [linkRow({ id: "box", title: "Status, storage, mesh, devices and updates" })]))
+    else if (d.status) {
+      const c = el("div", "card relay-card"), h = el("div", "relay-card-head")
+      const ic = el("span", "settings-icon big"); ic.append(svg("M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01", 20, 1.9))
+      const t = el("div", "relay-card-text"); t.append(el("div", "relay-card-title", "Your Vault"), el("div", "mono muted", `in this browser · ${d.status.events === null ? "…" : `${d.status.events} event${d.status.events === 1 ? "" : "s"}`}`))
+      const st = el("span", "relay-card-state"); st.append(el("span", "dot on"), "Running")
+      h.append(ic, t, st)
+      const sn = el("div", "storage-note"); sn.append(el("p", "muted small", d.status.line))
+      if (d.status.kept !== null) sn.append(el("p", `storage-kept small ${d.status.kept ? "on" : ""}`, d.status.kept ? "Kept on this browser" : "This browser may clear it"))
+      c.append(h, sn); out.push(c)
+    }
+    out.push(group("Learn", d.learn.map(linkRow)))
+    if (d.key) out.push(group("Your Key", [linkRow(d.key)]))
+    for (const g of d.groups) out.push(group(g.title, g.rows.map(linkRow)))
+    const ab = el("section", "settings-group"), a = el("div", "settings-about")
+    const v = el("div", "muted small", `Version ${d.about.version} (web)`)
+    if (d.about.commit) { v.append(" · "); if (d.about.commitLink) { const c = el("button", "about-link mono", d.about.commit); c.type = "button"; c.onclick = () => ask("go", { to: "commit" }); v.append(c) } else v.append(el("span", "mono", d.about.commit)) }
+    const np = el("button", "settings-npub", d.about.support); np.type = "button"; np.title = "Copy"; np.onclick = () => ask("copy", { what: "support" })
+    const tap = el("div", "muted", d.about.copied ? "Copied" : "(Tap to copy)"); tap.style.fontSize = "10px"
+    const pp = el("button", "about-link small", "Privacy Policy"); pp.type = "button"; pp.onclick = () => ask("go", { to: "privacy-policy" })
+    a.append(el("div", "settings-app", "Nostr Vault"), v, el("hr"), el("div", "settings-support", "Support & Abuse Reporting"), el("p", "muted small", "To report objectionable content or abusive users, contact the developer via Nostr"), np, tap, el("hr"), pp)
+    ab.append(el("div", "section-label", "About"), a); out.push(ab)
+    return out
+  }
+  function feed(d) {
+    const relays = el("button", "settings-row"); relays.type = "button"; relays.onclick = () => ask("go", { to: "relays" }); relays.append(title("Feed Relays", d.relaysInfo, "feed.relays"), chevron())
+    const sd = d.sendDelay, row = el("div", "settings-row static send-delay"), t = el("span", "settings-title"), lab = el("span", "", "Send Delay"); lab.id = "send-delay-label"; t.append(lab); const i = infoBtn(sd.info, "post.sendDelay"); if (i) t.append(i)
+    const seg = el("div", "seg-pill"); seg.setAttribute("role", "radiogroup"); seg.setAttribute("aria-labelledby", "send-delay-label")
+    for (const c of sd.choices) { const b = el("button", sd.seconds === c.value ? "on" : "", c.label); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", String(sd.seconds === c.value)); b.onclick = () => ask("set", { key: "sendDelay", value: c.value }); seg.append(b) }
+    row.append(t, seg)
+    const note = el("p", "settings-note muted small", sd.note); note.setAttribute("aria-live", "polite")
+    const posting = el("section", "settings-group"); const pl = el("div", "section-label", "Posting"); const rows = el("div", "settings-rows"); rows.append(row, note); posting.append(pl, rows)
+    return [group("Feed Relays", [relays], d.relaysNote), posting, el("p", "settings-note muted small", d.note)]
+  }
+  function media(d) {
+    const a = d.autoplay
+    const rows = [toggle("Autoplay Videos", a.info, "media.autoplay", a.on, on => ask("set", { key: "autoplay", value: on })), el("p", "settings-note muted small", a.note)]
+    const cache = el("section", "settings-group"), cr = el("div", "settings-rows"); cr.append(el("p", "settings-note muted small", d.cacheNote)); cache.append(el("div", "section-label", "Cache"), cr)
+    return [group("Playback", rows), cache]
+  }
+  function privacy(d) {
+    const out = d.sections.map((s, i) => group(s.label, [toggle(s.title, s.info, `privacy.${i}`, false, null, true)], s.note))
+    const p = el("p", "settings-note muted small", d.note); p.id = "privacy-web-note"; out.push(p)
+    for (const i of out.flatMap(x => [...x.querySelectorAll("input")])) i.setAttribute("aria-describedby", "privacy-web-note")
+    return out
+  }
+  function notifications(d) {
+    const s = el("section", "settings-group"), rows = el("div", "settings-rows")
+    rows.append(toggle("Notifications", d.info, "notify.enable", d.on, on => ask("set", { key: "notify", value: on })))
+    if (d.on) { const h = el("div", "section-label notify-types-head", "Alerts"); const i = infoBtn(d.alertsInfo, "notify.perAccount"); if (i) h.append(i); rows.append(h) }
+    for (const t of d.types) { const r = toggle(t.title, null, "", t.on, on => ask("set", { key: "alert", value: { id: t.id, on } })); r.classList.add("notify-type"); rows.append(r) }
+    rows.append(el("p", "settings-note muted small", d.note))
+    s.append(rows); return [s]
+  }
+  let data = null, shown = ""
+  function draw() {
+    const d = data, root = $("page")
+    root.setAttribute("aria-busy", String(!d))
+    if (!d) return
+    const body = d.page === "" ? list(d) : d.page === "feed" ? feed(d) : d.page === "media" ? media(d) : d.page === "privacy" ? privacy(d) : notifications(d)
+    root.replaceChildren(head(d), ...body)
+    if (shown !== d.page) { shown = d.page; scrollTo(0, 0) }
+  }
+  // Draws only when the answer changed: a redraw under the pointer would lose a click.
+  let drawn = null
+  const look = () => ask("state").then(d => { if (!d) return; const k = JSON.stringify(d); if (k !== drawn) { drawn = k; data = d; if (pop && d.page !== shown) pop = null; draw() } })
+  look()
+  if (n.inc && n.inc.on) n.inc.on("nv.settings.changed", look)
+</script>
+</body>
+</html>
