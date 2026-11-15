@@ -7,8 +7,9 @@ import vm from "node:vm"
 import { nip19 } from "nostr-tools"
 import { createBus } from "../src/napplet/bus.js"
 import { mediaViewOf } from "../src/napplet/media-view.js"
+import { hashtags } from "../src/net/hashtags.js"
 import { finalizeEvent, generateSecretKey, verifyEvent } from "nostr-tools/pure"
-import { readerIntents, linkTarget, readerOpenFor, previewCard, COMPOSE_DONE } from "../src/napplet/reader-intents.js"
+import { readerIntents, linkTarget, readerOpenFor, previewCard, feedTagOf, COMPOSE_DONE } from "../src/napplet/reader-intents.js"
 
 function pureOf(file, names) {
   const html = fs.readFileSync(new URL(`../napplets/${file}/index.html`, import.meta.url), "utf8")
@@ -18,7 +19,7 @@ function pureOf(file, names) {
   vm.runInNewContext(`${block}\n;Object.assign(box, { ${names.join(", ")} })`, { box, Date, URL })
   return box
 }
-const R = pureOf("reader", ["cardLinks", "withoutCards", "hostOf", "tokenize", "decodeNostr", "rootOf", "parentOf", "reactionTags", "repostOf", "mergeNotes", "threadRows", "ago"])
+const R = pureOf("reader", ["inlineMarks", "MARKS", "cardLinks", "withoutCards", "hostOf", "tokenize", "decodeNostr", "rootOf", "parentOf", "reactionTags", "repostOf", "mergeNotes", "threadRows", "ago"])
 const C = pureOf("compose", ["replyTags", "noteTemplate", "quoteOf", "imetaTag", "neventOf"])
 const A = "a".repeat(64), B = "b".repeat(64), C1 = "c".repeat(64), D = "d".repeat(64), E = "e".repeat(64)
 const ev = (id, tags = [], at = 1, extra = {}) => ({ id, pubkey: A, kind: 1, created_at: at, content: "", tags, ...extra })
@@ -191,6 +192,33 @@ test("mediaViewOf: trailing punctuation off the link; no media or no match -> nu
   assert.deepEqual(mediaViewOf({ content: "see https://p.example/a.jpg.", tags: [] }, "https://p.example/a.jpg"), { items: [{ url: "https://p.example/a.jpg", type: "image" }], start: 0 })
   assert.equal(mediaViewOf({ content: "text only", tags: [] }, "https://p.example/a.jpg"), null)
   assert.equal(mediaViewOf(null, "https://p.example/a.jpg"), null)
+})
+
+test("marks: the Reader's inline marks are the classic note text's, rule for rule", async () => {
+  const classic = await import("../src/net/inline-md.js")
+  const src = fs.readFileSync(new URL("../src/net/inline-md.js", import.meta.url), "utf8")
+  assert.equal(R.MARKS.source, /const RE = \/(.+)\/g\n/.exec(src)[1], "same expression as inline-md.js")
+  for (const t of ["**bold** and __b__", "*it* _it_ snake_case_word", "~~gone~~ `x = 1`", "plain", "a * b * c", "**unclosed"])
+    assert.deepEqual(plain(R.inlineMarks(t)), classic.inlineMarks(t), t)
+})
+
+test("hashtags: classic rules (not after a letter or digit, needs a letter, <= 64); a link's #fragment stays the link", () => {
+  const tags = t => plain(R.tokenize(t)).filter(p => p.t === "tag").map(p => p.v)
+  const line = "#Nostr C#sharp a#b #1 #2024plans #_x #ünïcode"
+  assert.deepEqual(tags(line), ["Nostr", "2024plans", "_x", "ünïcode"])
+  assert.deepEqual(tags(line).map(t => t.toLowerCase()), hashtags(line), "same tags as the classic hashtags()")
+  assert.deepEqual(tags("#" + "a".repeat(64) + " #" + "b".repeat(65)), ["a".repeat(64)])
+  assert.deepEqual(tags("https://x.example/page#section"), [])
+})
+
+test("feed/open with a tag: #/feed?tag= opens the tag in the Reader; anything else is no tag", () => {
+  assert.deepEqual(readerOpenFor("feed", "", "#/feed?tag=Bitcoin"), { archetype: "feed", action: "open", payload: { tag: "bitcoin" } })
+  assert.deepEqual(readerOpenFor("feed", "", "#/feed?tag=%23Nostr&x=1"), { archetype: "feed", action: "open", payload: { tag: "nostr" } })
+  assert.equal(readerOpenFor("feed", "", "#/feed"), null)
+  assert.equal(readerOpenFor("feed", "", "#/feed?note=" + "a".repeat(64)), null)
+  assert.equal(feedTagOf("#/feed?tag=two words"), "")
+  assert.equal(feedTagOf("#/feed?tag=" + "x".repeat(65)), "")
+  assert.equal(readerOpenFor("search", "", "#/search?tag=x"), null)
 })
 
 test("switch: Feed, Thread and other profiles swap only while napplets are on; own profile and the old screens stay", () => {
