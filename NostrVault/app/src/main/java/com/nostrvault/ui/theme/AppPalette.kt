@@ -24,6 +24,12 @@ object AppPalette {
      */
     var overGlobe by mutableStateOf(false)
 
+    /**
+     * The mode the user chose, before [overGlobe] folds it to dark: the globe
+     * itself draws a daytime sky when this is true. Written by [NostrVaultTheme].
+     */
+    var lightChosen by mutableStateOf(false)
+
     /** Settings > Appearance > Accent, as saved in themeColor ("orange" or "#rrggbb"). */
     var accent by mutableStateOf("orange")
 

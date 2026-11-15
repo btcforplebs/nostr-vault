@@ -57,4 +57,10 @@ class AccentPaletteTest {
         assertTrue(AccentPalette.isPreset("#FFD60A"))
         assertTrue(!AccentPalette.isPreset("#123456"))
     }
+
+    /** Same numbers as web paper() (test/accent.test.mjs): warm paper + 5% of the accent. */
+    @Test fun lightPaperMixesFivePercentOfTheAccent() {
+        assertEquals(Color(0xFFF5EBE1), AccentPalette.paper("orange"))
+        assertEquals(Color(0xFFEAECEC), AccentPalette.paper("#0a84ff"))
+    }
 }

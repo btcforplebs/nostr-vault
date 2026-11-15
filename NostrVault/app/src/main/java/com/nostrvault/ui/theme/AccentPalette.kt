@@ -53,6 +53,24 @@ object AccentPalette {
 
     fun swatch(hex: String): Color = color(rgb(normalize(hex) ?: DEFAULT_HEX))
 
+    /** Light mode's page: the warm off-white with [PAPER_TINT] of the picked accent mixed in. */
+    const val PAPER = "#f6f1eb"
+    const val PAPER_TINT = 0.05
+
+    private val paperCache = HashMap<String, Color>()
+
+    /** Light's page colour for this accent setting (twin of paper() in net/accent.js). */
+    fun paper(setting: String): Color {
+        val pick = hex(setting)
+        return synchronized(paperCache) {
+            paperCache.getOrPut(pick) {
+                val a = rgb(PAPER); val b = rgb(pick)
+                fun m(x: Double, y: Double) = Math.round(x + (y - x) * PAPER_TINT).toDouble()
+                color(Rgb(m(a.r, b.r), m(a.g, b.g), m(a.b, b.b)))
+            }
+        }
+    }
+
     /** True when light mode has to deepen the colour to make it read. */
     fun shiftsInLight(hex: String): Boolean = contrast(rgb(normalize(hex) ?: DEFAULT_HEX), WHITE) < 3.0
 

@@ -31,11 +31,17 @@ import kotlin.math.max
         prepare(size.width, size.height, density)
         if (!ready) return@with
 
-        // Glow behind the core.
+        // Glow behind the core. By day a sunlit white halo with a little
+        // accent at its edge: the accent alone reads as a muddy stain on the sky.
         val glowR = (coreR * 3).toFloat()
         if (glowR > 0f) {
+            val glowColors = if (globeDay) {
+                listOf(Color.White.copy(alpha = 0.75f), accent.copy(alpha = 0.16f), Color.Transparent)
+            } else {
+                listOf(accent.copy(alpha = 0.32f), Color.Transparent)
+            }
             drawCircle(
-                brush = Brush.radialGradient(listOf(accent.copy(alpha = 0.32f), Color.Transparent),
+                brush = Brush.radialGradient(glowColors,
                     center = Offset(originX.toFloat(), originY.toFloat()), radius = glowR),
                 radius = glowR,
                 center = Offset(originX.toFloat(), originY.toFloat()),
@@ -43,7 +49,7 @@ import kotlin.math.max
         }
         fillStars(this, Slot.HAZE, HazeColor)
         fillStars(this, Slot.RING, RingColor)
-        fillStars(this, Slot.MUTUAL, Color.White)
+        fillStars(this, Slot.MUTUAL, MutualStar)
     }
 
     /**
@@ -55,8 +61,10 @@ import kotlin.math.max
         prepare(size.width, size.height, density)
         if (!ready) return@with
         val strokes = GlobeThreads.strokes(dpPx)
+        // A coloured glow on a bright sky reads heavier than on black: softer by day.
+        val dayScale = if (globeDay) 0.6f else 1f
         for (level in 0 until GlobeThreads.BANDS) {
-            val a = GlobeThreads.glowAlpha(level).toFloat()
+            val a = GlobeThreads.glowAlpha(level).toFloat() * dayScale
             if (glow[level].isEmpty || a <= GlobeThreads.GLOW_MIN) continue
             if (blurred) {
                 drawPath(glow[level], accent.copy(alpha = a), style = strokes.glow)
@@ -134,7 +142,7 @@ import kotlin.math.max
         fun label(text: String, x: Double, y: Double, sizeSp: Float, weight: FontWeight, alpha: Float) {
             val layout = measurer.measure(
                 text,
-                TextStyle(color = Color.White, fontSize = sizeSp.sp, fontWeight = weight),
+                TextStyle(color = GlobeLabel, fontSize = sizeSp.sp, fontWeight = weight),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 constraints = Constraints(maxWidth = (120 * dp).roundToInt()),
