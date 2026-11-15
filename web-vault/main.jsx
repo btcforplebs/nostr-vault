@@ -313,17 +313,23 @@ const wotInNapplet = () => nappletsOn()
 /** "#/wot/<hex>/web" -> { root: hex }, "#/wot/<hex>" -> { open: hex }, else {}. */
 const wotAddress = (hash = location.hash) => { const m = /^#\/wot\/([0-9a-f]{64})(\/web)?/.exec(hash); return m ? (m[2] ? { root: m[1] } : { open: m[1] }) : {} }
 
-/** Does this screen show as the Reader napplet? Only with the switch on, and never your own profile (its editor stays). */
-const readsInNapplet = (route, other) => nappletsOn() && (route === "feed" || route === "thread" || (route === "profile" && !!other))
+/** Does this screen show as the Reader napplet? Only with the switch on: the Feed and threads. Someone's profile is the
+ *  full classic profile (PersonScreen, as from Search: Follow, Message, Zap, WoT, Share, ⋯, all the tabs), with the
+ *  Reader kept mounted and hidden under it so Back lands where you were (bug run, full profiles). */
+const readsInNapplet = (route, other) => nappletsOn() && (route === "feed" || route === "thread")
+const readerUnder = (route, other) => nappletsOn() && route === "profile" && !!other
 
 /** The phone layout's screens, one at a time, as before the desktop layout existed. */
 function PhoneScreens({ ctx, route, arg, other }) {
-  // The napplet switch on: Feed, Thread and someone's Profile are the Reader napplet, one element so it stays mounted
-  // as you move between them (plan P4). Off: the screens below, unchanged.
+  // The napplet switch on: Feed and Thread are the Reader napplet, one element so it stays mounted as you move between
+  // them and into someone's profile and back (plan P4, bug run). Off: the screens below, unchanged.
   const reader = readsInNapplet(route, other)
+  // The address the Reader last opened: kept while it sits hidden under a profile, so it isn't sent back to the Feed.
+  const readerOpen = useRef(null)
+  if (reader) readerOpen.current = readerOpenFor(route, arg)
   return (
     <>
-      {reader && <ReaderPane ctx={ctx} open={readerOpenFor(route, arg)} />}
+      {(reader || readerUnder(route, other)) && <ReaderPane ctx={ctx} open={readerOpen.current} hidden={!reader} />}
       {!reader && route === "feed" && <FeedScreen ctx={ctx} />}
       {route === "compose" && <ComposeScreen ctx={ctx} />}
       {!reader && route === "profile" && (other ? <PersonScreen key={arg} ctx={ctx} pubkey={arg} /> : <ProfileScreen ctx={ctx} />)}
