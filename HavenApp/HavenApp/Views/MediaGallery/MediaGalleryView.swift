@@ -15,6 +15,8 @@ struct MediaGalleryView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var relayManager: RelayProcessManager
+    /// The Duo: no floating Vault button on the Vault tab (`showsDashboardButton`).
+    @Environment(\.dockInCameraStrip) private var dockInCameraStrip
     @Environment(\.inVaultTab) var inVaultTab
     @StateObject var feedService = FeedService.shared
     @ObservedObject var blossomCache = BlossomMediaCache.shared
@@ -169,6 +171,12 @@ struct MediaGalleryView: View {
 
     // MARK: - Body
 
+    /// The floating Vault / Servers button that opens the dashboard. Not on
+    /// the Duo's Vault tab: its dock is the rail in the camera strip, so the
+    /// button floated alone over the page; the dashboard is in the Vault
+    /// menu at the top there.
+    private var showsDashboardButton: Bool { !(inVaultTab && dockInCameraStrip) }
+
     var body: some View {
         #if os(iOS)
         NavigationStack(path: $navigationPath) {
@@ -195,6 +203,7 @@ struct MediaGalleryView: View {
                 if inVaultTab {
                     VaultModePill(mode: .media, zapsOnly: configService.config.zapsOnlyMode)
                         .tutorialAnchor(TutorialContent.vaultModes, isActive: vaultShowsMedia)
+                        .tutorialAnchor(TutorialContent.vaultRelay, isActive: vaultShowsMedia && !showsDashboardButton)
                 } else {
                     leadingToolbarInline
                 }
@@ -295,6 +304,7 @@ struct MediaGalleryView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
+            if showsDashboardButton {
             ChromeFold(anchor: .bottomTrailing) {
                 Button(action: openDashboard) {
                     HStack(spacing: 6) {
@@ -316,6 +326,7 @@ struct MediaGalleryView: View {
                 // Shares the row above the tab bar with the music mini player.
                 .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
+            }
             }
         }
         #else
@@ -417,6 +428,7 @@ struct MediaGalleryView: View {
         }
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {
+            if showsDashboardButton {
             ChromeFold(anchor: .bottomTrailing) {
                 Button(action: openDashboard) {
                     HStack(spacing: 6) {
@@ -438,6 +450,7 @@ struct MediaGalleryView: View {
                 // Shares the row above the tab bar with the music mini player.
                 .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
+            }
             }
         }
         #endif

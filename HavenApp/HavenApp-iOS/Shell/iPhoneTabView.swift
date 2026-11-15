@@ -344,6 +344,8 @@ struct iPhoneTabView: View {
         .tint(.havenPurple)
         .toolbar(.hidden, for: .tabBar)
         .environment(\.floatingTabBarHeight, tabBarHeight)
+        // Closed only: the open Duo is not checked yet.
+        .environment(\.dockInCameraStrip, layout == .duoClosed && stripRail != nil)
         // The dock's band is safe area on the window's root view controller,
         // so picture-in-picture keeps clear of it (DockSafeAreaInset); the dock
         // is drawn in that band. While typing it rides above the keyboard as a
