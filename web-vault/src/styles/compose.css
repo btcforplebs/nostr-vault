@@ -56,7 +56,7 @@ body:has(.compose-sheet) .tabbar { display: none; }
 .compose-cancel, .compose-post { min-height: 44px; padding: 0 18px; border-radius: 999px; font: 600 17px/1 var(--font);
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
 .compose-cancel { justify-self: start; color: var(--accent); }
-.compose-post { grid-column: 3; justify-self: end; color: #fff; background: var(--accent); border-color: transparent; }
+.compose-post { grid-column: 3; justify-self: end; color: var(--on-accent); background: var(--accent); border-color: transparent; }
 .compose-post:disabled { background: var(--glass); color: var(--text-3, rgb(255 255 255 / .35)); }
 .compose-sheet .compose-area { display: grid; grid-template-columns: 40px 1fr; column-gap: 12px; margin-top: 6px; }
 .compose-sheet .compose-area > * { grid-column: 2; }
@@ -85,7 +85,7 @@ body:has(.compose-sheet) .tabbar { display: none; }
 /* The send countdown (PostActionPill): an accent capsule at the top, "Posting in 5s", a 60 px bar, Undo. */
 .send-pill { position: fixed; z-index: 30; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 10px; padding: 0 4px 0 16px; min-height: 44px; border-radius: 999px;
-  background: var(--accent); color: #fff; font: 600 15px/1 var(--font); font-variant-numeric: tabular-nums;
+  background: var(--accent); color: var(--on-accent); font: 600 15px/1 var(--font); font-variant-numeric: tabular-nums;
   box-shadow: 0 6px 20px rgb(0 0 0 / .35); white-space: nowrap; }
 .send-pill-bar { position: relative; width: 60px; height: 4px; border-radius: 2px; background: rgb(255 255 255 / .3); overflow: hidden; }
 .send-pill-bar > span { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: #fff; transition: width .1s linear; }

@@ -16,6 +16,7 @@
   --accent-pale: rgb(230 115 38 / .10);
   --accent-line: rgb(230 115 38 / .30);  /* note-card border, OLED weight */
   --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-light));
+  --on-accent: #fff;  /* a label on an accent fill */
 
   /* Meaning colours: green = running only; teal = vouched-for only. */
   --online: #33d980;
@@ -25,12 +26,18 @@
 
   /* Text (iOS dark label ramp). */
   --text: #fff;
+  --ink: 255 255 255;  /* the text colour as channels, for tints: rgb(var(--ink) / .08) */
   --text-2: rgb(255 255 255 / .60);
   --text-3: rgb(255 255 255 / .35);
 
   /* Borders: a seam where fills already differ, a real line where the border is the only cue. */
   --hair: rgb(255 255 255 / .14);
   --strong: rgb(255 255 255 / .36);
+
+  /* Hover and the post buttons (iOS secondary label tint). */
+  --s1-hover: #222224;
+  --action: rgb(235 235 245 / .60);
+  --action-bg: rgb(235 235 245 / .10);
 
   /* Glass (tab bar, top chrome). */
   --glass: rgb(40 40 42 / .55);

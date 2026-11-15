@@ -73,7 +73,7 @@
 
 /* Passing pills: the orange one while your web maps (the live pill), a material one for a filter's note or a hint. */
 .wot-live, .wot-note, .wot-middle { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; font: 600 13px/1.25 var(--font); }
-.wot-live { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgb(230 115 38 / .35); }
+.wot-live { background: var(--accent); color: var(--on-accent); box-shadow: 0 4px 12px rgb(230 115 38 / .35); }
 .wot-note, .wot-middle { background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); color: var(--text); }
 .wot-note { border-radius: 14px; }
 .wot-middle { position: absolute; z-index: 5; left: 50%; top: 50%; transform: translate(-50%, -50%); white-space: nowrap; font-size: 14px; }
@@ -85,7 +85,7 @@
 .wot-myweb-button { position: fixed; z-index: 10; right: max(20px, calc(50% - 320px + 20px));
   bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 12px + env(safe-area-inset-bottom));
   display: inline-flex; align-items: center; gap: 6px; height: 48px; min-height: 0; padding: 0 18px; border: 0; border-radius: 999px;
-  background: var(--accent-grad); color: #fff; font: 700 14px/1 var(--font-round); box-shadow: 0 4px 8px rgb(230 115 38 / .35); }
+  background: var(--accent-grad); color: var(--on-accent); font: 700 14px/1 var(--font-round); box-shadow: 0 4px 8px rgb(230 115 38 / .35); }
 
 /* The trust card (TrustWebView+TrustCard): the thin material, slid up above the tab bar. */
 .wot-card { position: fixed; z-index: 9; left: 50%; transform: translateX(-50%); bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + env(safe-area-inset-bottom) + 6px);
@@ -109,7 +109,7 @@
 .wot-action { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 38px; min-height: 0; padding: 0 8px;
   border: 0; border-radius: 999px; background: rgb(255 255 255 / .08); color: var(--accent); font: 600 14px/1 var(--font); text-decoration: none; white-space: nowrap; }
 .wot-action svg { flex: none; }
-.wot-action.filled { background: var(--accent); color: #fff; }
+.wot-action.filled { background: var(--accent); color: var(--on-accent); }
 .wot-action:disabled { background: rgb(255 255 255 / .05); color: var(--text-3); }
 .wot-actions .more-wrap { flex: none; }
 .wot-action.wot-more { flex: none; width: 38px; padding: 0; color: var(--text-2); }

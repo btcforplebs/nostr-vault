@@ -3,7 +3,7 @@
 .emoji-set { padding: 8px 0 12px; border-bottom: 1px solid var(--hair); }
 .emoji-set-head { display: flex; gap: 10px; align-items: center; width: 100%; padding: 6px var(--gutter); border: 0; background: none;
   color: inherit; text-align: left; font: inherit; min-height: 0; }
-button.emoji-set-head:hover { background: rgb(255 255 255 / .04); }
+button.emoji-set-head:hover { background: rgb(var(--ink) / .04); }
 .emoji-set-icon { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; object-fit: cover;
   background: var(--s1); font-size: 20px; }
 .emoji-set-text { display: grid; gap: 2px; min-width: 0; }

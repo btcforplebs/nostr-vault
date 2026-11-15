@@ -20,7 +20,7 @@
      moment the app draws anything, so a slow first load is never a black screen. Styled here: app.css isn't loaded yet. -->
 <main class="splash boot-splash" aria-busy="true"><span class="splash-mark"><img src="./icon.svg" alt="" /></span><p role="status">Opening Nostr Vault…</p></main>
 <style>
-  html, body { margin: 0; background: #000; }
+  html, body { margin: 0; background: var(--bg, #000); }
   .boot-splash { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: 24px;
     max-width: 420px; margin: 0 auto; box-sizing: border-box; text-align: center; color: rgb(255 255 255 / .6);
     font: 400 17px/1.35 -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif; }

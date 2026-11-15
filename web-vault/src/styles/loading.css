@@ -45,7 +45,7 @@ button[aria-busy="true"]:not(.note-action, .more)::before { content: ""; display
 button[aria-busy="true"]:not(.note-action, .more):has(> svg)::before { margin-right: 0; }
 button[aria-busy="true"]:not(.note-action, .more) > svg:first-child { display: none; } /* the spinner takes the icon's place */
 @media (prefers-reduced-motion: no-preference) { button[aria-busy="true"]::before { animation: spin .8s linear infinite; } }
-button.primary[aria-busy="true"]:disabled { background: var(--accent-grad); color: #fff; opacity: .75; }
+button.primary[aria-busy="true"]:disabled { background: var(--accent-grad); color: var(--on-accent); opacity: .75; }
 
 /* Splash: the icon with one soft ring breathing out from it. index.html draws the same picture before any code
    loads, so the hand-over is still. */

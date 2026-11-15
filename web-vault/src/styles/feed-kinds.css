@@ -14,7 +14,7 @@
 .kind-poll-question { margin: 0; font: 600 17px/1.3 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
 .kind-poll-options { display: flex; flex-direction: column; gap: 8px; }
 .kind-poll-option { position: relative; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; overflow: hidden;
-  background: rgb(255 255 255 / .06); border: 1px solid transparent; font: 15px var(--font); }
+  background: rgb(var(--ink) / .06); border: 1px solid transparent; font: 15px var(--font); }
 .kind-poll-option.picked { border-color: rgb(230 115 38 / .7); font-weight: 600; }
 .kind-poll-bar { position: absolute; left: 0; top: 0; bottom: 0; background: rgb(230 115 38 / .14); transition: width .25s ease-out; }
 .kind-poll-option.picked .kind-poll-bar { background: rgb(230 115 38 / .28); }
@@ -39,7 +39,7 @@
 .link-card-desc { font: 400 12px/1.3 var(--font); color: var(--text-2); }
 /* Translate (NoteTranslateButton): the translation beside an accent bar, then the button. */
 .translate { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.translate-text { margin: 0; padding-left: 10px; border-left: 2px solid rgb(230 115 38 / .6); color: rgb(255 255 255 / .92); font: 17px/1.4 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.translate-text { margin: 0; padding-left: 10px; border-left: 2px solid rgb(230 115 38 / .6); color: rgb(var(--ink) / .92); font: 17px/1.4 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
 .translate-button { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--accent); font: 500 13px var(--font); }
 .translate-button.failed { color: rgb(255 69 58 / .8); }
 /* Event Info (EventBroadcastSheet). */

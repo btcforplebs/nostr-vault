@@ -5,7 +5,7 @@
 .note-card .note-byline { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 4px; }
 .note-card .note-nameline { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .note-card .note-nameline .author-link { gap: 6px; }
-.note-card .note-nameline .author-name { font: 600 14px/1.3 var(--font); color: #fff; }
+.note-card .note-nameline .author-name { font: 600 14px/1.3 var(--font); color: var(--text); }
 .note-card .note-time { margin-left: auto; color: var(--text-2); font: 400 11px/1.3 var(--mono); letter-spacing: .2px; }
 
 /* ⋯: a bare 28×20 glyph in secondary, a 44 px tap target around it. */
@@ -18,7 +18,7 @@
 .note-card .note-nameline .more-menu { bottom: auto; top: calc(100% + 6px); }
 
 /* "reply to name": 10 pt mono in secondary at 70%, the arrow accent at 60%. */
-.note-card .reply-to { margin: 0; gap: 3px; color: rgb(255 255 255 / .42); font: 400 10px/1.3 var(--mono); letter-spacing: .1px; }
+.note-card .reply-to { margin: 0; gap: 3px; color: rgb(var(--ink) / .42); font: 400 10px/1.3 var(--mono); letter-spacing: .1px; }
 .note-card .reply-to svg { width: 9px; height: 9px; }
 .note-card .reply-to .mention { color: inherit; font: inherit; }
 

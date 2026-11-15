@@ -9,7 +9,7 @@
 .live-toast { position: absolute; right: 0; top: calc(100% + 4px); padding: 6px 10px; border-radius: 999px; background: var(--s2); font: var(--t-foot); white-space: nowrap; }
 .live-host { display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: none; }
 .reader-byline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.live-follow { padding: 4px 12px; border-radius: 999px; border: 0; background: var(--accent); color: #fff; font: 600 12px/1.4 var(--font); cursor: pointer; }
+.live-follow { padding: 4px 12px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font: 600 12px/1.4 var(--font); cursor: pointer; }
 .live-follow.on { background: var(--s2); color: var(--text); border: 1px solid var(--hair); }
 .live-err { color: #ff9f0a; }
 
@@ -46,7 +46,7 @@ a.live-who:hover { text-decoration: underline; }
 .live-attach, .live-zap-btn, .live-send { width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--s2); color: var(--text); font: 600 17px/1 var(--font); cursor: pointer; display: grid; place-items: center; }
 .live-zap { position: relative; }
 .live-zap-btn { color: #ff9f0a; }
-.live-send { background: var(--accent); color: #fff; }
+.live-send { background: var(--accent); color: var(--on-accent); }
 .live-send:disabled, .live-attach:disabled { opacity: .45; cursor: default; }
 .live-note { width: 100%; margin: 0; color: var(--text-2); }
 
