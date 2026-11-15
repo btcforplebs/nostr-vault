@@ -220,6 +220,7 @@ class MainActivity : FragmentActivity() {
                 appTheme = AppTheme.fromKey(config.themeColor),
                 textSizeScale = config.textSizeScale,
                 appearanceMode = config.appearanceMode,
+                accent = config.themeColor,
                 oledMode = true,
                 zapsOnlyMode = config.zapsOnlyMode,
                 feedLineLimits = FeedLineLimits(config.compactLineLimit, config.threadedLineLimit),

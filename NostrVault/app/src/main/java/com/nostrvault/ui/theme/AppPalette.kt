@@ -16,6 +16,9 @@ import androidx.compose.runtime.setValue
 object AppPalette {
     var light by mutableStateOf(false)
 
+    /** Settings > Appearance > Accent, as saved in themeColor ("orange" or "#rrggbb"). */
+    var accent by mutableStateOf("orange")
+
     const val DARK = "dark"
     const val LIGHT = "light"
     const val SYSTEM = "system"
