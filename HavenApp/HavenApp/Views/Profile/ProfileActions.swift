@@ -17,7 +17,7 @@ enum ProfileActions {
                     .lineLimit(1)
             }
             .fixedSize()
-            .foregroundColor(filled ? .white : .havenPurple)
+            .foregroundColor(filled ? .onAccent : .havenPurple)
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, minHeight: height)
             .background(filled ? Color.havenPurple : Color.havenPurple.opacity(0.12))

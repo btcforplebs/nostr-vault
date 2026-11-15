@@ -46,7 +46,7 @@ extension DashboardView {
                 }) {
                     Text("Dismiss")
                         .font(.appSystem(size: 13, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.onAccent)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .background(Color.havenPurple)
@@ -128,7 +128,7 @@ extension DashboardView {
 
                                     Text(entry.message)
                                         .font(.appSystem(size: 10, design: .monospaced))
-                                        .foregroundColor(.white.opacity(0.85))
+                                        .foregroundColor(.ink.opacity(0.85))
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 .id(entry.id)

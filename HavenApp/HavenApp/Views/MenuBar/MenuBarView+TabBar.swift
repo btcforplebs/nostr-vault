@@ -125,7 +125,7 @@ extension MenuBarView {
                                     }) {
                                         Text("Open Window")
                                             .font(.appSystem(size: 12, weight: .semibold))
-                                            .foregroundColor(.white)
+                                            .foregroundColor(.onAccent)
                                             .padding(.horizontal, 16)
                                             .padding(.vertical, 6)
                                             .background(Color.havenPurple)
@@ -188,7 +188,7 @@ extension MenuBarView {
                                     }) {
                                         Text("Open Window")
                                             .font(.appSystem(size: 12, weight: .semibold))
-                                            .foregroundColor(.white)
+                                            .foregroundColor(.onAccent)
                                             .padding(.horizontal, 16)
                                             .padding(.vertical, 6)
                                             .background(Color.havenPurple)

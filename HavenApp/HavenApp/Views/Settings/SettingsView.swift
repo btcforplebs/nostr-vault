@@ -334,7 +334,7 @@ struct SettingsView: View {
         HStack(alignment: .center, spacing: 16) {
             Text(macGroup.rawValue)
                 .font(.appTitle2.bold())
-                .foregroundColor(.white)
+                .foregroundColor(.ink)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 8)
             if macGroup.tabs.count > 1 {
@@ -364,7 +364,7 @@ struct SettingsView: View {
                                 .fixedSize()
                         }
                     }
-                    .foregroundColor(.white.opacity(0.85))
+                    .foregroundColor(.ink.opacity(0.85))
                     .padding(.horizontal, showsTitles ? 10 : 8)
                     .padding(.vertical, 5)
                     .contentShape(Capsule())
@@ -392,7 +392,7 @@ struct SettingsView: View {
                 }
                 Text(tab.title)
                     .font(.appSystem(size: 15, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.ink)
             }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
@@ -418,7 +418,7 @@ struct SettingsView: View {
                 }
                 Text("About")
                     .font(.appSystem(size: 15, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.ink)
             }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
@@ -426,7 +426,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Nostr Vault \(appVersion)")
                     .font(.appHeadline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.ink)
 
                 Text("To report objectionable content or abusive users, contact the developer on Nostr:")
                     .font(.appCaption)
@@ -465,7 +465,7 @@ struct SettingsView: View {
                         .foregroundColor(.havenPurple)
                     Text("Settings")
                         .font(.appSystem(size: 15, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.ink)
                     Spacer()
                 }
                 .padding(.horizontal, 14)
@@ -487,15 +487,15 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Setup Incomplete")
                                 .font(.appSystem(size: 12, weight: .bold))
-                                .foregroundColor(.white)
+                                .foregroundColor(.ink)
                             Text("Click to finish setup")
                                 .font(.appSystem(size: 10))
-                                .foregroundColor(.white.opacity(0.7))
+                                .foregroundColor(.ink.opacity(0.7))
                         }
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.appSystem(size: 10, weight: .bold))
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundColor(.ink.opacity(0.5))
                     }
                     .padding(10)
                     .background(Color.orange.opacity(0.15))
@@ -557,7 +557,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(group.rawValue)
                         .font(.appSystem(size: 13, weight: isSelected ? .semibold : .medium))
-                        .foregroundColor(isSelected ? .white : .white.opacity(0.85))
+                        .foregroundColor(isSelected ? .ink : .ink.opacity(0.85))
                     Text(group.summary)
                         .font(.appSystem(size: 10))
                         .foregroundColor(.secondary)
@@ -642,15 +642,15 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Setup Incomplete")
                                     .font(.appHeadline)
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.ink)
                                 Text("Tap to complete setup and start your relay.")
                                     .font(.appCaption)
-                                    .foregroundColor(.white.opacity(0.8))
+                                    .foregroundColor(.ink.opacity(0.8))
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .font(.appCaption.bold())
-                                .foregroundColor(.white.opacity(0.5))
+                                .foregroundColor(.ink.opacity(0.5))
                         }
                         .padding()
                         .background(Color.orange.opacity(0.15))

@@ -64,7 +64,7 @@ struct ReactorsListView: View {
                     HStack(spacing: 12) {
                         AvatarView(url: profile?.pictureURL, pubkey: reactor.pubkey, size: 40)
                             .overlay(Circle().stroke(Color.platformSecondaryGroupedBackground, lineWidth: 2))
-                            .shadow(color: Color.black.opacity(0.1), radius: 3)
+                            .shadow(color: Color.shade.opacity(0.1), radius: 3)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(profile?.bestName ?? "npub…" + String(reactor.pubkey.suffix(6)))
@@ -141,7 +141,7 @@ struct RepostersListView: View {
                     HStack(spacing: 12) {
                         AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 40)
                             .overlay(Circle().stroke(Color.platformSecondaryGroupedBackground, lineWidth: 2))
-                            .shadow(color: Color.black.opacity(0.1), radius: 3)
+                            .shadow(color: Color.shade.opacity(0.1), radius: 3)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(profile?.bestName ?? "npub\u{2026}" + String(pubkey.suffix(6)))
@@ -213,7 +213,7 @@ struct QuotersListView: View {
                     HStack(spacing: 12) {
                         AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 40)
                             .overlay(Circle().stroke(Color.platformSecondaryGroupedBackground, lineWidth: 2))
-                            .shadow(color: Color.black.opacity(0.1), radius: 3)
+                            .shadow(color: Color.shade.opacity(0.1), radius: 3)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(profile?.bestName ?? "npub\u{2026}" + String(pubkey.suffix(6)))

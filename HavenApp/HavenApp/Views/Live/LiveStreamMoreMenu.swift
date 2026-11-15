@@ -85,7 +85,7 @@ struct LiveHostFollowButton: View {
             } label: {
                 Text(isFollowing ? "Following" : "Follow")
                     .font(.appSystem(size: 12, weight: .semibold))
-                    .foregroundColor(isFollowing ? .secondary : .white)
+                    .foregroundColor(isFollowing ? .secondary : .onAccent)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
                     .background(

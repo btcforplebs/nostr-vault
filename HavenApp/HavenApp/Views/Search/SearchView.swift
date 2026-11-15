@@ -217,7 +217,7 @@ struct SearchView: View {
                                             Text(filter.label)
                                                 .font(.appSystem(size: 12, weight: .semibold))
                                         }
-                                        .foregroundColor(resultTypeFilter == filter ? .white : .secondary)
+                                        .foregroundColor(resultTypeFilter == filter ? .onAccent : .secondary)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
                                         .background(resultTypeFilter == filter ? Color.havenPurple : Color.secondary.opacity(0.12))
@@ -281,7 +281,7 @@ struct SearchView: View {
                         Text("Post")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                     .frame(height: 48)
                     .padding(.horizontal, 18)
                     .background(

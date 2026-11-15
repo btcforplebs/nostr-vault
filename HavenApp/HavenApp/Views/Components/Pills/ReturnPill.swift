@@ -139,7 +139,7 @@ struct ReturnPillLayer: View {
                     .font(PillSize.regular.font)
                     .lineLimit(1)
             }
-            .foregroundColor(.white)
+            .foregroundColor(.onAccent)
             .padding(.vertical, PillSize.regular.vertical)
             .padding(.horizontal, PillSize.regular.horizontal)
             .background(Capsule().fill(PillTone.accent.color))
@@ -147,7 +147,7 @@ struct ReturnPillLayer: View {
                 pointer(arrow: arrow, at: arrowAt)
             }
             .compositingGroup()
-            .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+            .shadow(color: Color.shade.opacity(0.4), radius: 8, x: 0, y: 4)
             .contentShape(Capsule())
         }
         .buttonStyle(ReturnPillButtonStyle())

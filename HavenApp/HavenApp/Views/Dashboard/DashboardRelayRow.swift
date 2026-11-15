@@ -24,7 +24,7 @@ struct RelayRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
                     .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.ink)
                 Text(subtitle)
                     .font(.appSystem(size: 11))
                     .foregroundColor(.secondary)
@@ -39,7 +39,7 @@ struct RelayRow: View {
                 .truncationMode(.middle)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color.black.opacity(copied ? 0.5 : 0.35))
+                .background(Color.shade.opacity(copied ? 0.5 : 0.35))
                 .cornerRadius(6)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
@@ -71,7 +71,7 @@ struct RelayRow: View {
         .background(isHovered ? Color.platformSecondaryGroupedBackground : Color.platformCardBackground)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isHovered ? Color.havenPurple.opacity(0.2) : Color.white.opacity(0.03), lineWidth: 0.5)
+                .stroke(isHovered ? Color.havenPurple.opacity(0.2) : Color.ink.opacity(0.03), lineWidth: 0.5)
         )
         .animation(Motion.control, value: isHovered)
         .onHover { hovering in

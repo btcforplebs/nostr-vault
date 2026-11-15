@@ -81,7 +81,7 @@ struct CustomZapSheet: View {
 
             Text("Zap Amount")
                 .font(.appSystem(size: 18, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundColor(.ink)
 
             Spacer()
 
@@ -162,7 +162,7 @@ struct CustomZapSheet: View {
 
             TextField("Custom amount", text: $customAmountText)
                 .font(.appSystem(size: 16, weight: .medium, design: .monospaced))
-                .foregroundColor(.white)
+                .foregroundColor(.ink)
                 .textFieldStyle(.plain)
                 #if os(iOS)
                 .keyboardType(.numberPad)
@@ -202,7 +202,7 @@ struct CustomZapSheet: View {
 
             TextField("Add a comment (optional)", text: $comment)
                 .font(.appSystem(size: 16))
-                .foregroundColor(.white)
+                .foregroundColor(.ink)
                 .textFieldStyle(.plain)
                 .focused($isCommentFocused)
                 .submitLabel(.done)

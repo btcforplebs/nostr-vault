@@ -250,7 +250,7 @@ struct DMThreadView: View {
                             } else {
                                 Image(systemName: "arrow.up")
                                     .font(.appSystem(size: 15, weight: .bold))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.onAccent)
                                     .frame(width: 34, height: 34)
                                     .background(canSend ? Color.havenPurple : Color.secondary.opacity(0.25))
                                     .clipShape(Circle())
@@ -653,8 +653,8 @@ struct MessageBubbleView: View {
                         // opens the in-app browser by the post-link rules.
                         Text(Self.linked(split.text, fromMe: message.isFromMe))
                             .font(.appSystem(size: 15))
-                            .foregroundColor(message.isFromMe ? .white : .primary)
-                            .tint(message.isFromMe ? .white : .havenPurple)
+                            .foregroundColor(message.isFromMe ? .onAccent : .primary)
+                            .tint(message.isFromMe ? Color.onAccent : .havenPurple)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .textSelection(.enabled)
@@ -668,7 +668,7 @@ struct MessageBubbleView: View {
                             Text("NIP-04")
                                 .font(.appSystem(size: 9, weight: .medium))
                         }
-                        .foregroundColor(message.isFromMe ? .white.opacity(0.6) : .orange.opacity(0.8))
+                        .foregroundColor(message.isFromMe ? .onAccent.opacity(0.6) : .orange.opacity(0.8))
                         .padding(.horizontal, 14)
                         .padding(.top, split.text.isEmpty ? 8 : 0)
                         .padding(.bottom, 8)

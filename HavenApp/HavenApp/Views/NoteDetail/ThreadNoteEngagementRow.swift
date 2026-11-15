@@ -33,7 +33,7 @@ struct ThreadNoteEngagementRow: View {
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.04))
+                    .background(Color.ink.opacity(0.04))
                     .cornerRadius(6)
                 }
 
@@ -48,7 +48,7 @@ struct ThreadNoteEngagementRow: View {
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.04))
+                    .background(Color.ink.opacity(0.04))
                     .cornerRadius(6)
                 }
 
@@ -63,7 +63,7 @@ struct ThreadNoteEngagementRow: View {
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.04))
+                    .background(Color.ink.opacity(0.04))
                     .cornerRadius(6)
                 }
 

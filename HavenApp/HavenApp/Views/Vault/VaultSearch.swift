@@ -47,7 +47,7 @@ struct ProfileResultRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(isHovered ? Color.white.opacity(0.04) : Color.clear)
+        .background(isHovered ? Color.ink.opacity(0.04) : Color.clear)
         .onHover { isHovered = $0 }
         .contentShape(Rectangle())
     }

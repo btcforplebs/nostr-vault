@@ -98,7 +98,7 @@ struct RelayJobDot: View {
             if locked && on {
                 Image(systemName: "lock.fill")
                     .font(.appSystem(size: 8, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
             }
         }
         .frame(width: 18, height: 18)

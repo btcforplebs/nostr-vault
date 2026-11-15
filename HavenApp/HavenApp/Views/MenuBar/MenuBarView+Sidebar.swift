@@ -23,7 +23,7 @@ extension MenuBarView {
                                     .foregroundColor(.havenPurple)
                                 Text("Nostr Vault")
                                     .font(.appSystem(size: 18, weight: .bold))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.ink)
                                 Spacer()
                                 
                                 // Live status dot
@@ -69,7 +69,7 @@ extension MenuBarView {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(nostrService.profiles[activeHex]?.bestName ?? (isOwner ? "Owner" : "User"))
                                             .font(.appSystem(size: 13, weight: .semibold))
-                                            .foregroundColor(.white)
+                                            .foregroundColor(.ink)
                                             .lineLimit(1)
                                         Text(isOwner ? "Owner Key" : "Whitelisted")
                                             .font(.appSystem(size: 10))
@@ -86,7 +86,7 @@ extension MenuBarView {
                                 }
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
-                                .background(Color.white.opacity(0.04))
+                                .background(Color.ink.opacity(0.04))
                                 .cornerRadius(8)
                             }
                             .buttonStyle(.plain)
@@ -137,7 +137,7 @@ extension MenuBarView {
                                             .font(.appSystem(size: 13, weight: .semibold))
                                         Spacer()
                                     }
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.onAccent)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 9)
                                     .background(
@@ -169,14 +169,14 @@ extension MenuBarView {
                                             .id(activeHex)
                                             .overlay(
                                                 Circle()
-                                                    .stroke(selectedTab == .profile ? Color.white.opacity(0.6) : Color.clear, lineWidth: 1.5)
+                                                    .stroke(selectedTab == .profile ? Color.ink.opacity(0.6) : Color.clear, lineWidth: 1.5)
                                             )
                                             .frame(width: 20, height: 20)
                                             .zapFlightOrigin()
 
                                         Text("My Profile")
                                             .font(.appSystem(size: 13, weight: selectedTab == .profile ? .semibold : .medium))
-                                            .foregroundColor(selectedTab == .profile ? .white : .secondary)
+                                            .foregroundColor(selectedTab == .profile ? .ink : .secondary)
 
                                         Spacer()
                                     }

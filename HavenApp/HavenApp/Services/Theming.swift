@@ -129,12 +129,33 @@ extension Color {
 
     /// 1.35:1 on `surface0`. A seam, not a boundary. Only legitimate when the
     /// two sides already differ in fill.
-    static let borderHairline = Color.white.opacity(0.14)
+    static let borderHairline = Color.ink.opacity(0.14)
 
     /// 3.14:1 on `surface0`. Meets the non-text contrast floor. Use wherever the
     /// border alone communicates the control — an unselected checkbox, a focus
     /// ring, an empty drop target.
-    static let borderStrong = Color.white.opacity(0.36)
+    static let borderStrong = Color.ink.opacity(0.36)
+
+    // MARK: - Ink, shade and labels
+    //
+    // The app is dark-only today, so these resolve to plain white / black. They
+    // exist so a light mode can flip them in one place
+    // (PLANS/NV_LIGHT_MODE_AND_CUSTOM_COLORS.md). Pick by what the colour sits on:
+    //
+    // - `ink`: text, icons, strokes and tints on the app's own surfaces
+    //   (`surface0`-`surface3`, `platform*`). Use `.ink.opacity(x)` for the
+    //   dimmer steps. Flips to near-black in light.
+    // - `shade`: shadows and dimming drawn over the app's own surfaces. Flips to a
+    //   warm brown-grey in light.
+    // - `onAccent`: a label on an accent fill (`havenPurple` buttons, badges).
+    //   Follows the accent, not the mode.
+    // - Plain `.white` / `.black`: only where the backdrop is dark in every mode,
+    //   such as text over a photo or video, the media viewer, the player, the
+    //   trust globe, or a black scrim.
+
+    static let ink = Color.white
+    static let shade = Color.black
+    static let onAccent = Color.white
 
     static var controlBackgroundColor: Color {
         #if os(macOS)

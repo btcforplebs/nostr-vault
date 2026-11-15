@@ -376,14 +376,14 @@ struct EventBroadcastSheet: View {
         } label: {
             HStack(spacing: 8) {
                 if isBroadcasting {
-                    ProgressView().controlSize(.small).tint(.white)
+                    ProgressView().controlSize(.small).tint(Color.onAccent)
                 } else {
                     Image(systemName: "antenna.radiowaves.left.and.right")
                 }
                 Text(broadcastTitle(count: count))
             }
             .font(.appSystem(size: 14, weight: .semibold))
-            .foregroundColor(.white)
+            .foregroundColor(.onAccent)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .background(disabled ? Color.secondary.opacity(0.4) : Color.havenPurple)

@@ -26,7 +26,7 @@ struct SpacePanelCard<Content: View>: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.ink.opacity(0.05))
         )
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
@@ -50,7 +50,7 @@ struct SpacePanelCard<Content: View>: View {
             if let badge = AccountUnread.badge(count) {
                 Text(badge)
                     .font(.appSystem(size: 12, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(Capsule().fill(Color.havenPurple))
@@ -85,11 +85,11 @@ struct SpacePanelCard<Content: View>: View {
             Image(systemName: symbol)
                 .font(.appSystem(size: 13, weight: .semibold))
                 .frame(width: 32, height: 32)
-                .background(Circle().fill(Color.white.opacity(0.08)))
+                .background(Circle().fill(Color.ink.opacity(0.08)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .foregroundColor(enabled ? .white : .secondary.opacity(0.4))
+        .foregroundColor(enabled ? .ink : .secondary.opacity(0.4))
         .disabled(!enabled)
         .accessibilityLabel(label)
     }

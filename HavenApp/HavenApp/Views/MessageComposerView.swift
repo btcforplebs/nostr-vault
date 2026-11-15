@@ -216,7 +216,7 @@ struct MessageComposerView: View {
                                 Image(systemName: "paperplane.fill")
                                     .font(.appSystem(size: 12, weight: .semibold))
                             }
-                            .foregroundColor(.white)
+                            .foregroundColor(.onAccent)
                             .padding(.horizontal, 18)
                             .padding(.vertical, 10)
                             .background(canSend ? Color.havenPurple : Color.havenPurple.opacity(0.3))

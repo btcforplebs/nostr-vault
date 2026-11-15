@@ -18,7 +18,7 @@ extension FeedView {
                         )
                     Text(String(localized: "feed.media.empty.title"))
                         .font(.appSystem(size: 18, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.ink)
                     Text(feedService.mediaFeedMode == .following ? String(localized: "feed.media.empty.following") : String(localized: "feed.media.empty.global"))
                         .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
                         .foregroundColor(.secondary)

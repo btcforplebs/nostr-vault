@@ -58,7 +58,7 @@ struct RailPinItem: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(Color.ink)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 4)
             .contentShape(Rectangle())

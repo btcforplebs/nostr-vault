@@ -40,7 +40,7 @@ struct PostConfirmationPill: View {
             if confirmation.state == .sending {
                 ProgressView()
                     .controlSize(.mini)
-                    .tint(.white)
+                    .tint(Color.onAccent)
             } else {
                 Image(systemName: confirmation.state == .confirmed ? "checkmark" : "clock")
                     .font(PillSize.regular.iconFont)
@@ -100,9 +100,9 @@ struct PostActionPill: View {
             // Progress bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.3))
+                    Capsule().fill(Color.onAccent.opacity(0.3))
                     Capsule()
-                        .fill(Color.white)
+                        .fill(Color.onAccent)
                         .frame(width: max(0, geo.size.width * (timeRemaining / max(totalTime, 0.1))))
                         .animation(.linear(duration: 0.1), value: timeRemaining)
                 }

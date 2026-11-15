@@ -196,7 +196,7 @@ struct MenuBarContent: View {
 
             // Custom Error Overlay
             if relayManager.showProcessKillAlert {
-                Color.black
+                Color.surface0
                     .ignoresSafeArea()
                     .onTapGesture { }
 
@@ -208,11 +208,11 @@ struct MenuBarContent: View {
                     VStack(spacing: 6) {
                         Text(String(localized: "relay.error.processKill.title"))
                             .font(.appTitle2.bold())
-                            .foregroundColor(.white)
+                            .foregroundColor(.ink)
 
                         Text(String(localized: "relay.error.processKill.message"))
                             .multilineTextAlignment(.center)
-                            .foregroundColor(.white.opacity(0.9))
+                            .foregroundColor(.ink.opacity(0.9))
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -238,7 +238,7 @@ struct MenuBarContent: View {
                 .padding(24)
                 // Was a hard 400pt, which overflows the panel that hosts it.
                 .frame(maxWidth: .infinity)
-                .background(Color.black)
+                .background(Color.surface0)
                 .cornerRadius(16)
                 .padding(12)
                 .transition(.scale.combined(with: .opacity))

@@ -200,7 +200,7 @@ struct VaultModePill: View {
             HStack(spacing: 0) {
                 Image(systemName: mode.symbol)
                     .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.ink)
                     .frame(width: 30, height: 30)
                 HStack(spacing: 3) {
                     Text(mode.title)
@@ -208,7 +208,7 @@ struct VaultModePill: View {
                     Image(systemName: "chevron.down")
                         .font(.appSystem(size: 9, weight: .bold))
                 }
-                .foregroundColor(.white)
+                .foregroundColor(.ink)
                 .padding(.leading, 8)
                 .padding(.trailing, 12)
             }

@@ -85,7 +85,7 @@ struct GatedArticleBody: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .background(Color.havenPurple)
-                        .foregroundColor(.white)
+                        .foregroundColor(.onAccent)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
                     .buttonStyle(.plain)

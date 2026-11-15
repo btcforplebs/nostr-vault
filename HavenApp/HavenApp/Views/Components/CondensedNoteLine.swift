@@ -286,7 +286,7 @@ struct CondensedNoteLine: View, Equatable {
         HStack(spacing: 4) {
             Text(displayName)
                 .font(.appSystem(size: nameSize, weight: .semibold))
-                .foregroundColor(.white.opacity(isRoot ? 1.0 : (isOLED ? 0.92 : 0.95)))
+                .foregroundColor(.ink.opacity(isRoot ? 1.0 : (isOLED ? 0.92 : 0.95)))
                 .lineLimit(1)
                 // The name opens the profile, as on a full post; the photo
                 // opens the quick menu.
@@ -340,7 +340,7 @@ struct CondensedNoteLine: View, Equatable {
         if !text.isEmpty {
             Text(text)
                 .font(.appSystem(size: bodySize))
-                .foregroundColor(.white.opacity(isRoot ? 1.0 : (isOLED ? 0.8 : 0.85)))
+                .foregroundColor(.ink.opacity(isRoot ? 1.0 : (isOLED ? 0.8 : 0.85)))
                 .lineLimit(bodyLineLimit)
                 .lineSpacing(1)
                 .multilineTextAlignment(.leading)

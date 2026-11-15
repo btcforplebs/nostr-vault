@@ -490,7 +490,7 @@ struct Kind3EventDetailView: View {
                             Spacer()
                         }
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                     .listRowBackground(Color.havenPurple)
                 }
             }
@@ -629,7 +629,7 @@ struct SnapshotDetailView: View {
                             Spacer()
                         }
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                     .listRowBackground(Color.havenPurple)
                 }
             }

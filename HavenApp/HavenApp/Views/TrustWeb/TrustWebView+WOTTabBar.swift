@@ -158,12 +158,12 @@ extension TrustWebView {
                         .multilineTextAlignment(.center)
                 } else if refreshStep != nil {
                     // The Rebuild button's steps.
-                    ProgressView().controlSize(.mini).tint(.white)
+                    ProgressView().controlSize(.mini).tint(Color.onAccent)
                     Text(refreshCaption)
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                 } else {
-                    ProgressView().controlSize(.mini).tint(.white)
+                    ProgressView().controlSize(.mini).tint(Color.onAccent)
                     Text("Mapping your web")
                 }
             }
@@ -176,7 +176,7 @@ extension TrustWebView {
                     .fill(Color.havenPurple)
                     .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
             )
-            .foregroundColor(.white)
+            .foregroundColor(.onAccent)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(refreshStep != nil ? refreshCaption : "Your web is updating")
             .transition(.opacity.combined(with: .move(edge: .top)))

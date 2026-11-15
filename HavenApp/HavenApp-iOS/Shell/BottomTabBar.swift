@@ -85,7 +85,7 @@ struct BottomTabBar: View {
         .background(Color.platformWindowBackground.ignoresSafeArea())
         .overlay(alignment: railOnRight ? .leading : .trailing) {
             Rectangle()
-                .fill(Color.white.opacity(0.08))
+                .fill(Color.ink.opacity(0.08))
                 .frame(width: 1)
                 .ignoresSafeArea()
         }
@@ -355,7 +355,7 @@ struct BottomTabBar: View {
                         .font(.appSystem(size: 20, weight: selected ? .semibold : .regular))
                 }
             }
-            .foregroundStyle(selected ? Color.havenPurple : .white)
+            .foregroundStyle(selected ? Color.havenPurple : Color.ink)
             .frame(height: 24)
             .overlay(alignment: .topTrailing) {
                 NewsDot(isShown: hasRedBadge)
@@ -363,7 +363,7 @@ struct BottomTabBar: View {
             }
             Text(title)
                 .font(.appSystem(size: 10, weight: selected ? .semibold : .regular))
-                .foregroundStyle(selected ? Color.havenPurple : .white)
+                .foregroundStyle(selected ? Color.havenPurple : Color.ink)
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
@@ -388,13 +388,13 @@ struct BottomTabBar: View {
                 AvatarView(url: nostrService.profiles[activeHex]?.pictureURL, pubkey: activeHex, size: 24)
                     .overlay(
                         Circle()
-                            .stroke(selected ? Color.havenPurple : .white.opacity(0.5), lineWidth: selected ? 2 : 1)
+                            .stroke(selected ? Color.havenPurple : Color.ink.opacity(0.5), lineWidth: selected ? 2 : 1)
                     )
                     .zapFlightOrigin()
                     .frame(height: 24)
                 Text("Profile")
                     .font(.appSystem(size: 10, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Color.havenPurple : .white)
+                    .foregroundStyle(selected ? Color.havenPurple : Color.ink)
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())

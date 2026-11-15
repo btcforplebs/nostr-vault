@@ -13,12 +13,12 @@ struct SidebarTabButton: View {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(isSelected ? .white : (isHovered ? .primary : .secondary))
+                    .foregroundColor(isSelected ? .onAccent : (isHovered ? .primary : .secondary))
                     .frame(width: 20, height: 20)
                 
                 Text(title)
                     .font(.appSystem(size: 13, weight: isSelected ? .semibold : .medium))
-                    .foregroundColor(isSelected ? .white : (isHovered ? .primary : .secondary))
+                    .foregroundColor(isSelected ? .onAccent : (isHovered ? .primary : .secondary))
                 
                 Spacer()
             }
@@ -26,7 +26,7 @@ struct SidebarTabButton: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.havenPurple : (isHovered ? Color.white.opacity(0.06) : Color.clear))
+                    .fill(isSelected ? Color.havenPurple : (isHovered ? Color.ink.opacity(0.06) : Color.clear))
             )
             .contentShape(Rectangle())
         }

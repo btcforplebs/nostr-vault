@@ -177,7 +177,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
             Text(title)
                 .font(.appSystem(size: 13, weight: .semibold))
                 .lineLimit(1)
-                .foregroundColor(isSelected ? .white : .havenPurple)
+                .foregroundColor(isSelected ? .onAccent : .havenPurple)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(isSelected ? Color.havenPurple : Color.havenPurple.opacity(0.12))
@@ -235,7 +235,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                     Text(followed ? "Following" : "Follow")
                         .font(.appSystem(size: 13, weight: .semibold))
                 }
-                .foregroundColor(followed ? .white : .havenPurple)
+                .foregroundColor(followed ? .onAccent : .havenPurple)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(followed ? Color.havenPurple : Color.havenPurple.opacity(0.12))

@@ -494,7 +494,7 @@ extension FeedView {
                         Text(ModeComposer(feedMode: feedService.feedMode)?.buttonTitle ?? String(localized: "feed.action.post"))
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                     .frame(height: 48)
                     .padding(.horizontal, 18)
                     .background(

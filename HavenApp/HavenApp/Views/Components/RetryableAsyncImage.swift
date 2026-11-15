@@ -89,7 +89,7 @@ struct RetryableAsyncImage: View {
                                             .padding(.horizontal, 10)
                                             .padding(.vertical, 4)
                                             .background(Color.havenPurple)
-                                            .foregroundColor(.white)
+                                            .foregroundColor(.onAccent)
                                             .cornerRadius(4)
                                     }
                                     .buttonStyle(.plain)

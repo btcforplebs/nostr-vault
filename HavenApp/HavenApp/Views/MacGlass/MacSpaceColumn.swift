@@ -145,7 +145,7 @@ struct MacSpaceColumn: View {
                     ForEach(list) { device in
                         HStack(spacing: 8) {
                             Circle()
-                                .fill(peers.contains(device.npub) ? Color.havenOnline : Color.white.opacity(0.25))
+                                .fill(peers.contains(device.npub) ? Color.havenOnline : Color.ink.opacity(0.25))
                                 .frame(width: 7, height: 7)
                             Text(device.displayName)
                                 .font(.appSystem(size: 12, weight: .medium))

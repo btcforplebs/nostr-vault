@@ -191,7 +191,7 @@ extension NoteRow {
                 // Zero mouse feedback on the app's densest, most-clicked element —
                 // `isHovered` was tracked and never read. Same tint level as
                 // ProfileResultRow's hover state, for one hover language app-wide.
-                Color.white.opacity(isHovered ? 0.04 : 0)
+                Color.ink.opacity(isHovered ? 0.04 : 0)
             }
         )
         .cornerRadius(12)

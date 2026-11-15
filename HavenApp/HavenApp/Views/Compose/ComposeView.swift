@@ -18,7 +18,7 @@ extension View {
                 .lineLimit(1)
                 .fixedSize()
                 .font(.appSystem(size: 10, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(.onAccent)
                 .padding(.horizontal, count > 9 ? 3 : 0)
                 .frame(minWidth: 15, minHeight: 15)
                 .background(Color.havenPurple, in: Capsule())

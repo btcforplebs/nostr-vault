@@ -80,7 +80,7 @@ extension NoteDetailView {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.05))
+                    .background(Color.ink.opacity(0.05))
                     .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
@@ -101,7 +101,7 @@ extension NoteDetailView {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.05))
+                    .background(Color.ink.opacity(0.05))
                     .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
@@ -122,7 +122,7 @@ extension NoteDetailView {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.05))
+                    .background(Color.ink.opacity(0.05))
                     .cornerRadius(8)
                 }
                 .buttonStyle(.plain)

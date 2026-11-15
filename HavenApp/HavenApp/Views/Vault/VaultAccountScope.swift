@@ -554,7 +554,7 @@ struct VaultAccountChipView: View {
                 Text(title)
                     .font(.appSystem(size: 15, weight: .semibold))
                     .lineLimit(1)
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .foregroundColor(isSelected ? .onAccent : .primary)
                     .padding(.horizontal, 16)
                     .frame(minHeight: Self.pictureSize + 6)
                     .background(Capsule().fill(isSelected ? Color.havenPurple : Color.havenPurple.opacity(0.10)))

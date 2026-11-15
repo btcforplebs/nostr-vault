@@ -461,7 +461,7 @@ struct FollowListButton: View {
         Button(action: action) {
             Text(label)
                 .font(.appSystem(size: 13, weight: .semibold))
-                .foregroundColor(filled ? .white : .primary)
+                .foregroundColor(filled ? .onAccent : .primary)
                 .frame(minWidth: 84, minHeight: 30)
                 .background(
                     Capsule().fill(filled ? Color.havenPurple : Color.clear)

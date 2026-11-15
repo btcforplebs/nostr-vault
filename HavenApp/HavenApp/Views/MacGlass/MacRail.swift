@@ -39,7 +39,7 @@ struct MacRail: View {
                 Button(action: onNewPost) {
                     Image(systemName: "square.and.pencil")
                         .font(.appSystem(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.onAccent)
                         .frame(width: 44, height: 44)
                         .background(
                             Circle().fill(LinearGradient(
@@ -55,7 +55,7 @@ struct MacRail: View {
             }
 
             Rectangle()
-                .fill(Color.white.opacity(0.10))
+                .fill(Color.ink.opacity(0.10))
                 .frame(width: 32, height: 1)
                 .padding(.vertical, 6)
 
@@ -121,7 +121,7 @@ struct MacRail: View {
                     .shadow(color: MacVaultGlance.stateTint(relayManager).opacity(0.8), radius: 4)
                 Text(MacVaultGlance.stateLabel(relayManager))
                     .font(.appSystem(size: 9, weight: .semibold))
-                    .foregroundColor(Color.white.opacity(0.72))
+                    .foregroundColor(Color.ink.opacity(0.72))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
@@ -155,11 +155,11 @@ struct MacRailItem<Icon: View>: View {
                     .font(.appSystem(size: 10, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundColor(selected ? .havenPurple : Color.white.opacity(0.72))
+            .foregroundColor(selected ? .havenPurple : Color.ink.opacity(0.72))
             .frame(width: 58, height: 52)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(hovering ? 0.08 : 0))
+                    .fill(Color.ink.opacity(hovering ? 0.08 : 0))
             )
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }

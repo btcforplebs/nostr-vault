@@ -130,7 +130,7 @@ struct MusicPillButton: View {
         Button(action: action) {
             Label(title, systemImage: icon)
                 .font(.appSystem(size: 14, weight: .semibold))
-                .foregroundColor(filled ? .white : .havenPurple)
+                .foregroundColor(filled ? .onAccent : .havenPurple)
                 .padding(.horizontal, 16)
                 .frame(minHeight: 36)
                 .background(Capsule().fill(filled ? Color.havenPurple : Color.havenPurple.opacity(0.14)))

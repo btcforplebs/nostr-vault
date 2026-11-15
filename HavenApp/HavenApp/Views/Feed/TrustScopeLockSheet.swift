@@ -37,7 +37,7 @@ struct TrustScopeLockSheet: View {
             Button { dismiss() } label: {
                 Text("OK")
                     .font(.appSystem(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .background(Color.havenPurple)
                     .cornerRadius(10)

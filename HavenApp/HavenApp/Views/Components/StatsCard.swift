@@ -33,7 +33,7 @@ struct StatsCard: View {
                 } else {
                     Text(value)
                         .font(.appSystem(size: 22, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white)
+                        .foregroundColor(.ink)
                 }
                 Text(title)
                     .font(.appSystem(size: 11))

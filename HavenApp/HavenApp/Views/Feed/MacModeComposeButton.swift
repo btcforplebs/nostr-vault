@@ -24,7 +24,7 @@ struct MacModeComposeButton: View {
             Button { open(composer) } label: {
                 Label(composer.buttonTitle, systemImage: composer.symbolName)
                     .font(.appSystem(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                     .padding(.horizontal, 18)
                     .frame(height: 40)
                     .background(

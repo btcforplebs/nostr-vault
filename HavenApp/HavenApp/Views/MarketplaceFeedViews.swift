@@ -148,7 +148,7 @@ struct MarketplaceCategoryBar: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(isOn ? Color.havenPurple : Color.havenPurplePale)
-                .foregroundColor(isOn ? .white : .havenPurple)
+                .foregroundColor(isOn ? .onAccent : .havenPurple)
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -174,7 +174,7 @@ private struct MarketplaceAuctionBadge: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color.havenPurple)
-            .foregroundColor(.white)
+            .foregroundColor(.onAccent)
             .clipShape(Capsule())
     }
 }
@@ -383,7 +383,7 @@ struct MarketplaceListingSheet: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
                         .background(Color.havenPurple)
-                        .foregroundColor(.white)
+                        .foregroundColor(.onAccent)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)

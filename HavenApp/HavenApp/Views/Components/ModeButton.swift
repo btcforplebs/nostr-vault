@@ -16,11 +16,11 @@ struct ModeButton: View {
             HStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.appSystem(size: 14, weight: .semibold))
-                    .foregroundColor(isSelected ? .white : (hasNotification ? accentTint : .white))
+                    .foregroundColor(isSelected ? .onAccent : (hasNotification ? accentTint : .ink))
                 Text(title)
                     .font(.appSystem(size: 13, weight: .semibold, design: .default))
                     .lineLimit(1)
-                    .foregroundColor(isSelected ? .white : (hasNotification ? accentTint : .white))
+                    .foregroundColor(isSelected ? .onAccent : (hasNotification ? accentTint : .ink))
             }
             .fixedSize()
             .padding(.horizontal, 16)

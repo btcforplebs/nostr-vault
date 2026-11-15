@@ -19,7 +19,7 @@ extension View {
             self
                 .background(fallback, in: shape)
                 .background((tint ?? .clear).opacity(0.18), in: shape)
-                .overlay(shape.stroke(Color.white.opacity(0.10), lineWidth: 0.5))
+                .overlay(shape.stroke(Color.ink.opacity(0.10), lineWidth: 0.5))
         }
     }
 
@@ -27,11 +27,11 @@ extension View {
     func macContentTile(cornerRadius: CGFloat = 12) -> some View {
         background(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.ink.opacity(0.05))
         )
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                .stroke(Color.ink.opacity(0.06), lineWidth: 0.5)
         )
     }
 }

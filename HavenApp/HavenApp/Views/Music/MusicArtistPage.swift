@@ -62,7 +62,7 @@ struct MusicArtistPage: View {
             VStack(spacing: 8) {
                 MusicArtwork(url: shown.artURL, size: 148)
                     .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+                    .shadow(color: Color.shade.opacity(0.25), radius: 12, y: 4)
                 Text(shown.name)
                     .font(.appSystem(size: 26, weight: .bold))
                     .multilineTextAlignment(.center)

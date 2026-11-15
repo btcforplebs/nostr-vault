@@ -53,7 +53,7 @@ struct FeedPickerMenu: View, Equatable {
                 // did not open the menu. Folded, the pill itself is the ring.
                 Image(systemName: mode.symbolName)
                     .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.ink)
                     .frame(width: 30, height: 30)
 
                 // Always laid out, only faded: removing it would resize the
@@ -65,7 +65,7 @@ struct FeedPickerMenu: View, Equatable {
                         Image(systemName: "chevron.down")
                             .font(.appSystem(size: 9, weight: .bold))
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(.ink)
                     .padding(.leading, 8)
                     .padding(.trailing, 12)
                 }

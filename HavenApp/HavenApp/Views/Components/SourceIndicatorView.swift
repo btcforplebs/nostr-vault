@@ -329,7 +329,7 @@ struct SourceIndicatorView: View {
                         BlossomBackupBadge(hash: hash)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.1))
+                            .background(Color.ink.opacity(0.1))
                             .cornerRadius(20)
                     }
                     .buttonStyle(.plain)
