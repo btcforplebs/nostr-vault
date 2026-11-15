@@ -271,7 +271,7 @@ export function VaultScreen({ ctx, desk = false }) {
       <header class="screen-head vault-head">
         {desk ? (
           <div class="vault-modes" role="tablist" aria-label="Vault">
-            {MODES.map(x => <button key={x.id} role="tab" aria-selected={x.id === mode} class={x.id === mode ? "on" : ""} title={fresh.has(x.id) ? `${x.title}: new` : x.title} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} /><span>{x.title}</span>{fresh.has(x.id) && <span class="vault-new-dot" aria-label="new" />}</button>)}
+            {MODES.map(x => <button key={x.id} role="tab" aria-selected={x.id === mode} class={x.id === mode ? "on" : ""} title={fresh.has(x.id) ? `${x.title}: new` : x.title} onClick={() => (nappletsOn() ? (location.hash = `#/vault/${x.id}`) : pick(x.id))}><Icon d={ICONS[x.id]} /><span>{x.title}</span>{fresh.has(x.id) && <span class="vault-new-dot" aria-label="new" />}</button>)}
           </div>
         ) : (
           <VaultPagesMenu ctx={ctx} current={mode} fresh={fresh} onPick={pick} />
