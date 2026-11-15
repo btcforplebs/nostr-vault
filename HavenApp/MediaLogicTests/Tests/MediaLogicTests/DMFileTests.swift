@@ -17,7 +17,7 @@ final class DMFileTests: XCTestCase {
 
     func testEverySharedVectorOpensOrIsRefusedAsExpected() throws {
         let vectors = try XCTUnwrap(json("DM_FILE_VECTORS")["vectors"] as? [[String: Any]])
-        XCTAssertEqual(vectors.count, 10)
+        XCTAssertEqual(vectors.count, 11)
         for v in vectors {
             let id = v["id"] as? String ?? "?"
             let expect = try XCTUnwrap(v["expect"] as? String)

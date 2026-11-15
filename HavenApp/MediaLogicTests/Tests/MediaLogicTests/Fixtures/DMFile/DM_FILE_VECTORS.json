@@ -21,7 +21,8 @@
     "receiver": "sha256(\"d0 receiver\")",
     "png-12-byte-nonce": "key sha256(\"d0 key 1\"), nonce first 12 bytes of sha256(\"d0 nonce 12\")",
     "png-16-byte-nonce": "key sha256(\"d0 key 2\"), nonce first 16 bytes of sha256(\"d0 nonce 16\")",
-    "amethyst-crypto-kmp": "key sha256(\"d0 amethyst key\"), nonce first 16 bytes of sha256(\"d0 amethyst nonce\")"
+    "amethyst-crypto-kmp": "key sha256(\"d0 amethyst key\"), nonce first 16 bytes of sha256(\"d0 amethyst nonce\")",
+    "mp4-video-12-byte-nonce": "key sha256(\"d0 video key\"), nonce first 12 bytes of sha256(\"d0 video nonce\")"
   },
   "vectors": [
     {
@@ -190,6 +191,62 @@
           ]
         ],
         "content": "https://files.example/84191b79ee4f6099f3663e1efdd4189bdc3ef4dfe2768e1652aa0b41d234bf6a.txt"
+      }
+    },
+    {
+      "id": "mp4-video-12-byte-nonce",
+      "expect": "ok",
+      "note": "A video file (MP4 ftyp/free/mdat boxes). Same send shape as png-12-byte-nonce; receivers play it inline after the same checks.",
+      "source": "Nostr Vault (Node WebCrypto)",
+      "file_type": "video/mp4",
+      "algorithm": "aes-gcm",
+      "key": "3d659b9df5e61d84f648154c6cd8fda4f6e6e2e23dcd59580131a55ab06a0b8b",
+      "nonce": "c5164abb7d4f9e590a0b8892",
+      "plaintext_hex": "000000206674797069736f6d0000020069736f6d69736f32617663316d7034310000000866726565000000106d6461744e562076696465f0",
+      "ciphertext_hex": "e41b9adcde2a8c8b771c8f12ab30f05cfe5da99e399639402f0e90ad94fd04165ae10fdc3dbd64f335acb6a0cc5fa018db05cfe2a018aa0fa8d1aa5fbcc37703918a4b3a010f6891",
+      "x": "70a5fcb9c400ff5bfb0dafa09ae9b9d8301bc92369a22d11ff2d1c4fcfbe4ae4",
+      "ox": "2440e7eacdb5a992cbf530d82ad94144887c38c31eea0f35a1f36ffe67f99520",
+      "size": 72,
+      "ext": ".mp4",
+      "rumor": {
+        "pubkey": "112bf6b423d7f462f29c1332fce677ed7037bcbaa2cf7a67ca57a5d8f5d2fb95",
+        "created_at": 1762905600,
+        "kind": 15,
+        "tags": [
+          [
+            "p",
+            "f4a3296660fd5f0f8068c33981cb5d07f2eccbc757e74ffea1b587dccbcbfa34"
+          ],
+          [
+            "file-type",
+            "video/mp4"
+          ],
+          [
+            "encryption-algorithm",
+            "aes-gcm"
+          ],
+          [
+            "decryption-key",
+            "3d659b9df5e61d84f648154c6cd8fda4f6e6e2e23dcd59580131a55ab06a0b8b"
+          ],
+          [
+            "decryption-nonce",
+            "c5164abb7d4f9e590a0b8892"
+          ],
+          [
+            "x",
+            "70a5fcb9c400ff5bfb0dafa09ae9b9d8301bc92369a22d11ff2d1c4fcfbe4ae4"
+          ],
+          [
+            "ox",
+            "2440e7eacdb5a992cbf530d82ad94144887c38c31eea0f35a1f36ffe67f99520"
+          ],
+          [
+            "size",
+            "72"
+          ]
+        ],
+        "content": "https://files.example/70a5fcb9c400ff5bfb0dafa09ae9b9d8301bc92369a22d11ff2d1c4fcfbe4ae4.mp4"
       }
     },
     {

@@ -32,7 +32,7 @@ class DMFileVectorsTest {
 
     @Test
     fun `every vector reads as it expects`() {
-        assertEquals(10, vectors.size)
+        assertEquals(11, vectors.size)
         for (v in vectors) {
             val id = v.s("id")
             val expect = v.s("expect")

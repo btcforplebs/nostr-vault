@@ -174,7 +174,7 @@ test("the shared kind 15 vectors (DM_FILE_VECTORS.json): x, then decrypt, then o
   const { vectors } = JSON.parse(await readFile(new URL("./fixtures/DM_FILE_VECTORS.json", import.meta.url), "utf8"))
   const bytes = h => Uint8Array.from(h.match(/../g) ?? [], b => parseInt(b, 16))
   const { fileContentOf } = await import("../src/net/dm-file.js")
-  assert.ok(vectors.length >= 10)
+  assert.equal(vectors.length, 11)
   for (const v of vectors) {
     const shown = fileContentOf(v.rumor)
     const f = parseFileLink(shown)
