@@ -19,6 +19,10 @@
   --accent-line: rgb(var(--accent-rgb) / .30);  /* note-card border, OLED weight */
   --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-light));
   --on-accent: #fff;  /* a label on an accent fill */
+  /* Nostr Vault's own orange, whatever the accent: the logo on posts (badges.css). light.css has the Light pair. */
+  --nv-orange: #e67326;
+  --nv-orange-light: #fa9447;
+  --nv-orange-rgb: 230 115 38;
   --on-badge: #1a0d03;  /* a count badge's number on an accent dot */
 
   /* Meaning colours: green = running only; teal = vouched-for only. */

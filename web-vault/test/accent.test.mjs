@@ -93,3 +93,10 @@ test("Appearance shows the accent row under Mode", () => {
   const page = read("../src/screens/settings/AppearancePage.jsx")
   assert.ok(page.indexOf("AppearanceModePicker />") < page.indexOf("AccentColorPicker />"))
 })
+
+test("Light's paper mixes 5% of the accent into the warm off-white", async () => {
+  const { paper } = await import("../src/net/accent.js")
+  assert.equal(paper("#e67326"), "#f5ebe1")
+  assert.equal(paper("#0a84ff"), "#eaecec")
+  assert.equal(paper("not a colour"), "#f5ebe1")
+})

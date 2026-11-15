@@ -245,6 +245,17 @@ export const STAR = {
 /** A face's rim colour by kind (GlobeScene face tints): follows blue-white, outer faces lavender, bridges orange, the
  *  traced person yellow. */
 export const RIM = { follow: [184, 209, 255], outer: [158, 140, 230], bridge: [230, 115, 38], traced: [255, 214, 10] }
+/** Light mode's globe sits on a late-morning sky (styles/wot.css), where the night colours wash out: the same hues,
+ *  deeper, and brighter at the back (Android TrustWebViewGlobe day colours). */
+export const STAR_DAY = {
+  further: [106, 98, 168, 0.10, 0.30],
+  extended: [106, 98, 168, 0.16, 0.45],
+  ring: [47, 108, 179, 0.35, 0.95],
+  hot: [229, 115, 10, 0.45, 1],
+}
+export const RIM_DAY = { follow: [47, 108, 179], outer: [106, 98, 168], bridge: [229, 115, 10], traced: [217, 164, 0] }
+/** True while the page is in Light: the globe draws its daytime colours. */
+export const globeDay = (doc = globalThis.document) => doc?.documentElement?.dataset?.theme === "light"
 /** A star's alpha for its front-ness (dotLight's 0.35..1 read as 0..1). */
 export const starAlpha = ([, , , back, front], light) => back + (front - back) * Math.max(0, Math.min(1, (light - 0.35) / 0.65))
 /** How bright a face past your follows is drawn, as Everyone's outer faces. */

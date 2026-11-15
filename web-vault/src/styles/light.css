@@ -6,7 +6,12 @@
   color-scheme: light;
   accent-color: var(--accent);
 
-  --bg: #f6f1eb;  /* warm paper */
+  /* Warm paper (#f6f1eb) with 5% of the accent mixed in: this is the orange's. Another accent's sheet (net/accent.js
+     accentTokens, paper()) sets its own. */
+  --bg: #f5ebe1;
+  /* The Nostr Vault logo on posts is always NV orange, never the picked accent (badges.css). */
+  --nv-orange: #c2571a;
+  --nv-orange-light: #e67326;
   --s1: #fff;     /* cards sit white on the paper */
   --s2: #efe9e2;
   --s3: #e2dbd3;

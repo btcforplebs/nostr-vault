@@ -15,7 +15,7 @@ import { faceCache, FACE_PX } from "../net/face-cache.js"
 import { fraction } from "../net/wot.js"
 import {
   RADIUS, newCamera, moving, drag, flick, zoomBy, zoomNow, flyTo, facing, direction, home, step, projector, outline,
-  faceShown, faceRadius, dotLight, seatFade, faceSize, seats, onScreen, hit, OUTER_ALPHA, LAYER_WEIGHTS, SIZE, STAR, RIM, starAlpha,
+  faceShown, faceRadius, dotLight, seatFade, faceSize, seats, onScreen, hit, OUTER_ALPHA, LAYER_WEIGHTS, SIZE, STAR, RIM, STAR_DAY, RIM_DAY, globeDay, starAlpha,
 } from "../net/wot-globe.js"
 
 /** New pictures a frame may start loading: a fast spin brings faces into seats faster than they need decoding at once;
@@ -43,6 +43,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
   const images = useRef(sharedImages)
   const pointers = useRef(new Map())
   const loadsLeft = useRef(0) // pictures this frame may still start loading
+  const rims = useRef(RIM) // face rim colours for this frame: RIM, or RIM_DAY in Light
   const gesture = useRef(null)
   const pickedRef = useRef(picked)
   pickedRef.current = picked
@@ -63,6 +64,9 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     loadsLeft.current = LOADS_PER_FRAME
     images.current.frame() // pictures drawn from here on are on screen, and never dropped
     const { web, nodes, weights, path, lit, label } = scene.current
+    // Light: a daytime sky behind (styles/wot.css), so deeper stars and rims, a sunlit halo, softer thread glow.
+    const day = globeDay(), STARS = day ? STAR_DAY : STAR
+    rims.current = day ? RIM_DAY : RIM
     // The open card's person and their bridges are lit whatever the layer or filter, and while they're traced only they
     // show as faces (GlobeScene traceTarget): everyone else steps back to a star.
     const target = pickedRef.current && pickedRef.current !== web.me ? pickedRef.current : null
@@ -96,7 +100,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
       out.push({ node, x: p.x, y: p.y, depth: p.depth, face: false })
     }
     for (const [key, list] of bands) {
-      const [kind, weight, b] = key.split("|"), star = STAR[kind], s0 = SIZE[kind === "hot" ? "ring" : kind]
+      const [kind, weight, b] = key.split("|"), star = STARS[kind], s0 = SIZE[kind === "hot" ? "ring" : kind]
       g.beginPath()
       for (const p of list) { const s = s0 * p.scale * Math.min(k.zoom, 1.8); g.moveTo(p.x + s, p.y); g.arc(p.x, p.y, s, 0, 2 * Math.PI) }
       g.fillStyle = `rgb(${star[0]} ${star[1]} ${star[2]} / ${Math.min(1, starAlpha(star, 0.35 + 0.65 * (+b + 0.5) / 4) * +weight)})`
@@ -125,7 +129,8 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
 
     // The glow behind the middle (GlobeScene: the accent at 0.32).
     const glow = g.createRadialGradient(me.x, me.y, 0, me.x, me.y, me.r * 3)
-    glow.addColorStop(0, "rgb(230 115 38 / .32)"); glow.addColorStop(1, "rgb(230 115 38 / 0)")
+    if (day) { glow.addColorStop(0, "rgb(255 255 255 / .75)"); glow.addColorStop(0.5, "rgb(229 115 10 / .16)"); glow.addColorStop(1, "rgb(229 115 10 / 0)") }
+    else { glow.addColorStop(0, "rgb(230 115 38 / .32)"); glow.addColorStop(1, "rgb(230 115 38 / 0)") }
     g.fillStyle = glow; g.beginPath(); g.arc(me.x, me.y, me.r * 3, 0, 2 * Math.PI); g.fill()
 
     // The open card's trust path, as the iPhone traces it: from the middle to each bridge showing (a faint inner leg),
@@ -142,14 +147,19 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
         for (const b of legs) { if (inner) { g.moveTo(me.x, me.y); g.lineTo(b.x, b.y) } else { g.moveTo(b.x, b.y); g.lineTo(to.x, to.y) } }
         g.lineWidth = width; g.strokeStyle = colour; g.stroke()
       }
-      stroke(3, "rgb(230 115 38 / .16)", true); stroke(3, "rgb(230 115 38 / .25)", false)
-      stroke(0.8, "rgb(255 168 77 / .45)", true); stroke(1.3, "rgb(255 168 77 / .9)", false)
+      if (day) {
+        stroke(3, "rgb(229 115 10 / .10)", true); stroke(3, "rgb(229 115 10 / .15)", false)
+        stroke(0.8, "rgb(207 106 20 / .5)", true); stroke(1.3, "rgb(207 106 20 / .9)", false)
+      } else {
+        stroke(3, "rgb(230 115 38 / .16)", true); stroke(3, "rgb(230 115 38 / .25)", false)
+        stroke(0.8, "rgb(255 168 77 / .45)", true); stroke(1.3, "rgb(255 168 77 / .9)", false)
+      }
     }
 
     for (const f of all) {
       // A face losing its seat or rolling round the back fades into a star where it sits.
       if (!f.me && f.shown < 1) {
-        const star = f.kind === "bridge" || f.kind === "traced" ? STAR.hot : f.kind === "follow" ? STAR.ring : STAR.extended
+        const star = f.kind === "bridge" || f.kind === "traced" ? STARS.hot : f.kind === "follow" ? STARS.ring : STARS.extended
         g.beginPath(); g.arc(f.x, f.y, SIZE.ring * f.r / SIZE.follow, 0, 2 * Math.PI)
         g.fillStyle = `rgb(${star[0]} ${star[1]} ${star[2]} / ${starAlpha(star, dotLight(f.depth)) * (1 - f.shown)})`; g.fill()
       }
@@ -162,13 +172,13 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
 
     // The middle's name under it: "You", or whose web this is (GlobeScene: the core's label, 13pt bold).
     g.font = "700 13px -apple-system, BlinkMacSystemFont, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "top"
-    g.lineWidth = 3; g.lineJoin = "round"; g.strokeStyle = "rgb(0 0 0 / .65)"; g.strokeText(label, me.x, me.y + me.r + 5)
-    g.fillStyle = "#fff"; g.fillText(label, me.x, me.y + me.r + 5)
+    g.lineWidth = 3; g.lineJoin = "round"; g.strokeStyle = day ? "rgb(255 255 255 / .7)" : "rgb(0 0 0 / .65)"; g.strokeText(label, me.x, me.y + me.r + 5)
+    g.fillStyle = day ? "#1e2733" : "#fff"; g.fillText(label, me.x, me.y + me.r + 5)
 
     // A star whose card is open (a face wears its own rim).
     const p = pickedRef.current && out.find(d => d.node.pk === pickedRef.current)
     if (p && !p.face && p.depth > -0.2) {
-      g.beginPath(); g.arc(p.x, p.y, 9, 0, 2 * Math.PI); g.lineWidth = 2; g.strokeStyle = "rgb(255 214 10)"; g.stroke()
+      g.beginPath(); g.arc(p.x, p.y, 9, 0, 2 * Math.PI); g.lineWidth = 2; g.strokeStyle = day ? "rgb(217 164 0)" : "rgb(255 214 10)"; g.stroke()
     }
   }
 
@@ -192,7 +202,8 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
       im.src = url
     }
     g.globalAlpha = alpha
-    const [rr, rg, rb] = kind === "me" ? [230, 115, 38] : RIM[kind] ?? RIM.follow
+    const rim = rims.current
+    const [rr, rg, rb] = kind === "me" ? rim.bridge : rim[kind] ?? rim.follow
     g.beginPath(); g.arc(x, y, r + 1.5, 0, 2 * Math.PI)
     g.lineWidth = 4; g.strokeStyle = `rgb(${rr} ${rg} ${rb} / .22)`; g.stroke()
     if (img && typeof img === "object") g.drawImage(img, x - r, y - r, 2 * r, 2 * r)

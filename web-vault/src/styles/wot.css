@@ -6,6 +6,9 @@
 /* The globe, full-bleed on the deep blue the iPhone draws behind it (GlobeSpace). */
 .wot-globe { position: absolute; inset: 0; overflow: hidden;
   background: radial-gradient(circle at 50% 50%, rgb(18 20 33) 40px, #000 900px); }
+/* Light: a late-morning sky instead, pale blue overhead to a warm haze low down (the globe's colours follow, WotGlobe
+   globeDay). The pills and menus over it stay the dark island's glass, as on the phones. */
+:root[data-theme="light"] .wot-globe { background: linear-gradient(180deg, #a7cdee 0%, #d3e5f2 55%, #f4e8d8 100%); }
 .wot-globe canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; outline: none; }
 .wot-globe canvas:active { cursor: grabbing; }
 .wot-globe canvas:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
