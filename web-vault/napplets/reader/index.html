@@ -22,6 +22,7 @@
   #list { list-style: none; margin: 0; padding: 0; }
   article { display: grid; grid-template-columns: 44px 1fr; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--hair); cursor: pointer; }
   article.focus { background: var(--s1); cursor: default; }
+  article.kbd { box-shadow: inset 3px 0 0 var(--accent); background: var(--s1); }
   .av { width: 44px; height: 44px; border-radius: 50%; background: var(--s2); object-fit: cover; display: grid; place-items: center; color: var(--muted); font-weight: 700; border: 0; padding: 0; }
   .who { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
   .who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
@@ -384,6 +385,49 @@ function card(ev, { focus = false, depth = 0, by = null } = {}) {
 }
 
 function compose(action, ev) { n.intent?.invoke(`napplet:compose/${action}`, { payload: ev ? { event: ev } : {} }).catch(() => {}) }
+// The desktop's keys over this frame: every key goes to the shell, which reads it with the app's one key map and
+// sends the row commands (j/k, Enter/o, r, l, z) back here. Hover over a name or avatar: the shell's hover card.
+document.addEventListener("keydown", e => {
+  if (e.isComposing || e.repeat && !/^[jk]$/.test(e.key)) return
+  const typing = !!e.target.closest?.("input, textarea, select, [contenteditable]")
+  const mod = e.metaKey || e.ctrlKey
+  if ((mod || e.altKey) && !(mod && e.key === "Enter")) return
+  if (e.key.length > 12) return
+  if (!typing && (e.key === "/" || e.key === "?")) e.preventDefault()
+  n.inc?.emit("nv.key", { key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, typing })
+})
+const rows = () => [...document.querySelectorAll("#list > article")].filter(r => r.getClientRects().length)
+function rowCmd(cmd) {
+  const all = rows(), cur = document.querySelector("#list > article.kbd")
+  const at = all.indexOf(cur)
+  if (cmd === "next" || cmd === "prev") {
+    const r = all[at < 0 ? 0 : Math.max(0, Math.min(all.length - 1, at + (cmd === "next" ? 1 : -1)))]
+    if (!r) return
+    cur?.classList.remove("kbd"); r.classList.add("kbd"); r.scrollIntoView({ block: "nearest" })
+    return
+  }
+  // The row the command is for: the one picked with j/k, else the open thread's note.
+  const row = cur ?? document.querySelector("#list > article.focus")
+  if (!row) return
+  if (cmd === "open") return row.click()
+  if (cmd === "reply") return row.querySelector(".acts > button")?.click()
+  if (cmd === "like") return (row.querySelector("button[data-like]") ?? row.querySelector(".acts > button:nth-child(4)"))?.click()
+  if (cmd === "zap") return [...row.querySelectorAll(".acts > button")].find(b => b.textContent.startsWith("⚡"))?.click()
+}
+let hovering = null
+const hoverOut = () => { if (hovering) { hovering = null; n.inc?.emit("nv.hover", { out: true }) } }
+document.addEventListener("pointerover", e => {
+  if (e.pointerType !== "mouse") return
+  const t = e.target.closest?.(".av[data-pk], .who b[data-pk], a[data-pk]")
+  if (!t) return
+  if (hovering === t) return
+  hovering = t
+  const r = t.getBoundingClientRect()
+  n.inc?.emit("nv.hover", { pubkey: t.dataset.pk, rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } })
+})
+document.addEventListener("pointerout", e => { if (hovering && !hovering.contains(e.relatedTarget)) hoverOut() })
+addEventListener("scroll", hoverOut, { passive: true })
+document.addEventListener("pointerdown", hoverOut)
 function openArticle(ev) { n.intent?.invoke("napplet:article/open", { payload: { event: ev } }).catch(() => {}) }
 // An article, highlight or poll: its card's strings come from the shell (napplet:note/card), worked out from the signed
 // event as the classic feed card does; the napplet only draws them.
@@ -623,6 +667,7 @@ async function start() {
     }
   })
   n.inc?.on?.("nv.note.stats", e => showStats(e?.payload))
+  n.inc?.on?.("nv.key.cmd", e => rowCmd(e?.payload?.cmd))
   n.inc?.on?.("nv.compose.sent", e => {
     const ev = e?.payload?.event
     if (!ev || !HEX.test(ev.id ?? "")) return
