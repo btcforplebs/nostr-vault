@@ -19,8 +19,16 @@ object DMOpenedVideo {
     /** The link open now: a tile whose video was let go stops its player, so two aren't held. */
     val current: kotlinx.coroutines.flow.StateFlow<String?> = _current
 
-    /** The opened video for [link] (up to DMFile.MAX_FILE); throws when it can't be fetched or isn't the file sent. */
-    suspend fun open(context: Context, link: String, onProgress: ((Long, Long) -> Unit)? = null): ByteArray =
+    /**
+     * The opened video for [link] (up to [max]); throws when it can't be fetched or isn't the file
+     * sent, and DMFileLoader.TooBig when it is over [max] (a size tag that said less: tap to load).
+     */
+    suspend fun open(
+        context: Context,
+        link: String,
+        max: Long = com.nostrvault.service.DMFile.MAX_FILE,
+        onProgress: ((Long, Long) -> Unit)? = null,
+    ): ByteArray =
         lock.withLock {
             bytes?.takeIf { this.link == link }?.let {
                 onProgress?.invoke(it.size.toLong(), it.size.toLong())
@@ -30,7 +38,7 @@ object DMOpenedVideo {
             this.link = null
             bytes = null
             _current.value = null
-            val opened = DMFileLoader.open(context, link, onProgress = onProgress).first
+            val opened = DMFileLoader.open(context, link, max, video = true, onProgress = onProgress).first
             this.link = link
             bytes = opened
             _current.value = link

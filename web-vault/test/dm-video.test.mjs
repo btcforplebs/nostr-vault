@@ -65,3 +65,22 @@ test("a photo link is not a video link; a sent video's link carries its size", a
   assert.ok(isVideoLink(m.shown))
   assert.equal(parseFileLink(m.shown).size, enc.cipher.length)
 })
+
+test("an open without a tap is held to AUTO_SHOW_MAX, whatever the size tag says (Tron #2105 M1)", async () => {
+  const { AUTO_SHOW_MAX, autoLink } = await import("../src/net/dm-file.js")
+  const plain = new Uint8Array(AUTO_SHOW_MAX + 1024)
+  const enc = await encryptFile(plain)
+  // The sender's size tag says 1000 bytes; the file is bigger than a thread opens by itself.
+  const link = fileLink("https://files.example/" + enc.x, { ...enc, mime: "video/mp4", size: 1000 })
+  const asked = []
+  const fetchBytes = async (url, onProgress, opts) => { asked.push(opts?.max); return enc.cipher }
+  await assert.rejects(openFileLink(link, { fetchBytes, max: AUTO_SHOW_MAX }), e => e.tooBig === true)
+  assert.equal(asked[0], AUTO_SHOW_MAX)
+  // A link marked auto (the Messages napplet, through the shell) is held there too, with no max given.
+  await assert.rejects(openFileLink(autoLink(link), { fetchBytes }), e => e.tooBig === true)
+  assert.equal(parseFileLink(autoLink(link)).auto, true)
+  assert.equal(parseFileLink(link).auto, undefined)
+  // A tap opens it whole.
+  const blob = await openFileLink(link, { fetchBytes })
+  assert.equal(blob.size, plain.length)
+})

@@ -253,7 +253,7 @@ function fill(b, content, load) {
     if (part.video) {
       // A locked video: its size first; a small one from someone you trust opens at once, any other after a tap.
       const size = part.size ? ` · ${mb(part.size)}` : ""
-      if (load && part.size && part.size <= AUTO_VIDEO) b.append(videoOf(part.video, size))
+      if (load && part.size && part.size <= AUTO_VIDEO) b.append(videoOf(part.video, size, true))
       else { const t = el("button", "photo", `Video${size} · tap to load`); t.type = "button"; t.onclick = () => t.replaceWith(videoOf(part.video, size)); b.append(t) }
       continue
     }
@@ -263,19 +263,31 @@ function fill(b, content, load) {
   }
 }
 const AUTO_VIDEO = 16 * 1024 * 1024 // the phones' and the classic thread's AUTO_SHOW_MAX
+/** The link marked as opened without a tap ("a": 1, net/dm-file.js autoLink): the shell then reads at most AUTO_VIDEO,
+ *  since the size tag is only the sender's word. */
+function autoLink(link) {
+  const i = link.indexOf("#nv-dm=")
+  if (i < 0) return link
+  try {
+    const d = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(link.slice(i + 7).replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0))))
+    const b = btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify({ ...d, a: 1 }))))
+    return link.slice(0, i + 7) + b.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+  } catch { return link }
+}
 const mb = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`
 /** A locked video, opened by the shell (it fetches, checks and decrypts): silent in the bubble, a tap goes full screen. */
-function videoOf(url, size) {
+function videoOf(url, size, auto = false) {
   const wait = el("span", "", `Loading video${size}…`)
   if (!n.resource) return el("span", "", url)
-  n.resource.bytes(url).then(blob => {
+  n.resource.bytes(auto ? autoLink(url) : url).then(blob => {
     const v = el("video", "video"); v.muted = true; v.autoplay = true; v.loop = true; v.playsInline = true; v.setAttribute("aria-label", "Video")
     v.src = URL.createObjectURL(blob)
     v.onclick = () => { v.controls = true; v.muted = false; if (v.requestFullscreen) v.requestFullscreen().catch(() => {}); else v.webkitEnterFullscreen?.(); v.play?.().catch(() => {}) }
     v.onfullscreenchange = () => { if (!document.fullscreenElement) { v.controls = false; v.muted = true } }
     wait.replaceWith(v)
   }, () => {
-    // The shell may still be fetching a big one (a request here gives up after 30 s): a tap asks again.
+    // The shell may still be fetching a big one (a request here gives up after 30 s), or it was bigger than its size
+    // said (an auto open stops there): a tap asks again, for the whole file.
     const again = el("button", "photo", "This video isn't here yet or couldn't load · tap to try again"); again.type = "button"
     again.onclick = () => again.replaceWith(videoOf(url, size))
     wait.replaceWith(again)

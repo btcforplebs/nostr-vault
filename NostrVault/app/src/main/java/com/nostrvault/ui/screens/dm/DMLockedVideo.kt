@@ -58,14 +58,19 @@ object DMLockedVideo {
         val file = compressed(context, uri)
         try {
             sizeError(file.length())?.let { throw DMLockedPhoto.Unsendable(it) }
-            val plain = withContext(Dispatchers.IO) { file.readBytes() }
-            file.delete()
-            val enc = withContext(Dispatchers.Default) { DMFile.encrypt(plain) }
+            val enc = encryptFile(file)
             val url = blossom.uploadLocked(enc.cipher, enc.x) ?: throw DMPhotoUploadException()
             return DMFile.fileMessage(url, enc, "video/mp4")
         } finally {
             file.delete()
         }
+    }
+
+    /** Read and encrypt [file], then delete it; the plain bytes are let go before the upload. */
+    private suspend fun encryptFile(file: File): DMFile.Encrypted = withContext(Dispatchers.Default) {
+        val plain = file.readBytes()
+        file.delete()
+        DMFile.encrypt(plain)
     }
 
     /**

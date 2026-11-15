@@ -10,6 +10,7 @@ import coil.fetch.SourceResult
 import coil.request.Options
 import com.nostrvault.data.model.BlossomUri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -47,6 +48,9 @@ object DMFileLoader {
 
     private val gate = Semaphore(1)
 
+    /** Videos have their own gate: a big one arriving must not hold up every locked photo. */
+    private val videoGate = Semaphore(1)
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -73,17 +77,42 @@ object DMFileLoader {
      * The opened photo's bytes and type. Throws when it can't be fetched or isn't the file that was
      * sent, and [TooBig] when its ciphertext is over [max] (under [DMFile.MAX_FILE]). [onProgress]
      * hears (bytes so far, whole size or -1 when the server doesn't say) while the ciphertext arrives,
-     * and (size, size) once it is all here, from the server or the cache.
+     * and (size, size) once it is all here, from the server or the cache. Cancelling the caller (the
+     * thread closed) stops the download at once. [video] uses the videos' own gate.
      */
     suspend fun open(
         context: Context,
         link: String,
         max: Long = DMFile.MAX_FILE,
+        video: Boolean = false,
         onProgress: ((Long, Long) -> Unit)? = null,
     ): Pair<ByteArray, String> =
-        gate.withPermit { withContext(Dispatchers.IO) { openNow(context, link, max, onProgress) } }
+        (if (video) videoGate else gate).withPermit {
+            val calls = java.util.Collections.synchronizedList(mutableListOf<okhttp3.Call>())
+            kotlinx.coroutines.coroutineScope {
+                // The blocking read below doesn't hear a cancel; this does, and cancels the HTTP call.
+                val watcher = launch {
+                    try {
+                        kotlinx.coroutines.awaitCancellation()
+                    } finally {
+                        synchronized(calls) { calls.forEach { it.cancel() } }
+                    }
+                }
+                try {
+                    withContext(Dispatchers.IO) { openNow(context, link, max, onProgress) { calls.add(it) } }
+                } finally {
+                    watcher.cancel()
+                }
+            }
+        }
 
-    private fun openNow(context: Context, link: String, max: Long, onProgress: ((Long, Long) -> Unit)?): Pair<ByteArray, String> {
+    private fun openNow(
+        context: Context,
+        link: String,
+        max: Long,
+        onProgress: ((Long, Long) -> Unit)?,
+        onCall: (okhttp3.Call) -> Unit,
+    ): Pair<ByteArray, String> {
         val f = DMFile.parseFileLink(link) ?: throw IOException("not a DM file")
         val name = f.x ?: DMFile.sha256Hex(f.url.toByteArray())
         val kept = File(directory(context), name)
@@ -99,7 +128,7 @@ object DMFileLoader {
                 kept.delete()
             }
         }
-        val cipher = fetchCapped(f.url, max, onProgress)
+        val cipher = fetchCapped(f.url, max, onProgress, onCall)
         val plain = DMFile.decrypt(cipher, f.key, f.nonce, f.x, f.ox)
         runCatching {
             val temp = File(kept.parentFile, "${kept.name}.${System.nanoTime()}.part")
@@ -120,33 +149,63 @@ object DMFileLoader {
         }
     }
 
-    /** GET [url], read in chunks and stopped at the cap: a body with no length that never ends can't fill memory. */
-    internal fun fetchCapped(url: String, max: Long = DMFile.MAX_FILE, onProgress: ((Long, Long) -> Unit)? = null): ByteArray =
-        client.newCall(Request.Builder().url(url).get().build()).execute().use { r ->
+    /**
+     * GET [url], read in chunks and stopped at the cap: a body with no length that never ends can't
+     * fill memory. When the server gives the length, the bytes are read into one array of that size
+     * (no growing buffer, no second copy); a body longer than it said is refused.
+     */
+    internal fun fetchCapped(
+        url: String,
+        max: Long = DMFile.MAX_FILE,
+        onProgress: ((Long, Long) -> Unit)? = null,
+        onCall: ((okhttp3.Call) -> Unit)? = null,
+    ): ByteArray {
+        val call = client.newCall(Request.Builder().url(url).get().build())
+        onCall?.invoke(call)
+        return call.execute().use { r ->
             if (r.code != 200) throw IOException("HTTP ${r.code}")
             val body = r.body ?: throw IOException("empty")
             fun over(): IOException = if (max < DMFile.MAX_FILE) TooBig() else IOException("too large")
             val length = body.contentLength()
             if (length > max) throw over()
-            val out = ByteArrayOutputStream(if (length > 0) length.toInt() else 64 * 1024)
             var told = 0L
-            body.byteStream().use { input ->
-                val buf = ByteArray(64 * 1024)
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    if (out.size() + n > max) throw over()
-                    out.write(buf, 0, n)
-                    // About every 256 KB: a progress ring, not a callback per read.
-                    if (onProgress != null && out.size() - told >= 256 * 1024) {
-                        told = out.size().toLong()
-                        onProgress(told, length)
-                    }
+            fun progress(got: Int) {
+                // About every 256 KB: a progress ring, not a callback per read.
+                if (onProgress != null && got - told >= 256 * 1024) {
+                    told = got.toLong()
+                    onProgress(told, length)
                 }
             }
-            onProgress?.invoke(out.size().toLong(), out.size().toLong())
-            out.toByteArray()
+            val bytes = body.byteStream().use { input ->
+                if (length >= 0) {
+                    val out = ByteArray(length.toInt())
+                    var got = 0
+                    while (got < out.size) {
+                        val n = input.read(out, got, out.size - got)
+                        if (n < 0) throw IOException("cut short")
+                        got += n
+                        progress(got)
+                    }
+                    if (input.read() >= 0) throw IOException("longer than it said")
+                    out
+                } else {
+                    val out = ByteArrayOutputStream(64 * 1024)
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        if (out.size() + n > max) throw over()
+                        out.write(buf, 0, n)
+                        progress(out.size())
+                    }
+                    // Unknown length only (rare): one copy out of the growing buffer.
+                    out.toByteArray()
+                }
+            }
+            onProgress?.invoke(bytes.size.toLong(), bytes.size.toLong())
+            bytes
         }
+    }
 
     /** Writes the opened photo to a temp file for saving; the caller deletes it. */
     suspend fun openToFile(context: Context, link: String): Pair<File, String> {

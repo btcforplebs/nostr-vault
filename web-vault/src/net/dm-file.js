@@ -47,6 +47,14 @@ export function fileLink(url, { key, nonce, x, ox, mime, size }) {
   return `${url}${MARK}${b64url(JSON.stringify({ k: key, n: nonce, x, o: ox, m: mime, s: size }))}`
 }
 
+/** The same link marked as opened without a tap ("a": 1): whoever fetches it (the shell, for the Messages napplet)
+ *  holds it to AUTO_SHOW_MAX. */
+export function autoLink(link) {
+  if (!isFileLink(link)) return link
+  const i = link.indexOf(MARK)
+  try { return `${link.slice(0, i)}${MARK}${b64url(JSON.stringify({ ...JSON.parse(unb64url(link.slice(i + MARK.length))), a: 1 }))}` } catch { return link }
+}
+
 export const isFileLink = s => typeof s === "string" && /^https:\/\/[^\s#]+#nv-dm=[A-Za-z0-9_-]+$/.test(s)
 
 /** -> { url, key, nonce, x, ox, mime, size } or null. "o" (ox) is the same field the Apple app keeps. */
@@ -57,7 +65,7 @@ export function parseFileLink(s) {
     const d = JSON.parse(unb64url(s.slice(i + MARK.length)))
     if (!HEX64.test(d?.k ?? "") || !NONCE.test(d?.n ?? "") || (d.x != null && !HEX64.test(d.x)) || (d.o != null && !HEX64.test(d.o))) return null
     const size = Number.isSafeInteger(d.s) && d.s > 0 && d.s <= MAX_FILE ? d.s : undefined
-    return { url: s.slice(0, i), key: d.k, nonce: d.n, x: d.x ?? undefined, ox: d.o ?? undefined, mime: MIME.test(d.m ?? "") ? d.m : "application/octet-stream", ...(size ? { size } : {}) }
+    return { url: s.slice(0, i), key: d.k, nonce: d.n, x: d.x ?? undefined, ox: d.o ?? undefined, mime: MIME.test(d.m ?? "") ? d.m : "application/octet-stream", ...(size ? { size } : {}), ...(d.a === 1 ? { auto: true } : {}) }
   } catch { return null }
 }
 
@@ -93,28 +101,44 @@ export function fileContentOf(rumor) {
 /** The most one encrypted file may be: 100 MB, room for a video (Logen 2026-11-15). */
 export const MAX_FILE = 100 * 1024 * 1024
 
+/** The most a thread opens by itself, without a tap (the phones' DMFileLoader.AUTO_SHOW_MAX). The size tag is the
+ *  sender's word, so an auto open is held to this while it reads, and a file past it waits for a tap. */
+export const AUTO_SHOW_MAX = 16 * 1024 * 1024
+
+/** A file is bigger than an open without a tap may read (not refused: a tap opens it). */
+export const tooBig = () => Object.assign(new Error("too big to show by itself"), { tooBig: true })
+
 /** A kept file link whose file is a video (its file-type starts with "video/"). */
 export const isVideoLink = s => /^video\//i.test(parseFileLink(typeof s === "string" ? s.trim() : s)?.mime ?? "")
 
-async function fetchCapped(url, onProgress) {
-  // A 100 MB video on a slow line takes minutes: ten of them, where a photo needed one.
-  const res = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", redirect: "error", signal: AbortSignal.timeout?.(600_000) })
+async function fetchCapped(url, onProgress, { max = MAX_FILE, signal } = {}) {
+  // A 100 MB video on a slow line takes minutes: ten of them, where a photo needed one. `signal` (the thread closed,
+  // the shell's slot taken) stops it at once.
+  const timeout = AbortSignal.timeout?.(600_000)
+  const stop = signal && timeout ? (AbortSignal.any?.([signal, timeout]) ?? signal) : (signal ?? timeout)
+  const res = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", redirect: "error", signal: stop })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const over = () => max < MAX_FILE ? tooBig() : new Error("too large")
   const length = Number(res.headers.get("content-length"))
-  if (length > MAX_FILE) throw new Error("too large")
-  // Read in chunks and stopped at the cap: a body with no length that never ends would otherwise fill the tab.
-  const b = await readCapped(res, MAX_FILE, onProgress && (got => onProgress(got, length > 0 ? length : -1)))
-  if (!b) throw new Error("too large")
+  if (length > max) { res.body?.cancel?.().catch(() => {}); throw over() }
+  // Read in chunks and stopped at the cap: a body with no length (or a wrong one) can't read past it.
+  const b = await readCapped(res, max, onProgress && (got => onProgress(got, length > 0 ? length : -1)))
+  if (!b) throw over()
   onProgress?.(b.length, b.length)
   return b
 }
 
 /** The photo or video behind a file link, as a Blob of its own type. `onProgress(got, total or -1)` hears the
- *  ciphertext arrive. `fetchBytes(url, onProgress)` -> bytes is for tests and the shell. */
-export async function openFileLink(link, { fetchBytes = fetchCapped, onProgress } = {}) {
+ *  ciphertext arrive. `max` caps the ciphertext read (AUTO_SHOW_MAX for an open without a tap; a link marked auto,
+ *  autoLink, is held to it too); past a cap under MAX_FILE it throws an error with `tooBig`. `signal` aborts the read.
+ *  `fetchBytes(url, onProgress, { max, signal })` -> bytes is for tests and the shell. */
+export async function openFileLink(link, { fetchBytes = fetchCapped, onProgress, max = MAX_FILE, signal } = {}) {
   const f = parseFileLink(link)
   if (!f) throw new Error("not a DM file")
-  const plain = await decryptFile(await fetchBytes(f.url, onProgress), f)
+  const cap = Math.min(max, f.auto ? AUTO_SHOW_MAX : MAX_FILE)
+  const bytes = await fetchBytes(f.url, onProgress, { max: cap, signal })
+  if (bytes.length > cap) throw cap < MAX_FILE ? tooBig() : new Error("too large")
+  const plain = await decryptFile(bytes, f)
   return new Blob([plain], { type: f.mime })
 }
 

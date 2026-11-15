@@ -82,6 +82,9 @@ private sealed interface LockedVideoState {
     data class Loading(val got: Long, val total: Long) : LockedVideoState
     class Ready(val bytes: ByteArray) : LockedVideoState
     data object Failed : LockedVideoState
+
+    /** Its size tag said it would load by itself, but it is bigger: it waits for a tap. */
+    data object Bigger : LockedVideoState
 }
 
 /** "12.4 MB" for a byte count. */
@@ -104,18 +107,23 @@ internal fun DMLockedVideoTile(link: String, size: Dp, onOpen: () -> Unit) {
     var state by androidx.compose.runtime.remember(link) { androidx.compose.runtime.mutableStateOf<LockedVideoState>(LockedVideoState.Waiting) }
     // Each tap to load (or try again) is a new try; a small video's first try is its own.
     var tries by androidx.compose.runtime.remember(link) { androidx.compose.runtime.mutableIntStateOf(if (auto) 1 else 0) }
+    // Only a tap may load past AUTO_SHOW_MAX: the sender's size tag is not trusted for that.
+    var tapped by androidx.compose.runtime.remember(link) { androidx.compose.runtime.mutableStateOf(false) }
     val current by DMOpenedVideo.current.collectAsState()
 
     androidx.compose.runtime.LaunchedEffect(link, tries) {
         if (tries == 0 || state is LockedVideoState.Ready) return@LaunchedEffect
         state = LockedVideoState.Loading(0, total ?: -1)
         state = try {
-            val bytes = DMOpenedVideo.open(app, link) { got, all ->
+            val max = if (tapped) com.nostrvault.service.DMFile.MAX_FILE else com.nostrvault.service.DMFileLoader.AUTO_SHOW_MAX
+            val bytes = DMOpenedVideo.open(app, link, max) { got, all ->
                 state = LockedVideoState.Loading(got, if (all > 0) all else total ?: -1)
             }
             LockedVideoState.Ready(bytes)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
+        } catch (e: com.nostrvault.service.DMFileLoader.TooBig) {
+            LockedVideoState.Bigger
         } catch (e: Exception) {
             LockedVideoState.Failed
         }
@@ -134,7 +142,10 @@ internal fun DMLockedVideoTile(link: String, size: Dp, onOpen: () -> Unit) {
             .clickable {
                 when (state) {
                     is LockedVideoState.Ready -> onOpen()
-                    LockedVideoState.Waiting, LockedVideoState.Failed -> tries++
+                    LockedVideoState.Waiting, LockedVideoState.Failed, LockedVideoState.Bigger -> {
+                        tapped = true
+                        tries++
+                    }
                     is LockedVideoState.Loading -> Unit
                 }
             }
@@ -170,12 +181,13 @@ internal fun DMLockedVideoTile(link: String, size: Dp, onOpen: () -> Unit) {
                     )
                 }
             }
-            LockedVideoState.Waiting, LockedVideoState.Failed -> {
+            LockedVideoState.Waiting, LockedVideoState.Failed, LockedVideoState.Bigger -> {
                 androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Filled.PlayCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(44.dp))
                     androidx.compose.material3.Text(
                         text = when {
                             state == LockedVideoState.Failed -> "Couldn't open this video. Tap to try again."
+                            state == LockedVideoState.Bigger -> "Bigger than it said. Tap to load"
                             total != null -> dmVideoSize(total)
                             else -> "Tap to load"
                         },

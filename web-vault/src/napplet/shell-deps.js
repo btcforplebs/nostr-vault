@@ -56,8 +56,9 @@ export function appTheme(doc = document) {
   return { colors: { background: v("--bg") || "#000", text: v("--text") || "#fff", primary: v("--accent") || "#e67326" }, title: "Nostr Vault" }
 }
 
-/** The last locked DM file asked for: { url, blob: Promise<Blob> }. */
-let lastLocked = null
+/** The last locked DM file asked for, one slot for videos and one for photos: { url, blob: Promise<Blob>, stop }.
+ *  A photo never takes a video's slot; a file that takes a slot aborts the download it replaces. */
+const lockedSlots = { video: null, photo: null }
 
 async function fetchBytes(url, { servers = [], range } = {}) {
   // A DM photo (dm-file.js): its ciphertext fetched like any https file, checked against its hash and decrypted here,
@@ -67,12 +68,19 @@ async function fetchBytes(url, { servers = [], range } = {}) {
   if (locked) {
     const no = blockedUrl(locked.url)
     if (no) throw codeError(no)
-    // The last locked file stays open (one slot): the napplet's request gives up after 30 s (@napplet/shim), so a big
-    // video on a slow line arrives after it; asked again, it is answered from here instead of fetched again.
-    if (lastLocked?.url !== url) lastLocked = { url, blob: openFileLink(url) }
-    const blob = await lastLocked.blob.catch(e => {
-      if (lastLocked?.url === url) lastLocked = null
-      throw e?.code ? e : codeError(/too large/.test(String(e?.message)) ? "too-large" : "network-error", String(e?.message ?? e))
+    // The last locked file of each kind stays open: the napplet's request gives up after 30 s (@napplet/shim), so a big
+    // video on a slow line arrives after it; asked again, it is answered from here instead of fetched again. A link the
+    // napplet marks auto (dm-file.js autoLink) is held to AUTO_SHOW_MAX by openFileLink.
+    const kind = /^video\//i.test(locked.mime) ? "video" : "photo"
+    let slot = lockedSlots[kind]
+    if (slot?.url !== url) {
+      slot?.stop.abort()
+      const stop = new AbortController()
+      slot = lockedSlots[kind] = { url, stop, blob: openFileLink(url, { signal: stop.signal }) }
+    }
+    const blob = await slot.blob.catch(e => {
+      if (lockedSlots[kind] === slot) lockedSlots[kind] = null
+      throw e?.code ? e : codeError(e?.tooBig || /too large/.test(String(e?.message)) ? "too-large" : "network-error", String(e?.message ?? e))
     })
     return { blob, mime: blob.type }
   }
