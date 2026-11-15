@@ -53,7 +53,10 @@
   new ResizeObserver(() => ask("napplet:card/height", { height: $("rows").scrollHeight })).observe($("rows"))
   const dayOf = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` }
   let day = dayOf()
-  const read = () => ask("napplet:space/thisday").then(draw)
+  // Draws only when the answer changed: a redraw under the pointer would lose a click, and moves nothing for nothing.
+  let drawn = null
+  const fresh = d => { const k = JSON.stringify(d); if (k !== drawn) { drawn = k; draw(d) } }
+  const read = () => ask("napplet:space/thisday").then(fresh)
   read()
   if (n.inc && n.inc.on) n.inc.on("nv.card.again", read)
   setInterval(() => { if (dayOf() !== day) { day = dayOf(); read() } }, 60 * 1000)

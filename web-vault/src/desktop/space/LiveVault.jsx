@@ -12,22 +12,32 @@ import { useVaultLines } from "./useVaultLines.js"
 import { place, sameShot, splitShown, topFaces, rowText, facesText, MAX_ROWS } from "./live-vault.js"
 import { Icon, ICON } from "../Sidebar.jsx"
 
-export function LiveVault({ ctx, open = true, tools = null }) {
+/** The rows on screen (placed, live-vault.js), the faces on top and the unread ones. `onPlace` runs before new rows go
+ *  in (the panel holds its scroll there). The Live Vault card (WidgetCard.jsx) draws the same. */
+export function useLiveVault(ctx, onPlace = () => {}) {
   const { lines, unread, fetched } = useVaultLines(ctx)
   // What is on screen (live-vault.js snapshot), from when the first ask of the relays is done; until then the panel is
   // loading, and draws lines as they come. After that, new lines are placed on top as they arrive.
   const [shown, setShown] = useState(null)
-  const list = useRef()
-  // The row at the top of the view when lines came in, to hold it there (only when scrolled down: at the top, the
-  // new lines show).
-  const anchor = useRef(null)
   useEffect(() => {
     if (!lines || !fetched) return
     const next = place(lines, shown)
     if (sameShot(next, shown)) return
-    anchor.current = topRow(list.current)
+    onPlace()
     setShown(next)
   }, [lines, fetched])
+  const rows = !lines ? [] : shown ? splitShown(lines, shown).rows : lines.slice(0, MAX_ROWS)
+  const news = lines ? lines.filter(r => unread.has(r.id)) : []
+  const { faces, more } = topFaces(news.length ? news : rows)
+  return { rows, unread, fetched, shown, faces, more, news }
+}
+
+export function LiveVault({ ctx, open = true, tools = null }) {
+  const list = useRef()
+  // The row at the top of the view when lines came in, to hold it there (only when scrolled down: at the top, the
+  // new lines show).
+  const anchor = useRef(null)
+  const { rows, unread, fetched, shown, faces, more, news } = useLiveVault(ctx, () => { anchor.current = topRow(list.current) })
   useLayoutEffect(() => {
     const a = anchor.current, ul = list.current
     anchor.current = null
@@ -38,9 +48,6 @@ export function LiveVault({ ctx, open = true, tools = null }) {
   // Every row's picture loads here (Logen, 2026-11-02 polish): these are people who just liked, replied to, zapped or
   // followed you. The Vault list itself still waits on a stranger's picture.
   const trusted = () => true
-  const rows = !lines ? [] : shown ? splitShown(lines, shown).rows : lines.slice(0, MAX_ROWS)
-  const news = lines ? lines.filter(r => unread.has(r.id)) : []
-  const { faces, more } = topFaces(news.length ? news : rows)
   return (
     <section class={open ? "sp-panel live-vault" : "sp-panel live-vault closed"} aria-label="Live Vault">
       <header class="sp-head">

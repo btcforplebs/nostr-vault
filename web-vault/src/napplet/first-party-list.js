@@ -11,6 +11,10 @@ export const WOT_DTAG = "nv-wot"
 export const MESSAGES_DTAG = "nv-messages"
 export const LIVE_NOW_DTAG = "nv-live-now"
 export const ON_THIS_DAY_DTAG = "nv-on-this-day"
+export const LIVE_VAULT_DTAG = "nv-live-vault"
+export const WOT_MINI_DTAG = "nv-wot-mini"
+export const MESSAGES_PEEK_DTAG = "nv-messages-peek"
+export const MY_DEVICES_DTAG = "nv-my-devices"
 
 export const FIRST_PARTY_LIST = [
   { dTag: EMOJI_DTAG, title: "Emoji", file: "emoji", domains: ["identity", "relay", "resource", "storage", "inc", "intent", "theme"], intents: ["emoji/pick"],
@@ -36,6 +40,14 @@ export const FIRST_PARTY_LIST = [
     summary: "Streams from people you follow that are on air." },
   { dTag: ON_THIS_DAY_DTAG, title: "On this day", file: "on-this-day", pane: true, widget: ["S", "M", "L"], card: "on-this-day", domains: ["intent", "inc", "theme"], intents: [],
     summary: "Your own notes from this date one and two years ago, read from your vault." },
+  { dTag: LIVE_VAULT_DTAG, title: "Live Vault", file: "live-vault", pane: true, widget: ["S", "M", "L"], card: "live-vault", domains: ["resource", "intent", "inc", "theme"], intents: [],
+    summary: "Your Vault list's newest lines: likes, replies, zaps and follows as they come in." },
+  { dTag: WOT_MINI_DTAG, title: "Web of Trust mini", file: "wot-mini", pane: true, widget: ["S", "M", "L"], card: "wot-mini", domains: ["resource", "intent", "inc", "theme"], intents: [],
+    summary: "A small globe of your web, how many people are in it, and who is new in it." },
+  { dTag: MESSAGES_PEEK_DTAG, title: "Messages peek", file: "messages-peek", pane: true, widget: ["S", "M", "L"], card: "messages", domains: ["resource", "intent", "inc", "theme"], intents: [],
+    summary: "Your chats, unread first, each with its last line. The shell reads them; this card sees names and last lines only." },
+  { dTag: MY_DEVICES_DTAG, title: "My devices", file: "my-devices", pane: true, widget: ["S", "M", "L"], card: "my-devices", domains: ["intent", "inc", "theme"], intents: [],
+    summary: "Which of your own devices are on the mesh, and when each one last was." },
   { dTag: "nv-note-drafts", title: "Note Drafts", file: "note-drafts", domains: ["identity", "storage", "outbox", "theme"], intents: [], sample: true,
     summary: "A sample: write a note, it saves as you type." },
 ]

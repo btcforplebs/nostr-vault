@@ -19,7 +19,9 @@ import { peekRows, peekOpen } from "./messages-peek.js"
 import { Icon, ICON } from "../Sidebar.jsx"
 import "../../styles/messages-peek.css"
 
-export function MessagesPeek({ ctx, open: shown = true, tools = null }) {
+/** The chats the panel draws (messages-peek.js peekRows), whether they're open yet and why not, and the unread chats.
+ *  Fetches the names and faces they need. */
+export function usePeek(ctx) {
   const me = ctx.session.pubkey
   const [, setTick] = useState(0)
   useEffect(() => onRead(() => setTick(t => t + 1)), [])
@@ -35,6 +37,12 @@ export function MessagesPeek({ ctx, open: shown = true, tools = null }) {
     const relays = uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
     fetchProfiles(ctx.vault, peers.split(","), relays).catch(() => {})
   }, [peers])
+  return { open, note: state.note, rows, waiting }
+}
+
+export function MessagesPeek({ ctx, open: shown = true, tools = null }) {
+  const me = ctx.session.pubkey
+  const { open, note, rows, waiting } = usePeek(ctx)
   return (
     <section class={shown ? "sp-panel msg-peek" : "sp-panel msg-peek closed"} aria-label="Messages">
       <header class="sp-head">
@@ -44,7 +52,7 @@ export function MessagesPeek({ ctx, open: shown = true, tools = null }) {
         {tools}
       </header>
       <ul class="sp-rows">
-        {!open ? <li class="sp-empty">{state.note ? `Your messages can't be read here (${state.note}).` : "Reading your messages…"}</li>
+        {!open ? <li class="sp-empty">{note ? `Your messages can't be read here (${note}).` : "Reading your messages…"}</li>
           : !rows.length ? <li class="sp-empty">No messages yet.</li>
           : rows.map(r => <Row key={r.peer} row={r} me={me} load={ctx.account.follows.includes(r.peer)} />)}
       </ul>

@@ -1,8 +1,10 @@
 // One of our Your space panels drawn as a card (plan NV_WEB_ONE_PLAN.md step 4), while napplets are on (flag.js): the
 // shell draws the header (icon, name, count, collapse or the edit tools), our widget napplet draws the body in its own
 // walled-off frame (first-party.js widgetFor), and the shell answers what it asks (widget-answers.js) through
-// shell-answered intents. Same cost rules as an app card (AppCard.jsx): a frame slot from frames.js, none while the
-// columns are edited, and a collapsed card's frame closes after a minute. Napplets off: the panel itself (panels.js).
+// shell-answered intents. Live now and On this day are read on ask; the other four by the panels' own hooks
+// (widget-sources.jsx), which also set the header's badge, and their clicks open only routes the shell kept
+// (napplet:space/open). The footer link is the shell's. Same cost rules as an app card (AppCard.jsx): a frame slot
+// from frames.js, none while the columns are edited, and a collapsed card's frame closes after a minute. Napplets off: the panel itself (panels.js).
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { usePaneNapplet } from "../../napplet/usePaneNapplet.js"
 import { widgetFor } from "../../napplet/first-party.js"
@@ -15,24 +17,63 @@ import { liveNow } from "./live-now.js"
 import { readOnThisDay } from "./on-this-day.js"
 import { claimFrame, whenFree } from "./frames.js"
 import { CARD_ICON } from "./card-icons.js"
-import { surfaceAnswer, fitHeight, countOf, liveNowData, thisDayData, noteRoute } from "./widget-answers.js"
+import { surfaceAnswer, fitHeight, countOf, liveNowData, thisDayData, noteRoute, openRoute } from "./widget-answers.js"
+import { SOURCES } from "./widget-sources.jsx"
 import { CLOSE_AFTER_MS } from "./AppCard.jsx"
 import "../../napplet/napplet.css"
 
 /** Whether panel `id` draws as a widget card here. */
 export const isWidget = id => !!widgetFor(id)
 
+/** The intent each source-drawn card (widget-sources.jsx) asks for its data: napplet:space/<this>. */
+export const SOURCE_ASK = { "live-vault": "vault", messages: "messages", "my-devices": "devices", "wot-mini": "wot" }
+/** The shell's own footer link under each card that had one as a panel. */
+export const CARD_FOOT = {
+  "live-vault": ["#/vault/activity", "Open the Vault list ›"],
+  messages: ["#/messages", "Open Messages ›"],
+  "my-devices": ["#/relay", "Who Can Reach You ›"],
+  "wot-mini": ["#/wot", "Open the globe ›"],
+}
+
+/** What a source last put (data, routes) and who to tell when it changes: the frame, to ask again. */
+function makePipe() {
+  const listeners = new Set()
+  let key = null
+  return {
+    data: null, routes: new Map(),
+    put(data, routes) {
+      this.routes = routes
+      const k = JSON.stringify(data)
+      if (k === key) return
+      key = k; this.data = data
+      for (const l of listeners) l()
+    },
+    on(l) { listeners.add(l); return () => listeners.delete(l) },
+  }
+}
+
 /**
  * The shell's answers for card `id`. `state()` reads the card's size and side now; `ui` is what the shell does for it
- * (open a stream's player, set the header's count, the Fit height).
+ * (open a stream's player, set the header's count, the Fit height); `pipe` holds a source-drawn card's data.
  */
-function answersFor(id, ctx, state, ui) {
+function answersFor(id, ctx, state, ui, pipe) {
   const me = () => ctx.session.pubkey
   const base = [
     { archetype: "shell", actions: ["surface"], deliver: () => ({ data: surfaceAnswer(state().size, state().side) }) },
     { archetype: "card", actions: ["height"], deliver: p => { ui.height(fitHeight(p?.height)); return {} } },
-    { archetype: "card", actions: ["count"], deliver: p => { ui.count(countOf(p?.count)); return {} } },
+    { archetype: "card", actions: ["count"], deliver: p => { const c = countOf(p?.count); ui.badge(c ? { text: String(c), label: id === "live-now" ? `${c} live` : String(c) } : null); return {} } },
   ]
+  if (SOURCE_ASK[id]) {
+    return [...base,
+      { archetype: "space", actions: [SOURCE_ASK[id]], deliver: () => ({ data: pipe.data }) },
+      { archetype: "space", actions: ["open"], deliver: p => {
+        const to = openRoute(pipe.routes, p?.id)
+        if (!to) return { ok: false, error: "not a row this card shows" }
+        location.hash = to
+        return {}
+      } },
+    ]
+  }
   if (id === "live-now") {
     const streams = new Map() // address -> stream, only the ones this card was handed
     return [...base,
@@ -80,10 +121,10 @@ export const AGAIN_TOPIC = "nv.card.again"
 const asHandlers = (dTag, list) => list.map(h => ({ id: `shell:${dTag}`, title: "Nostr Vault", conventions: [], ...h }))
 
 /** The frame itself: mounted only while the card runs (WidgetCard holds the slot). */
-function WidgetFrame({ ctx, id, state, ui }) {
+function WidgetFrame({ ctx, id, state, ui, pipe }) {
   const host = useRef(null)
   const n = widgetFor(id)
-  const handlers = useMemo(() => asHandlers(n.dTag, answersFor(id, ctx, state, ui)), [id])
+  const handlers = useMemo(() => asHandlers(n.dTag, answersFor(id, ctx, state, ui, pipe)), [id])
   const { live, note, ready } = usePaneNapplet(ctx, host, { dTag: n.dTag, handlers })
   const blocked = getBlocks().blocked
   const again = [ctx.account.loaded, ctx.account.follows.length, ctx.account.follows[0], blocked.size].join(":")
@@ -93,6 +134,8 @@ function WidgetFrame({ ctx, id, state, ui }) {
     if (first.current) { first.current = false; return }
     live.current?.bus.emit(live.current.me, AGAIN_TOPIC, {})
   }, [ready, again])
+  // A source-drawn card asks again when its source's data changes.
+  useEffect(() => (ready ? pipe.on(() => live.current?.bus.emit(live.current.me, AGAIN_TOPIC, {})) : undefined), [ready])
   return (
     <>
       {note && <p class="sp-empty">{note}</p>}
@@ -107,11 +150,14 @@ export function WidgetCard({ ctx, id, name, open, editing, tools, size = null, s
   const [slot, setSlot] = useState(false)
   const [busy, setBusy] = useState(false) // every frame slot is taken
   const [fit, setFit] = useState(null)
-  const [count, setCount] = useState(0)
+  const [badge, setBadge] = useState(null)
+  const pipe = useMemo(makePipe, [])
+  const Source = SOURCES[id]
   const [playing, setPlaying] = useState(null)
   const now = useRef({ size, side })
   now.current = { size: full ? "L" : size, side }
-  const ui = useMemo(() => ({ height: setFit, count: setCount, play: setPlaying }), [])
+  const ui = useMemo(() => ({ height: setFit, badge: setBadge, play: setPlaying }), [])
+  const put = useMemo(() => ({ data, routes, badge }) => { setBadge(badge); pipe.put(data, routes) }, [])
   useEffect(() => {
     if (open && !editing) { setWanted(true); return }
     if (editing) { setWanted(false); return }
@@ -133,15 +179,18 @@ export function WidgetCard({ ctx, id, name, open, editing, tools, size = null, s
       <header class="sp-head">
         <span class="sp-icon"><Icon d={CARD_ICON[id]} size={15} /></span>
         <h3>{name}</h3>
-        {count > 0 && <span class="ln-count" role="img" aria-label={id === "live-now" ? `${count} live` : String(count)}>{count}</span>}
+        {id === "live-vault" && <span class="sp-live" title="New lines come in while this page is open"><span class="sp-pulse" />Live</span>}
+        {badge && <span class={badge.cls ?? (id === "live-now" ? "ln-count" : "sp-count")} role="img" aria-label={badge.label}>{badge.text}</span>}
         {tools}
       </header>
       {wanted && (
         <div class="sp-app-body sp-widget-body" style={!shown ? { display: "none" } : !sized && fit ? { height: `${fit}px`, flex: "none" } : undefined}>
           {busy ? <p class="sp-empty">Too many cards are open. Collapse one and this opens.</p>
-            : slot ? <WidgetFrame ctx={ctx} id={id} state={() => now.current} ui={ui} /> : null}
+            : slot ? <WidgetFrame ctx={ctx} id={id} state={() => now.current} ui={ui} pipe={pipe} /> : null}
         </div>
       )}
+      {shown && CARD_FOOT[id] && <a class="sp-foot" href={CARD_FOOT[id][0]}>{CARD_FOOT[id][1]}</a>}
+      {Source && <Source ctx={ctx} open={shown} put={put} />}
       {playing && <LiveSheet ctx={ctx} stream={playing} onClose={() => setPlaying(null)} />}
     </section>
   )

@@ -3,7 +3,7 @@
 // once it has ended, the tile says ENDED, is dimmed and offers nothing to play. Read at each draw, so an embed
 // scrolled back to after its stream ended stops offering it.
 import { createPortal } from "preact/compat"
-import { useEffect, useState } from "preact/hooks"
+import { useEffect, useRef, useState } from "preact/hooks"
 import { actionContext } from "../net/actions.js"
 import { LIVE_KIND, isPlayableLive, parseStream } from "./live.js"
 import { LivePlayer, LiveTile } from "./LiveScreen.jsx"
@@ -28,7 +28,10 @@ export function LiveEmbed({ stream, now = Math.floor(Date.now() / 1000), load = 
 
 /** The player over everything, as the iPhone's sheet; Esc or Back closes it, Minimize keeps the sound playing. */
 export function LiveSheet({ ctx, stream, onClose }) {
+  const sheet = useRef(null)
   useEffect(() => {
+    // The sheet takes focus, so Esc reaches it even when it was opened from inside a card's frame (WidgetCard.jsx).
+    sheet.current?.focus({ preventScroll: true })
     const key = e => { if (e.key === "Escape") onClose() }
     const overflow = document.body.style.overflow
     document.addEventListener("keydown", key)
@@ -36,7 +39,7 @@ export function LiveSheet({ ctx, stream, onClose }) {
     return () => { document.removeEventListener("keydown", key); document.body.style.overflow = overflow }
   }, [])
   return createPortal(
-    <div class="live-embed-sheet" role="dialog" aria-modal="true" aria-label={stream.title || "Live stream"}>
+    <div ref={sheet} tabIndex={-1} class="live-embed-sheet" role="dialog" aria-modal="true" aria-label={stream.title || "Live stream"}>
       <LivePlayer ctx={ctx} stream={stream} onBack={onClose} />
     </div>,
     document.body,

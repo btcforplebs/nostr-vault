@@ -65,7 +65,10 @@
   // Fit: tell the shell this card's height; S/M/L: the shell fixes it and this scrolls.
   ask("napplet:shell/surface").then(s => { if (s && s.size) document.documentElement.classList.add("sized") })
   new ResizeObserver(() => ask("napplet:card/height", { height: $("rows").scrollHeight })).observe($("rows"))
-  const look = () => ask("napplet:space/livenow").then(draw)
+  // Draws only when the answer changed: a redraw under the pointer would lose a click, and moves nothing for nothing.
+  let drawn = null
+  const fresh = d => { const k = JSON.stringify(d); if (k !== drawn) { drawn = k; draw(d) } }
+  const look = () => ask("napplet:space/livenow").then(fresh)
   look()
   setInterval(look, 2 * 60 * 1000)
   // The shell says when what this card shows may have changed (the account loaded, a follow, a block).
