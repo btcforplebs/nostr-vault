@@ -15,7 +15,8 @@
 //                                                            ⋯ menu (copy, bookmark, block, report, delete). The
 //                                                            event must carry a valid signature: a napplet can't make
 //                                                            the shell repost, zap or delete a note it made up.
-//   shell -> Reader: napplet:note/open { id }, napplet:profile/open { pubkey }, napplet:feed/open
+//   shell -> Reader: napplet:note/open { id }, napplet:profile/open { pubkey }, napplet:feed/open { tag? } (a #tag
+//                    link, #/feed?tag=<t>, opens that tag's notes in the Reader)
 export const COMPOSE_DONE = "nv.compose.done"
 /** Compose posted and the Send Delay counts down (hide the sheet so the pill's Undo can be reached), or it was undone
  *  (show it again, text intact). */
@@ -33,8 +34,19 @@ export function linkTarget(raw) {
   return u.href
 }
 
-/** Where a route opens the Reader: { archetype, action, payload } for #/thread/<id> or someone's #/profile/<pk>. */
-export function readerOpenFor(route, arg) {
+/** The tag a #tag link asks for ("#/feed?tag=Bitcoin" -> "bitcoin"), or "": lower-cased, no #, one word, as the
+ *  classic feed's normalizeTag (net/feeds.js, not imported: it pulls the relay pool in). */
+export function feedTagOf(hash = "") {
+  const i = String(hash).indexOf("?")
+  const t = String(new URLSearchParams(i < 0 ? "" : hash.slice(i + 1)).get("tag") ?? "").trim().replace(/^#+/, "").toLowerCase()
+  return t && !/\s/.test(t) && [...t].length <= 64 ? t : ""
+}
+
+/** Where a route opens the Reader: { archetype, action, payload } for #/thread/<id>, someone's #/profile/<pk>, or a
+ *  #/feed?tag=<t> link. */
+export function readerOpenFor(route, arg, hash = globalThis.location?.hash ?? "") {
+  const tag = route === "feed" ? feedTagOf(hash) : ""
+  if (tag) return { archetype: "feed", action: "open", payload: { tag } }
   if (route === "thread" && HEX.test(arg ?? "")) return { archetype: "note", action: "open", payload: { id: arg } }
   if (route === "profile" && HEX.test(arg ?? "")) return { archetype: "profile", action: "open", payload: { pubkey: arg } }
   return null
