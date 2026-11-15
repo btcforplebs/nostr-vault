@@ -98,8 +98,9 @@ export function fileContentOf(rumor) {
   return fileLink(url, { key, nonce, x: HEX64.test(x) ? x : undefined, ox: HEX64.test(ox) ? ox : undefined, mime: MIME.test(tag("file-type") ?? "") ? tag("file-type") : undefined, size: Number.isSafeInteger(size) && size > 0 && size <= MAX_FILE ? size : undefined })
 }
 
-/** The most one encrypted file may be: 100 MB, room for a video (Logen 2026-11-15). */
-export const MAX_FILE = 100 * 1024 * 1024
+/** The most one encrypted file may be: a 100 MB video (Logen 2026-11-15) plus its 16-byte GCM tag, so a video the
+ *  apps send at their full 100 MB (DMFile.maxVideoBytes + 16) still opens here. */
+export const MAX_FILE = 100 * 1024 * 1024 + 16
 
 /** The most a thread opens by itself, without a tap (the phones' DMFileLoader.AUTO_SHOW_MAX). The size tag is the
  *  sender's word, so an auto open is held to this while it reads, and a file past it waits for a tap. */
