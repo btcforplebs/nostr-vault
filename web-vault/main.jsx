@@ -28,7 +28,7 @@ import { runAndWait, resumeImportJobs } from "./src/net/import-jobs.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
 import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard, NappletShell, ReaderPane, WotPane, MessagesPane } from "./src/screens/lazy-screens.js"
-import { nappletsOn } from "./src/napplet/flag.js"
+import { nappletsOn, switchFromAddress } from "./src/napplet/flag.js"
 import { readerOpenFor } from "./src/napplet/reader-intents.js"
 import { warmScreens } from "./src/screens/warm-screens.js"
 import { GuestApp } from "./src/guest/GuestApp.jsx"
@@ -52,6 +52,8 @@ import "./src/styles/boot-sheets.js" // after app.css: the sheets the boot compo
 import { NotifyWatch } from "./src/components/useNotifyWatch.js"
 import { isDashboardOpen } from "./src/net/dashboard-route.js"
 
+// /vault/?napplets=1 (or =0): the napplet switch from the address, before anything draws, signed in or not.
+switchFromAddress()
 // The napplet shell page (plan P1), opened only by its address: /vault/?shell=1.
 const NAPPLET_SHELL = new URLSearchParams(location.search).get("shell") === "1"
 const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "bookmarks", "emoji", "apps", "settings", "accounts", "wallet", ...(BOX ? ["box"] : [])]
