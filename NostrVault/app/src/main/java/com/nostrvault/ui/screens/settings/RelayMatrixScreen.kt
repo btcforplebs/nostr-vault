@@ -959,7 +959,7 @@ private fun JobSwitch(job: Job, on: Boolean, accent: Color, onSet: (Job, Boolean
         Switch(
             checked = on,
             onCheckedChange = { onSet(job, it) },
-            colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = accent),
+            colors = SwitchDefaults.colors(checkedThumbColor = OnAccent, checkedTrackColor = accent),
         )
     }
 }

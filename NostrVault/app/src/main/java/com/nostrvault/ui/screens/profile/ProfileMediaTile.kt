@@ -192,7 +192,7 @@ internal fun ProfileMediaTile(
 }
 
 /** iOS MediaGridItem's audio tile: Color(red: 0.1, green: 0.1, blue: 0.14). */
-private val AudioTileBg = Color(0xFF1A1A24)
+private val AudioTileBg: Color get() = lightOr(Surface2, Color(0xFF1A1A24))
 
 /** A `.gif` link, query and fragment aside. */
 internal fun isGifUrl(url: String): Boolean =

@@ -363,7 +363,7 @@ private fun SettingsToggleItem(
             checked = checked,
             onCheckedChange = onChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = PrimaryText,
+                checkedThumbColor = OnAccent,
                 checkedTrackColor = LocalNostrVaultColors.current.primary,
             ),
         )

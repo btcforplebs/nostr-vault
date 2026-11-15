@@ -89,7 +89,7 @@ fun ExternalRelaySection(
             onCheckedChange = { enabled = it },
             enabled = !checking,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = PrimaryText,
+                checkedThumbColor = OnAccent,
                 checkedTrackColor = colors.primary,
             ),
         )

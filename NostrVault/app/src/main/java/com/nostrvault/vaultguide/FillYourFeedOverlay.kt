@@ -98,9 +98,13 @@ import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import com.nostrvault.ui.theme.Surface0
+import com.nostrvault.ui.theme.Surface1
+import com.nostrvault.ui.theme.Surface2
+import com.nostrvault.ui.theme.lightOr
 
-private val CardSurface = Color(0xFF1F1F1F)
-private val ChipSurface = Color(0xFF2E2E2E)
+private val CardSurface: Color get() = lightOr(Surface1, Color(0xFF1F1F1F))
+private val ChipSurface: Color get() = lightOr(Surface2, Color(0xFF2E2E2E))
 private val GoldLight = Color(0xFFFFE08A)
 private val GoldMid = Color(0xFFF2B81F)
 private val GoldDark = Color(0xFFC98A00)
@@ -575,7 +579,7 @@ private fun MeterBar(
         modifier
             .fillMaxWidth()
             .shadow(if (gold) 12.dp else 8.dp, shape, ambientColor = if (gold) GoldMid else Shade, spotColor = if (gold) GoldMid else Shade)
-            .background(Color(0xF02A2A2D), shape)
+            .background(lightOr(Surface1, Color(0xF02A2A2D)), shape)
             .border(1.dp, if (gold) GoldMid.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.1f), shape)
             .clip(shape)
             .clickable(role = Role.Button, onClickLabel = "Open your picks", onClick = onOpen)
@@ -629,7 +633,7 @@ private fun MeterSlots(meter: VaultMeter, profiles: Map<String, FeedProfile>, go
             val slot = Modifier.offset(x = -overlap * i).size(size)
             if (i < people.size) {
                 val pk = people[i]
-                Box(slot.border(2.dp, if (gold) GoldMid else Color(0xFF141414), CircleShape).clip(CircleShape)) {
+                Box(slot.border(2.dp, if (gold) GoldMid else lightOr(Surface0, Color(0xFF141414)), CircleShape).clip(CircleShape)) {
                     AvatarImage(url = profiles[pk]?.pictureURL, pubkey = pk, size = size, displayName = profiles[pk]?.bestName)
                 }
             } else {
@@ -637,8 +641,8 @@ private fun MeterSlots(meter: VaultMeter, profiles: Map<String, FeedProfile>, go
                 // overlapping slots don't cross their dashes.
                 Canvas(slot) {
                     val ring = 2.dp.toPx()
-                    drawCircle(Color(0xFF141414))
-                    drawCircle(Color(0xFF1F1F1F), radius = this.size.minDimension / 2 - ring)
+                    drawCircle(lightOr(Surface0, Color(0xFF141414)))
+                    drawCircle(lightOr(Surface1, Color(0xFF1F1F1F)), radius = this.size.minDimension / 2 - ring)
                     drawCircle(
                         Color.White.copy(alpha = 0.35f),
                         radius = this.size.minDimension / 2 - ring - 0.75.dp.toPx(),
@@ -660,7 +664,7 @@ private fun MeterPill(meter: VaultMeter, modifier: Modifier, onClick: () -> Unit
         modifier
             .heightIn(min = 48.dp)
             .shadow(8.dp, shape)
-            .background(Color(0xF02A2A2D), shape)
+            .background(lightOr(Surface1, Color(0xF02A2A2D)), shape)
             .border(1.dp, if (gold) GoldMid.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.1f), shape)
             .clip(shape)
             .clickable(role = Role.Button, onClickLabel = "Open the meter", onClick = onClick)

@@ -455,7 +455,7 @@ private fun RepostedNoteBlock(
             .fillMaxWidth()
             .clip(shape)
             .background(TertiaryGroupedBg)
-            .border(BorderStroke(0.5.dp, Color(0xFF33333F)), shape)
+            .border(BorderStroke(0.5.dp, lightOr(BorderHairline, Color(0xFF33333F))), shape)
             .padding(10.dp),
     ) {
         Row(

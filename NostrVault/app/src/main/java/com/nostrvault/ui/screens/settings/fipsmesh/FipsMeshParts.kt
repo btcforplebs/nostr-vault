@@ -43,6 +43,9 @@ import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.SeparatorColor
 import com.nostrvault.ui.theme.SuccessGreen
 import com.nostrvault.ui.theme.WarningYellow
+import com.nostrvault.ui.theme.Surface3
+import com.nostrvault.ui.theme.lightOr
+import com.nostrvault.ui.theme.OnAccent
 
 // The grouped-list pieces the FIPS Mesh pages share: a titled card, its rows and the footnote under it, laid out as
 // the iPhone's inset grouped list (OUTBOX/NV_FIPS_SETTINGS).
@@ -85,8 +88,8 @@ internal fun MeshSwitchRow(
         // Off reads as off: the iPhone's grey track and white thumb, not a dark pill on a dark card.
         Switch(checked = checked, onCheckedChange = onChange, enabled = enabled,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary,
-                uncheckedThumbColor = Color.White, uncheckedTrackColor = Color(0xFF39393D), uncheckedBorderColor = Color.Transparent,
+                checkedThumbColor = OnAccent, checkedTrackColor = colors.primary,
+                uncheckedThumbColor = Color.White, uncheckedTrackColor = lightOr(Surface3, Color(0xFF39393D)), uncheckedBorderColor = Color.Transparent,
             ))
     }
 }

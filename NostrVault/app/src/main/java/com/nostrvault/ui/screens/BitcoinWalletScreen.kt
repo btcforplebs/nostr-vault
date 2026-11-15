@@ -105,7 +105,7 @@ fun BitcoinWalletScreen(
                 Switch(
                     checked = config.showBitcoinWallet,
                     onCheckedChange = viewModel::toggleBitcoin,
-                    colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
+                    colors = SwitchDefaults.colors(checkedThumbColor = OnAccent, checkedTrackColor = colors.primary),
                 )
             }
 

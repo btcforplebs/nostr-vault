@@ -478,7 +478,7 @@ private fun AccountBackupSection(viewModel: WalletViewModel, current: String) {
                 checked = on,
                 onCheckedChange = viewModel::setSaveToAccount,
                 enabled = !busy,
-                colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
+                colors = SwitchDefaults.colors(checkedThumbColor = OnAccent, checkedTrackColor = colors.primary),
             )
         }
     }

@@ -63,6 +63,8 @@ import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+import com.nostrvault.ui.theme.Surface1
+import com.nostrvault.ui.theme.lightOr
 
 /**
  * Draws the active tutorial's card, pointing at its anchor (iOS
@@ -208,7 +210,7 @@ private fun TutorialCard(
         Modifier
             .fillMaxWidth()
             .shadow(16.dp, shape)
-            .background(Color(0xFF1F1F1F), shape)
+            .background(lightOr(Surface1, Color(0xFF1F1F1F)), shape)
             .border(1.dp, primary.copy(alpha = 0.6f), shape)
             // The tail sits inside the card's bounds, on the edge facing the anchor.
             .padding(

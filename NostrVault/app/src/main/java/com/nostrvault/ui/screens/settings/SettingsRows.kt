@@ -26,6 +26,7 @@ import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.TertiaryText
+import com.nostrvault.ui.theme.OnAccent
 
 /**
  * The rows the settings pages are built from: a label, an optional (i) with
@@ -92,7 +93,7 @@ internal fun ToggleRow(
             onCheckedChange = onChange,
             enabled = enabled,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = PrimaryText,
+                checkedThumbColor = OnAccent,
                 checkedTrackColor = colors.primary,
             ),
         )

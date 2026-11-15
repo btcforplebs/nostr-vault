@@ -39,6 +39,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import com.nostrvault.ui.theme.Surface1
+import com.nostrvault.ui.theme.lightOr
 
 /**
  * "Switched to <name>": a gray bubble mid-screen with the account's picture,
@@ -101,7 +103,7 @@ fun AccountSwitchBubble(hex: String, profile: FeedProfile?) {
         modifier = Modifier
             .widthIn(min = 200.dp, max = 280.dp)
             .shadow(18.dp, shape)
-            .background(Color(0xF0383838), shape)
+            .background(lightOr(Surface1.copy(alpha = 0.94f), Color(0xF0383838)), shape)
             .padding(horizontal = 28.dp, vertical = 22.dp)
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
     ) {

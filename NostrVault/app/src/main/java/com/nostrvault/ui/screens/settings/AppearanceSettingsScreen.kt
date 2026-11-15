@@ -106,6 +106,14 @@ class AppearanceViewModel @Inject constructor(
         .map { it.showNewPostsPill }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.showNewPostsPill)
 
+    val appearanceMode = configStore.config
+        .map { it.appearanceMode }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.appearanceMode)
+
+    fun setAppearanceMode(mode: String) {
+        configStore.update { it.copy(appearanceMode = mode) }
+    }
+
     fun setShowNewPostsPill(on: Boolean) {
         configStore.update { it.copy(showNewPostsPill = on) }
     }
@@ -190,6 +198,7 @@ fun AppearanceSettingsScreen(
     val hideNostrVaultBadge by viewModel.hideNostrVaultBadge.collectAsState()
     val postButtons by viewModel.postButtons.collectAsState()
     val sendDelaySeconds by viewModel.sendDelaySeconds.collectAsState()
+    val appearanceMode by viewModel.appearanceMode.collectAsState()
 
     Scaffold(
         topBar = {
@@ -216,8 +225,8 @@ fun AppearanceSettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
-            // Theme colour picker removed — the app ships a single
-            // appearance (OLED black with the orange accent).
+            AppearanceModeRow(appearanceMode, viewModel::setAppearanceMode)
+            Spacer(Modifier.height(32.dp))
 
             // Text size
             SettingHeading("Text Size", SettingsHelp.DISPLAY_TEXT_SIZE)
@@ -283,7 +292,7 @@ fun AppearanceSettingsScreen(
                     checked = showNewPostsPill,
                     onCheckedChange = viewModel::setShowNewPostsPill,
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = PrimaryText,
+                        checkedThumbColor = OnAccent,
                         checkedTrackColor = LocalNostrVaultColors.current.primary,
                     ),
                 )
@@ -301,7 +310,7 @@ fun AppearanceSettingsScreen(
                     checked = hideNostrVaultBadge,
                     onCheckedChange = viewModel::setHideNostrVaultBadge,
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = PrimaryText,
+                        checkedThumbColor = OnAccent,
                         checkedTrackColor = LocalNostrVaultColors.current.primary,
                     ),
                 )
@@ -364,7 +373,7 @@ fun AppearanceSettingsScreen(
                     checked = disableTabBarAnimation,
                     onCheckedChange = viewModel::toggleTabBarAnimation,
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = PrimaryText,
+                        checkedThumbColor = OnAccent,
                         checkedTrackColor = LocalNostrVaultColors.current.primary,
                     ),
                 )
@@ -382,7 +391,7 @@ fun AppearanceSettingsScreen(
                     checked = zapsOnly,
                     onCheckedChange = viewModel::toggleZapsOnly,
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = PrimaryText,
+                        checkedThumbColor = OnAccent,
                         checkedTrackColor = LocalNostrVaultColors.current.primary,
                     ),
                 )
@@ -506,7 +515,7 @@ private fun TranslationSection(
             checked = enabled,
             onCheckedChange = onEnabledChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = PrimaryText,
+                checkedThumbColor = OnAccent,
                 checkedTrackColor = LocalNostrVaultColors.current.primary,
             ),
         )
@@ -556,7 +565,7 @@ private fun TranslationSection(
 
 /** A setting's title with its (i), in place of a grey caption under it. */
 @Composable
-private fun SettingHeading(title: String, help: SettingsHelp? = null, modifier: Modifier = Modifier) {
+internal fun SettingHeading(title: String, help: SettingsHelp? = null, modifier: Modifier = Modifier) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
         Text(
             text = title,

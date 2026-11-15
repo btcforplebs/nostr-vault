@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.nostrvault.ui.theme.SecondaryGroupedBg
+import com.nostrvault.ui.theme.Surface2
+import com.nostrvault.ui.theme.lightOr
 
 /**
  * Displays a row of overlapping circular avatars, matching the iOS Vault design.
@@ -54,7 +56,7 @@ fun OverlappingAvatars(
                     .size(size)
                     .border(borderWidth, borderColor, CircleShape)
                     .clip(CircleShape)
-                    .background(Color(0xFF1A1A1E)),
+                    .background(lightOr(Surface2, Color(0xFF1A1A1E))),
             ) {
                 AvatarImage(
                     url = profiles[pubkey]?.pictureURL,
