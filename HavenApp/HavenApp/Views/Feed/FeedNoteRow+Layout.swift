@@ -10,7 +10,7 @@ extension FeedNoteRow {
             fullLayoutContent
             if let footer { footer }
         }
-        .foregroundColor(Color(red: 1, green: 1, blue: 1))
+        .foregroundColor(Color.ink)
         .if(!suppressCardStyling) { view in
             view
                 .padding(14)
@@ -64,7 +64,7 @@ extension FeedNoteRow {
                             HStack(spacing: 6) {
                                 Text(rowData.parentProfile?.bestName ?? shortKey(parent.pubkey))
                                     .font(.appSystem(size: 14, weight: .semibold, design: .default))
-                                    .foregroundColor(Color(red: 0.85, green: 0.85, blue: 0.85))
+                                    .foregroundColor(Color.ink.opacity(0.85))
                                     .lineLimit(1)
                                     .onTapGesture { onProfile?(parent.pubkey) }
 
@@ -91,7 +91,7 @@ extension FeedNoteRow {
                             if !parentFormatted.characters.isEmpty {
                                 Text(parentFormatted)
                                     .font(.appSystem(size: 14, weight: .regular))
-                                    .foregroundColor(Color(red: 0.7, green: 0.7, blue: 0.7))
+                                    .foregroundColor(Color.ink.opacity(0.7))
                                     .lineLimit(2)
                             }
 
@@ -208,7 +208,7 @@ extension FeedNoteRow {
                         HStack(spacing: 6) {
                             Text(rowData.displayProfile?.bestName ?? shortKey(displayPubkey))
                                 .font(.appSystem(size: 14, weight: .semibold, design: .default))
-                                .foregroundColor(Color(red: 1, green: 1, blue: 1))
+                                .foregroundColor(Color.ink)
                                 .lineLimit(1)
                                 .onTapGesture { onProfile?(displayPubkey) }
 
@@ -286,7 +286,7 @@ extension FeedNoteRow {
                     HStack(spacing: 6) {
                         Text(rowData.displayProfile?.bestName ?? shortKey(displayPubkey))
                             .font(.appSystem(size: 14, weight: .semibold, design: .default))
-                            .foregroundColor(Color(red: 1, green: 1, blue: 1))
+                            .foregroundColor(Color.ink)
                             .lineLimit(1)
                             .onTapGesture { onProfile?(displayPubkey) }
 
