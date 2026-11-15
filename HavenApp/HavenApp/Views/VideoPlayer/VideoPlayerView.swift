@@ -2,10 +2,9 @@ import SwiftUI
 import AVKit
 import AVFoundation
 
-#if os(iOS)
-import UIKit
-#endif
-
+/// Mac only: the Media page's clip player. iPhone and iPad use
+/// `FullScreenVideoPlayer` for every big clip.
+#if os(macOS)
 struct VideoPlayerView: View {
     let url: URL
     /// Optional MIME hint used when the URL has no extension (e.g. Blossom hashes).
@@ -125,3 +124,4 @@ struct VideoPlayerView: View {
         }
     }
 }
+#endif
