@@ -167,7 +167,7 @@ struct ReactionTapbackBar: View {
         .animation(Motion.pick, value: highlighted)
         .background(
             Capsule()
-                .fill(Color(white: 0.17))
+                .fill(Color(light: Color.surface1, dark: Color(white: 0.17)))
                 .overlay(Capsule().strokeBorder(Color.ink.opacity(0.1), lineWidth: 0.5))
                 .shadow(color: Color.shade.opacity(0.45), radius: 14, y: 6)
         )

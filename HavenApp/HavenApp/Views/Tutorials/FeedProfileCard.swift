@@ -111,7 +111,7 @@ struct FeedProfileCard: View {
                         .font(.appBody.weight(.semibold))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(Capsule().fill(isFollowing ? Color(white: 0.25) : Color.havenPurple))
+                        .background(Capsule().fill(isFollowing ? Color(light: Color.surface3, dark: Color(white: 0.25)) : Color.havenPurple))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(isFollowing ? "Following \(name). Tap to unfollow." : "Follow \(name)")

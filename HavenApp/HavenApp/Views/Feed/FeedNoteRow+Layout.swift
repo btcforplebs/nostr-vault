@@ -26,7 +26,7 @@ extension FeedNoteRow {
                         .stroke(
                             isFocused
                                 ? Color.havenPurple
-                                : Color.havenPurple.opacity(ConfigService.shared.config.useOLED ? (note.isReply ? 0.40 : 0.30) : (note.isReply ? 0.15 : 0.06)),
+                                : Color.cardLine(ConfigService.shared.config.useOLED ? (note.isReply ? 0.40 : 0.30) : (note.isReply ? 0.15 : 0.06)),
                             lineWidth: isFocused ? 2.0 : (ConfigService.shared.config.useOLED ? 1.5 : (note.isReply ? 0.8 : 0.5))
                         )
                 )

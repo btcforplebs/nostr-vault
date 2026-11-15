@@ -26,6 +26,7 @@ struct BottomTabBar: View {
 
     /// Scroll-linked fold, 0 = full tab bar, 1 = avatar + compose capsule.
     private var chrome: ChromeCollapse { .shared }
+    @Environment(\.colorScheme) private var scheme
 
     private var activeHex: String { configService.activeAccountHexPubkey }
 
@@ -43,7 +44,8 @@ struct BottomTabBar: View {
 
     var body: some View {
         Group {
-            if vertical { sidebar } else { dock }
+            // The floating dock sits over the trust globe on WoT, which is dark in every mode.
+            if vertical { sidebar } else { dock.environment(\.colorScheme, selectedTab == 3 ? .dark : scheme) }
         }
         // Reading DMs lowers what the dashboard saw, so the next one dots.
         .onChange(of: dmService.totalUnreadCount) { _, unread in

@@ -11,8 +11,23 @@ struct AppearanceSettingsView: View {
 
     var body: some View {
         Form {
-            // Accent Theme picker removed — the app ships a single appearance
-            // (OLED black with the orange accent), so there is nothing to choose.
+            Section {
+                Picker("Mode", selection: $configService.config.appearanceMode) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Text(mode.title).tag(mode.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("appearance.mode")
+                .onChange(of: configService.config.appearanceMode) { _, _ in
+                    configService.save()
+                    AppAppearance.apply()
+                }
+            } header: {
+                Text("Mode")
+            } footer: {
+                Text("Photos, videos and the trust globe stay dark in every mode.")
+            }
 
             Section {
                 VStack(alignment: .leading, spacing: 8) {

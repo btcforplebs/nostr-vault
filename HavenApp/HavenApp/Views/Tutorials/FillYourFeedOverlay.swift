@@ -158,21 +158,21 @@ struct FillYourFeedOverlay: View {
                 if index < people.count {
                     let pubkey = Array(people)[index]
                     AvatarView(url: nostr.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: size)
-                        .overlay(Circle().stroke(gold ? Gold.mid : Color(white: 0.08), lineWidth: 2))
+                        .overlay(Circle().stroke(gold ? Gold.mid : Color(light: Color.surface0, dark: Color(white: 0.08)), lineWidth: 2))
                         .shadow(color: gold ? Gold.mid.opacity(0.6) : .clear, radius: 4)
                         .transition(reduceMotion ? .opacity : .scale(scale: 0.4).combined(with: .opacity))
                 } else {
                     // A ring in the meter's colour, like the photos', so
                     // overlapping slots don't cross their dashes.
                     Circle()
-                        .fill(Color(white: 0.12))
+                        .fill(Color(light: Color.surface1, dark: Color(white: 0.12)))
                         .overlay(
                             Circle()
                                 .inset(by: 2)
                                 .stroke(style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
                                 .foregroundColor(.ink.opacity(0.35))
                         )
-                        .overlay(Circle().stroke(Color(white: 0.08), lineWidth: 2))
+                        .overlay(Circle().stroke(Color(light: Color.surface0, dark: Color(white: 0.08)), lineWidth: 2))
                         .frame(width: size, height: size)
                 }
             }
@@ -299,7 +299,7 @@ private struct GuideCard<Content: View>: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(white: 0.12))
+                .fill(Color(light: Color.surface1, dark: Color(white: 0.12)))
                 .shadow(color: Color.shade.opacity(0.5), radius: 16, y: 6)
         )
         .overlay(
@@ -405,11 +405,11 @@ private struct WebOfTrustDiagram: View {
             for (k, p) in mids.enumerated() {
                 let r = CGRect(x: p.x - 11, y: p.y - 11, width: 22, height: 22)
                 context.fill(Path(ellipseIn: r), with: .color(Self.colors[k]))
-                context.stroke(Path(ellipseIn: r), with: .color(Color(white: 0.12)), lineWidth: 2)
+                context.stroke(Path(ellipseIn: r), with: .color(Color(light: Color.surface1, dark: Color(white: 0.12))), lineWidth: 2)
             }
             let you = CGRect(x: center.x - 17, y: center.y - 17, width: 34, height: 34)
             context.fill(Path(ellipseIn: you), with: .color(.havenPurple))
-            context.stroke(Path(ellipseIn: you), with: .color(Color(white: 0.12)), lineWidth: 3)
+            context.stroke(Path(ellipseIn: you), with: .color(Color(light: Color.surface1, dark: Color(white: 0.12))), lineWidth: 3)
             context.draw(Text("You").font(.system(size: 11, weight: .bold)).foregroundColor(.onAccent), at: center)
             context.draw(Text("your follows").font(.system(size: 10)).foregroundColor(.secondary),
                          at: CGPoint(x: size.width / 2 - 100, y: size.height - 6))
@@ -476,7 +476,7 @@ private struct TopicChips: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 12)
                         .frame(minHeight: 36)
-                        .background(Capsule().fill(on ? Color.havenPurple : Color(white: 0.18)))
+                        .background(Capsule().fill(on ? Color.havenPurple : Color(light: Color.surface3, dark: Color(white: 0.18))))
                         .overlay(Capsule().stroke(on ? Color.havenPurple : Color.ink.opacity(0.1), lineWidth: 1))
                         .padding(.vertical, 4)
                         .contentShape(Rectangle())
@@ -627,7 +627,7 @@ private struct ReadyCard: View {
             HStack(spacing: -10) {
                 ForEach(guide.meter.recent, id: \.self) { pubkey in
                     AvatarView(url: nostr.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 44)
-                        .overlay(Circle().stroke(Color(white: 0.12), lineWidth: 3))
+                        .overlay(Circle().stroke(Color(light: Color.surface1, dark: Color(white: 0.12)), lineWidth: 3))
                 }
             }
             .frame(maxWidth: .infinity)

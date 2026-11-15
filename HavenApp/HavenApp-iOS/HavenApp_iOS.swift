@@ -18,7 +18,7 @@ struct HavenApp_iOSApp: App {
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
                 .environmentObject(appState)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(AppAppearance.colorScheme)
         }
     }
 }
