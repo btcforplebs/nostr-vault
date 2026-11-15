@@ -5,10 +5,13 @@ import { notifyOn, onNotifyPref, permission, setNotifyOn, turnOn } from "../net/
 import { TYPES, readTypes, setType, onTypes } from "../net/notify-prefs.js"
 import { SettingInfo } from "./SettingInfo.jsx"
 
-const WHY = {
+export const WHY = {
   denied: "This browser blocks notifications for this site. Allow them in the browser's site settings, then turn this on again.",
   unsupported: "This browser can't show notifications from a web page. On iPhone and iPad, add Nostr Vault to the Home Screen first.",
 }
+
+export const NOTIFY_NOTE = "While Nostr Vault is open in a tab, even in the background, what you pick here shows as notifications. Nothing goes through a push server: the tab asks your relays every minute while you are looking at it, every five minutes while it is in the background, and right away when you come back to it, so nothing arrives once every tab is closed. Messages are opened by your signer as they arrive."
+export const NOT_ALLOWED = "Notifications weren't allowed, so they stay off."
 
 export function NotifySwitch() {
   const [on, setOn] = useState(() => notifyOn() && permission() === "granted")
@@ -22,7 +25,7 @@ export function NotifySwitch() {
     if (!want) { setNotifyOn(false); setOn(false); return }
     const p = await turnOn().catch(() => "denied")
     setOn(p === "granted")
-    if (p !== "granted") setWhy(WHY[p] ?? "Notifications weren't allowed, so they stay off.")
+    if (p !== "granted") setWhy(WHY[p] ?? NOT_ALLOWED)
   }
   return (
     <>
@@ -37,7 +40,7 @@ export function NotifySwitch() {
           <input type="checkbox" role="switch" checked={types[t.id]} onChange={e => setType(t.id, e.currentTarget.checked)} />
         </label>
       ))}
-      <p class="settings-note muted small">{why || "While Nostr Vault is open in a tab, even in the background, what you pick here shows as notifications. Nothing goes through a push server: the tab asks your relays every minute while you are looking at it, every five minutes while it is in the background, and right away when you come back to it, so nothing arrives once every tab is closed. Messages are opened by your signer as they arrive."}</p>
+      <p class="settings-note muted small">{why || NOTIFY_NOTE}</p>
     </>
   )
 }

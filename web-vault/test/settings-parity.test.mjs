@@ -54,8 +54,9 @@ test("the index lists pages, as the iPhone; its old inline sections moved to the
 
 test("Privacy shows the iPhone's two lookups, off, and says the web doesn't make them", () => {
   const p = src("screens/settings/PrivacyPage.jsx")
-  assert.match(p, /<Row title="Follower Counts from Vertex" info="privacy.vertex" \/>/)
-  assert.match(p, /<Row title="Check Fanfares Articles" info="privacy.fanfares" \/>/)
+  assert.match(p, /title: "Follower Counts from Vertex", info: "privacy.vertex"/)
+  assert.match(p, /title: "Check Fanfares Articles", info: "privacy.fanfares"/)
+  assert.match(p, /PRIVACY_SECTIONS.map\(s => <Section [^\n]*<Row title=\{s.title\} info=\{s.info\} \/>/)
   assert.match(p, /checked=\{false\} disabled/, "no switch that would do nothing")
   assert.match(p, /doesn't make either lookup yet/)
 })
