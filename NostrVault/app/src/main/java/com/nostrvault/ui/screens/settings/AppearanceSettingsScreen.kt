@@ -110,6 +110,14 @@ class AppearanceViewModel @Inject constructor(
         .map { it.appearanceMode }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.appearanceMode)
 
+    val accent = configStore.config
+        .map { it.themeColor }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.themeColor)
+
+    fun setAccent(setting: String) {
+        configStore.update { it.copy(themeColor = setting) }
+    }
+
     fun setAppearanceMode(mode: String) {
         configStore.update { it.copy(appearanceMode = mode) }
     }
@@ -199,6 +207,7 @@ fun AppearanceSettingsScreen(
     val postButtons by viewModel.postButtons.collectAsState()
     val sendDelaySeconds by viewModel.sendDelaySeconds.collectAsState()
     val appearanceMode by viewModel.appearanceMode.collectAsState()
+    val accent by viewModel.accent.collectAsState()
 
     Scaffold(
         topBar = {
@@ -226,6 +235,8 @@ fun AppearanceSettingsScreen(
                 .padding(16.dp),
         ) {
             AppearanceModeRow(appearanceMode, viewModel::setAppearanceMode)
+            Spacer(Modifier.height(32.dp))
+            AccentPresetRow(accent, viewModel::setAccent)
             Spacer(Modifier.height(32.dp))
 
             // Text size

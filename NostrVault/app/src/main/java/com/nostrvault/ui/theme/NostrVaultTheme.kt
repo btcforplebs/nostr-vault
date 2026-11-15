@@ -95,8 +95,11 @@ fun NostrVaultTheme(
     feedLineLimits: FeedLineLimits = FeedLineLimits(),
     /** Settings > Appearance > Mode. Null leaves the mode as the main activity set it. */
     appearanceMode: String? = null,
+    /** Settings > Appearance > Accent (themeColor). Null keeps the main activity's. */
+    accent: String? = null,
     content: @Composable () -> Unit,
 ) {
+    if (accent != null && AppPalette.accent != accent) AppPalette.accent = accent
     val systemDark = isSystemInDarkTheme()
     if (appearanceMode != null) {
         val light = AppPalette.isLight(appearanceMode, systemDark)
@@ -114,7 +117,7 @@ fun NostrVaultTheme(
         }
     }
     val light = AppPalette.light
-    val colors = if (light) appTheme.lightColors else appTheme.colors
+    val colors = AccentPalette.ramp(AppPalette.accent, light).scheme
 
     // Map our theme colors to Material 3 color slots
     val materialColors = (if (light) lightColorScheme() else darkColorScheme()).copy(

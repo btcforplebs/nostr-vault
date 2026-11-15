@@ -85,7 +85,7 @@ fun lightOr(light: Color, dark: Color): Color = if (AppPalette.light) light else
 
 val Ink: Color get() = if (AppPalette.light) Color.Black else Color.White
 val Shade: Color get() = if (AppPalette.light) Color(0xFF3C2814) else Color.Black  // light: warm brown-grey
-val OnAccent = Color.White
+val OnAccent: Color get() = AccentPalette.ramp(AppPalette.accent, AppPalette.light).onAccent
 
 val Surface0: Color get() = if (AppPalette.light) Color(0xFFF6F1EB) else Color(0xFF000000) // page (light: warm paper)
 val Surface1: Color get() = if (AppPalette.light) Color(0xFFFFFFFF) else Color(0xFF1C1C1E) // resting card
