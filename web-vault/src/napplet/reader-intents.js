@@ -3,6 +3,11 @@
 //   napplet:compose/new, napplet:compose/reply { event }  -> the Compose napplet (openCompose mounts it in a sheet)
 //   napplet:compose/quote { event }                       -> Compose, quoting it (net/actions.js quoteOf's format)
 //   napplet:link/open { url }                             -> a new tab, http(s) only, no opener, no referrer
+//   napplet:link/preview { url }                          -> { data: { title, description, siteName, image } | null }:
+//                                                            the page's OpenGraph, read by the shell as the classic
+//                                                            link card does (link-preview.js: public https only, CORS,
+//                                                            no cookies, no referrer). Reader only: the napplet itself
+//                                                            has no network, and no other napplet gets a fetcher.
 //   napplet:note/repost|zap|menu { event }                -> the classic flows, run by the shell (gap run, after P8):
 //                                                            repost with the Send Delay's Undo, the zap picker, the
 //                                                            ⋯ menu (copy, bookmark, block, report, delete). The
@@ -13,6 +18,7 @@ export const COMPOSE_DONE = "nv.compose.done"
 /** Compose posted and the Send Delay counts down (hide the sheet so the pill's Undo can be reached), or it was undone
  *  (show it again, text intact). */
 export const COMPOSE_WAITING = "nv.compose.waiting", COMPOSE_UNDONE = "nv.compose.undone"
+import { READER_DTAG as READER } from "./first-party-list.js"
 const HEX = /^[0-9a-f]{64}$/
 
 /** A link a napplet asked to open -> the URL to open, or null. http(s) only, no user:pass, at most 2048 characters. */
@@ -50,7 +56,15 @@ export function actionNote(raw, verify) {
   return null
 }
 
-export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {} }) {
+/** link/preview's answer: only what the card draws, as plain strings; the picture an https address the Reader then
+ *  asks for as bytes (resource.bytes, the shell's picture rules). */
+export function previewCard(meta) {
+  if (!meta?.title) return null
+  const str = v => (typeof v === "string" && v ? v.slice(0, 300) : null)
+  return { title: str(meta.title), description: str(meta.description), siteName: str(meta.siteName), image: /^https:\/\//i.test(meta.image ?? "") ? meta.image : null }
+}
+
+export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, preview = async () => null }) {
   const on = { [COMPOSE_DONE]: onComposeDone, [COMPOSE_WAITING]: onComposeWaiting, [COMPOSE_UNDONE]: onComposeUndone }
   const me = { dTag: "shell", send: m => { if (m?.type === "inc.event" && on[m.topic]) on[m.topic](m.payload) } }
   for (const t of Object.keys(on)) bus.subscribe(me, t)
@@ -67,6 +81,14 @@ export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaitin
       if (!url) return { ok: false, error: "not an http(s) link" }
       openUrl(url)
       return { ok: true }
+    } }),
+    bus.register({ id: "shell-link-preview", title: "Link preview", archetype: "link", actions: ["preview"], conventions: [], deliver: async (p, from) => {
+      if (from?.dTag !== READER) return { ok: false, error: "the Reader's only" }
+      const url = linkTarget(p?.url)
+      if (!url) return { ok: false, error: "not an http(s) link" }
+      let meta = null
+      try { meta = await preview(url) } catch {}
+      return { ok: true, data: previewCard(meta) }
     } }),
   ]
   return { me, close: () => { bus.forget(me); off.forEach(f => f()) } }

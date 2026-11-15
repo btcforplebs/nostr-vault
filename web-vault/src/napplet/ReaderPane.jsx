@@ -13,6 +13,7 @@ import { useLiveCtx } from "./usePaneNapplet.js"
 import { verifyEvent } from "nostr-tools/pure"
 import { repostWithUndo } from "../components/repost-undo.js"
 import { ZapSheet, MenuSheet } from "./NoteSheets.jsx"
+import { loadPreview } from "../components/link-preview.js"
 import "./napplet.css"
 
 const READY_WAIT_MS = 5000
@@ -70,6 +71,7 @@ export function ReaderPane({ ctx, open = null }) {
       onRepost: n => repostWithUndo(liveCtx, n),
       onZap: n => setSheet({ kind: "zap", note: n }),
       onMenu: n => setSheet({ kind: "menu", note: n }),
+      preview: loadPreview,
     })
     live.current.me = wire.me
     ;(async () => {
