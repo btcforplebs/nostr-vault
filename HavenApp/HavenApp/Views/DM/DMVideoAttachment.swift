@@ -43,19 +43,18 @@ struct DMVideoAttachment {
     }
 }
 
-/// A video a message carries: a play tile; tapping it opens the media viewer,
-/// which plays it.
+/// A video a message carries: a frame from the clip with a play button;
+/// tapping it opens the media viewer, which plays it.
 struct DMVideoTile: View {
+    let url: URL
     let size: CGFloat
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.85)
-            Image(systemName: "play.circle.fill")
-                .font(.appSystem(size: 44))
-                .foregroundStyle(.white, .black.opacity(0.35))
-        }
-        .frame(width: size, height: size)
+        // The same frame-grab the Media page's tiles use (cached), so a clip
+        // in a chat looks like what it is instead of a black square.
+        VideoThumbnailView(url: url)
+            .frame(width: size, height: size)
+            .clipped()
         .contentShape(Rectangle())
         .accessibilityLabel("Video")
     }
