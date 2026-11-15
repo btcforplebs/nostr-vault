@@ -96,6 +96,19 @@
   .prof h2 { margin: 0; font-size: 19px; }
   .prof p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); margin: 10px 0 0; }
   .muted { color: var(--muted); font-size: 13px; }
+  .notif { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--hair); }
+  .notif.tap { cursor: pointer; } .notif.tap:hover { background: var(--s1); }
+  .notif .badge { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--s2); color: var(--accent); font-size: 14px; }
+  .notif.unread .badge { background: color-mix(in srgb, var(--accent) 22%, var(--s2)); }
+  .ntop { display: flex; align-items: center; gap: 4px; }
+  .ntop .av { width: 26px; height: 26px; font-size: 11px; }
+  .ntop time { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .ndot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-left: 6px; }
+  .nwho { margin: 6px 0 2px; } .nwho b { font-weight: 650; }
+  .nwords { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+  .nabout { color: var(--muted); font-size: 14px; border-left: 2px solid var(--hair); padding-left: 10px; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .nthumbs { display: flex; gap: 6px; margin-top: 6px; } .nthumbs img { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; background: var(--s2); }
+  .fold { display: block; margin: 8px 14px; }
   .sect { margin: 0; padding: 14px 14px 2px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
   .sect-note { margin: 0; padding: 0 14px 10px; border-bottom: 1px solid var(--hair); }
   /* Your own profile (plan step 5): the site's ProfileHeader, drawn here. */
@@ -678,6 +691,7 @@ async function render() {
   if (view.kind === "profile") return showProfile(view.pubkey)
   if (view.kind === "tag") return showTag(view.tag)
   if (view.kind === "bookmarks") return showBookmarks()
+  if (view.kind === "notifications") return showNotifs()
 }
 
 // A #tag's notes, as the shell gives them: your vault first, then relays, and only people in your web (the shell's
@@ -796,6 +810,61 @@ async function showProfile(pk) {
   $("foot").textContent = evs.length ? "" : "No notes from them yet."
 }
 
+
+// ---- notifications (plan step 6b) ----
+// The shell reads them with the Notifications screen's own rules and hands each row as plain strings
+// (napplet:notifications/list); a click hands back the row's id (napplet:notifications/open), the shell opens it.
+// Older pages: napplet:notifications/more. A change comes as nv.notifications.changed.
+const NBADGE = { reply: "↩", mention: "@", quote: "❝", reaction: "♥", repost: "⟲", zap: "⚡", article: "▤", highlight: "✎", follow: "+" }
+let nfilter = "all", ndrawn = null, nfold = false
+function notifRow(r) {
+  const a = el("article", `notif${r.unread ? " unread" : ""}${r.open ? " tap" : ""}`)
+  const badge = el("span", "badge", NBADGE[r.type] ?? "•"); badge.setAttribute("aria-hidden", "true")
+  const col = el("div"), top = el("div", "ntop")
+  for (const f of r.faces) { const s = el("span", "av", (f.name || "?").slice(0, 1).toUpperCase()); if (f.picture) picture(s, f.picture); top.append(s) }
+  const t = el("time", "", ago(r.at)); t.dateTime = new Date(r.at * 1000).toISOString(); top.append(t)
+  if (r.unread) { const d = el("span", "ndot"); d.setAttribute("role", "img"); d.setAttribute("aria-label", "New"); top.append(d) }
+  const who = el("div", "nwho"); who.append(el("b", "", r.who), ` ${r.verb}`)
+  col.append(top, who)
+  if (r.text) col.append(el("div", "nwords", r.text))
+  if (r.about) {
+    if (r.about.text) col.append(el("div", "nabout", r.about.text))
+    if (r.about.thumbs.length) { const th = el("div", "nthumbs"); for (const u of r.about.thumbs) { const i = el("img"); i.alt = ""; picture(i, u); th.append(i) } col.append(th) }
+  }
+  a.append(badge, col)
+  if (r.open) { a.tabIndex = 0; a.setAttribute("role", "link"); a.onclick = () => n.intent?.invoke("napplet:notifications/open", { payload: { id: r.id } }).catch(() => {}); a.onkeydown = e => { if (e.key === "Enter") a.onclick() } }
+  return a
+}
+async function showNotifs(again = false) {
+  $("title").textContent = "Notifications"
+  const d = await (n.intent?.invoke("napplet:notifications/list", { payload: { filter: nfilter } }) ?? Promise.resolve(null)).then(r => (r?.ok ? r.data : null)).catch(() => null)
+  if (view.kind !== "notifications") return
+  // Drawn only when the answer changed: a redraw under the pointer would lose a click.
+  const key = JSON.stringify([d, nfold])
+  if (again && key === ndrawn) return
+  ndrawn = key
+  const bar = el("div", "tabs"); bar.setAttribute("role", "tablist"); bar.setAttribute("aria-label", "Show")
+  for (const [id, label] of [["all", "All"], ["mentions", "Mentions"]]) {
+    const b = el("button", id === nfilter ? "on" : "", label); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(id === nfilter))
+    b.onclick = () => { nfilter = id; showNotifs() }
+    bar.append(b)
+  }
+  const rows = [bar]
+  if (d?.status) rows.push(el("p", "muted sect-note", d.status))
+  if (d?.outside?.length) {
+    const f = el("button", "fold", `${nfold ? "Hide" : "Show"} ${d.outsideCount} from outside your web`); f.type = "button"; f.setAttribute("aria-expanded", String(nfold))
+    f.onclick = () => { nfold = !nfold; showNotifs() }
+    rows.push(f)
+    if (nfold) rows.push(...d.outside.map(notifRow))
+  }
+  if (d?.rows) rows.push(...d.rows.map(notifRow))
+  $("list").replaceChildren(...rows)
+  $("list").setAttribute("aria-busy", String(!d || d.loading))
+  const foot = $("foot"); foot.replaceChildren()
+  if (!d || !d.rows || d.loading) foot.textContent = "Loading notifications…"
+  else if (!d.rows.length && !d.outside.length && d.done) foot.textContent = nfilter === "mentions" ? "No mentions yet. Replies, mentions and quotes land here." : "Nothing new yet. Replies, likes, zaps and new followers land here."
+  else if (!d.done) { const b = el("button", "", d.busy ? "Loading older notifications…" : "Older notifications"); b.type = "button"; b.disabled = d.busy; b.onclick = () => { b.disabled = true; n.intent?.invoke("napplet:notifications/more", { payload: {} }).catch(() => {}) }; foot.append(b) }
+}
 
 // ---- your bookmarks (plan step 6a) ----
 // The shell reads your bookmark list (its private part opened by your signer, never here) and hands over the signed
@@ -927,6 +996,7 @@ async function start() {
     const p = d?.payload ?? {}
     if (d.archetype === "note" && d.action !== "removed" && HEX.test(p.id ?? "")) { if (p.side === true) { document.body.classList.add("side"); stack = []; return go({ kind: "thread", id: p.id }, false) } go({ kind: "thread", id: p.id }, view.kind !== "feed" || stack.length > 0) }
     else if (d.archetype === "profile" && HEX.test(p.pubkey ?? "")) go({ kind: "profile", pubkey: p.pubkey }, view.kind !== "feed" || stack.length > 0)
+    else if (d.archetype === "feed" && p.list === "notifications") { stack = []; go({ kind: "notifications" }, false) }
     else if (d.archetype === "feed" && p.list === "bookmarks") { stack = []; go({ kind: "bookmarks" }, false) }
     else if (d.archetype === "feed" && typeof p.tag === "string" && /^[\p{L}\p{N}_]{1,64}$/u.test(p.tag)) go({ kind: "tag", tag: p.tag.toLowerCase() })
     else if (d.archetype === "feed") { stack = []; go({ kind: "feed" }, false) }
@@ -942,6 +1012,7 @@ async function start() {
   n.inc?.on?.("nv.key.cmd", e => rowCmd(e?.payload?.cmd))
   n.inc?.on?.("nv.note.open", e => markOpen(e?.payload?.id))
   // Your profile saved, or its follower count came in: the header again, the tab as it was.
+  n.inc?.on?.("nv.notifications.changed", () => { if (view.kind === "notifications") showNotifs(true) })
   n.inc?.on?.("nv.bookmarks.changed", () => { if (view.kind === "bookmarks") showBookmarks() })
   n.inc?.on?.("nv.profile.changed", () => { if (view.kind === "profile" && view.pubkey === me) mineHeadNow().then(drawMine) })
   n.inc?.on?.("nv.compose.sent", e => {

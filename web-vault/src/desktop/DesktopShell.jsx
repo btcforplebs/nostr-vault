@@ -71,7 +71,9 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const mine = nappletsOn() && view.route === "profile" && !other
   // Bookmarks too (plan step 6a): the Reader's Bookmarks list (reader-bookmarks.js).
   const marks = nappletsOn() && view.route === "bookmarks"
-  const inReader = mine || marks
+  // And Notifications (plan step 6b, reader-notifications.js).
+  const notifs = nappletsOn() && view.route === "notifications"
+  const inReader = mine || marks || notifs
   // Feed and Search stay mounted once opened, so going back to them keeps the list, its results and where you were.
   const [kept, setKept] = useState({ feed: view.route === "feed" || inReader, search: view.route === "search" })
   useEffect(() => { const k = inReader ? "feed" : view.route; if ((k === "feed" || k === "search") && !kept[k]) setKept(was => ({ ...was, [k]: true })) }, [view.route, inReader])
@@ -94,10 +96,11 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const listKey = other ? `person:${view.arg}` : inReader ? "feed" : view.route
   const readerOpen = mine ? { archetype: "profile", action: "open", payload: { pubkey: me } }
     : marks ? { archetype: "feed", action: "open", payload: { list: "bookmarks" } }
+    : notifs ? { archetype: "feed", action: "open", payload: { list: "notifications" } }
     : readerOpenFor("feed", "", hash)
   const list = (
     <>
-      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpen} beside={openBeside} openId={note ?? ""} fullCompose /> : <FeedScreen ctx={ctx} />}</div>}
+      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpen} notifications={notifs} beside={openBeside} openId={note ?? ""} fullCompose /> : <FeedScreen ctx={ctx} />}</div>}
       {kept.search && <div class="desk-pane" hidden={listKey !== "search"}><SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} /></div>}
       {listKey !== "feed" && listKey !== "search" && (
         <div class="desk-pane" key={listKey}>

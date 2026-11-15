@@ -31,6 +31,12 @@ import { displayEmoji, likeWithFeedback, pickFor } from "../components/ReactionB
 import { STATS_TOPIC, statsOf } from "./note-stats.js"
 import { mineIntents } from "./reader-mine.js"
 import { bookmarkIntents } from "./reader-bookmarks.js"
+import { notifIntents, notifAnswer, NOTIF_TOPIC } from "./reader-notifications.js"
+import { ReaderNotifSource } from "./ReaderNotifSource.jsx"
+import { rowHref, verb as notifVerb } from "../screens/NotificationsScreen.jsx"
+import { aboutYourPost } from "../screens/useNotifications.js"
+import { aboutPreview } from "../net/notifications.js"
+import { whoText } from "../net/notify-watch.js"
 import { loadBookmarks, onBookmarks, entries as bookmarkEntries } from "../net/bookmarks.js"
 import { fetchEntries } from "../net/bookmark-notes.js"
 import { npubEncode } from "nostr-tools/nip19"
@@ -54,7 +60,7 @@ const whenReady = async m => { await Promise.race([m.napplet.ready, new Promise(
 // `openId`: the note open beside it, marked in the list. `keys`: takes j/k/Enter/r/l/z (the list's Reader, not the one
 // beside it). `fullCompose`: Post, Reply and Quote open the site's full composer (#/compose, the desktop's dialog) in
 // place of the Compose napplet (plan step 2b); what it sends comes back to the Reader as inc nv.compose.sent.
-export function ReaderPane({ ctx, open = null, hidden = false, beside = null, openId = "", keys = true, fullCompose = false }) {
+export function ReaderPane({ ctx, open = null, hidden = false, beside = null, openId = "", keys = true, fullCompose = false, notifications = false }) {
   const host = useRef(null), composeHost = useRef(null)
   const [composing, setComposing] = useState(false)
   const [composeAside, setComposeAside] = useState(false) // a post counting down: the sheet steps aside, still mounted
@@ -62,6 +68,8 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
   const [sheet, setSheet] = useState(null) // { kind: "zap" | "menu", note }
   const grants = useMemo(() => grantStore(localStorage, ctx.session.pubkey), [ctx.session.pubkey])
   const liveCtx = useLiveCtx(ctx)
+  // Notifications (plan step 6b): the latest list from ReaderNotifSource, while the desktop shows Notifications.
+  const notifPipe = useMemo(() => ({ list: null, tell: () => {}, put(l) { this.list = l; this.tell() } }), [])
   const live = useRef(null) // { bus, me, reader }
   const openRef = useRef(open)
   openRef.current = open
@@ -145,6 +153,18 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
         return { public: pub, private: priv, privateNote: s.privateNote }
       },
     })
+    notifPipe.tell = () => bus.emit(wire.me, NOTIF_TOPIC, {})
+    const offNotif = notifIntents({
+      bus,
+      answer: filter => {
+        const l = notifPipe.list
+        if (!l) return null
+        const h = { me: liveCtx.session.pubkey, notes: l.notes, unreadSince: l.unreadSince, known: l.known, profileOf: getProfile, verbOf: notifVerb, whoOf: whoText, aboutOf: aboutPreview, aboutYourPost }
+        return notifAnswer(l, filter, h, rowHref)
+      },
+      more: () => notifPipe.list?.loadMore(),
+      open: to => { location.hash = to },
+    })
     const offMine = mineIntents({
       bus,
       profile: async () => {
@@ -181,7 +201,7 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
         if (openIdRef.current) bus.emit(wire.me, OPEN_TOPIC, { id: openIdRef.current })
       } catch (e) { if (!gone) setNote(`The Reader couldn't open: ${e?.message ?? e}`) }
     })()
-    return () => { removeEventListener(READER_CMD_EVENT, rowCmd); removeEventListener(NOTE_SENT_EVENT, sentNote); gone = true; offStats.forEach(f => f()); offMine(); offBookmarks(); wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
+    return () => { removeEventListener(READER_CMD_EVENT, rowCmd); removeEventListener(NOTE_SENT_EVENT, sentNote); gone = true; offStats.forEach(f => f()); offMine(); offBookmarks(); offNotif(); notifPipe.tell = () => {}; wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
   }, [ctx.session.pubkey, ctx.vault, ctx.signer, grants])
 
   // The note open beside the list, marked in it (nv.note.open); "" when the side pane closes.
@@ -212,6 +232,7 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
       {sheet?.kind === "listing" && <div class="reader-article screen"><ListingView ctx={ctx} listing={sheet.listing} onBack={() => setSheet(null)} /></div>}
       {sheet?.kind === "share" && <ShareProfileSheet pubkey={ctx.session.pubkey} own onClose={() => setSheet(null)} />}
       {sheet?.kind === "media" && <MediaLightbox items={sheet.items} author={sheet.author} start={sheet.start} onClose={() => setSheet(null)} />}
+      {notifications && <ReaderNotifSource ctx={ctx} pipe={notifPipe} />}
       {composing && <ComposeSheet aside={composeAside} onClose={() => live.current?.closeCompose()} onMount={el => live.current?.mountCompose(el)} />}
     </main>
   )
