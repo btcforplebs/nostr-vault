@@ -88,18 +88,25 @@ object DMFileLoader {
         onProgress: ((Long, Long) -> Unit)? = null,
     ): Pair<ByteArray, String> =
         (if (video) videoGate else gate).withPermit {
-            val calls = java.util.Collections.synchronizedList(mutableListOf<okhttp3.Call>())
+            val calls = mutableListOf<okhttp3.Call>()
+            var stopped = false
             kotlinx.coroutines.coroutineScope {
                 // The blocking read below doesn't hear a cancel; this does, and cancels the HTTP call.
                 val watcher = launch {
                     try {
                         kotlinx.coroutines.awaitCancellation()
                     } finally {
-                        synchronized(calls) { calls.forEach { it.cancel() } }
+                        synchronized(calls) {
+                            stopped = true
+                            calls.forEach { it.cancel() }
+                        }
                     }
                 }
                 try {
-                    withContext(Dispatchers.IO) { openNow(context, link, max, onProgress) { calls.add(it) } }
+                    withContext(Dispatchers.IO) {
+                        // A cancel that came before the call was made still stops it.
+                        openNow(context, link, max, onProgress) { synchronized(calls) { calls.add(it); if (stopped) it.cancel() } }
+                    }
                 } finally {
                     watcher.cancel()
                 }
