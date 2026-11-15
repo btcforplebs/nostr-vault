@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Nostr Vault
+GenericName=Nostr vault
+Comment=Your Nostr vault: feed, vault, devices and settings
+Exec=nostr-vault-desktop
+Icon=nostr-vault
+Terminal=false
+Categories=Network;InstantMessaging;
+Keywords=nostr;relay;vault;
+StartupWMClass=nostr-vault-desktop
+StartupNotify=true

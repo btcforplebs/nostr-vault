@@ -1,8 +1,10 @@
 # Nostr Vault for Linux
 
-Your vault on a small always-on Linux machine: a Raspberry Pi 4/5, a mini PC or a home server, arm64 or x86-64.
-It runs as one Docker container, `nostr-vault-linux`, and you reach it on your local network (and over the mesh).
-Nothing opens a port on your router, and the box never holds your secret key.
+Your vault on a Linux machine: a Raspberry Pi 4/5, a mini PC, a home server or a desktop, arm64 or x86-64.
+It runs natively, like the Mac app: system services that start on boot and, on a desktop, a window and a tray icon
+(`native/README.md`). On other systems, or when you ask for it (`NV_DOCKER=1`), it runs as one Docker container,
+`nostr-vault-linux`, as before. Either way you reach it on your local network (and over the mesh). Nothing opens a
+port on your router, and the box never holds your secret key.
 
 ## Install
 
@@ -12,11 +14,17 @@ curl -fsSL https://raw.githubusercontent.com/btcforplebs/nostr-vault/master/linu
 
 The installer:
 
-1. installs Docker if it isn't there (from get.docker.com);
+1. on Debian, Ubuntu and Raspberry Pi OS installs the `nostr-vault` package (with the window's libraries when the
+   machine has a desktop), checked against the release's sha256. With `NV_DOCKER=1`, or on a machine that already
+   runs the Docker box, it installs Docker if it isn't there (from get.docker.com) and uses the container.
+   `NV_NATIVE=1` moves a Docker box to native, keeping its data, owner and port;
 2. asks **Where should your vault live?** and suggests the drive with the most free space. On an SD card it warns
    you first: a vault writes all the time, and a USB SSD lasts much longer;
 3. asks for **your npub**. Only that account can manage the vault. Nobody can claim it by visiting first;
 4. starts the vault and prints its address, e.g. `http://192.168.1.20:8080/`.
+
+On a desktop you can also skip the terminal: install the package and open **Nostr Vault** from your apps; it
+asks the same two questions.
 
 Open that address on a phone or computer on the same network, sign in with your Nostr account, and approve the box
 in **My Devices** (as with the Mac app). The box makes its own device key on first start; it never sees your nsec.
@@ -27,7 +35,16 @@ place starts an empty vault there (the installer asks first); to move a vault, u
 Answers can be given ahead, for scripts: `NV_DATA_HOST=/mnt/ssd/nostr-vault NV_OWNER=npub1… NV_YES=1 sh install.sh`.
 Also `NV_PORT` (8080), `NV_IMAGE`, `NV_HOME` (`/opt/nostr-vault`).
 
-## Day to day
+## Day to day (native)
+
+| | |
+|---|---|
+| Logs | `journalctl -fu nostr-vault -u nostr-vault-mesh` |
+| Stop / start | `sudo systemctl stop nostr-vault` / `start` (the mesh goes with it) |
+| Settings | `sudo nostr-vault-setup --show`; change them with `sudo nostr-vault-setup --owner … --data … --port …` |
+| Update | run the installer again (data, owner and port stay) |
+
+## Day to day (Docker)
 
 | | |
 |---|---|
@@ -40,14 +57,6 @@ The container gets at most 1.5 GB of memory and low CPU priority, restarts by it
 3 × 10 MB of logs. It shares the machine's network, so the mesh can offer your devices its real LAN address: the
 vault listens on `NV_PORT` (8080), and on loopback only the engine (3355) and the mesh door (8081). The installer
 checks those are free.
-
-### Public on the web (advanced)
-
-Your own devices reach the box over the mesh with no domain. To also make it public on the web, give it a domain and a
-tunnel that ends at `NV_PORT`, set `NV_RELAY_URL=vault.example.com` in `/opt/nostr-vault/.env` and restart. Then in the
-web app's **Box** screen, **Public on the web** › **Make this vault public on the web** lists that domain in your relay
-list and its `/inbox` in your DM inbox (the browser signs them; the box holds no account key). Off unlists it; the
-tunnel keeps running until you stop it.
 
 ## Inside the container (for the four lanes)
 

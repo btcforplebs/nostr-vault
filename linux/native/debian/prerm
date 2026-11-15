@@ -1,0 +1,8 @@
+#!/bin/sh
+# Stop the vault when the package goes away (an upgrade only restarts it, in postinst).
+set -e
+if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
+  systemctl disable --now -q nostr-vault-mesh.service nostr-vault.service 2>/dev/null || true
+  systemctl stop nostr-vault-prepare.service 2>/dev/null || true
+fi
+exit 0

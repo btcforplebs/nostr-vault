@@ -1,0 +1,29 @@
+#!/bin/sh
+# nostr-vault postinst: the two users (the container's uids when they are free, so a Docker box's data dir works as
+# it is), the desktop caches, and (when the vault is set up) the services, started again on the new version.
+set -e
+user() { # user <name> <uid>
+  getent passwd "$1" >/dev/null && return
+  if getent passwd "$2" >/dev/null || getent group "$2" >/dev/null; then
+    useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$1"
+  else
+    useradd --system --uid "$2" --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$1"
+  fi
+}
+if [ "$1" = configure ]; then
+  user nvmesh 10001
+  user nvvault 10002
+  if command -v gtk-update-icon-cache >/dev/null; then gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true; fi
+  if command -v update-desktop-database >/dev/null; then update-desktop-database -q /usr/share/applications || true; fi
+  if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload
+    if grep -q '^NV_OWNER=npub1' /etc/nostr-vault/vault.env 2>/dev/null; then
+      systemctl enable -q nostr-vault.service nostr-vault-mesh.service || true
+      systemctl restart nostr-vault-prepare.service nostr-vault.service nostr-vault-mesh.service || true
+    else
+      echo "Nostr Vault is installed. Set it up: open Nostr Vault from your apps, or run"
+      echo "  sudo nostr-vault-setup --owner npub1…"
+    fi
+  fi
+fi
+exit 0

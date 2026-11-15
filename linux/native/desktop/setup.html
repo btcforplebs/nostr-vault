@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Nostr Vault</title>
+<style>
+  /* The web app's tokens (web-vault/src/styles/tokens.css): OLED black, the orange accent. */
+  :root { color-scheme: dark; --bg:#000; --s1:#1c1c1e; --s2:#2c2c2e; --accent:#e67326; --accent-light:#fa9447;
+    --text:#fff; --text-2:rgb(255 255 255/.6); --text-3:rgb(255 255 255/.35); --hair:rgb(255 255 255/.14);
+    --danger:#ff453a; --online:#33d980; --booting:#ffd60a;
+    --font: system-ui, "Cantarell", "Ubuntu", "Segoe UI", Roboto, sans-serif; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 400 15px/1.4 var(--font); }
+  main { max-width: 460px; margin: 0 auto; padding: 72px 24px 40px; }
+  .mark { width: 64px; height: 64px; border-radius: 16px; background: linear-gradient(135deg, var(--accent), var(--accent-light));
+    display: grid; place-items: center; margin-bottom: 24px; }
+  .mark svg { width: 34px; height: 34px; }
+  h1 { font: 700 28px/1.15 var(--font); margin: 0 0 8px; }
+  p.lead { color: var(--text-2); margin: 0 0 32px; }
+  label { display: block; font: 600 13px/1.3 var(--font); color: var(--text-2); margin: 0 0 8px; letter-spacing: .02em; }
+  .field { margin-bottom: 24px; }
+  input[type=text] { width: 100%; background: var(--s1); color: var(--text); border: 1px solid var(--hair); border-radius: 12px;
+    padding: 13px 14px; font: 400 15px/1.3 ui-monospace, monospace; outline: none; }
+  input[type=text]:focus { border-color: var(--accent); }
+  .hint { color: var(--text-3); font-size: 13px; margin-top: 8px; }
+  .drives { display: grid; gap: 8px; }
+  .drive { display: flex; align-items: center; gap: 12px; background: var(--s1); border: 1px solid var(--hair); border-radius: 12px;
+    padding: 12px 14px; cursor: pointer; }
+  .drive input { accent-color: var(--accent); margin: 0; }
+  .drive .path { font: 400 14px/1.3 ui-monospace, monospace; flex: 1; overflow-wrap: anywhere; }
+  .drive .free { color: var(--text-2); font-size: 13px; white-space: nowrap; }
+  .drive.sd .free::after { content: " · SD card"; color: var(--booting); }
+  .warn { color: var(--booting); font-size: 13px; margin-top: 8px; }
+  .err { color: var(--danger); font-size: 14px; margin: 0 0 16px; min-height: 1em; }
+  button { width: 100%; border: 0; border-radius: 12px; padding: 14px; font: 600 16px/1 var(--font); cursor: pointer;
+    background: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: var(--s2); margin-top: 10px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--booting); margin-right: 8px; }
+  .dot.failed, .dot.inactive { background: var(--danger); }
+  details { color: var(--text-2); font-size: 13px; margin-top: 24px; }
+  summary { cursor: pointer; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main id="setup" hidden>
+  <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="12" cy="12" r="3.2"/><path d="M12 8.8V7M12 17v-1.8M15.2 12H17M7 12h1.8"/></svg></div>
+  <h1>Welcome to Nostr Vault</h1>
+  <p class="lead">Your vault runs on this computer, on its own, even with this window closed. Two questions to start it.</p>
+  <div class="field">
+    <label for="owner">Your npub</label>
+    <input id="owner" type="text" placeholder="npub1…" autocomplete="off" spellcheck="false" autofocus>
+    <div class="hint">Only this account can manage the vault. Copy it from your Nostr app's profile. Your secret key is never asked for here.</div>
+  </div>
+  <div class="field">
+    <label>Where your vault lives</label>
+    <div class="drives" id="drives"></div>
+    <div class="warn" id="sdwarn" hidden>That's an SD card. A vault writes all the time: an SD card wears out and is slow. A USB SSD is much better.</div>
+  </div>
+  <p class="err" id="err" role="alert"></p>
+  <button id="go">Start my vault</button>
+  <details><summary>What happens</summary>
+    <p>Your computer asks for your password once, to set the vault up as a service: it starts when the computer does.
+    Phones and computers on your network can open it too, and your own devices reach it over the mesh after you add them in My Devices.
+    Nothing opens a port on your router.</p></details>
+</main>
+
+<main id="waiting" hidden>
+  <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"/></svg></div>
+  <h1 id="wtitle">Your vault is starting</h1>
+  <p class="lead"><span class="dot" id="wdot"></span><span id="wtext">This takes a few seconds. The window opens it when it's ready.</span></p>
+  <button id="start" hidden>Start the vault</button>
+  <button id="logs" class="ghost" hidden>Show its log</button>
+</main>
+
+<script>
+  const state = /*NV_STATE*/null || { page: "setup", drives: [] }
+  const post = msg => window.webkit && window.webkit.messageHandlers.nv.postMessage(JSON.stringify(msg))
+  const $ = id => document.getElementById(id)
+  const gb = b => b >= 1e12 ? (b / 1e12).toFixed(1) + " TB free" : Math.round(b / 1e9) + " GB free"
+  const npubOk = s => /^npub1[02-9ac-hj-np-z]{58}$/.test(s)
+
+  if (state.page === "waiting") {
+    $("waiting").hidden = false
+    const failed = state.state === "failed" || state.state === "inactive"
+    if (failed) {
+      $("wtitle").textContent = "Your vault isn't running"
+      $("wtext").textContent = state.state === "failed" ? "It stopped with an error." : "It's stopped."
+      $("wdot").className = "dot " + state.state
+      $("start").hidden = false; $("logs").hidden = false
+    }
+    $("start").onclick = () => post({ do: "start" })
+    $("logs").onclick = () => post({ do: "logs" })
+  } else {
+    $("setup").hidden = false
+    const drives = state.drives.length ? state.drives : [{ path: "/var/lib/nostr-vault", free: 0, sd: false }]
+    // The suggestion: the drive with the most free space that isn't an SD card (the list comes sorted by space).
+    const pick = drives.find(d => !d.sd) || drives[0]
+    for (const d of drives) {
+      const row = document.createElement("label")
+      row.className = "drive" + (d.sd ? " sd" : "")
+      row.innerHTML = '<input type="radio" name="drive"><span class="path"></span><span class="free"></span>'
+      row.querySelector(".path").textContent = d.path
+      row.querySelector(".free").textContent = d.free ? gb(d.free) : ""
+      const r = row.querySelector("input"); r.value = d.path; r.checked = d === pick; r.dataset.sd = d.sd ? "1" : ""
+      r.onchange = () => { $("sdwarn").hidden = !d.sd }
+      $("drives").appendChild(row)
+    }
+    $("sdwarn").hidden = !pick.sd
+    const go = $("go")
+    go.onclick = () => {
+      const owner = $("owner").value.trim()
+      if (!npubOk(owner)) { $("err").textContent = "That isn't an npub: npub1 and 58 more letters and digits."; $("owner").focus(); return }
+      if (!state.setup) { $("err").textContent = "nostr-vault-setup is missing: reinstall the nostr-vault package."; return }
+      const r = document.querySelector('input[name=drive]:checked')
+      $("err").textContent = ""
+      go.disabled = true; go.textContent = "Setting up…"
+      post({ do: "setup", owner, data: r.value, sdOk: !!r.dataset.sd })
+    }
+    $("owner").addEventListener("keydown", e => { if (e.key === "Enter") go.click() })
+    window.nvSetupResult = res => {
+      if (res.ok) { go.textContent = "Starting…"; return }
+      go.disabled = false; go.textContent = "Start my vault"
+      $("err").textContent = res.text || "Setup didn't finish."
+    }
+  }
+</script>
+</body>
+</html>
