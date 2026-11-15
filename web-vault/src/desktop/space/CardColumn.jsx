@@ -8,6 +8,8 @@ import { columnCards, moveInColumn, dropCard, moveAcross, setSize, takeOff, isAp
 import { setOpen } from "./space-layout.js"
 import { CollapseButton, EditTools, useDragPanels } from "./SpaceEdit.jsx"
 import { AppCard, appTitle } from "./AppCard.jsx"
+import { WidgetCard, isWidget } from "./WidgetCard.jsx"
+import { nappletsOn } from "../../napplet/flag.js"
 
 const ADD = "M12 5v14M5 12h14"
 export const PANEL_BY_ID = new Map(PANELS.map(p => [p.id, p]))
@@ -31,6 +33,7 @@ export function CardColumn({ ctx, side, layout, change, editing, canLeft = true,
   const canDraw = drawableFor(me)
   const shown = columnCards(layout, side, canDraw)
   const drag = useDragPanels(shown.map(p => p.id), (id, before) => change(l => dropCard(l, id, side, before)))
+  const widgets = nappletsOn()
   const across = side === LEFT ? "Move to Your space" : "Move to the left column"
   return (
     <div class={editing ? "sp-cards editing" : "sp-cards"} {...(editing ? drag.area : {})}>
@@ -50,9 +53,12 @@ export function CardColumn({ ctx, side, layout, change, editing, canLeft = true,
         const sized = !app && size && open && !editing
         const cls = ["sp-slot", drag.over === id && `drop-${drag.side}`, sized && "sized"].filter(Boolean).join(" ")
         const Panel = PANEL_BY_ID.get(id)?.Panel
+        // Napplets on (flag.js): our panels that have a widget draw as one (plan step 4), the rest as today.
+        const widget = !app && widgets && isWidget(id)
         return (
           <div key={id} class={cls} style={sized ? { height: `${SIZE_PX[size]}px` } : undefined} {...(editing ? drag.slot(id) : {})}>
             {app ? <AppCard ctx={ctx} id={id} open={open} size={size} editing={editing} tools={tools} onGone={() => change(l => takeOff(l, id))} />
+              : widget ? <WidgetCard ctx={ctx} id={id} name={name} open={open} editing={editing} tools={tools} size={size ?? null} side={side} />
               : <Panel ctx={ctx} open={open && !editing} tools={tools} />}
           </div>
         )

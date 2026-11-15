@@ -7,7 +7,8 @@ import { lookInFront } from "../../components/auto-look.js"
 import { loadMyDevices, deviceStatus, statusLine, deviceName, REFRESH_MS, MESH_HEADER } from "./my-devices.js"
 import "../../styles/my-devices.css"
 
-export function MyDevices({ ctx, open: shown = true, tools = null }) {
+/** The devices and their adverts, looked at again every REFRESH_MS while the page is in front (null until the first look). */
+export function useMyDevices(ctx) {
   const [data, setData] = useState(null)
   useEffect(() => {
     let alive = true
@@ -16,6 +17,11 @@ export function MyDevices({ ctx, open: shown = true, tools = null }) {
     const stop = lookInFront(look, { every: REFRESH_MS })
     return () => { alive = false; stop() }
   }, [ctx.session.pubkey])
+  return data
+}
+
+export function MyDevices({ ctx, open: shown = true, tools = null }) {
+  const data = useMyDevices(ctx)
   const now = Math.floor(Date.now() / 1000)
   const rows = (data?.devices ?? []).map(d => ({ d, s: deviceStatus(data.adverts.get(d.hex), now, { checked: data.checked }) }))
   const onMesh = rows.filter(r => r.s.state === "online" || r.s.state === "connected").length

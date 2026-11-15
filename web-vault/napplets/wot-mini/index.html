@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Web of Trust</title>
+<style>
+  /* A card's body only (plan step 4): the shell draws the header (icon, name, count, edit tools) and the footer link. */
+  :root { color-scheme: dark; --bg: #1c1c1e; --s2: #2c2c2e; --text: #fff; --text-2: rgb(255 255 255 / .60); --text-3: rgb(255 255 255 / .38); --accent: #e67326;
+    font: 13px/1.35 -apple-system, system-ui, sans-serif; }
+  html, body { margin: 0; background: var(--s1, var(--bg)); color: var(--text); }
+  html.sized, html.sized body { height: 100%; }
+  html.sized body { overflow-y: auto; overscroll-behavior: contain; }
+  ul { list-style: none; margin: 0; padding: 4px 0; }
+  .empty { padding: 16px 14px; color: var(--text-2); }
+  .row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; height: 58px; padding: 0 12px;
+    border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .row:hover { background: var(--s2); }
+  .av { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: var(--s2); color: var(--text-2); font-weight: 700; }
+  .main { display: grid; min-width: 0; }
+  .who, .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who { color: var(--text-2); }
+  .who b { color: var(--text); font-weight: 600; }
+  .text { color: var(--text-3); }
+  .unread .text { color: var(--text-2); }
+  .side { display: grid; justify-items: end; gap: 4px; }
+  time { font-size: 11px; color: var(--text-3); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .n { min-width: 16px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--on-badge, #fff); font: 700 10px/16px -apple-system, system-ui, sans-serif; text-align: center; }
+  .top { display: grid; grid-template-columns: 112px 1fr; gap: 14px; align-items: center; padding: 12px 14px 6px; }
+  canvas { width: 112px; height: 112px; cursor: pointer; display: block; }
+  dl { margin: 0; display: grid; gap: 6px; }
+  dl div { display: flex; justify-content: space-between; gap: 8px; }
+  dt { color: var(--text-2); font-size: 12px; } dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .vouched { color: var(--accent-light, var(--accent)); }
+  h4 { margin: 6px 14px 4px; font-size: 12px; font-weight: 600; color: var(--text-2); display: flex; gap: 6px; align-items: center; }
+  .note { margin: 0 14px 12px; color: var(--text-2); font-size: 12px; }
+  .faces { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 10px 12px; }
+  .face { display: grid; justify-items: center; gap: 4px; width: 64px; border: 0; background: none; color: var(--text); font: inherit; font-size: 11px; cursor: pointer; padding: 4px; border-radius: 10px; }
+  .face:hover { background: var(--s2); }
+  .face .av { width: 36px; height: 36px; }
+  .face span.nm { max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="card"><div class="top"><canvas id="globe" title="Open your web of trust"></canvas><dl><div><dt>in your web</dt><dd id="everyone">–</dd></div><div><dt>you follow</dt><dd id="following">–</dd></div><div><dt>vouched</dt><dd id="close" class="vouched">–</dd></div></dl></div><h4 id="newh">New in your web</h4><div id="new"><p class="note">Loading your web…</p></div></div>
+<script>
+/*@nv-theme*/
+  const n = window.napplet || {}
+  nvTheme(n)
+  const $ = id => document.getElementById(id)
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+  const ask = (what, payload = {}) => n.intent ? n.intent.invoke(what, { payload }).then(r => (r && r.ok ? r.data : null)).catch(() => null) : Promise.resolve(null)
+  const pics = new Map()
+  // A face: the first letter, swapped for the picture once it comes through resource (the shell's IP rules).
+  function face(row, size = 32) {
+    const f = el("span", "av", (row.name || "?").slice(0, 1).toUpperCase())
+    if (n.resource && /^https:\/\//i.test(row.picture || "")) {
+      if (!pics.has(row.picture)) pics.set(row.picture, n.resource.bytes(row.picture).then(b => URL.createObjectURL(b)).catch(() => ""))
+      pics.get(row.picture).then(src => { if (src) { const i = el("img", "av"); i.alt = ""; i.src = src; f.replaceWith(i) } })
+    }
+    return f
+  }
+  const ago = at => {
+    const s = Math.max(0, Math.floor(Date.now() / 1000) - at)
+    return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : s < 30 * 86400 ? `${Math.floor(s / 86400)}d` : new Date(at * 1000).toLocaleDateString()
+  }
+  const stamp = at => { const t = el("time", "", ago(at)); t.dateTime = new Date(at * 1000).toISOString(); return t }
+  // Fit: tell the shell this card's height; S/M/L: the shell fixes it and this scrolls.
+  ask("napplet:shell/surface").then(s => { if (s && s.size) document.documentElement.classList.add("sized") })
+  new ResizeObserver(() => ask("napplet:card/height", { height: $("card").scrollHeight })).observe($("card"))
+  // Web of Trust as a card (plan step 4). The shell builds your web with the panel's rules (useWotMini: your follows'
+  // lists, the block list, who is new) and answers napplet:space/wot with the numbers, the new faces and the globe's
+  // points. The globe turns here, a few frames a second, and holds still while hidden or with reduced motion. A click on
+  // a face or the globe hands back its id and the shell opens it (napplet:space/open).
+  const RADIUS = 1.3, TURN_MS = 120000, FPS = 12, TILT = 0.38, SIZE = 112
+  let points = []
+  function turn([x, y, z], angle) {
+    const c = Math.cos(angle), s = Math.sin(angle), x1 = x * c - y * s, y1 = x * s + y * c
+    const ct = Math.cos(TILT), st = Math.sin(TILT)
+    return [x1, -(z * ct - y1 * st), (z * st + y1 * ct) / RADIUS]
+  }
+  const rgb = v => v.trim().split(/\s+/).map(Number)
+  function colours() {
+    const css = getComputedStyle(document.documentElement)
+    const a = rgb(css.getPropertyValue("--accent-rgb") || "230 115 38")
+    const light = document.documentElement.dataset.theme === "light" || css.colorScheme === "light"
+    return { follow: light ? [74, 116, 204] : [184, 209, 255], vouched: light ? [112, 92, 196] : [158, 140, 230], new: a.length === 3 && a.every(Number.isFinite) ? a : [230, 115, 38] }
+  }
+  const cv = $("globe"), dpr = window.devicePixelRatio || 1
+  cv.width = SIZE * dpr; cv.height = SIZE * dpr
+  const g = cv.getContext("2d")
+  function paint(angle) {
+    if (!g) return
+    const half = SIZE / 2, scale = (half - 4) / RADIUS, col = colours()
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, SIZE, SIZE)
+    g.strokeStyle = `rgb(${col.new.join(" ")} / .18)`; g.beginPath(); g.arc(half, half, scale * RADIUS, 0, Math.PI * 2); g.stroke()
+    const drawn = points.map(pt => ({ kind: pt.kind, at: turn(pt.p, angle) })).sort((a, b) => a.at[2] - b.at[2])
+    for (const { kind, at: [x, y, depth] } of drawn) {
+      const light = 0.25 + 0.75 * Math.max(0, Math.min(1, (depth + 0.6) / 1.4))
+      g.fillStyle = `rgb(${(col[kind] || col.vouched).join(" ")} / ${kind === "new" ? Math.max(0.5, light) : light * 0.85})`
+      g.beginPath(); g.arc(half + x * scale, half + y * scale, kind === "new" ? 2.6 : kind === "follow" ? 1.5 : 1.1, 0, Math.PI * 2); g.fill()
+    }
+    g.fillStyle = `rgb(${col.new.join(" ")})`; g.beginPath(); g.arc(half, half, 4.5, 0, Math.PI * 2); g.fill()
+  }
+  const still = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches
+  const start = performance.now()
+  let last = 0
+  function tick(t) {
+    requestAnimationFrame(tick)
+    if (still || document.hidden || t - last < 1000 / FPS) return
+    last = t; paint(((t - start) / TURN_MS) * Math.PI * 2)
+  }
+  paint(0); requestAnimationFrame(tick)
+  cv.onclick = () => ask("napplet:space/open", { id: "globe" })
+  function draw(d) {
+    if (!d) return
+    points = d.points; if (still) paint(0)
+    const num = v => (d.counts ? d.counts[v].toLocaleString() : "–")
+    $("everyone").textContent = num("everyone"); $("following").textContent = num("following"); $("close").textContent = num("close")
+    const h = $("newh"); h.replaceChildren("New in your web"); if (d.newCount) h.append(el("span", "n", String(d.newCount)))
+    const box = $("new"); box.replaceChildren()
+    if (d.status) { box.append(el("p", "note", d.status)); return }
+    if (!d.faces.length) { box.append(el("p", "note", `No one new yet. People show here when ${d.extendedMin}+ of your follows start following them.`)); return }
+    const wrap = el("div", "faces")
+    for (const f of d.faces) {
+      const b = el("button", "face"); b.type = "button"; b.title = f.title
+      b.append(face(f, 36), el("span", "nm", f.name))
+      b.onclick = () => ask("napplet:space/open", { id: f.id })
+      wrap.append(b)
+    }
+    box.append(wrap)
+  }
+  // Draws only when the answer changed: a redraw under the pointer would lose a click, and moves nothing for nothing.
+  let drawn = null
+  const fresh = d => { const k = JSON.stringify(d); if (k !== drawn) { drawn = k; draw(d) } }
+  const look = () => ask("napplet:space/wot").then(fresh)
+  look()
+  if (n.inc && n.inc.on) n.inc.on("nv.card.again", look)
+</script>
+</body>
+</html>

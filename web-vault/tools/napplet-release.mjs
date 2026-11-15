@@ -30,7 +30,7 @@ export function manifestTemplate(n, html) {
   const x = crypto.createHash("sha256").update(html, "utf8").digest("hex")
   return {
     kind: 35129, content: n.summary ?? "",
-    tags: [["d", n.dTag], ["x", x], ["title", n.title], ["summary", n.summary ?? ""], ...n.domains.map(d => ["R", d]), ...(n.intents ?? []).map(i => ["i", `napplet:${i}`])],
+    tags: [["d", n.dTag], ["x", x], ["title", n.title], ["summary", n.summary ?? ""], ...n.domains.map(d => ["R", d]), ...(n.intents ?? []).map(i => ["i", `napplet:${i}`]), ...(n.widget ? [["surface", "widget", ...n.widget]] : [])],
   }
 }
 

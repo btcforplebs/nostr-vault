@@ -16,7 +16,8 @@ import { newInWeb, readKept, writeKept, mapped, loadingText, vouchText, globePoi
 import { Icon } from "../Sidebar.jsx"
 import "../../styles/wot-mini.css"
 
-export function WotMini({ ctx, open = true, tools = null }) {
+/** The panel's numbers, status line, new people and globe points (the WoT card, WidgetCard.jsx, draws the same). */
+export function useWotMini(ctx) {
   const me = ctx.session.pubkey
   const follows = useMemo(() => ctx.account.follows.filter(pk => pk !== me), [ctx.account.follows, me])
   const key = `${me}:${follows.length}:${follows[0] ?? ""}:${follows.at(-1) ?? ""}`
@@ -72,6 +73,11 @@ export function WotMini({ ctx, open = true, tools = null }) {
     : web && mapped(follows.length, unsettled) && !blocksLoaded ? "Loading your block list…"
     : !ready ? `${loadingText(have, follows.length)}…`
     : null
+  return { web, counts, status, fresh, faces, points }
+}
+
+export function WotMini({ ctx, open = true, tools = null }) {
+  const { web, counts, status, fresh, faces, points } = useWotMini(ctx)
   return (
     <section class={open ? "sp-panel wot-mini" : "sp-panel wot-mini closed"} aria-label="Web of Trust">
       <header class="sp-head">
