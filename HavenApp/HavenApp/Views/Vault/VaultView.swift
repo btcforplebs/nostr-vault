@@ -142,6 +142,8 @@ struct VaultView: View {
     @State var focusTask: Task<Void, Never>?
     /// Non-nil when an iPad split pane owns the note detail column.
     @Environment(\.noteDetailSelection) var noteDetailSelection
+    /// The Duo: no floating Vault button (`showsFloatingVaultButton`).
+    @Environment(\.dockInCameraStrip) var dockInCameraStrip
     @Environment(\.inVaultTab) var vaultTabHostsMedia
 
     /// Opens a note in the split pane's detail column when there is one. On
@@ -342,6 +344,10 @@ struct VaultView: View {
             ToolbarItem(placement: .cancellationAction) {
                 leadingToolbarInline
                     .tutorialAnchor(TutorialContent.vaultModes, isActive: showsVaultTutorialAnchors)
+                    // No floating Vault button on the Duo: "Tap Vault" points
+                    // here, the menu that holds the dashboard.
+                    .tutorialAnchor(TutorialContent.vaultRelay,
+                                    isActive: showsVaultTutorialAnchors && !showsFloatingVaultButton)
             }
             #if os(iOS)
             ToolbarItem(placement: .navigationBarTrailing) {

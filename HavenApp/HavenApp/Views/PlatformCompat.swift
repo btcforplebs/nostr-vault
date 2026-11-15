@@ -478,6 +478,19 @@ extension EnvironmentValues {
     }
 }
 
+private struct DockInCameraStripKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// The dock is the rail inside the closed iPhone Duo's camera strip
+    /// (`ShellLayout.stripRail`). False everywhere else.
+    var dockInCameraStrip: Bool {
+        get { self[DockInCameraStripKey.self] }
+        set { self[DockInCameraStripKey.self] = newValue }
+    }
+}
+
 /// Lifts a floating action button (Post, Relay, Blossom) clear of the iPhone's
 /// floating tab bar. Where there is no bar -- the iPad split -- the fixed 90pt
 /// lift left the button hovering over the list's cards, so it drops to the

@@ -54,7 +54,7 @@ extension VaultView {
         }
         .overlay(alignment: .bottomTrailing) {
             // The inbox has its own compose button in the bar.
-            if viewMode != .messages {
+            if viewMode != .messages, showsFloatingVaultButton {
             ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingRelayDashboard = true }) {
                     HStack(spacing: 6) {
@@ -189,6 +189,7 @@ extension VaultView {
         }
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {
+            if showsFloatingVaultButton {
             ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingRelayDashboard = true }) {
                     HStack(spacing: 6) {
@@ -211,9 +212,17 @@ extension VaultView {
                 .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
             }
+            }
         }
         #endif
     }
+
+    /// The floating Vault (or Relay) button, coloured by the relay's state,
+    /// that opens the dashboard. Not on the Duo: its dock is the rail in the
+    /// camera strip, so the button floated alone over the page (an empty
+    /// Vault page showed just a green pill); the dashboard is in the Vault
+    /// menu at the top there.
+    var showsFloatingVaultButton: Bool { !dockInCameraStrip }
 
     // MARK: - macOS Desktop Header
 
