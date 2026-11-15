@@ -50,7 +50,7 @@ struct FeedMediaPager: View {
                 if !zoomPresented { Color.black.ignoresSafeArea() }
                 TabView(selection: $selection) {
                     ForEach(urls, id: \.absoluteString) { url in
-                        FeedMediaViewer(url: url, enableDragDismiss: true, onDismiss: onDismiss)
+                        FeedMediaViewer(url: url, enableDragDismiss: true, isOnScreen: url == selection, onDismiss: onDismiss)
                             .tag(url)
                     }
                 }

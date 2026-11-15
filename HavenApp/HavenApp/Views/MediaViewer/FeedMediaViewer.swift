@@ -10,6 +10,8 @@ struct FeedMediaViewer: View {
     let url: URL
     var enableDragDismiss: Bool = true
     var onDismiss: (() -> Void)? = nil
+    /// False for the pages a pager builds either side of the one showing.
+    var isOnScreen: Bool = true
     @Environment(\.dismiss) private var dismiss
     @Environment(\.mediaZoomPresented) private var zoomPresented
     @EnvironmentObject var nostrService: NostrService
@@ -27,10 +29,14 @@ struct FeedMediaViewer: View {
     /// black and the buttons stay gone, instead of coming back as `offset`
     /// animates to zero.
     @State private var isClosing = false
+    /// Set the moment any close starts (X, swipe let-go, PiP), so the phone
+    /// turns upright before the viewer zooms back into the post.
+    @State private var closeStarted = false
 
-    init(url: URL, enableDragDismiss: Bool = true, onDismiss: (() -> Void)? = nil) {
+    init(url: URL, enableDragDismiss: Bool = true, isOnScreen: Bool = true, onDismiss: (() -> Void)? = nil) {
         self.url = url
         self.enableDragDismiss = enableDragDismiss
+        self.isOnScreen = isOnScreen
         self.onDismiss = onDismiss
         // A kind the feed already resolved is known before the first frame,
         // so the zoom never catches a spinner.
@@ -302,12 +308,20 @@ struct FeedMediaViewer: View {
             updateMirrorStatus()
         }
         #if os(iOS)
-        .allowsLandscapeWhileShown()
-        .turnsSidewaysForWideClip(isVideo ? url : nil)
+        .landscapeSlot(held: holdsLandscape, closing: closingNow)
+        .turnsSidewaysForWideClip(holdsLandscape ? url : nil)
         #endif
     }
 
+    private var closingNow: Bool { isClosing || closeStarted || zoomSwipe.isClosing }
+
+    /// Only a clip on screen may turn the phone; photos stay upright.
+    private var holdsLandscape: Bool {
+        LandscapeCount.pageHolds(isClip: isVideo, isOnScreen: isOnScreen, isClosing: closingNow)
+    }
+
     func performDismiss() {
+        closeStarted = true
         if let onDismiss = onDismiss {
             onDismiss()
         } else {
