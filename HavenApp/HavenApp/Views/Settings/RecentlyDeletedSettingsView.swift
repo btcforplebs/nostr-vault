@@ -25,6 +25,7 @@ struct RecentlyDeletedSettingsView: View {
                 Text("Posts you delete on this device stay here for 30 days. \(DeletedPost.undeleteNote)")
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         .onAppear(perform: reload)
         .onChange(of: configService.config.activeAccountNpub) { _ in reload() }

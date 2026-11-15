@@ -41,6 +41,7 @@ struct RelayAccessSettingsView: View {
                 Text("Web of Trust")
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         .onAppear {
             let depth = configService.config.chatRelayWotDepth

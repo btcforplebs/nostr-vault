@@ -74,6 +74,7 @@ struct AddAccountSheetView: View {
                 }
                 if let error = addError { Text(error).foregroundColor(.red) }
             }
+            .warmFormBackground()
             .navigationTitle("Add Account")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { performDismiss() } }

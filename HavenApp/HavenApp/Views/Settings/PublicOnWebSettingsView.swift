@@ -42,6 +42,7 @@ struct PublicOnWebSettingsView: View {
                     Text("Needs your own domain and a tunnel. On: your domain goes in your DM inbox now and in your relay list the next time you save Relays, so other apps can reach this vault. Turning it off takes it out of your relay list and DM inbox now. A tunnel you started keeps running until you stop it.")
                 }
             }
+            .warmFormBackground()
             .groupedFormStyleCompat()
             .confirmationDialog(moveFrom.flatMap(WebRoleService.shared.movePrompt) ?? "",
                                 isPresented: Binding(get: { moveFrom != nil }, set: { if !$0 { moveFrom = nil } }),

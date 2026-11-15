@@ -58,6 +58,7 @@ struct AdvancedSettingsView: View {
                 Text("Danger Zone")
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

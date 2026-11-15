@@ -96,6 +96,7 @@ struct FipsMeshAdvancedView: View {
                 Text("Changes apply the next time the mesh starts.")
             }
         }
+        .warmFormBackground()
         .listStyle(.insetGrouped)
         .tint(Color.havenPurple)
         .navigationTitle("Advanced")

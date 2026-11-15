@@ -117,6 +117,7 @@ struct ImportKeySheetView: View {
                 }
                 if let error = importError { Text(error).foregroundColor(.red) }
             }
+            .warmFormBackground()
             .navigationTitle("Import Key")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { performDismiss() } }

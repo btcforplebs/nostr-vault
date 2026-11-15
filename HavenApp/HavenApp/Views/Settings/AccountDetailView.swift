@@ -162,6 +162,7 @@ struct AccountDetailView: View {
                          : "Deletes this account from this device. Nothing is sent to relays.")
                 }
             }
+            .warmFormBackground()
             .groupedFormStyleCompat()
             .confirmDestructive(
                 "Remove Local Key",

@@ -59,6 +59,7 @@ struct ListMergeView: View {
                     if let rows { confirm(rows) }
                 }
             }
+            .warmFormBackground()
             .formStyle(.grouped)
             .navigationTitle("Merge \(name)")
             #if os(iOS)
@@ -214,6 +215,7 @@ private struct ListMergeReview: View {
             section(titles.stays, rows.indices.filter { rows[$0].status == .current },
                     footer: kind == 3 ? "Untick someone to unfollow them." : "Untick an entry to take it out.")
         }
+        .warmFormBackground()
         .formStyle(.grouped)
         .navigationTitle("Review")
         .onAppear { ListEntryLabel.loadPeople(rows.map(\.key)) }

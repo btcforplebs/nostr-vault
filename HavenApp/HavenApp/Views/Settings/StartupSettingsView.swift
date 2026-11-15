@@ -16,6 +16,7 @@ struct StartupSettingsView: View {
                 }
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

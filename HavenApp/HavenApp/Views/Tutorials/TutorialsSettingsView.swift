@@ -30,6 +30,7 @@ struct TutorialsSettingsView: View {
                 Text("Each tutorial shows again the next time you open its page. Your follows aren't changed.")
             }
         }
+        .warmFormBackground()
         .formStyle(.grouped)
         .confirmationDialog("Show all tutorials again?", isPresented: $confirmingReset, titleVisibility: .visible) {
             Button("Show All Again", role: .destructive) { center.resetAll(account: account) }

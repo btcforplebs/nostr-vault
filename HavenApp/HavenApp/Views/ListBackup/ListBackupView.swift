@@ -34,6 +34,7 @@ struct ListBackupView: View {
                 }
             }
         }
+        .warmFormBackground()
         .formStyle(.grouped)
         .task(id: config.config.activeAccountNpub) { await service.load() }
     }

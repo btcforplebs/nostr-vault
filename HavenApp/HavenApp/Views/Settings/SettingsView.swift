@@ -747,6 +747,7 @@ struct SettingsView: View {
                 .frame(height: 60)
             #endif
         }
+        .warmFormBackground()
         .listStyle(.insetGrouped)
         .navigationTitle("Settings")
         .sheet(isPresented: $showingSetupWizard) {

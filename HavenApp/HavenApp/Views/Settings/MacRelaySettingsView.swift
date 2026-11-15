@@ -117,6 +117,7 @@ struct MacRelaySettingsView: View {
                 }
             }
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {

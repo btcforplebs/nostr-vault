@@ -23,6 +23,7 @@ struct MacFipsMeshSettingsView: View {
             shareSection
             advancedSection
         }
+        .warmFormBackground()
         .groupedFormStyleCompat()
         .sheet(isPresented: $showPair) { PairDeviceView().environmentObject(configService) }
         .onAppear {
