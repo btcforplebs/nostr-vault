@@ -15,6 +15,10 @@
 //                                                            (kind-cards.js); a poll's with its vote count
 //   napplet:poll/vote { event, picks }                    -> the classic vote (poll-votes.js sendVote: your signer,
 //                                                            your write relays and the poll's own), { data } = the card
+//   napplet:note/stats { event }                          -> { data }: your Like and the note's zap total (note-stats.js);
+//                                                            changes come after as inc nv.note.stats
+//   napplet:note/like { event, emoji? }                   -> the classic Like (likeWithFeedback: react, swap, or take it
+//                                                            back), signed by your signer; the result comes as stats
 //   napplet:profile/show { pubkey }                       -> the full classic profile (#/profile/<pk>), Reader kept
 //   napplet:article/open { event }                        -> the classic article reader over the Reader
 //   napplet:note/repost|zap|menu { event }                -> the classic flows, run by the shell (gap run, after P8):
@@ -31,6 +35,7 @@ export const COMPOSE_WAITING = "nv.compose.waiting", COMPOSE_UNDONE = "nv.compos
 import { READER_DTAG as READER } from "./first-party-list.js"
 import { mediaViewOf } from "./media-view.js"
 import { CARD_KINDS } from "./kind-cards.js"
+import { askedEmoji } from "./note-stats.js"
 const HEX = /^[0-9a-f]{64}$/
 
 /** A link a napplet asked to open -> the URL to open, or null. http(s) only, no user:pass, at most 2048 characters. */
@@ -94,7 +99,16 @@ export function signedOf(raw, verify) {
   try { return ev && verify(ev) ? ev : null } catch { return null }
 }
 
-export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {}, onProfile = null }) {
+/** The note a Like or zap total is for: a signed note, article, highlight or poll the Reader draws (a repost: the
+ *  note inside it). -> event | null. */
+export function likedNote(raw, verify) {
+  const ev = signedOf(raw, verify)
+  if (!ev) return null
+  if (ev.kind === 1 || CARD_KINDS.includes(ev.kind)) return ev
+  return ev.kind === 6 ? actionNote(ev, verify) : null
+}
+
+export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {}, onProfile = null, stats = null, like = null }) {
   const on = { [COMPOSE_DONE]: onComposeDone, [COMPOSE_WAITING]: onComposeWaiting, [COMPOSE_UNDONE]: onComposeUndone }
   const me = { dTag: "shell", send: m => { if (m?.type === "inc.event" && on[m.topic]) on[m.topic](m.payload) } }
   for (const t of Object.keys(on)) bus.subscribe(me, t)
@@ -123,6 +137,19 @@ export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaitin
       if (!HEX.test(p?.pubkey ?? "")) return { ok: false, error: "not a pubkey" }
       onProfile(p.pubkey)
       return { ok: true }
+    } })] : []),
+    ...(stats ? [bus.register({ id: "shell-note-stats", title: "Stats", archetype: "note", actions: ["stats"], conventions: [], deliver: (p, from) => {
+      if (from?.dTag !== READER) return { ok: false, error: "the Reader's only" }
+      const note = likedNote(p?.event, verify)
+      if (!note) return { ok: false, error: "not a signed note" }
+      return { ok: true, data: stats(note) }
+    } })] : []),
+    ...(like ? [bus.register({ id: "shell-note-like", title: "Like", archetype: "note", actions: ["like"], conventions: [], deliver: (p, from) => {
+      if (from?.dTag !== READER) return { ok: false, error: "the Reader's only" }
+      const note = likedNote(p?.event, verify)
+      if (!note) return { ok: false, error: "not a signed note" }
+      const why = like(note, askedEmoji(p?.emoji))
+      return why ? { ok: false, error: why } : { ok: true }
     } })] : []),
     bus.register({ id: "shell-article-open", title: "Read", archetype: "article", actions: ["open"], conventions: [], deliver: p => {
       const ev = signedOf(p?.event, verify)

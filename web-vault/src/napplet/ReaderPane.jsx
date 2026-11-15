@@ -21,6 +21,10 @@ import { heldVotes, loadVotes, sendVote, votesFresh } from "../components/poll-v
 import { isClosed, parsePoll } from "../components/polls.js"
 import { getBlocks } from "../net/blocks.js"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
+import { actionState, loadSent, onActionState, reactionOf } from "../net/actions.js"
+import { onZapTotals, wantTotals, zapTotal } from "../net/zaps.js"
+import { displayEmoji, likeWithFeedback, pickFor } from "../components/ReactionButton.jsx"
+import { STATS_TOPIC, statsOf } from "./note-stats.js"
 import "./napplet.css"
 
 const READY_WAIT_MS = 5000
@@ -68,6 +72,7 @@ export function ReaderPane({ ctx, open = null, hidden = false }) {
       },
       closeCompose: () => { compose?.close(); compose = null; setComposing(false); setComposeAside(false) },
     }
+    const watched = new Set() // the notes whose Like and zaps the Reader asked about (napplet:note/stats)
     const wire = readerIntents({
       bus, openCompose,
       onComposeDone: () => live.current?.closeCompose(),
@@ -83,9 +88,18 @@ export function ReaderPane({ ctx, open = null, hidden = false }) {
       vote: (ev, picks) => pollVote(liveCtx, ev, picks),
       onArticle: ev => setSheet({ kind: "article", event: ev }),
       onProfile: pk => { location.hash = `#/profile/${pk}` },
+      stats: note => { watched.add(note.id); loadSent(liveCtx, note.id); wantTotals(liveCtx, note.id); return statsNow(note.id) },
+      like: (note, emoji) => {
+        if (liveCtx.signer?.readOnly) return READ_ONLY_SHORT
+        likeWithFeedback(liveCtx, note, emoji === undefined ? undefined : pickFor(actionState(note.id).like === "sent" ? displayEmoji(reactionOf(note.id)) : null, emoji))
+        return ""
+      },
       preview: loadPreview,
     })
     live.current.me = wire.me
+    // Your Like and the zap totals, pushed to the Reader as they change (note-stats.js), for the notes it asked about.
+    const push = id => { if (watched.has(id)) bus.emit(wire.me, STATS_TOPIC, statsNow(id)) }
+    const offStats = [onActionState(push), onZapTotals(push)]
     ;(async () => {
       try {
         reader = await mount(READER_DTAG, host.current, () => { reader = null })
@@ -96,7 +110,7 @@ export function ReaderPane({ ctx, open = null, hidden = false }) {
         if (openRef.current) bus.invoke(wire.me, openRef.current)
       } catch (e) { if (!gone) setNote(`The Reader couldn't open: ${e?.message ?? e}`) }
     })()
-    return () => { gone = true; wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
+    return () => { gone = true; offStats.forEach(f => f()); wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
   }, [ctx.session.pubkey, ctx.vault, ctx.signer, grants])
 
   // A new address (another thread or profile) while the Reader is up: hand it over instead of mounting again.
@@ -160,3 +174,6 @@ async function pollVote(ctx, ev, picks) {
   await sendVote(ctx, poll, picks)
   return pollCard(ev, heldVotes(poll.id), { me: ctx.session?.pubkey ?? "", blocked: getBlocks().blocked })
 }
+
+/** A note's Like and zap total as the classic card has them now (note-stats.js). */
+const statsNow = id => statsOf(id, { state: actionState(id), reaction: reactionOf(id), total: zapTotal(id) }, displayEmoji)
