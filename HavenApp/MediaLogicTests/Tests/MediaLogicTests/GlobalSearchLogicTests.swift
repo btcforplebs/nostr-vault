@@ -10,7 +10,8 @@ final class GlobalSearchLogicTests: XCTestCase {
             "wss://nostr.wine",
             "wss://search.nos.today",
             "wss://relay.vertexlab.io",
-            "wss://profiles.nostrver.se"
+            "wss://profiles.nostrver.se",
+            "wss://index.hzrd149.com"
         ])
         XCTAssertFalse(SearchRelayDefaults.relays.contains { $0.contains("nostr.band") })
         XCTAssertFalse(SearchRelayDefaults.relays.contains { $0.contains("noswhere") })

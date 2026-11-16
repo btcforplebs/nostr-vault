@@ -128,6 +128,8 @@ class NostrService @Inject constructor(
             "wss://relay.damus.io",
             "wss://user.kindpag.es",
             "wss://purplepag.es",
+            // Vertex WoT index (hzrd149): kind 0/3/10002 for fiatjaf and jack in ~2 s (2026-11-16).
+            "wss://index.hzrd149.com",
         )
         internal const val METADATA_IDLE_TIMEOUT_MS = 60_000L
         internal const val METADATA_SUB_ID = "meta-pool"

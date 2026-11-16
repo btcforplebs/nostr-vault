@@ -60,16 +60,20 @@ enum RelayDraft {
     }
 
     /// The relays that index every account's lists; a "none" counts only when both answered.
-    static let indexers = ["wss://purplepag.es", "wss://user.kindpag.es"]
+    static let settlingIndexers = ["wss://purplepag.es", "wss://user.kindpag.es"]
 
-    /// Whether a lookup settled the list: every one of the `indexers`
+    /// Asked for lists. index.hzrd149.com keeps only its web of trust, so a
+    /// new account's list may never be there: it never settles a "none".
+    static let indexers = settlingIndexers + ["wss://index.hzrd149.com"]
+
+    /// Whether a lookup settled the list: every one of the `settlingIndexers`
     /// answered, found or not. Any other relay answering proves little: most
     /// of them are this device's own defaults, a list made in another app may
     /// never have reached them, and one of them may hold an older copy that
     /// re-signing would bring back (Tron, #1386).
     static func settled(found: Bool, answeredBy: Set<String>) -> Bool {
         let answered = Set(answeredBy.map(RelayMatrix.key))
-        return indexers.allSatisfy { answered.contains(RelayMatrix.key($0)) }
+        return settlingIndexers.allSatisfy { answered.contains(RelayMatrix.key($0)) }
     }
 
     struct State: Equatable {

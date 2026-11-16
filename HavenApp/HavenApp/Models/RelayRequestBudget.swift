@@ -17,6 +17,8 @@ enum RelayRequestBudget {
     static let profileIndexRelays = [
         "wss://user.kindpag.es",
         "wss://purplepag.es",
+        // Vertex WoT index (hzrd149): kind 0/3/10002 for fiatjaf and jack in ~2 s (2026-11-16).
+        "wss://index.hzrd149.com",
     ]
 
     /// How often queued profile lookups go out as one batch. Was 0.5 s.

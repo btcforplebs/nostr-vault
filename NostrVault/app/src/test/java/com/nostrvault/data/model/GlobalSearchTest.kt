@@ -250,6 +250,7 @@ class GlobalSearchTest {
                 "wss://search.nos.today",
                 "wss://relay.vertexlab.io",
                 "wss://profiles.nostrver.se",
+                "wss://index.hzrd149.com",
             ),
             DEFAULT_SEARCH_RELAYS,
         )

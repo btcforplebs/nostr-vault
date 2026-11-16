@@ -240,6 +240,14 @@ class RelayDraftTest {
     }
 
     @Test
+    fun `the wot index is asked but never settles a list`() {
+        // index.hzrd149.com keeps only its web of trust: a new account's list may never be there.
+        assertTrue("wss://index.hzrd149.com" in RelayDraft.INDEXERS)
+        assertFalse(RelayDraft.settled(found = false, answeredBy = listOf("wss://index.hzrd149.com", "wss://purplepag.es")))
+        assertTrue(RelayDraft.settled(found = false, answeredBy = listOf("wss://purplepag.es", "wss://user.kindpag.es")))
+    }
+
+    @Test
     fun `a held list from that lookup never publishes over the real one`() {
         val held = RelayDraft.Published(
             relayListKnown = RelayDraft.settled(false, defaultsAnswered),

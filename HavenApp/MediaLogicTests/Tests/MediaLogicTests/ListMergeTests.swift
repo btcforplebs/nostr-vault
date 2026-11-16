@@ -370,6 +370,6 @@ final class ListMergeTests: XCTestCase {
 
     func testEditLookupAskKeepsThreeReadRelaysAndDropsRepeats() {
         let ask = ListMerge.editLookupAsk(readRelays: ["wss://a.example", "wss://PURPLEPAG.es/", "wss://b.example", "wss://c.example"])
-        XCTAssertEqual(ask, ["wss://a.example", "wss://PURPLEPAG.es/", "wss://b.example", "wss://user.kindpag.es"])
+        XCTAssertEqual(ask, ["wss://a.example", "wss://PURPLEPAG.es/", "wss://b.example", "wss://user.kindpag.es", "wss://index.hzrd149.com"])
     }
 }

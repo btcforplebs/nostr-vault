@@ -4,6 +4,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { engagementWeight, targetOf, reactorOf, tally, rankTargets, scoreNotes, trustSet, fetchPopular } from "../src/net/popular.js"
+import { PROFILE_RELAYS } from "../src/net/pool.js"
 
 const hex = c => c.repeat(64)
 const N1 = hex("1"), N2 = hex("2"), N3 = hex("3")
@@ -81,7 +82,7 @@ test("the trust set is the user, their follows and who those follow, newest cont
   ] }
   const set = await trustSet(AUTHOR, [R1, R2], { query })
   assert.deepEqual([...set].sort(), [AUTHOR, R1, R2, R3].sort())
-  assert.deepEqual(asked, [[["wss://purplepag.es"], { kinds: [3], authors: [R1, R2], limit: 2 }]], "contact lists from the profile relay only")
+  assert.deepEqual(asked, [[PROFILE_RELAYS, { kinds: [3], authors: [R1, R2], limit: 2 }]], "contact lists from the profile relay only")
   await trustSet(AUTHOR, [R1, R2], { query: async () => assert.fail("built once") })
 })
 
@@ -90,7 +91,7 @@ test("a big follow list asks for its contact lists in chunks of 250, all at once
   let open = 0, most = 0, asks = 0
   const query = async (r, f) => {
     asks++; open++; most = Math.max(most, open)
-    assert.deepEqual(r, ["wss://purplepag.es"]); assert.equal(f.authors.length, 250)
+    assert.deepEqual(r, PROFILE_RELAYS); assert.equal(f.authors.length, 250)
     await new Promise(res => setTimeout(res, 10)); open--
     return f.authors.map(pk => ({ kind: 3, pubkey: pk, created_at: 1, tags: [["p", hex("7")]] }))
   }
