@@ -29,9 +29,8 @@ import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
 import { startAppearance } from "./src/net/appearance.js"
 import { startAccent } from "./src/net/accent.js"
-import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard, NappletShell, ReaderPane, WotPane, MessagesPane } from "./src/screens/lazy-screens.js"
-import { nappletsOn, switchFromAddress } from "./src/napplet/flag.js"
-import { readerOpenFor } from "./src/napplet/reader-intents.js"
+import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard } from "./src/screens/lazy-screens.js"
+import { setDeskLayout, forgetOldSwitch } from "./src/napplet/flag.js"
 import { warmScreens } from "./src/screens/warm-screens.js"
 import { GuestApp } from "./src/guest/GuestApp.jsx"
 import { SettingsScreen, resetBrowser } from "./src/screens/SettingsScreen.jsx"
@@ -54,11 +53,9 @@ import "./src/styles/boot-sheets.js" // after app.css: the sheets the boot compo
 import { NotifyWatch } from "./src/components/useNotifyWatch.js"
 import { isDashboardOpen } from "./src/net/dashboard-route.js"
 
-// /vault/?napplets=1 (or =0): the napplet switch from the address, before anything draws, signed in or not.
-switchFromAddress()
-// The napplet shell page (plan P1), opened only by its address: /vault/?shell=1.
-const NAPPLET_SHELL = new URLSearchParams(location.search).get("shell") === "1"
-const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "bookmarks", "emoji", "apps", "settings", "accounts", "wallet", ...(BOX ? ["box"] : [])]
+// The old napplet preview switch (?napplets=1 in a bookmark, the stored tick) is gone: the layout decides (plan step 11).
+forgetOldSwitch()
+const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "bookmarks", "emoji", "settings", "accounts", "wallet", ...(BOX ? ["box"] : [])]
 // "#/thread/<id>" -> { route: "thread", arg: "<id>" }; "#/profile/<pubkey>" is someone else's profile.
 const routeOf = () => {
   const [r, arg = ""] = location.hash.replace(/^#\/?/, "").split(/[?]/)[0].split("/")
@@ -115,6 +112,7 @@ function App() {
   const [account, setAccount] = useState(null)
   const [error, setError] = useState("")
   const mode = useDeskMode()
+  setDeskLayout(mode !== "phone") // the desktop layout's screens are the napplets (plan step 11), before any screen reads it
   const modeNow = useRef(mode)
   modeNow.current = mode
   const [{ route, arg }, setRoute] = useState(() => settle(mode))
@@ -289,8 +287,6 @@ function App() {
   const ctx = { vault, session, signer, account, signOut, reloadAccount }
   setActionContext(ctx)
   setMeshPeople(session.pubkey, account.follows) // whose note photos may load over FIPS (MediaImage)
-  // ?shell=1: the napplet shell page instead of the app's screens (src/napplet, plan P1). Hidden: nothing links it.
-  if (NAPPLET_SHELL) return <div class="app"><NappletShell ctx={ctx} /><AuthPrompt /></div>
   const other = route === "profile" && arg && arg !== session.pubkey // someone else's profile, reached from Search
   const desk = mode !== "phone"
   // The relay screen stays mounted (its FIPS panel finds its elements once, by id), in the same place in both layouts.
@@ -301,10 +297,10 @@ function App() {
       {/* A box has its own mesh and no in-page relay: its Box screen (src/box) instead of the browser relay's. */}
       {BOX ? (route === "box" || route === "relay") && <div class="box-host"><BoxScreen ctx={ctx} /></div>
         : <div class="relay-host" hidden={route !== "relay"}>{relayShown && <RelayScreen ctx={ctx} log={log} />}</div>}
-      {!desk && (route === "feed" && !readsInNapplet(route, other) || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
+      {!desk && (route === "feed" || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
       {!desk && <TabBar ctx={ctx} route={tabOf(route, other)} pubkey={session.pubkey} />}
       <FloatingPlayer />
-      {isDashboardOpen() && <VaultDashboard ctx={ctx} napplet={desk && nappletsOn()} />}
+      {isDashboardOpen() && <VaultDashboard ctx={ctx} napplet={desk} />}
       <AuthPrompt />
       {tour && <WelcomeTour onDone={() => { markTourDone(session.pubkey); setTour(false) }} />}
       {!BOX && <NotifyAsk busy={tour} />}
@@ -312,41 +308,22 @@ function App() {
   )
 }
 
-/** The WoT tab as the WoT napplet (plan P6) with the switch on, "See their web" (#/wot/<hex>/web) included (gap run). */
-const wotInNapplet = () => nappletsOn()
-/** "#/wot/<hex>/web" -> { root: hex }, "#/wot/<hex>" -> { open: hex }, else {}. */
-const wotAddress = (hash = location.hash) => { const m = /^#\/wot\/([0-9a-f]{64})(\/web)?/.exec(hash); return m ? (m[2] ? { root: m[1] } : { open: m[1] }) : {} }
-
-/** Does this screen show as the Reader napplet? Only with the switch on: the Feed and threads. Someone's profile is the
- *  full classic profile (PersonScreen, as from Search: Follow, Message, Zap, WoT, Share, ⋯, all the tabs), with the
- *  Reader kept mounted and hidden under it so Back lands where you were (bug run, full profiles). */
-const readsInNapplet = (route, other) => nappletsOn() && (route === "feed" || route === "thread")
-const readerUnder = (route, other) => nappletsOn() && route === "profile" && !!other
-
 /** The phone layout's screens, one at a time, as before the desktop layout existed. */
 function PhoneScreens({ ctx, route, arg, other }) {
-  // The napplet switch on: Feed and Thread are the Reader napplet, one element so it stays mounted as you move between
-  // them and into someone's profile and back (plan P4, bug run). Off: the screens below, unchanged.
-  const reader = readsInNapplet(route, other)
-  // The address the Reader last opened: kept while it sits hidden under a profile, so it isn't sent back to the Feed.
-  const readerOpen = useRef(null)
-  if (reader) readerOpen.current = readerOpenFor(route, arg)
+  // The phone keeps today's screens (plan step 11, Logen's call 5); the napplets are the desktop layout's.
   return (
     <>
-      {(reader || readerUnder(route, other)) && <ReaderPane ctx={ctx} open={readerOpen.current} hidden={!reader} />}
-      {!reader && route === "feed" && <FeedScreen ctx={ctx} />}
+      {route === "feed" && <FeedScreen ctx={ctx} />}
       {route === "compose" && <ComposeScreen ctx={ctx} />}
-      {!reader && route === "profile" && (other ? <PersonScreen key={arg} ctx={ctx} pubkey={arg} /> : <ProfileScreen ctx={ctx} />)}
-      {route === "wot" && (wotInNapplet() ? <WotPane ctx={ctx} open={wotAddress().open ?? null} root={wotAddress().root ?? null} /> : <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(arg) ? arg : undefined} />)}
+      {route === "profile" && (other ? <PersonScreen key={arg} ctx={ctx} pubkey={arg} /> : <ProfileScreen ctx={ctx} />)}
+      {route === "wot" && <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(arg) ? arg : undefined} />}
       {route === "search" && <SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} />}
       {route === "notifications" && <NotificationsScreen ctx={ctx} vaultMenu />}
-      {!reader && route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}
-      {route === "messages" && !nappletsOn() && <MessagesScreen ctx={ctx} vaultMenu />}
-      {(route === "messages" || route === "dm") && nappletsOn() && <MessagesPane ctx={ctx} open={route === "dm" ? arg : null} vaultMenu />}
+      {route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}
+      {route === "messages" && <MessagesScreen ctx={ctx} vaultMenu />}
       {route === "bookmarks" && <BookmarksScreen ctx={ctx} />}
       {route === "emoji" && <EmojiScreen ctx={ctx} />}
-      {route === "apps" && <NappletShell ctx={ctx} showSwitch={false} vaultMenu />}
-      {route === "dm" && !nappletsOn() && <ConversationScreen key={arg} ctx={ctx} peer={arg} />}
+      {route === "dm" && <ConversationScreen key={arg} ctx={ctx} peer={arg} />}
       {route === "vault" && <VaultScreen ctx={ctx} />}
       {route === "settings" && <SettingsScreen key={arg} ctx={ctx} page={arg} />}
       {route === "accounts" && <AccountsScreen ctx={ctx} />}

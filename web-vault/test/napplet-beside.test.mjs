@@ -55,5 +55,5 @@ test("the shell hears nv.ctx from the Reader; the menu and the desktop take it",
   assert.match(menu, /addEventListener\(CTX_EVENT, fromReader\)/)
   const shell = fs.readFileSync(new URL("../src/desktop/DesktopShell.jsx", import.meta.url), "utf8")
   assert.match(shell, /<ReaderPane ctx=\{ctx\} open=\{readerOpen\} notifications=\{notifs\} search=\{!!kept.finding\} vault=\{vaulting \? \(vaultMode \?\? true\) : null\} beside=\{openBeside\} openId=\{note \?\? ""\} fullCompose \/>/)
-  assert.match(shell, /reader \? <ReaderPane ctx=\{ctx\} open=\{\{ archetype: "note", action: "open", payload: \{ id, side: true \} \}\} keys=\{false\} fullCompose \/>/)
+  assert.match(shell, /<ReaderPane ctx=\{ctx\} open=\{\{ archetype: "note", action: "open", payload: \{ id, side: true \} \}\} keys=\{false\} fullCompose \/>/)
 })

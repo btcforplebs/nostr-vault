@@ -1,4 +1,4 @@
-// The consent sheet and the "may it…?" ask, shared by the Apps pane (NappletShell.jsx) and the app cards in the side
+// The consent sheet and the "may it…?" ask, used by the app cards in the side
 // columns (desktop/space/AppCard.jsx): one sheet, so a grant is made the same way wherever an app is opened. The sheet
 // only reports what the user ticked; runtime.js turns it into the grant (policy.js outsideGrant), as it always did.
 import { useState } from "preact/hooks"
