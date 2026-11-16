@@ -3,6 +3,7 @@
 // document before the first paint (theme.js themeHead); this keeps them in step: theme.get once, then every
 // theme.changed. Napplet CSS uses the same names as styles/tokens.css (var(--s1), var(--text-2), …).
 // `island: "dark"` keeps the napplet on the dark set whatever the mode (the trust globe, as the classic screen does).
+// data-sky on :root is always the page's own mode, island or not: what the WoT globe paints its sky by.
 // Every change also fires a window "nv-theme" event, for napplets that paint with the colours themselves (canvas).
 // No imports and plain `function`s: inlined as a script (wot-inject.js asScript).
 export function nvTheme(n, opts) {
@@ -18,7 +19,8 @@ export function nvTheme(n, opts) {
     const mode = island ? "dark" : nv && nv.mode === "light" ? "light" : "dark"
     root.style.colorScheme = mode
     root.dataset.theme = mode
-    try { dispatchEvent(new CustomEvent("nv-theme", { detail: { mode } })) } catch (e) {}
+    root.dataset.sky = nv && nv.mode === "light" ? "light" : "dark"
+    try { dispatchEvent(new CustomEvent("nv-theme", { detail: { mode, sky: root.dataset.sky } })) } catch (e) {}
   }
   try {
     if (n && n.theme && n.theme.get) n.theme.get().then(apply, () => {})

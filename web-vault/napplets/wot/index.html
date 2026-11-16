@@ -11,6 +11,9 @@
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
+  /* Light: the classic screen's late-morning sky behind the globe (styles/wot.css), the same colours; the bar, menus
+     and cards over it stay the dark island's glass. data-sky = the page's mode (theme-client.js). */
+  :root[data-sky="light"], :root[data-sky="light"] body { background: linear-gradient(180deg, #a7cdee 0%, #d3e5f2 55%, #f4e8d8 100%); }
   canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; outline: none; }
   .bar { position: fixed; top: 10px; left: 8px; right: 8px; z-index: 2; display: flex; gap: 6px; align-items: center; }
   .bar > * { flex: none; }
@@ -114,7 +117,12 @@ const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").match
 const DIMMED = 0.08, LOADS_PER_FRAME = 8, BITMAP = 96
 
 // ---------- drawing: net/screens/WotGlobe.jsx's frame, as it is, on this canvas ----------
+// Before theme.get answers: the shell's first-paint block says the page's mode (theme.js --nv-mode).
+document.documentElement.dataset.sky = getComputedStyle(document.documentElement).getPropertyValue("--nv-mode").trim() === "light" ? "light" : "dark"
+/** In Light the globe draws by day (net/wot-globe.js STAR_DAY / RIM_DAY, WotGlobe.jsx's day frame). */
+const isDay = () => document.documentElement.dataset.sky === "light"
 const canvas = $("globe")
+let rims = RIM // face rim colours for this frame: RIM, or RIM_DAY in Light
 let cam = newCamera(), size = { w: 0, h: 0 }, drawn = [], fades = new Map(), fading = false, frame = 0, last = 0, loadsLeft = 0
 const images = new Map() // picture url -> bitmap | "loading" | "failed"
 // The accent the canvas paints with ("r g b" channels), read from the theme tokens; redrawn when they change.
@@ -139,6 +147,8 @@ function draw(dt) {
   g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h)
   const k = cam, project = projector(k, w, h), reduce = reducedMotion()
   loadsLeft = LOADS_PER_FRAME
+  const day = isDay(), STARS = day ? STAR_DAY : STAR
+  rims = day ? RIM_DAY : RIM
   const weights = LAYER_WEIGHTS[layer] ?? LAYER_WEIGHTS.everyone, lit = litOf(web, followsBackOn)
   const path = picked ? (trustPath(web, picked)?.all ?? []) : []
   const target = picked && picked !== web.me ? picked : null
@@ -165,7 +175,7 @@ function draw(dt) {
     out.push({ node, x: p.x, y: p.y, depth: p.depth, face: false })
   }
   for (const [key, list] of bands) {
-    const [kind, weight, b] = key.split("|"), star = STAR[kind], s0 = SIZE[kind === "hot" ? "ring" : kind]
+    const [kind, weight, b] = key.split("|"), star = STARS[kind], s0 = SIZE[kind === "hot" ? "ring" : kind]
     g.beginPath()
     for (const p of list) { const s = s0 * p.scale * Math.min(k.zoom, 1.8); g.moveTo(p.x + s, p.y); g.arc(p.x, p.y, s, 0, 2 * Math.PI) }
     g.fillStyle = `rgb(${star[0]} ${star[1]} ${star[2]} / ${Math.min(1, starAlpha(star, 0.35 + 0.65 * (+b + 0.5) / 4) * +weight)})`; g.fill()
@@ -182,7 +192,8 @@ function draw(dt) {
   fades = next; fading = !still
   const all = [...faces.sort((a, b) => a.depth - b.depth), me]
   const glow = g.createRadialGradient(me.x, me.y, 0, me.x, me.y, me.r * 3)
-  glow.addColorStop(0, `rgb(${tint.accent} / .32)`); glow.addColorStop(1, `rgb(${tint.accent} / 0)`)
+  if (day) { glow.addColorStop(0, "rgb(255 255 255 / .75)"); glow.addColorStop(0.5, `rgb(${tint.accent} / .16)`); glow.addColorStop(1, `rgb(${tint.accent} / 0)`) }
+  else { glow.addColorStop(0, `rgb(${tint.accent} / .32)`); glow.addColorStop(1, `rgb(${tint.accent} / 0)`) }
   g.fillStyle = glow; g.beginPath(); g.arc(me.x, me.y, me.r * 3, 0, 2 * Math.PI); g.fill()
   const at = new Map(); for (const d of out) at.set(d.node.pk, d); for (const f of faces) at.set(f.pk, f)
   const to = target && at.get(target)
@@ -190,11 +201,12 @@ function draw(dt) {
     const legs = []
     for (const pk of path) { const b = at.get(pk); if (b && b.depth >= -0.2 && (b.shown ?? 1) >= 0.3) legs.push(b) }
     const stroke = (width, colour, inner) => { g.beginPath(); for (const b of legs) { if (inner) { g.moveTo(me.x, me.y); g.lineTo(b.x, b.y) } else { g.moveTo(b.x, b.y); g.lineTo(to.x, to.y) } } g.lineWidth = width; g.strokeStyle = colour; g.stroke() }
-    stroke(3, `rgb(${tint.accent} / .16)`, true); stroke(3, `rgb(${tint.accent} / .25)`, false); stroke(0.8, `rgb(${tint.light} / .45)`, true); stroke(1.3, `rgb(${tint.light} / .9)`, false)
+    if (day) { stroke(3, `rgb(${tint.accent} / .10)`, true); stroke(3, `rgb(${tint.accent} / .15)`, false); stroke(0.8, `rgb(${tint.accent} / .5)`, true); stroke(1.3, `rgb(${tint.accent} / .9)`, false) }
+    else { stroke(3, `rgb(${tint.accent} / .16)`, true); stroke(3, `rgb(${tint.accent} / .25)`, false); stroke(0.8, `rgb(${tint.light} / .45)`, true); stroke(1.3, `rgb(${tint.light} / .9)`, false) }
   }
   for (const f of all) {
     if (!f.me && f.shown < 1) {
-      const star = f.kind === "bridge" || f.kind === "traced" ? STAR.hot : f.kind === "follow" ? STAR.ring : STAR.extended
+      const star = f.kind === "bridge" || f.kind === "traced" ? STARS.hot : f.kind === "follow" ? STARS.ring : STARS.extended
       g.beginPath(); g.arc(f.x, f.y, SIZE.ring * f.r / SIZE.follow, 0, 2 * Math.PI)
       g.fillStyle = `rgb(${star[0]} ${star[1]} ${star[2]} / ${starAlpha(star, dotLight(f.depth)) * (1 - f.shown)})`; g.fill()
     }
@@ -203,9 +215,9 @@ function draw(dt) {
   }
   drawn = out
   g.font = "700 13px -apple-system, BlinkMacSystemFont, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "top"
-  g.lineWidth = 3; g.lineJoin = "round"; g.strokeStyle = "rgb(0 0 0 / .65)"; g.strokeText(middleName(), me.x, me.y + me.r + 5); g.fillStyle = "#fff"; g.fillText(middleName(), me.x, me.y + me.r + 5)
+  g.lineWidth = 3; g.lineJoin = "round"; g.strokeStyle = day ? "rgb(255 255 255 / .7)" : "rgb(0 0 0 / .65)"; g.strokeText(middleName(), me.x, me.y + me.r + 5); g.fillStyle = day ? "#1e2733" : "#fff"; g.fillText(middleName(), me.x, me.y + me.r + 5)
   const p = picked && out.find(d => d.node.pk === picked)
-  if (p && !p.face && p.depth > -0.2) { g.beginPath(); g.arc(p.x, p.y, 9, 0, 2 * Math.PI); g.lineWidth = 2; g.strokeStyle = "rgb(255 214 10)"; g.stroke() }
+  if (p && !p.face && p.depth > -0.2) { g.beginPath(); g.arc(p.x, p.y, 9, 0, 2 * Math.PI); g.lineWidth = 2; g.strokeStyle = day ? "rgb(217 164 0)" : "rgb(255 214 10)"; g.stroke() }
 }
 function face(g, pk, x, y, r, alpha, kind, load) {
   const url = pictureOf(pk), img = url && images.get(url)
@@ -214,7 +226,7 @@ function face(g, pk, x, y, r, alpha, kind, load) {
     n.resource.bytes(url).then(b => createImageBitmap(b)).then(bm => { images.set(url, roundBitmap(bm)); request() }).catch(() => images.set(url, "failed"))
   }
   g.globalAlpha = alpha
-  const [rr, rg, rb] = kind === "me" ? [230, 115, 38] : RIM[kind] ?? RIM.follow
+  const [rr, rg, rb] = kind === "me" ? [230, 115, 38] : rims[kind] ?? rims.follow
   g.beginPath(); g.arc(x, y, r + 1.5, 0, 2 * Math.PI); g.lineWidth = 4; g.strokeStyle = `rgb(${rr} ${rg} ${rb} / .22)`; g.stroke()
   if (img && typeof img === "object") g.drawImage(img, x - r, y - r, 2 * r, 2 * r)
   else {
