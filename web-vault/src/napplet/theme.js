@@ -60,7 +60,9 @@ export function themeHead(theme) {
   const nv = theme?.nv, tokens = cleanTokens(nv?.tokens)
   if (!Object.keys(tokens).length) return ""
   const mode = nv?.mode === "light" ? "light" : "dark"
-  return `<style id="nv-theme">:root:root { color-scheme: ${mode}; ${Object.entries(tokens).map(([k, v]) => `${k}: ${v};`).join(" ")} }</style>`
+  // --nv-mode: the page's own mode, for a napplet that keeps a dark island but still draws something by daylight
+  // (the WoT globe's sky): it reads it before theme.get answers (theme-client.js keeps data-sky after that).
+  return `<style id="nv-theme">:root:root { color-scheme: ${mode}; --nv-mode: ${mode}; ${Object.entries(tokens).map(([k, v]) => `${k}: ${v};`).join(" ")} }</style>`
 }
 
 export const THEME_STORAGE_KEYS = ["display.appearance", "display.accent", "display.accentCss"]

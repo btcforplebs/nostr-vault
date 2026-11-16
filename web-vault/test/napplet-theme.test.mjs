@@ -31,7 +31,7 @@ test("token values that could end the style rule or block are dropped", () => {
 
 test("the first-paint block sets the mode and the tokens, ranked over the napplet's own :root", () => {
   const head = themeHead({ nv: { mode: "light", tokens: { "--bg": "#f6f1eb", "--accent": "#c2571a", "--x": "a}b" } } })
-  assert.equal(head, `<style id="nv-theme">:root:root { color-scheme: light; --bg: #f6f1eb; --accent: #c2571a; }</style>`)
+  assert.equal(head, `<style id="nv-theme">:root:root { color-scheme: light; --nv-mode: light; --bg: #f6f1eb; --accent: #c2571a; }</style>`)
   assert.equal(themeHead({ colors: { background: "#000" } }), "") // no nv block: nothing to add
   // After the bootstrap, before the napplet's own head: no napplet style or script runs first.
   const doc = buildSrcdoc(`<html><head><style>:root{--bg:#000}</style></head></html>`, "boot()", "default-src 'none'", head)

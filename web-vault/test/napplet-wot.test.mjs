@@ -153,3 +153,14 @@ test("step 12: the WoT napplet's page spans the main area like the classic scree
   const css = fs.readFileSync(new URL("../src/napplet/napplet.css", import.meta.url), "utf8")
   assert.match(css, /\.wot-pane \{[^}]*max-width: none;[^}]*padding: 0;/)
 })
+
+test("in Light the WoT napplet draws the classic screen's daytime sky and day colours; the theme says the page's mode", () => {
+  const sky = read("src/styles/wot.css").match(/:root\[data-theme="light"\] \.wot-globe \{ background: ([^;]+);/)[1]
+  const nap = read("napplets/wot/index.html")
+  assert.ok(nap.includes(`:root[data-sky="light"] body { background: ${sky}; }`), "same gradient as styles/wot.css")
+  assert.match(nap, /STARS = day \? STAR_DAY : STAR/)
+  assert.match(nap, /rims = day \? RIM_DAY : RIM/)
+  assert.match(nap, /getPropertyValue\("--nv-mode"\)/)
+  const client = read("src/napplet/theme-client.js")
+  assert.match(client, /root\.dataset\.sky = nv && nv\.mode === "light" \? "light" : "dark"/)
+})
