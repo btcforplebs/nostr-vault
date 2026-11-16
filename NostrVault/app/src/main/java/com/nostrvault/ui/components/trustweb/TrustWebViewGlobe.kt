@@ -37,8 +37,14 @@ private val SkyMid = Color(0xFFD3E5F2)
 internal val SkyLow = Color(0xFFF4E8D8)
 private val DaySky = Brush.verticalGradient(0f to SkyHigh, 0.55f to SkyMid, 1f to SkyLow)
 
-/** The globe draws a daytime sky when the user chose Light (the chrome over it stays dark glass). */
-internal val globeDay: Boolean get() = AppPalette.lightChosen
+/**
+ * The Web of Trust always draws Dark (Logen 2026-11-16): the daytime sky is
+ * kept but unused. Set true to bring it back for anyone who chose Light.
+ */
+private val GLOBE_DAY_SKY = false
+
+/** The globe draws a daytime sky only when [GLOBE_DAY_SKY] is on and the user chose Light. */
+internal val globeDay: Boolean get() = GLOBE_DAY_SKY && AppPalette.lightChosen
 
 /** What fills behind the globe: deep space in Dark, the sky in Light. */
 internal val SpaceBrush: Brush get() = if (globeDay) DaySky else DarkSpace
