@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks"
 import { getBlocks, loadBlocks, onBlocks } from "../net/blocks.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 
-const NONE = { pubkey: null, blocked: new Set(), privateBlocked: new Set(), privateNote: "" }
+const NONE = { pubkey: null, blocked: new Set(), publicBlocked: new Set(), privateBlocked: new Set(), privateNote: "" }
 
 /** The signed-in user's blocks ({ blocked: Set, privateNote, loaded }), loading the list on first use and re-rendering
  *  when it arrives. `loaded` is false until the first load for the account has finished, found or not: screens that

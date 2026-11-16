@@ -7,7 +7,7 @@ import { generateSecretKey, getPublicKey } from "nostr-tools/pure"
 import { npubEncode } from "nostr-tools/nip19"
 import { HELP, helpTopic } from "../src/net/settings-help.js"
 import { popAt } from "../src/components/setting-info.js"
-import { blockTarget } from "../src/screens/settings/block-someone.js"
+import { blockTarget, blockedSections } from "../src/screens/settings/block-someone.js"
 
 const src = f => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")
 
@@ -74,4 +74,17 @@ test("help buttons sit on the rows that have iPhone words", () => {
     assert.match(src(file), new RegExp(`<SettingInfo topic="${topic.replace(".", "\\.")}" />`), `${file} ${topic}`)
   assert.match(src("components/LineLimitSteppers.jsx"), /display\.threadedLines/)
   assert.doesNotMatch(src("components/LineLimitSteppers.jsx"), /compact/i, "Compact View is gone (2026-11-11)")
+})
+
+test("Settings › Blocked: Public and Private sections, and Block Someone can block privately", () => {
+  const a = "a".repeat(64), b = "b".repeat(64), c = "c".repeat(64)
+  // Someone in both parts shows once, under Public (iPhone BlockedPeople.sections).
+  assert.deepEqual(blockedSections({ publicBlocked: new Set([a, b]), privateBlocked: new Set([b, c]) }), { publicBlocks: [a, b], privateBlocks: [c] })
+  assert.deepEqual(blockedSections({}), { publicBlocks: [], privateBlocks: [] })
+  const screen = src("screens/SettingsScreen.jsx")
+  assert.match(screen, />Public<\/div>[\s\S]*No public blocks\.[\s\S]*>Private<\/div>[\s\S]*No private blocks\./)
+  const someone = src("screens/settings/BlockSomeone.jsx")
+  assert.match(someone, /Block privately/)
+  assert.match(someone, /<BlockDialog [^>]*isPrivate=\{canPrivate && priv\}/, "the confirmation starts on the private choice")
+  assert.match(src("components/Moderation.jsx"), /useState\(isPrivate\)/)
 })

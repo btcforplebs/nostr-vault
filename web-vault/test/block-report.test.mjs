@@ -9,6 +9,7 @@ import * as nip04 from "nostr-tools/nip04"
 import { wrap } from "../src/signer/nip46.js"
 import { editedBlockList, blockGuard, setBlock, loadBlocks, getBlocks, resetBlocks, pTags, newestBlockList, entryCount } from "../src/net/blocks.js"
 import { REASONS, reportTemplate, reportAndBlock } from "../src/net/reports.js"
+import { blockedSections } from "../src/screens/settings/block-someone.js"
 
 const sk = generateSecretKey()
 const ME = getPublicKey(sk)
@@ -204,6 +205,8 @@ test("setBlock privately through the bunker: encrypted to the user, and read bac
   assert.deepEqual(pTags(event.tags), [A])
   assert.deepEqual(open44(event.content), [["p", B]])
   assert.ok(getBlocks().blocked.has(B) && getBlocks().privateBlocked.has(B))
+  assert.deepEqual([...getBlocks().publicBlocked], [A], "the public tags alone, for Settings › Blocked's Public section")
+  assert.deepEqual(blockedSections(getBlocks()), { publicBlocks: [A], privateBlocks: [B] })
 })
 
 test("setBlock publishes nothing when the guard refuses or no relay takes it", async () => {
