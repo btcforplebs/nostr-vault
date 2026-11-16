@@ -262,7 +262,7 @@ extension FeedNoteRow {
                             #if os(iOS)
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                             #endif
-                            zapSheetContext = ZapSheetContext(defaultAmount: rowData.defaultZapAmount / 1000)
+                            zapSheetContext = ZapSheetContext(defaultAmount: HavenConfig.quickZapSats(msats: rowData.defaultZapAmount))
                         }
                     }
                     .onTapGesture {

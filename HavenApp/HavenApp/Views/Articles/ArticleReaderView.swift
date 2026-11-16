@@ -133,7 +133,7 @@ struct ArticleReaderView: View {
             ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo)
         }
         .sheet(item: $zapSheetContext) { _ in
-            CustomZapSheet(defaultAmount: ConfigService.shared.config.defaultZapAmount / 1000) { amount, comment in
+            CustomZapSheet(defaultAmount: ConfigService.shared.config.quickZapSats) { amount, comment in
                 zap(amount: amount, comment: comment)
             }
             #if os(iOS)
@@ -223,7 +223,7 @@ struct ArticleReaderView: View {
                 actionButton(zapped ? "bolt.fill" : "bolt", tint: zapped ? Color.havenZapGold : .secondary, label: "Zap",
                              count: zapSats, countText: zapSats > 0 ? Self.compact(zapSats) : nil) {
                     if lightningAddress != nil {
-                        zapSheetContext = ZapSheetContext(defaultAmount: ConfigService.shared.config.defaultZapAmount / 1000)
+                        zapSheetContext = ZapSheetContext(defaultAmount: ConfigService.shared.config.quickZapSats)
                     } else {
                         noLightningAddressAlert = true
                     }

@@ -301,7 +301,7 @@ struct LiveStreamPlayerView: View {
 
             if PostButtons.showsZap(postButtons) {
                 Button {
-                    zapSheet = ZapSheetContext(defaultAmount: max(1, configService.config.defaultZapAmount / 1000))
+                    zapSheet = ZapSheetContext(defaultAmount: configService.config.quickZapSats)
                 } label: {
                     Image(systemName: "bolt.fill")
                         .font(.appSystem(size: 16, weight: .bold))

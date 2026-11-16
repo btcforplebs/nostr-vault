@@ -269,7 +269,7 @@ struct FeedActions {
             zapNote: { note, lud16, amount, comment in
                 // A repost is zapped as the note it carries: its id, its author.
                 let note = feedService.originalNote(for: note)
-                let amountSats = amount ?? (ConfigService.shared.config.defaultZapAmount / 1000)
+                let amountSats = amount ?? (ConfigService.shared.config.quickZapSats)
                 do {
                     try await ZapService.shared.zapNote(
                         noteId: note.id,

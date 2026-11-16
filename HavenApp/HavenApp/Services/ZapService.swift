@@ -69,7 +69,7 @@ class ZapService: ObservableObject {
     ///   invisible on the stream it paid for.
     /// - Parameter extraReceiptRelays: see `receiptRelays(me:recipient:extra:)`.
     func zapNote(noteId: String, notePubkey: String, lud16: String, amountSats: Int? = nil, message: String = "", addressTag: String? = nil, extraReceiptRelays: [String] = []) async throws {
-        let amountSats = amountSats ?? (ConfigService.shared.config.defaultZapAmount / 1000)
+        let amountSats = amountSats ?? (ConfigService.shared.config.quickZapSats)
         guard amountSats > 0 else {
             throw ZapError.paymentFailed("Zap amount must be greater than 0")
         }

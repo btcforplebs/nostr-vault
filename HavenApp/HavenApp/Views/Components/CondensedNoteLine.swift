@@ -63,6 +63,10 @@ struct CondensedNoteLine: View, Equatable {
 
     var onProfile: ((String) -> Void)? = nil
     var onTap: (() -> Void)? = nil
+    /// A zap bolt on the line (thread replies): tap zaps the default amount,
+    /// hold picks one. Shown only with a wallet, the zap post button on, and
+    /// an author who can take zaps, as on a full post.
+    var showsZapButton: Bool = false
 
     /// Everything the line draws. The closures are left out: callers build
     /// them from the note and the screen's own state, so an equal line's old
@@ -76,6 +80,7 @@ struct CondensedNoteLine: View, Equatable {
             && lhs.engagement == rhs.engagement && lhs.showsMediaThumbnail == rhs.showsMediaThumbnail
             && lhs.showsTranslate == rhs.showsTranslate && lhs.quotes == rhs.quotes
             && (lhs.onTap == nil) == (rhs.onTap == nil)
+            && lhs.showsZapButton == rhs.showsZapButton
     }
 
     @EnvironmentObject private var configService: ConfigService
@@ -83,6 +88,10 @@ struct CondensedNoteLine: View, Equatable {
     @State private var showingUserMenu = false
     @State private var menuExpanded = false
     @State private var showingTrustWeb = false
+    @Environment(\.feedActions) private var actions
+    @AppStorage(PostButtons.storageKey) private var postButtons = ""
+    @State private var zapSheet: ZapSheetContext?
+    @State private var zapSent = false
 
     private var isOLED: Bool { configService.config.useOLED }
     private var isRoot: Bool { depth == 0 }
@@ -206,6 +215,50 @@ struct CondensedNoteLine: View, Equatable {
         .accessibilityAddTraits(onTap == nil ? [] : .isButton)
         .onDisappear { showingUserMenu = false; menuExpanded = false }
         .trustWebPresentation(isPresented: $showingTrustWeb, author: authorPubkey)
+        .sheet(item: $zapSheet) { context in
+            CustomZapSheet(defaultAmount: context.defaultAmount) { amount, comment in
+                zap(amount: amount, comment: comment)
+            }
+        }
+    }
+
+    // MARK: - Zap
+
+    /// The author's lightning address when the bolt shows, else nil.
+    private var zapAddress: String? {
+        guard showsZapButton, !configService.config.nwcURI.isEmpty, PostButtons.showsZap(postButtons) else { return nil }
+        return actions.getLightningAddress(authorPubkey)
+    }
+
+    private func zap(amount: Int?, comment: String) {
+        guard let lud16 = zapAddress else { return }
+        Task {
+            if await actions.zapNote(note, lud16, amount, comment) { zapSent = true }
+        }
+    }
+
+    private var zapBolt: some View {
+        Image(systemName: zapSent ? "bolt.fill" : "bolt")
+            .font(.appSystem(size: 11, weight: .semibold))
+            .foregroundColor(zapSent ? Color.havenZapGold : .secondary)
+            .frame(width: 28, height: 20)
+            .contentShape(Rectangle())
+            .onLongPressGesture {
+                #if os(iOS)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                #endif
+                zapSheet = ZapSheetContext(defaultAmount: configService.config.quickZapSats)
+            }
+            .onTapGesture { zap(amount: nil, comment: "") }
+            #if os(macOS)
+            .contextMenu {
+                Button { zapSheet = ZapSheetContext(defaultAmount: configService.config.quickZapSats) } label: {
+                    Label("Zap…", systemImage: "bolt")
+                }
+            }
+            #endif
+            .accessibilityLabel("Zap")
+            .accessibilityHint("Tap to send sats, hold to choose an amount")
     }
 
     // MARK: - Quick menu
@@ -377,7 +430,8 @@ struct CondensedNoteLine: View, Equatable {
 
     @ViewBuilder
     private var engagementRow: some View {
-        if !engagement.isEmpty {
+        let canZap = zapAddress != nil
+        if !engagement.isEmpty || canZap {
             HStack(spacing: 6) {
                 if engagement.reactions > 0 {
                     countChip(
@@ -392,6 +446,7 @@ struct CondensedNoteLine: View, Equatable {
                 if engagement.reposts > 0 {
                     countChip(symbol: .system("arrow.2.squarepath"), count: engagement.reposts, tint: .green)
                 }
+                if canZap { zapBolt }
             }
             .padding(.top, 2)
         }
