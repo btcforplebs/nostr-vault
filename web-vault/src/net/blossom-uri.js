@@ -91,13 +91,14 @@ export async function readCapped(res, maxBytes, onProgress) {
 
 /**
  * The file's bytes from the first server whose answer hashes to the link's sha256. -> { bytes, server, mime } | null.
- * A server that refuses, times out, sends too much or sends other bytes is skipped. `fetch` is for tests.
+ * A server that refuses, times out, sends too much or sends other bytes is skipped. No redirects: a public server
+ * that passed blockedUrl could 302 to a home-network host (Tron's #2144 read). `fetch` is for tests.
  */
 export async function fetchVerified(b, servers, { fetch = globalThis.fetch, maxBytes = MAX_BYTES } = {}) {
   if (b.size && b.size > maxBytes) return null
   for (const server of servers) {
     try {
-      const res = await fetch(`${server}/${b.sha256}.${b.ext}`, { signal: AbortSignal.timeout?.(TIMEOUT_MS), referrerPolicy: "no-referrer", credentials: "omit" })
+      const res = await fetch(`${server}/${b.sha256}.${b.ext}`, { signal: AbortSignal.timeout?.(TIMEOUT_MS), referrerPolicy: "no-referrer", credentials: "omit", redirect: "error" })
       if (!res.ok) continue
       const length = Number(res.headers?.get?.("content-length"))
       if (Number.isFinite(length) && length > maxBytes) continue

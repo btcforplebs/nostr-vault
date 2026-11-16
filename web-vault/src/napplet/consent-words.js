@@ -32,12 +32,18 @@ export function tagSummary(tags = []) {
   if (!counts.size) return "No tags."
   return `Tags: ${[...counts].map(([n, c]) => `${c} ${n}${TAG_NAMES[n] ? ` (${TAG_NAMES[n]})` : ""}`).join(", ")}.`
 }
-// Every kind shows its tags (a named kind's hidden p/e tags too), and an addressable kind says it replaces the post
-// with the same d tag (step 12 safety review: a kind 30023 could silently replace one of your articles).
+// Every kind shows its tags (a named kind's hidden p/e tags too), and a replaceable kind says it replaces your earlier
+// one (step 12 safety review: a kind 30023 could silently replace one of your articles). 10000-19999 keep one per
+// account; 30000-39999 one per d tag, and a missing d tag is "" (Tron's #2144 read).
+export function replacesLine(kind, tags) {
+  if (kind >= 10000 && kind < 20000) return `This replaces your earlier ${kindName(kind).replace(/^an? /, "")}, if you have one.`
+  if (kind < 30000 || kind >= 40000) return ""
+  const d = (tags ?? []).find(t => Array.isArray(t) && t[0] === "d")?.[1] ?? ""
+  return d ? `This replaces your earlier one with the same name ("${d.slice(0, 60)}"), if you have one.` : "This replaces your earlier one with no name, if you have one."
+}
 const withTags = (kind, tags, text) => {
   const named = KIND_NAMES[kind] && !(tags ?? []).some(t => Array.isArray(t) && t[0])
-  const d = kind >= 30000 && kind < 40000 ? (tags ?? []).find(t => Array.isArray(t) && t[0] === "d")?.[1] : undefined
-  const replaces = d !== undefined ? `This replaces your earlier one with the same name ("${d.slice(0, 60)}"), if you have one.` : ""
+  const replaces = replacesLine(kind, tags)
   return [text, named ? "" : tagSummary(tags), replaces].filter(Boolean).join("\n\n")
 }
 /** The post's words for the ask, cut at 280 characters with a line saying how much more there is (step 12 review). */
@@ -63,7 +69,11 @@ export function askWords(what, napplet, detail = {}) {
   const preview = previewOf(detail.content)
   if (what === "publish" && detail.kind === 5) {
     const n = (detail.tags ?? []).filter(t => (t[0] === "e" || t[0] === "a") && t[1]).length
-    return { title: `${who} wants to delete ${n} of your posts`, body: [preview && `Reason: ${preview}`, "Relays that keep them are asked to drop them. This can't be undone."].filter(Boolean).join("\n\n"), yes: "Delete", no: "Don't delete" }
+    // The kinds the shell looked up (dispatch.js deletionRefusal) and the a addresses name: "Deletes: 2 notes, 1 article."
+    const kinds = [...(detail.found ?? []), ...(detail.tags ?? []).filter(t => t[0] === "a" && t[1]).map(t => Number(t[1].split(":")[0]))]
+    const counts = new Map(); for (const k of kinds) counts.set(k, (counts.get(k) ?? 0) + 1)
+    const deletes = counts.size ? `Deletes: ${[...counts].map(([k, c]) => `${c} × ${kindName(k).replace(/^an? /, "")}`).join(", ")}.` : ""
+    return { title: `${who} wants to delete ${n} of your posts`, body: [deletes, preview && `Reason: ${preview}`, "Relays that keep them are asked to drop them. This can't be undone."].filter(Boolean).join("\n\n"), yes: "Delete", no: "Don't delete" }
   }
   if (what === "publish") return { title: `${who} wants to post ${kindName(detail.kind)} as you`, body: withTags(detail.kind, detail.tags, preview), yes: "Post", no: "Don't post" }
   if (what === "relay-publish") return { title: `${who} wants to send ${kindName(detail.kind)}`, body: withTags(detail.kind, detail.tags, preview), yes: "Send", no: "Don't send" }

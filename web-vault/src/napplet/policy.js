@@ -24,8 +24,12 @@ export const PRIVATE_KINDS = new Set([
  *  edited only by the app's own guarded editors (test/user-list-sign-guard.test.mjs); a napplet asks the shell.
  *  10030/30030: the emoji list and emoji sets (Tara, 2026-11-14): the Emoji napplet only reads them.
  *  10001 pins, 10003 bookmarks (with their private part), 10015 interests, 30000 follow sets, 30003 bookmark sets
- *  (step 12 safety review): an empty one signed for a napplet would wipe the list, and the ask can't show that. */
-export const ACCOUNT_KINDS = new Set([0, 3, 10000, 10001, 10002, 10003, 10006, 10015, 10030, 10050, 10063, 30000, 30003, 30030])
+ *  (step 12 safety review): an empty one signed for a napplet would wipe the list, and the ask can't show that.
+ *  Tron's #2144 read: 10019 (where nutzaps are paid: a napplet's own mint would take your money) and the other
+ *  NIP-51 lists and sets (10004 communities, 10005 chats, 10007 search relays, 10009 groups, 10012 relay feeds,
+ *  10020 media follows, 30002 relay sets, 30004 curation sets, 30015 interest sets). */
+export const ACCOUNT_KINDS = new Set([0, 3, 10000, 10001, 10002, 10003, 10004, 10005, 10006, 10007, 10009, 10012, 10015, 10019, 10020, 10030, 10050, 10063,
+  30000, 30002, 30003, 30004, 30015, 30030])
 
 /** Kinds no napplet ever gets signed, ours included: a credential (relay AUTH, Blossom auth, HTTP auth, NWC), or the
  *  account's end (62, NIP-62 Request to Vanish). */

@@ -371,3 +371,29 @@ test("step 12 review: one ask at a time; a second ask while one is open is refus
   shown[1].resolve(false)
   assert.equal(await third, false)
 })
+
+// Tron's #2144 read.
+test("policy: every NIP-51 list and set, and 10019 (nutzap mints), is an account list no napplet signs or deletes", () => {
+  const first = defaultGrant({ firstParty: true })
+  for (const kind of [10004, 10005, 10007, 10009, 10012, 10019, 10020, 30002, 30004, 30015]) {
+    assert.equal(signDecision(first, { kind, content: "", tags: [] }).ok, false, `sign ${kind}`)
+    assert.equal(signDecision(defaultGrant(), { kind: 5, content: "", tags: [["a", `${kind}:${ME}:`]] }).ok, false, `delete ${kind}`)
+  }
+})
+
+test("dispatch: a deletion's ask names the kinds it found; a follow list hidden behind an e id never reaches the ask", async () => {
+  const details = []
+  const m = make(defaultGrant(), { ...withEvents(own), ask: async q => { details.push(q.detail); return true } })
+  assert.equal((await m.handlers.outbox(del([["e", MYLIST]]), napplet())).ok, false)
+  assert.equal(details.length, 0)
+  assert.equal((await m.handlers.outbox(del([["e", MINE], ["a", `30023:${ME}:x`]]), napplet())).ok, true)
+  assert.deepEqual(details[0].found, [1])
+  assert.match(askWords("publish", {}, details[0]).body, /^Deletes: 1 × note, 1 × article\./)
+})
+
+test("ask sheet: a replaceable kind says it replaces yours; an addressable kind with no d tag replaces the unnamed one", () => {
+  assert.match(askWords("publish", {}, { kind: 10123, content: "", tags: [] }).body, /replaces your earlier kind 10123 event/)
+  assert.match(askWords("publish", {}, { kind: 30023, content: "", tags: [] }).body, /replaces your earlier one with no name/)
+  assert.match(askWords("publish", {}, { kind: 30023, content: "", tags: [["d", "x"]] }).body, /same name \("x"\)/)
+  assert.doesNotMatch(askWords("publish", {}, { kind: 1, content: "hi", tags: [] }).body, /replaces/)
+})
