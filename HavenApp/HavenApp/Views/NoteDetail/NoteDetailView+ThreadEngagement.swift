@@ -194,7 +194,7 @@ extension NoteDetailView {
     }
     
     private func zapNote(lud16: String, amount: Int? = nil) async {
-        let amountSats = amount ?? (ConfigService.shared.config.defaultZapAmount / 1000)
+        let amountSats = amount ?? (ConfigService.shared.config.quickZapSats)
 
         do {
             try await ZapService.shared.zapNote(

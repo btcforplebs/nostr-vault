@@ -126,7 +126,19 @@ struct FeedNoteRow: View {
         } message: { alert in
             Text(alert.message)
         }
+        // Mac only: right-click. On iPhone and iPad a row-wide context menu
+        // took the hold on the zap bolt of your own posts and reposts (it
+        // showed Delete, not the amount sheet); Delete stays in the ⋯ menu.
+        #if os(macOS)
         .contextMenu {
+            if rowData.hasNWC && PostButtons.showsZap(postButtons),
+               actions.getLightningAddress(zapRecipient) != nil {
+                Button {
+                    zapSheetContext = ZapSheetContext(defaultAmount: HavenConfig.quickZapSats(msats: rowData.defaultZapAmount))
+                } label: {
+                    Label("Zap…", systemImage: "bolt")
+                }
+            }
             if rowData.isOwnNote {
                 Button(role: .destructive) {
                     showingDeleteConfirm = true
@@ -135,6 +147,7 @@ struct FeedNoteRow: View {
                 }
             }
         }
+        #endif
         .onDisappear { showingUserMenu = false; menuExpanded = false; showingParentUserMenu = false; parentMenuExpanded = false }
     }
 

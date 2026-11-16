@@ -330,7 +330,8 @@ extension NoteDetailView {
                 reposts: rowData.stats.reposts
             ),
             onProfile: { showingProfilePubkey = $0 },
-            onTap: { selectAndScrollToNote(note.id, proxy: proxy) }
+            onTap: { selectAndScrollToNote(note.id, proxy: proxy) },
+            showsZapButton: true
         )
         .id(note.id)
     }

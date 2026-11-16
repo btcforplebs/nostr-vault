@@ -399,7 +399,7 @@ private struct ArtistZapPill: View {
     @State private var burst = false
 
     private var defaultSats: Int {
-        max(1, configService.config.defaultZapAmount / 1000)
+        configService.config.quickZapSats
     }
 
     private var lightningAddress: String? {

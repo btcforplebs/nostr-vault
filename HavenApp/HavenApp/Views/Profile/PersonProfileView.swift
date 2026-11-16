@@ -208,7 +208,7 @@ struct PersonProfileView: View, Equatable {
     }
 
     private var defaultZapSats: Int {
-        max(1, configService.config.defaultZapAmount / 1000)
+        configService.config.quickZapSats
     }
 
     private var lightningAddress: String? {
@@ -244,6 +244,13 @@ struct PersonProfileView: View, Equatable {
             zapSheetContext = ZapSheetContext(defaultAmount: defaultZapSats)
         }
         .onTapGesture { zap() }
+        #if os(macOS)
+        .contextMenu {
+            Button { zapSheetContext = ZapSheetContext(defaultAmount: defaultZapSats) } label: {
+                Label("Zap…", systemImage: "bolt")
+            }
+        }
+        #endif
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Zap \(defaultZapSats) sats")
         .accessibilityHint("Long-press to choose an amount")

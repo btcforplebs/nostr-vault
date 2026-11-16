@@ -177,7 +177,8 @@ struct FeedThreadCard: View {
             ),
             onMissingQuote: actions.fetchMissingNote,
             onProfile: onProfile,
-            onTap: tapAction(for: note)
+            onTap: tapAction(for: note),
+            showsZapButton: true
         )
         // Skipped when only the feed around it redrew; see `CondensedNoteLine`.
         .equatable()

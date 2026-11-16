@@ -560,3 +560,12 @@ struct HavenConfig: Codable, Equatable {
         s3BucketName = try container.decodeIfPresent(String.self, forKey: .s3BucketName) ?? defaults.s3BucketName
     }
 }
+
+extension HavenConfig {
+    /// Sats a one-tap zap sends for a `defaultZapAmount` in msats: never
+    /// under 1 sat, so a setting below 1000 msats can't send a 0-sat zap.
+    static func quickZapSats(msats: Int) -> Int { max(1, msats / 1000) }
+
+    /// The one-tap zap amount in sats (see `quickZapSats(msats:)`).
+    var quickZapSats: Int { Self.quickZapSats(msats: defaultZapAmount) }
+}
