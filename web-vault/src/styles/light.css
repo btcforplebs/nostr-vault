@@ -25,7 +25,7 @@
   --on-accent: #fff;
   --accent-pale: rgb(var(--accent-rgb) / .14);
   --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-light));
-  --accent-line: rgb(28 28 30 / .22);  /* note-card border: the dark greys, not orange */
+  --accent-line: rgb(var(--accent-rgb) / .30);  /* note-card border: the accent, as Android draws it in Light */
 
   --online: #1a9e57;
   --verified: #16916b;
