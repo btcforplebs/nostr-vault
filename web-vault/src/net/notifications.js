@@ -8,6 +8,7 @@ import { pool } from "./pool.js"
 import { parseRef } from "./quotes.js"
 import { mediaType } from "./media.js"
 import { meshHost } from "./fips-ref.js"
+import { reactionCode, rememberEmoji, seenEmoji } from "./custom-emoji.js"
 
 /** Notes, contact lists (a follow), reposts, reactions, generic reposts, highlights, zaps, long-form articles, and the
  *  comments (1111) and polls (1068) the phones list too. */
@@ -178,7 +179,7 @@ export function classify(ev, pubkey) {
     // changed, the closest a browser gets to the iPhone's follower ledger.
     case 3: return { ...base, type: "follow" }
     case 6: case 16: return { ...base, type: "repost", noteId: lastTag(ev.tags, "e") }
-    case 7: return { ...base, type: "reaction", noteId: lastTag(ev.tags, "e"), emoji: reactionEmoji(ev.content) }
+    case 7: rememberEmoji(ev.tags); return { ...base, type: "reaction", noteId: lastTag(ev.tags, "e"), emoji: reactionEmoji(ev.content) }
     case 9735: {
       // Who zapped is only ever the signer of a valid zap request: the receipt, its `P` tag and its invoice are
       // whatever the receipt's publisher wrote. Who may publish receipts is checked by zaps.js trustedReceipts.
@@ -209,22 +210,27 @@ const tagValue = (tags, name) => tags.find(t => t[0] === name)?.[1]
 const firstTag = (tags, name) => tags.find(t => t[0] === name && HEX64.test(t[1] ?? ""))?.[1] ?? null
 const lastTag = (tags, name) => { const v = tags.filter(t => t[0] === name && HEX64.test(t[1] ?? "")); return v.length ? v[v.length - 1][1] : null }
 
-/** "+" and "" are a like; anything else (an emoji, "-") is shown as it is. Custom `:shortcode:` reactions show their name. */
+/** "+" and "" are a like; anything else (an emoji, "-") is shown as it is. A custom `:shortcode:` is kept whole, so
+ *  its picture can show (net/custom-emoji.js). */
 export function reactionEmoji(content) {
   const c = (content ?? "").trim()
   if (c === "" || c === "+") return "❤️"
   if (c === "-") return "👎"
+  if (reactionCode(c)) return c
   return c.length > 8 ? c.slice(0, 8) : c
 }
 
 /**
  * A reaction's raw content as the iPhone's notification row shows it (reactionDisplayEmoji): a like is a heart, a
- * dislike a thumbs down, anything else its first emoji, and a shortcode or plain text a heart.
+ * dislike a thumbs down, anything else its first emoji, and plain text a heart. A shortcode whose picture came with a
+ * reaction stays `:shortcode:` (drawn by CustomEmoji.jsx ReactionText); one with no picture is a heart.
  */
 export function reactionDisplayEmoji(raw) {
   const c = (raw ?? "").trim()
   if (["", "+", "+1", "❤", "❤️"].includes(c)) return "❤️"
   if (c === "-" || c === "-1") return "👎"
+  const code = reactionCode(c)
+  if (code) return seenEmoji().has(code) ? c : "❤️"
   for (const { segment } of new Intl.Segmenter().segment(c)) if (emojiRenderable(segment)) return segment
   return "❤️"
 }

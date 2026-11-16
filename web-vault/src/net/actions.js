@@ -11,6 +11,7 @@ import { repostInner, repostedId, verifiedCopy } from "./thread.js"
 import { keepDeletedCopy } from "./recently-deleted.js"
 import { sendDelaySeconds, startCountdown } from "./send-delay.js"
 import { defaultReaction } from "./reaction-pref.js"
+import { reactionEmojiTags, rememberEmoji } from "./custom-emoji.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -42,7 +43,8 @@ export function addressOf(ev) {
  *  ArticleEngagement.reactionTags). */
 export function reactionTemplate(note, content = REACTION) {
   const a = addressOf(note)
-  return { kind: 7, created_at: now(), tags: [["e", note.id, ""], ...(a ? [["a", a, ""]] : []), ["p", note.pubkey], ["k", String(note.kind)]], content }
+  // NIP-30: a :shortcode: reaction carries its picture (your own emoji first, net/custom-emoji.js).
+  return { kind: 7, created_at: now(), tags: [["e", note.id, ""], ...(a ? [["a", a, ""]] : []), ["p", note.pubkey], ["k", String(note.kind)], ...reactionEmojiTags(content)], content }
 }
 
 /** NIP-18 repost, the reposted event as the content. Kind 6 is only for kind 1 notes; anything else (an article, a
@@ -182,7 +184,7 @@ export async function loadSent(ctx, id) {
   for (const ev of mine) {
     if (ev.kind === 7 && (gone.has(ev.id) || deleted.has(ev.id))) continue
     const kind = ev.kind === 7 ? "like" : "repost"
-    if (kind === "like") { addLikes(id, [ev.id]); if (!emojiOf.has(id)) emojiOf.set(id, ev.content || REACTION) }
+    if (kind === "like") { addLikes(id, [ev.id]); rememberEmoji(ev.tags); if (!emojiOf.has(id)) emojiOf.set(id, ev.content || REACTION) }
     if (actionState(id)[kind] === undefined) put(id, kind, "sent")
   }
 }

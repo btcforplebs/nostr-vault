@@ -42,6 +42,7 @@ import { nappletsOn } from "../napplet/flag.js"
 // ActivityRow is the Notifications row (Faces, notif-who, the unread dot), so its layout has to ship with this screen too:
 // the sheet used to arrive only with NotificationsScreen's chunk, and Vault activity faces stacked one per row.
 import "../styles/notifications.css"
+import { ReactionText } from "../components/CustomEmoji.jsx"
 
 const nowSec = () => Math.floor(Date.now() / 1000)
 const VAULT_RECHECK_MS = 60_000 // the list looks for new answers this often while it is on screen
@@ -414,7 +415,7 @@ export function ActivityRow({ row, trusted = () => false, unread = false, onFoll
         <time class="note-time" datetime={new Date(row.created_at * 1000).toISOString()}>{ago(row.created_at)}</time>
         {unread && <span class="notif-dot" role="img" aria-label="New" title="New" />}
       </div>
-      <div class="notif-who"><Names who={row.actors} /> {verb(row)}</div>
+      <div class="notif-who"><Names who={row.actors} /> <ReactionText text={verb(row)} load={ok} /></div>
       {["reply", "mention", "quote", "article", "highlight"].includes(row.kind)
         ? <NoteText content={row.preview} images={ok} />
         : row.preview ? <div class="repost-line vault-about"><span>{cut(row.preview)}</span></div> : null}

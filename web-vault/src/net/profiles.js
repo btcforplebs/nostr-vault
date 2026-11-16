@@ -2,6 +2,7 @@
 // there), so they're there offline; this module holds the ones in use in memory and tells the screens.
 import { pool, PROFILE_RELAYS, uniq } from "./pool.js"
 import { storeAll } from "./sync.js"
+import { emojiMap } from "./custom-emoji.js"
 
 const cache = new Map()
 const listeners = new Set()
@@ -29,9 +30,12 @@ function store(ev) {
   if (have && have.created_at >= ev.created_at) return false
   let c
   try { c = JSON.parse(ev.content) } catch { return false }
-  cache.set(ev.pubkey, { name: str(c.display_name) || str(c.name), picture: str(c.picture), about: str(c.about), banner: str(c.banner), nip05: str(c.nip05), lud16: str(c.lud16), website: link(c.website), created_at: ev.created_at })
+  cache.set(ev.pubkey, { name: str(c.display_name) || str(c.name), picture: str(c.picture), about: str(c.about), banner: str(c.banner), nip05: str(c.nip05), lud16: str(c.lud16), website: link(c.website), created_at: ev.created_at, ...emojiOf(ev) })
   return true
 }
+
+/** NIP-30: the kind 0's emoji tags, for :shortcode: in the name (CustomEmoji.jsx). Left off when there are none. */
+const emojiOf = ev => { const m = emojiMap(ev.tags); return m.size ? { emoji: m } : {} }
 
 function changed() { for (const cb of listeners) cb() }
 

@@ -473,7 +473,7 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
           </button>
           {emojiOpen && (nappletsOn()
             ? <ComposeEmoji ctx={ctx} onPick={addEmoji} onClose={() => { setEmojiOpen(false); box.current?.focus() }} />
-            : <EmojiPicker title="Add Emoji" action="Add" onPick={e => addEmoji({ text: e })} onClose={() => { setEmojiOpen(false); box.current?.focus() }} />)}
+            : <EmojiPicker ctx={ctx} title="Add Emoji" action="Add" onPick={(e, c) => addEmoji(c ? { text: e, tag: ["emoji", c.code, c.url] } : { text: e })} onClose={() => { setEmojiOpen(false); box.current?.focus() }} />)}
           {photos.length > 0 && <span class="muted small">{photos.length} of {MAX_PHOTOS}</span>}
           {loaded === key && (text.trim() || ready.length > 0) && !result && <span class="muted small compose-draft">Draft saved</span>}
         </div>

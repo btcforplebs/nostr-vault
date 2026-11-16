@@ -19,6 +19,8 @@ import { DmPhoto } from "./DmPhoto.jsx"
 import { isFileLink } from "../net/dm-file.js"
 import { parseBlossomUri } from "../net/blossom-uri.js"
 import { liveDrops, liveRefs, trimAroundLive } from "../net/live-note.js"
+import { emojiMap } from "../net/custom-emoji.js"
+import { emojiNodes } from "./CustomEmoji.jsx"
 
 // A BUD-10 blossom:<sha256>.<ext>?… link is one token too, so its query never reads as text (BlossomMedia).
 const TOKEN = /(https?:\/\/[^\s<>"]+|nostr:[a-z0-9]+|blossom:[0-9a-fA-F]{64}\.[A-Za-z0-9]{1,10}(?:\?[^\s<>"]*)?)/gi
@@ -62,10 +64,12 @@ export function NoteText(props) {
     const keys = new Set(lives.map(r => r.ref.toLowerCase()))
     parts = trimAroundLive(parts, s => /^nostr:/i.test(s) && keys.has(s.slice(6).toLowerCase()))
   }
+  // NIP-30: a :shortcode: the note's emoji tags give a picture for is drawn as it, unless pictures wait (images off).
+  const emoji = images ? emojiMap(tags) : null
   return (
     <div class="note-text">
       {parts.map((s, i) => {
-        if (i % 2 === 0) return withMarks(s, i)
+        if (i % 2 === 0) return withMarks(s, i, emoji)
         if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm, memoryOnly, trusted)
         if (/^blossom:/i.test(s)) { const b = parseBlossomUri(s); return b ? <BlossomMedia key={i} b={b} author={author} images={images} dm={dm} /> : <span key={i}>{s}</span> }
         // A .fips link left in the text (a DM, or images off) stays plain text: as an <img>, <video> or <a> it would
@@ -118,23 +122,24 @@ export function withoutLinks(parts, drop) {
 }
 
 /** Plain text with its inline markdown drawn (bold, italic, strike, code), and #tags linked inside it. */
-function withMarks(text, key) {
+function withMarks(text, key, emoji) {
   const marks = inlineMarks(text)
-  if (marks.length === 1 && marks[0].type === "text") return withHashtags(text, key)
+  if (marks.length === 1 && marks[0].type === "text") return withHashtags(text, key, emoji)
   return marks.map((m, j) => {
     const k = `${key}.${j}`
     if (m.type === "code") return <code key={k}>{m.text}</code>
-    const body = withHashtags(m.text, k)
+    const body = withHashtags(m.text, k, emoji)
     return m.type === "strong" ? <strong key={k}>{body}</strong> : m.type === "em" ? <em key={k}>{body}</em>
       : m.type === "del" ? <del key={k}>{body}</del> : <span key={k}>{body}</span>
   })
 }
 
-/** Plain text with each #tag a link to that tag's feed (FeedNoteRow's hashtag links), spelled as the author wrote it. */
-function withHashtags(text, key) {
+/** Plain text with each #tag a link to that tag's feed (FeedNoteRow's hashtag links), spelled as the author wrote it,
+ *  and its custom emoji drawn. */
+function withHashtags(text, key, emoji) {
   const parts = splitHashtags(text)
-  if (parts.length === 1) return text
-  return parts.map((s, i) => i % 2 === 0 ? s
+  if (parts.length === 1) return emojiNodes(text, emoji, key)
+  return parts.map((s, i) => i % 2 === 0 ? emojiNodes(s, emoji, `${key}-${i}`)
     : <a key={`${key}-${i}`} class="hashtag" href={`#/feed?tag=${encodeURIComponent(s.slice(1).toLowerCase())}`} onClick={e => e.stopPropagation()}>{s}</a>)
 }
 
@@ -162,7 +167,7 @@ export function Mention({ pubkey, memoryOnly = false }) {
     load()
     return onQuotes(load) // again once main.jsx registers the vault
   }, [pubkey, memoryOnly])
-  return <a class="mention" href={`#/profile/${pubkey}`} onClick={e => e.stopPropagation()}>@{p?.name || npubEncode(pubkey).slice(0, 12) + "…"}</a>
+  return <a class="mention" href={`#/profile/${pubkey}`} onClick={e => e.stopPropagation()}>@{emojiNodes(p?.name || npubEncode(pubkey).slice(0, 12) + "…", p?.emoji)}</a>
 }
 
 // Drops trailing .,;:!? and any ")" without a matching "(" in the link, so "(see https://x.com/a)." links to https://x.com/a.

@@ -9,6 +9,7 @@ import { sealMeshAuth } from "../../net/pair-hello.js"
 import { mediaServers, DEFAULT_MEDIA_SERVERS } from "../../net/upload.js"
 import { authorServers } from "../../net/blossom-uri.js"
 import { ListNotSaved } from "../../net/list-edit.js"
+import { forgetMyEmoji } from "../../net/custom-emoji.js"
 
 /** -> { list, listChecked, sets: [set] | null, others: [set] (copies filed under sets not in the list), copies, homeVault,
  *  links: Map url -> state, saved(set, emoji), setOn(set, add) -> Promise<message> } */
@@ -73,6 +74,7 @@ export function useEmojiVault(ctx) {
   const setOn = async (set, add) => {
     try {
       const r = await changeSet(ctx, { set, add, previous: list.event })
+      forgetMyEmoji(me) // the pickers read the list again
       setList({ event: r.event, checked: true })
       await load()
       if (!add) return `Removed "${set.title}" from your emoji list.`
