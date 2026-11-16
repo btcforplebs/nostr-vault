@@ -379,7 +379,8 @@ class NostrService @Inject constructor(
         remove: List<String> = emptyList(),
         localBlocks: List<String>,
         privateBefore: Collection<String> = emptyList(),
-    ): String? = publishMuteListChangeImpl(accountNpub, add, remove, localBlocks, privateBefore)
+        privately: Boolean = false,
+    ): String? = publishMuteListChangeImpl(accountNpub, add, remove, localBlocks, privateBefore, privately)
 
 
     fun adoptPublishedDMRelayList() { adoptPublishedDMRelayListImpl() }
