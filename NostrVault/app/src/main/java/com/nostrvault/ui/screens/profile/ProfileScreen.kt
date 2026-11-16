@@ -153,6 +153,7 @@ fun ProfileScreen(
     var openListing by remember { mutableStateOf<com.nostrvault.data.model.MarketListing?>(null) }
     // The post bar's Web of Trust button: the author whose map is open.
     var trustWebAuthor by remember { mutableStateOf<String?>(null) }
+    var zapTarget by remember { mutableStateOf<com.nostrvault.ui.components.NoteZapTarget?>(null) }
     // Coming back from the Sell composer: show the listing just posted.
     var sellLaunched by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (sellLaunched) { sellLaunched = false; viewModel.reloadShop() } }
@@ -597,6 +598,7 @@ fun ProfileScreen(
                         onReply = onReply,
                         onQuote = onQuote,
                         onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
+                        onLongPressZap = { zapTarget = com.nostrvault.ui.components.NoteZapTarget(note.effectiveEventId, note.effectiveAuthor) },
                         onTrustWeb = if (viewModel.isOwnNote(note.effectiveAuthor)) null else ({ author: String -> trustWebAuthor = author }),
                         engagement = engagement,
                     )
@@ -647,6 +649,17 @@ fun ProfileScreen(
             onDismiss = { openListing = null },
         )
     }
+
+    // Hold on a row's bolt: pick an amount (tap zaps the default, as in the feed).
+    com.nostrvault.ui.components.NoteZapSheet(
+        target = zapTarget,
+        defaultAmount = viewModel.defaultZapSats,
+        onDismiss = { zapTarget = null },
+        onZap = { target, amount, comment ->
+            zapTarget = null
+            viewModel.zapNote(target.noteId, target.pubkey, amount, comment)
+        },
+    )
 
     trustWebAuthor?.let { author ->
         TrustWebDialog(

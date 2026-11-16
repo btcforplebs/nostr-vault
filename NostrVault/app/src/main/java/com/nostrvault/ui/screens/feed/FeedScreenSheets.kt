@@ -96,7 +96,7 @@ internal fun FeedScreenSheets(
     if (zapNoteId != null) {
         CustomZapSheet(
             sheetState = zapSheetState,
-            defaultAmount = viewModel.configStoreRef.config.value.defaultZapAmount,
+            defaultAmount = com.nostrvault.ui.components.quickZapSats(viewModel.configStoreRef.config.value.defaultZapAmount),
             onDismiss = { zapNoteId = null },
             onZap = { amount, comment ->
                 zapNoteId?.let { viewModel.zapNote(it, amount, comment) }

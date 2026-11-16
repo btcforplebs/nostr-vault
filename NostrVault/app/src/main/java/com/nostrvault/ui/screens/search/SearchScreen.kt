@@ -74,6 +74,7 @@ fun SearchScreen(
     val colors = LocalNostrVaultColors.current
     // The post bar's Web of Trust button: the author whose map is open.
     var trustWebAuthor by remember { mutableStateOf<String?>(null) }
+    var zapTarget by remember { mutableStateOf<com.nostrvault.ui.components.NoteZapTarget?>(null) }
     // Tapping the Search tab while it shows scrolls to the top, as iOS does.
     val discoveryListState = rememberLazyListState()
     val resultsListState = rememberLazyListState()
@@ -121,6 +122,7 @@ fun SearchScreen(
             onReply = onReply,
             onQuote = onQuote,
             onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
+            onLongPressZap = { zapTarget = com.nostrvault.ui.components.NoteZapTarget(note.effectiveEventId, note.effectiveAuthor) },
             onTrustWeb = if (viewModel.isOwnNote(note.effectiveAuthor)) null else ({ author: String -> trustWebAuthor = author }),
         )
         HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
@@ -453,6 +455,17 @@ fun SearchScreen(
         }
       }
     }
+
+    // Hold on a row's bolt: pick an amount (tap zaps the default, as in the feed).
+    com.nostrvault.ui.components.NoteZapSheet(
+        target = zapTarget,
+        defaultAmount = viewModel.defaultZapSats,
+        onDismiss = { zapTarget = null },
+        onZap = { target, amount, comment ->
+            zapTarget = null
+            viewModel.zapNote(target.noteId, target.pubkey, amount, comment)
+        },
+    )
 
     trustWebAuthor?.let { author ->
         TrustWebDialog(
