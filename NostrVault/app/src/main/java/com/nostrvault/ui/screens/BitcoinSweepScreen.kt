@@ -628,7 +628,7 @@ private fun SweepSuccessView(success: SweepSuccess) {
             textAlign = TextAlign.Center)
         Spacer(Modifier.height(16.dp))
         TextButton(onClick = { runCatching { uriHandler.openUri("https://mempool.space/tx/${success.txid}") } }) {
-            Text("View on mempool ↗", color = LocalNostrVaultColors.current.primary, fontWeight = FontWeight.Medium)
+            Text("View on mempool ↗", color = LocalNostrVaultColors.current.primaryText, fontWeight = FontWeight.Medium)
         }
     }
 }

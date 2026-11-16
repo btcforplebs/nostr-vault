@@ -203,7 +203,7 @@ private fun AccentWheelDialog(initialHex: String, onDone: (String) -> Unit, onDi
                     AccentPreview(hex, light = true, Modifier.weight(1f))
                 }
                 Text(
-                    if (AccentPalette.shiftsInLight(hex)) "Too pale to read on white, so Light mode uses a deeper shade."
+                    if (AccentPalette.shiftsInLight(hex)) "Too pale to read on white, so Light mode uses a deeper shade for text."
                     else "Buttons, links and highlights use this colour.",
                     color = TertiaryText,
                     fontSize = 12.sp,

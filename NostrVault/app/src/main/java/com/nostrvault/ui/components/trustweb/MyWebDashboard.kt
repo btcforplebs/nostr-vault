@@ -190,7 +190,7 @@ internal fun MyWebSheet(
                     Icon(NostrVaultIcons.WebOfTrust, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("My Web", color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) { Text("Done", color = LocalNostrVaultColors.current.primary) }
+                    TextButton(onClick = onDismiss) { Text("Done", color = LocalNostrVaultColors.current.primaryText) }
                 }
                 Headline(numbers.counts[TrustMap.Layer.EVERYONE] ?: 0)
                 if (numbers.follows > 0) DashSection(title = "New in your web") { newcomers() }

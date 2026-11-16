@@ -45,7 +45,7 @@ internal fun DMSignerWaitingBanner(count: Int, onRetry: () -> Unit) {
         }
         Spacer(Modifier.width(8.dp))
         TextButton(onClick = onRetry) {
-            Text("Retry", color = LocalNostrVaultColors.current.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text("Retry", color = LocalNostrVaultColors.current.primaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

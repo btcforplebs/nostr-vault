@@ -545,7 +545,7 @@ private fun TranslationSection(
                 Text("Translate To", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
                 Text(
                     text = FeedLanguage(target).displayName(),
-                    color = LocalNostrVaultColors.current.primary,
+                    color = LocalNostrVaultColors.current.primaryText,
                     fontSize = 15.sp,
                 )
             }

@@ -82,7 +82,7 @@ fun ImportSettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Start Date", color = PrimaryText, modifier = Modifier.weight(1f))
-                Text(config.importStartDate, color = colors.primary)
+                Text(config.importStartDate, color = colors.primaryText)
             }
             if (pickingDate) {
                 val pickerState = rememberDatePickerState(

@@ -253,7 +253,7 @@ private fun PageLinkText(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.clickable(onClickLabel = hint, onClick = onClick).padding(horizontal = 4.dp, vertical = 2.dp),
     ) {
-        Text(text, color = LocalNostrVaultColors.current.primary, fontSize = size, fontWeight = weight, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(text, color = LocalNostrVaultColors.current.primaryText, fontSize = size, fontWeight = weight, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = LocalNostrVaultColors.current.primary, modifier = Modifier.size(16.dp))
     }
 }

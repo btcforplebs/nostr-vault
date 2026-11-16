@@ -126,7 +126,7 @@ fun FeedMenuEditor(
                     onClick = { scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() } },
                     modifier = Modifier.align(Alignment.CenterEnd),
                 ) {
-                    Text("Done", color = colors.primary, fontWeight = FontWeight.SemiBold)
+                    Text("Done", color = colors.primaryText, fontWeight = FontWeight.SemiBold)
                 }
             }
 

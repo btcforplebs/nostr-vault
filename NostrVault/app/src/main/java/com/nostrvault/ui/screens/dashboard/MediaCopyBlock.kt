@@ -1,6 +1,7 @@
 package com.nostrvault.ui.screens.dashboard
 
 import androidx.compose.animation.AnimatedVisibility
+import com.nostrvault.ui.theme.NostrVaultTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -72,7 +73,7 @@ internal fun CopyBlock(
         ) {
             Text(
                 if (showFiles) "Hide files" else "Show files",
-                color = MaterialTheme.colorScheme.primary,
+                color = NostrVaultTheme.colors.primaryText,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f),

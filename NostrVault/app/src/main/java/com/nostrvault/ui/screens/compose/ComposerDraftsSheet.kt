@@ -93,7 +93,7 @@ internal fun ComposerDraftsRow(keeper: ComposerDraftKeeper, onClick: () -> Unit)
         Spacer(Modifier.width(10.dp))
         Text(
             if (others.size == 1) "1 saved draft" else "${others.size} saved drafts",
-            color = colors.primary,
+            color = colors.primaryText,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f),
         )

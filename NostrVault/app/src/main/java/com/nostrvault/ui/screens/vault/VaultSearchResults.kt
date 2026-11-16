@@ -156,7 +156,7 @@ private fun LazyListScope.sectionItems(
         ) {
             Text(s.title, color = SecondaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             if (total > limit && !whole) {
-                Text("See all %,d".format(total), color = LocalNostrVaultColors.current.primary, fontSize = 13.sp,
+                Text("See all %,d".format(total), color = LocalNostrVaultColors.current.primaryText, fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onSeeAll))
             }
         }
@@ -219,7 +219,7 @@ private fun HashtagRow(tag: String) {
             .clickable(enabled = open != null) { open?.invoke(tag) }
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Text("#$tag", color = LocalNostrVaultColors.current.primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+        Text("#$tag", color = LocalNostrVaultColors.current.primaryText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.weight(1f))
         Icon(NostrVaultIcons.Navigate, contentDescription = null, tint = SecondaryText.copy(alpha = 0.5f),
             modifier = Modifier.size(14.dp))
@@ -238,7 +238,7 @@ private fun LinkRow(link: VaultSearchLogic.Link) {
             .clickable { runCatching { uri.openUri(link.url) } }
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Text(link.title, color = LocalNostrVaultColors.current.primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+        Text(link.title, color = LocalNostrVaultColors.current.primaryText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(link.url, color = SecondaryText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1,
             overflow = TextOverflow.Ellipsis)

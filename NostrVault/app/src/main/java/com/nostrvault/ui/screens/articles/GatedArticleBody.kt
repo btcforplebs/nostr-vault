@@ -93,7 +93,7 @@ internal fun GatedLockFrame(
                     Text("Locked article", color = PrimaryText, fontSize = 16.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f))
                     Surface(shape = RoundedCornerShape(50), color = colors.primary.copy(alpha = 0.15f)) {
-                        Text("${gated.priceSats} sats", color = colors.primary, fontSize = 13.sp,
+                        Text("${gated.priceSats} sats", color = colors.primaryText, fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
                     }

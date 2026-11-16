@@ -17,6 +17,9 @@ data class NostrVaultColorScheme(
     val primaryLight: Color,
     val primaryDark: Color,
     val primaryPale: Color,
+    /** Accent text (#tags, links, mentions): [primary] in Dark; in Light a darker
+     *  shade when the accent is too pale to read on white (AccentPalette). */
+    val primaryText: Color = primary,
 )
 
 /**
@@ -36,19 +39,22 @@ enum class AppTheme(
     SUNSET_ORANGE(
         key = "orange",
         displayName = "Sunset Orange",
+        // Dark: the orange's neon (AccentPalette.neonHex), fills and text.
         colors = NostrVaultColorScheme(
-            primary = Color(0xFFE67326),
-            primaryLight = Color(0xFFFA9447),
-            primaryDark = Color(0xFFB35214),
-            primaryPale = Color(0xFFE67326).copy(alpha = 0.10f),
+            primary = Color(0xFFEA7013),
+            primaryLight = Color(0xFFFF8A3A),
+            primaryDark = Color(0xFFC04A00),
+            primaryPale = Color(0xFFEA7013).copy(alpha = 0.10f),
+            primaryText = Color(0xFFEA7013),
         ),
-        // Light deepens each step so orange text reads on the paper page
-        // (#C2571A is 4.6:1 on white); white labels still read on it.
+        // Light: fills are the exact orange; only its text is darkened so it
+        // reads on the paper page (#C35400 is 4.5:1 on white).
         lightColors = NostrVaultColorScheme(
-            primary = Color(0xFFC2571A),
+            primary = Color(0xFFE67326),
             primaryLight = Color(0xFFE67326),
-            primaryDark = Color(0xFF9A4512),
-            primaryPale = Color(0xFFC2571A).copy(alpha = 0.10f),
+            primaryDark = Color(0xFFC35400),
+            primaryPale = Color(0xFFE67326).copy(alpha = 0.10f),
+            primaryText = Color(0xFFC35400),
         ),
     ),
     ;

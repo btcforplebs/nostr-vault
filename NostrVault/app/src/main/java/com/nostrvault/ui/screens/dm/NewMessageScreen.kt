@@ -241,7 +241,7 @@ fun NewMessageScreen(
                 title = { com.nostrvault.ui.components.HiddenTitle("New Message") },
                 navigationIcon = {
                     TextButton(onClick = onBack) {
-                        Text("Cancel", color = colors.primary)
+                        Text("Cancel", color = colors.primaryText)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

@@ -57,7 +57,7 @@ fun SettingsScreen(
                 title = { Text("Settings", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     TextButton(onClick = onBack) {
-                        Text("Close", color = LocalNostrVaultColors.current.primary, fontSize = 17.sp)
+                        Text("Close", color = LocalNostrVaultColors.current.primaryText, fontSize = 17.sp)
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -248,7 +248,7 @@ private fun AboutSection() {
         HorizontalDivider(color = SeparatorColor, modifier = Modifier.padding(vertical = 8.dp))
         Text(
             text = "Privacy Policy",
-            color = LocalNostrVaultColors.current.primary,
+            color = LocalNostrVaultColors.current.primaryText,
             fontSize = 12.sp,
             modifier = Modifier.clickable {
                 com.nostrvault.ui.components.NostrWebLinks.open(context, PRIVACY_POLICY_URL)

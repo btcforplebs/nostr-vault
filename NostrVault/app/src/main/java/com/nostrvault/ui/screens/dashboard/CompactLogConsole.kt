@@ -72,7 +72,7 @@ fun CompactLogConsole(
                 ) {
                     Text(
                         text = "View All",
-                        color = LocalNostrVaultColors.current.primary,
+                        color = LocalNostrVaultColors.current.primaryText,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                     )

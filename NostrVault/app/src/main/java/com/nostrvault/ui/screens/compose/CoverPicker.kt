@@ -54,7 +54,7 @@ internal fun CoverPicker(cover: Uri?, onPicked: (Uri?) -> Unit) {
             Image(preview.asImageBitmap(), contentDescription = "Cover photo",
                 contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         } else {
-            Text("Add a cover photo", color = colors.primary)
+            Text("Add a cover photo", color = colors.primaryText)
         }
     }
 }

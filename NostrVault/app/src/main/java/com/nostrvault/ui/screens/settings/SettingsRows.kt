@@ -124,11 +124,11 @@ internal fun StepperRow(
         IconButton(
             onClick = { onChange((value - step).coerceAtLeast(range.first)) },
             enabled = value > range.first,
-        ) { Text("−", color = colors.primary, fontSize = 20.sp) }
+        ) { Text("−", color = colors.primaryText, fontSize = 20.sp) }
         IconButton(
             onClick = { onChange((value + step).coerceAtMost(range.last)) },
             enabled = value < range.last,
-        ) { Text("+", color = colors.primary, fontSize = 20.sp) }
+        ) { Text("+", color = colors.primaryText, fontSize = 20.sp) }
     }
 }
 

@@ -62,7 +62,7 @@ fun ProfileEmptySection(
                 CircularProgressIndicator(color = colors.primary, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
             ProfileEmptyTabPaging.Status.OLDER_LEFT ->
                 TextButton(onClick = onLookFurther) {
-                    Text("Look further back", color = colors.primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Look further back", color = colors.primaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             ProfileEmptyTabPaging.Status.NONE -> Unit
         }

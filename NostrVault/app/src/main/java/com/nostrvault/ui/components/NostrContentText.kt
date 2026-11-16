@@ -77,7 +77,7 @@ fun NostrContentText(
     // Resolve mention display-names + build the styled string. This is cheap
     // (map lookups + string appends, no regex), so it can re-run when profiles
     // or theme change without hurting scroll.
-    val annotated = remember(segments, profiles, colors.primary, emojis) {
+    val annotated = remember(segments, profiles, colors.primaryText, emojis) {
         buildAnnotatedString {
             for (segment in segments) {
                 when (segment) {
@@ -88,7 +88,7 @@ fun NostrContentText(
                         val displayName = profiles[segment.pubkey]?.bestName
                             ?: mentionFallbackLabel(segment)
                         pushStringAnnotation("profile", segment.pubkey)
-                        withStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Medium)) {
+                        withStyle(SpanStyle(color = colors.primaryText, fontWeight = FontWeight.Medium)) {
                             append("@$displayName")
                         }
                         pop()
@@ -96,7 +96,7 @@ fun NostrContentText(
 
                     is ContentSegment.Url -> {
                         pushStringAnnotation("url", segment.url)
-                        withStyle(SpanStyle(color = colors.primary)) {
+                        withStyle(SpanStyle(color = colors.primaryText)) {
                             append(segment.displayUrl)
                         }
                         pop()
@@ -104,7 +104,7 @@ fun NostrContentText(
 
                     is ContentSegment.Hashtag -> {
                         pushStringAnnotation("hashtag", segment.tag)
-                        withStyle(SpanStyle(color = colors.primary)) {
+                        withStyle(SpanStyle(color = colors.primaryText)) {
                             append(segment.text)
                         }
                         pop()

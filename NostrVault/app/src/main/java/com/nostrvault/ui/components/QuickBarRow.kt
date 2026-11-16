@@ -50,7 +50,7 @@ internal fun QuickBarRow(
                 fontSize = 13.sp,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onToggleEdit) { Text(if (editing) "Done" else "Edit", color = colors.primary) }
+            TextButton(onClick = onToggleEdit) { Text(if (editing) "Done" else "Edit", color = colors.primaryText) }
         }
         Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
             for (pick in bar) {

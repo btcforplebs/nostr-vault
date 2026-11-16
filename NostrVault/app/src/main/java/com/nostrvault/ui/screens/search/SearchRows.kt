@@ -184,7 +184,7 @@ internal fun SearchHashtagRow(
         ) {
             Text(
                 text = "#$tag",
-                color = colors.primary,
+                color = colors.primaryText,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
@@ -216,7 +216,7 @@ internal fun SearchLinkRow(
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Text(
                 text = link.title,
-                color = colors.primary,
+                color = colors.primaryText,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -275,7 +275,7 @@ internal fun TrendingHashtagChip(
     ) {
         Text(
             text = "#$tag",
-            color = colors.primary,
+            color = colors.primaryText,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),

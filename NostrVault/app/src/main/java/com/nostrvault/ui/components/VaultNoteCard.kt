@@ -315,7 +315,7 @@ private fun ExpandedLayout(
                             )
                             Text(
                                 text = "Reply",
-                                color = LocalNostrVaultColors.current.primary.copy(alpha = 0.7f),
+                                color = LocalNostrVaultColors.current.primaryText.copy(alpha = 0.7f),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
                             )

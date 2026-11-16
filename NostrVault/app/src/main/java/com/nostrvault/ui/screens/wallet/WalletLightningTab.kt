@@ -169,7 +169,7 @@ fun WalletLightningTab(
                     fontFamily = FontFamily.Monospace,
                 )
             }
-            TextButton(onClick = viewModel::refreshBalance) { Text("Refresh", color = colors.primary) }
+            TextButton(onClick = viewModel::refreshBalance) { Text("Refresh", color = colors.primaryText) }
         }
 
         // Your lightning address from your profile (lud16), as on iOS.
@@ -224,7 +224,7 @@ fun WalletLightningTab(
                 }
                 Spacer(Modifier.width(8.dp))
                 TextButton(onClick = { viewModel.clearInvoice(); receiveAmount = ""; receiveDesc = "" }) {
-                    Text("Done", color = colors.primary)
+                    Text("Done", color = colors.primaryText)
                 }
             }
         }
@@ -259,7 +259,7 @@ fun WalletLightningTab(
                 when (pastedAmount) {
                     is Bolt11Amount.Sats -> Text(
                         "Paying ${formatSats(pastedAmount.sats)} sats",
-                        color = colors.primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        color = colors.primaryText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                     )
                     Bolt11Amount.Unspecified -> Text(
                         "This invoice names no amount — your wallet decides what to send, and may refuse it.",

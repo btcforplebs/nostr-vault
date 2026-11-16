@@ -250,7 +250,7 @@ private fun QuotedArticleBody(meta: ArticleMeta) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "Article",
-                color = colors.primary.copy(alpha = 0.8f),
+                color = colors.primaryText.copy(alpha = 0.8f),
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 10.sp,
             )

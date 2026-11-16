@@ -384,7 +384,7 @@ fun BlossomSettingsScreen(
             title = { Text("Save ${changes.changesLabel()}?") },
             text = { Text("Your media server list is not published until you save.") },
             confirmButton = {
-                TextButton(onClick = { leaving = false; viewModel.save(); onBack() }) { Text("Save", color = colors.primary) }
+                TextButton(onClick = { leaving = false; viewModel.save(); onBack() }) { Text("Save", color = colors.primaryText) }
             },
             dismissButton = {
                 TextButton(onClick = { leaving = false; viewModel.discard(); onBack() }) { Text("Discard", color = ErrorRed) }
@@ -440,7 +440,7 @@ private fun FipsSection(onOpenFipsMesh: () -> Unit) {
                 )
                 Text(
                     "Your own devices and sharing: Mesh",
-                    color = LocalNostrVaultColors.current.primary,
+                    color = LocalNostrVaultColors.current.primaryText,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clickable(onClick = onOpenFipsMesh),
@@ -561,7 +561,7 @@ private fun YourVaultsSection(vaults: List<com.nostrvault.fips.MediaServerVault>
                 if (v.listed) {
                     TextButton(onClick = { onChoose(v.npub, false) }) { Text("Take off", color = ErrorRed, fontSize = 13.sp) }
                 } else {
-                    TextButton(onClick = { onChoose(v.npub, true) }) { Text("Add to my media servers", color = colors.primary, fontSize = 13.sp) }
+                    TextButton(onClick = { onChoose(v.npub, true) }) { Text("Add to my media servers", color = colors.primaryText, fontSize = 13.sp) }
                 }
             }
             HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp, modifier = Modifier.padding(start = 16.dp))
@@ -675,7 +675,7 @@ private fun WaitingPostsSection(
             onClick = onRetry,
             modifier = Modifier.padding(horizontal = 8.dp),
         ) {
-            Text("Try sending now", color = LocalNostrVaultColors.current.primary)
+            Text("Try sending now", color = LocalNostrVaultColors.current.primaryText)
         }
         Text(
             text = "The photos are saved on this device. These posts send themselves as soon as a media server below answers.",

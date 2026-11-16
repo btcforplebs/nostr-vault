@@ -136,7 +136,7 @@ internal fun ProfileArticleRow(note: FeedNote, onClick: () -> Unit) {
                     topics.forEach { topic ->
                         Text(
                             text = topic,
-                            color = colors.primary,
+                            color = colors.primaryText,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
@@ -175,7 +175,7 @@ internal fun ProfileArticleRow(note: FeedNote, onClick: () -> Unit) {
                     Dot()
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         Icon(NostrVaultIcons.Lock, contentDescription = null, tint = colors.primary, modifier = Modifier.size(12.dp))
-                        Text("Locked", color = colors.primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text("Locked", color = colors.primaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                     }
                 } else if (minutes != null) {
                     Dot()

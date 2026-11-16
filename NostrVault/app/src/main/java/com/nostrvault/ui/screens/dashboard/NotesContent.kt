@@ -193,7 +193,7 @@ private fun LoadOlderButton(isLoading: Boolean, onClick: () -> Unit) {
             } else {
                 Icon(NostrVaultIcons.History, contentDescription = null, tint = colors.primary, modifier = Modifier.size(18.dp))
             }
-            Text("Load older", color = colors.primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text("Load older", color = colors.primaryText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
