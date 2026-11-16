@@ -36,7 +36,7 @@ import { AT_TOP_PX, holdSpot, readingSpot } from "../components/feed-stay.js"
 import { VaultButton } from "../components/VaultButton.jsx"
 import { dashboardHref, openDashboard } from "../net/dashboard-route.js"
 import { ICONS, filterIcon, Icon, Chevron, Menu, MenuItem } from "./vault-ui.jsx"
-import { VaultPagesMenu } from "./VaultPagesMenu.jsx"
+import { VaultPagesMenu, BOOKMARKS_PAGE } from "./VaultPagesMenu.jsx"
 import { MediaPane } from "./lazy-screens.js"
 import { nappletsOn } from "../napplet/flag.js"
 // ActivityRow is the Notifications row (Faces, notif-who, the unread dot), so its layout has to ship with this screen too:
@@ -272,6 +272,8 @@ export function VaultScreen({ ctx, desk = false }) {
         {desk ? (
           <div class="vault-modes" role="tablist" aria-label="Vault">
             {MODES.map(x => <button key={x.id} role="tab" aria-selected={x.id === mode} class={x.id === mode ? "on" : ""} title={fresh.has(x.id) ? `${x.title}: new` : x.title} onClick={() => (nappletsOn() ? (location.hash = `#/vault/${x.id}`) : pick(x.id))}><Icon d={ICONS[x.id]} /><span>{x.title}</span>{fresh.has(x.id) && <span class="vault-new-dot" aria-label="new" />}</button>)}
+            {/* Bookmarks (kind 10003, BookmarksScreen.jsx): a page of its own, as in the phone's Vault menu. */}
+            <button role="tab" aria-selected={false} title={BOOKMARKS_PAGE.title} onClick={() => (location.hash = BOOKMARKS_PAGE.href)}><Icon d={ICONS.bookmarks} /><span>{BOOKMARKS_PAGE.title}</span></button>
           </div>
         ) : (
           <VaultPagesMenu ctx={ctx} current={mode} fresh={fresh} onPick={pick} />
