@@ -9,14 +9,14 @@
 //                                            relay only); its results come in vault/state as `search`, opened by id
 // A change comes as inc nv.vault.changed. The Reader's only.
 import { READER_DTAG as READER } from "./first-party-list.js"
-import { MODES, FILTERS, CLEARABLE, ALL_TITLE, previewOf } from "../net/vault-lists.js"
+import { MODES, FILTERS, CLEARABLE, ALL_TITLE, previewOf, cutPreview } from "../net/vault-lists.js"
 import { SECTIONS } from "../net/vault-search.js"
 
 export const VAULT_TOPIC = "nv.vault.changed"
 export const EVENT_MODES = new Set(["notes", "articles", "highlights"])
 const https = v => (/^https:\/\//i.test(v ?? "") ? String(v).slice(0, 2048) : "")
 const nameOf = p => String(p?.display_name || p?.name || "").slice(0, 80)
-const cut = s => (s.length > 140 ? s.slice(0, 140) + "…" : s)
+const cut = s => cutPreview(s) // never inside a nostr: reference, so the Reader can name the person
 const ago = (at, now) => { const s = Math.max(0, now - at); return s < 3600 ? `${Math.max(1, Math.floor(s / 60))}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d` }
 
 /** "Nothing here" for a mode and filter, in the screen's words (VaultScreen.jsx List). */

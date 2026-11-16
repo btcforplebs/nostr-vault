@@ -19,7 +19,7 @@ function pureOf(file, names) {
   vm.runInNewContext(`${block}\n;Object.assign(box, { ${names.join(", ")} })`, { box, Date, URL })
   return box
 }
-const R = pureOf("reader", ["inlineMarks", "MARKS", "cardLinks", "withoutCards", "hostOf", "tokenize", "decodeNostr", "rootOf", "parentOf", "repostOf", "mergeNotes", "threadRows", "ago"])
+const R = pureOf("reader", ["inlineMarks", "MARKS", "cardLinks", "withoutCards", "hostOf", "tokenize", "decodeNostr", "wordParts", "rootOf", "parentOf", "repostOf", "mergeNotes", "threadRows", "ago"])
 const C = pureOf("compose", ["replyTags", "noteTemplate", "quoteOf", "imetaTag", "neventOf"])
 const A = "a".repeat(64), B = "b".repeat(64), C1 = "c".repeat(64), D = "d".repeat(64), E = "e".repeat(64)
 const ev = (id, tags = [], at = 1, extra = {}) => ({ id, pubkey: A, kind: 1, created_at: at, content: "", tags, ...extra })
@@ -35,6 +35,14 @@ test("tokenize: links, pictures, video, hashtags, nostr: mentions and notes; pun
   ])
   assert.ok(parts.some(p => p.t === "text" && p.v.startsWith(", see")))
   assert.ok(parts.some(p => p.t === "text" && p.v.startsWith(". pic")))
+})
+
+test("wordParts: a Vault or Notifications line names its nostr: people; links and tags stay text, notes leave", () => {
+  const npub = nip19.npubEncode(B), note = nip19.noteEncode(C1)
+  assert.deepEqual(plain(R.wordParts(`hey nostr:${npub} see https://x.example/a #Nostr nostr:${note} ok`)), [
+    { t: "text", v: "hey " }, { t: "profile", v: B }, { t: "text", v: " see https://x.example/a #Nostr  ok" },
+  ])
+  assert.deepEqual(plain(R.wordParts("plain words")), [{ t: "text", v: "plain words" }])
 })
 
 test("tokenize: a broken nostr: reference stays text; no javascript: links", () => {

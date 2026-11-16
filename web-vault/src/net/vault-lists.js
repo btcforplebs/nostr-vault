@@ -104,6 +104,16 @@ export function previewOf(ev) {
   return (ev.content ?? "").split(/\s+/).filter(w => w && !pictures.has(w)).join(" ")
 }
 
+/** A preview line cut to about `n` characters ("…" after), never inside a `nostr:` reference: one the cut would land in
+ *  is kept whole, so a named person still draws as @name rather than half an npub. */
+export function cutPreview(s, n = 140) {
+  s = String(s ?? "")
+  if (s.length <= n) return s
+  let end = n
+  if (/^nostr:/i.test(/\S*$/.exec(s.slice(0, n))[0])) end += /^\S*/.exec(s.slice(n))[0].length
+  return end < s.length ? s.slice(0, end) + "…" : s
+}
+
 /**
  * The "Vault" list: what others sent you, newest first, folded as the phone folds it (VaultActivity.lines).
  * Likes, plain zaps and reposts on one of your notes share a line; follows on one day share a line; a reply,
