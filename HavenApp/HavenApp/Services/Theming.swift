@@ -32,7 +32,11 @@ enum AppTheme: String, CaseIterable, Identifiable {
 extension Color {
     // The accent ramp (Settings › Appearance › Accent, AccentPalette). The
     // names predate the orange; they are the accent, whatever colour it is.
+    /// The accent fill: buttons, rings, borders, toggles (exact in Light, neon in Dark).
     @MainActor static var havenPurple: Color { AccentPalette.current.primary }
+    /// Accent text: #tags, links, accent labels and icons. Same as the fill in
+    /// Dark; in Light darkened for colours too pale to read on white.
+    @MainActor static var accentText: Color { AccentPalette.current.text }
     @MainActor static var havenPurpleLight: Color { AccentPalette.current.light }
     @MainActor static var havenPurpleDark: Color { AccentPalette.current.dark }
     @MainActor static var havenPurplePale: Color { AccentPalette.current.primary.opacity(0.1) }

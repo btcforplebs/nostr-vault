@@ -18,7 +18,7 @@ struct RelayRow: View {
         HStack {
             Image(systemName: icon)
                 .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(Color.havenPurple)
+                .foregroundColor(Color.accentText)
                 .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 2) {

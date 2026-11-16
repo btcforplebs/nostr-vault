@@ -184,7 +184,7 @@ struct ReasonRow: View {
                 Spacer()
                 if selectedValue == value {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 } else {
                     Image(systemName: "circle")
                         .foregroundColor(.secondary)

@@ -134,7 +134,7 @@ struct NowPlayingView: View {
                 Image(systemName: "chevron.right").font(.appSystem(size: size - 4, weight: .semibold))
             }
             .font(.appSystem(size: size, weight: weight))
-            .foregroundColor(.havenPurple)
+            .foregroundColor(.accentText)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -186,7 +186,7 @@ struct NowPlayingView: View {
             Button(action: player.togglePlayPause) {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.appSystem(size: 64))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
             }
             .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
             Spacer()
@@ -220,7 +220,7 @@ struct NowPlayingView: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.appSystem(size: 17, weight: .semibold))
-                .foregroundColor(isOn ? .havenPurple : .secondary)
+                .foregroundColor(isOn ? .accentText : .secondary)
                 .frame(width: 40, height: 40)
                 .background(Circle().fill(Color.havenPurple.opacity(isOn ? 0.18 : 0)))
                 .contentShape(Circle())
@@ -301,7 +301,7 @@ struct NowPlayingView: View {
                 } label: {
                     Image(systemName: "list.bullet")
                         .font(.appSystem(size: 18, weight: .semibold))
-                        .foregroundColor(showingQueue ? .havenPurple : .secondary)
+                        .foregroundColor(showingQueue ? .accentText : .secondary)
                         .frame(width: 44, height: 44)
                         .background(Circle().fill(Color.havenPurple.opacity(showingQueue ? 0.18 : 0)))
                         .contentShape(Circle())
@@ -332,7 +332,7 @@ struct NowPlayingView: View {
                 Spacer()
                 if player.isShuffled {
                     Label("Shuffled", systemImage: "shuffle").font(.appSystem(size: 12, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
             }
             let upcoming = Array(player.upNext.enumerated())

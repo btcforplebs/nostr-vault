@@ -68,7 +68,7 @@ struct RetryableAsyncImage: View {
                                 VStack(spacing: 6) {
                                     Image(systemName: "photo.fill.on.rectangle.fill")
                                         .font(.appSystem(size: 28))
-                                        .foregroundColor(.havenPurple.opacity(0.8))
+                                        .foregroundColor(.accentText.opacity(0.8))
 
                                     VStack(spacing: 2) {
                                         Text("Media Missing")
@@ -77,7 +77,7 @@ struct RetryableAsyncImage: View {
                                             .font(.appSystem(size: 9))
                                             .textCase(.uppercase)
                                     }
-                                    .foregroundColor(.havenPurple)
+                                    .foregroundColor(.accentText)
 
                                     Button(action: {
                                         id = UUID()

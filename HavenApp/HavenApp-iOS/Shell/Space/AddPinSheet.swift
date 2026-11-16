@@ -127,7 +127,7 @@ struct AddPinSheet: View {
                 if let avatar {
                     AvatarView(url: nostrService.profiles[avatar]?.pictureURL, pubkey: avatar, size: 30)
                 } else {
-                    Image(systemName: symbol).foregroundColor(.havenPurple).frame(width: 30)
+                    Image(systemName: symbol).foregroundColor(.accentText).frame(width: 30)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).foregroundColor(.primary).lineLimit(1)
@@ -135,7 +135,7 @@ struct AddPinSheet: View {
                 }
                 Spacer()
                 Image(systemName: pinned ? "pin.fill" : "pin")
-                    .foregroundColor(pinned ? .havenPurple : .secondary)
+                    .foregroundColor(pinned ? .accentText : .secondary)
             }
         }
         .disabled(pinned)

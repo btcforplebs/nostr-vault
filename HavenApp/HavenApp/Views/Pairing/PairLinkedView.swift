@@ -23,7 +23,7 @@ struct PairLinkedView: View {
             if keepOpen {
                 Text(OtherVaultCopy.keepOpenLine)
                     .font(.appCaption.weight(.semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .multilineTextAlignment(.center)
             }
             Button("Done", action: done)

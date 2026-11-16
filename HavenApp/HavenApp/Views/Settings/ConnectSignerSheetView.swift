@@ -90,7 +90,7 @@ struct ConnectSignerSheetView: View {
                         Button(action: { showQRScanner = true }) {
                             Image(systemName: "qrcode.viewfinder")
                                 .font(.appSystem(size: 20))
-                                .foregroundColor(Color.havenPurple)
+                                .foregroundColor(Color.accentText)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Scan QR code")

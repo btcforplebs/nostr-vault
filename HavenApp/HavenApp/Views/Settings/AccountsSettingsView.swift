@@ -136,7 +136,7 @@ struct AccountsSettingsView: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Color.havenPurple.opacity(0.2))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                             .cornerRadius(4)
                     }
                 }

@@ -1593,6 +1593,7 @@
 		B386724A8940928483234E37 /* NewToVaultStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FC6197FC5445D1791E20673 /* NewToVaultStep.swift */; };
 		B3A065D965688DBC83174179 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC33568A91E5B5B737A03D1F /* FeedService.swift */; };
 		B3C732E56C5484EA9CAF99BF /* MediaPostShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8AA58D6F5990BE4F751953 /* MediaPostShareHandler.swift */; };
+		B3C915B1AFDABEFC06B8F7DD /* AccentMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F6C3CE43A9AD195A971B04F /* AccentMath.swift */; };
 		B3FD24BC9B33881B24479DAD /* DMVideoAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A7402147FAE2D5DA87D95EF /* DMVideoAttachment.swift */; };
 		B40BA85ED93F41D32CE93858 /* NoteDeletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDDBB29FDB253D22C3F8452 /* NoteDeletion.swift */; };
 		B440F78F5E6A93EEB6E6756D /* ListHistoryScanStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BD3061693CB7921DAB3A13 /* ListHistoryScanStatus.swift */; };
@@ -2219,6 +2220,7 @@
 		F869E49FB6A5FA8DDFC1A20C /* StatsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E22622B26A3F1A5C9D0A2A /* StatsService.swift */; };
 		F877A8871291B495977B62DC /* ListHistoryScan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 553707F873D13C982C8456E0 /* ListHistoryScan.swift */; };
 		F886F6AEE134AD4080106B31 /* VaultDataProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB0CF7D47686F1256BEF99DB /* VaultDataProcessing.swift */; };
+		F8B44E104B7A3DB049D9BA8D /* AccentMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F6C3CE43A9AD195A971B04F /* AccentMath.swift */; };
 		F8F10B5EDE343C59B75BFB68 /* LiveFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47192F4794DB3DF64A802E30 /* LiveFeedViews.swift */; };
 		F8FA6B0E694BF0C80E2E1707 /* ProfileShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D321A8DE1CDEFF237C6323E /* ProfileShareHandler.swift */; };
 		F909E9664DAB54DA38575736 /* WelcomeWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34B22EE405098B9706D5B1D8 /* WelcomeWindowView.swift */; };
@@ -2464,6 +2466,7 @@
 		1EE4A76F3D64D98E70FB8BFE /* VaultNewsDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultNewsDot.swift; sourceTree = "<group>"; };
 		1F3A25C07796E884E71CB032 /* NVZapsTodayCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVZapsTodayCounter.swift; sourceTree = "<group>"; };
 		1F45B3B97F11CA01BFD2C8C0 /* FeedService+Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+Search.swift"; sourceTree = "<group>"; };
+		1F6C3CE43A9AD195A971B04F /* AccentMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccentMath.swift; sourceTree = "<group>"; };
 		1F9219034E71FF230B258B6C /* VaultReturnRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultReturnRules.swift; sourceTree = "<group>"; };
 		1F9BBC06F0AE2BC8D187209F /* UploadSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadSigner.swift; sourceTree = "<group>"; };
 		1FA3615DADD2C113A8BFF7E6 /* LiveNowWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNowWidget.swift; sourceTree = "<group>"; };
@@ -4960,6 +4963,7 @@
 		E342A7707DDDD3E895FE42F9 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				1F6C3CE43A9AD195A971B04F /* AccentMath.swift */,
 				B85F3815F94E1E1DEBB94D27 /* AccentPalette.swift */,
 				E2C295EC834C1EFDC6B042DC /* AccountUnreadStore.swift */,
 				815D5743884602474E33A86A /* AccountUnreadStore+ListRules.swift */,
@@ -5523,6 +5527,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F8B44E104B7A3DB049D9BA8D /* AccentMath.swift in Sources */,
 				8B28F5284B5C29AAC561A259 /* AccentPalette.swift in Sources */,
 				6E4F4DB419E29D99190EF5E0 /* AccentSettingsSection.swift in Sources */,
 				0A65ABE6A642C1496B8D1E8E /* AccountBunkerConfig.swift in Sources */,
@@ -6683,6 +6688,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B3C915B1AFDABEFC06B8F7DD /* AccentMath.swift in Sources */,
 				3449E2F845D0510D5C225FAE /* AccentPalette.swift in Sources */,
 				8159EB3B355FA5D3EA0FB3B9 /* AccentSettingsSection.swift in Sources */,
 				422734AE557FE5F2D6B426DB /* AccountBunkerConfig.swift in Sources */,

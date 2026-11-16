@@ -64,10 +64,10 @@ struct FeedMenuEditor: View {
             HStack(spacing: 12) {
                 Image(systemName: isShown ? "checkmark.circle.fill" : "circle")
                     .font(.appSystem(size: 20))
-                    .foregroundColor(isShown ? (isPinned ? .secondary : .havenPurple) : .secondary)
+                    .foregroundColor(isShown ? (isPinned ? .secondary : .accentText) : .secondary)
                 Image(systemName: mode.symbolName)
                     .font(.appSystem(size: 16, weight: .semibold))
-                    .foregroundColor(isShown ? .havenPurple : .secondary)
+                    .foregroundColor(isShown ? .accentText : .secondary)
                     .frame(width: 24)
                 Text(mode.displayName)
                     .foregroundColor(isShown ? .primary : .secondary)

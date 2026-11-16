@@ -42,7 +42,7 @@ struct MarkdownBodyView: View {
 
                 case .bullet(let text):
                     HStack(alignment: .top, spacing: 8) {
-                        Text("•").font(.appSystem(size: 16, weight: .bold)).foregroundColor(.havenPurple)
+                        Text("•").font(.appSystem(size: 16, weight: .bold)).foregroundColor(.accentText)
                         inlineText(text).font(.appSystem(size: 16)).fixedSize(horizontal: false, vertical: true)
                     }
                     .highlightable(text, onHighlight, shown: highlights[block.id] ?? [], onShow: onShowHighlights)
@@ -51,7 +51,7 @@ struct MarkdownBodyView: View {
                     HStack(alignment: .top, spacing: 8) {
                         Text("\(index).")
                             .font(.appSystem(size: 16, weight: .bold))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                             .monospacedDigit()
                         inlineText(text).font(.appSystem(size: 16)).fixedSize(horizontal: false, vertical: true)
                     }

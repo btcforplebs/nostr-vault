@@ -40,7 +40,7 @@ struct SpacePanelCard<Content: View>: View {
         HStack(spacing: 8) {
             Image(systemName: symbol)
                 .font(.appSystem(size: 13, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .frame(width: 26, height: 26)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.havenPurple.opacity(0.15)))
                 .accessibilityHidden(true)

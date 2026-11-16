@@ -60,7 +60,7 @@ struct WavlakeTrackCard: View {
             } label: {
                 Image(systemName: isCurrent && player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.appSystem(size: 38))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isCurrent && player.isPlaying ? "Pause \(track.title)" : "Play \(track.title)")

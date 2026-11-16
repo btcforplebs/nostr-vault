@@ -14,7 +14,7 @@ struct ArticleBookmarkButton: View {
             Button { bookmarks.toggle(note) } label: {
                 Image(systemName: marked ? "bookmark.fill" : "bookmark")
                     .font(.appSystem(size: 15, weight: .medium))
-                    .foregroundColor(marked ? .havenPurple : .secondary)
+                    .foregroundColor(marked ? .accentText : .secondary)
                     .padding(.horizontal, 10)
                     .frame(height: 32)
                     .contentShape(Rectangle())

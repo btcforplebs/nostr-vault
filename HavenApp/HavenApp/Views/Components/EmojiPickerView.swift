@@ -176,7 +176,7 @@ struct EmojiPickerView: View {
                             }
                         }
                         .frame(width: 34, height: 30)
-                        .foregroundStyle(index == current ? Color.havenPurple : Color.secondary)
+                        .foregroundStyle(index == current ? Color.accentText : Color.secondary)
                         .background(index == current ? Color.havenPurple.opacity(0.15) : Color.clear,
                                     in: RoundedRectangle(cornerRadius: 8))
                         .contentShape(Rectangle())

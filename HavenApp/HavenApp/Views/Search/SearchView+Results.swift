@@ -33,7 +33,7 @@ extension SearchView {
                !(snapshot.notes.isEmpty && snapshot.profiles.isEmpty) {
                 Button("Clear filter") { searchFilter = .all }
                     .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .buttonStyle(.plain)
             }
         }
@@ -217,7 +217,7 @@ extension SearchView {
             VStack(alignment: .leading, spacing: 2) {
                 Text("#\(hashtag)")
                     .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
             }
 
             Spacer()
@@ -243,7 +243,7 @@ extension SearchView {
         VStack(alignment: .leading, spacing: 4) {
             Text(link.title)
                 .font(.appSystem(size: 13, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .lineLimit(1)
 
             Text(link.url)

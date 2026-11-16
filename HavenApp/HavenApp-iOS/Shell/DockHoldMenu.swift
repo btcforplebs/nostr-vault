@@ -342,7 +342,7 @@ struct DockHoldMenuOverlay: View {
                         .font(.appSystem(size: 13, weight: .bold))
                 }
             }
-            .foregroundStyle(hovered ? Color.onAccent : (entry.isCurrent ? Color.havenPurple : Color.primary))
+            .foregroundStyle(hovered ? Color.onAccent : (entry.isCurrent ? Color.accentText : Color.primary))
             .padding(.horizontal, 14)
             .frame(width: 210, height: entry.subtitle == nil ? 42 : 50)
             .background(

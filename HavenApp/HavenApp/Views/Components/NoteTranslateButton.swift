@@ -101,7 +101,7 @@ struct NoteTranslateButton: View {
                 Text(label)
             }
             .font(.appSystem(size: 13, weight: .medium))
-            .foregroundColor(failed ? .red.opacity(0.8) : Color.havenPurple)
+            .foregroundColor(failed ? .red.opacity(0.8) : Color.accentText)
         }
         .buttonStyle(.plain)
         .disabled(isTranslating)

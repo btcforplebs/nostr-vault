@@ -138,7 +138,7 @@ private struct ProfileMenuSheetsHost: ViewModifier {
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button("Close") { sheets.open = nil }
-                                    .foregroundColor(.havenPurple)
+                                    .foregroundColor(.accentText)
                             }
                         }
                 }

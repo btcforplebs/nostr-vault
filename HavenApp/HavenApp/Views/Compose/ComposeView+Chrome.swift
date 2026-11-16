@@ -22,7 +22,7 @@ extension ComposeView {
                 } label: {
                     Image(systemName: "doc.text")
                         .font(.appSystem(size: 14, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                         .draftCountBadge(draftService.draftsForActiveAccount.count, ringColor: .platformControlBackground)
                 }
                 .buttonStyle(.plain)
@@ -254,7 +254,7 @@ extension ComposeView {
                                     Color.platformSecondaryGroupedBackground
                                     Image(systemName: attachment.type.conforms(to: .movie) || attachment.type.conforms(to: .video) ? "video.fill" : "doc.fill")
                                         .font(.appTitle)
-                                        .foregroundColor(Color.havenPurple.opacity(0.8))
+                                        .foregroundColor(Color.accentText.opacity(0.8))
                                 }
                                 .frame(width: side, height: side)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))

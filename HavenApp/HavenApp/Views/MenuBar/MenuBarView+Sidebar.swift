@@ -20,7 +20,7 @@ extension MenuBarView {
                             HStack(spacing: 10) {
                                 Image(systemName: "server.rack")
                                     .font(.appSystem(size: 18, weight: .bold))
-                                    .foregroundColor(.havenPurple)
+                                    .foregroundColor(.accentText)
                                 Text("Nostr Vault")
                                     .font(.appSystem(size: 18, weight: .bold))
                                     .foregroundColor(.ink)

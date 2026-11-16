@@ -111,7 +111,7 @@ struct MenuBarContent: View {
                     VStack(spacing: 24) {
                         Image(systemName: "server.rack")
                             .font(.appSystem(size: 56, weight: .light))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                             .offset(y: isVisible ? 0 : 20)
                             .opacity(isVisible ? 1 : 0)
                             .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.1), value: isVisible)

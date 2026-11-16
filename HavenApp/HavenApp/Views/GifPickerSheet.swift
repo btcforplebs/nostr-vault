@@ -76,7 +76,7 @@ struct GifPickerSheet: View {
         HStack(spacing: 10) {
             Image(systemName: "film.fill")
                 .font(.appSystem(size: 16, weight: .bold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
 
             Text("GIFs")
                 .font(.appSystem(size: 18, weight: .bold, design: .rounded))
@@ -124,7 +124,7 @@ struct GifPickerSheet: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.appSystem(size: 14, weight: .semibold))
-                .foregroundColor(searchFocused ? .havenPurple : .secondary)
+                .foregroundColor(searchFocused ? .accentText : .secondary)
             // Submit only. Both sources are free services being read through
             // their own web pages, and an as-you-type search spent a page
             // request plus a fresh grid of preview GIFs on every pause.
@@ -331,7 +331,7 @@ struct GifPickerSheet: View {
             Spacer()
             Image(systemName: icon)
                 .font(.appSystem(size: 40, weight: .thin))
-                .foregroundColor(.havenPurple.opacity(0.6))
+                .foregroundColor(.accentText.opacity(0.6))
             Text(text)
                 .font(.appSystem(size: 14, weight: .medium))
                 .foregroundColor(.secondary)

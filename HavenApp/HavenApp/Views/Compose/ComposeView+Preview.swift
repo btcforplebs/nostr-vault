@@ -93,7 +93,7 @@ extension ComposeView {
         } label: {
             Text(showingPreview ? "Edit" : "Preview")
                 .fontWeight(.semibold)
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .lineLimit(1)
                 .fixedSize()
         }

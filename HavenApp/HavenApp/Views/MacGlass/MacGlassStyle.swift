@@ -93,7 +93,7 @@ struct MacVaultArchMark: View {
             .resizable()
             .scaledToFit()
             .frame(width: size, height: size)
-            .foregroundStyle(glow == .stopped ? Color.secondary : Color.havenPurple)
+            .foregroundStyle(glow == .stopped ? Color.secondary : Color.accentText)
             .shadow(color: glow == .stopped ? .clear : Color.havenPurple.opacity(0.75), radius: glow == .stopped ? 0 : 8)
             .opacity(glow == .busy && pulsing ? 0.45 : 1)
             .animation(glow == .busy ? Motion.ambientPulse : Motion.fade, value: pulsing)

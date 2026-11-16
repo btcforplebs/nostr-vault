@@ -31,7 +31,7 @@ struct SearchRecommendationsSection: View {
                 HStack(spacing: 6) {
                     Image(systemName: "sparkles")
                         .font(.appSystem(size: 12, weight: .semibold))
-                        .foregroundColor(Color.havenPurple)
+                        .foregroundColor(Color.accentText)
                     Text("For you")
                         .font(.appSystem(size: 13, weight: .semibold))
                         .foregroundColor(.secondary)
@@ -106,7 +106,7 @@ struct SearchRecommendationsSection: View {
                         Button(action: { onTopic(tag) }) {
                             Text("#\(tag)")
                                 .font(.appSystem(size: 12, weight: .medium))
-                                .foregroundColor(Color.havenPurple)
+                                .foregroundColor(Color.accentText)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
                                 .background(Color.havenPurple.opacity(0.12))

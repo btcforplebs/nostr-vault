@@ -15,7 +15,7 @@ struct WelcomeWindowView: View {
                     .font(.appSystem(size: 72))
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [.havenPurple, .havenPurpleLight],
+                            colors: [.accentText, .havenPurpleLight],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -39,7 +39,7 @@ struct WelcomeWindowView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "menubar.rectangle")
                             .font(.appSystem(size: 24))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                             .frame(width: 32)
                         
                         VStack(alignment: .leading, spacing: 4) {
@@ -52,7 +52,7 @@ struct WelcomeWindowView: View {
                             + Text(" ")
                             + Text(Image(systemName: "server.rack"))
                                 .font(.appSystem(size: 13, weight: .bold))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                             + Text(" icon in the top-right corner of your screen")
                                 .font(.appSystem(size: 13))
                                 .foregroundColor(.secondary)
@@ -67,7 +67,7 @@ struct WelcomeWindowView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "hand.tap.fill")
                             .font(.appSystem(size: 24))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                             .frame(width: 32)
                         
                         VStack(alignment: .leading, spacing: 4) {

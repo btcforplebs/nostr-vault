@@ -25,12 +25,13 @@ struct ArticleCommentRow: View {
                 if !text.characters.isEmpty {
                     Text(text)
                         .font(.appSystem(size: 14))
+                        .tint(Color.accentText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if replies > 0 {
                     Label(replies == 1 ? "1 reply" : "\(replies) replies", systemImage: "arrowshape.turn.up.left")
                         .font(.appSystem(size: 12, weight: .medium))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
             }
             .padding(12)

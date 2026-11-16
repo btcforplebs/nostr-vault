@@ -107,7 +107,7 @@ extension MediaGalleryView {
         } label: {
             Image(systemName: all ? "circle.grid.2x2" : "circle.grid.2x2.fill")
                 .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .frame(width: 36, height: 36)
                 .contentShape(Rectangle())
         }
@@ -139,7 +139,7 @@ extension MediaGalleryView {
         } label: {
             Image(systemName: "line.3.horizontal.decrease")
                 .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .frame(width: 36, height: 36)
                 .contentShape(Rectangle())
         }
@@ -185,7 +185,7 @@ extension MediaGalleryView {
         } label: {
             Image(systemName: "arrow.up.arrow.down")
                 .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .frame(width: 36, height: 36)
                 .contentShape(Rectangle())
         }

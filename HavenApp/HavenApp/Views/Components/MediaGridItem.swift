@@ -39,7 +39,7 @@ struct MediaGridItem: View {
                             Color(red: 0.1, green: 0.1, blue: 0.14)
                             Image(systemName: "waveform")
                                 .font(.appSystem(size: 36))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                         }
                     } else if item.type == .unknown {
                         ZStack {
@@ -47,7 +47,7 @@ struct MediaGridItem: View {
                             VStack(spacing: 4) {
                                 Image(systemName: "doc.fill")
                                     .font(.appSystem(size: 28))
-                                    .foregroundColor(.havenPurple.opacity(0.6))
+                                    .foregroundColor(.accentText.opacity(0.6))
                                 if let mime = item.mimeType {
                                     Text(mime)
                                         .font(.appSystem(size: 9, weight: .medium, design: .monospaced))

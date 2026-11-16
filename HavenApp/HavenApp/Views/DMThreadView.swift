@@ -130,7 +130,7 @@ struct DMThreadView: View {
                     HStack(spacing: 6) {
                         Image(systemName: useNIP04 ? "lock.open" : "lock.fill")
                             .font(.appSystem(size: 10, weight: .medium))
-                            .foregroundColor(useNIP04 ? .orange.opacity(0.8) : .havenPurple.opacity(0.7))
+                            .foregroundColor(useNIP04 ? .orange.opacity(0.8) : .accentText.opacity(0.7))
 
                         Text(useNIP04 ? "NIP-04 (legacy)" : "NIP-17 (encrypted)")
                             .font(.appSystem(size: 11, weight: .medium))
@@ -141,7 +141,7 @@ struct DMThreadView: View {
                         Button(action: { withAnimation(Motion.toggle) { useNIP04.toggle() } }) {
                             Text("Switch")
                                 .font(.appSystem(size: 11, weight: .medium))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                         }
                         .buttonStyle(.plain)
                     }
@@ -204,7 +204,7 @@ struct DMThreadView: View {
                         PhotosPicker(selection: $pickedPhotoItem, matching: .any(of: [.images, .videos])) {
                             Image(systemName: "photo")
                                 .font(.appSystem(size: 17, weight: .medium))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                                 .frame(width: 34, height: 34)
                         }
                         .buttonStyle(.plain)

@@ -101,7 +101,7 @@ private struct AccountList: View {
             HStack(spacing: 12) {
                 Image(systemName: page.symbol)
                     .font(.appSystem(size: 17, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .frame(width: 36)
                 Text(page.title)
                     .font(.appSystem(size: 15, weight: .semibold))
@@ -135,7 +135,7 @@ private struct AccountList: View {
                 }
                 Spacer(minLength: 8)
                 if isCurrent {
-                    Image(systemName: "checkmark").foregroundColor(.havenPurple)
+                    Image(systemName: "checkmark").foregroundColor(.accentText)
                 } else if unreadStore.count(npub: npub) > 0 {
                     NewsDot(isShown: true, size: 9)
                 }

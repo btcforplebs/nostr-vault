@@ -216,7 +216,7 @@ struct EventBroadcastSheet: View {
         VStack(spacing: 6) {
             Image(systemName: copied ? "checkmark" : icon)
                 .font(.appSystem(size: 16, weight: .medium))
-                .foregroundColor(copied ? .green : Color.havenPurple)
+                .foregroundColor(copied ? .green : Color.accentText)
                 .frame(height: 20)
             Text(copied ? "Copied" : title)
                 .font(.appSystem(size: 11, weight: .medium))
@@ -277,7 +277,7 @@ struct EventBroadcastSheet: View {
                         withAnimation(Motion.toggle) { selectedRelays.formUnion(missingRelays) }
                     }
                     .font(.appSystem(size: 12, weight: .medium))
-                    .foregroundColor(Color.havenPurple)
+                    .foregroundColor(Color.accentText)
                     .buttonStyle(.plain)
                     .disabled(isBroadcasting)
                 }
@@ -315,7 +315,7 @@ struct EventBroadcastSheet: View {
             } label: {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.appSystem(size: 20))
-                    .foregroundColor(isSelected ? Color.havenPurple : Color.secondary.opacity(0.5))
+                    .foregroundColor(isSelected ? Color.accentText : Color.secondary.opacity(0.5))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -520,7 +520,7 @@ struct CopyableRow: View {
             } label: {
                 Image(systemName: copied ? "checkmark" : "doc.on.doc")
                     .font(.appSystem(size: 13))
-                    .foregroundColor(copied ? .green : Color.havenPurple)
+                    .foregroundColor(copied ? .green : Color.accentText)
                     .frame(width: 32, height: 32)
             }
             .buttonStyle(.plain)

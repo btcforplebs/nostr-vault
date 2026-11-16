@@ -148,7 +148,7 @@ struct KindRow: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(count)")
                     .font(.appSystem(size: 15, weight: .bold, design: .monospaced))
-                    .foregroundColor(Color.havenPurple)
+                    .foregroundColor(Color.accentText)
                 Text(String(format: "%.1f%%", percent * 100))
                     .font(.appSystem(size: 10, design: .monospaced))
                     .foregroundColor(.secondary)

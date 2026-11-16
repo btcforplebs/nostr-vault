@@ -14,7 +14,7 @@ struct DMRequestsButton: View {
         Button(action: action) {
             Image(systemName: isActive ? "tray.fill" : "tray")
                 .font(.appSystem(size: size, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
         }
         .accessibilityLabel("Requests")
         .help("Requests: messages from people outside your Web of Trust")

@@ -53,7 +53,7 @@ struct MediaItemRenderer: View {
                 VStack(spacing: 12) {
                     Image(systemName: "doc.fill")
                         .font(.appSystem(size: 64))
-                        .foregroundColor(Color.havenPurple.opacity(0.6))
+                        .foregroundColor(Color.accentText.opacity(0.6))
                     if let mime = mediaItem.mimeType {
                         Text(mime)
                             .font(.appSystem(size: 14, weight: .medium, design: .monospaced))

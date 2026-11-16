@@ -101,7 +101,7 @@ extension TrustWebView {
             if let tag {
                 Text(tag)
                     .font(.appSystem(size: 11, weight: .semibold))
-                    .foregroundColor(tag == "In your web" ? .secondary : .havenPurple)
+                    .foregroundColor(tag == "In your web" ? .secondary : .accentText)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(Capsule().fill(Color.white.opacity(0.08)))

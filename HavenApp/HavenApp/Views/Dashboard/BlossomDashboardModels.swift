@@ -75,7 +75,7 @@ struct ActivityLogView: View {
                             .controlSize(.small)
                         Text(syncMessage)
                             .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)

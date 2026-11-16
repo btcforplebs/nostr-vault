@@ -106,7 +106,7 @@ struct BitcoinSweepView: View {
                             dismiss()
                         }
                     }
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                 }
             }
         }
@@ -280,7 +280,7 @@ struct BitcoinSweepView: View {
                         Text("View on mempool")
                     }
                     .font(.appSystem(size: 14, weight: .medium))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                 }
             }
         }

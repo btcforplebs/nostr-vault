@@ -55,7 +55,7 @@ extension NoteRow {
                                 Text("Reply")
                                     .font(.appSystem(size: 11, weight: .medium))
                             }
-                            .foregroundColor(Color.havenPurple.opacity(0.7))
+                            .foregroundColor(Color.accentText.opacity(0.7))
                         }
 
                         Image(systemName: noteType.icon)
@@ -101,6 +101,7 @@ extension NoteRow {
                                 case .text(let piece):
                                     Text(NostrContentFormatter.format(piece, mediaURLs: urls))
                                         .font(.appSystem(size: contentFontSize, weight: .regular, design: .default))
+                                        .tint(Color.accentText)
                                         .foregroundColor(Color.ink)
                                         .lineSpacing(2)
                                         .lineLimit(show.lineLimit)
@@ -126,6 +127,7 @@ extension NoteRow {
                                     if case .text(let piece) = segment {
                                         Text(NostrContentFormatter.format(piece, mediaURLs: urls))
                                             .font(.appSystem(size: contentFontSize, weight: .regular, design: .default))
+                                            .tint(Color.accentText)
                                             .lineSpacing(2)
                                             .fixedSize(horizontal: false, vertical: true)
                                             .background(GeometryReader { geo in
@@ -144,7 +146,7 @@ extension NoteRow {
                         Button(action: { withAnimation(Motion.panel) { isExpanded = true } }) {
                             Text("Show more")
                                 .font(.appSystem(size: 12, weight: .semibold, design: .monospaced))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                         }
                         .buttonStyle(.plain)
                     }

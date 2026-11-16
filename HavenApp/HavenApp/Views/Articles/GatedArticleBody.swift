@@ -104,7 +104,7 @@ struct GatedArticleBody: View {
                         Text(phase == .checking ? "Checking…" : "Already unlocked?")
                     }
                     .font(.appSystem(size: 13, weight: .medium))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                 }
                 .buttonStyle(.plain)
                 .disabled(phase == .checking)

@@ -40,7 +40,7 @@ struct TutorialsSettingsView: View {
     private func row(_ id: TutorialID) -> some View {
         HStack(spacing: 12) {
             Image(systemName: id.symbolName)
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .frame(width: 26)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {

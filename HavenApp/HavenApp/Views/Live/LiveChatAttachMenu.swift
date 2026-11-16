@@ -50,7 +50,7 @@ struct LiveChatAttachMenu: View {
                 } else {
                     Image(systemName: "plus.circle")
                         .font(.appSystem(size: 19, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
             }
             .frame(width: 32, height: 32)

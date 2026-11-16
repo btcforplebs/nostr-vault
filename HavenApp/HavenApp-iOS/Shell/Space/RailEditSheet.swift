@@ -45,11 +45,11 @@ struct RailEditSheet: View {
                             if pinned { store.removePin(pin.id) } else { store.addPin(pin) }
                         } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: mode.symbolName).foregroundColor(.havenPurple).frame(width: 28)
+                                Image(systemName: mode.symbolName).foregroundColor(.accentText).frame(width: 28)
                                 Text(mode.displayName).foregroundColor(.primary)
                                 Spacer()
                                 Image(systemName: pinned ? "checkmark.circle.fill" : "plus.circle")
-                                    .foregroundColor(pinned ? .havenPurple : .secondary)
+                                    .foregroundColor(pinned ? .accentText : .secondary)
                             }
                         }
                         .accessibilityLabel(pinned ? "\(mode.displayName) on your rail. Take off" : "Add \(mode.displayName) to your rail")
@@ -79,11 +79,11 @@ struct RailEditSheet: View {
     private func icon(_ pin: SpaceLayout.Pin) -> some View {
         switch pin.kind {
         case .section(let id):
-            Image(systemName: RailSection.symbol(id)).foregroundColor(.havenPurple)
+            Image(systemName: RailSection.symbol(id)).foregroundColor(.accentText)
         case .person(let p):
             AvatarView(url: nostrService.profiles[p]?.pictureURL, pubkey: p, size: 26)
         default:
-            Image(systemName: RailPin.symbol(pin.kind)).foregroundColor(.havenPurple)
+            Image(systemName: RailPin.symbol(pin.kind)).foregroundColor(.accentText)
         }
     }
 

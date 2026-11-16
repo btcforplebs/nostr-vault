@@ -10,16 +10,21 @@ import UIKit
 /// colours, or any colour from the wheel (PLANS/NV_LIGHT_MODE_AND_CUSTOM_COLORS.md).
 /// Same rules as web-vault/src/net/accent.js:
 ///
-/// - Dark shows the colour as picked, lifted only if it would be too dark to
-///   read on a card (4.5:1 on #1C1C1E).
-/// - Light never puts a pale colour on the paper as text: the accent there is
-///   the colour darkened in OKLab until it reads (4.5:1 on white).
+/// - Dark is neon (`AccentMath.neon`): the same hue pushed to the most colour
+///   sRGB allows, lighter only as far as text needs to read 4.5:1 on a card.
+///   Buttons and text both use it.
+/// - Light shows the colour exactly as picked on buttons and fills
+///   (`primary`); only accent text (`text`: #tags, links) is darkened, and only
+///   for colours under 3.5:1 on white (gold, green, teal, orange), to 4.5:1.
 /// - A label on an accent fill is white whenever white reads (3:1, a bold
 ///   label), otherwise black, so yellow and teal buttons get black labels.
 ///
 /// Saved as `HavenConfig.themeColor`: "orange" (the default) or "#rrggbb".
 struct AccentPalette {
+    /// The fill: buttons, rings, borders, toggles.
     let primary: Color
+    /// Accent text: #tags, links, accent-coloured labels and icons.
+    let text: Color
     let light: Color
     let dark: Color
     let onAccent: Color
@@ -38,11 +43,9 @@ struct AccentPalette {
 
     static let defaultHex = "#e67326"
 
-    /// The ready-made row, orange first. Apple's system colours, so each sits well on black.
-    static let presets: [(hex: String, name: String)] = [
-        ("#e67326", "Orange"), ("#ffd60a", "Yellow"), ("#30d158", "Green"), ("#40c8e0", "Teal"),
-        ("#0a84ff", "Blue"), ("#5e5ce6", "Indigo"), ("#bf5af2", "Purple"), ("#ff375f", "Pink"),
-    ]
+    /// The ready-made row, orange first: three anchors (the app's orange, Nostr
+    /// purple from the Nostr logo, Android green) and the colours around them.
+    static let presets: [(hex: String, name: String)] = AccentMath.presets
 
     /// The saved colour as "#rrggbb"; anything else is the default orange.
     static func hex(fromSetting setting: String) -> String {
@@ -74,33 +77,26 @@ struct AccentPalette {
 
     static func make(_ hex: String) -> AccentPalette {
         let pick = normalize(hex) ?? defaultHex
-        if pick == defaultHex {
-            // The orange keeps its hand-tuned ramp exactly.
-            let t = AppTheme.orange
-            return AccentPalette(primary: t.primaryColor, light: t.lightColor, dark: t.darkColor, onAccent: .white,
-                                 surface0: paper(paperBases.s0, pick, darkHex: 0x000000),
-                                 surface2: paper(paperBases.s2, pick, darkHex: 0x2C2C2E),
-                                 surface3: paper(paperBases.s3, pick, darkHex: 0x3A3A3C))
-        }
-        let rgb = AccentMath.rgb(pick)
-        let darkText = AccentMath.readable(rgb, on: AccentMath.cardDark, min: 4.5, dir: 1)
-        let lightText = AccentMath.readable(rgb, on: AccentMath.white, min: 4.5, dir: -1)
+        let t = AccentMath.tokens(AccentMath.rgb(pick))
+        func both(_ light: AccentMath.RGB, _ dark: AccentMath.RGB) -> Color { Color(light: color(light), dark: color(dark)) }
+        func label(_ white: Bool) -> Color { white ? .white : .black }
         return AccentPalette(
-            primary: Color(light: AccentMath.color(lightText), dark: AccentMath.color(darkText)),
-            light: Color(light: AccentMath.color(AccentMath.readable(rgb, on: AccentMath.white, min: 3, dir: -1)),
-                         dark: AccentMath.color(AccentMath.shade(darkText, 0.08))),
-            dark: Color(light: AccentMath.color(AccentMath.shade(lightText, -0.1)),
-                        dark: AccentMath.color(AccentMath.shade(darkText, -0.12))),
-            onAccent: Color(light: AccentMath.labelOn(lightText), dark: AccentMath.labelOn(darkText)),
+            primary: both(t.lightFill, t.darkFill),
+            text: both(t.lightText, t.darkFill),
+            light: both(t.lightLight, t.darkLight),
+            dark: both(t.lightDeep, t.darkDeep),
+            onAccent: Color(light: label(t.lightWhiteLabel), dark: label(t.darkWhiteLabel)),
             surface0: paper(paperBases.s0, pick, darkHex: 0x000000),
             surface2: paper(paperBases.s2, pick, darkHex: 0x2C2C2E),
             surface3: paper(paperBases.s3, pick, darkHex: 0x3A3A3C)
         )
     }
 
+    static func color(_ c: AccentMath.RGB) -> Color { Color(red: c.r / 255, green: c.g / 255, blue: c.b / 255) }
+
     /// A Light surface: the base with `paperTint` of the pick mixed in.
     static func paper(_ base: UInt32, _ pick: String, darkHex: UInt32) -> Color {
-        Color(light: AccentMath.color(AccentMath.mix(paperHex: base, pick: pick, amount: paperTint)),
+        Color(light: color(AccentMath.mix(paperHex: base, pick: pick, amount: paperTint)),
               dark: Color(hex: darkHex))
     }
 
@@ -119,85 +115,13 @@ struct AccentPalette {
 
     /// The picked colour itself (no lift or deepening), for swatches.
     static func swatch(_ hex: String) -> Color {
-        AccentMath.color(AccentMath.rgb(normalize(hex) ?? defaultHex))
+        color(AccentMath.rgb(normalize(hex) ?? defaultHex))
     }
 
-    /// True when light mode had to darken the colour a lot to make it read,
-    /// so the picker can say the light version looks different.
+    /// True when Light darkens the colour's text to make it read, so the
+    /// picker can say #tags look deeper in Light.
     static func shiftsInLight(_ hex: String) -> Bool {
-        AccentMath.contrast(AccentMath.rgb(normalize(hex) ?? defaultHex), AccentMath.white) < 3
+        AccentMath.textDarkenedInLight(AccentMath.rgb(normalize(hex) ?? defaultHex))
     }
 }
 
-/// Colour maths, a port of web-vault/src/net/accent.js. RGB is 0...255.
-enum AccentMath {
-    typealias RGB = (r: Double, g: Double, b: Double)
-
-    static let white: RGB = (255, 255, 255)
-    static let cardDark: RGB = (28, 28, 30)
-
-    static func rgb(_ hex: String) -> RGB {
-        let v = UInt32(hex.dropFirst(), radix: 16) ?? 0xE67326
-        return (Double((v >> 16) & 0xFF), Double((v >> 8) & 0xFF), Double(v & 0xFF))
-    }
-
-    static func color(_ c: RGB) -> Color { Color(red: c.r / 255, green: c.g / 255, blue: c.b / 255) }
-
-    private static func lin(_ c: Double) -> Double { let x = c / 255; return x <= 0.04045 ? x / 12.92 : pow((x + 0.055) / 1.055, 2.4) }
-    private static func unlin(_ c: Double) -> Double { 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * pow(c, 1 / 2.4) - 0.055) }
-
-    static func luminance(_ c: RGB) -> Double { 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b) }
-
-    static func contrast(_ a: RGB, _ b: RGB) -> Double {
-        let x = luminance(a), y = luminance(b)
-        return (max(x, y) + 0.05) / (min(x, y) + 0.05)
-    }
-
-    /// OKLab (Björn Ottosson): changing only L keeps the hue and how colourful it looks.
-    private static func toLab(_ c: RGB) -> (Double, Double, Double) {
-        let r = lin(c.r), g = lin(c.g), b = lin(c.b)
-        let l = cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
-        let m = cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
-        let s = cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
-        return (0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
-                1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
-                0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s)
-    }
-
-    private static func fromLab(_ L: Double, _ A: Double, _ B: Double) -> RGB {
-        let l = pow(L + 0.3963377774 * A + 0.2158037573 * B, 3)
-        let m = pow(L - 0.1055613458 * A - 0.0638541728 * B, 3)
-        let s = pow(L - 0.0894841775 * A - 1.291485548 * B, 3)
-        func ch(_ v: Double) -> Double { (unlin(min(1, max(0, v)))).rounded() }
-        return (ch(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
-                ch(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
-                ch(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s))
-    }
-
-    /// The colour moved lighter (dir 1) or darker (-1) in small steps until it reads at `min` on `bg`.
-    static func readable(_ c: RGB, on bg: RGB, min: Double, dir: Double) -> RGB {
-        if contrast(c, bg) >= min { return c }
-        let (L, A, B) = toLab(c)
-        for i in 1...100 {
-            let next = fromLab(Swift.min(1, Swift.max(0, L + dir * Double(i) * 0.01)), A, B)
-            if contrast(next, bg) >= min { return next }
-        }
-        return dir < 0 ? (0, 0, 0) : white
-    }
-
-    /// `amount` of the picked colour mixed into a paper base, in sRGB, rounded to bytes.
-    static func mix(paperHex base: UInt32, pick: String, amount: Double) -> RGB {
-        let b: RGB = (Double((base >> 16) & 0xFF), Double((base >> 8) & 0xFF), Double(base & 0xFF))
-        let c = rgb(pick)
-        func m(_ x: Double, _ y: Double) -> Double { (x * (1 - amount) + y * amount).rounded() }
-        return (m(b.r, c.r), m(b.g, c.g), m(b.b, c.b))
-    }
-
-    static func shade(_ c: RGB, _ dL: Double) -> RGB {
-        let (L, A, B) = toLab(c)
-        return fromLab(min(1, max(0, L + dL)), A, B)
-    }
-
-    /// White or black for a label on a fill of this colour: white whenever it reads as a bold label.
-    static func labelOn(_ c: RGB) -> Color { contrast(white, c) >= 3 ? .white : .black }
-}

@@ -61,7 +61,7 @@ struct ArticleCardView: View {
                             .foregroundColor(.secondary)
                         Label("Locked", systemImage: "lock.fill")
                             .font(.appSystem(size: 12, weight: .semibold))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                     } else if let minutes = LongFormMetadata.readingTimeMinutes(for: note.content) {
                         Text("·")
                             .foregroundColor(.secondary)
@@ -104,7 +104,7 @@ struct ArticleCardView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(Color.havenPurplePale)
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .clipShape(Capsule())
             }
         }

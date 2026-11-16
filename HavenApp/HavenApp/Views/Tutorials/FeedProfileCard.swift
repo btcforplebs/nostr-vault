@@ -175,7 +175,7 @@ struct FeedProfileCard: View {
     private var fullProfileButton: some View {
         Button("See full profile") { showingFullProfile = true }
             .font(.appSubheadline.weight(.semibold))
-            .foregroundColor(.havenPurple)
+            .foregroundColor(.accentText)
             .frame(maxWidth: .infinity, minHeight: 44)
     }
 

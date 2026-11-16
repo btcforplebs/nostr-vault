@@ -306,7 +306,7 @@ struct LongFormComposeView: View {
                             .scaledToFill()
                     } else {
                         Label("Add a cover photo", systemImage: "photo")
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 12))

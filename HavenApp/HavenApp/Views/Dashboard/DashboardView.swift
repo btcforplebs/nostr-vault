@@ -150,7 +150,7 @@ struct DashboardView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "server.rack")
                         .font(.appSystem(size: 14, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                     Text("Relay Dashboard")
                         .font(.appSystem(size: 14, weight: .bold))
                         .foregroundColor(.primary)

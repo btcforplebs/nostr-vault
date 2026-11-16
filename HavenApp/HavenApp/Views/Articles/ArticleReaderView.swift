@@ -89,7 +89,7 @@ struct ArticleReaderView: View {
                 if highlighting {
                     Label(String(localized: "Tap a paragraph to highlight it"), systemImage: "highlighter")
                         .font(.appSystem(size: 13, weight: .medium))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
 
                 if let gated = note.gatedArticle {

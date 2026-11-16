@@ -31,6 +31,7 @@ struct OtherResponseCard: View {
             if !text.characters.isEmpty {
                 Text(text)
                     .font(.appSystem(size: 14))
+                    .tint(Color.accentText)
                     .lineLimit(note.kind == 9802 ? 6 : 4)
                     .padding(.leading, note.kind == 9802 ? 8 : 0)
                     .overlay(alignment: .leading) {

@@ -86,7 +86,7 @@ struct PollCardView: View {
                 HStack(spacing: 10) {
                     Image(systemName: selectionIcon(selected))
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(selected ? .havenPurple : .secondary)
+                        .foregroundColor(selected ? .accentText : .secondary)
                     Text(option.label)
                         .font(.appSystem(size: 15, weight: selected ? .semibold : .regular))
                         .foregroundColor(.primary)
@@ -96,7 +96,7 @@ struct PollCardView: View {
                     if showsResults {
                         Text("\(Int((share * 100).rounded()))%")
                             .font(.appSystem(size: 14, weight: .semibold).monospacedDigit())
-                            .foregroundColor(selected ? .havenPurple : .secondary)
+                            .foregroundColor(selected ? .accentText : .secondary)
                     }
                 }
                 .padding(.horizontal, 12)

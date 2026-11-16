@@ -211,7 +211,7 @@ struct MacSpacePanel<Content: View>: View {
             HStack(spacing: 6) {
                 Image(systemName: systemImage)
                     .font(.appSystem(size: 11, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                 Text(title)
                     .font(.appSystem(size: 12, weight: .bold))
                     .foregroundColor(.primary)
@@ -220,7 +220,7 @@ struct MacSpacePanel<Content: View>: View {
                     Button(action.title, action: action.run)
                         .buttonStyle(.plain)
                         .font(.appSystem(size: 11, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                         .accessibilityLabel("\(action.title) \(title)")
                 }
             }

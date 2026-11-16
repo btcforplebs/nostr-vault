@@ -16,7 +16,7 @@ struct EveryoneBannerView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button(EveryoneBanner.back, action: onBack)
                 .font(.appSystem(size: 13, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)

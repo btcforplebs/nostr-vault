@@ -19,7 +19,7 @@ extension FeedView {
         Button(action: toggleTrustScope) {
             Image(systemName: shield)
                 .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(everyone ? Color.orange : Color.havenPurple)
+                .foregroundColor(everyone ? Color.orange : Color.accentText)
         }
         .buttonStyle(.plain)
         .help(everyone ? "Everyone: unfiltered posts. Click for your Web of Trust"

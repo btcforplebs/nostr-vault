@@ -152,7 +152,7 @@ struct MarketplaceSellView: View {
                             Text(photos.isEmpty ? "Add photos" : "Add")
                                 .font(.appSystem(size: 11, weight: .semibold))
                         }
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                         .frame(width: 88, height: 88)
                         .background(Color.havenPurplePale)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))

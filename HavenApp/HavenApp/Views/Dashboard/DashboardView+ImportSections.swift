@@ -19,7 +19,7 @@ extension DashboardView {
                 
                 Text("\(Int(relayManager.importProgress * 100))%")
                     .font(.appSystem(size: 14, weight: .bold, design: .monospaced))
-                    .foregroundColor(Color.havenPurple)
+                    .foregroundColor(Color.accentText)
             }
             
             GeometryReader { geo in

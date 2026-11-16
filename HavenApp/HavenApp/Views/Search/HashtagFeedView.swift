@@ -88,7 +88,7 @@ struct HashtagFeedView: View {
                         Image(systemName: everyone ? "shield.slash.fill"
                               : TrustScopeLock.isLocked(followCount: feedService.trustLockFollowCount, everyoneIsOn: false)
                               ? "lock.shield.fill" : "checkmark.shield.fill")
-                            .foregroundColor(everyone ? .orange : .havenPurple)
+                            .foregroundColor(everyone ? .orange : .accentText)
                     }
                     .accessibilityLabel(everyone ? "Everyone" : "Web of Trust")
                     .help(everyone ? "Everyone: unfiltered posts. Click for your Web of Trust" : "Web of Trust: people you follow and the people they follow. Click for everyone")
@@ -175,7 +175,7 @@ struct HashtagFeedView: View {
                     Text(isFollowingTag ? "Following" : "Follow")
                         .font(.appSystem(size: 13, weight: .semibold))
                 }
-                .foregroundColor(isFollowingTag ? .onAccent : .havenPurple)
+                .foregroundColor(isFollowingTag ? .onAccent : .accentText)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(isFollowingTag ? Color.havenPurple : Color.havenPurple.opacity(0.12))

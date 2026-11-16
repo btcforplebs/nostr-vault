@@ -194,7 +194,7 @@ struct FillYourFeedOverlay: View {
                         .rotationEffect(.degrees(-90))
                     Image(systemName: "bolt.fill")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(gold ? Gold.mid : .havenPurple)
+                        .foregroundColor(gold ? Gold.mid : .accentText)
                 }
                 .frame(width: 26, height: 26)
                 Text(FillYourFeedGuide.pillText(guide.meter))
@@ -489,11 +489,11 @@ private struct TopicChips: View {
                 Button(action: onMore) {
                     Text("More topics…")
                         .font(.appSubheadline)
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                         .padding(.horizontal, 12)
                         .frame(minHeight: 36)
                         .overlay(Capsule().strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                            .foregroundColor(.havenPurple))
+                            .foregroundColor(.accentText))
                         .padding(.vertical, 4)
                         .contentShape(Rectangle())
                 }
@@ -707,7 +707,7 @@ private struct FeedPicksSheet: View {
                         Spacer()
                         Button("Unfollow") { _ = FeedService.shared.unfollowUser(pubkey) }
                             .font(.appSubheadline.weight(.semibold))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                             .frame(minHeight: 44)
                     }
                     Divider()

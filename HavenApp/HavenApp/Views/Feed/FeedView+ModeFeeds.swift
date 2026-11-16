@@ -60,7 +60,7 @@ extension FeedView {
         VStack(spacing: 10) {
             Image(systemName: "doc.richtext")
                 .font(.appSystem(size: 34))
-                .foregroundColor(.havenPurple.opacity(0.7))
+                .foregroundColor(.accentText.opacity(0.7))
             Text("No articles yet")
                 .font(.appSystem(size: 16, weight: .bold))
             Text(feedService.articlesFeedMode == .following
@@ -118,7 +118,7 @@ extension FeedView {
         VStack(spacing: 10) {
             Image(systemName: recipeService.loadFailed ? "wifi.slash" : "fork.knife")
                 .font(.appSystem(size: 34))
-                .foregroundColor(.havenPurple.opacity(0.7))
+                .foregroundColor(.accentText.opacity(0.7))
             Text(emptyRecipesTitle)
                 .font(.appSystem(size: 16, weight: .bold))
             Text(emptyRecipesMessage)
@@ -128,12 +128,12 @@ extension FeedView {
             if recipeService.followSetIsEmpty {
                 Button("Show Global recipes") { recipeService.setScope(.global) }
                     .buttonStyle(.borderless)
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .padding(.top, 4)
             } else {
                 Button("Try again") { recipeService.refresh() }
                     .buttonStyle(.borderless)
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .padding(.top, 4)
             }
         }
@@ -203,7 +203,7 @@ extension FeedView {
         VStack(spacing: 10) {
             Image(systemName: marketplaceService.loadFailed ? "wifi.slash" : "bag")
                 .font(.appSystem(size: 34))
-                .foregroundColor(.havenPurple.opacity(0.7))
+                .foregroundColor(.accentText.opacity(0.7))
             Text(marketplaceService.followSetIsEmpty || marketplaceService.scope == .following
                  ? "No listings from your follows"
                  : (marketplaceService.loadFailed ? "Could not reach any relay" : "No listings found"))
@@ -219,12 +219,12 @@ extension FeedView {
             if marketplaceService.scope == .following {
                 Button("Show Global listings") { marketplaceService.setScope(.global) }
                     .buttonStyle(.borderless)
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .padding(.top, 4)
             } else {
                 Button("Try again") { marketplaceService.refresh() }
                     .buttonStyle(.borderless)
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .padding(.top, 4)
             }
         }
@@ -370,7 +370,7 @@ extension FeedView {
         return VStack(spacing: 10) {
             Image(systemName: text.noConnection ? "wifi.slash" : "dot.radiowaves.left.and.right")
                 .font(.appSystem(size: 34))
-                .foregroundColor(.havenPurple.opacity(0.7))
+                .foregroundColor(.accentText.opacity(0.7))
             Text(text.title)
                 .font(.appSystem(size: 16, weight: .bold))
             Text(text.message)
@@ -381,12 +381,12 @@ extension FeedView {
             case .showGlobal:
                 Button("Show Global streams") { liveService.setScope(.global) }
                     .buttonStyle(.borderless)
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .padding(.top, 4)
             case .tryAgain:
                 Button("Try again") { liveService.refresh() }
                     .buttonStyle(.borderless)
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .padding(.top, 4)
             }
         }

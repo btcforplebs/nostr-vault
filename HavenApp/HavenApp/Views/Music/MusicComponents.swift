@@ -130,7 +130,7 @@ struct MusicPillButton: View {
         Button(action: action) {
             Label(title, systemImage: icon)
                 .font(.appSystem(size: 14, weight: .semibold))
-                .foregroundColor(filled ? .onAccent : .havenPurple)
+                .foregroundColor(filled ? .onAccent : .accentText)
                 .padding(.horizontal, 16)
                 .frame(minHeight: 36)
                 .background(Capsule().fill(filled ? Color.havenPurple : Color.havenPurple.opacity(0.14)))
@@ -198,7 +198,7 @@ struct MusicBackButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundColor(.havenPurple)
+        .foregroundColor(.accentText)
     }
 }
 
@@ -278,7 +278,7 @@ struct MusicTrackRow: View {
                     if isCurrent {
                         Image(systemName: isPlaying ? "waveform" : "play.fill")
                             .font(.appSystem(size: 14, weight: .bold))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                     } else {
                         Text("\(number)")
                             .font(.appSystem(size: 15, weight: .semibold).monospacedDigit())
@@ -301,7 +301,7 @@ struct MusicTrackRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
                     .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(isCurrent ? .havenPurple : .primary)
+                    .foregroundColor(isCurrent ? .accentText : .primary)
                     .lineLimit(1)
                 Text(track.artist)
                     .font(.appSystem(size: 13))

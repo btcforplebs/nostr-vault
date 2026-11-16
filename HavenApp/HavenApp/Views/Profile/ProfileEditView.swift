@@ -154,7 +154,7 @@ struct ProfileEditView: View {
                 } else {
                     Text("Save")
                         .font(.appSystem(size: 13, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
             }
             .disabled(isSaving || uploading != nil)
@@ -500,7 +500,7 @@ struct ProfileEditView: View {
                 .font(.appSystem(size: 13, weight: .semibold))
                 .lineLimit(1)
         }
-        .foregroundColor(.havenPurple)
+        .foregroundColor(.accentText)
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, minHeight: 32)
         .background(Color.havenPurple.opacity(0.12))

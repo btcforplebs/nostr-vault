@@ -153,7 +153,7 @@ struct VaultSearchResults: View {
                 if total > limit, section == nil {
                     Button("See all \(total.formatted())") { section = s }
                         .font(.appSystem(size: 13, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                         .buttonStyle(.plain)
                 }
             }
@@ -213,7 +213,7 @@ struct VaultSearchResults: View {
             HStack {
                 Text("#\(tag)")
                     .font(.appSystem(size: 14, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.appSystem(size: 12, weight: .semibold))
@@ -234,7 +234,7 @@ struct VaultSearchResults: View {
         let label = VStack(alignment: .leading, spacing: 3) {
             Text(link.title)
                 .font(.appSystem(size: 14, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .lineLimit(1)
             Text(link.url)
                 .font(.appSystem(size: 11, design: .monospaced))
@@ -262,7 +262,7 @@ struct VaultSearchResults: View {
         VStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.appSystem(size: 40, weight: .thin))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
             Text(title)
                 .font(.appSystem(size: 17, weight: .bold))
             Text(detail)

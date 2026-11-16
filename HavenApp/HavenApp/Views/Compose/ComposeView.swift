@@ -269,7 +269,7 @@ struct ComposeView: View {
                         } label: {
                             Image(systemName: "doc.text")
                                 .font(.appSystem(size: 16, weight: .semibold))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                                 .draftCountBadge(draftService.draftsForActiveAccount.count, ringColor: .platformSecondaryGroupedBackground)
                         }
                     }

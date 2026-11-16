@@ -39,8 +39,8 @@ struct AccentSettingsSection: View {
             Text("Accent")
         } footer: {
             Text(AccentPalette.shiftsInLight(pickedHex)
-                 ? "This colour is too pale to read on white, so Light mode uses a deeper shade of it."
-                 : "Buttons, links and highlights use this colour.")
+                 ? "This colour is too pale to read as text on white, so in Light mode links and #tags use a deeper shade. Buttons keep the colour."
+                 : "Buttons, links and highlights use this colour. Dark mode shows a brighter, neon version.")
         }
     }
 
@@ -73,7 +73,7 @@ struct AccentSettingsSection: View {
                 .background(Capsule().fill(Color.havenPurple))
             Text("nostrvault.app")
                 .font(.appFootnote)
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)

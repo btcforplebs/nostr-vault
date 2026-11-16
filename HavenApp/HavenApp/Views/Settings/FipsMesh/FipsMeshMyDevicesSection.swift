@@ -33,7 +33,7 @@ struct FipsMeshMyDevicesSection: View {
             } label: {
                 Label("Add a device", systemImage: "plus.circle.fill")
                     .font(.appBody)
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
             }
         } header: {
             Text("My Devices")

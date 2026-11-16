@@ -36,7 +36,7 @@ struct MyDevicesPanel: View {
             Button { showPairing = true } label: {
                 Label("Add a device", systemImage: "plus.circle.fill")
                     .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
             }
             .buttonStyle(.plain)
         }

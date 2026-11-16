@@ -317,7 +317,7 @@ struct LiveStreamPlayerView: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.appSystem(size: 22))
                     .foregroundColor(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                     ? .secondary : .havenPurple)
+                                     ? .secondary : .accentText)
             }
             .buttonStyle(.plain)
             .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chat.isSending)

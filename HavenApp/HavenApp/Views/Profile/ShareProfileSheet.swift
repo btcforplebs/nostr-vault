@@ -93,7 +93,7 @@ struct ShareProfileSheet: View {
                 Label(copied ? "Copied" : "Copy link", systemImage: copied ? "checkmark" : "doc.on.doc")
                     .font(.appSystem(size: 15, weight: .semibold))
                     .frame(maxWidth: .infinity, minHeight: 44)
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .background(Color.havenPurple.opacity(0.12))
                     .cornerRadius(10)
                     .contentShape(RoundedRectangle(cornerRadius: 10))
