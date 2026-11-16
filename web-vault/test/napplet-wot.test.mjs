@@ -154,10 +154,14 @@ test("step 12: the WoT napplet's page spans the main area like the classic scree
   assert.match(css, /\.wot-pane \{[^}]*max-width: none;[^}]*padding: 0;/)
 })
 
-test("in Light the WoT napplet draws the classic screen's daytime sky and day colours; the theme says the page's mode", () => {
+test("the WoT napplet always draws Dark: the classic screen's daytime sky is kept but off; the theme says the page's mode", () => {
   const sky = read("src/styles/wot.css").match(/:root\[data-theme="light"\] \.wot-globe\.day-sky \{ background: ([^;]+);/)[1]
   const nap = read("napplets/wot/index.html")
-  assert.ok(nap.includes(`:root[data-sky="light"] body { background: ${sky}; }`), "same gradient as styles/wot.css")
+  assert.ok(nap.includes(`:root[data-sky="light"].day-sky body { background: ${sky}; }`), "same gradient as styles/wot.css, behind day-sky")
+  assert.match(nap, /const GLOBE_DAY_SKY = false/)
+  assert.match(nap, /const isDay = \(\) => GLOBE_DAY_SKY && /)
+  assert.match(read("napplets/wot-mini/index.html"), /nvTheme\(n, \{ island: "dark" \}\)/, "the mini globe is a dark island too")
+  assert.match(read("src/napplet/WotPane.jsx"), /useEffect\(\(\) => holdDark\(\), \[\]\)/, "the page around it draws dark")
   assert.match(nap, /STARS = day \? STAR_DAY : STAR/)
   assert.match(nap, /rims = day \? RIM_DAY : RIM/)
   assert.match(nap, /getPropertyValue\("--nv-mode"\)/)

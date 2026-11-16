@@ -15,12 +15,14 @@ import { layerFaceCandidates } from "../net/wot-globe.js"
 import { sceneOf, waitingScene } from "./wot-scene.js"
 import { WOT_DTAG } from "./first-party.js"
 import { usePaneNapplet } from "./usePaneNapplet.js"
+import { holdDark } from "../net/appearance.js"
 import "./napplet.css"
 
 const HEX = /^[0-9a-f]{64}$/
 const SEND_EVERY_MS = 600
 
 export function WotPane({ ctx, open = null, root = null }) {
+  useEffect(() => holdDark(), []) // the Web of Trust is always Dark, and so is the page around it while it shows
   const { vault, account, session } = ctx
   const me = session.pubkey
   const follows = useMemo(() => account.follows.filter(pk => pk !== me), [account.follows, me])

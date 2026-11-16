@@ -26,6 +26,8 @@ import "../../napplet/napplet.css"
 export const isWidget = id => !!widgetFor(id)
 
 /** The intent each source-drawn card (widget-sources.jsx) asks for its data: napplet:space/<this>. */
+/** Cards that stay Dark in Light: the Web of Trust always draws Dark (Logen 2026-11-16), its napplet a dark island. */
+const DARK_CARDS = new Set(["wot-mini"])
 export const SOURCE_ASK = { "live-vault": "vault", messages: "messages", "my-devices": "devices", "wot-mini": "wot" }
 /** The shell's own footer link under each card that had one as a panel. */
 export const CARD_FOOT = {
@@ -176,7 +178,7 @@ export function WidgetCard({ ctx, id, name, open, editing, tools, size = null, s
   const shown = open && !editing
   const sized = full || size
   return (
-    <section class={shown ? `sp-panel sp-widget ${id}` : `sp-panel sp-widget ${id} closed`} aria-label={name}>
+    <section class={shown ? `sp-panel sp-widget ${id}` : `sp-panel sp-widget ${id} closed`} aria-label={name} data-theme={DARK_CARDS.has(id) ? "dark" : undefined}>
       <header class="sp-head">
         <span class="sp-icon"><Icon d={CARD_ICON[id]} size={15} /></span>
         <h3>{name}</h3>
