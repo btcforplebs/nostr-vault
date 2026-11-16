@@ -23,6 +23,7 @@ const { removeAccount } = await import("../src/signer/accounts.js")
 const { resetEverything, isAppKey, RESET_ALL_QUESTION } = await import("../src/net/reset-all.js")
 const { saveSession, rememberAccount, loadAccounts } = await import("../src/session.js")
 const { markSynced, syncedRecently } = await import("../src/net/feed-synced.js")
+const { originSalt } = await import("../src/napplet/origin.js")
 
 /** localStorage as the browser has it, with length and key(i). */
 function storage() {
@@ -31,7 +32,7 @@ function storage() {
 }
 const idb = () => { const deleted = []; return { deleted, deleteDatabase(name) { const req = {}; setTimeout(() => { deleted.push(name); req.onsuccess?.() }); return req } } }
 const ME = "a".repeat(64), OTHER = "b".repeat(64), THIRD = "c".repeat(64)
-const LEFTOVERS = ["nv-vault-seen", "nv-vault-history", "nv-notify-mark", "nv-notify-since", "nv-notify-dm-mark", "nv-vault-followers-seen", "nv-vault-follower-lists", "nv-dm-read", "nv-never-connect", "nv-gallery-servers"]
+const LEFTOVERS = ["nv-vault-seen", "nv-vault-history", "nv-notify-mark", "nv-notify-since", "nv-notify-dm-mark", "nv-vault-followers-seen", "nv-vault-follower-lists", "nv-dm-read", "nv-never-connect", "nv-gallery-servers", "nv-napplet-origin-salt"]
 const fill = (s, pk) => { for (const k of LEFTOVERS) s.setItem(`${k}:${pk}`, "x") }
 
 test("sign-out deletes this account's leftovers, its feed-sync mark and the notifications showing; not another's", async () => {
@@ -123,4 +124,20 @@ test("Reset Everything asks first, in the iPhone's terms, and only an explicit {
   assert.deepEqual(calls, [{ all: true }])
   const main = readFileSync(new URL("../main.jsx", import.meta.url), "utf8")
   assert.match(main, /const all = opts\?\.all === true/)
+})
+
+// An outside card's origin is per account (origin.js accountScope, from this browser's salt for that account). Signing
+// out or removing the account drops the salt, so adding the account back can't reach its cards' old origin storage.
+test("sign-out and Remove account drop the account's napplet origin salt; adding it back gets a new one", async () => {
+  const s = storage()
+  saveSession({ method: "nip07", pubkey: ME }, s)
+  rememberAccount({ method: "nip07", pubkey: OTHER }, s)
+  const mine = originSalt(s, ME), other = originSalt(s, OTHER)
+  await removeAccount({ account: { method: "nip07", pubkey: OTHER }, pool: null, storage: s, idb: idb(), session: storage() })
+  assert.equal(s.getItem(`nv-napplet-origin-salt:${OTHER}`), null)
+  assert.equal(originSalt(s, ME), mine, "the active account keeps its salt")
+  await forgetThisBrowser({ vault: null, pubkey: ME, storage: s, idb: idb(), session: storage(), sw: null })
+  assert.equal(s.getItem(`nv-napplet-origin-salt:${ME}`), null)
+  assert.notEqual(originSalt(s, ME), mine)
+  assert.notEqual(originSalt(s, OTHER), other)
 })
