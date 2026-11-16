@@ -332,7 +332,9 @@ test("ask sheet: deletions say so; unnamed kinds show their tags; the grant says
   const odd = askWords("publish", { title: "Cool app" }, { kind: 9999, content: "Thanks!", tags: [["p", PUB], ["p", ME], ["e", MINE]] })
   assert.match(odd.body, /Thanks!/)
   assert.match(odd.body, /Tags: 2 p \(people\), 1 e \(events\)/)
-  assert.doesNotMatch(askWords("publish", {}, { kind: 1, content: "hi", tags: [["p", PUB]] }).body, /Tags/)
+  // Step 12 review: a named kind shows its tags too (a hidden p tag mentions someone), and one with none stays plain.
+  assert.match(askWords("publish", {}, { kind: 1, content: "hi", tags: [["p", PUB]] }).body, /Tags: 1 p \(people\)/)
+  assert.equal(askWords("publish", {}, { kind: 1, content: "hi", tags: [] }).body, "hi")
   assert.equal(tagSummary([]), "No tags.")
   assert.match(PUBLIC_WORDS, /never sees your vault's private data/)
 })
@@ -341,4 +343,31 @@ test("storage: two picked files with the same name don't share storage", async (
   // runtime.js localManifest: publisher "local", dTag = the file's name (runtime.js imports the shim, not node-safe)
   assert.notEqual(nappletLine({ publisher: "local", dTag: "napplet.html", hash: H }), nappletLine({ publisher: "local", dTag: "napplet.html", hash: "f".repeat(64) }))
   assert.equal(nappletLine({ publisher: PUB, dTag: "x", hash: H }), nappletLine({ publisher: PUB, dTag: "x", hash: "f".repeat(64) })) // published: across versions
+})
+
+test("step 12 review: the ask shows how much of a long post it cut, and that an article replaces one with its name", async () => {
+  const { previewOf } = await import("../src/napplet/consent-words.js")
+  assert.equal(previewOf("short"), "short")
+  const long = "x".repeat(300)
+  assert.equal(previewOf(long), `${"x".repeat(280)}… (20 more characters)`)
+  assert.match(askWords("publish", {}, { kind: 1, content: long, tags: [] }).body, /20 more characters/)
+  const art = askWords("publish", {}, { kind: 30023, content: "words", tags: [["d", "my-post"], ["title", "T"]] })
+  assert.match(art.body, /replaces your earlier one with the same name \("my-post"\)/)
+  assert.doesNotMatch(askWords("publish", {}, { kind: 1, content: "w", tags: [["d", "x"]] }).body, /replaces/)
+})
+
+test("step 12 review: one ask at a time; a second ask while one is open is refused, not swapped in", async () => {
+  const { oneAskAtATime } = await import("../src/napplet/consent-words.js")
+  const shown = []
+  const ask = oneAskAtATime(a => shown.push(a))
+  const first = ask({ title: "Post A" })
+  assert.equal(await ask({ title: "Post B" }), false)
+  assert.equal(shown.length, 1)
+  assert.equal(shown[0].words.title, "Post A")
+  shown[0].resolve(true)
+  assert.equal(await first, true)
+  const third = ask({ title: "Post C" })
+  assert.equal(shown.length, 2)
+  shown[1].resolve(false)
+  assert.equal(await third, false)
 })

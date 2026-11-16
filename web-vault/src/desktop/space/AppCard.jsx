@@ -13,7 +13,7 @@ import { useLiveCtx } from "../../napplet/usePaneNapplet.js"
 import { appStore, removeApp } from "../../napplet/catalog.js"
 import { parseManifest, nappletKey, domainsFor } from "../../napplet/manifest.js"
 import { idbNappletStorage, idbArtifacts } from "../../napplet/storage-idb.js"
-import { askWords, PUBLIC_ONLY } from "../../napplet/consent-words.js"
+import { askWords, oneAskAtATime, PUBLIC_ONLY } from "../../napplet/consent-words.js"
 import { GrantSheet, AskDialog, saveAccessGrant } from "../../napplet/GrantSheet.jsx"
 import { SIZE_PX, appSize, surfaceOf, lineOfCard } from "./columns.js"
 import { claimFrame, whenFree } from "./frames.js"
@@ -68,7 +68,8 @@ export function AppCard({ ctx, id, open, size, editing, tools, onGone }) {
     setNote("")
     let mounted = null, gone = false
     const bus = createBus()
-    const ask = ({ napplet, what, detail }) => new Promise(resolve => setAsking({ words: askWords(what, napplet, detail), resolve }))
+    const one = oneAskAtATime(setAsking)
+    const ask = ({ napplet, what, detail }) => one(askWords(what, napplet, detail))
     ;(async () => {
       try {
         let html = await artifacts.get(manifest.hash).catch(() => null)
