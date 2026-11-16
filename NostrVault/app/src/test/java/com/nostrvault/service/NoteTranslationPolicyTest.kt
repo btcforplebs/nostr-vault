@@ -8,7 +8,7 @@ import org.junit.Test
 
 class NoteTranslationPolicyTest {
 
-    /** A slice of ML Kit's TranslateLanguage list; no Hindi-only gaps matter here. */
+    /** A slice of the translator's language list; no Hindi-only gaps matter here. */
     private val supported = setOf("en", "de", "es", "fr", "ja", "zh", "pt", "he", "id", "ar", "ko")
 
     private val german = "Guten Morgen zusammen, heute ist ein schöner Tag."

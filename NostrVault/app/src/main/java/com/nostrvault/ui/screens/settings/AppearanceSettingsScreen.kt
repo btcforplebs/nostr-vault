@@ -69,7 +69,7 @@ class AppearanceViewModel @Inject constructor(
             resolveTarget(configStore.config.value.translateTargetLanguage),
         )
 
-    /** "Translate to" choices: device languages first, only what ML Kit can translate into. */
+    /** "Translate to" choices: device languages first, only what the translator can translate into. */
     val translateTargets: List<String> by lazy {
         NoteTranslationPolicy.pickerList(deviceLanguageTags(), noteTranslator.supportedLanguages)
     }
@@ -492,7 +492,7 @@ private fun LineCountButton(symbol: String, label: String, enabled: Boolean, onC
 /**
  * Appearance > Translation: the "Translate" button under posts in another
  * language, and the language they translate into. Translation runs on the
- * phone (ML Kit); only the language model is downloaded, once per language.
+ * phone (Mozilla Bergamot); only the language model is downloaded, once per language.
  */
 @Composable
 private fun TranslationSection(
@@ -517,7 +517,7 @@ private fun TranslationSection(
             Text(text = "Translate Button on Posts", color = PrimaryText, fontSize = 15.sp)
             Text(
                 text = "Posts in another language get a Translate button. Translation happens on your phone; " +
-                    "the first time for a language, its model is downloaded from Google.",
+                    "the first time for a language, its model is downloaded from Mozilla.",
                 color = SecondaryText,
                 fontSize = 13.sp,
             )

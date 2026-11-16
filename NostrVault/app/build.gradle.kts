@@ -119,6 +119,12 @@ android {
         buildConfig = true
     }
 
+    // Translate post's language-ID model is already compressed; stored as is
+    // it opens as a file descriptor (LanguageIdentifier compares its length).
+    androidResources {
+        noCompress += "ftz"
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -231,19 +237,14 @@ dependencies {
     // ---- Markdown ----
     implementation("com.github.jeziellago:compose-markdown:0.5.4")
 
-    // ---- On-device translation (ML Kit) ----
-    // "Translate post": language ID ships its model in the APK; translation
-    // downloads one model per language from Google on first use. The note
-    // text never leaves the phone.
-    implementation("com.google.mlkit:language-id:17.0.6")
-    implementation("com.google.mlkit:translate:17.0.3")
+    // ---- On-device translation ----
+    // "Translate post" uses Mozilla's Bergamot engine and fastText language
+    // ID from libnvtranslate.so (build_translate_android.sh), not ML Kit:
+    // no Google or Firebase code in the APK. Models come from Mozilla per
+    // language on first use; the note text never leaves the phone.
 
     // ---- Permissions ----
     implementation("com.google.accompanist:accompanist-permissions:0.37.3")
-
-    // ---- Firebase (Push Notifications) ----
-    // Uncomment when google-services.json is added
-    // implementation("com.google.firebase:firebase-messaging-ktx:24.1.0")
 
     // ---- Testing ----
     testImplementation("junit:junit:4.13.2")

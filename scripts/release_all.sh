@@ -138,7 +138,18 @@ if [ "$SKIP_ANDROID" = 0 ]; then
     # The FIPS mesh (libnvfips.so) is gitignored and optional at build time: an
     # APK without it builds fine and reports the mesh as unavailable.
     (cd "$ANDROID_DIR" && ./build_fips_v2_android.sh)
+    # Translate post: Bergamot + fastText (.so) and the language-ID asset, both gitignored.
+    (cd "$ANDROID_DIR" && ./build_translate_android.sh)
     (cd "$ANDROID_DIR" && ./gradlew assembleRelease -q)
+    unzip -l "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" | grep -q "lib/arm64-v8a/libnvtranslate.so" \
+        || die "APK has no libnvtranslate.so — Translate post would be missing"
+    unzip -l "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" | grep -q "assets/translate/lid.176.ftz" \
+        || die "APK has no lid.176.ftz — Translate post would never show"
+    # Zapstore lists Google services from its APK scan; keep the APK free of them.
+    if grep -qE "com\.google\.android\.gms|com\.google\.firebase|com\.google\.mlkit" \
+        "$ANDROID_DIR/app/build/outputs/mapping/release/mapping.txt"; then
+        die "APK contains Google Play services / Firebase / ML Kit classes (mapping.txt)"
+    fi
     unzip -l "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" | grep -q "lib/arm64-v8a/libnvfips.so" \
         || die "APK has no libnvfips.so — the FIPS mesh would be missing"
     # jniLibs are gitignored, so a stale libhaven.so ships silently. Refuse an

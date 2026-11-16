@@ -275,7 +275,7 @@ data class HavenConfig(
     val globalFeedLanguages: List<String> = emptyList(),
     /** Global (and Media's Global) shows everyone, not only your Web of Trust. Off by default. Mirrors iOS. */
     val globalShowsEveryone: Boolean = false,
-    /** A "Translate" button under notes written in another language (on-device ML Kit). On by default. */
+    /** A "Translate" button under notes written in another language (on-device, Mozilla Bergamot). On by default. */
     val showTranslateButton: Boolean = true,
     /** ISO 639-1 code notes translate into. Empty follows the device language. */
     val translateTargetLanguage: String = "",

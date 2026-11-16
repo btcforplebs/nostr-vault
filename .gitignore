@@ -41,6 +41,10 @@ DM_PLAN.md
 /NostrVault/app/build/
 /NostrVault/app/.cxx/
 /NostrVault/app/src/main/jniLibs/
+# build_translate_android.sh: pinned sources, build dir, language-ID model
+/NostrVault/.translate-src/
+/NostrVault/.translate-build*
+/NostrVault/app/src/main/assets/translate/
 
 # Environment secrets
 push-server/.env
