@@ -155,7 +155,7 @@ struct MacRailItem<Icon: View>: View {
                     .font(.appSystem(size: 10, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundColor(selected ? .havenPurple : Color.ink.opacity(0.72))
+            .foregroundColor(selected ? .accentText : Color.ink.opacity(0.72))
             .frame(width: 58, height: 52)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)

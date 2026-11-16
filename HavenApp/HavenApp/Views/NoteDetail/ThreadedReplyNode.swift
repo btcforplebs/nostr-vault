@@ -45,7 +45,7 @@ struct ThreadedReplyNode: View {
                             Text("Show \(childReplies.count) more \(childReplies.count == 1 ? "reply" : "replies")")
                                 .font(.appSystem(size: 12, weight: .bold, design: .rounded))
                         }
-                        .foregroundColor(Color.havenPurple)
+                        .foregroundColor(Color.accentText)
                         .padding(.vertical, 6)
                         .padding(.horizontal, 12)
                         .background(Color.havenPurple.opacity(0.1))

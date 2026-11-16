@@ -63,7 +63,7 @@ extension VaultView {
                 Text("Load older")
             }
             .font(.appSystem(size: 14, weight: .semibold))
-            .foregroundColor(.havenPurple)
+            .foregroundColor(.accentText)
             .padding(.horizontal, 16)
             .frame(height: 36)
             .background(Capsule().fill(Color.havenPurple.opacity(0.12)))
@@ -266,7 +266,7 @@ extension VaultView {
         } label: {
             Image(systemName: outsideOn ? "ellipsis.circle.fill" : "ellipsis")
                 .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(outsideOn ? .havenPurple : .secondary)
+                .foregroundColor(outsideOn ? .accentText : .secondary)
                 .frame(width: 36, height: 36)
                 .contentShape(Rectangle())
         }
@@ -569,7 +569,7 @@ extension VaultView {
                 }
             } label: {
                 Image(systemName: contentFilter == .outside ? "ellipsis.circle.fill" : "ellipsis.circle")
-                    .foregroundColor(contentFilter == .outside ? .havenPurple : .secondary)
+                    .foregroundColor(contentFilter == .outside ? .accentText : .secondary)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
@@ -611,7 +611,7 @@ extension VaultView {
                 }
             } label: {
                 Image(systemName: on ? "ellipsis.circle.fill" : "ellipsis.circle")
-                    .foregroundColor(on ? .havenPurple : .secondary)
+                    .foregroundColor(on ? .accentText : .secondary)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)

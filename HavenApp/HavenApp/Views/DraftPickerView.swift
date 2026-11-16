@@ -60,7 +60,7 @@ struct DraftPickerView: View {
                     VStack(spacing: 16) {
                         Image(systemName: "doc.text")
                             .font(.appSystem(size: 48, weight: .thin))
-                            .foregroundColor(Color.havenPurple.opacity(0.6))
+                            .foregroundColor(Color.accentText.opacity(0.6))
                         Text("No drafts")
                             .font(.appSystem(size: 16, weight: .medium))
                             .foregroundColor(.secondary)
@@ -81,19 +81,19 @@ struct DraftPickerView: View {
                                 if isSelecting {
                                     Image(systemName: selectedIDs.contains(draft.id) ? "checkmark.circle.fill" : "circle")
                                         .font(.appSystem(size: 20))
-                                        .foregroundColor(selectedIDs.contains(draft.id) ? .havenPurple : .secondary.opacity(0.5))
+                                        .foregroundColor(selectedIDs.contains(draft.id) ? .accentText : .secondary.opacity(0.5))
                                         .transition(.opacity)
                                 }
                                 VStack(alignment: .leading, spacing: 4) {
                                     if draft.isReply {
                                         Label("Reply", systemImage: "arrowshape.turn.up.left")
                                             .font(.appCaption)
-                                            .foregroundColor(.havenPurple)
+                                            .foregroundColor(.accentText)
                                         DraftReplyParentLine(draft: draft)
                                     } else if draft.isQuote {
                                         Label("Quote", systemImage: "quote.bubble")
                                             .font(.appCaption)
-                                            .foregroundColor(.havenPurple)
+                                            .foregroundColor(.accentText)
                                     } else {
                                         Label("Post", systemImage: "square.and.pencil")
                                             .font(.appCaption)

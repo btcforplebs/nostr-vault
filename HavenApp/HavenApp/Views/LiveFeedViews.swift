@@ -101,7 +101,7 @@ struct LiveStreamThumbnail: View {
             Rectangle().fill(Color.havenPurplePale)
             Image(systemName: "dot.radiowaves.left.and.right")
                 .font(.appSystem(size: 28))
-                .foregroundColor(.havenPurple.opacity(0.7))
+                .foregroundColor(.accentText.opacity(0.7))
             if let image {
                 // An overlay on a clear rectangle, so a fill-scaled picture is
                 // cropped to the tile instead of widening it.

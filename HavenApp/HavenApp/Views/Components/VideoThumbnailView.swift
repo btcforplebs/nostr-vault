@@ -60,7 +60,7 @@ struct VideoThumbnailView: View {
                         VStack(spacing: 6) {
                             Image(systemName: "video.fill")
                                 .font(.appSystem(size: 22))
-                                .foregroundColor(.havenPurple.opacity(0.7))
+                                .foregroundColor(.accentText.opacity(0.7))
 
                             Text("Video")
                                 .font(.appSystem(size: 10, weight: .bold, design: .default))

@@ -254,10 +254,10 @@ struct MyWebDashboardView: View {
                 RowText(title: title, detail: detail)
                 Text(count.map { $0.formatted() } ?? "–")
                     .font(.appSystem(size: 17, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundColor(selected ? .havenPurple : .primary)
+                    .foregroundColor(selected ? .accentText : .primary)
                 Image(systemName: selected ? "checkmark" : "chevron.right")
                     .font(.appSystem(size: 12, weight: .semibold))
-                    .foregroundColor(selected ? .havenPurple : .secondary)
+                    .foregroundColor(selected ? .accentText : .secondary)
                     .frame(width: 14)
             }
             .padding(.horizontal, 14)

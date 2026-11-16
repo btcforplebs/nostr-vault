@@ -9,7 +9,7 @@ extension MenuBarView {
                         HStack {
                             Label("Nostr Vault", systemImage: "server.rack")
                                 .font(.appSystem(size: 16, weight: .semibold))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                             
                             Spacer()
                             
@@ -28,7 +28,7 @@ extension MenuBarView {
                                     Button(action: { showingCompose = true }) {
                                         Image(systemName: "square.and.pencil")
                                             .font(.appSystem(size: 16, weight: .medium))
-                                            .foregroundColor(.havenPurple)
+                                            .foregroundColor(.accentText)
                                             .frame(width: 28, height: 28)
                                             .contentShape(Rectangle())
                                     }
@@ -247,7 +247,7 @@ extension MenuBarView {
                                         Text("Profile")
                                             .font(.appSystem(size: 10, weight: selectedTab == .profile ? .semibold : .regular))
                                     }
-                                    .foregroundColor(selectedTab == .profile ? Color.havenPurple : .secondary)
+                                    .foregroundColor(selectedTab == .profile ? Color.accentText : .secondary)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 6)
                                     .contentShape(Rectangle())

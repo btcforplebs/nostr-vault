@@ -30,7 +30,7 @@ extension ProfileContent {
                             tabLabel(section, showsCount: true)
                             tabLabel(section, showsCount: false)
                         }
-                        .foregroundColor(selectedSection == section ? .havenPurple : .secondary)
+                        .foregroundColor(selectedSection == section ? .accentText : .secondary)
 
                         Rectangle()
                             .fill(selectedSection == section ? Color.havenPurple : Color.clear)
@@ -290,7 +290,7 @@ extension ProfileContent {
             } else if olderLeft {
                 Button("Look further back") { loader.loadOlder(for: section) }
                     .font(.appSystem(size: 12, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .buttonStyle(.plain)
             }
         }

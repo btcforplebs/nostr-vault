@@ -237,7 +237,7 @@ struct MessageComposerView: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                 }
             }
             .alert("Failed to Send", isPresented: Binding<Bool>(

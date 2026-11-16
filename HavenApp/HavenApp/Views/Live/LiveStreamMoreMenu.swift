@@ -50,7 +50,7 @@ struct LiveStreamMoreMenu: View {
         } label: {
             Image(systemName: "ellipsis.circle")
                 .font(.appSystem(size: 16))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }

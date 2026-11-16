@@ -326,12 +326,15 @@ extension FeedNoteRow {
     }
 
     /// A run of the note's text; with custom emoji it draws their images inline.
-    @ViewBuilder
+    /// Links and #tags take the accent's text colour.
     func noteText(_ text: AttributedString, emojis: [String: CustomEmoji]) -> some View {
-        if emojis.isEmpty {
-            Text(text)
-        } else {
-            CustomEmojiText(text: text, emojis: emojis, fontSize: 17)
+        Group {
+            if emojis.isEmpty {
+                Text(text)
+            } else {
+                CustomEmojiText(text: text, emojis: emojis, fontSize: 17)
+            }
         }
+        .tint(Color.accentText)
     }
 }

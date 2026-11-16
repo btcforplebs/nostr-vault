@@ -159,7 +159,7 @@ struct SpaceColumn: View {
             } else if editing {
                 Button("Done") { withAnimation(.easeInOut(duration: 0.2)) { editing = false } }
                     .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .padding(.horizontal, 8)
             } else {
                 barButton("pencil", label: "Edit Your space") {
@@ -211,7 +211,7 @@ struct SpaceColumn: View {
                         .font(.appSystem(size: 15, weight: .semibold))
                     Button("Edit to add panels") { withAnimation { editing = true } }
                         .font(.appSystem(size: 14, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 40)
@@ -279,7 +279,7 @@ struct SpaceColumn: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
             }
             Button("Reset to default") { withAnimation(.easeInOut(duration: 0.2)) { store.resetPanels() } }
                 .font(.appSystem(size: 13))
@@ -339,7 +339,7 @@ struct SpaceColumn: View {
             } else {
                 Image(systemName: symbol)
                     .font(.appSystem(size: 17, weight: .semibold))
-                    .foregroundColor(isOpen ? .havenPurple : .secondary)
+                    .foregroundColor(isOpen ? .accentText : .secondary)
                     .frame(width: 40, height: 40)
                     .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(isOpen ? Color.havenPurple.opacity(0.16) : Color.clear))
@@ -378,7 +378,7 @@ struct SpaceColumn: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
-        .foregroundStyle(isOpen ? Color.havenPurple : Color.ink)
+        .foregroundStyle(isOpen ? Color.accentText : Color.ink)
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)

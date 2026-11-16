@@ -32,7 +32,7 @@ struct LiveVideoOverlayButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.appSystem(size: 15, weight: .bold))
-                .foregroundColor(isOn ? .havenPurple : .white)
+                .foregroundColor(isOn ? .accentText : .white)
                 .frame(width: 36, height: 36)
                 .background(Circle().fill(isOn ? Color.white : Color.black.opacity(0.45)))
                 .frame(width: 44, height: 44)

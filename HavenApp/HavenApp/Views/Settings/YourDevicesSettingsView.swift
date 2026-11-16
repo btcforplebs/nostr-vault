@@ -173,7 +173,7 @@ struct YourDeviceCard: View {
         HStack(spacing: 12) {
             Image(systemName: device.role.icon)
                 .font(.appSystem(size: 20))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .frame(width: 32)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -184,7 +184,7 @@ struct YourDeviceCard: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(Color.havenPurple.opacity(0.15)))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                     }
                 }
                 Text(status)

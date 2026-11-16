@@ -13,7 +13,7 @@ struct GenmojiAddCard: View {
                 HStack(spacing: 12) {
                     Image(systemName: "face.smiling.inverse")
                         .font(.appSystem(size: 22))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                         .frame(width: 36, height: 36)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Add Genmoji")
@@ -27,7 +27,7 @@ struct GenmojiAddCard: View {
                     Spacer(minLength: 0)
                     Image(systemName: "plus.circle.fill")
                         .font(.appSystem(size: 22))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 14).fill(Color.havenPurple.opacity(0.08)))

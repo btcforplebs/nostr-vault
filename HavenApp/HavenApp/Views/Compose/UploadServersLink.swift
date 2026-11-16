@@ -19,7 +19,7 @@ struct UploadServersLink: View {
                     .truncationMode(.tail)
                 Text(servers.isEmpty ? "  Add a server" : "  Media servers")
                     .fontWeight(.semibold)
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .lineLimit(1)
                     .fixedSize()
                 Spacer(minLength: 0)

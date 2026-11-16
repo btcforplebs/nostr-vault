@@ -58,7 +58,7 @@ struct PinFeedView: View {
         HStack(spacing: 12) {
             Image(systemName: RailPin.symbol(pin.kind))
                 .font(.appSystem(size: 20, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.title ?? pin.name ?? RailPin.fallbackLabel(pin.kind))
                     .font(.appTitle2)

@@ -311,7 +311,7 @@ struct CondensedNoteLine: View, Equatable {
             if note.isReply && depth == 0 {
                 Image(systemName: "arrowshape.turn.up.left.fill")
                     .font(.appSystem(size: 10))
-                    .foregroundColor(Color.havenPurple.opacity(0.7))
+                    .foregroundColor(Color.accentText.opacity(0.7))
             }
             if note.repostedBy != nil {
                 Image(systemName: "arrow.2.squarepath")
@@ -365,7 +365,7 @@ struct CondensedNoteLine: View, Equatable {
                         .font(.appSystem(size: 10, weight: .semibold, design: .monospaced))
                 }
             }
-            .foregroundColor(Color.havenPurple.opacity(isOLED ? 0.85 : 0.9))
+            .foregroundColor(Color.accentText.opacity(isOLED ? 0.85 : 0.9))
             .padding(.top, 1)
         }
     }

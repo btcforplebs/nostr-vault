@@ -236,7 +236,7 @@ struct MyProfileView: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") { showingLightning = false }
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                     }
                 }
         }
@@ -259,7 +259,7 @@ struct MyProfileView: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") { showingSettings = false }
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                     }
                 }
         }
@@ -317,7 +317,7 @@ private struct MyProfileToolbar: ViewModifier {
                     Button(action: onWallet) {
                         Image(systemName: "bolt.fill")
                             .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Lightning")
@@ -349,7 +349,7 @@ private struct MyProfileToolbar: ViewModifier {
             ToolbarItem(placement: .automatic) {
                 Button(action: onRefresh) {
                     Image(systemName: "arrow.clockwise")
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
                 .help("Refresh Profile")
                 .keyboardShortcut("r", modifiers: .command)
@@ -358,7 +358,7 @@ private struct MyProfileToolbar: ViewModifier {
                 if isOwner {
                     Button(action: onWallet) {
                         Image(systemName: "bolt.fill")
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                     }
                     .help("Lightning")
                 }

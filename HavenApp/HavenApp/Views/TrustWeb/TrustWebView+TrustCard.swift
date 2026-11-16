@@ -166,7 +166,7 @@ extension TrustWebView {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(title))
-            .foregroundColor(filled ? .onAccent : .havenPurple)
+            .foregroundColor(filled ? .onAccent : .accentText)
             .frame(maxWidth: .infinity)
             .frame(height: 38)
             .background(Capsule().fill(filled ? Color.havenPurple : Color.white.opacity(0.08)))

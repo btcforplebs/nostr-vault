@@ -35,7 +35,7 @@ extension MediaGalleryView {
                     .font(.appSystem(size: 48, weight: .thin))
                     .foregroundStyle(
                         LinearGradient(
-                            gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
+                            gradient: Gradient(colors: [Color.accentText, Color.havenPurpleLight]),
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )

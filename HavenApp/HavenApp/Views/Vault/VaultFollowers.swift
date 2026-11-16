@@ -146,7 +146,7 @@ extension VaultView {
     private func followersSummary(_ count: Int) -> some View {
         HStack(spacing: 6) {
             Image(systemName: followersFilter == .outside ? "person.crop.circle.badge.questionmark" : "person.2.fill")
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
             Text(followersFilter == .outside
                  ? "\(count) outside your web"
                  : "\(count) \(count == 1 ? "follower" : "followers") in your web")
@@ -161,7 +161,7 @@ extension VaultView {
         VStack(spacing: 8) {
             Image(systemName: "person.2")
                 .font(.appSystem(size: 40, weight: .thin))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
             Text(followersFilter == .outside ? "No followers outside your web" : "No followers in your web yet")
                 .font(.appSystem(size: 17, weight: .bold))
         }
@@ -197,7 +197,7 @@ struct FollowerRow: View {
             if entry.isNews {
                 Text(entry.isReturning ? "Returning" : "New")
                     .font(.appSystem(size: 11, weight: .bold))
-                    .foregroundColor(entry.isReturning ? .orange : .havenPurple)
+                    .foregroundColor(entry.isReturning ? .orange : .accentText)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(Capsule().fill((entry.isReturning ? Color.orange : Color.havenPurple).opacity(0.16)))

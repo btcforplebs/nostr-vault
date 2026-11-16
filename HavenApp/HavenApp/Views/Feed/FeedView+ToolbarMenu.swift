@@ -161,7 +161,7 @@ extension FeedView {
         } label: {
             Image(systemName: "line.3.horizontal.decrease")
                 .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .frame(width: 36, height: 36)
                 .contentShape(Rectangle())
         }

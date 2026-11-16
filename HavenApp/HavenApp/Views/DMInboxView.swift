@@ -107,14 +107,14 @@ struct DMInboxView: View {
                         Button(action: { dmService.markAllAsRead() }) {
                             Image(systemName: "checkmark.circle")
                                 .font(.appSystem(size: 16, weight: .semibold))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                         }
                         .help(String(localized: "dm.inbox.markAllRead"))
 
                         Button(action: { showingCompose = true }) {
                             Image(systemName: "square.and.pencil")
                                 .font(.appSystem(size: 16, weight: .semibold))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                         }
                     }
                 }
@@ -135,7 +135,7 @@ struct DMInboxView: View {
                         Button(action: { dmService.refresh() }) {
                             Image(systemName: "arrow.clockwise")
                                 .font(.appSystem(size: 15, weight: .semibold))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                         }
                         .help(String(localized: "dm.inbox.refresh"))
                         .keyboardShortcut("r", modifiers: .command)
@@ -147,14 +147,14 @@ struct DMInboxView: View {
                         Button(action: { dmService.markAllAsRead() }) {
                             Image(systemName: "checkmark.circle")
                                 .font(.appSystem(size: 15, weight: .semibold))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                         }
                         .help(String(localized: "dm.inbox.markAllRead"))
 
                         Button(action: { showingCompose = true }) {
                             Image(systemName: "square.and.pencil")
                                 .font(.appSystem(size: 15, weight: .semibold))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                         }
                         .help(String(localized: "dm.inbox.newMessage"))
                     }
@@ -190,7 +190,7 @@ struct DMInboxView: View {
                 Spacer(minLength: 8)
                 Button("Retry") { dmService.retryWaitingForSigner() }
                     .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
@@ -233,7 +233,7 @@ struct DMInboxView: View {
                                 .font(.appSystem(size: 36, weight: .light))
                                 .foregroundStyle(
                                     LinearGradient(
-                                        colors: [.havenPurple, .havenPurpleLight],
+                                        colors: [.accentText, .havenPurpleLight],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     )
@@ -260,7 +260,7 @@ struct DMInboxView: View {
                             } label: {
                                 Label("Requests are waiting", systemImage: "tray")
                                     .font(.appSystem(size: 15, weight: .semibold))
-                                    .foregroundColor(.havenPurple)
+                                    .foregroundColor(.accentText)
                             }
                             .buttonStyle(.plain)
                         }
@@ -467,7 +467,7 @@ struct MacComposeView: View {
                     .font(.appSystem(size: 15, weight: .semibold))
                 Spacer()
                 Button(String(localized: "dm.compose.cancel")) { dismiss() }
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .keyboardShortcut(.cancelAction)
             }
             .padding()
@@ -659,7 +659,7 @@ struct ConversationRow: View {
 
                     Text(lastMessageTime)
                         .font(.appSystem(size: 12, weight: .regular))
-                        .foregroundColor(hasUnread ? .havenPurple : .secondary)
+                        .foregroundColor(hasUnread ? .accentText : .secondary)
                 }
 
                 HStack(spacing: 8) {

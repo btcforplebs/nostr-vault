@@ -118,7 +118,7 @@ struct QuotedNoteView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Article")
                     .font(.appSystem(size: 10, weight: .semibold))
-                    .foregroundColor(.havenPurple.opacity(0.8))
+                    .foregroundColor(.accentText.opacity(0.8))
 
                 Text(note.longFormDisplayTitle)
                     .font(.appSystem(size: 13, weight: .semibold))
@@ -177,6 +177,7 @@ struct QuotedNoteView: View {
         if !formattedContent.characters.isEmpty {
             Text(formattedContent)
                 .font(.appSystem(size: 13, weight: .regular))
+                .tint(Color.accentText)
                 .foregroundColor(.secondary)
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)

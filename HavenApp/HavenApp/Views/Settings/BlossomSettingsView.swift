@@ -160,7 +160,7 @@ struct BlossomSettingsView: View {
                         HStack {
                             Image(systemName: "server.rack")
                                 .font(.appSystem(size: 14))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(url)
                                     .font(.appSystem(size: 12, design: .monospaced))

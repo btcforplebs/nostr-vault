@@ -357,7 +357,7 @@ struct BottomTabBar: View {
                         .font(.appSystem(size: 20, weight: selected ? .semibold : .regular))
                 }
             }
-            .foregroundStyle(selected ? Color.havenPurple : Color.ink)
+            .foregroundStyle(selected ? Color.accentText : Color.ink)
             .frame(height: 24)
             .overlay(alignment: .topTrailing) {
                 NewsDot(isShown: hasRedBadge)
@@ -365,7 +365,7 @@ struct BottomTabBar: View {
             }
             Text(title)
                 .font(.appSystem(size: 10, weight: selected ? .semibold : .regular))
-                .foregroundStyle(selected ? Color.havenPurple : Color.ink)
+                .foregroundStyle(selected ? Color.accentText : Color.ink)
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
@@ -396,7 +396,7 @@ struct BottomTabBar: View {
                     .frame(height: 24)
                 Text("Profile")
                     .font(.appSystem(size: 10, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Color.havenPurple : Color.ink)
+                    .foregroundStyle(selected ? Color.accentText : Color.ink)
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())

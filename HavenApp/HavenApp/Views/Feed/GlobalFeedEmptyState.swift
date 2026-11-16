@@ -13,7 +13,7 @@ struct GlobalFeedEmptyState: View {
             } else {
                 Image(systemName: "globe")
                     .font(.appSystem(size: 40, weight: .thin))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
             }
             Text(message)
                 .font(.appSystem(size: 13, weight: .regular, design: .monospaced))

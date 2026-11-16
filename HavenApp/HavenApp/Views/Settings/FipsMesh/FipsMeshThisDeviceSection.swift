@@ -47,7 +47,7 @@ struct FipsMeshThisDeviceSection: View {
             } label: {
                 Label("Link a device", systemImage: "qrcode.viewfinder")
                     .font(.appBody)
-                    .foregroundStyle(Color.havenPurple)
+                    .foregroundStyle(Color.accentText)
             }
         } header: {
             Text("This Device")

@@ -64,7 +64,7 @@ struct VaultSearchBar: View {
                         .opacity(progress)
                 }
                 .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .frame(width: Self.height, height: Self.height)
                 .contentShape(Circle())
             }

@@ -42,7 +42,7 @@ extension TrustWebView {
         .padding(.leading, 3)
         .padding(.trailing, 10)
         .padding(.vertical, 3)
-        .foregroundColor(destination ? Color.havenPurple : .primary)
+        .foregroundColor(destination ? Color.accentText : .primary)
         .background(Capsule().fill(on ? Color.havenPurple.opacity(0.22) : Color.white.opacity(0.08)))
         .overlay(Capsule().stroke(destination ? Color.havenPurple.opacity(0.5) : .clear, lineWidth: 1))
     }

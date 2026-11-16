@@ -36,7 +36,7 @@ struct MarketplaceCardView: View {
 
                 Text(listing.priceLabel)
                     .font(.appSystem(size: 14, weight: .heavy))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .lineLimit(1)
 
                 Text(profile?.bestName ?? "npub…" + String(listing.pubkey.suffix(6)))
@@ -90,7 +90,7 @@ struct MarketplaceListingEmbedView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(listing.isAuction ? "Auction" : "Listing")
                     .font(.appSystem(size: 10, weight: .semibold))
-                    .foregroundColor(.havenPurple.opacity(0.8))
+                    .foregroundColor(.accentText.opacity(0.8))
                 Text(listing.title)
                     .font(.appSystem(size: 13, weight: .semibold))
                     .foregroundColor(.primary.opacity(0.9))
@@ -98,7 +98,7 @@ struct MarketplaceListingEmbedView: View {
                     .multilineTextAlignment(.leading)
                 Text(listing.priceLabel)
                     .font(.appSystem(size: 13, weight: .heavy))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -148,7 +148,7 @@ struct MarketplaceCategoryBar: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(isOn ? Color.havenPurple : Color.havenPurplePale)
-                .foregroundColor(isOn ? .onAccent : .havenPurple)
+                .foregroundColor(isOn ? .onAccent : .accentText)
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -162,7 +162,7 @@ private struct MarketplaceImagePlaceholder: View {
             Rectangle().fill(Color.havenPurplePale)
             Image(systemName: "bag")
                 .font(.appSystem(size: 28))
-                .foregroundColor(.havenPurple.opacity(0.7))
+                .foregroundColor(.accentText.opacity(0.7))
         }
     }
 }
@@ -319,7 +319,7 @@ struct MarketplaceListingSheet: View {
             HStack(spacing: 8) {
                 Text(listing.priceLabel)
                     .font(.appSystem(size: 20, weight: .heavy))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                 if listing.isAuction {
                     MarketplaceAuctionBadge()
                 }
@@ -394,7 +394,7 @@ struct MarketplaceListingSheet: View {
                         .font(.appSystem(size: 15, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .stroke(Color.havenPurple, lineWidth: 1.5)

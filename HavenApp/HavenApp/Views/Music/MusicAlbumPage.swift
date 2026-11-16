@@ -27,7 +27,7 @@ struct MusicAlbumPage: View {
                 if let name = shown.artist {
                     if let artistId = shown.artistId {
                         Button { openArtist(id: artistId, name: name) } label: {
-                            Text(name).font(.appSystem(size: 16, weight: .semibold)).foregroundColor(.havenPurple)
+                            Text(name).font(.appSystem(size: 16, weight: .semibold)).foregroundColor(.accentText)
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint("Opens the artist")

@@ -91,7 +91,7 @@ struct PersonProfileView: View, Equatable {
                     Button(action: { showingMessageComposer = true }) {
                         Image(systemName: "message.fill")
                             .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Message")

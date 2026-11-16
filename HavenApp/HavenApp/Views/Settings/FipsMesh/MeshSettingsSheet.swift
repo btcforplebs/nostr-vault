@@ -13,7 +13,7 @@ struct MeshSettingsSheet: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close", action: onClose)
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                     }
                 }
         }

@@ -92,7 +92,7 @@ struct AccountSwitcherView: View {
                         if isOwner {
                             Text("Owner")
                                 .font(.appSystem(size: 9, weight: .bold))
-                                .foregroundColor(Color.havenPurple)
+                                .foregroundColor(Color.accentText)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 2)
                                 .background(Color.havenPurple.opacity(0.15))
@@ -142,7 +142,7 @@ struct AccountSwitcherView: View {
                 // Active checkmark
                 Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
                     .font(.appSystem(size: 15))
-                    .foregroundColor(isActive ? Color.havenPurple : .secondary.opacity(0.3))
+                    .foregroundColor(isActive ? Color.accentText : .secondary.opacity(0.3))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

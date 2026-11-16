@@ -14,7 +14,7 @@ struct TrustScopeLockSheet: View {
         VStack(spacing: 16) {
             Image(systemName: "lock.shield.fill")
                 .font(.appSystem(size: 40, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .accessibilityHidden(true)
             Text("Everyone is locked")
                 .font(.appSystem(size: 20, weight: .bold))

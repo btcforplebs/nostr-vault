@@ -16,7 +16,7 @@ struct ComposerDraftsSheet: View {
                     VStack(spacing: 16) {
                         Image(systemName: "doc.text")
                             .font(.appSystem(size: 48, weight: .thin))
-                            .foregroundColor(Color.havenPurple.opacity(0.6))
+                            .foregroundColor(Color.accentText.opacity(0.6))
                         Text("No drafts")
                             .font(.appSystem(size: 16, weight: .medium))
                             .foregroundColor(.secondary)
@@ -126,7 +126,7 @@ struct ComposerDraftsSheet: View {
                 .frame(width: 48, height: 48)
                 .overlay {
                     Image(systemName: Self.symbol(for: draft.kind))
-                        .foregroundColor(.havenPurple.opacity(0.8))
+                        .foregroundColor(.accentText.opacity(0.8))
                 }
                 .accessibilityHidden(true)
         }
@@ -162,7 +162,7 @@ struct ComposerDraftsRow: View {
                     HStack {
                         Label(keeper.others.count == 1 ? "1 saved draft" : "\(keeper.others.count) saved drafts",
                               systemImage: "tray.full")
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.appSystem(size: 13, weight: .semibold))

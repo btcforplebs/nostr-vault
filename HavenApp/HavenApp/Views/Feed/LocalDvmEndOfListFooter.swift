@@ -22,7 +22,7 @@ struct LocalDvmEndOfListFooter: View {
             Button(action: onRefresh) {
                 Label(String(localized: "feed.action.refresh"), systemImage: "arrow.clockwise")
                     .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(Color.havenPurple)
+                    .foregroundColor(Color.accentText)
             }
             .buttonStyle(.plain)
             #endif

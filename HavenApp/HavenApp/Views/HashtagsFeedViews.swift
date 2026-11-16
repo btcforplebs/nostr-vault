@@ -177,7 +177,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
             Text(title)
                 .font(.appSystem(size: 13, weight: .semibold))
                 .lineLimit(1)
-                .foregroundColor(isSelected ? .onAccent : .havenPurple)
+                .foregroundColor(isSelected ? .onAccent : .accentText)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(isSelected ? Color.havenPurple : Color.havenPurple.opacity(0.12))
@@ -190,7 +190,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
 
     private var noTagsState: some View {
         VStack(spacing: 12) {
-            Image(systemName: "number").font(.appSystem(size: 30)).foregroundColor(.havenPurple.opacity(0.7))
+            Image(systemName: "number").font(.appSystem(size: 30)).foregroundColor(.accentText.opacity(0.7))
             Text("Follow a hashtag to see it here")
                 .font(.appSystem(size: 16, weight: .bold))
             if suggestions.isLoading && suggestions.tags.isEmpty {
@@ -235,7 +235,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                     Text(followed ? "Following" : "Follow")
                         .font(.appSystem(size: 13, weight: .semibold))
                 }
-                .foregroundColor(followed ? .onAccent : .havenPurple)
+                .foregroundColor(followed ? .onAccent : .accentText)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(followed ? Color.havenPurple : Color.havenPurple.opacity(0.12))

@@ -36,7 +36,7 @@ struct MusicToolbarButtons: View {
         } label: {
             Image(systemName: icon)
                 .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(isSelected ? .havenPurple : .secondary)
+                .foregroundColor(isSelected ? .accentText : .secondary)
                 .frame(width: 36, height: 36)
                 .contentShape(Rectangle())
                 .animation(Motion.toggle, value: isSelected)

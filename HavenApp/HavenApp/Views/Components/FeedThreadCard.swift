@@ -261,7 +261,7 @@ struct FeedThreadCard: View {
         HStack(spacing: 8) {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.appSystem(size: 12, weight: .semibold))
-                .foregroundColor(Color.havenPurple.opacity(0.7))
+                .foregroundColor(Color.accentText.opacity(0.7))
             Text("Loading the start of this thread…")
                 .font(.appSystem(size: 12, weight: .medium, design: .monospaced))
                 .foregroundColor(.secondary)
@@ -294,7 +294,7 @@ struct FeedThreadCard: View {
                 Text(title)
                     .font(.appSystem(size: 12, weight: .bold, design: .rounded))
             }
-            .foregroundColor(Color.havenPurple)
+            .foregroundColor(Color.accentText)
             .padding(.vertical, 6)
             .padding(.horizontal, 10)
             .background(Color.havenPurple.opacity(0.1))

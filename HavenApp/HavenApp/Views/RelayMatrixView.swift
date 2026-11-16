@@ -414,7 +414,7 @@ struct RelayMatrixView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "lock.circle.fill")
                 .font(.title3)
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .padding(.top, 2)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
@@ -554,7 +554,7 @@ struct RelayMatrixView: View {
     private func mediaServersLinkLabel(empty: Bool) -> some View {
         Text(empty ? "Add a media server" : "Edit media servers")
             .font(.appBody)
-            .foregroundColor(.havenPurple)
+            .foregroundColor(.accentText)
     }
 
     private func refreshSuggestions() {

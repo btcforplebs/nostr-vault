@@ -18,7 +18,7 @@ struct AudioPlayerView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 150, height: 150)
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .shadow(color: .havenPurple.opacity(0.3), radius: 10, x: 0, y: 5)
             
             // Audio info
@@ -67,7 +67,7 @@ struct AudioPlayerView: View {
                 Button(action: togglePlayPause) {
                     Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.appSystem(size: 60))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
                 .buttonStyle(.plain)
                 

@@ -50,7 +50,7 @@ struct ArticleInlineBody: View {
                         .font(.appSystem(size: 11))
                 }
             }
-            .foregroundColor(.havenPurple)
+            .foregroundColor(.accentText)
             .accessibilityElement(children: .combine)
 
             if isFocused {

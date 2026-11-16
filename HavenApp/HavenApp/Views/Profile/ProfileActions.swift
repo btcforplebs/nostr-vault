@@ -17,7 +17,7 @@ enum ProfileActions {
                     .lineLimit(1)
             }
             .fixedSize()
-            .foregroundColor(filled ? .onAccent : .havenPurple)
+            .foregroundColor(filled ? .onAccent : .accentText)
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, minHeight: height)
             .background(filled ? Color.havenPurple : Color.havenPurple.opacity(0.12))
@@ -35,7 +35,7 @@ enum ProfileActions {
     static func iconLabel(_ icon: String) -> some View {
         Image(systemName: icon)
             .font(.appSystem(size: 13, weight: .semibold))
-            .foregroundColor(.havenPurple)
+            .foregroundColor(.accentText)
             .frame(width: height + 4, height: height)
             .background(Color.havenPurple.opacity(0.12))
             .cornerRadius(6)
@@ -48,7 +48,7 @@ enum ProfileActions {
             Image("WoTTab")
                 .resizable()
                 .frame(width: 15, height: 15)
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .frame(width: height + 4, height: height)
                 .background(Color.havenPurple.opacity(0.12))
                 .cornerRadius(6)

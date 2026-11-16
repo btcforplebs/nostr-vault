@@ -125,7 +125,7 @@ struct FloatingArrowView: View {
                 .font(.appSystem(size: 52, weight: .bold))
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [.havenPurpleLight, .havenPurple],
+                        colors: [.havenPurpleLight, .accentText],
                         startPoint: .bottom,
                         endPoint: .top
                     )

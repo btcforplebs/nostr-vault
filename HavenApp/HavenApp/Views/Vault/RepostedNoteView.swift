@@ -47,6 +47,7 @@ struct RepostedNoteView: View {
                 case .text(let piece):
                     Text(NostrContentFormatter.format(piece, mediaURLs: urls))
                         .font(.appSystem(size: 14, weight: .regular, design: .default))
+                        .tint(Color.accentText)
                         .foregroundColor(Color.ink.opacity(0.9))
                         .lineSpacing(2)
                         .lineLimit(nil)

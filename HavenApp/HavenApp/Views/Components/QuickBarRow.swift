@@ -20,7 +20,7 @@ struct QuickBarRow: View {
                 Spacer()
                 Button(editing ? "Done" : "Edit", action: onToggleEdit)
                     .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .buttonStyle(.plain)
             }
             HStack(spacing: 12) {

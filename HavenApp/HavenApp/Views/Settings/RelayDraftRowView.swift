@@ -19,7 +19,7 @@ struct RelayDraftRowView: View {
             Button(action: row.removed ? undo : remove) {
                 Image(systemName: row.removed ? "arrow.uturn.backward.circle.fill" : "minus.circle.fill")
                     .font(.title3)
-                    .foregroundColor(row.removed ? .havenPurple : .red)
+                    .foregroundColor(row.removed ? .accentText : .red)
                     .padding(.top, 2)
             }
             .buttonStyle(.plain)

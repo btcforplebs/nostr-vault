@@ -445,7 +445,7 @@ struct SettingsView: View {
 
                 Link("Privacy Policy", destination: URL(string: "https://nostrvault.app/privacy.html")!)
                     .font(.appCaption)
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -462,7 +462,7 @@ struct SettingsView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "gearshape.fill")
                         .font(.appSystem(size: 15, weight: .bold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                     Text("Settings")
                         .font(.appSystem(size: 15, weight: .bold))
                         .foregroundColor(.ink)
@@ -732,7 +732,7 @@ struct SettingsView: View {
                             
                         Link("Privacy Policy", destination: URL(string: "https://nostrvault.app/privacy.html")!)
                             .font(.appCaption)
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                     }
                 }
                 .frame(maxWidth: .infinity)

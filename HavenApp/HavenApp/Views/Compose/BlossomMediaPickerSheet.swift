@@ -73,7 +73,7 @@ struct BlossomMediaPickerSheet: View {
                     VStack(spacing: 16) {
                         Image(systemName: "camera.macro")
                             .font(.appSystem(size: 48, weight: .thin))
-                            .foregroundColor(Color.havenPurple.opacity(0.6))
+                            .foregroundColor(Color.accentText.opacity(0.6))
                         Text("No media matches these filters")
                             .font(.appSystem(size: 16, weight: .medium))
                             .foregroundColor(.secondary)
@@ -83,7 +83,7 @@ struct BlossomMediaPickerSheet: View {
                     VStack(spacing: 16) {
                         Image(systemName: "camera.macro")
                             .font(.appSystem(size: 48, weight: .thin))
-                            .foregroundColor(Color.havenPurple.opacity(0.6))
+                            .foregroundColor(Color.accentText.opacity(0.6))
                         Text("No media on your media servers")
                             .font(.appSystem(size: 16, weight: .medium))
                             .foregroundColor(.secondary)
@@ -182,7 +182,7 @@ struct BlossomMediaPickerSheet: View {
         } label: {
             Image(systemName: "arrow.up.arrow.down")
                 .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
         }
         .accessibilityLabel("Sort")
         #if os(macOS)
@@ -228,7 +228,7 @@ private struct BlossomPickerGridItem: View {
                             Color(red: 0.1, green: 0.1, blue: 0.14)
                             Image(systemName: "waveform")
                                 .font(.appSystem(size: 28))
-                                .foregroundColor(.havenPurple)
+                                .foregroundColor(.accentText)
                         }
                     } else if item.isAnimatedGIF {
                         AnimatedThumbnail(url: item.url)

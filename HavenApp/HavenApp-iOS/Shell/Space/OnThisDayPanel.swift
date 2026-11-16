@@ -21,7 +21,7 @@ struct OnThisDayPanel: View {
                 ForEach(years.filter { !$0.notes.isEmpty }, id: \.years) { year in
                     Text(OnThisDay.yearsText(year.years))
                         .font(.appSystem(size: 12, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                         .padding(.horizontal, 12)
                         .padding(.top, 10)
                         .padding(.bottom, 2)

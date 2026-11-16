@@ -61,7 +61,7 @@ extension SearchView {
                                 Button(action: { searchQuery = "#\(tag)" }) {
                                     Text("#\(tag)")
                                         .font(.appSystem(size: 12, weight: .medium))
-                                        .foregroundColor(Color.havenPurple)
+                                        .foregroundColor(Color.accentText)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
                                         .background(Color.havenPurple.opacity(0.12))

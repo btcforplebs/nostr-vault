@@ -18,7 +18,7 @@ struct RecipeCardView: View {
                         Rectangle().fill(Color.havenPurplePale)
                         Image(systemName: "fork.knife")
                             .font(.appSystem(size: 28))
-                            .foregroundColor(.havenPurple.opacity(0.7))
+                            .foregroundColor(.accentText.opacity(0.7))
                     }
                 }
             }
@@ -80,7 +80,7 @@ struct RecipeCategoryBar: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(isOn ? Color.havenPurple : Color.havenPurplePale)
-                .foregroundColor(isOn ? .onAccent : .havenPurple)
+                .foregroundColor(isOn ? .onAccent : .accentText)
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)

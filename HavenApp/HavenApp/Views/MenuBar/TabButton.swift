@@ -15,7 +15,7 @@ struct TabButton: View {
                 Text(title)
                     .font(.appSystem(size: 10, weight: isSelected ? .semibold : .regular))
             }
-            .foregroundColor(isSelected ? Color.havenPurple : .secondary)
+            .foregroundColor(isSelected ? Color.accentText : .secondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
             .contentShape(Rectangle())

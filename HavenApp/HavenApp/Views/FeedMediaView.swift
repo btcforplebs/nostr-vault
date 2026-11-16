@@ -512,7 +512,7 @@ private struct FeedVideoThumbnailView: View {
                 // glyph rather than spinning forever.
                 Image(systemName: "video.fill")
                     .font(.appSystem(size: 22))
-                    .foregroundColor(Color.havenPurple.opacity(0.5))
+                    .foregroundColor(Color.accentText.opacity(0.5))
             } else {
                 ProgressView()
                     .tint(Color.havenPurple.opacity(0.6))
@@ -795,7 +795,7 @@ struct FeedAudioCard: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.havenPurple.opacity(0.15))
                 .frame(width: 52, height: 52)
-                .overlay(Image(systemName: "waveform").font(.appSystem(size: 22)).foregroundColor(.havenPurple))
+                .overlay(Image(systemName: "waveform").font(.appSystem(size: 22)).foregroundColor(.accentText))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.appSystem(size: 15, weight: .semibold)).lineLimit(1)
                 if let host = url.host {
@@ -811,7 +811,7 @@ struct FeedAudioCard: View {
             } label: {
                 Image(systemName: isCurrent && player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.appSystem(size: 38))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isCurrent && player.isPlaying ? "Pause \(title)" : "Play \(title)")

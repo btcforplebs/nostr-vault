@@ -164,7 +164,7 @@ struct RowLabel: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.appSystem(size: 14, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
                 .frame(width: 30, height: 30)
                 .background(Color.havenPurple.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
                 .accessibilityHidden(true)
@@ -218,7 +218,7 @@ struct RowButton: View {
                 if isLoading { ProgressView().controlSize(.small) }
             }
             .font(.appSystem(size: 13, weight: .semibold))
-            .foregroundColor(.havenPurple)
+            .foregroundColor(.accentText)
             .padding(.horizontal, 12)
             .frame(minHeight: 30)
             .background(Color.havenPurple.opacity(0.12), in: Capsule())

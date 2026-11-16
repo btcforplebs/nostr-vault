@@ -84,7 +84,7 @@ struct PollsEmptyStateView: View {
         VStack(spacing: 10) {
             Image(systemName: FeedMode.polls.symbolName)
                 .font(.appSystem(size: 34))
-                .foregroundColor(.havenPurple.opacity(0.7))
+                .foregroundColor(.accentText.opacity(0.7))
             Text(title)
                 .font(.appSystem(size: 16, weight: .bold))
             Text(scope == .following
@@ -96,7 +96,7 @@ struct PollsEmptyStateView: View {
             if let onPost {
                 Button("Post a poll", action: onPost)
                     .font(.appSystem(size: 14, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .padding(.top, 4)
             }
         }

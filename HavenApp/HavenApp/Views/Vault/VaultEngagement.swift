@@ -73,7 +73,7 @@ struct ReactorsListView: View {
                             if let nip05 = profile?.nip05, !nip05.isEmpty {
                                 Text(nip05)
                                     .font(.appSystem(size: 13))
-                                    .foregroundColor(Color.havenPurple)
+                                    .foregroundColor(Color.accentText)
                             }
                         }
 
@@ -150,7 +150,7 @@ struct RepostersListView: View {
                             if let nip05 = profile?.nip05, !nip05.isEmpty {
                                 Text(nip05)
                                     .font(.appSystem(size: 13))
-                                    .foregroundColor(Color.havenPurple)
+                                    .foregroundColor(Color.accentText)
                             }
                         }
 
@@ -222,7 +222,7 @@ struct QuotersListView: View {
                             if let nip05 = profile?.nip05, !nip05.isEmpty {
                                 Text(nip05)
                                     .font(.appSystem(size: 13))
-                                    .foregroundColor(Color.havenPurple)
+                                    .foregroundColor(Color.accentText)
                             }
                         }
 

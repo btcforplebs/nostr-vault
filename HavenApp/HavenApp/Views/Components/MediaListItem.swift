@@ -39,14 +39,14 @@ struct MediaListItem: View {
                                     Color(red: 0.1, green: 0.1, blue: 0.14)
                                     Image(systemName: "waveform")
                                         .font(.appSystem(size: 20))
-                                        .foregroundColor(.havenPurple)
+                                        .foregroundColor(.accentText)
                                 }
                             } else if item.type == .unknown {
                                 ZStack {
                                     Color(red: 0.1, green: 0.1, blue: 0.14)
                                     Image(systemName: "doc.fill")
                                         .font(.appSystem(size: 18))
-                                        .foregroundColor(.havenPurple.opacity(0.6))
+                                        .foregroundColor(.accentText.opacity(0.6))
                                 }
                             } else if item.isAnimatedGIF {
                                 AnimatedThumbnail(url: item.url)
@@ -62,7 +62,7 @@ struct MediaListItem: View {
                 // Type Icon
                 Image(systemName: item.type == .video ? "video.fill" : item.type == .audio ? "waveform" : item.type == .image ? "photo.fill" : "doc.fill")
                     .font(.appSystem(size: 20))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                     .frame(width: 32)
 
                 // Location Status: on this phone or not, plus how many of
@@ -101,7 +101,7 @@ struct MediaListItem: View {
                     Button(action: pushToMirrors) {
                         Image(systemName: isPushingToMirrors ? "arrow.up.circle.fill" : "arrow.up.circle")
                             .font(.appSystem(size: 22))
-                            .foregroundColor(isPushingToMirrors ? .secondary : .havenPurple)
+                            .foregroundColor(isPushingToMirrors ? .secondary : .accentText)
                     }
                     .buttonStyle(.plain)
                     .disabled(isPushingToMirrors)
@@ -112,7 +112,7 @@ struct MediaListItem: View {
                     Button(action: mirrorToLocalRelay) {
                         Image(systemName: isMirroringToLocal ? "arrow.down.circle.fill" : "arrow.down.circle")
                             .font(.appSystem(size: 22))
-                            .foregroundColor(isMirroringToLocal ? .secondary : .havenPurple)
+                            .foregroundColor(isMirroringToLocal ? .secondary : .accentText)
                     }
                     .buttonStyle(.plain)
                     .disabled(isMirroringToLocal)
@@ -124,7 +124,7 @@ struct MediaListItem: View {
                 }) {
                     Image(systemName: "doc.on.doc")
                         .font(.appSystem(size: 22))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
                 .buttonStyle(.plain)
             }

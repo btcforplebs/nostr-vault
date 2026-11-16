@@ -44,7 +44,7 @@ extension FeedView {
                 Button(action: { reelsService.setScope(.following) }) {
                     Image(systemName: reelsService.scope == .following ? "person.2.fill" : "person.2")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(reelsService.scope == .following ? Color.havenPurple : .secondary)
+                        .foregroundColor(reelsService.scope == .following ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Videos from people you follow")
@@ -52,7 +52,7 @@ extension FeedView {
                 Button(action: { reelsService.setScope(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(reelsService.scope == .global ? Color.havenPurple : .secondary)
+                        .foregroundColor(reelsService.scope == .global ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Global videos: your Web of Trust, or everyone with the shield off")
@@ -67,7 +67,7 @@ extension FeedView {
                 }) {
                     Image(systemName: feedService.mediaFeedMode == .following ? "person.2.fill" : "person.2")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(feedService.mediaFeedMode == .following ? Color.havenPurple : .secondary)
+                        .foregroundColor(feedService.mediaFeedMode == .following ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help(String(localized: "feed.help.followingMedia"))
@@ -77,7 +77,7 @@ extension FeedView {
                 }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(feedService.mediaFeedMode == .global ? Color.havenPurple : .secondary)
+                        .foregroundColor(feedService.mediaFeedMode == .global ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help(String(localized: "feed.help.globalMedia"))
@@ -89,7 +89,7 @@ extension FeedView {
                 Button(action: { setArticlesFeedMode(.following) }) {
                     Image(systemName: feedService.articlesFeedMode == .following ? "person.2.fill" : "person.2")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(feedService.articlesFeedMode == .following ? Color.havenPurple : .secondary)
+                        .foregroundColor(feedService.articlesFeedMode == .following ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Articles from people you follow")
@@ -97,7 +97,7 @@ extension FeedView {
                 Button(action: { setArticlesFeedMode(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(feedService.articlesFeedMode == .global ? Color.havenPurple : .secondary)
+                        .foregroundColor(feedService.articlesFeedMode == .global ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Global articles: your Web of Trust, or everyone with the shield off")
@@ -109,7 +109,7 @@ extension FeedView {
                 Button(action: { PollsFeed.setScope(.following) }) {
                     Image(systemName: feedService.pollsFeedMode == .following ? "person.2.fill" : "person.2")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(feedService.pollsFeedMode == .following ? Color.havenPurple : .secondary)
+                        .foregroundColor(feedService.pollsFeedMode == .following ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Polls from people you follow")
@@ -117,7 +117,7 @@ extension FeedView {
                 Button(action: { PollsFeed.setScope(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(feedService.pollsFeedMode == .global ? Color.havenPurple : .secondary)
+                        .foregroundColor(feedService.pollsFeedMode == .global ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Global polls: your Web of Trust, or everyone with the shield off")
@@ -129,7 +129,7 @@ extension FeedView {
                 Button(action: { configService.config.autoLoadNewPosts.toggle(); configService.save() }) {
                     Image(systemName: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(configService.config.autoLoadNewPosts ? Color.havenPurple : .secondary)
+                        .foregroundColor(configService.config.autoLoadNewPosts ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help(configService.config.autoLoadNewPosts ? String(localized: "feed.help.autoLoadOn") : String(localized: "feed.help.autoLoadOff"))
@@ -137,7 +137,7 @@ extension FeedView {
                 Button(action: { recipeService.setScope(.following) }) {
                     Image(systemName: recipeService.scope == .following ? "person.2.fill" : "person.2")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(recipeService.scope == .following ? Color.havenPurple : .secondary)
+                        .foregroundColor(recipeService.scope == .following ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Recipes from people you follow")
@@ -145,7 +145,7 @@ extension FeedView {
                 Button(action: { recipeService.setScope(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(recipeService.scope == .global ? Color.havenPurple : .secondary)
+                        .foregroundColor(recipeService.scope == .global ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Global recipes: your Web of Trust, or everyone with the shield off")
@@ -157,7 +157,7 @@ extension FeedView {
                 Button(action: { marketplaceService.setScope(.following) }) {
                     Image(systemName: marketplaceService.scope == .following ? "person.2.fill" : "person.2")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(marketplaceService.scope == .following ? Color.havenPurple : .secondary)
+                        .foregroundColor(marketplaceService.scope == .following ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Listings from people you follow")
@@ -165,7 +165,7 @@ extension FeedView {
                 Button(action: { marketplaceService.setScope(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(marketplaceService.scope == .global ? Color.havenPurple : .secondary)
+                        .foregroundColor(marketplaceService.scope == .global ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Global listings: your Web of Trust, or everyone with the shield off")
@@ -183,7 +183,7 @@ extension FeedView {
                 Button(action: { liveService.setScope(.following) }) {
                     Image(systemName: liveService.scope == .following ? "person.2.fill" : "person.2")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(liveService.scope == .following ? Color.havenPurple : .secondary)
+                        .foregroundColor(liveService.scope == .following ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Streams from people you follow")
@@ -191,7 +191,7 @@ extension FeedView {
                 Button(action: { liveService.setScope(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(liveService.scope == .global ? Color.havenPurple : .secondary)
+                        .foregroundColor(liveService.scope == .global ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Global streams: your Web of Trust, or everyone with the shield off")
@@ -206,7 +206,7 @@ extension FeedView {
                 Button(action: { feedService.showPopularEngagement.toggle() }) {
                     Image(systemName: feedService.showPopularEngagement ? "flame.fill" : "flame")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(feedService.showPopularEngagement ? Color.havenPurple : .secondary)
+                        .foregroundColor(feedService.showPopularEngagement ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help(feedService.showPopularEngagement ? "Hide ranks" : "Show ranks")
@@ -215,7 +215,7 @@ extension FeedView {
                 Button(action: { configService.config.autoLoadNewPosts.toggle(); configService.save() }) {
                     Image(systemName: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(configService.config.autoLoadNewPosts ? Color.havenPurple : .secondary)
+                        .foregroundColor(configService.config.autoLoadNewPosts ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help(configService.config.autoLoadNewPosts ? String(localized: "feed.help.autoLoadOn") : String(localized: "feed.help.autoLoadOff"))
@@ -224,7 +224,7 @@ extension FeedView {
                 Button(action: { configService.config.showReposts.toggle(); configService.save(); feedService.recomputeFilteredNotes() }) {
                     Image(systemName: "arrow.2.squarepath")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(configService.config.showReposts ? Color.havenPurple : .secondary)
+                        .foregroundColor(configService.config.showReposts ? Color.accentText : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help(configService.config.showReposts ? String(localized: "feed.help.hideReposts") : String(localized: "feed.help.showReposts"))
@@ -234,7 +234,7 @@ extension FeedView {
                     Button(action: { configService.config.showReplies.toggle(); configService.save(); feedService.recomputeFilteredNotes() }) {
                         Image(systemName: configService.config.showReplies ? "message.fill" : "message")
                             .font(.appSystem(size: 15, weight: .semibold))
-                            .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+                            .foregroundColor(configService.config.showReplies ? Color.accentText : .secondary)
                     }
                     .buttonStyle(.plain)
                     .help(configService.config.showReplies ? String(localized: "feed.help.hideReplies") : String(localized: "feed.help.showReplies"))
@@ -261,7 +261,7 @@ extension FeedView {
                 }) {
                     Image(systemName: layoutModeForCurrentFeed.symbolName)
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(layoutModeForCurrentFeed == .expanded ? .secondary : Color.havenPurple)
+                        .foregroundColor(layoutModeForCurrentFeed == .expanded ? .secondary : Color.accentText)
                 }
                 .buttonStyle(.plain)
                 .help("\(layoutModeForCurrentFeed.displayName) — click for \(layoutModeForCurrentFeed.nextDisplayName(supportsThreading: currentFeedSupportsThreading))")

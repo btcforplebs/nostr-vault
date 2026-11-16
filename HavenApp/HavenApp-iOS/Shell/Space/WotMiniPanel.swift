@@ -22,7 +22,7 @@ struct WotMiniPanel: View {
                     .font(.appSystem(size: 13, weight: .semibold))
             }
             .buttonStyle(.plain)
-            .foregroundColor(.havenPurple)
+            .foregroundColor(.accentText)
             .disabled(me.isEmpty)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

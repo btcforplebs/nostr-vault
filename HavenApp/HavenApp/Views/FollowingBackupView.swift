@@ -82,7 +82,7 @@ struct FollowingBackupSettingsView: View {
                                     Text("Owner")
                                         .font(.appCaption2)
                                         .fontWeight(.bold)
-                                        .foregroundColor(.havenPurple)
+                                        .foregroundColor(.accentText)
                                         .padding(.horizontal, 5)
                                         .padding(.vertical, 2)
                                         .background(Color.havenPurple.opacity(0.15))
@@ -93,7 +93,7 @@ struct FollowingBackupSettingsView: View {
                                     Image(systemName: "checkmark")
                                         .font(.appSubheadline)
                                         .fontWeight(.semibold)
-                                        .foregroundColor(.havenPurple)
+                                        .foregroundColor(.accentText)
                                 }
                             }
                         }

@@ -130,7 +130,7 @@ extension FeedNoteRow {
                         scheduleParentFetchTimeout(pId)
                     }
                     .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(.accentText)
                 }
                 .padding(.vertical, 6)
             } else {
@@ -237,7 +237,7 @@ extension FeedNoteRow {
                             HStack(spacing: 3) {
                                 Image(systemName: "arrowshape.turn.up.left.fill")
                                     .font(.appSystem(size: 9, weight: .semibold))
-                                    .foregroundColor(Color.havenPurple.opacity(0.6))
+                                    .foregroundColor(Color.accentText.opacity(0.6))
 
                                 if let rPubkey = note.replyToPubkey {
                                     let name = rowData.replyToName ?? shortKey(rPubkey)
@@ -316,7 +316,7 @@ extension FeedNoteRow {
                         HStack(spacing: 3) {
                             Image(systemName: "arrowshape.turn.up.left.fill")
                                 .font(.appSystem(size: 9, weight: .semibold))
-                                .foregroundColor(Color.havenPurple.opacity(0.6))
+                                .foregroundColor(Color.accentText.opacity(0.6))
 
                             if let rPubkey = note.replyToPubkey {
                                 let name = rowData.replyToName ?? shortKey(rPubkey)

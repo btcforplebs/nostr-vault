@@ -203,7 +203,7 @@ struct RelayActivityShareButtons: View {
             #endif
         }
         .buttonStyle(.plain)
-        .foregroundColor(.havenPurple)
+        .foregroundColor(.accentText)
     }
 
     @ViewBuilder
@@ -375,7 +375,7 @@ struct RelayActivityCard: View {
                 Button(action: onViewAll) {
                     Text("View All")
                         .font(.appSystem(size: 10, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                         .padding(.vertical, 4)
                         .contentShape(Rectangle())
                 }
@@ -442,7 +442,7 @@ struct RelayActivityPanel: View {
                 Button { showingRawLogs = true } label: {
                     Text("Open full logs")
                         .font(.appSystem(size: 12, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
                 .buttonStyle(.plain)
                 .help("The raw relay log, for troubleshooting")
@@ -546,7 +546,7 @@ struct RelayActivityWindow: View {
                 } label: {
                     Text("Open full logs")
                         .font(.appSystem(size: 12, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
                 .buttonStyle(.plain)
                 .help("The raw relay log, for troubleshooting")

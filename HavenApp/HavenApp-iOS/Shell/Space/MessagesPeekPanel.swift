@@ -45,7 +45,7 @@ struct MessagesPeekPanel: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundColor(.havenPurple)
+            .foregroundColor(.accentText)
         }
         .onAppear { nostrService.fetchMissingProfiles(for: rows.map(\.id)) }
     }

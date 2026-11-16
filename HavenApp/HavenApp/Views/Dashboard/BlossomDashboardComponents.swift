@@ -137,7 +137,7 @@ struct UnifiedActionButton: View {
                 } else {
                     Image(systemName: icon)
                         .font(.appSystem(size: 20, weight: .medium))
-                        .foregroundColor(.havenPurple)
+                        .foregroundColor(.accentText)
                 }
 
                 Text(title)
@@ -185,10 +185,10 @@ struct SectionHeader: View {
                     HStack(spacing: 4) {
                         Text(actionTitle)
                             .font(.appSystem(size: 10, weight: .medium))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(.accentText)
                         Image(systemName: "chevron.right")
                             .font(.appSystem(size: 8, weight: .semibold))
-                            .foregroundColor(.havenPurple.opacity(0.7))
+                            .foregroundColor(.accentText.opacity(0.7))
                     }
                 }
                 .buttonStyle(.plain)

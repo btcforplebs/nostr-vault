@@ -55,7 +55,7 @@ struct RelayStatusCard: View {
                 .frame(width: 44, height: 44)
             Image(systemName: "externaldrive.connected.to.line.below")
                 .font(.appSystem(size: 20, weight: .semibold))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(.accentText)
         }
         .accessibilityHidden(true)
     }
