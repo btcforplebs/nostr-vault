@@ -76,7 +76,7 @@ export function AppCard({ ctx, id, open, size, editing, tools, onGone }) {
         if (!html) { html = await fetchAppArtifact(ctx, app.event); await artifacts.put(manifest.hash, html) }
         if (gone) return
         const r = await openNapplet({
-          html, manifestEvent: app.event, container: host.current, grants,
+          html, manifestEvent: app.event, container: host.current, grants, account: me, installedAt: app.installedAt,
           consent: ({ ident, domains }) => new Promise(resolve => setConsent({ ident, domains, resolve })),
           makeDeps: saveGrant => shellDeps(liveCtx, { ask, saveGrant, bus, storage }),
           onRevoke: why => { if (!gone && why !== "closed by shell") setNote(`Closed: ${why}.`) },

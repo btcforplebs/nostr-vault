@@ -6,7 +6,7 @@ import { mountNapplet, artifactHash, LOADER_PATH } from "./host.js"
 import { parseManifest, checkArtifact, domainsFor, nappletKey, SHELL_DOMAINS } from "./manifest.js"
 import { defaultGrant, outsideGrant } from "./policy.js"
 import { createHandlers } from "./dispatch.js"
-import { nappletOrigin } from "./origin.js"
+import { nappletOrigin, originSalt, accountScope } from "./origin.js"
 import { themeHead } from "./theme.js"
 
 /** A napplet with no manifest (a file the user picked): asks for every domain the shell has; the user trims it. */
@@ -19,10 +19,17 @@ export const localManifest = (name, hash, title = name, domains = SHELL_DOMAINS)
  *   makeDeps: (grantSaver) -> deps for dispatch.js (shell-deps.js shellDeps).
  *   origin:   where it runs (origin.js; tests pass their own). An outside napplet runs only on its own origin, behind
  *             the loader's guards (P2): this site without a napplet host runs our own napplets only.
+ *   account, installedAt: for an outside napplet, whose card this is: its origin is that account's own (origin.js
+ *             accountScope, salt kept in saltStore), so accounts in one browser never share its saved data.
  * -> { ident, grant, domains, mounted } or throws (bad manifest, wrong hash, can't run here, the user said no).
  */
-export async function openNapplet({ html, manifestEvent, name = "napplet", title, firstParty = false, domains: only, container, grants, consent, makeDeps, loader = new URL(LOADER_PATH, document.baseURI).href, onRevoke, origin }) {
+export async function openNapplet({ html, manifestEvent, name = "napplet", title, firstParty = false, domains: only, container, grants, consent, makeDeps, loader = new URL(LOADER_PATH, document.baseURI).href, onRevoke, origin, account, installedAt, saltStore = globalThis.localStorage }) {
   const hash = await artifactHash(html)
+  if (!origin && !firstParty) {
+    if (!nappletOrigin(hash)) throw new Error("This site can't wall off an outside napplet yet (no napplet host), so it won't open one.")
+    if (!account || !saltStore) throw new Error("An outside napplet opens only as one account's card (its storage is kept per account).")
+    origin = nappletOrigin(hash, { scope: await accountScope(hash, originSalt(saltStore, account), installedAt) })
+  }
   origin ??= nappletOrigin(hash)
   if (!origin && !firstParty) throw new Error("This site can't wall off an outside napplet yet (no napplet host), so it won't open one.")
   const manifest = manifestEvent ? parseManifest(manifestEvent) : localManifest(name, hash, title, firstParty && only ? only : undefined)

@@ -9,7 +9,7 @@ import { registerHooks } from "node:module"
 import { CATEGORIES, KEYWORDS } from "../src/components/emoji-data.js"
 import { pickedEmoji, composeEmoji, emojiTags, EMOJI_TOPIC } from "../src/napplet/emoji-intent.js"
 import { createBus } from "../src/napplet/bus.js"
-import { nappletOrigin, nappletParentHost } from "../src/napplet/origin.js"
+import { nappletOrigin, nappletParentHost, originSalt, accountScope } from "../src/napplet/origin.js"
 import { isolatedLoaderCsp, nappletOriginFile, loaderCsp, frameCsp, LOADER_FILE, SW_FILE } from "../src/napplet/csp.js"
 import { nappletsOn, setDeskLayout } from "../src/napplet/flag.js"
 
@@ -111,6 +111,42 @@ test("an outside napplet won't open where there is no napplet origin; the user i
   let asked = false
   await assert.rejects(openNapplet({ html: "<p>x</p>", loader: "http://localhost/vault/napplet-frame.html", grants: { get: () => null }, consent: async () => { asked = true } }), /can't wall off an outside napplet/)
   assert.equal(asked, false)
+})
+
+test("an outside card's origin is its account's own: two accounts in one browser never share its storage", async () => {
+  const mem = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), m } }
+  const store = mem(), A = "aa".repeat(32), B = "bb".repeat(32)
+  const sa = originSalt(store, A), sb = originSalt(store, B)
+  assert.match(sa, /^[0-9a-f]{32}$/)
+  assert.equal(originSalt(store, A), sa, "kept, not remade")
+  assert.notEqual(sa, sb)
+  assert.ok(![...store.m.values()].some(v => v.includes(A.slice(0, 16))), "the salt isn't the pubkey")
+  const la = await accountScope(H, sa, 1), lb = await accountScope(H, sb, 1)
+  assert.notEqual(la, lb)
+  assert.notEqual(la, H.slice(0, 32), "not the shared hash label")
+  assert.equal(await accountScope(H, sa, 1), la, "same account, same install: same storage")
+  assert.notEqual(await accountScope(H, sa, 2), la, "reinstalled after Remove: empty storage")
+  const loc = { hostname: "localhost", port: "8799", protocol: "http:" }
+  const oa = nappletOrigin(H, { loc, host: "", scope: la }), ob = nappletOrigin(H, { loc, host: "", scope: lb })
+  assert.equal(oa, `http://n-${la}.localhost:8799`)
+  assert.notEqual(oa, ob)
+  assert.equal(nappletOrigin(H, { loc, host: "nvapps.example", scope: la }), `https://n-${la}.nvapps.example`, "the live host too")
+  assert.equal(nappletParentHost(new URL(oa).host), "localhost:8799", "the servers still serve it")
+  assert.equal(nappletOrigin(H, { loc, host: "", scope: "xyz" }), null)
+})
+
+test("an outside napplet opens on its account's origin, and not at all without an account", async () => {
+  const { openNapplet } = await import("../src/napplet/runtime.js")
+  const prev = globalThis.location
+  globalThis.location = { hostname: "localhost", port: "8799", protocol: "http:", origin: "http://localhost:8799" }
+  try {
+    let asked = false
+    await assert.rejects(openNapplet({ html: "<p>x</p>", loader: "http://localhost:8799/vault/napplet-frame.html", grants: { get: () => null }, consent: async () => { asked = true } }), /only as one account's card/)
+    assert.equal(asked, false)
+    const runtime = read("../src/napplet/runtime.js"), card = read("../src/desktop/space/AppCard.jsx")
+    assert.match(runtime, /accountScope\(hash, originSalt\(saltStore, account\), installedAt\)/)
+    assert.match(card, /account: me, installedAt: app\.installedAt/)
+  } finally { globalThis.location = prev }
 })
 
 test("napplets in the app's screens: the desktop layout's, not the phone's (plan step 11)", () => {
