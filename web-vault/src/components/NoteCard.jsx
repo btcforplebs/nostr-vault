@@ -23,13 +23,14 @@ import { TranslateButton } from "./TranslateButton.jsx"
 import { EventInfoButton } from "./EventInfo.jsx"
 import { AvatarMenu } from "./AuthorQuickMenu.jsx"
 import { ReactionButton } from "./ReactionButton.jsx"
+import { emojiNodes } from "./CustomEmoji.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) { import("../styles/note-actions.css"); import("../styles/note-card.css") }
 
 export function AuthorName({ pubkey }) {
   const p = useProfile(pubkey)
-  return <span class="author-name">{p?.display_name || p?.name || npubEncode(pubkey).slice(0, 12) + "…"}</span>
+  return <span class="author-name">{emojiNodes(p?.display_name || p?.name || npubEncode(pubkey).slice(0, 12) + "…", p?.emoji)}</span>
 }
 
 /** A kind 1 note, or a kind 6 repost shown as the reposted note with a "reposted" line. Floating card, as on iOS

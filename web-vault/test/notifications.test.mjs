@@ -53,12 +53,13 @@ test("a repost and a reaction point at the last e tag", () => {
   assert.equal(rx.emoji, "🤙")
 })
 
-test("reaction content: + and empty are a heart, - is a thumbs down, long custom content is cut", () => {
+test("reaction content: + and empty are a heart, - is a thumbs down, long text is cut, a shortcode kept whole", () => {
   assert.equal(reactionEmoji("+"), "❤️")
   assert.equal(reactionEmoji(""), "❤️")
   assert.equal(reactionEmoji("-"), "👎")
   assert.equal(reactionEmoji("🔥"), "🔥")
-  assert.equal(reactionEmoji(":a_long_shortcode:"), ":a_long_")
+  assert.equal(reactionEmoji(":a_long_shortcode:"), ":a_long_shortcode:")
+  assert.equal(reactionEmoji("a long reaction"), "a long r")
 })
 
 test("a zap's who is the zap request's sender, not the LNURL server that signed the 9735", () => {

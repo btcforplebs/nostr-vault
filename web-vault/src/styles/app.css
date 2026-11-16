@@ -167,3 +167,8 @@ button.person-row:hover { border-color: var(--accent-line); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 .note-text code { font: .9em var(--mono); padding: 1px 4px; border-radius: 4px; background: var(--s2); }
 
+
+/* NIP-30 custom emoji (components/CustomEmoji.jsx): a picture the height of the text around it, bigger in the picker. */
+.custom-emoji { display: inline-block; height: 1.25em; width: auto; max-width: 3em; vertical-align: -0.25em; object-fit: contain; }
+.picker-cell.custom .custom-emoji { height: 28px; max-width: 100%; vertical-align: middle; }
+.reaction-emoji .custom-emoji { height: 18px; vertical-align: middle; }

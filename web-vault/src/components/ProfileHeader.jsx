@@ -7,6 +7,7 @@ import { fetchFollowers, keptFollowers } from "../net/followers.js"
 import { MediaLightbox } from "./MediaLightbox.jsx"
 import { imageItem } from "../net/note-media.js"
 import { NoteText } from "./NoteText.jsx"
+import { emojiNodes } from "./CustomEmoji.jsx"
 
 if (import.meta.env) import("../styles/profile.css")
 
@@ -38,7 +39,7 @@ export function ProfileHeader({ pubkey, follows, you = true, relation = "", chil
           : <Avatar pubkey={pubkey} size={72} ring />}
         <div class="profile-names">
           <div class="profile-name-row">
-            <h1>{p?.display_name || p?.name || npub.slice(0, 16) + "…"}</h1>
+            <h1>{emojiNodes(p?.display_name || p?.name || npub.slice(0, 16) + "…", p?.emoji)}</h1>
             <Badges pubkey={pubkey} />
             <span class="profile-badge">{you ? <span class="you-badge">YOU</span> : <Relation kind={relation} />}</span>
           </div>

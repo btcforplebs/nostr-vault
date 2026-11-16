@@ -10,6 +10,7 @@ import { MAX_SKEW } from "./follows.js"
 import { groupNotifications, replyTarget, reactionEmoji, zapRequest, zapSats, isOutside } from "./notifications.js"
 import { isMutedNote } from "./blocks.js"
 import { imageItem } from "./note-media.js"
+import { rememberEmoji } from "./custom-emoji.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 export const ARTICLE_KIND = 30023
@@ -145,6 +146,7 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
       // A like of a note Haven doesn't hold yet counts by its p tag, and only from your network (when there is one):
       // nothing ties it to a note we can see, so a stranger's stays out.
       if (!myText.has(target) && (!onMyNote(ev, me) || out(ev.pubkey))) continue
+      rememberEmoji(ev.tags)
       fold("like", target, ev.pubkey, ev.created_at, { emoji: reactionEmoji(ev.content) })
       continue
     }
@@ -262,7 +264,11 @@ export function mediaFor(own) {
  * -> rows shaped like the Notifications screen's: { id, type, who, noteId, emoji, sats, created_at, events }
  */
 export function likesFor(own, inbound, me, filter, blocked = new Set()) {
-  if (filter === "given") return own.filter(e => e.kind === 7).sort(byNewest).map(e => ({ id: e.id, type: "reaction", who: [me], noteId: lastE(e), emoji: reactionEmoji(e.content), sats: 0, created_at: e.created_at, events: [e] }))
+  if (filter === "given") {
+    const given = own.filter(e => e.kind === 7)
+    for (const e of given) rememberEmoji(e.tags)
+    return given.sort(byNewest).map(e => ({ id: e.id, type: "reaction", who: [me], noteId: lastE(e), emoji: reactionEmoji(e.content), sats: 0, created_at: e.created_at, events: [e] }))
+  }
   return groupNotifications(inbound.filter(e => e.kind === 7), me).filter(r => r.type === "reaction" && !r.who.every(w => blocked.has(w)))
 }
 

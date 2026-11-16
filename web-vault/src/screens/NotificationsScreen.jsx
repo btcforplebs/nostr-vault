@@ -13,6 +13,7 @@ import { OutsideFold } from "../components/OutsideFold.jsx"
 import { outsideCount } from "../net/outside-fold.js"
 import { useNotifications, aboutYourPost } from "./useNotifications.js"
 import "../styles/notifications.css"
+import { ReactionText } from "../components/CustomEmoji.jsx"
 
 export { Faces, Who, MAX_FACES } from "../components/ActivityFaces.jsx"
 
@@ -103,9 +104,9 @@ export function Row({ row, note, trusted = () => false, unread = false, me = "" 
           <time class="note-time" datetime={new Date(row.created_at * 1000).toISOString()}>{ago(row.created_at)}</time>
           {unread && <span class="notif-dot" role="img" aria-label="New" title="New" />}
         </div>
-        <div class="notif-who"><Who who={row.who} /> {verb(row)}</div>
+        <div class="notif-who"><Who who={row.who} /> <ReactionText text={verb(row)} load={trusted(row.who[0])} /></div>
         {row.type === "reply" || row.type === "mention" || row.type === "quote" || row.type === "highlight"
-          ? <NoteText content={ev.content} images={trusted(row.who[0])} />
+          ? <NoteText content={ev.content} tags={ev.tags} images={trusted(row.who[0])} />
           : (row.type === "zap" || row.type === "article") && row.comment
             ? <NoteText content={row.comment} images={false} />
             : aboutYourPost(row) ? <About note={note} me={me} /> : null}
