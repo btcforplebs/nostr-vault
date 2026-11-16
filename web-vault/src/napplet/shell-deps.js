@@ -87,7 +87,9 @@ async function fetchBytes(url, { servers = [], range } = {}) {
   if (typeof url === "string" && url.startsWith("blossom:")) {
     const b = parseBlossomUri(url)
     if (!b) throw codeError("invalid-request")
-    const got = await fetchVerified(b, candidateServers(b, servers.filter(s => !blockedUrl(s))))
+    // Every candidate through the fetch policy, the link's own ?xs= servers included: they come from the napplet too,
+    // and serverOrigin alone lets a mesh (.fips) or home-network name through (step 12 safety review).
+    const got = await fetchVerified(b, candidateServers(b, servers).filter(s => !blockedUrl(s)))
     if (!got) throw codeError("not-found")
     return { blob: new Blob([got.bytes], { type: got.mime }), mime: got.mime }
   }
