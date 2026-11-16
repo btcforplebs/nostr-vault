@@ -26,7 +26,9 @@ import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -68,10 +70,14 @@ class BlockedSettingsViewModel @Inject constructor(
         val cfg = configStore.config.value
         val key = cfg.activeOrOwnerNpub()
         if (npub in cfg.privateBlockedNpubsPerAccount[key].orEmpty()) return
+        // Nothing is kept locally, so leaving the screen mid-publish must not
+        // cancel it: the block would silently never land.
         viewModelScope.launch {
-            nostrService.publishMuteListChange(
-                key, add = listOf(npub), localBlocks = cfg.publicBlockedFor(key).filter { it != npub }, privately = true,
-            )?.let { notificationManager.showError(it) }
+            withContext(NonCancellable) {
+                nostrService.publishMuteListChange(
+                    key, add = listOf(npub), localBlocks = cfg.publicBlockedFor(key).filter { it != npub }, privately = true,
+                )?.let { notificationManager.showError(it) }
+            }
         }
     }
 
