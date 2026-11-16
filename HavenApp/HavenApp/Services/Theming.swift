@@ -148,11 +148,11 @@ extension Color {
     static let shade = Color(lightHex: 0x3C2814, darkHex: 0x000000)
     @MainActor static var onAccent: Color { AccentPalette.current.onAccent }
 
-    /// A note card's outline: the accent in dark, the dark greys in light
-    /// (an orange ring round every card on the paper page was too loud).
+    /// A note card's outline: the accent at the same strength in both modes
+    /// (Logen 2026-11-16: Light matches Android, 30% on a post, 40% on a reply).
     @MainActor
-    static func cardLine(_ darkOpacity: Double) -> Color {
-        Color(light: Color(hex: 0x1C1C1E).opacity(0.22), dark: .havenPurple.opacity(darkOpacity))
+    static func cardLine(_ opacity: Double) -> Color {
+        Color(light: .havenPurple.opacity(opacity), dark: .havenPurple.opacity(opacity))
     }
 
     static var controlBackgroundColor: Color {
