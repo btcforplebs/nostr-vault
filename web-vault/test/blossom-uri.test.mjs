@@ -198,3 +198,9 @@ test("a view that leaves before its bytes land keeps them for the next view", as
 test("MAX_CACHE_BYTES is the 64 MB the spec asks for, and a file bigger than it is still refused up front", () => {
   assert.equal(MAX_CACHE_BYTES, 64 * 1024 * 1024)
 })
+
+test("fetchVerified never follows a redirect (a public server could 302 to a home-network host)", async () => {
+  const opts = []
+  await fetchVerified(parseBlossomUri(link()), ["https://good.example"], { fetch: async (url, o) => { opts.push(o); return server({ "https://good.example": bytes })(url, o) } })
+  assert.equal(opts[0].redirect, "error")
+})

@@ -120,18 +120,20 @@ export function createHandlers({ ident, grant, domains, deps }) {
   // A kind 5's `e` ids say nothing about what they delete, so the shell looks each one up (vault and network, never
   // shown to the napplet): every id must be found, be the user's, and not be an account list or a vanish request.
   // Otherwise "delete 1 post" could be the user's follow list.
-  async function deletionRefusal(template) {
+  // `found` gets each id's kind, for the ask to name.
+  async function deletionRefusal(template, found = []) {
     const { ids } = deletionTargets(template)
     if (!ids.length) return null
     if (ids.length > MAX_EVENTS || ids.some(x => !/^[0-9a-f]{64}$/.test(x))) return "a deletion names ids it can't check"
     const fs = [{ ids, limit: ids.length }]
-    const found = dedupe([...(await deps.vaultQuery(fs).catch(() => [])), ...(await deps.netQuery(fs).catch(() => []))])
-    const byId = new Map(found.filter(ev => ev?.pubkey === deps.pubkey).map(ev => [ev.id, ev]))
+    const hits = dedupe([...(await deps.vaultQuery(fs).catch(() => [])), ...(await deps.netQuery(fs).catch(() => []))])
+    const byId = new Map(hits.filter(ev => ev?.pubkey === deps.pubkey).map(ev => [ev.id, ev]))
     for (const x of ids) {
       const ev = byId.get(x)
       if (!ev) return "a deletion names an event of yours the shell can't find"
       if (protectedKind(ev.kind)) return `a napplet can't delete kind ${ev.kind}`
     }
+    found.push(...ids.map(x => byId.get(x).kind))
     return null
   }
 
@@ -139,11 +141,12 @@ export function createHandlers({ ident, grant, domains, deps }) {
     const d = signDecision(grant, template)
     if (!d.ok) return { ok: false, error: d.error }
     const unsigned = { kind: template.kind, content: template.content, tags: template.tags ?? [], created_at: Math.floor(Date.now() / 1000) }
+    const found = []
     if (unsigned.kind === 5) {
-      const bad = await deletionRefusal(unsigned)
+      const bad = await deletionRefusal(unsigned, found)
       if (bad) return { ok: false, error: bad }
     }
-    if (d.ask && !(await ask(what, { kind: unsigned.kind, content: unsigned.content, tags: unsigned.tags }))) return { ok: false, error: "the user said no" }
+    if (d.ask && !(await ask(what, { kind: unsigned.kind, content: unsigned.content, tags: unsigned.tags, ...(unsigned.kind === 5 ? { found } : {}) }))) return { ok: false, error: "the user said no" }
     // The user's Send Delay with Undo (publish-delay.js): nothing is signed until it runs out.
     if (deps.delay && DELAYED_KINDS.has(unsigned.kind) && !(await deps.delay(unsigned))) return { ok: false, error: "undone" }
     unsigned.created_at = Math.floor(Date.now() / 1000)
