@@ -7,7 +7,7 @@
 
 /** Every token in styles/tokens.css, by name (test/napplet-theme.test.mjs keeps the two lists equal). */
 export const THEME_TOKENS = [
-  "--bg", "--s1", "--s2", "--s3", "--accent", "--accent-rgb", "--accent-light", "--accent-dark", "--accent-pale", "--accent-line",
+  "--bg", "--s1", "--s2", "--s3", "--accent", "--accent-text", "--accent-rgb", "--accent-light", "--accent-dark", "--accent-pale", "--accent-line",
   "--accent-grad", "--on-accent", "--on-badge", "--nv-orange", "--nv-orange-light", "--nv-orange-rgb", "--online", "--verified", "--booting", "--danger", "--orange", "--green", "--red",
   "--blue", "--yellow", "--gold", "--purple", "--grey", "--text", "--ink", "--text-2", "--text-3", "--hair", "--strong",
   "--s1-hover", "--action", "--action-bg", "--seg-on", "--menu", "--shade", "--shade-k", "--scrim-k", "--bar-rgb", "--dock",

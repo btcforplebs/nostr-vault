@@ -20,12 +20,12 @@
   border-radius: 10px; color: var(--text); font: var(--t-sub); text-align: left; }
 .feed-mode-list button:hover { background: var(--s2); }
 .feed-mode-list button span:first-of-type { flex: 1; }
-.feed-mode-list .check { width: 14px; color: var(--accent); font-weight: 700; }
+.feed-mode-list .check { width: 14px; color: var(--accent-text); font-weight: 700; }
 .feed-toolbar { flex: none; display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 4px; border-radius: 999px;
   background: var(--s1); border: 1px solid var(--hair); }
 .feed-tool { display: grid; place-items: center; width: 36px; height: 36px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: none;
   color: var(--text-2); cursor: pointer; }
-.feed-tool.on { color: var(--accent); }
+.feed-tool.on { color: var(--accent-text); }
 .feed-tool.on[aria-label="Replies"] svg { fill: currentColor; } /* message.fill, as on the iPhone */
 .feed-tool:hover { background: var(--s2); }
 .feed-tool:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
@@ -89,7 +89,7 @@
 .thread-missing { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font: 500 12px var(--mono); }
 .thread-missing svg { color: rgb(var(--accent-rgb) / .7); flex: none; }
 .thread-fold { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 2px 22px; min-height: 28px; padding: 6px 10px; border: 0; border-radius: 8px;
-  background: var(--accent-pale); color: var(--accent); font: 700 12px var(--font-round); }
+  background: var(--accent-pale); color: var(--accent-text); font: 700 12px var(--font-round); }
 .thread-open-link { display: flex; align-items: center; gap: 6px; margin-left: 22px; padding: 6px 10px; color: var(--text-2); font: 700 12px var(--font-round); }
 .thread-open-link svg { margin-left: auto; }
 /* A line opened in place: the full card with no chrome of its own, on the line's rail and indent. */
@@ -116,11 +116,11 @@
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); border-radius: 12px; }
 .feed-filter-menu button { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: none; border: 0; border-radius: 8px; color: var(--text); font: var(--t-sub); text-align: left; }
 .feed-filter-menu button:hover { background: var(--s2); }
-.feed-filter-menu .check { width: 14px; color: var(--accent); font-weight: 700; }
+.feed-filter-menu .check { width: 14px; color: var(--accent-text); font-weight: 700; }
 .feed-end { text-align: center; font: var(--t-foot); margin: 12px 0; }
 .more .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--hair); border-top-color: var(--accent); border-radius: 50%; vertical-align: -2px; }
 @media (prefers-reduced-motion: no-preference) { .more .spinner { animation: spin .8s linear infinite; } }
-.pull-indicator { display: grid; place-items: center; height: calc(var(--pull) * 44px); overflow: hidden; color: var(--accent); opacity: var(--pull); }
+.pull-indicator { display: grid; place-items: center; height: calc(var(--pull) * 44px); overflow: hidden; color: var(--accent-text); opacity: var(--pull); }
 .pull-indicator svg { transform: rotate(calc(var(--pull) * 270deg)); }
 .condensed-mark.article { color: rgb(var(--accent-rgb) / .7); }
 .condensed-mark.highlight { color: rgb(255 214 10 / .7); }

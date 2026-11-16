@@ -3,27 +3,30 @@
 // light.css already are the orange. Any other colour becomes one <style id="nv-accent"> with a dark set and a light
 // set, also saved as text so public/theme-boot.js can put it in before the first paint.
 //
-// Dark mode shows the colour as picked, lifted only if it would be too dark to read on a card. Light mode never puts
-// a pale colour on white as text: --accent there is the colour darkened until it reads (4.5:1 on white), and the
-// colour itself stays for glows (--accent-rgb) and, as far as a label allows, the light end of fills (--accent-light).
+// Dark mode is neon: the same hue pushed to the most colour sRGB allows, made lighter only as far as text needs to
+// read on a card (neon()); buttons and text both use it. Light mode uses the colour exactly as picked for buttons and
+// fills; only accent text (--accent-text: #tags, links) is darkened, and only for colours too pale to read on white
+// (under 3.5:1, e.g. gold, green, teal, orange), until it reads at 4.5:1.
 
 export const ACCENT_KEY = "display.accent"
 export const ACCENT_CSS_KEY = "display.accentCss"
 export const ACCENT_DEFAULT = "#e67326"
-/** The ready-made row, orange first. Apple's system colours, so each sits well on black. */
+/** The ready-made row, orange first: three anchors (the app's orange, Nostr purple from the Nostr logo, Android
+ *  green) and the colours around them. Light shows these exactly; Dark shows neon() of each. */
 export const ACCENT_PRESETS = [
   { hex: "#e67326", name: "Orange" },
-  { hex: "#ffd60a", name: "Yellow" },
-  { hex: "#30d158", name: "Green" },
-  { hex: "#40c8e0", name: "Teal" },
-  { hex: "#0a84ff", name: "Blue" },
-  { hex: "#5e5ce6", name: "Indigo" },
-  { hex: "#bf5af2", name: "Purple" },
-  { hex: "#ff375f", name: "Pink" },
+  { hex: "#ffb800", name: "Gold" },
+  { hex: "#3ddc84", name: "Green" },
+  { hex: "#00c2b8", name: "Teal" },
+  { hex: "#2e7dff", name: "Blue" },
+  { hex: "#662482", name: "Nostr purple" },
+  { hex: "#ff2d87", name: "Pink" },
+  { hex: "#a8071a", name: "Blood red" },
 ]
 const CARD_DARK = "#1c1c1e" // --s1 in dark: text in the accent sits on cards
 const WHITE = "#ffffff"
 const TEXT_MIN = 4.5 // WCAG body text
+const LIGHT_TEXT_KEEP = 3.5 // Light keeps the exact colour as text at or above this on white; under it, text is darkened
 const LABEL_MIN = 3 // a bold label on a fill (WCAG large text): keeps today's white on orange
 
 // ---- colour maths -----------------------------------------------------------------------------------------------
@@ -73,20 +76,54 @@ export function readableOn(hex, bg, min, dir) {
   return dir < 0 ? "#000000" : WHITE
 }
 const shade = (hex, dL) => { const [L, A, B] = toLab(hex); return fromLab([Math.min(1, Math.max(0, L + dL)), A, B]) }
+
+// OKLCH (OKLab as lightness, chroma, hue) for neon(): the most chroma sRGB holds at a lightness and hue.
+const labRgb = ([L, A, B]) => {
+  const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3
+  const m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3
+  const s = (L - 0.0894841775 * A - 1.291485548 * B) ** 3
+  return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s]
+}
+const lchLab = (L, C, H) => [L, C * Math.cos(H), C * Math.sin(H)]
+function maxChroma(L, H) {
+  let lo = 0, hi = 0.4
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2
+    if (labRgb(lchLab(L, mid, H)).every(c => c >= -1e-4 && c <= 1 + 1e-4)) lo = mid; else hi = mid
+  }
+  return lo
+}
+/** Dark mode's neon of a colour: its hue at (nearly) the most chroma sRGB allows, at the darkest lightness from
+ *  max(its own, 0.55) up that reads 4.5:1 on the dark card. Greys have no hue to push, so they only get lighter. */
+export function neon(hex) {
+  const pick = normalizeHex(hex) ?? ACCENT_DEFAULT
+  const [L0, A, B] = toLab(pick)
+  const C0 = Math.hypot(A, B), H = Math.atan2(B, A)
+  if (C0 < 0.03) return readableOn(pick, CARD_DARK, TEXT_MIN, 1)
+  const start = Math.max(L0, 0.55)
+  for (let i = 0; start + i * 0.005 <= 0.95; i++) {
+    const L = start + i * 0.005, max = maxChroma(L, H)
+    const c = fromLab(lchLab(L, Math.min(max, Math.max(C0, max * 0.97)), H))
+    if (contrast(c, CARD_DARK) >= TEXT_MIN) return c
+  }
+  return fromLab(lchLab(0.95, maxChroma(0.95, H), H))
+}
+
 /** White or black for a label on a fill of this colour: white whenever it reads as a bold label. */
 export const labelOn = hex => (contrast(WHITE, hex) >= LABEL_MIN ? "#fff" : "#000")
 
-/** Every accent token for both modes, from one colour. */
+/** Every accent token for both modes, from one colour. --accent is the fill (buttons, rings, borders), --accent-text
+ *  the colour for text. */
 export function accentTokens(hex) {
   const pick = normalizeHex(hex) ?? ACCENT_DEFAULT
-  const rgb = rgbOf(pick).join(" ")
-  const dark = readableOn(pick, CARD_DARK, TEXT_MIN, 1)
-  const lightText = readableOn(pick, WHITE, TEXT_MIN, -1)
+  const glow = neon(pick)
+  const lightText = contrast(pick, WHITE) >= LIGHT_TEXT_KEEP ? pick : readableOn(pick, WHITE, TEXT_MIN, -1)
+  // The fill's light end: a touch lighter, unless that would fade a white label under 3:1.
+  const lift = shade(pick, 0.08)
+  const lightEnd = labelOn(pick) === "#000" || contrast(WHITE, lift) >= LABEL_MIN ? lift : pick
   return {
-    dark: { "--accent": dark, "--accent-rgb": rgb, "--accent-light": shade(dark, 0.08), "--accent-dark": shade(dark, -0.12), "--on-accent": labelOn(dark) },
-    // The fill's light end: the colour itself only as pale as a white label can stand (3:1), so a gradient
-    // button never fades its label out at one end.
-    light: { "--bg": paper(pick), "--accent": lightText, "--accent-rgb": rgb, "--accent-light": readableOn(pick, WHITE, LABEL_MIN, -1), "--accent-dark": shade(lightText, -0.1), "--on-accent": labelOn(lightText) },
+    dark: { "--accent": glow, "--accent-text": glow, "--accent-rgb": rgbOf(glow).join(" "), "--accent-light": shade(glow, 0.08), "--accent-dark": shade(glow, -0.12), "--on-accent": labelOn(glow) },
+    light: { "--bg": paper(pick), "--accent": pick, "--accent-text": lightText, "--accent-rgb": rgbOf(pick).join(" "), "--accent-light": lightEnd, "--accent-dark": shade(pick, -0.1), "--on-accent": labelOn(pick) },
   }
 }
 

@@ -5,7 +5,7 @@
 .for-you-rail { display: flex; gap: 10px; overflow-x: auto; padding: 2px var(--gutter) 14px; scrollbar-width: none; }
 .for-you-rail::-webkit-scrollbar { display: none; }
 .for-you-rail .chip.topic { flex: none; min-height: 32px; display: inline-flex; align-items: center; padding: 0 12px; text-decoration: none;
-  background: var(--accent-pale); color: var(--accent); border-color: transparent; font: var(--t-foot); font-weight: 600; }
+  background: var(--accent-pale); color: var(--accent-text); border-color: transparent; font: var(--t-foot); font-weight: 600; }
 .for-you-card { flex: none; width: 108px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 6px; min-height: 0;
   border-radius: 12px; border: 1px solid transparent; background: var(--s2); color: var(--text); }
 .for-you-card b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-foot); font-weight: 600; }
@@ -21,7 +21,7 @@
 .src-chip.hit span, .src-chip.hit svg { color: var(--online); }
 .src-chip.failed span, .src-chip.failed svg { color: #ff9f0a; }
 .src-chip .nv-spin { width: 10px; height: 10px; }
-.see-all { display: block; min-height: 32px; margin: 0 var(--gutter) 6px; padding: 0; border: 0; background: none; cursor: pointer; font: var(--t-foot); font-weight: 600; color: var(--accent); }
+.see-all { display: block; min-height: 32px; margin: 0 var(--gutter) 6px; padding: 0; border: 0; background: none; cursor: pointer; font: var(--t-foot); font-weight: 600; color: var(--accent-text); }
 /* Recent wears the iPhone's clock.arrow.circlepath; Trending is tinted like a topic, as SearchView+EmptyState draws them. */
 .search .chip.recent svg { color: var(--text-2); }
-.search .chips .chip.topic { background: var(--accent-pale); color: var(--accent); border-color: transparent; font-weight: 600; }
+.search .chips .chip.topic { background: var(--accent-pale); color: var(--accent-text); border-color: transparent; font-weight: 600; }

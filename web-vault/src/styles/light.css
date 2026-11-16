@@ -1,7 +1,7 @@
 /* Light mode, "warm paper" (Logen 2026-11-15, PLANS/NV_LIGHT_MODE_AND_CUSTOM_COLORS.md): an off-white page, white
    cards, the dark mode's greys for every line and shade, black text. On when <html data-theme="light">
-   (net/appearance.js, Settings › Appearance › Mode). Orange text and links use a deeper orange that reads on white
-   (#c2571a, 4.5:1 on white); orange fills keep their gradient. */
+   (net/appearance.js, Settings › Appearance › Mode). Buttons and fills use the accent exactly; only accent text
+   (--accent-text) is darkened for a colour too pale to read on white, like the orange (#c35400, 4.5:1 on white). */
 :root[data-theme="light"], [data-theme="light"] {
   color-scheme: light;
   accent-color: var(--accent);
@@ -17,9 +17,12 @@
   --s3: #e2dbd3;
   --s1-hover: #faf6f1;
 
-  --accent: #c2571a;
+  --accent: #e67326;
+  --accent-text: #c35400;
+  --accent-rgb: 230 115 38;
   --accent-light: #e67326;
-  --accent-dark: #9a4512;
+  --accent-dark: #c35400;
+  --on-accent: #fff;
   --accent-pale: rgb(var(--accent-rgb) / .14);
   --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-light));
   --accent-line: rgb(28 28 30 / .22);  /* note-card border: the dark greys, not orange */

@@ -13,7 +13,7 @@
 .account-switch-name, .account-switch-kind { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-switch-name { font: var(--t-sub); font-weight: 600; }
 .account-switch-kind { color: var(--text-2); font: var(--t-foot); }
-.account-switch-check { color: var(--accent); flex: none; }
+.account-switch-check { color: var(--accent-text); flex: none; }
 .account-switch-error { margin: 4px 10px 6px; color: var(--danger); font: var(--t-foot); }
 /* A long press on the avatar opens the menu, not iOS Safari's link preview or a text selection. */
 .tab-avatar-hold { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }

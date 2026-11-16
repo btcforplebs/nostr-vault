@@ -8,7 +8,7 @@
 a.settings-row:hover { background: var(--s2); }
 .settings-row.static { margin: 0 var(--gutter) 8px; background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); }
 .settings-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; color: #fff; flex: none; }
-.settings-icon.big { width: 44px; height: 44px; border-radius: 10px; background: var(--accent-pale); color: var(--accent); }
+.settings-icon.big { width: 44px; height: 44px; border-radius: 10px; background: var(--accent-pale); color: var(--accent-text); }
 .settings-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-title.mono { font: 13px var(--mono); }
 .settings-chevron { color: var(--text-3); flex: none; }
@@ -51,7 +51,7 @@ a.settings-row:hover { background: var(--s2); }
 .vault-pill b { font: var(--t-headline); }
 .vault-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-foot); font-weight: 600; }
 .vault-pill.open, .vault-pill:hover { border-color: var(--strong); }
-.vault-menu .vault-pill svg:first-child { color: var(--accent); }
+.vault-menu .vault-pill svg:first-child { color: var(--accent-text); }
 .vault-pill-btn { flex: none; padding: 0; min-height: 0; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; color: var(--text-2);
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
 .vault-menu-list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 200px; padding: 6px; display: grid;
@@ -62,9 +62,9 @@ a.settings-row:hover { background: var(--s2); }
 .vault-menu-list hr { border: 0; border-top: 1px solid var(--hair); margin: 6px 0; }
 .vault-menu-list [role=menuitem] { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border: 0; border-radius: 8px;
   background: none; color: var(--text); font: var(--t-sub); text-align: left; white-space: nowrap; }
-.vault-menu-list [role=menuitem] svg { color: var(--accent); }
+.vault-menu-list [role=menuitem] svg { color: var(--accent-text); }
 .vault-menu-list [role=menuitem]:hover { background: var(--s2); }
-.vault-menu-list [role=menuitem].on { color: var(--accent); font-weight: 600; }
+.vault-menu-list [role=menuitem].on { color: var(--accent-text); font-weight: 600; }
 .vault-menu-list [role=menuitem].on::after { content: "✓"; margin-left: auto; }
 /* The phone's right pill (VaultToolbar trailingPill): envelope | filters as bare icons | search. Buttons narrow on a
    small phone, where Media's five filters would push the mode pill off. */
@@ -73,9 +73,9 @@ a.settings-row:hover { background: var(--s2); }
 .vault-capsule-filters { display: flex; }
 .vault-capsule-btn { flex: none; width: 34px; height: 36px; min-height: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center;
   border: 0; border-radius: 999px; background: none; color: var(--text-2); }
-.vault-capsule-btn.on { color: var(--accent); }
+.vault-capsule-btn.on { color: var(--accent-text); }
 .vault-capsule-btn:hover { color: var(--text); }
-.vault-capsule-btn.on:hover { color: var(--accent); }
+.vault-capsule-btn.on:hover { color: var(--accent-text); }
 .vault-capsule-line { flex: none; width: 1px; height: 20px; margin: 0 2px; background: var(--hair); }
 @media (max-width: 400px) { .vault-capsule-btn { width: 30px; } }
 @media (max-width: 350px) { .vault-capsule-btn { width: 26px; } .vault-capsule-line { margin: 0; } }
@@ -120,7 +120,7 @@ a.settings-row:hover { background: var(--s2); }
 .relay-edit-row .settings-tags { align-items: center; margin-left: auto; }
 .relay-edit-row .settings-title .tag { margin-left: 8px; }
 .tag.job { min-height: 0; border: 1px solid var(--hair); cursor: pointer; }
-.tag.job.on { background: var(--accent-pale); color: var(--accent); border-color: transparent; }
+.tag.job.on { background: var(--accent-pale); color: var(--accent-text); border-color: transparent; }
 .relay-remove { min-height: 28px; padding: 0 10px; }
 .relay-add input { flex: 1; min-width: 0; min-height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--hair); background: var(--s2); color: var(--text); font: 13px var(--mono); }
 .settings-note.row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -130,11 +130,11 @@ a.settings-row:hover { background: var(--s2); }
 .vault-search-bar input { flex: 1; min-width: 0; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--hair); background: var(--s1); color: var(--text); font: var(--t-body); }
 .vault-search-chips { display: flex; gap: 6px; overflow-x: auto; padding: 0 var(--gutter) 10px; }
 .vault-search-chips .chip { flex: none; }
-.vault-search-chips .chip.on { background: var(--accent-pale); color: var(--accent); border-color: transparent; font-weight: 600; }
+.vault-search-chips .chip.on { background: var(--accent-pale); color: var(--accent-text); border-color: transparent; font-weight: 600; }
 .vault-search-head { display: flex; justify-content: space-between; align-items: baseline; }
-.vault-search-head button.link { min-height: 0; padding: 0; border: 0; background: none; color: var(--accent); font: var(--t-foot); font-weight: 600; }
+.vault-search-head button.link { min-height: 0; padding: 0; border: 0; background: none; color: var(--accent-text); font: var(--t-foot); font-weight: 600; }
 .vault-search-row { width: calc(100% - 2 * var(--gutter)); margin: 0 var(--gutter) 6px; background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); text-align: left; }
-.vault-search-row a.small { flex: none; color: var(--accent); font: var(--t-foot); font-weight: 600; }
+.vault-search-row a.small { flex: none; color: var(--accent-text); font: var(--t-foot); font-weight: 600; }
 
 /* Vault › Media: the Blossom gallery (iPhone MediaGalleryView) and its file viewer. */
 .blossom-day { margin-top: 10px; }
@@ -162,7 +162,7 @@ a.settings-row:hover { background: var(--s2); }
 .relay-edit-row .settings-title:has(.server-health) { white-space: normal; }
 
 /* Vault mode menu: New (iPhone VaultModePill newModes). */
-.vault-new { margin-left: auto; padding: 2px 6px; border-radius: 999px; background: var(--accent-pale); color: var(--accent); font: 700 10px/1.2 var(--font); letter-spacing: .04em; text-transform: uppercase; }
+.vault-new { margin-left: auto; padding: 2px 6px; border-radius: 999px; background: var(--accent-pale); color: var(--accent-text); font: 700 10px/1.2 var(--font); letter-spacing: .04em; text-transform: uppercase; }
 .vault-menu-list [role=menuitem].on .vault-new { margin-left: 8px; }
 /* Messages' unread count in the Vault menu (VaultPagesMenu.jsx). */
 .vault-count { margin-left: auto; min-width: 18px; padding: 1px 6px; border-radius: 999px; background: var(--danger); color: #fff; font: 700 11px/1.4 var(--font); text-align: center; font-variant-numeric: tabular-nums; }
@@ -204,9 +204,9 @@ a.settings-row:hover { background: var(--s2); }
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
 .search-tabs button { flex: none; width: 40px; height: 36px; min-height: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center;
   border: 0; border-radius: 999px; background: none; color: var(--text-2); }
-.search-tabs button.on { color: var(--accent); }
+.search-tabs button.on { color: var(--accent-text); }
 .search-head .vault-pill-btn { width: 48px; height: 48px; }
-.search-filter-btn.on { color: var(--accent); }
+.search-filter-btn.on { color: var(--accent-text); }
 .search-filter-list { min-width: 260px; padding: 4px 0 10px; }
 .search-filter-list .section-label { padding: 10px 12px 6px; }
 .search-filter-list .vault-search-chips { padding: 0 12px 4px; flex-wrap: wrap; overflow: visible; }
@@ -219,7 +219,7 @@ a.settings-row:hover { background: var(--s2); }
 .search .section-label { font: 600 15px/1.3 var(--font); letter-spacing: 0; text-transform: none; color: var(--text-2); }
 .search .for-you-head .for-you-src { font-size: 12px; }
 .for-you-title { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
-.for-you-title svg { color: var(--accent); }
+.for-you-title svg { color: var(--accent-text); }
 .vault-search-about { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
 /* Settings › Database & Reset: the phone's Danger Zone header above Reset Everything. */
 .card .danger-zone { margin-top: 18px; color: var(--danger); }
@@ -266,5 +266,5 @@ button.default-reaction:active { transform: none; }
 .accent-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; border-radius: var(--radius);
   background: var(--bg); border: 1px solid var(--hair); }
 .accent-preview-mode { font: var(--t-cap); color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
-.accent-preview-link { font: var(--t-sub); color: var(--accent); }
+.accent-preview-link { font: var(--t-sub); color: var(--accent-text); }
 .accent-preview-fill { padding: 6px 14px; border-radius: 999px; background: var(--accent-grad); color: var(--on-accent); font: 600 13px var(--font); }

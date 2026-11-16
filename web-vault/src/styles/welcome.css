@@ -16,8 +16,8 @@
 .welcome-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 24px 0 0; padding: 0; list-style: none; }
 .welcome-chips li { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 999px;
   background: var(--s1); border: 1px solid var(--hair); font: 500 13px/1 var(--font); white-space: nowrap; }
-.welcome-chips svg { flex: none; color: var(--accent); }
-.welcome-learn { margin-top: 12px; min-height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: none; color: var(--accent);
+.welcome-chips svg { flex: none; color: var(--accent-text); }
+.welcome-learn { margin-top: 12px; min-height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: none; color: var(--accent-text);
   font: 500 13px/1 var(--font); }
 .welcome-learn:hover, .welcome-learn:focus-visible { color: var(--accent-light); }
 html[data-shell="learn"] .welcome-learn { visibility: hidden; } /* the page is already out around the phone (src/shell.js) */
@@ -52,7 +52,7 @@ html[data-shell="learn"] .welcome-learn { visibility: hidden; } /* the page is a
    stays the one filled button, and the line under it saying what TestFlight or Zapstore is. */
 .welcome-app { display: grid; gap: 6px; padding-bottom: 4px; }
 .welcome .welcome-get { display: flex; align-items: center; justify-content: center; box-sizing: border-box; border-color: var(--accent);
-  color: var(--accent); text-decoration: none; }
+  color: var(--accent-text); text-decoration: none; }
 .welcome .welcome-get:hover, .welcome .welcome-get:focus-visible { color: var(--accent-light); }
 .welcome-app-line { margin: 0; text-align: center; font: 400 13px/1.35 var(--font); color: var(--text-2); }
 /* "New to Nostr?" above the two doors (net/first-run.js). */

@@ -30,7 +30,7 @@
 .dm-dot { position: absolute; top: -1px; right: -2px; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--s1); }
 .dm-row-foot { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .dm-row-foot .dm-row-last { flex: 1; min-width: 0; }
-.dm-row.unread .dm-time { color: var(--accent); }
+.dm-row.unread .dm-time { color: var(--accent-text); }
 /* Unread (DMInboxView): the name and last line bold, the count in an accent pill. */
 .dm-row.unread .author-name { font-weight: 700; color: var(--text); }
 .dm-row.unread .dm-row-last { font-weight: 500; color: var(--text); opacity: .8; }

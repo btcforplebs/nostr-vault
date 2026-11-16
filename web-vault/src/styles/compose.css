@@ -55,7 +55,7 @@ body:has(.compose-sheet) .tabbar { display: none; }
 .compose-bar h2 { margin: 0; font: var(--t-headline); text-align: center; }
 .compose-cancel, .compose-post { min-height: 44px; padding: 0 18px; border-radius: 999px; font: 600 17px/1 var(--font);
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
-.compose-cancel { justify-self: start; color: var(--accent); }
+.compose-cancel { justify-self: start; color: var(--accent-text); }
 .compose-post { grid-column: 3; justify-self: end; color: var(--on-accent); background: var(--accent); border-color: transparent; }
 .compose-post:disabled { background: var(--glass); color: var(--text-3, rgb(255 255 255 / .35)); }
 .compose-sheet .compose-area { display: grid; grid-template-columns: 40px 1fr; column-gap: 12px; margin-top: 6px; }
@@ -67,7 +67,7 @@ body:has(.compose-sheet) .tabbar { display: none; }
 .compose-sheet .compose-area.dragging .compose { border: 1px dashed var(--accent); border-radius: var(--radius); }
 .compose-sheet .compose-tools { grid-column: 1 / -1; margin-top: 10px; }
 .compose-sheet .compose-add-photo, .compose-sheet .compose-add-emoji { width: 52px; height: 52px; min-height: 0; padding: 0; display: grid; place-items: center;
-  border-radius: 50%; border: 0; background: var(--accent-pale); color: var(--accent); }
+  border-radius: 50%; border: 0; background: var(--accent-pale); color: var(--accent-text); }
 .compose-sheet .compose-add-photo svg, .compose-sheet .compose-add-emoji svg { width: 24px; height: 24px; }
 /* Keyboard up (ComposeScreen useKeyboardFrame gives the visible area as --kb-top and --kb-height): the bar stays at the top, the
    tools sit on the keyboard, and the editor takes what's between and scrolls. Phone layout only: the desktop's compose

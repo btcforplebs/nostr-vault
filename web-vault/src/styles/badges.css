@@ -20,4 +20,4 @@
 .parent-preview.loading .sk-bar { display: block; height: 12px; border-radius: 4px; background: var(--s2); margin-top: 6px; }
 .parent-preview.loading { cursor: default; opacity: .8; }
 .parent-failed { display: flex; align-items: center; gap: 10px; padding: 6px 0; margin-bottom: 6px; color: var(--text-2); font-size: 13px; }
-.parent-failed button { margin-left: auto; background: none; border: 0; padding: 0; color: var(--accent); font: 600 13px var(--font); }
+.parent-failed button { margin-left: auto; background: none; border: 0; padding: 0; color: var(--accent-text); font: 600 13px var(--font); }
