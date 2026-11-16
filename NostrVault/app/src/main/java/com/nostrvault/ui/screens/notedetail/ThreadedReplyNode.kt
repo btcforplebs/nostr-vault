@@ -187,7 +187,10 @@ internal fun ThreadReplyRowItem(
     onFocus: (String) -> Unit,
     onReply: (String) -> Unit,
     onQuote: (String) -> Unit,
+    /** Tap on the bolt: zap the default amount at once. */
     onZapNote: (FeedNote) -> Unit,
+    /** Hold on the bolt: pick an amount. */
+    onLongPressZapNote: (FeedNote) -> Unit,
     onBroadcastNote: (FeedNote) -> Unit,
     /** Opens the Web of Trust map for an author. */
     onTrustWeb: (String) -> Unit,
@@ -250,6 +253,7 @@ internal fun ThreadReplyRowItem(
             onQuote = onQuote,
             onReply = onReply,
             onZap = { onZapNote(reply) },
+            onLongPressZap = { onLongPressZapNote(reply) },
             onBroadcast = { onBroadcastNote(reply) },
             onTrustWeb = if (viewModel.isOwnNote(reply.effectiveAuthor)) null else onTrustWeb,
             isOwnNote = viewModel.isOwnNote(reply.pubkey),

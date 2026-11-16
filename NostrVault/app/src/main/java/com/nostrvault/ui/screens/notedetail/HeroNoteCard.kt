@@ -65,6 +65,7 @@ internal fun HeroNoteCard(
     onRepostsClick: () -> Unit,
     onZapsClick: () -> Unit,
     onZap: () -> Unit,
+    onLongPressZap: () -> Unit,
     onShare: () -> Unit,
     onBroadcast: () -> Unit,
 ) {
@@ -336,6 +337,7 @@ internal fun HeroNoteCard(
                 onQuote = { onQuote() },
                 onLike = { onLike() },
                 onZap = { onZap() },
+                onLongPressZap = { onLongPressZap() },
                 onLongPressLike = { onLongPressLike() },
                 onBroadcast = onBroadcast,
             )

@@ -31,7 +31,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.nostrvault.ui.navigation.FloatingButtonRow
 import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.data.model.*
-import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.chromeFab
@@ -313,10 +312,6 @@ fun DashboardScreen(
         }
     }
 
-    // Zap sheet state
-    var zapNoteId by remember { mutableStateOf<String?>(null) }
-    val zapSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
     // Trigger load-more when near bottom
     val shouldLoadMore by remember {
         derivedStateOf {
@@ -590,16 +585,6 @@ fun DashboardScreen(
                 )
             }
         }
-    }
-
-    // Zap sheet
-    if (zapNoteId != null) {
-        CustomZapSheet(
-            sheetState = zapSheetState,
-            defaultAmount = viewModel.configStore.config.value.defaultZapAmount,
-            onDismiss = { zapNoteId = null },
-            onZap = { _, _ -> zapNoteId = null },
-        )
     }
 }
 

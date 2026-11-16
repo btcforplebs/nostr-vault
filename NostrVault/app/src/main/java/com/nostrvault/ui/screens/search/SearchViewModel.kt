@@ -144,13 +144,16 @@ class SearchViewModel @Inject constructor(
     /** After the send-delay countdown, so the banner can undo it. */
     fun repostNote(noteId: String) = pendingPostManager.startRepost(noteId, feedService)
 
-    fun zapNote(noteId: String, notePubkey: String) {
+    /** The Wallet default, same figure the feed and profile use (never under 1 sat). */
+    val defaultZapSats: Int get() = com.nostrvault.ui.components.quickZapSats(configStore.config.value.defaultZapAmount)
+
+    /** Tap on the bolt zaps [defaultZapSats]; the held bolt's sheet passes its amount and comment. */
+    fun zapNote(noteId: String, notePubkey: String, amount: Int = defaultZapSats, comment: String = "") {
+        val sats = amount.coerceAtLeast(1)
         viewModelScope.launch {
-            // The Wallet default, same figure the feed and profile use.
-            val sats = configStore.config.value.defaultZapAmount.coerceAtLeast(1)
             // The zap pill reports the result (docs/pills.md).
             notificationManager.zapping(com.nostrvault.ui.screens.feed.zapRecipientName(nostrService.profiles.value, notePubkey), sats) {
-                zapSendService.zapNote(noteId, notePubkey, sats)
+                zapSendService.zapNote(noteId, notePubkey, sats, message = comment)
             }.onSuccess { ZapFlight.launch(noteId) }
         }
     }

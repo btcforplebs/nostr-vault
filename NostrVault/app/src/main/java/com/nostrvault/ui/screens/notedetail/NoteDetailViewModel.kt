@@ -420,12 +420,17 @@ class NoteDetailViewModel @Inject constructor(
         }
     }
 
+    /** One tap on the bolt: the Wallet default (never under 1 sat), no sheet. */
+    fun quickZap(note: FeedNote) =
+        zapNote(note, com.nostrvault.ui.components.quickZapSats(configStoreRef.config.value.defaultZapAmount))
+
     /**
      * Real NIP-57 zap of [note] (effective id handles kind-6 reposts).
      * The zap pill reports the result (docs/pills.md); engagement re-fetches
      * after a delay so the kind-9735 receipt has time to propagate (iOS parity).
      */
     fun zapNote(note: FeedNote, amountSats: Int, comment: String = "") {
+        val amountSats = amountSats.coerceAtLeast(1)
         if (_isZapping.value) return
         viewModelScope.launch {
             _isZapping.value = true

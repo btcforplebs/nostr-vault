@@ -230,7 +230,7 @@ class ProfileViewModel @Inject constructor(
     /** Transient user-facing message (zap / block result). */
 
     /** The default zap amount from Wallet settings, in sats (iOS `defaultZapSats`). */
-    val defaultZapSats: Int get() = configStore.config.value.defaultZapAmount.coerceAtLeast(1)
+    val defaultZapSats: Int get() = com.nostrvault.ui.components.quickZapSats(configStore.config.value.defaultZapAmount)
 
     /**
      * Tagged lists other people's notes, so it passes the block list and the
@@ -879,12 +879,12 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    /** Zap a post (default amount); the zap pill reports the result. */
-    fun zapNote(noteId: String, notePubkey: String) {
-        val amount = defaultZapSats
+    /** Zap a post: tap sends the default, the held bolt's sheet its own amount. The zap pill reports the result. */
+    fun zapNote(noteId: String, notePubkey: String, amountSats: Int = defaultZapSats, comment: String = "") {
+        val amount = amountSats.coerceAtLeast(1)
         viewModelScope.launch {
             notificationManager.zapping(com.nostrvault.ui.screens.feed.zapRecipientName(nostrService.profiles.value, notePubkey), amount) {
-                zapSendService.zapNote(noteId, notePubkey, amount)
+                zapSendService.zapNote(noteId, notePubkey, amount, message = comment)
             }.onSuccess { ZapFlight.launch(noteId) }
         }
     }

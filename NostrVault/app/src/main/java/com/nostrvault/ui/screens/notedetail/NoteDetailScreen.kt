@@ -522,7 +522,9 @@ fun NoteDetailScreen(
                             onRepost = viewModel::repostNote,
                             onQuote = onQuote,
                             onReply = onReply,
-                            onZap = { zapTargetNote = parent },
+                            // Tap zaps the default, hold picks an amount (as in the feed).
+                            onZap = { viewModel.quickZap(parent) },
+                            onLongPressZap = { zapTargetNote = parent },
                             onBroadcast = { broadcastTargetNote = parent },
                             onTrustWeb = if (viewModel.isOwnNote(parent.effectiveAuthor)) null else openTrustWeb,
                             isOwnNote = viewModel.isOwnNote(parent.pubkey),
@@ -582,7 +584,8 @@ fun NoteDetailScreen(
                         onReactionsClick = { engagementSheet = EngagementSheetTarget(EngagementSheetKind.REACTIONS, null) },
                         onRepostsClick = { engagementSheet = EngagementSheetTarget(EngagementSheetKind.REPOSTS, null) },
                         onZapsClick = { engagementSheet = EngagementSheetTarget(EngagementSheetKind.ZAPS, null) },
-                        onZap = { zapTargetNote = focusedNote },
+                        onZap = { focusedNote?.let(viewModel::quickZap) },
+                        onLongPressZap = { zapTargetNote = focusedNote },
                         onShare = { shareNote(context, focusedNote!!) },
                         onBroadcast = { broadcastTargetNote = focusedNote },
                     )
@@ -656,7 +659,8 @@ fun NoteDetailScreen(
                         onFocus = { id -> scrollToNote(id) },
                         onReply = onReply,
                         onQuote = onQuote,
-                        onZapNote = { zapTargetNote = it },
+                        onZapNote = viewModel::quickZap,
+                        onLongPressZapNote = { zapTargetNote = it },
                         onBroadcastNote = { broadcastTargetNote = it },
                         onTrustWeb = openTrustWeb,
                         onModerateNote = { note, action ->
@@ -778,7 +782,7 @@ fun NoteDetailScreen(
     zapTargetNote?.let { target ->
         CustomZapSheet(
             sheetState = zapSheetState,
-            defaultAmount = viewModel.configStoreRef.config.value.defaultZapAmount,
+            defaultAmount = com.nostrvault.ui.components.quickZapSats(viewModel.configStoreRef.config.value.defaultZapAmount),
             onDismiss = { zapTargetNote = null },
             onZap = { amount, comment ->
                 viewModel.zapNote(target, amount, comment)

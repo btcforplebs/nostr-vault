@@ -760,8 +760,8 @@ class FeedViewModel @Inject constructor(
         .map { !it.nwcURI.isNullOrBlank() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), !configStore.config.value.nwcURI.isNullOrBlank())
 
-    /** One tap on the bolt: the default amount from Wallet settings, no sheet. */
-    fun quickZap(noteId: String) = zapNote(noteId, configStore.config.value.defaultZapAmount)
+    /** One tap on the bolt: the default amount from Wallet settings (never under 1 sat), no sheet. */
+    fun quickZap(noteId: String) = zapNote(noteId, com.nostrvault.ui.components.quickZapSats(configStore.config.value.defaultZapAmount))
 
     fun zapNote(noteId: String, amount: Int = 21, comment: String = "") {
         viewModelScope.launch {
