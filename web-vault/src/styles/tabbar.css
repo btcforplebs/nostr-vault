@@ -9,7 +9,7 @@
   display: flex; justify-content: space-around; align-items: center; }
 .tab { position: relative; flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
   color: var(--text); font: 400 10px/1.2 var(--font); }
-.tab.on { color: var(--accent); font-weight: 600; }
+.tab.on { color: var(--accent-text); font-weight: 600; }
 /* Every icon in a 24px-tall slot, so the labels line up whatever the glyph (the globe is drawn at 26). */
 .tab-icon { display: flex; align-items: center; justify-content: center; height: 24px; }
 .tab.on .tab-icon svg { stroke-width: 2; }

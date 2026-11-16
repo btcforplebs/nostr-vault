@@ -24,7 +24,7 @@
   container-type: inline-size; }
 .profile-tabs button { flex: 1 1 0; min-width: 0; min-height: 0; padding: 10px 0 8px; display: inline-flex;
   align-items: center; justify-content: center; gap: 4px; color: var(--text-2); }
-.profile-tabs button.on { color: var(--accent); }
+.profile-tabs button.on { color: var(--accent-text); }
 .profile-tabs .tab-count { font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-2); }
 /* Too narrow for the counts: icons alone (the iPhone's ViewThatFits). */
 @container (max-width: 320px) { .profile-tabs .tab-count { display: none; } }

@@ -17,7 +17,7 @@
 /* The cover: a 160 px tile, the photo cropped to fill it, a round × at the top right. */
 .article-cover { position: relative; }
 .article-cover-pick { display: block; width: 100%; height: 160px; padding: 0; overflow: hidden; border: 0; border-radius: var(--radius);
-  background: var(--s2); color: var(--accent); box-shadow: none; }
+  background: var(--s2); color: var(--accent-text); box-shadow: none; }
 .article-cover-pick:active { transform: none; }
 .article-cover-pick img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .article-cover-empty { display: inline-flex; align-items: center; gap: 8px; font: 600 16px var(--font); }
@@ -43,7 +43,7 @@
 .poll-option-remove { flex: none; width: 44px; height: 44px; min-height: 0; padding: 0; display: grid; place-items: center;
   border: 0; background: none; box-shadow: none; color: #ff453a; }
 .poll-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 4px;
-  border: 0; background: none; box-shadow: none; color: var(--accent); font: 600 16px var(--font); }
+  border: 0; background: none; box-shadow: none; color: var(--accent-text); font: 600 16px var(--font); }
 .poll-option-remove:active, .poll-add:active { transform: none; }
 .kind-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 4px 4px 4px 14px;
   border-radius: var(--radius); background: var(--s2); }

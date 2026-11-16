@@ -24,7 +24,7 @@ test("inbox row as the iPhone's: unread dot on the face, accent time, count only
   assert.match(src, /\{unread > 1 && <span class="dm-unread">/)
   assert.doesNotMatch(src, /\{unread > 0 && <span class="dm-unread">/)
   assert.match(css, /\.dm-row-last \{[^}]*-webkit-line-clamp: 2/)
-  assert.match(css, /\.dm-row\.unread \.dm-time \{ color: var\(--accent\); \}/)
+  assert.match(css, /\.dm-row\.unread \.dm-time \{ color: var\(--accent-text\); \}/)
 })
 
 test("their bubbles carry their face (DMThreadView), and a stranger's picture still waits", () => {

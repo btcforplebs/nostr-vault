@@ -86,7 +86,7 @@ test("napplet side: a dark island takes the dark set in Light; an older shell's 
   const o = napplet({ colors: { background: "#111", text: "#eee", primary: "#0af" } })
   o.start()
   await tick()
-  assert.deepEqual([...o.props], [["--bg", "#111"], ["--text", "#eee"], ["--accent", "#0af"]])
+  assert.deepEqual([...o.props], [["--bg", "#111"], ["--text", "#eee"], ["--accent", "#0af"], ["--accent-text", "#0af"]])
 })
 
 test("the shell side fires once per burst, for Mode, accent, the device, and another tab", async () => {

@@ -19,7 +19,7 @@
 .fold-avatar .avatar { display: block; border-radius: 50%; }
 .fold-avatar .tab-dot { top: -3px; left: auto; right: -3px; width: 11px; height: 11px; }
 .fold-action { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%;
-  background: rgb(var(--accent-rgb) / .15); color: var(--accent); }
+  background: rgb(var(--accent-rgb) / .15); color: var(--accent-text); }
 .fold-action svg { stroke-width: 2.2; }
 
 a.post-button { opacity: var(--fold-out); scale: calc(.85 + .15 * var(--fold-out)); transform-origin: 100% 100%; }

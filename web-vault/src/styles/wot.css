@@ -34,7 +34,7 @@
   border-radius: 10px; color: var(--text); font: var(--t-sub); text-align: left; }
 .wot-menu button:hover:not(:disabled) { background: var(--s2); }
 .wot-menu button:disabled { background: none; color: var(--text-3); }
-.wot-menu button svg { flex: none; color: var(--accent); }
+.wot-menu button svg { flex: none; color: var(--accent-text); }
 .wot-menu button span:last-child { flex: 1; display: grid; }
 .wot-menu small { color: var(--text-2); font: var(--t-cap); }
 .wot-menu .check { flex: none; width: 14px; color: var(--text); font-weight: 700; }
@@ -44,7 +44,7 @@
 .wot-tools { flex: none; display: flex; align-items: center; gap: 4px; padding: 0 4px; }
 .wot-tool { display: grid; place-items: center; width: 36px; height: 36px; min-height: 0; padding: 0; border: 0; border-radius: 50%;
   background: none; color: var(--text-2); cursor: pointer; }
-.wot-tool.on { color: var(--accent); }
+.wot-tool.on { color: var(--accent-text); }
 .wot-tool:hover { background: rgb(255 255 255 / .08); }
 .wot-tool:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
 .wot-tool-divider { width: 1px; height: 20px; margin: 0 2px; background: var(--hair); }
@@ -110,7 +110,7 @@
 .wot-actions { display: flex; gap: 8px; }
 /* The card's buttons (cardButton): 38 high capsules, the accent filled for Follow, a faint fill with accent words else. */
 .wot-action { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 38px; min-height: 0; padding: 0 8px;
-  border: 0; border-radius: 999px; background: rgb(255 255 255 / .08); color: var(--accent); font: 600 14px/1 var(--font); text-decoration: none; white-space: nowrap; }
+  border: 0; border-radius: 999px; background: rgb(255 255 255 / .08); color: var(--accent-text); font: 600 14px/1 var(--font); text-decoration: none; white-space: nowrap; }
 .wot-action svg { flex: none; }
 .wot-action.filled { background: var(--accent); color: var(--on-accent); }
 .wot-action:disabled { background: rgb(255 255 255 / .05); color: var(--text-3); }
@@ -123,9 +123,9 @@
 .wot-myweb-head b { display: block; font: 700 26px/1.15 var(--font-round); font-variant-numeric: tabular-nums; }
 .wot-myweb-head small { display: block; color: var(--text-2); font: 13px/1.35 var(--font); }
 .wot-count-row { border: 0; border-radius: 0; background: none; text-align: left; font: inherit; }
-.wot-count-row .dash-icon { color: var(--accent); }
+.wot-count-row .dash-icon { color: var(--accent-text); }
 .wot-count { font: 600 17px/1 var(--font-round); font-variant-numeric: tabular-nums; color: var(--text); }
-.wot-count-row.on .wot-count, .wot-count-check { color: var(--accent); }
+.wot-count-row.on .wot-count, .wot-count-check { color: var(--accent-text); }
 .wot-count-check { width: 12px; font-weight: 700; }
 
 /* The web as a list (WotList.jsx): a panel over the globe, under the top bar, scrolling on its own. */

@@ -15,7 +15,7 @@ button.emoji-set-head:hover { background: rgb(var(--ink) / .04); }
 .emoji-tile.dead { opacity: .55; }
 .emoji-tile figcaption { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-foot); color: var(--text-2); }
 .emoji-dot { position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
-.emoji-saved { position: absolute; top: 2px; left: 4px; font: 600 10px/1 var(--font); color: var(--accent); }
+.emoji-saved { position: absolute; top: 2px; left: 4px; font: 600 10px/1 var(--font); color: var(--accent-text); }
 .emoji-more { align-self: center; justify-self: center; color: var(--text-2); font: var(--t-foot); }
 .emoji-detail, .emoji-browse { display: grid; gap: 6px; padding: 8px 0; }
 .emoji-detail > button, .emoji-browse > button { justify-self: start; margin-left: var(--gutter); }

@@ -33,6 +33,6 @@ export function nvColors(t) {
   const c = (t && t.colors) || {}, out = {}
   if (c.background) out["--bg"] = c.background
   if (c.text) out["--text"] = c.text
-  if (c.primary) out["--accent"] = c.primary
+  if (c.primary) { out["--accent"] = c.primary; out["--accent-text"] = c.primary }
   return out
 }

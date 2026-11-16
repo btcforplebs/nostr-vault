@@ -6,7 +6,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync, readdirSync } from "node:fs"
 import vm from "node:vm"
-import { ACCENT_PRESETS, ACCENT_DEFAULT, ACCENT_KEY, ACCENT_CSS_KEY, accent, accentCss, accentTokens, contrast, normalizeHex, setAccent } from "../src/net/accent.js"
+import { ACCENT_PRESETS, ACCENT_DEFAULT, ACCENT_KEY, ACCENT_CSS_KEY, accent, accentCss, accentTokens, contrast, neon, normalizeHex, setAccent } from "../src/net/accent.js"
 
 const store = (init = {}) => { const m = new Map(Object.entries(init)); return { getItem: k => m.has(k) ? m.get(k) : null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) } }
 const read = p => readFileSync(new URL(p, import.meta.url), "utf8")
@@ -17,7 +17,8 @@ function fakeDoc() {
 function readable(hex) {
   const t = accentTokens(hex)
   assert.ok(contrast(t.dark["--accent"], "#1c1c1e") >= 4.5, `${hex} dark text ${t.dark["--accent"]}`)
-  assert.ok(contrast(t.light["--accent"], "#ffffff") >= 4.5, `${hex} light text ${t.light["--accent"]}`)
+  assert.ok(contrast(t.dark["--accent-text"], "#1c1c1e") >= 4.5, `${hex} dark text ${t.dark["--accent-text"]}`)
+  assert.ok(contrast(t.light["--accent-text"], "#ffffff") >= 3.5, `${hex} light text ${t.light["--accent-text"]}`)
   assert.ok(contrast(t.dark["--on-accent"], t.dark["--accent"]) >= 3, `${hex} dark label`)
   assert.ok(contrast(t.light["--on-accent"], t.light["--accent"]) >= 3, `${hex} light label`)
   assert.ok(contrast(t.light["--on-accent"], t.light["--accent-light"]) >= 3, `${hex} light label on the gradient's light end`)
@@ -42,12 +43,38 @@ test("any colour from the wheel reads too: 300 random colours, from neon yellow 
   for (let i = 0; i < 300; i++) readable("#" + Math.floor(rnd() * 0xffffff).toString(16).padStart(6, "0"))
 })
 
+test("the row Logen picked (nv-ui c5abde71): neon in Dark, exact buttons in Light, only pale #tag text darkened", () => {
+  const neonDark = { "#e67326": "#ea7013", "#ffb800": "#ffb800", "#3ddc84": "#1fde7f", "#00c2b8": "#00c2b8", "#2e7dff": "#327fff", "#662482": "#c641fc", "#ff2d87": "#ff2d87", "#a8071a": "#fc2c37" }
+  const darkened = ["#e67326", "#ffb800", "#3ddc84", "#00c2b8"]
+  assert.deepEqual(ACCENT_PRESETS.map(p => p.hex), Object.keys(neonDark))
+  for (const p of ACCENT_PRESETS) {
+    const t = accentTokens(p.hex)
+    assert.equal(t.dark["--accent"], neonDark[p.hex], `${p.name} dark`)
+    assert.equal(t.dark["--accent-text"], neonDark[p.hex], `${p.name} dark text`)
+    assert.equal(t.light["--accent"], p.hex, `${p.name} light fill is exact`)
+    if (darkened.includes(p.hex)) assert.ok(contrast(t.light["--accent-text"], "#ffffff") >= 4.5 && t.light["--accent-text"] !== p.hex, `${p.name} light text darkened`)
+    else assert.equal(t.light["--accent-text"], p.hex, `${p.name} light text exact`)
+  }
+})
+
 test("a pale colour keeps its own shade for fills and glows in light mode", () => {
   const t = accentTokens("#ffd60a")
-  assert.notEqual(t.light["--accent"], "#ffd60a") // deepened for text on white
+  assert.equal(t.light["--accent"], "#ffd60a")
+  assert.notEqual(t.light["--accent-text"], "#ffd60a") // deepened for text on white
   assert.equal(t.light["--accent-rgb"], "255 214 10")
-  assert.equal(t.dark["--accent"], "#ffd60a") // as picked in dark: it already reads on a card
   assert.equal(t.dark["--on-accent"], "#000") // white on yellow doesn't read
+})
+
+test("greys stay grey in Dark: no hue to push, only lighter", () => {
+  assert.equal(neon("#000000"), "#868686")
+  assert.equal(neon("#ffffff"), "#ffffff")
+})
+
+test("the CSS default is the orange's computed tokens, so no sheet is needed for it", () => {
+  const t = accentTokens(ACCENT_DEFAULT)
+  const tokens = read("../src/styles/tokens.css"), light = read("../src/styles/light.css")
+  for (const [k, v] of Object.entries(t.dark)) assert.ok(tokens.includes(`${k}: ${v};`), `tokens.css ${k}: ${v}`)
+  for (const [k, v] of Object.entries(t.light)) assert.ok(light.includes(`${k}: ${v};`), `light.css ${k}: ${v}`)
 })
 
 test("hex input: short, long, with or without #, anything else refused", () => {
@@ -61,7 +88,7 @@ test("picking saves the colour and its sheet; going back to orange removes both"
   const s = store(), doc = fakeDoc()
   setAccent("#0a84ff", s, doc)
   assert.equal(s.getItem(ACCENT_KEY), "#0a84ff")
-  assert.match(s.getItem(ACCENT_CSS_KEY), /html:root, html \[data-theme="dark"\] \{ --accent: #0a84ff;/)
+  assert.match(s.getItem(ACCENT_CSS_KEY), /html:root, html \[data-theme="dark"\] \{ --accent: #[0-9a-f]{6};/)
   assert.match(s.getItem(ACCENT_CSS_KEY), /html:root\[data-theme="light"\], html \[data-theme="light"\] \{/)
   assert.equal(doc.getElementById("nv-accent").textContent, s.getItem(ACCENT_CSS_KEY))
   setAccent(ACCENT_DEFAULT, s, doc)
@@ -83,10 +110,10 @@ test("the CSS glows follow the accent: no hard-coded orange left in the styleshe
   const left = []
   for (const d of dirs) for (const f of readdirSync(new URL(d, import.meta.url)).filter(f => f.endsWith(".css"))) {
     const css = read(d + f)
-    if (/rgba?\(\s*230[ ,]+115[ ,]+38/.test(css) && !/tokens\.css$/.test(f)) left.push(f)
+    if (/rgba?\(\s*230[ ,]+115[ ,]+38/.test(css) && !/(tokens|light)\.css$/.test(f)) left.push(f)
   }
   assert.deepEqual(left, [])
-  assert.match(read("../src/styles/tokens.css"), /--accent-rgb: 230 115 38;/)
+  assert.match(read("../src/styles/light.css"), /--accent-rgb: 230 115 38;/)
 })
 
 test("Appearance shows the accent row under Mode", () => {

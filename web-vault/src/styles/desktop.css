@@ -25,8 +25,8 @@
 .side-row { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; flex: none;
   width: 58px; min-height: 52px; padding: 4px 0; box-sizing: border-box; border-radius: 12px; color: var(--text-2); white-space: nowrap; }
 .side-row:hover { background: var(--s1); color: var(--text); }
-.side-row.on { background: none; color: var(--accent); }
-.side-row.on .side-icon { color: var(--accent); }
+.side-row.on { background: none; color: var(--accent-text); }
+.side-row.on .side-icon { color: var(--accent-text); }
 .side-row svg { flex: none; }
 .side-icon { position: relative; display: flex; flex: none; }
 .desk-side .side-label { font: 600 10px/1.1 var(--font); letter-spacing: .01em; }
@@ -60,7 +60,7 @@
 .side-switch { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; border-radius: 8px; border: 0;
   background: none; color: var(--text); font: var(--t-sub); text-align: left; justify-content: flex-start; box-shadow: none; }
 .side-switch:is(button):hover, .side-switch:focus-visible { background: var(--s3); }
-.side-switch.on::after { content: "✓"; margin-left: auto; color: var(--accent); font-weight: 700; }
+.side-switch.on::after { content: "✓"; margin-left: auto; color: var(--accent-text); font-weight: 700; }
 .side-switch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-pop-error { margin: 4px 12px; color: var(--danger); font: var(--t-foot); }
 
@@ -295,7 +295,7 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-side .side-fav .side-label { max-width: 58px; overflow: hidden; text-overflow: ellipsis; }
 .desk-side .side-fav .avatar { box-shadow: 0 0 0 1px var(--hair); }
 .desk-side .side-edit-btn { min-height: 44px; border: 0; background: none; font: inherit; cursor: pointer; }
-.desk-side .side-edit-btn.on { color: var(--accent); background: var(--s1); }
+.desk-side .side-edit-btn.on { color: var(--accent-text); background: var(--s1); }
 .rail-edit { position: fixed; z-index: 30; top: 12px; bottom: 12px; left: calc(var(--rail-w) + 6px); width: 340px; display: flex; flex-direction: column;
   gap: 10px; padding: 12px; overflow-y: auto; box-sizing: border-box; background: var(--s1); border: 1px solid var(--strong); border-radius: 14px;
   box-shadow: 0 16px 40px rgb(var(--shade) / calc(.65 * var(--shade-k))); scrollbar-width: thin; }

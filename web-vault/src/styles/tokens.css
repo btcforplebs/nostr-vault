@@ -10,11 +10,13 @@
   --s2: #2c2c2e;  /* a field or button inside a card */
   --s3: #3a3a3c;  /* overlays, pressed, disabled fills */
 
-  /* Accent (AppTheme.orange). */
-  --accent: #e67326;
-  --accent-rgb: 230 115 38;  /* the accent as channels, for glows and tints: rgb(var(--accent-rgb) / .3) */
-  --accent-light: #fa9447;
-  --accent-dark: #b35214;
+  /* Accent: the orange's neon (net/accent.js accentTokens(), neon()); a picked accent's sheet sets its own.
+     --accent fills buttons, rings and borders; --accent-text is accent text (the same colour in Dark). */
+  --accent: #ea7013;
+  --accent-text: #ea7013;
+  --accent-rgb: 234 112 19;  /* the accent as channels, for glows and tints: rgb(var(--accent-rgb) / .3) */
+  --accent-light: #ff8a3a;
+  --accent-dark: #c04a00;
   --accent-pale: rgb(var(--accent-rgb) / .10);
   --accent-line: rgb(var(--accent-rgb) / .30);  /* note-card border, OLED weight */
   --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-light));

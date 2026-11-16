@@ -7,7 +7,7 @@
 .fdash-title { display: flex; flex-direction: column; align-items: center; text-align: center; }
 .fdash-title strong { font: var(--t-headline); }
 .fdash-title span { font: var(--t-cap); color: var(--text-2); }
-.fdash-done { min-height: 40px; padding: 0 10px; border: 0; background: none; box-shadow: none; color: var(--accent);
+.fdash-done { min-height: 40px; padding: 0 10px; border: 0; background: none; box-shadow: none; color: var(--accent-text);
   font: var(--t-sub); font-weight: 700; cursor: pointer; }
 .fdash-done { justify-self: end; }
 .fdash-body { overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 20px; }
@@ -62,7 +62,7 @@
 .fdash-tile-count { align-self: flex-end; font: var(--t-headline); font-variant-numeric: tabular-nums; }
 
 .fdash-vault { flex-direction: row; align-items: center; gap: 10px; color: var(--text); text-align: left; box-shadow: none; }
-.fdash-accent { color: var(--accent); display: inline-flex; }
+.fdash-accent { color: var(--accent-text); display: inline-flex; }
 .fdash-vault-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .fdash-vault-text strong { font: var(--t-sub); font-weight: 600; }
 .fdash-vault-text span { font: var(--t-foot); color: var(--text-2); font-variant-numeric: tabular-nums; }

@@ -33,7 +33,7 @@
 .compose-target .compose-label .author-name { font: inherit; font-weight: 600; color: var(--text); }
 /* "reply to @name" under a reply's head (FeedNoteRow+Layout): small, quiet, the name still a link. */
 .reply-to { display: flex; align-items: center; gap: 4px; margin: 4px 0 -2px; color: var(--text-2); font: var(--t-foot); min-width: 0; }
-.reply-to svg { flex: none; color: var(--accent); opacity: .6; }
+.reply-to svg { flex: none; color: var(--accent-text); opacity: .6; }
 .reply-to .mention { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The iPhone's pulse when a Like or Repost lands (FeedNoteRow+NoteBody burst). */
 @media (prefers-reduced-motion: no-preference) {

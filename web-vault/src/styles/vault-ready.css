@@ -23,7 +23,7 @@
 /* A 20px slot per state, so the titles line up whatever the icon is. */
 .vr-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; }
 .vr-icon .nv-spin { width: 16px; height: 16px; vertical-align: 0; }
-.vr-done { border-radius: 50%; background: var(--accent-pale); color: var(--accent); }
+.vr-done { border-radius: 50%; background: var(--accent-pale); color: var(--accent-text); }
 .vr-wait::before { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--hair); }
 .vr-later { color: var(--text-2); font-weight: 700; letter-spacing: 1px; }
 

@@ -20,7 +20,7 @@
 .kind-poll-option.picked .kind-poll-bar { background: rgb(var(--accent-rgb) / .28); }
 .kind-poll-mark, .kind-poll-label, .kind-poll-pct { position: relative; }
 .kind-poll-mark { color: var(--text-2); width: 16px; text-align: center; }
-.kind-poll-option.picked .kind-poll-mark, .kind-poll-option.picked .kind-poll-pct { color: var(--accent); }
+.kind-poll-option.picked .kind-poll-mark, .kind-poll-option.picked .kind-poll-pct { color: var(--accent-text); }
 .kind-poll-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .kind-poll-pct { color: var(--text-2); font: 600 14px var(--font); font-variant-numeric: tabular-nums; }
 .kind-spinner { width: 10px; height: 10px; border: 2px solid var(--hair); border-top-color: var(--text-2); border-radius: 50%; }
@@ -40,7 +40,7 @@
 /* Translate (NoteTranslateButton): the translation beside an accent bar, then the button. */
 .translate { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .translate-text { margin: 0; padding-left: 10px; border-left: 2px solid rgb(var(--accent-rgb) / .6); color: rgb(var(--ink) / .92); font: 17px/1.4 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
-.translate-button { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--accent); font: 500 13px var(--font); }
+.translate-button { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--accent-text); font: 500 13px var(--font); }
 .translate-button.failed { color: rgb(255 69 58 / .8); }
 /* Event Info (EventBroadcastSheet). */
 .info-head { display: flex; align-items: center; justify-content: space-between; }
