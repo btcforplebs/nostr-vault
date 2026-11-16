@@ -79,7 +79,7 @@ export function useWotMini(ctx) {
 export function WotMini({ ctx, open = true, tools = null }) {
   const { web, counts, status, fresh, faces, points } = useWotMini(ctx)
   return (
-    <section class={open ? "sp-panel wot-mini" : "sp-panel wot-mini closed"} aria-label="Web of Trust">
+    <section class={open ? "sp-panel wot-mini" : "sp-panel wot-mini closed"} aria-label="Web of Trust" data-theme="dark">
       <header class="sp-head">
         <span class="sp-icon"><Icon d={WOT_GLOBE} size={15} /></span>
         <h3>Web of Trust</h3>

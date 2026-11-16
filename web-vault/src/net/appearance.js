@@ -28,9 +28,29 @@ export function resolveAppearance(choice, win = globalThis) {
   return win?.matchMedia?.("(prefers-color-scheme: light)")?.matches ? "light" : "dark"
 }
 
-/** Puts a resolved mode on the page: the data-theme attribute and the browser bar colour. */
+// The Web of Trust always draws Dark (Logen 2026-11-16): while a WoT screen is up (holdDark), the whole page paints
+// dark, so the tab bar, menus and buttons around the globe stay readable. Light comes back when the last one closes.
+let darkHolds = 0
+export const darkHeld = () => darkHolds > 0
+
+/** Paints the page dark until the returned release is called (once). WotScreen and the WoT napplet pane hold it. */
+export function holdDark(win = globalThis) {
+  darkHolds++
+  repaint(win)
+  let done = false
+  return () => {
+    if (done) return
+    done = true
+    darkHolds--
+    repaint(win)
+  }
+}
+const repaint = win => paintAppearance(resolveAppearance(appearance(win?.localStorage), win), win?.document, win?.localStorage)
+
+/** Puts a resolved mode on the page: the data-theme attribute and the browser bar colour. A dark hold wins. */
 export function paintAppearance(mode, doc = globalThis.document, storage = globalThis.localStorage) {
   if (!doc?.documentElement) return
+  if (darkHolds > 0) mode = "dark"
   if (mode === "light") doc.documentElement.dataset.theme = "light"
   else delete doc.documentElement.dataset.theme
   doc.querySelector?.('meta[name="theme-color"]')?.setAttribute("content", bar(mode, storage))
@@ -47,7 +67,7 @@ export function onAppearance(fn) { listeners.add(fn); return () => listeners.del
 
 /** At startup: paints the saved mode, and on Auto follows the device when it switches (sunset, Control Centre). */
 export function startAppearance(win = globalThis) {
-  const paint = () => paintAppearance(resolveAppearance(appearance(win?.localStorage), win), win?.document, win?.localStorage)
+  const paint = () => repaint(win)
   paint()
   win?.matchMedia?.("(prefers-color-scheme: light)")?.addEventListener?.("change", () => { if (appearance(win?.localStorage) === "auto") paint() })
   // Another tab changed it.

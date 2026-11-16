@@ -5,7 +5,8 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import vm from "node:vm"
-import { appearance, setAppearance, resolveAppearance, paintAppearance, APPEARANCE_KEY } from "../src/net/appearance.js"
+import { appearance, setAppearance, resolveAppearance, paintAppearance, holdDark, darkHeld, APPEARANCE_KEY } from "../src/net/appearance.js"
+import { globeDay } from "../src/net/wot-globe.js"
 
 const store = (init = {}) => { const m = new Map(Object.entries(init)); return { getItem: k => m.has(k) ? m.get(k) : null, setItem: (k, v) => m.set(k, String(v)) } }
 const win = light => ({ matchMedia: q => ({ matches: q.includes("light") && light }) })
@@ -66,4 +67,21 @@ test("light mode only overrides tokens dark mode defines, and covers the page co
 test("the trust globe screen stays dark in light mode", () => {
   assert.match(read("../src/screens/WotScreen.jsx"), /<main class="screen wot" data-theme="dark">/)
   assert.match(read("../src/styles/tokens.css"), /:root, \[data-theme="dark"\] \{/)
+})
+
+test("the Web of Trust is always Dark: a hold paints the page dark in Light until the last release", () => {
+  const doc = fakeDoc(), w = { ...win(false), document: doc, localStorage: store({ [APPEARANCE_KEY]: "light" }) }
+  paintAppearance("light", doc, w.localStorage)
+  assert.equal(doc.documentElement.dataset.theme, "light")
+  const a = holdDark(w), b = holdDark(w)
+  assert.equal(darkHeld(), true)
+  assert.equal(doc.documentElement.dataset.theme, undefined, "dark while WoT shows")
+  paintAppearance("light", doc, w.localStorage)
+  assert.equal(doc.documentElement.dataset.theme, undefined, "a mode change under a hold stays dark")
+  a(); a()
+  assert.equal(doc.documentElement.dataset.theme, undefined, "one release twice counts once; the other hold stands")
+  b()
+  assert.equal(darkHeld(), false)
+  assert.equal(doc.documentElement.dataset.theme, "light", "Light is back once WoT closes")
+  assert.equal(globeDay({ documentElement: { dataset: { theme: "light" } } }), false, "no daytime sky")
 })
