@@ -255,7 +255,10 @@ export const STAR_DAY = {
 }
 export const RIM_DAY = { follow: [47, 108, 179], outer: [106, 98, 168], bridge: [229, 115, 10], traced: [217, 164, 0] }
 /** True while the page is in Light: the globe draws its daytime colours. */
-export const globeDay = (doc = globalThis.document) => doc?.documentElement?.dataset?.theme === "light"
+/** The Web of Trust always draws Dark (Logen 2026-11-16): the daytime sky (STAR_DAY, RIM_DAY, wot.css .day-sky) is kept
+ *  but unused. Set true to bring it back in Light. */
+export const GLOBE_DAY_SKY = false
+export const globeDay = (doc = globalThis.document) => GLOBE_DAY_SKY && doc?.documentElement?.dataset?.theme === "light"
 /** A star's alpha for its front-ness (dotLight's 0.35..1 read as 0..1). */
 export const starAlpha = ([, , , back, front], light) => back + (front - back) * Math.max(0, Math.min(1, (light - 0.35) / 0.65))
 /** How bright a face past your follows is drawn, as Everyone's outer faces. */

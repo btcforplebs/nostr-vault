@@ -24,6 +24,7 @@ import { LayerMenu, WotToolbar, WotSearch } from "./WotTopBar.jsx"
 import { WotMyWeb, WotGlobeIcon } from "./WotMyWeb.jsx"
 import { WotList } from "./WotList.jsx"
 import { fetchPersonLists } from "../net/person.js"
+import { holdDark } from "../net/appearance.js"
 
 if (import.meta.env) import("../styles/wot.css")
 
@@ -33,6 +34,7 @@ const theirWebHash = pk => `#/wot/${pk}/web`
 const NOTE_MS = 2000
 
 export function WotScreen({ ctx, pubkey }) {
+  useEffect(() => holdDark(), []) // the Web of Trust is always Dark, and so is the page around it while it shows
   const { vault, account, session } = ctx
   const me = session.pubkey
   // You aren't one of your own follows, even when your list names you (TrustMap: myFollows minus you).

@@ -155,7 +155,7 @@ test("step 12: the WoT napplet's page spans the main area like the classic scree
 })
 
 test("in Light the WoT napplet draws the classic screen's daytime sky and day colours; the theme says the page's mode", () => {
-  const sky = read("src/styles/wot.css").match(/:root\[data-theme="light"\] \.wot-globe \{ background: ([^;]+);/)[1]
+  const sky = read("src/styles/wot.css").match(/:root\[data-theme="light"\] \.wot-globe\.day-sky \{ background: ([^;]+);/)[1]
   const nap = read("napplets/wot/index.html")
   assert.ok(nap.includes(`:root[data-sky="light"] body { background: ${sky}; }`), "same gradient as styles/wot.css")
   assert.match(nap, /STARS = day \? STAR_DAY : STAR/)
