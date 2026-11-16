@@ -15,7 +15,7 @@ import { fetchProfiles, getProfile } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { MEDIA_DTAG } from "./first-party.js"
 import { usePaneNapplet } from "./usePaneNapplet.js"
-import { askWords } from "./consent-words.js"
+import { askWords, oneAskAtATime } from "./consent-words.js"
 import "./napplet.css"
 
 const HEX = /^[0-9a-f]{64}$/
@@ -35,11 +35,12 @@ export function MediaPane({ ctx, filter = "all" }) {
   ctxRef.current = ctx
   const tilesNow = useRef(null) // the latest live tiles, handed over when the napplet is up
   const [asking, setAsking] = useState(null) // { words, resolve }
+  const [oneAsk] = useState(() => oneAskAtATime(setAsking))
   const filterRef = useRef(filter)
   filterRef.current = filter
   const { live, note } = usePaneNapplet(ctx, host, {
     dTag: MEDIA_DTAG, actions: { media: ["open", "notes", "tiles"] },
-    ask: ({ napplet, what, detail }) => new Promise(resolve => setAsking({ words: askWords(what, napplet, detail), resolve })),
+    ask: ({ napplet, what, detail }) => oneAsk(askWords(what, napplet, detail)),
     handlers: [
       { id: "shell-media-posted", title: "Posted in", archetype: "media", actions: ["postedIn"], conventions: [], deliver: p => {
         if (!HEX.test(p?.sha256 ?? "") || typeof p.url !== "string" || !/^https?:\/\//i.test(p.url)) return { ok: false, error: "invalid request" }

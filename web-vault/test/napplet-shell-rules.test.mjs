@@ -191,3 +191,17 @@ test("an outside napplet writes at most OUTSIDE_STORE_PER_MIN network events int
   await q(ours)
   assert.ok(ours.calls.stored.length > OUTSIDE_STORE_PER_MIN) // our own napplets aren't capped
 })
+
+test("step 12 review: no napplet gets a pin, bookmark, interest or set list signed, or deleted", () => {
+  for (const kind of [10001, 10003, 10015, 30000, 30003]) {
+    const tags = kind >= 30000 ? [["d", "x"]] : []
+    for (const grant of [{ firstParty: true }, { publish: "allow" }, null]) assert.equal(signDecision(grant, { kind, content: "", tags }).ok, false, `kind ${kind}`)
+    assert.equal(protectedKind(kind), true)
+    assert.equal(signDecision({ firstParty: true }, { kind: 5, content: "", tags: [["a", `${kind}:${"a".repeat(64)}:`]] }).ok, false, `delete ${kind}`)
+  }
+})
+
+test("step 12 review: a blossom: link's own ?xs= servers go through the fetch policy", () => {
+  const src = fs.readFileSync(new URL("../src/napplet/shell-deps.js", import.meta.url), "utf8")
+  assert.match(src, /candidateServers\(b, servers\)\.filter\(s => !blockedUrl\(s\)\)/)
+})

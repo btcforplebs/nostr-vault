@@ -22,8 +22,10 @@ export const PRIVATE_KINDS = new Set([
 
 /** Kinds no napplet may have signed, ours included: one bad list wipes the account's follows or relays. Lists are
  *  edited only by the app's own guarded editors (test/user-list-sign-guard.test.mjs); a napplet asks the shell.
- *  10030/30030: the emoji list and emoji sets (Tara, 2026-11-14): the Emoji napplet only reads them. */
-export const ACCOUNT_KINDS = new Set([0, 3, 10000, 10002, 10006, 10030, 10050, 10063, 30030])
+ *  10030/30030: the emoji list and emoji sets (Tara, 2026-11-14): the Emoji napplet only reads them.
+ *  10001 pins, 10003 bookmarks (with their private part), 10015 interests, 30000 follow sets, 30003 bookmark sets
+ *  (step 12 safety review): an empty one signed for a napplet would wipe the list, and the ask can't show that. */
+export const ACCOUNT_KINDS = new Set([0, 3, 10000, 10001, 10002, 10003, 10006, 10015, 10030, 10050, 10063, 30000, 30003, 30030])
 
 /** Kinds no napplet ever gets signed, ours included: a credential (relay AUTH, Blossom auth, HTTP auth, NWC), or the
  *  account's end (62, NIP-62 Request to Vanish). */

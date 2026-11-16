@@ -32,12 +32,35 @@ export function tagSummary(tags = []) {
   if (!counts.size) return "No tags."
   return `Tags: ${[...counts].map(([n, c]) => `${c} ${n}${TAG_NAMES[n] ? ` (${TAG_NAMES[n]})` : ""}`).join(", ")}.`
 }
-const withTags = (kind, tags, text) => (KIND_NAMES[kind] ? text : [text, tagSummary(tags)].filter(Boolean).join("\n\n"))
+// Every kind shows its tags (a named kind's hidden p/e tags too), and an addressable kind says it replaces the post
+// with the same d tag (step 12 safety review: a kind 30023 could silently replace one of your articles).
+const withTags = (kind, tags, text) => {
+  const named = KIND_NAMES[kind] && !(tags ?? []).some(t => Array.isArray(t) && t[0])
+  const d = kind >= 30000 && kind < 40000 ? (tags ?? []).find(t => Array.isArray(t) && t[0] === "d")?.[1] : undefined
+  const replaces = d !== undefined ? `This replaces your earlier one with the same name ("${d.slice(0, 60)}"), if you have one.` : ""
+  return [text, named ? "" : tagSummary(tags), replaces].filter(Boolean).join("\n\n")
+}
+/** The post's words for the ask, cut at 280 characters with a line saying how much more there is (step 12 review). */
+export const previewOf = content => {
+  const all = String(content ?? "")
+  return all.length > 280 ? `${all.slice(0, 280)}… (${all.length - 280} more characters)` : all
+}
+
+/** One ask on screen at a time: a napplet's second ask while one is open is refused, so it can't swap the post shown
+ *  under the user's finger (step 12 safety review). `show({ words, resolve })` puts the dialog up. */
+export function oneAskAtATime(show) {
+  let open = false
+  return words => {
+    if (open) return Promise.resolve(false)
+    open = true
+    return new Promise(resolve => show({ words, resolve: yes => { open = false; resolve(yes) } }))
+  }
+}
 
 /** The ask sheet's question for one request -> { title, body, yes, no }. */
 export function askWords(what, napplet, detail = {}) {
   const who = napplet?.title || napplet?.dTag || "This napplet"
-  const preview = String(detail.content ?? "").slice(0, 280)
+  const preview = previewOf(detail.content)
   if (what === "publish" && detail.kind === 5) {
     const n = (detail.tags ?? []).filter(t => (t[0] === "e" || t[0] === "a") && t[1]).length
     return { title: `${who} wants to delete ${n} of your posts`, body: [preview && `Reason: ${preview}`, "Relays that keep them are asked to drop them. This can't be undone."].filter(Boolean).join("\n\n"), yes: "Delete", no: "Don't delete" }

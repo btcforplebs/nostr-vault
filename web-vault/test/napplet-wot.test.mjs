@@ -148,3 +148,8 @@ test("WotPane: a card asked for by address (#/wot/<hex>) is spent only on a scen
   const pane = read("src/napplet/WotPane.jsx")
   assert.match(pane, /const built = theirRoot \? !!theirs : !!web\n\s*const first = built && open && opened\.current !== open \? open : null\n\s*if \(built\) opened\.current = open/)
 })
+
+test("step 12: the WoT napplet's page spans the main area like the classic screen, not the 640px column", () => {
+  const css = fs.readFileSync(new URL("../src/napplet/napplet.css", import.meta.url), "utf8")
+  assert.match(css, /\.wot-pane \{[^}]*max-width: none;[^}]*padding: 0;/)
+})
