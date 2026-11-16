@@ -8,7 +8,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName, NoteCard } from "../components/NoteCard.jsx"
 import { ArticleCard } from "../components/ArticleCard.jsx"
-import { NoteText, TapImage } from "../components/NoteText.jsx"
+import { Mention, NoteText, TapImage } from "../components/NoteText.jsx"
+import { parseRef } from "../net/quotes.js"
 import { MediaImage } from "../components/MediaImage.jsx"
 import { imageItem } from "../net/note-media.js"
 import { fipsRef } from "../net/fips-ref.js"
@@ -25,7 +26,7 @@ import { VaultSearch } from "./VaultSearch.jsx"
 import { BlossomGallery } from "./BlossomGallery.jsx"
 import { newestByMode, readSeen, writeSeen, markSeen, baseline, newModes } from "../net/vault-new.js"
 import {
-  MODES, FILTERS, CLEARABLE, ALL_TITLE, isMode, defaultFilter, nextFilter, validFilter, previewOf, highlightSource, followersOf, followersInWeb, followersSeenAt, markFollowersSeen,
+  MODES, FILTERS, CLEARABLE, ALL_TITLE, isMode, defaultFilter, nextFilter, validFilter, previewOf, cutPreview, highlightSource, followersOf, followersInWeb, followersSeenAt, markFollowersSeen,
   readOwn, readInbound, readOlder, fetchVault, READ_PAGE, keepVault, keptVault, sinceKept,
   readLists, keepLists, mergeLists, itemsFor, peopleOf, clampSince,
 } from "../net/vault-lists.js"
@@ -418,7 +419,7 @@ export function ActivityRow({ row, trusted = () => false, unread = false, onFoll
       <div class="notif-who"><Names who={row.actors} /> <ReactionText text={verb(row)} load={ok} /></div>
       {["reply", "mention", "quote", "article", "highlight"].includes(row.kind)
         ? <NoteText content={row.preview} images={ok} />
-        : row.preview ? <div class="repost-line vault-about"><span>{cut(row.preview)}</span></div> : null}
+        : row.preview ? <div class="repost-line vault-about"><span><PreviewText text={cut(row.preview)} /></span></div> : null}
       {row.images.length > 0 && <div class="vault-thumbs">{row.images.slice(0, 4).map(u => <ActivityThumb key={u} url={u} by={row.imagesBy} load={trusted(row.imagesBy)} />)}</div>}
     </article>
   )
@@ -473,10 +474,21 @@ function Who({ who }) {
 
 function About({ note }) {
   if (!note) return <div class="repost-line vault-about muted">a note</div>
-  return <div class="repost-line vault-about"><span style="flex: none"><AuthorName pubkey={note.pubkey} />:</span><span>{cut(previewOf(note)) || "(media)"}</span></div>
+  const text = previewOf(note)
+  return <div class="repost-line vault-about"><span style="flex: none"><AuthorName pubkey={note.pubkey} />:</span><span>{text ? <PreviewText text={cut(text)} /> : "(media)"}</span></div>
 }
 
-const cut = s => s.length > 140 ? s.slice(0, 140) + "…" : s
+const cut = s => cutPreview(s)
+
+/** A preview line with its nostr:npub / nprofile people as @names linking to their profile (NoteText's Mention: the
+ *  short npub until the name loads); the rest stays plain text. */
+function PreviewText({ text }) {
+  return String(text).split(/(nostr:[a-z0-9]+)/i).map((s, i) => {
+    if (i % 2 === 0) return s
+    const q = parseRef(s.slice(6))
+    return q?.type === "profile" ? <Mention key={i} pubkey={q.pubkey} /> : s
+  })
+}
 
 /** A NIP-84 highlight: the quoted text and where it came from. */
 function HighlightCard({ event, trusted = () => false }) {

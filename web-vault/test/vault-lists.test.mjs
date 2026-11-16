@@ -334,3 +334,16 @@ test("the Notes, Articles and Highlights tabs leave out what tags you from outsi
   assert.deepEqual(itemsFor("highlights", "all", { inbound, me: ME, trusted }), [])
   assert.equal(itemsFor("notes", "all", { inbound, me: ME, trusted: new Set() }).length, 0, "no web yet: fails closed")
 })
+
+test("cutPreview: about 140 characters, never inside a nostr: reference", async () => {
+  const { cutPreview } = await import("../src/net/vault-lists.js")
+  const { npubEncode } = await import("nostr-tools/nip19")
+  assert.equal(cutPreview("short"), "short")
+  assert.equal(cutPreview("a".repeat(150)), "a".repeat(140) + "…")
+  const ref = `nostr:${npubEncode(ALICE)}`
+  const text = `${"x".repeat(130)} ${ref} and more`
+  const out = cutPreview(text)
+  assert.ok(out.includes(ref), "the npub the cut landed in is kept whole")
+  assert.equal(out, `${"x".repeat(130)} ${ref}…`)
+  assert.equal(cutPreview(`${"x".repeat(130)} ${ref}`), `${"x".repeat(130)} ${ref}`, "no … when the reference ends the text")
+})

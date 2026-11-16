@@ -329,6 +329,18 @@ function ago(ts, now = Date.now() / 1000) {
   const s = Math.max(0, now - ts)
   return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : s < 604800 ? `${Math.floor(s / 86400)}d` : new Date(ts * 1000).toLocaleDateString()
 }
+/** A row's words -> text and profile parts only (words): a link, picture or hashtag stays its text, a note reference
+ *  leaves (a line can't draw its card). */
+function wordParts(text) {
+  const out = []
+  for (const p of tokenize(text)) {
+    if (p.t === "profile") { out.push(p); continue }
+    const v = p.t === "note" ? "" : p.t === "tag" ? `#${p.v}` : p.v
+    if (out.length && out[out.length - 1].t === "text") out[out.length - 1].v += v
+    else if (v) out.push({ t: "text", v })
+  }
+  return out
+}
 // ---- end pure ----
 
 const n = window.napplet || {}
@@ -400,6 +412,16 @@ function body(ev) {
   }
   for (const url of cards) media.append(linkCard(url))
   const f = document.createDocumentFragment(); f.append(div); if (media.childElementCount) f.append(media); return f
+}
+/** A row's words (Vault and Notifications lines): text, with nostr:npub / nprofile people as @names that open their
+ *  profile (the short key until the name loads, as body's). */
+function words(text) {
+  return wordParts(text).map(p => {
+    if (p.t === "text") return p.v
+    const a = el("a"); a.href = "#"; a.dataset.pk = p.v; a.dataset.at = "1"; want(p.v); paintWho(a)
+    a.onclick = e => { e.preventDefault(); e.stopPropagation(); openProfile(p.v) }
+    return a
+  })
 }
 /** Text with its inline marks as elements (never HTML: textContent only). */
 function marked(text) {
@@ -858,7 +880,7 @@ function engageRow(r) {
   const a = el("article", `engage${r.open ? " tap" : ""}`)
   const f = r.faces[0] ?? {}, av = el("span", "av", (f.name || "?").slice(0, 1).toUpperCase()); if (f.picture) picture(av, f.picture)
   const col = el("div"), who = el("div"); who.append(el("b", "", r.who), ` ${r.what}`); col.append(who)
-  if (r.about) { const ab = el("div", "nabout"); if (r.about.name) ab.append(el("b", "", `${r.about.name}: `)); ab.append(r.about.text); col.append(ab) }
+  if (r.about) { const ab = el("div", "nabout"); if (r.about.name) ab.append(el("b", "", `${r.about.name}: `)); ab.append(...words(r.about.text)); col.append(ab) }
   const t = el("time", "", ago(r.at)); t.dateTime = new Date(r.at * 1000).toISOString()
   a.append(av, col, t)
   if (r.open) { a.tabIndex = 0; a.setAttribute("role", "link"); a.onclick = () => vask("open", { id: r.id }); a.onkeydown = e => { if (e.key === "Enter") a.onclick() } }
@@ -1094,9 +1116,9 @@ function notifRow(r, from = "notifications") {
   if (r.unread) { const d = el("span", "ndot"); d.setAttribute("role", "img"); d.setAttribute("aria-label", "New"); top.append(d) }
   const who = el("div", "nwho"); who.append(el("b", "", r.who), ` ${r.verb}`)
   col.append(top, who)
-  if (r.text) col.append(el("div", "nwords", r.text))
+  if (r.text) { const w = el("div", "nwords"); w.append(...words(r.text)); col.append(w) }
   if (r.about) {
-    if (r.about.text) col.append(el("div", "nabout", r.about.text))
+    if (r.about.text) { const ab = el("div", "nabout"); ab.append(...words(r.about.text)); col.append(ab) }
     if (r.about.thumbs.length) { const th = el("div", "nthumbs"); for (const u of r.about.thumbs) { const i = el("img"); i.alt = ""; picture(i, u); th.append(i) } col.append(th) }
   }
   a.append(badge, col)
