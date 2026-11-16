@@ -1,6 +1,7 @@
 package com.nostrvault.ui.theme
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
@@ -23,6 +24,13 @@ object AppPalette {
      * by NavGraph; [NostrVaultTheme] folds it into [light].
      */
     var overGlobe by mutableStateOf(false)
+
+    /**
+     * How many Web of Trust globes are open as dialogs (TrustWebDialog, from a
+     * note, a profile, search). Above zero the app draws dark, as for
+     * [overGlobe], so the globe's buttons and bars stay readable in Light.
+     */
+    var globeDialogs by mutableIntStateOf(0)
 
     /**
      * The mode the user chose, before [overGlobe] folds it to dark: the globe

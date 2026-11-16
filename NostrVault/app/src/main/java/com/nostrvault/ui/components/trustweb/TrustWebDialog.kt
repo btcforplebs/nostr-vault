@@ -34,6 +34,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.data.model.TrustPath
+import com.nostrvault.ui.theme.AppPalette
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import kotlinx.coroutines.flow.first
 
@@ -58,6 +59,11 @@ fun TrustWebDialog(
     onProfileClick: ((String) -> Unit)?,
     onDismiss: () -> Unit,
 ) {
+    // The globe is always Dark, so the app (and this dialog's chrome) draws dark while it is open.
+    DisposableEffect(Unit) {
+        AppPalette.globeDialogs++
+        onDispose { AppPalette.globeDialogs-- }
+    }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),

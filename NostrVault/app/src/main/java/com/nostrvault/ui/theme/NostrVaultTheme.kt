@@ -104,7 +104,7 @@ fun NostrVaultTheme(
     if (appearanceMode != null) {
         val chosen = AppPalette.isLight(appearanceMode, systemDark)
         if (AppPalette.lightChosen != chosen) AppPalette.lightChosen = chosen
-        val light = chosen && !AppPalette.overGlobe
+        val light = chosen && !AppPalette.overGlobe && AppPalette.globeDialogs == 0
         // Set before the tree below reads any token, so the first frame is right.
         if (AppPalette.light != light) AppPalette.light = light
         val view = LocalView.current
