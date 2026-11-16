@@ -6,6 +6,9 @@ struct BlockedSettingsView: View {
     
     @State private var searchInput = ""
     @State private var isSearching = false
+    /// Block Someone's choice: in the list's encrypted part instead of its
+    /// public tags.
+    @State private var blockPrivately = false
     /// Bumped when the mute list's private part is reopened, which the
     /// config doesn't publish.
     @State private var privateRevision = 0
@@ -37,15 +40,24 @@ struct BlockedSettingsView: View {
                         .autocorrectionDisabled()
                     Button("Block") {
                         if let npub = NpubValidation.typedNpub(searchInput) {
-                            configService.blockProfile(npub)
+                            if blockPrivately {
+                                configService.blockPrivately(npub)
+                            } else {
+                                configService.blockProfile(npub)
+                            }
                             searchInput = ""
                         }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(NpubValidation.typedNpub(searchInput) == nil)
                 }
+                Toggle("Block privately", isOn: $blockPrivately)
             } header: {
                 Text("Block Someone").settingInfo(.accountBlocked)
+            } footer: {
+                Text(blockPrivately
+                     ? "Only you will see this block. It is encrypted in your block list and shows once your relays have it."
+                     : "Anyone can see this block in your block list.")
             }
 
             let lists = sections

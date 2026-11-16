@@ -26,7 +26,9 @@ import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -57,6 +59,26 @@ class BlockedSettingsViewModel @Inject constructor(
     fun block(npub: String) {
         configStore.blockProfile(npub)
         publishMuteListChange(add = listOf(npub))
+    }
+
+    /**
+     * Blocks [npub] privately: in the mute list's encrypted part, and out of
+     * its public "p" tags. Nothing is stored here first; the block shows once
+     * the published list is read back. iOS: ConfigService.blockPrivately.
+     */
+    fun blockPrivately(npub: String) {
+        val cfg = configStore.config.value
+        val key = cfg.activeOrOwnerNpub()
+        if (npub in cfg.privateBlockedNpubsPerAccount[key].orEmpty()) return
+        // Nothing is kept locally, so leaving the screen mid-publish must not
+        // cancel it: the block would silently never land.
+        viewModelScope.launch {
+            withContext(NonCancellable) {
+                nostrService.publishMuteListChange(
+                    key, add = listOf(npub), localBlocks = cfg.publicBlockedFor(key).filter { it != npub }, privately = true,
+                )?.let { notificationManager.showError(it) }
+            }
+        }
     }
 
     fun unblock(npub: String) {
@@ -99,6 +121,7 @@ fun BlockedSettingsScreen(
     }
 
     var input by remember { mutableStateOf("") }
+    var privately by remember { mutableStateOf(false) }
     val canBlock = input.trim().startsWith("npub1")
 
     Scaffold(
@@ -146,15 +169,32 @@ fun BlockedSettingsScreen(
                 Spacer(Modifier.width(8.dp))
                 Button(
                     onClick = {
-                        viewModel.block(input.trim())
+                        if (privately) viewModel.blockPrivately(input.trim()) else viewModel.block(input.trim())
                         input = ""
                     },
                     enabled = canBlock,
                     colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                 ) { Text("Block") }
             }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) {
+                Text("Block privately", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = privately,
+                    onCheckedChange = { privately = it },
+                    colors = SwitchDefaults.colors(checkedTrackColor = colors.primary),
+                )
+            }
             Text(
-                text = "Enter an npub to block it. Blocked profiles are hidden from your feed.",
+                text = if (privately) {
+                    "Enter an npub to block it. Only you will see this block. It is encrypted in your block list " +
+                        "and shows once your relays have it."
+                } else {
+                    "Enter an npub to block it. Anyone can see this block in your block list. " +
+                        "Blocked profiles are hidden from your feed."
+                },
                 color = SecondaryText,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 6.dp),

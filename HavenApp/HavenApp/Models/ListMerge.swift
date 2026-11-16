@@ -105,6 +105,52 @@ enum ListMerge {
         return .content(encrypted)
     }
 
+    /// The private part of a kind 10000 with people put in: the decrypted
+    /// `plaintext` with a `p` entry for each of `add` (hex) it doesn't hold
+    /// yet, as JSON again. Nil when it is not exactly a JSON array of string
+    /// arrays: writing it back would then lose what it holds.
+    static func privateAdded(plaintext: String, add: [String]) -> String? {
+        guard let data = plaintext.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [Any] else { return nil }
+        var tags: [[String]] = []
+        for item in array {
+            guard let tag = item as? [Any] else { return nil }
+            let strings = tag.compactMap { $0 as? String }
+            guard strings.count == tag.count else { return nil }
+            tags.append(strings)
+        }
+        let edited = edit(name: "p", base: tags, add: add, remove: [])
+        guard let out = try? JSONSerialization.data(withJSONObject: edited, options: [.withoutEscapingSlashes]) else { return nil }
+        return String(data: out, encoding: .utf8)
+    }
+
+    /// `content` with `add` (hex) put in its encrypted `p` entries: a private
+    /// block. It is encrypted again with the scheme it came in (NIP-04 when it
+    /// has "?iv=", else NIP-44); an empty content starts a NIP-44 one. Fails
+    /// when there is no one to add, when the content can't be opened (a new
+    /// one would lose what it holds), or when the new content doesn't open
+    /// again to the edited part in the same scheme, as in `removingPrivate`.
+    /// Android: ListMerge.addingPrivate.
+    static func addingPrivate(content: String, add: [String],
+                              decrypt: (String, Bool) async throws -> String,
+                              encrypt: (String, Bool) async throws -> String) async -> PrivateEdit {
+        guard !add.isEmpty else { return .failed }
+        let ciphertext = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nip04 = !ciphertext.isEmpty && MuteList.isNip04(ciphertext)
+        let plaintext: String
+        if ciphertext.isEmpty {
+            plaintext = "[]"
+        } else {
+            guard let opened = try? await decrypt(ciphertext, nip04) else { return .failed }
+            plaintext = opened
+        }
+        guard let edited = privateAdded(plaintext: plaintext, add: add),
+              let encrypted = try? await encrypt(edited, nip04), !encrypted.isEmpty,
+              MuteList.isNip04(encrypted) == nip04,
+              let reopened = try? await decrypt(encrypted, nip04), reopened == edited else { return .failed }
+        return .content(encrypted)
+    }
+
     /// What an edit builds on.
     enum EditBase<Event> {
         /// The newest list, published or already held here.

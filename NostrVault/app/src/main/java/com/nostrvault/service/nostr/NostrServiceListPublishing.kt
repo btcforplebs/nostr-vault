@@ -263,6 +263,9 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * the active account is no longer [accountNpub]).
      * [privateBefore] is the account's private blocks before an unblock took
      * the person off this device's list.
+     * [privately]: [add] goes in the encrypted part only, and out of the
+     * public "p" tags. Nothing is kept on this device first, so when it can't
+     * be published the person is told it wasn't saved.
      */
     internal suspend fun NostrService.publishMuteListChangeImpl(
         accountNpub: String,
@@ -270,6 +273,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         remove: List<String>,
         localBlocks: List<String>,
         privateBefore: Collection<String> = emptyList(),
+        privately: Boolean = false,
     ): String? {
         val forceOwner = forceOwnerFor(accountNpub) ?: run {
             Log.w(TAG, "publishMuteList: ${accountNpub.take(12)} is not the owner or active account; not published")
@@ -278,7 +282,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val author = npubToHex(accountNpub) ?: ownerHexPubkey
         if (author.isBlank()) return null
         val action = if (add.isEmpty()) "Unblock" else "Block"
-        val switched = "$action saved on this device only: the account changed before your mute list was published."
+        val notSaved = if (privately) "Private block not saved" else "$action saved on this device only"
+        val switched = "$notSaved: the account changed before your mute list was published."
         // Locked before the lookup, which can wait 6 s: a switch in that time used to sign this account's list with
         // the key of the account switched to. The active account must be the one whose list is fetched, and stay so.
         val lock = lockPostingAccount()
@@ -302,26 +307,37 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             ListMerge.EditBase.None -> localBlocks.filter { it !in private }.mapNotNull { npubToHex(it) }.map { listOf("p", it) } to ""
             is ListMerge.EditBase.Unknown -> {
                 Log.w(TAG, "kind 10000: list not known (${lookup.answered}/${lookup.asked} relays answered, ${own.size} own); not published")
-                if (base.why == ListMerge.NO_RELAY_LIST) return "$action saved on this device only. ${ListMerge.NO_RELAY_LIST}"
-                return "$action saved on this device only: your relays didn't send your mute list, " +
+                if (base.why == ListMerge.NO_RELAY_LIST) return "$notSaved. ${ListMerge.NO_RELAY_LIST}"
+                return "$notSaved: your relays didn't send your mute list, " +
                     "and publishing without it would erase blocks set in other apps. Try again later."
             }
         }
         val removeHex = remove.mapNotNull { npubToHex(it) }
-        // An unblock takes the person out of the encrypted part too, or
-        // reading the published list back blocks them again.
-        val content = when (
-            val edited = ListMerge.removingPrivate(
+        val addHex = add.mapNotNull { npubToHex(it) }
+        // A private block goes in the encrypted part. An unblock takes the
+        // person out of it too, or reading the published list back blocks
+        // them again.
+        val privateEdit = if (privately) {
+            ListMerge.addingPrivate(
+                baseContent, addHex,
+                decrypt = { text, nip04 -> decryptOwnList(author, text, nip04) },
+                encrypt = { text, nip04 -> encryptOwnList(author, text, nip04) },
+            )
+        } else {
+            ListMerge.removingPrivate(
                 baseContent, removeHex,
                 knownPrivate = remove.any { it in private || it in privateBefore },
                 decrypt = { text, nip04 -> decryptOwnList(author, text, nip04) },
                 encrypt = { text, nip04 -> encryptOwnList(author, text, nip04) },
             )
-        ) {
-            ListMerge.PrivateEdit.Failed -> return "$action saved on this device only: your private blocks couldn't be updated"
-            is ListMerge.PrivateEdit.Done -> edited.content
         }
-        val tags = ListMerge.edit("p", baseTags, add.mapNotNull { npubToHex(it) }, removeHex)
+        val content = when (privateEdit) {
+            ListMerge.PrivateEdit.Failed -> return "$notSaved: your private blocks couldn't be updated"
+            is ListMerge.PrivateEdit.Done -> privateEdit.content
+        }
+        // A private block also comes out of the public tags.
+        val tags = if (privately) ListMerge.edit("p", baseTags, emptyList(), addHex)
+        else ListMerge.edit("p", baseTags, addHex, removeHex)
         val event = try {
             signEventAsync(
                 kind = 10000, content = content, tags = tags, forceOwner = forceOwner, lockedTo = lock,
@@ -334,7 +350,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         } catch (e: Exception) {
             Log.e(TAG, "kind 10000 not signed: ${e.message}")
             null
-        } ?: return "$action saved on this device only: your signer didn't answer"
+        } ?: return "$notSaved: your signer didn't answer"
         // Only the list of the account it was fetched for, whatever the signer did.
         if (!event.pubkey.equals(author, ignoreCase = true)) {
             Log.w(TAG, "kind 10000 signed as ${event.pubkey.take(8)}, list is ${author.take(8)}'s; not published")

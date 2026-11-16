@@ -11,13 +11,18 @@ extension NostrService {
     /// `localBlocks`, this device's blocks after the change, is published
     /// only when the account has no list anywhere. When the list can't be
     /// fetched nothing is published and the person is told why.
+    /// `privately`: `add` goes in the encrypted part only, and out of the
+    /// public `p` tags. Nothing is kept on this device first, so when it
+    /// can't be published the person is told it wasn't saved.
     @MainActor
-    func publishMuteListChange(for accountNpub: String, add: [String] = [], remove: [String] = [], localBlocks: [String]) {
+    func publishMuteListChange(for accountNpub: String, add: [String] = [], remove: [String] = [], localBlocks: [String],
+                               privately: Bool = false) {
         let hexKeys: ([String]) -> [String] = { npubs in
             npubs.compactMap { Bech32.decode($0.trimmingCharacters(in: .whitespacesAndNewlines))?.hexString }
         }
         guard let author = Bech32.decode(accountNpub.trimmingCharacters(in: .whitespacesAndNewlines))?.hexString else { return }
         let action = add.isEmpty ? "Unblock" : "Block"
+        let notSaved = privately ? "Private block not saved" : "\(action) saved on this device only"
 
         Task {
             // The relays the mute list is read from at launch, so a block
@@ -36,7 +41,7 @@ extension NostrService {
                 baseAt = nil
             case .noRelayList:
                 ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
-                                               message: "\(action) saved on this device only. \(ListMerge.noRelayListMessage)",
+                                               message: "\(notSaved). \(ListMerge.noRelayListMessage)",
                                                tone: .error)
                 return
             case .unknown:
@@ -45,32 +50,42 @@ extension NostrService {
                 #endif
                 ActionToastManager.shared.show(
                     icon: "exclamationmark.triangle.fill",
-                    message: "\(action) saved on this device only: your relays didn't send your mute list, and publishing without it would erase blocks set in other apps. Try again later.",
+                    message: "\(notSaved): your relays didn't send your mute list, and publishing without it would erase blocks set in other apps. Try again later.",
                     tone: .error)
                 return
             }
-            // An unblock takes the person out of the encrypted part too, or
-            // reading the published list back blocks them again.
+            // A private block goes in the encrypted part. An unblock takes the
+            // person out of it too, or reading the published list back blocks
+            // them again.
             let content: String
             let privateHex = MuteListStore.shared.privatePubkeys(forAccount: accountNpub)
-            switch await ListMerge.removingPrivate(
-                content: base.content, remove: hexKeys(remove),
-                knownPrivate: hexKeys(remove).contains { privateHex.contains($0.lowercased()) },
-                decrypt: { try await MuteListStore.decryptToSelf($0, me: author, nip04: $1) },
-                encrypt: { try await MuteListStore.encryptToSelf($0, me: author, nip04: $1) }) {
+            let privateEdit = privately
+                ? await ListMerge.addingPrivate(
+                    content: base.content, add: hexKeys(add),
+                    decrypt: { try await MuteListStore.decryptToSelf($0, me: author, nip04: $1) },
+                    encrypt: { try await MuteListStore.encryptToSelf($0, me: author, nip04: $1) })
+                : await ListMerge.removingPrivate(
+                    content: base.content, remove: hexKeys(remove),
+                    knownPrivate: hexKeys(remove).contains { privateHex.contains($0.lowercased()) },
+                    decrypt: { try await MuteListStore.decryptToSelf($0, me: author, nip04: $1) },
+                    encrypt: { try await MuteListStore.encryptToSelf($0, me: author, nip04: $1) })
+            switch privateEdit {
             case .content(let edited):
                 content = edited
             case .failed:
                 ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
-                                               message: "\(action) saved on this device only: your private blocks couldn't be updated",
+                                               message: "\(notSaved): your private blocks couldn't be updated",
                                                tone: .error)
                 return
             }
-            let tags = ListMerge.edit(name: "p", base: base.tags, add: hexKeys(add), remove: hexKeys(remove))
+            // A private block also comes out of the public tags.
+            let tags = privately
+                ? ListMerge.edit(name: "p", base: base.tags, add: [], remove: hexKeys(add))
+                : ListMerge.edit(name: "p", base: base.tags, add: hexKeys(add), remove: hexKeys(remove))
             guard let event = await signEventAsync(kind: 10000, content: content, tags: tags, signAsNpub: accountNpub,
                                                    notBefore: baseAt.map { ListMerge.signedAt(now: Int64(Date().timeIntervalSince1970), base: $0) }) else {
                 ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
-                                               message: "\(action) saved on this device only: your signer didn't answer",
+                                               message: "\(notSaved): your signer didn't answer",
                                                tone: .error)
                 return
             }
