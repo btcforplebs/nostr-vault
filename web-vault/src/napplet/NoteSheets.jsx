@@ -7,6 +7,7 @@ import { Dialog, BlockDialog, UnblockDialog, ReportDialog, DeleteDialog } from "
 import { BookmarkMenuItem } from "../components/BookmarkMenuItem.jsx"
 import { AmountPicker, useWallet, zapWithFeedback } from "../components/ZapButton.jsx"
 import { useProfile } from "../components/useProfile.js"
+import { zapDefault } from "../net/wallet.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { isDeleted, shareLink } from "../net/actions.js"
 import { fetchProfiles, getProfile } from "../net/profiles.js"
@@ -22,11 +23,21 @@ function useAuthor(ctx, pk) {
 
 const nameOf = (p, pk) => p?.display_name || p?.name || npubEncode(pk).slice(0, 12) + "…"
 
-/** Zap a note's author: the classic amount picker, or why it can't (no wallet, read-only, no lightning address). */
-export function ZapSheet({ ctx, note, onClose }) {
+/** Zap a note's author: the classic amount picker, or why it can't (no wallet, read-only, no lightning address).
+ *  `quick`: the Reader's tap on the bolt, as the classic button's tap: the default amount goes at once (once the
+ *  author's lightning address is known) and the sheet closes; only a hold opens the picker. */
+export function ZapSheet({ ctx, note, onClose, quick = false }) {
   const wallet = useWallet()
   const p = useAuthor(ctx, note.pubkey)
   const name = nameOf(p, note.pubkey)
+  const fired = useRef(false)
+  const ready = wallet.status === "ready" && !ctx.signer?.readOnly && !!p && !!(p.lud16 || p.lud06)
+  useEffect(() => {
+    if (!quick || fired.current || !ready) return
+    fired.current = true
+    onClose()
+    zapWithFeedback(ctx, { recipient: note.pubkey, note, sats: zapDefault(wallet.defaultSats), name }).catch(() => {})
+  }, [quick, ready])
   const why = ctx.signer?.readOnly ? "This sign-in can't sign a zap request."
     : wallet.status !== "ready" ? "Connect a wallet in Settings › Wallet to zap."
     : p && !p.lud16 && !p.lud06 ? `${name} has no lightning address, so they can't receive zaps.` : ""
@@ -37,10 +48,17 @@ export function ZapSheet({ ctx, note, onClose }) {
       <div class="mod-row">{wallet.status !== "ready" && !ctx.signer?.readOnly && <a class="button" href="#/wallet" onClick={onClose}>Wallet</a>}<button type="button" onClick={onClose}>Close</button></div>
     </Dialog>
   )
+  if (quick) return ( // the lightning address is still on its way; the zap goes once it lands
+    <Dialog label={`Zap ${name}`} onClose={onClose}>
+      <h3>Zap {name}</h3>
+      <p class="muted">Getting {name}'s lightning address…</p>
+      <div class="mod-row"><button type="button" onClick={onClose}>Close</button></div>
+    </Dialog>
+  )
   return (
     <Dialog label={`Zap ${name}`} onClose={onClose}>
       <h3>Zap {name}</h3>
-      <AmountPicker initial={wallet.defaultSats} onClose={onClose}
+      <AmountPicker initial={zapDefault(wallet.defaultSats)} onClose={onClose}
         onZap={(sats, comment) => { onClose(); zapWithFeedback(ctx, { recipient: note.pubkey, note, sats, name, comment }).catch(() => {}) }} />
     </Dialog>
   )

@@ -30,7 +30,7 @@
 //                                                            in its first filter; built from public follow lists
 //   napplet:profile/show { pubkey }                       -> the full classic profile (#/profile/<pk>), Reader kept
 //   napplet:article/open { event }                        -> the classic article reader over the Reader
-//   napplet:note/repost|zap|menu { event }                -> the classic flows, run by the shell (gap run, after P8):
+//   napplet:note/repost|zap|menu { event, quick? }        -> the classic flows, run by the shell (gap run, after P8):
 //                                                            repost with the Send Delay's Undo, the zap picker, the
 //                                                            ⋯ menu (copy, bookmark, block, report, delete). The
 //                                                            event must carry a valid signature: a napplet can't make
@@ -140,7 +140,7 @@ export function readerIntents({ bus, openCompose, fullCompose = null, onComposeD
     ...[["repost", onRepost], ["zap", onZap], ["menu", onMenu]].map(([action, run]) => bus.register({ id: `shell-note-${action}`, title: action, archetype: "note", actions: [action], conventions: [], deliver: p => {
       const note = actionNote(p?.event, verify)
       if (!note) return { ok: false, error: "not a signed note" }
-      run(note)
+      run(note, p?.quick === true) // zap: a tap sends the default amount, a hold (quick false) opens the picker
       return { ok: true }
     } })),
     bus.register({ id: "shell-note-card", title: "Card", archetype: "note", actions: ["card"], conventions: [], deliver: async (p, from) => {

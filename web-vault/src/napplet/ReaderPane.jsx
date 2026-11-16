@@ -130,7 +130,7 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
       openUrl: url => window.open(url, "_blank", "noopener,noreferrer"),
       verify: verifyEvent,
       onRepost: n => repostWithUndo(liveCtx, n),
-      onZap: n => setSheet({ kind: "zap", note: n }),
+      onZap: (n, quick) => setSheet({ kind: "zap", note: n, quick }),
       onMenu: n => setSheet({ kind: "menu", note: n }),
       onMedia: v => setSheet({ kind: "media", ...v }),
       card: ev => kindCard(liveCtx, ev),
@@ -247,7 +247,7 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
     <main class="screen reader-pane" hidden={hidden}>
       {note && <p class="muted small napplet-note" role="status">{note}</p>}
       <div class="napplet-host reader-host" ref={host} />
-      {sheet?.kind === "zap" && <ZapSheet ctx={ctx} note={sheet.note} onClose={() => setSheet(null)} />}
+      {sheet?.kind === "zap" && <ZapSheet ctx={ctx} note={sheet.note} quick={!!sheet.quick} onClose={() => setSheet(null)} />}
       {sheet?.kind === "menu" && <MenuSheet ctx={ctx} note={sheet.note} onClose={() => setSheet(null)}
         onDeleted={id => { const l = live.current; if (l?.reader) l.bus.invoke(l.me, { archetype: "note", action: "removed", payload: { id } }) }} />}
       {sheet?.kind === "article" && <div class="reader-article screen"><ArticleReader event={sheet.event} ctx={ctx} onBack={() => setSheet(null)} /></div>}
