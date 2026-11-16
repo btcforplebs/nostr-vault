@@ -1,16 +1,15 @@
 // The web Vault at 760px and up, two columns (Logen, 2026-11-02). Left: the app as on the iPhone, the sections in a bar
 // on top and one page at a time below it (a note, conversation or person covers the list, ‹ Back returns). Right,
 // from 1024px: "Your space", panels pinned beside whatever is open (space/SpaceDock.jsx). New Post is a dialog and
-// replies are written under the open thread. Every screen is the phone's own screen component, so the two layouts
-// can't drift apart.
+// replies are written under the open thread. Its pages are the napplets (plan NV_WEB_ONE_PLAN.md step 11): the Reader,
+// Messages, WoT, Media, Settings and the Your space cards; keys, accounts, the wallet, the list editors, Emoji and
+// someone else's full profile stay the app's own screens. The phone layout keeps today's screens.
 import { useEffect, useRef, useState } from "preact/hooks"
-import { FeedScreen } from "../screens/FeedScreen.jsx"
 import { SettingsScreen } from "../screens/SettingsScreen.jsx"
 // Every other screen comes as its own chunk, when it is first shown (screens/lazy.jsx), the same wrappers the phone
 // layout uses: the boot bundle carries the desktop layout and the Feed, not Compose's editors or the Vault's gallery.
-import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, NappletShell, ReaderPane, WotPane, MessagesPane, SettingsPane } from "../screens/lazy-screens.js"
+import { ComposeScreen, PersonScreen, VaultScreen, AccountsScreen, WalletScreen, EmojiScreen, ReaderPane, WotPane, MessagesPane, SettingsPane } from "../screens/lazy-screens.js"
 import { drawsHere as settingsInNapplet } from "../napplet/settings-answer.js"
-import { nappletsOn } from "../napplet/flag.js"
 import { readerOpenFor } from "../napplet/reader-intents.js"
 import { NAPPLET_KEY_EVENT, READER_CMD_EVENT, ROW_CMDS } from "../napplet/napplet-keys.js"
 import { compose } from "../net/actions.js"
@@ -42,10 +41,12 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   // Compose is a dialog over the screen it was opened from, which stays as it was underneath.
   // An address that names no screen (a bare #/, right after sign-in) is the Feed, as on the phone.
   const parsed = parseHash(composing ? lastList || "#/feed" : hash)
-  const view = SPLIT.has(parsed.route) || FULL.has(parsed.route) ? parsed : parseHash("#/feed")
+  const space = mode !== "single" // Your space needs the room: from 1024px
+  // An old #/apps link is + Add (below) where there are side columns; a narrow window has none, so it is the Feed.
+  const known = SPLIT.has(parsed.route) || FULL.has(parsed.route) && (parsed.route !== "apps" || space)
+  const view = known ? parsed : parseHash("#/feed")
   const [spaceFolded, setSpaceFolded] = useSpaceFolded(me)
   const [help, setHelp] = useState(false)
-  const space = mode !== "single" // Your space needs the room: from 1024px
   // The side columns (plan NV_WEB_ONE_PLAN.md step 3): Edit in Your space edits both; the left one, under the menu,
   // only at full width and only once it has a card (or while editing). `adding`: the column + Add's sheet adds to.
   const canLeft = mode === "full"
@@ -54,7 +55,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const [layout, change] = useLayout(me)
   const leftOn = useLeftShown(me, editing) && canLeft
   const edit = on => { setEditing(on); if (on && spaceFolded) setSpaceFolded(false) }
-  // The Apps page is + Add now, where there are side columns: #/apps opens it (the phone and a narrow window keep it).
+  // The Apps page is + Add now: an old #/apps link opens it (on the phone it is the Feed, main.jsx ROUTES).
   const toAdd = space && view.route === "apps"
   useEffect(() => {
     if (!toAdd) return
@@ -68,22 +69,23 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const note = HEX.test(view.params.get("note") ?? "") ? view.params.get("note") : null
   const dm = HEX.test(view.params.get("dm") ?? "") ? view.params.get("dm") : null
 
-  // Your own profile, with napplets on (plan step 5): the Feed's Reader, opened to it (reader-mine.js), so it is one frame.
-  const mine = nappletsOn() && view.route === "profile" && !other
-  // Bookmarks too (plan step 6a): the Reader's Bookmarks list (reader-bookmarks.js).
-  const marks = nappletsOn() && view.route === "bookmarks"
-  // And Notifications (plan step 6b, reader-notifications.js).
-  const notifs = nappletsOn() && view.route === "notifications"
-  // And Search (plan step 7, reader-search.js); its source stays mounted once opened, so going back keeps the results.
-  const finding = nappletsOn() && view.route === "search"
+  // The desktop's pages are the napplets (plan step 11). Your own profile (plan step 5) is the Feed's Reader opened to it,
+  // so it is one frame. Someone else's stays the full profile (PersonScreen: Follow, Message, Zap, WoT, Share, every
+  // tab), as the bug run chose.
+  const mine = view.route === "profile" && !other
+  // Bookmarks (plan step 6a, reader-bookmarks.js), Notifications (6b, reader-notifications.js) and Search (7,
+  // reader-search.js), whose source stays mounted once opened, so going back keeps the results.
+  const marks = view.route === "bookmarks"
+  const notifs = view.route === "notifications"
+  const finding = view.route === "search"
   // And the Vault's list pages (plan step 8a, reader-vault.js). Media stays the Media napplet's page (VaultScreen).
   const vaultMode = view.route === "vault" ? (view.arg || null) : null
-  const vaulting = nappletsOn() && view.route === "vault" && vaultMode !== "media"
-  const inReader = mine || marks || notifs || finding || vaulting
-  // Feed and Search stay mounted once opened, so going back to them keeps the list, its results and where you were.
-  const [kept, setKept] = useState({ feed: view.route === "feed" || inReader, search: view.route === "search" && !finding, finding })
+  const vaulting = view.route === "vault" && vaultMode !== "media"
+  const inReader = view.route === "feed" || mine || marks || notifs || finding || vaulting
+  // The Reader stays mounted once opened, so going back to it keeps the list, its results and where you were.
+  const [kept, setKept] = useState({ feed: inReader, finding })
   useEffect(() => { if (finding && !kept.finding) setKept(was => ({ ...was, finding: true })) }, [finding])
-  useEffect(() => { const k = inReader ? "feed" : view.route; if ((k === "feed" || k === "search") && !kept[k]) setKept(was => ({ ...was, [k]: true })) }, [view.route, inReader])
+  useEffect(() => { if (inReader && !kept.feed) setKept(was => ({ ...was, feed: true })) }, [inReader])
   // The screen a person was opened from names the crumb back to it.
   const from = useRef("search")
   if (!other && LABEL[view.route]) from.current = view.route
@@ -109,17 +111,13 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
     : readerOpenFor("feed", "", hash)
   const list = (
     <>
-      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpen} notifications={notifs} search={!!kept.finding} vault={vaulting ? (vaultMode ?? true) : null} beside={openBeside} openId={note ?? ""} fullCompose /> : <FeedScreen ctx={ctx} />}</div>}
-      {kept.search && <div class="desk-pane" hidden={listKey !== "search"}><SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} /></div>}
-      {listKey !== "feed" && listKey !== "search" && (
+      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}><ReaderPane ctx={ctx} open={readerOpen} notifications={notifs} search={!!kept.finding} vault={vaulting ? (vaultMode ?? true) : null} beside={openBeside} openId={note ?? ""} fullCompose /></div>}
+      {listKey !== "feed" && (
         <div class="desk-pane" key={listKey}>
           {other && <div class="desk-crumb"><button type="button" class="small" onClick={() => history.back()}>‹ {LABEL[from.current] ?? "Back"}</button></div>}
           {other ? <PersonScreen key={view.arg} ctx={ctx} pubkey={view.arg} />
-            : view.route === "profile" ? <ProfileScreen ctx={ctx} />
             : view.route === "vault" ? <VaultScreen ctx={ctx} desk />
-            : view.route === "messages" ? (nappletsOn() ? <MessagesPane ctx={ctx} open={dm} /> : <MessagesScreen ctx={ctx} />)
-            : view.route === "notifications" ? <NotificationsScreen ctx={ctx} />
-            : view.route === "bookmarks" ? <BookmarksScreen ctx={ctx} />
+            : view.route === "messages" ? <MessagesPane ctx={ctx} open={dm} />
             : view.route === "emoji" ? <EmojiScreen ctx={ctx} />
             : null}
         </div>
@@ -127,22 +125,16 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
     </>
   )
 
-  let detail = null
-  if (view.route === "messages") {
-    // With napplets on, the Messages napplet shows the conversation itself (MessagesPane).
-    if (dm && !nappletsOn()) detail = <div class="desk-pane"><ConversationScreen key={dm} ctx={ctx} peer={dm} /></div>
-  } else if (note) {
-    detail = <ThreadPane key={nappletsOn() ? "reader" : note} ctx={ctx} id={note} onClose={closeDetail} reader={nappletsOn()} />
-  }
+  // The Messages napplet shows a conversation itself (MessagesPane); a note opens beside the list in the Reader.
+  const detail = view.route !== "messages" && note ? <ThreadPane key="reader" ctx={ctx} id={note} onClose={closeDetail} /> : null
 
   const full = view.route === "wot" || view.route === "relay"
   // Settings, Accounts and Wallet: one page across the main area, the phone's own screen with its ‹ Settings button.
-  // With napplets on, the Settings list and its plain preference pages are the Settings napplet (plan step 10a).
-  const page = view.route === "settings" && nappletsOn() && settingsInNapplet(view.arg) ? <SettingsPane key="settings-napplet" ctx={ctx} page={view.arg ?? ""} />
+  // The Settings list and its plain preference pages are the Settings napplet (plan step 10a).
+  const page = view.route === "settings" && settingsInNapplet(view.arg) ? <SettingsPane key="settings-napplet" ctx={ctx} page={view.arg ?? ""} />
     : view.route === "settings" ? <SettingsScreen key={view.arg} ctx={ctx} page={view.arg} />
     : view.route === "accounts" ? <AccountsScreen ctx={ctx} />
     : view.route === "wallet" ? <WalletScreen />
-    : view.route === "apps" ? (space ? null : <NappletShell ctx={ctx} showSwitch={false} vaultMenu />)
     : null
   return (
     <div class={`desk ${mode}${space ? (spaceFolded ? " space folded" : " space") : ""}${leftOn ? " left-on" : ""}`}>
@@ -150,11 +142,11 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
       <Sidebar ctx={ctx} side={side} rail />
       {leftOn && <LeftDock ctx={ctx} editing={editing} onEdit={edit} onAdd={setAdding} />}
       <section class="desk-main">
-        {view.route === "wot" ? <div class="desk-full">{nappletsOn() ? <WotPane ctx={ctx} open={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? null : /^[0-9a-f]{64}$/.test(view.arg) ? view.arg : null} root={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? view.arg : null} /> : <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : undefined} />}</div>
+        {view.route === "wot" ? <div class="desk-full"><WotPane ctx={ctx} open={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? null : /^[0-9a-f]{64}$/.test(view.arg) ? view.arg : null} root={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? view.arg : null} /></div>
           // The Settings napplet stays up from page to page (it draws the page in the address); other pages start fresh.
           : page ? <div class="desk-page" key={page.type === SettingsPane ? "settings-napplet" : view.path}>{page}</div>
           : full ? null /* the Dashboard: main.jsx keeps the relay screen mounted and lays it over this area */
-          : <SplitPane list={list} detail={detail} onBack={closeDetail} beside={nappletsOn() && view.route === "feed"} />}
+          : <SplitPane list={list} detail={detail} onBack={closeDetail} beside={view.route === "feed"} />}
         <Current note={note} dm={dm} />
       </section>
       </div>
@@ -177,9 +169,8 @@ function Current({ note, dm }) {
   return <style>{`${rules.join(", ")} { background: var(--s2); border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }`}</style>
 }
 
-/** The open note's thread, and the reply box under it (design §4: the thread stays on screen while you type). */
-// `reader`: with napplets on, the thread is the Reader napplet's own (its Reply opens Compose), not the classic screen.
-function ThreadPane({ ctx, id, onClose, reader = false }) {
+/** The open note's thread beside the list: the Reader napplet's own (its Reply opens Compose). */
+function ThreadPane({ ctx, id, onClose }) {
   return (
     <div class="desk-pane desk-thread">
       <header class="desk-detail-head">
@@ -188,9 +179,7 @@ function ThreadPane({ ctx, id, onClose, reader = false }) {
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </header>
-      {reader ? <ReaderPane ctx={ctx} open={{ archetype: "note", action: "open", payload: { id, side: true } }} keys={false} fullCompose />
-        : <ThreadScreen ctx={ctx} id={id} />}
-      {!reader && !ctx.signer?.readOnly && <div class="desk-reply"><ComposeScreen ctx={ctx} fixed={{ mode: "reply", id }} inline /></div>}
+      <ReaderPane ctx={ctx} open={{ archetype: "note", action: "open", payload: { id, side: true } }} keys={false} fullCompose />
     </div>
   )
 }

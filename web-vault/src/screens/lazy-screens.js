@@ -27,8 +27,6 @@ export const VaultDashboard = lazyScreen("VaultDashboard", () => import("./Vault
 // never shows. Its chunk lands while the boot splash (main.jsx, until Haven starts) still covers the page, and on a
 // slow link after it: the splash again then, not an empty page.
 export const DesktopShell = lazyScreen("DesktopShell", () => import("../desktop/DesktopShell.jsx"), { fallback: () => h(Splash, null, "Opening Nostr Vault…") })
-// The napplet shell page (?shell=1, main.jsx): hidden until the Apps pane (P3); its runtime is in no other chunk.
-export const NappletShell = lazyScreen("NappletShell", () => import("../napplet/NappletShell.jsx"))
 // Feed, Thread and someone's Profile as napplets when the switch is on (plan P4): the runtime loads only then.
 export const ReaderPane = lazyScreen("ReaderPane", () => import("../napplet/ReaderPane.jsx"))
 // Vault › Media as the Media napplet when the switch is on (plan P5).

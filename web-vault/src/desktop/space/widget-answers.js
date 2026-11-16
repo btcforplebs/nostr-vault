@@ -116,3 +116,7 @@ export function wotData({ counts, status, fresh, faces, points, extendedMin }, {
     },
   }
 }
+
+/** Two header counts say the same. A source puts a new badge object on every draw: keeping the old one when they match
+ *  stops the card redrawing its source, which would put again (a folded Live Vault with new rows hung the page). */
+export const sameBadge = (a, b) => a === b || !!a && !!b && a.text === b.text && a.label === b.label && a.cls === b.cls

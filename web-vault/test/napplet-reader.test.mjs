@@ -234,13 +234,14 @@ test("profile/show: a name tapped in the Reader opens the app's full profile; on
   assert.equal((await bus2.invoke(reader, { archetype: "profile", action: "show", payload: { pubkey: B } })).ok, false)
 })
 
-test("switch: Feed, Thread and other profiles swap only while napplets are on; own profile and the old screens stay", () => {
+test("plan step 11: the desktop's Feed and threads are the Reader, someone's profile stays the full one; the phone keeps its screens", () => {
   const main = fs.readFileSync(new URL("../main.jsx", import.meta.url), "utf8")
-  assert.match(main, /const readsInNapplet = \(route, other\) => nappletsOn\(\) && \(route === "feed" \|\| route === "thread"\)\n/)
-  // someone's profile is the full classic one, with the Reader kept (hidden) under it
-  assert.match(main, /const readerUnder = \(route, other\) => nappletsOn\(\) && route === "profile" && !!other/)
-  assert.match(main, /\{\(reader \|\| readerUnder\(route, other\)\) && <ReaderPane ctx=\{ctx\} open=\{readerOpen.current\} hidden=\{!reader\} \/>\}/)
-  assert.match(main, /\{!reader && route === "profile" && \(other \? <PersonScreen/)
-  assert.match(main, /\{!reader && route === "feed" && <FeedScreen/)
-  assert.match(main, /\{!reader && route === "thread" && <ThreadScreen/)
+  const desk = fs.readFileSync(new URL("../src/desktop/DesktopShell.jsx", import.meta.url), "utf8")
+  assert.match(main, /setDeskLayout\(mode !== "phone"\)/)
+  assert.doesNotMatch(main, /ReaderPane|nappletsOn/, "the phone layout has no napplets")
+  assert.match(main, /\{route === "profile" && \(other \? <PersonScreen/)
+  assert.match(main, /\{route === "feed" && <FeedScreen/)
+  assert.match(main, /\{route === "thread" && <ThreadScreen/)
+  assert.match(desk, /\{other \? <PersonScreen key=\{view\.arg\} ctx=\{ctx\} pubkey=\{view\.arg\} \/>/, "someone's profile: the full classic one")
+  assert.doesNotMatch(desk, /FeedScreen|ThreadScreen|nappletsOn/)
 })

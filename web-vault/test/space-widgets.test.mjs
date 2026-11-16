@@ -139,3 +139,14 @@ test("wot: numbers, status, new faces with their vouch line, globe points to two
   assert.equal(routes.has(H("b")), false, "only faces drawn open")
   assert.equal(wotData({ counts: null, status: "Loading…", fresh: [], faces: [], points: [] }, { profileOf, vouchOf: () => "" }).data.counts, null)
 })
+
+test("a card keeps its header count when a source puts the same one again (the folded Live Vault loop)", async () => {
+  const { sameBadge } = await import("../src/desktop/space/widget-answers.js")
+  assert.equal(sameBadge(null, null), true)
+  assert.equal(sameBadge({ text: "3", label: "3 new" }, { text: "3", label: "3 new" }), true)
+  assert.equal(sameBadge({ text: "3", label: "3 new" }, { text: "4", label: "4 new" }), false)
+  assert.equal(sameBadge({ text: "3", label: "3 new" }, null), false)
+  assert.equal(sameBadge(null, { text: "1", label: "1 new" }), false)
+  assert.equal(sameBadge({ text: "1", label: "x", cls: "a" }, { text: "1", label: "x", cls: "b" }), false)
+  assert.match(read("src/desktop/space/WidgetCard.jsx"), /setBadgeNow\(was => \(sameBadge\(was, next\) \? was : next\)\)/)
+})

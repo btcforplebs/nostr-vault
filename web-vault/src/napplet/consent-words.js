@@ -1,4 +1,4 @@
-// The words the consent and ask sheets use (NappletShell.jsx). Pure, so the copy is tested with the rules.
+// The words the consent and ask sheets use (GrantSheet.jsx). Pure, so the copy is tested with the rules.
 import { npubEncode } from "nostr-tools/nip19"
 export const DOMAIN_WORDS = {
   identity: "See your public key, profile, follows and relays",
