@@ -54,7 +54,7 @@ internal fun ArticleCommentRow(comment: ArticleEngagementEvent, author: FeedProf
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Icon(Icons.AutoMirrored.Outlined.Reply, contentDescription = null, tint = colors.primary,
                     modifier = Modifier.size(13.dp))
-                Text(if (replies == 1) "1 reply" else "$replies replies", color = colors.primary,
+                Text(if (replies == 1) "1 reply" else "$replies replies", color = colors.primaryText,
                     fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
         }

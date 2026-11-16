@@ -59,7 +59,7 @@ fun SuggestedMediaServersSection(
                     onClick = { onAdd(server.url) },
                     modifier = Modifier.semantics { contentDescription = "Add ${server.host}" },
                 ) {
-                    Text("Add", color = LocalNostrVaultColors.current.primary)
+                    Text("Add", color = LocalNostrVaultColors.current.primaryText)
                 }
             }
             HorizontalDivider(

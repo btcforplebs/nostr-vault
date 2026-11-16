@@ -257,7 +257,7 @@ private fun Primary(text: String, onClick: () -> Unit) {
 @Composable
 private fun Secondary(text: String, onClick: () -> Unit) {
     TextButton(onClick = onClick, modifier = Modifier.heightIn(min = 48.dp)) {
-        Text(text, color = LocalNostrVaultColors.current.primary)
+        Text(text, color = LocalNostrVaultColors.current.primaryText)
     }
 }
 
@@ -297,7 +297,7 @@ private fun CodeText(code: String) {
     ) {
         Icon(if (copied) Icons.Filled.Check else NostrVaultIcons.Copy, contentDescription = null, tint = LocalNostrVaultColors.current.primary, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
-        Text(if (copied) "Copied" else COPY_CODE, color = LocalNostrVaultColors.current.primary)
+        Text(if (copied) "Copied" else COPY_CODE, color = LocalNostrVaultColors.current.primaryText)
     }
 }
 
@@ -332,7 +332,7 @@ private fun PasteField(onPaste: (String) -> String?) {
             ) {
                 Icon(Icons.Filled.ContentPaste, contentDescription = null, tint = LocalNostrVaultColors.current.primary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Paste", color = LocalNostrVaultColors.current.primary)
+                Text("Paste", color = LocalNostrVaultColors.current.primaryText)
             }
             Spacer(Modifier.weight(1f))
             Button(

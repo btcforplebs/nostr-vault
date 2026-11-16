@@ -268,7 +268,7 @@ fun FollowingBackupScreen(
                                 size = 30.dp, displayName = profile?.bestName)
                             Text(name, color = PrimaryText, fontSize = 15.sp, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
                             if (isOwner) {
-                                Text("Owner", color = LocalNostrVaultColors.current.primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Owner", color = LocalNostrVaultColors.current.primaryText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                             Spacer(Modifier.weight(1f))
                             if (npub == selectedNpub) {

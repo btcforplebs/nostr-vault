@@ -166,7 +166,7 @@ internal fun ArticleBody(
         } else {
             // Highlight mode: one tappable block per paragraph, tinted so the
             // reader can see what a tap will pick up.
-            Text("Tap a paragraph to highlight it", color = colors.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text("Tap a paragraph to highlight it", color = colors.primaryText, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(12.dp))
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 blocks.forEach { block ->

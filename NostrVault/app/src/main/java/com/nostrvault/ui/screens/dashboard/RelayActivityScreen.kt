@@ -161,7 +161,7 @@ fun RelayActivityScreen(
             ) {
                 RelayPrivacyNote(Modifier.weight(1f))
                 TextButton(onClick = onOpenFullLogs) {
-                    Text("Open full logs", color = colors.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Open full logs", color = colors.primaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

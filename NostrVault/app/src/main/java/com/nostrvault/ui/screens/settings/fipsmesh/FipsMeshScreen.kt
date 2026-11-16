@@ -184,7 +184,7 @@ private fun MyDevicesSection(devices: List<MyDevice>, running: Boolean, onOpen: 
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onAdd).padding(vertical = 14.dp)) {
             Icon(Icons.Filled.AddCircle, contentDescription = null, tint = colors.primary, modifier = Modifier.size(26.dp))
             Spacer(Modifier.width(12.dp))
-            Text(ADD_A_DEVICE, color = colors.primary, fontSize = 16.sp)
+            Text(ADD_A_DEVICE, color = colors.primaryText, fontSize = 16.sp)
         }
     }
 }

@@ -556,7 +556,7 @@ fun ComposeNoteScreen(
                         if (fetchingGif) {
                             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = colors.primary)
                         } else {
-                            Text("GIF", color = colors.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                            Text("GIF", color = colors.primaryText, fontSize = 11.sp, fontWeight = FontWeight.Black)
                         }
                     }
                 }

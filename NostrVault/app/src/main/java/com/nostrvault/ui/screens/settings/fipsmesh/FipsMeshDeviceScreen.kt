@@ -114,7 +114,7 @@ fun FipsMeshDeviceScreen(npub: String, onBack: () -> Unit, viewModel: FipsMeshVi
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { clipboard.setText(AnnotatedString(d.npub)) }.padding(vertical = 14.dp)) {
                     Icon(NostrVaultIcons.Copy, contentDescription = null, tint = colors.primary, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(12.dp))
-                    Text("Copy address", color = colors.primary, fontSize = 16.sp)
+                    Text("Copy address", color = colors.primaryText, fontSize = 16.sp)
                 }
             }
 

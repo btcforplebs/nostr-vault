@@ -404,7 +404,7 @@ private fun DraftCard(
                             Spacer(Modifier.width(4.dp))
                             Text(
                                 text = "Reply",
-                                color = colors.primary,
+                                color = colors.primaryText,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                             )
@@ -429,7 +429,7 @@ private fun DraftCard(
                             Spacer(Modifier.width(4.dp))
                             Text(
                                 text = "Quote",
-                                color = colors.primary,
+                                color = colors.primaryText,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                             )

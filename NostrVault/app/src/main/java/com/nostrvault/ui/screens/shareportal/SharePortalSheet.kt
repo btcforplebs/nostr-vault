@@ -40,7 +40,7 @@ internal fun SharePortalSheet(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp).imePadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Nostr Vault", style = MaterialTheme.typography.titleMedium, color = colors.primary)
+            Text("Nostr Vault", style = MaterialTheme.typography.titleMedium, color = colors.primaryText)
             when (val phase = model.phase) {
                 SharePortalSheetModel.Phase.Loading -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
                 SharePortalSheetModel.Phase.Pick -> ActionList(model) { action ->

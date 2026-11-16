@@ -488,7 +488,7 @@ fun LiveStreamScreen(
                 }
                 status?.let {
                     Spacer(Modifier.height(8.dp))
-                    Text(it, color = colors.primary, fontSize = 12.sp)
+                    Text(it, color = colors.primaryText, fontSize = 12.sp)
                 }
             }
 

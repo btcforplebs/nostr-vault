@@ -68,7 +68,7 @@ fun AccentPresetRow(setting: String, onPick: (String) -> Unit) {
         AccentPreview(setting, light = true, Modifier.weight(1f))
     }
     Text(
-        if (AccentPalette.shiftsInLight(picked)) "This colour is too pale to read on white, so Light mode uses a deeper shade of it."
+        if (AccentPalette.shiftsInLight(picked)) "This colour is too pale to read on white, so Light mode uses a deeper shade of it for text."
         else "Buttons, links and highlights use this colour.",
         color = TertiaryText,
         fontSize = 12.sp,
@@ -103,6 +103,6 @@ internal fun AccentPreview(setting: String, light: Boolean, modifier: Modifier) 
                 .padding(horizontal = 14.dp, vertical = 6.dp),
         )
         Spacer(Modifier.height(6.dp))
-        Text("nostrvault.app", color = ramp.scheme.primary, fontSize = 13.sp)
+        Text("#nostr", color = ramp.scheme.primaryText, fontSize = 13.sp)
     }
 }

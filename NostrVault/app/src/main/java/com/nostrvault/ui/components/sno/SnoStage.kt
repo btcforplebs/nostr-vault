@@ -185,7 +185,7 @@ private fun SnoCaption(obj: SnoObject, alt: String?, large: Boolean = false) {
         Spacer(Modifier.width(8.dp))
         Text(
             "3D object",
-            color = LocalNostrVaultColors.current.primary,
+            color = LocalNostrVaultColors.current.primaryText,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier

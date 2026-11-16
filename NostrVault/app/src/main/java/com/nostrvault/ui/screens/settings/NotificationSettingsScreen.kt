@@ -294,7 +294,7 @@ private fun SoundPicker(selected: NotificationSound, onSelect: (NotificationSoun
     ) {
         Text("Sound", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
         Box {
-            Text(selected.displayName, color = LocalNostrVaultColors.current.primary, fontSize = 15.sp)
+            Text(selected.displayName, color = LocalNostrVaultColors.current.primaryText, fontSize = 15.sp)
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 NotificationSound.entries.forEach { sound ->
                     DropdownMenuItem(

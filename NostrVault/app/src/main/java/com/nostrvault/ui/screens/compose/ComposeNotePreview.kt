@@ -108,7 +108,7 @@ internal fun ComposeNotePreviewButton(previewing: Boolean, onToggle: () -> Unit,
             contentDescription = if (previewing) "Edit, back to typing" else "Preview, the note as it will post"
         },
     ) {
-        Text(previewButtonLabel(previewing), color = LocalNostrVaultColors.current.primary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        Text(previewButtonLabel(previewing), color = LocalNostrVaultColors.current.primaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

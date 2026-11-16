@@ -158,7 +158,7 @@ internal fun AccountDetail(
     ) {
         if (!isActive) {
             TextButton(onClick = { viewModel.switchTo(npub) }) {
-                Text("Switch to this account", color = colors.primary)
+                Text("Switch to this account", color = colors.primaryText)
             }
         }
 
@@ -206,7 +206,7 @@ internal fun AccountDetail(
                         )
                     }
                 }) {
-                    Text("Reveal Private Key", color = colors.primary)
+                    Text("Reveal Private Key", color = colors.primaryText)
                     InfoButton(SettingsHelp.ACCOUNT_REVEAL_KEY)
                 }
                 revealError?.let { Text(it, color = ErrorRed, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp)) }
@@ -219,7 +219,7 @@ internal fun AccountDetail(
             }
         } else {
             TextButton(onClick = { importingKey = true }) {
-                Text("Import Private Key", color = colors.primary)
+                Text("Import Private Key", color = colors.primaryText)
             }
         }
 
@@ -231,7 +231,7 @@ internal fun AccountDetail(
             }
         } else {
             TextButton(onClick = { connectingSigner = true }) {
-                Text("Connect Remote Signer", color = colors.primary)
+                Text("Connect Remote Signer", color = colors.primaryText)
             }
         }
 

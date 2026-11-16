@@ -197,7 +197,7 @@ fun BroadcastSheet(
                     contentPadding = PaddingValues(0.dp),
                     modifier = Modifier.align(Alignment.CenterStart),
                 ) {
-                    Text("Done", color = colors.primary, fontSize = 16.sp)
+                    Text("Done", color = colors.primaryText, fontSize = 16.sp)
                 }
                 Text(
                     text = "Event Info",
@@ -299,7 +299,7 @@ fun BroadcastSheet(
                     Text("Tick the relays to send to.", color = SecondaryText, fontSize = 11.sp, modifier = Modifier.weight(1f))
                     if (missing.isNotEmpty()) {
                         TextButton(onClick = { selected = selected + missing }, enabled = !isBroadcasting) {
-                            Text("Select missing (${missing.size})", color = colors.primary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("Select missing (${missing.size})", color = colors.primaryText, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }

@@ -662,7 +662,7 @@ private fun SuggestedHashtagRow(tag: String, enabled: Boolean, onFollow: () -> U
                 .padding(horizontal = 12.dp, vertical = 7.dp),
         ) {
             Icon(NostrVaultIcons.Create, contentDescription = null, tint = colors.primary, modifier = Modifier.size(14.dp))
-            Text("Follow", color = colors.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text("Follow", color = colors.primaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

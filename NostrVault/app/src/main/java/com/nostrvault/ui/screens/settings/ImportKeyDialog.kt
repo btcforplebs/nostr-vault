@@ -103,7 +103,7 @@ internal fun ImportKeyDialog(
                 },
                 enabled = !working && key.isNotBlank() && (!asksPassword || password.isNotEmpty()) &&
                     (!asksNewPassword || confirm.isNotEmpty()),
-            ) { Text("Import", color = colors.primary) }
+            ) { Text("Import", color = colors.primaryText) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss, enabled = !working) { Text("Cancel") }

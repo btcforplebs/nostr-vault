@@ -198,7 +198,7 @@ private fun Title(title: String, subtitle: String) {
 @Composable
 private fun Section(name: String) {
     Spacer(Modifier.height(16.dp))
-    Text(name, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    Text(name, style = MaterialTheme.typography.titleSmall, color = NostrVaultTheme.colors.primaryText)
 }
 
 @Composable

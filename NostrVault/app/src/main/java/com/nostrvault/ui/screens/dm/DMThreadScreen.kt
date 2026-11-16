@@ -462,7 +462,7 @@ private fun ProtocolToggleRow(
             Spacer(Modifier.weight(1f))
             Text(
                 text = "Switch",
-                color = colors.primary,
+                color = colors.primaryText,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.clickable(onClick = onToggle),

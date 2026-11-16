@@ -23,7 +23,7 @@ internal fun DMRequestsHeader(onBack: () -> Unit) {
             .clickable(onClick = onBack)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        Text("‹ Back to Messages", color = LocalNostrVaultColors.current.primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text("‹ Back to Messages", color = LocalNostrVaultColors.current.primaryText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(4.dp))
         Text(
             "Not shown in your inbox and never notified. Reply to move a conversation into your inbox.",

@@ -203,7 +203,7 @@ internal fun ParentNoteFailed(onRetry: (() -> Unit)?) {
             TextButton(onClick = onRetry) {
                 Text(
                     text = "Retry",
-                    color = LocalNostrVaultColors.current.primary,
+                    color = LocalNostrVaultColors.current.primaryText,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                 )

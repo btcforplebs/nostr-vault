@@ -212,7 +212,7 @@ private fun <T> Picker(label: String, options: List<T>, optionLabel: (T) -> Stri
     val colors = LocalNostrVaultColors.current
     var open by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { open = true }) { Text("$label ▾", color = colors.primary) }
+        TextButton(onClick = { open = true }) { Text("$label ▾", color = colors.primaryText) }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             options.forEach { option ->
                 DropdownMenuItem(text = { Text(optionLabel(option)) }, onClick = { onPick(option); open = false })
@@ -290,7 +290,7 @@ private fun PhotoStrip(photos: List<Uri>, enabled: Boolean, onChange: (List<Uri>
                     },
             ) {
                 Icon(NostrVaultIcons.Media, contentDescription = null, tint = colors.primary, modifier = Modifier.size(22.dp))
-                Text("Add photos", color = colors.primary, fontSize = 11.sp, modifier = Modifier.width(80.dp), maxLines = 1)
+                Text("Add photos", color = colors.primaryText, fontSize = 11.sp, modifier = Modifier.width(80.dp), maxLines = 1)
             }
         }
     }

@@ -119,7 +119,7 @@ fun FipsMeshAdvancedScreen(onBack: () -> Unit, viewModel: FipsMeshViewModel = hi
             }
 
             MeshSection(null) {
-                Text("Reset to defaults", color = colors.primary, fontSize = 16.sp,
+                Text("Reset to defaults", color = colors.primaryText, fontSize = 16.sp,
                     modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) { viewModel.resetAdvanced() }.padding(vertical = 14.dp))
             }
             Spacer(Modifier.height(24.dp))
