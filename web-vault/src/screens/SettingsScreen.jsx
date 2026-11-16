@@ -29,6 +29,7 @@ import { PrivacyPage } from "./settings/PrivacyPage.jsx"
 import { FeedSettingsPage } from "./settings/FeedSettingsPage.jsx"
 import { NotificationsPage } from "./settings/NotificationsPage.jsx"
 import { BlockSomeone } from "./settings/BlockSomeone.jsx"
+import { blockedSections } from "./settings/block-someone.js"
 import {
   SETTINGS_GROUPS, SETTINGS_ICONS, PAGES, isPage, APP_VERSION, APP_COMMIT, commitUrl, SUPPORT_NPUB, PRIVACY_URL,
   logLines,
@@ -175,22 +176,35 @@ function Page({ ctx, page }) {
   )
 }
 
-/** People the user blocked (their kind 10000 mute list, the one the phone keeps), each with Unblock. Blocking is
- *  done from a note's or a profile's ⋯ menu. */
+/** People the user blocked (their kind 10000 mute list, the one the phone keeps), each with Unblock, in Public and
+ *  Private sections as on the iPhone (BlockedSettingsView). Blocking is done above, or from a note's or a profile's
+ *  ⋯ menu. */
 function Blocked({ ctx }) {
-  const { blocked, privateBlocked, privateNote } = useBlocks(ctx)
-  const list = [...blocked]
-  useEffect(() => { if (list.length) fetchProfiles(ctx.vault, list, uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS])).catch(() => {}) }, [list.length])
+  const blocks = useBlocks(ctx)
+  const { privateNote } = blocks
+  const { publicBlocks, privateBlocks } = blockedSections(blocks)
+  const all = [...publicBlocks, ...privateBlocks]
+  useEffect(() => { if (all.length) fetchProfiles(ctx.vault, all, uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS])).catch(() => {}) }, [all.length])
   return (
     <>
-      <p class="settings-note muted small">Your block list, the same one your phone uses. Blocked people's notes, replies and messages are hidden. Block someone above by their npub, or from the ⋯ menu on their note or profile.{privateNote ? ` Private entries aren't shown: ${privateNote}.` : ""}</p>
-      {list.length ? list.map(pk => <BlockedRow key={pk} ctx={ctx} pubkey={pk} isPrivate={privateBlocked?.has(pk)} />)
-        : <p class="empty">Nobody is blocked.</p>}
+      <p class="settings-note muted small">Your block list, the same one your phone uses. Blocked people's notes, replies and messages are hidden. Block someone above by their npub, or from the ⋯ menu on their note or profile.</p>
+      <section class="settings-group">
+        <div class="section-label">Public</div>
+        {publicBlocks.length ? publicBlocks.map(pk => <BlockedRow key={pk} ctx={ctx} pubkey={pk} />)
+          : <p class="empty blocked-empty">No public blocks.</p>}
+        <p class="settings-note muted small">Anyone can see these in your block list.</p>
+      </section>
+      <section class="settings-group">
+        <div class="section-label">Private</div>
+        {privateBlocks.length ? privateBlocks.map(pk => <BlockedRow key={pk} ctx={ctx} pubkey={pk} />)
+          : <p class="empty blocked-empty">{privateNote ? `Private blocks aren't shown: ${privateNote}.` : "No private blocks."}</p>}
+        <p class="settings-note muted small">Only you can see these. They are encrypted in your block list.</p>
+      </section>
     </>
   )
 }
 
-function BlockedRow({ ctx, pubkey, isPrivate }) {
+function BlockedRow({ ctx, pubkey }) {
   const [asking, setAsking] = useState(false)
   const p = useProfile(pubkey)
   const name = p?.display_name || p?.name || npubEncode(pubkey).slice(0, 12) + "…"
@@ -198,7 +212,7 @@ function BlockedRow({ ctx, pubkey, isPrivate }) {
     <div class="person-row blocked-row">
       <a class="blocked-who" href={`#/profile/${pubkey}`}>
         <Avatar pubkey={pubkey} size={40} />
-        <span class="person-names"><AuthorName pubkey={pubkey} /><span class="person-sub">{isPrivate ? "Private · " : ""}{npubEncode(pubkey).slice(0, 20)}…</span></span>
+        <span class="person-names"><AuthorName pubkey={pubkey} /><span class="person-sub">{npubEncode(pubkey).slice(0, 20)}…</span></span>
       </a>
       <button type="button" class="small" onClick={() => setAsking(true)}>Unblock</button>
       {asking && <UnblockDialog ctx={ctx} pubkey={pubkey} name={name} onClose={() => setAsking(false)} />}

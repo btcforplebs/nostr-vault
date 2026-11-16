@@ -242,6 +242,10 @@ button.default-reaction:active { transform: none; }
 .block-someone input { flex: 1; min-width: 0; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--hair); background: var(--s1); color: var(--text); font: var(--t-body); }
 .block-someone button.danger-fill { background: var(--danger); color: #fff; border-color: transparent; }
 .block-someone button.danger-fill:disabled { background: var(--s2); color: var(--text-3); }
+.block-privately { display: flex; gap: 10px; align-items: center; min-height: 44px; margin: 0 var(--gutter); font: var(--t-sub); color: var(--text); cursor: pointer; }
+.block-privately input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+/* Settings › Blocked: an empty Public or Private section. */
+.empty.blocked-empty { padding: 12px var(--gutter); text-align: start; }
 
 /* Settings › Relays: each relay's answer from this browser (RelaysPage.jsx RelayName, net/relay-probe.js). */
 .relay-name { display: grid; gap: 2px; white-space: normal; }

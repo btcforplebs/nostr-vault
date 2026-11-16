@@ -110,8 +110,9 @@ function useAction() {
   return { busy, err, run }
 }
 
-export function BlockDialog({ ctx, pubkey, name, onClose }) {
-  const [priv, setPriv] = useState(false)
+/** `isPrivate` is where the private choice starts (Settings › Block Someone's "Block privately"). */
+export function BlockDialog({ ctx, pubkey, name, isPrivate = false, onClose }) {
+  const [priv, setPriv] = useState(isPrivate)
   const { busy, err, run } = useAction()
   const canPrivate = !!ctx.signer.crypto
   const go = run(async () => { await setBlock(ctx, pubkey, { block: true, isPrivate: priv }); onClose() })
@@ -123,7 +124,7 @@ export function BlockDialog({ ctx, pubkey, name, onClose }) {
         <label class="mod-check">
           <input type="checkbox" checked={priv} disabled={busy} onChange={e => setPriv(e.currentTarget.checked)} />
           <span>Keep this block private
-            <span class="muted small">Only you can see who's on the private part of your list. Your phone doesn't read private blocks yet, and blocking or unblocking someone there drops them.</span>
+            <span class="muted small">Only you can see who's on the private part of your list. It is encrypted, and your phone reads it too.</span>
           </span>
         </label>
       )}

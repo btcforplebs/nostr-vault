@@ -14,3 +14,11 @@ function keyOf(s) {
 
 /** The key typed in, or null: not a key, or the user's own. */
 export const blockTarget = (s, me) => { const pk = keyOf(String(s ?? "").trim()); return pk && pk !== me ? pk : null }
+
+/** Settings › Blocked's two sections (iPhone BlockedPeople.sections): the people in the list's public tags, then the
+ *  ones only in its encrypted part. Someone in both shows once, under Public, since anyone can see that block. */
+export function blockedSections({ publicBlocked, privateBlocked } = {}) {
+  const pub = [...(publicBlocked ?? [])]
+  const seen = new Set(pub)
+  return { publicBlocks: pub, privateBlocks: [...(privateBlocked ?? [])].filter(pk => !seen.has(pk)) }
+}
