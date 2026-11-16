@@ -184,18 +184,18 @@ struct TrustWebView: View {
         }
         .measureWidth { paneWidth = $0 }
         .background(GlobeSpace())
-        // The globe's glass (cards, search, pills) stays dark in every mode;
-        // sheets opened from here keep the app's own. Only the sky and what
-        // the globe draws follow Light, as a day sky (`globeDay`).
+        // The globe, its glass (cards, search, pills), menus and bar stay dark
+        // in every mode; sheets opened from here keep the app's own.
+        // `GlobeSpace.followsLight` brings back the day sky in Light.
         .environment(\.colorScheme, .dark)
-        .environment(\.globeDay, appScheme == .light)
+        .environment(\.globeDay, GlobeSpace.day(appScheme))
         #if os(iOS)
         // The WOT tab's bar is the feed's: two glass pills, no title.
         .navigationTitle(isWOTTab ? "" : centerKey == me ? "Web of Trust" : name(centerKey))
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(appScheme == .light ? GlobeSpace.dayEdge : GlobeSpace.edge, for: .navigationBar)
+        .toolbarBackground(GlobeSpace.day(appScheme) ? GlobeSpace.dayEdge : GlobeSpace.edge, for: .navigationBar)
         .toolbarBackground(isWOTTab ? .hidden : .visible, for: .navigationBar)
-        .toolbarColorScheme(appScheme == .light ? .light : .dark, for: .navigationBar)
+        .toolbarColorScheme(GlobeSpace.day(appScheme) ? .light : .dark, for: .navigationBar)
         #else
         .navigationTitle(centerKey == me ? "Web of Trust" : name(centerKey))
         #endif
