@@ -41,10 +41,14 @@ struct TrustWebSheet: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(GlobeSpace())
                         .environment(\.colorScheme, .dark)
-                        .environment(\.globeDay, appScheme == .light)
+                        .environment(\.globeDay, GlobeSpace.day(appScheme))
                         .navigationTitle("Web of Trust")
                         #if os(iOS)
                         .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(GlobeSpace.day(appScheme) ? GlobeSpace.dayEdge : GlobeSpace.edge,
+                                           for: .navigationBar)
+                        .toolbarBackground(.visible, for: .navigationBar)
+                        .toolbarColorScheme(GlobeSpace.day(appScheme) ? .light : .dark, for: .navigationBar)
                         #endif
                 }
             }

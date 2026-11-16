@@ -41,7 +41,11 @@ extension TrustWebView {
                                 .font(.appSystem(size: 17, weight: .bold, design: .rounded))
                         }
                     }
+                    .toolbarColorScheme(.dark, for: .navigationBar)
             }
+            // A screen of the web of trust: Dark like the globe, in every mode.
+            .presentationBackground(Color.platformWindowBackground)
+            .environment(\.colorScheme, .dark)
         }
     }
 

@@ -3,6 +3,13 @@ import SwiftUI
 /// The sky behind the globe: deep space at night (Dark), a late-morning sky
 /// by day (Light): pale blue overhead into a warm haze at the bottom.
 struct GlobeSpace: View {
+    /// Logen 11-16: the web of trust always draws Dark, also when the app is
+    /// Light. The day sky below stays for now, unused; set this back to true
+    /// to bring it back (sky, globe ink and the bar over it follow Light).
+    static let followsLight = false
+    /// True when the globe should draw its day sky for the app's `scheme`.
+    static func day(_ scheme: ColorScheme) -> Bool { followsLight && scheme == .light }
+
     static let edge = Color.black
     /// Day: the top of the sky, for a navigation bar drawn over it.
     static let dayEdge = Color(hex: 0x9CC8EE)
