@@ -232,6 +232,14 @@ final class RelayDraftTests: XCTestCase {
         XCTAssertTrue(RelayDraft.settled(found: false, answeredBy: ["wss://purplepag.es/", "wss://User.KindPag.es"]))
     }
 
+    /// index.hzrd149.com is asked but keeps only its web of trust: its answer
+    /// neither settles a list nor is needed to.
+    func testTheWotIndexIsAskedButNeverSettlesAList() {
+        XCTAssertTrue(RelayDraft.indexers.contains("wss://index.hzrd149.com"))
+        XCTAssertFalse(RelayDraft.settled(found: false, answeredBy: ["wss://index.hzrd149.com", "wss://purplepag.es"]))
+        XCTAssertTrue(RelayDraft.settled(found: false, answeredBy: ["wss://purplepag.es", "wss://user.kindpag.es"]))
+    }
+
     func testAHeldListFromThatLookupNeverPublishesOverTheRealOne() {
         let held = RelayDraft.Published(
             relayListKnown: RelayDraft.settled(found: false, answeredBy: defaultsAnswered),

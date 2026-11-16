@@ -34,6 +34,8 @@ val DEFAULT_SEARCH_RELAYS: List<String> = listOf(
     "wss://search.nos.today",
     "wss://relay.vertexlab.io",
     "wss://profiles.nostrver.se",
+    // Vertex WoT index run by hzrd149 (NIP-50 people search, no notes; 2026-11-16).
+    "wss://index.hzrd149.com",
 )
 
 object SearchRelayUrls {

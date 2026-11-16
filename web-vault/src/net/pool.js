@@ -371,7 +371,8 @@ export const pool = new LivePool({ enablePing: true, enableReconnect: true })
 // nostr-pub.wellorder.net since 2026-11-12: it hangs the handshake 10-12 s or answers 503 (Tron's slow-load review).
 export const DEFAULT_RELAYS = ["wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com"]
 // relay.nostr.band stopped answering (no EOSE, every query held to its timeout) on 2026-10-13.
-export const PROFILE_RELAYS = ["wss://purplepag.es"]
+// index.hzrd149.com: a Vertex WoT index; kind 0/3/10002 for fiatjaf and jack in ~2 s (2026-11-16).
+export const PROFILE_RELAYS = ["wss://purplepag.es", "wss://index.hzrd149.com"]
 
 /** Read and write relays from a kind 10002 event (NIP-65), dead hosts dropped, falling back to the defaults. */
 export function relayLists(ev) {

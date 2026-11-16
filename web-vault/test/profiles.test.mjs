@@ -3,6 +3,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
+import { PROFILE_RELAYS } from "../src/net/pool.js"
 
 const profile = (sk, name, at) => finalizeEvent({ kind: 0, created_at: at, tags: [], content: JSON.stringify({ name }) }, sk)
 
@@ -36,7 +37,7 @@ test("profiles from the network are written into Haven and found there after a r
   const second = await load()
   await second.fetchProfiles(vault, [getPublicKey(a), getPublicKey(b)], [], { query: offline })
   assert.equal(second.getProfile(getPublicKey(b)).name, "bob", "read back from Haven")
-  assert.equal(asked.length, 1)
+  assert.equal(asked.length, PROFILE_RELAYS.length, "one ask per profile relay, none after the reload")
 })
 
 test("only the pubkeys Haven doesn't have go to the network", async () => {
@@ -47,7 +48,7 @@ test("only the pubkeys Haven doesn't have go to the network", async () => {
   const net = async (relays, f) => { asked.push(...f.authors); return [profile(b, "bob", 100)] }
   const m = await load()
   await m.fetchProfiles(vault, [getPublicKey(a), getPublicKey(b)], [], { query: net })
-  assert.deepEqual(asked, [getPublicKey(b)])
+  assert.deepEqual(asked, PROFILE_RELAYS.map(() => getPublicKey(b)))
   assert.equal(m.getProfile(getPublicKey(a)).name, "alice")
   assert.equal(m.getProfile(getPublicKey(b)).name, "bob")
 })

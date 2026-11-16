@@ -9,7 +9,7 @@ import { pool } from "./pool.js"
 // The iPhone's Global search services (SearchRelayDefaults.relays), probed again 2026-10-25: nostr.wine answers people
 // and notes in 0.4-1.3 s, search.nos.today in 0.6-1.6 s (its people now and then 13 s), relay.vertexlab.io and
 // profiles.nostrver.se search people only (vertexlab CLOSES a notes REQ). relay.nostr.band still times out.
-export const SEARCH_RELAYS = ["wss://nostr.wine", "wss://search.nos.today", "wss://relay.vertexlab.io", "wss://profiles.nostrver.se"]
+export const SEARCH_RELAYS = ["wss://nostr.wine", "wss://search.nos.today", "wss://relay.vertexlab.io", "wss://profiles.nostrver.se", "wss://index.hzrd149.com"]
 
 /** What the box holds: nothing, one profile (with any relay hints), or text to search for. */
 export function parseQuery(input) {

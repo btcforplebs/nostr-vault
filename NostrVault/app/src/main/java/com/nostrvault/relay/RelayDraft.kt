@@ -52,10 +52,16 @@ object RelayDraft {
     fun listable(url: String): Boolean = PublicRelayList.tags(listOf(url), emptyList(), emptyList()).isNotEmpty()
 
     /** The relays that index every account's lists; a "none" counts only when both answered. */
-    val INDEXERS = listOf("wss://purplepag.es", "wss://user.kindpag.es")
+    val SETTLING_INDEXERS = listOf("wss://purplepag.es", "wss://user.kindpag.es")
 
     /**
-     * Whether a lookup settled the list: every one of the [INDEXERS]
+     * Asked for lists. index.hzrd149.com keeps only its web of trust, so a new
+     * account's list may never be there: it never settles a "none".
+     */
+    val INDEXERS = SETTLING_INDEXERS + "wss://index.hzrd149.com"
+
+    /**
+     * Whether a lookup settled the list: every one of the [SETTLING_INDEXERS]
      * answered, found or not. Any other relay answering proves little: most
      * of them are this device's own defaults, a list made in another app may
      * never have reached them (Tron, PR 1378), and one of them may hold an
@@ -68,7 +74,7 @@ object RelayDraft {
         // A copy skipped for being dated ahead (MAX_SKEW) is not "no list": a Save at now would lose to it.
         if (ahead) return false
         val answered = answeredBy.map(RelayMatrix::key).toSet()
-        return INDEXERS.all { RelayMatrix.key(it) in answered }
+        return SETTLING_INDEXERS.all { RelayMatrix.key(it) in answered }
     }
 
     data class State(

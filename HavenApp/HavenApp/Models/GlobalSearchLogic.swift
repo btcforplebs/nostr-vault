@@ -18,7 +18,9 @@ enum SearchRelayDefaults {
         "wss://nostr.wine",
         "wss://search.nos.today",
         "wss://relay.vertexlab.io",
-        "wss://profiles.nostrver.se"
+        "wss://profiles.nostrver.se",
+        // Vertex WoT index run by hzrd149 (NIP-50 people search, no notes; 2026-11-16).
+        "wss://index.hzrd149.com"
     ]
 
     /// UserDefaults key. Absent means "use the defaults", so a device that never
