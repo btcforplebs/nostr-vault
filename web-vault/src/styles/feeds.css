@@ -59,6 +59,10 @@
 .condensed-head { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 13px; }
 .condensed-name { min-width: 0; overflow: hidden; color: inherit; }
 .condensed-marks { margin-left: auto; padding-left: 4px; display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.condensed-zap { flex: none; display: inline-flex; align-items: center; position: relative; font-size: 11px; }
+.condensed-zap .note-action { padding: 0 2px; min-height: 0; }
+.condensed-zap svg { width: 12px; height: 12px; }
+.condensed-zap .zap-picker { bottom: auto; top: calc(100% + 6px); }
 .condensed-mark { flex: none; }
 .condensed-mark.reply { color: rgb(var(--accent-rgb) / .7); }
 .condensed-mark.repost { color: rgb(51 217 128 / .7); }

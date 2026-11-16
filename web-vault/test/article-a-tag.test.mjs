@@ -50,7 +50,7 @@ test("a zap on an article asks with its address; a note zap and a profile zap do
 test("the article's zap opens the amounts on a tap (pickFirst); the notes' still zap the default", () => {
   assert.match(readFileSync(new URL("../src/readers/ArticleActions.jsx", import.meta.url), "utf8"), /<ZapButton note=\{article\} pickFirst \/>/)
   const zb = readFileSync(new URL("../src/components/ZapButton.jsx", import.meta.url), "utf8")
-  assert.match(zb, /if \(!busy\) pickFirst \? setPicking\(true\) : send\(wallet\.defaultSats\)/)
-  assert.match(zb, /<AmountPicker initial=\{wallet\.defaultSats\}/)
+  assert.match(zb, /if \(!busy\) pickFirst \? setPicking\(true\) : send\(quick\)/)
+  assert.match(zb, /<AmountPicker initial=\{quick\}/)
   assert.match(readFileSync(new URL("../src/components/NoteCard.jsx", import.meta.url), "utf8"), /<ZapButton note=\{note\} \/>/)
 })

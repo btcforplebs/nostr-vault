@@ -80,7 +80,7 @@ test("reader napplet: Repost, Quote, Zap and ⋯ hand the note to the shell or C
   const html = fs.readFileSync(new URL("../napplets/reader/index.html", import.meta.url), "utf8")
   assert.match(html, /ACT\("⟲", "Repost", \(\) => shellAct\("repost", shown\)\)/)
   assert.match(html, /ACT\("❝", "Quote", \(\) => compose\("quote", shown\)\)/)
-  assert.match(html, /ACT\("⚡", "Zap", \(\) => shellAct\("zap", shown\)\)/)
+  assert.match(html, /zap = zapButton\(shown\)/)
   assert.match(html, /ACT\("⋯", "More", \(\) => shellAct\("menu", shown\)\)/)
   assert.match(html, /else if \(p\.t === "note"\) media\.append\(quoteCard\(p\.v\)\)/)
   assert.match(html, /d\.archetype === "note" && d\.action === "removed"/)

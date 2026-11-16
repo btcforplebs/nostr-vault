@@ -162,6 +162,13 @@ export async function openUri(sealed, subtle = crypto.subtle) {
   return new TextDecoder().decode(await subtle.decrypt({ name: "AES-GCM", iv: sealed.iv }, sealed.key, sealed.data))
 }
 
+/** A saved default as a tap may send it: whole sats, never under 1 (an old or hand-edited record of 0, a fraction or
+ *  junk would send a 0-sat zap the wallet refuses) and never over the 10,000,000 cap. */
+export function zapDefault(v) {
+  const n = Math.floor(Number(v))
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 10_000_000) : DEFAULT_ZAP_SATS
+}
+
 /** The account's wallet store: one record, { sealed?, defaultSats? }. Named so sign-out's store wipe takes it. */
 export const walletDbName = pubkey => `haven:${pubkey}:wallet`
 export function idbStore(pubkey, idb = globalThis.indexedDB) {
@@ -204,7 +211,7 @@ export function ensureWallet(pubkey) {
 export async function loadWallet(pubkey, s = idbStore(pubkey)) {
   store = s
   const rec = await s.get().catch(() => null)
-  const defaultSats = rec?.defaultSats ?? DEFAULT_ZAP_SATS
+  const defaultSats = zapDefault(rec?.defaultSats)
   let conn = null
   if (rec?.sealed) try { conn = parseWalletUri(await openUri(rec.sealed)) } catch {}
   set(conn ? { status: "ready", conn, defaultSats } : { status: "none", defaultSats })

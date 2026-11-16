@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks"
 import { actionContext, addressOf } from "../net/actions.js"
 import { formatSats } from "../net/notifications.js"
-import { ensureWallet, onWallet, walletState } from "../net/wallet.js"
+import { ensureWallet, onWallet, walletState, zapDefault } from "../net/wallet.js"
 import { MAX_ZAP_SATS, PRESET_SATS, ZAP_COMMENT_MAX, onZapTotals, wantTotals, zap, zapComment, zapTotal } from "../net/zaps.js"
 import { ZappersList } from "./ZappersList.jsx"
 import { useProfile } from "./useProfile.js"
@@ -105,7 +105,8 @@ export function ZapButton({ note, pubkey, pickFirst = false }) {
     }
   }
   const busy = state === "busy", zapped = state === "sent" || total?.mine, error = state?.error
-  const verb = note ? "Zap" : `Zap ${formatSats(wallet.defaultSats)}`
+  const quick = zapDefault(wallet.defaultSats) // a tap never sends 0 sats
+  const verb = note ? "Zap" : `Zap ${formatSats(quick)}`
   const name = error ? `Zap didn't go through: ${error}` : busy ? "Zapping…" : zapped ? `Zapped${sats ? `, ${formatSats(sats)} sats` : ""}`
     : `${verb}${sats ? `, ${formatSats(sats)} sats zapped` : ""}${pickFirst ? ". Choose an amount" : ". Hold to choose an amount"}`
 
@@ -115,7 +116,7 @@ export function ZapButton({ note, pubkey, pickFirst = false }) {
   const click = () => {
     if (held.current) { held.current = false; return }
     if (noLightning) return setState({ error: "This profile has no lightning address, so it can't receive zaps" })
-    if (!busy) pickFirst ? setPicking(true) : send(wallet.defaultSats)
+    if (!busy) pickFirst ? setPicking(true) : send(quick)
   }
 
   return (
@@ -123,14 +124,14 @@ export function ZapButton({ note, pubkey, pickFirst = false }) {
       <button type="button" class={`note-action zap-button${zapped ? " sent" : ""}${error ? " failed" : ""}${!note ? " wide" : ""}${noLightning && !zapped ? " no-lightning" : ""}`}
         aria-label={name} title={name} aria-busy={busy || undefined} aria-haspopup="dialog" aria-expanded={picking}
         onPointerDown={noLightning ? undefined : down} onPointerUp={up} onPointerLeave={up} onClick={click}
-        onContextMenu={e => { e.preventDefault(); up(); if (!busy) setPicking(true) }}>
+        onContextMenu={e => { e.preventDefault(); e.stopPropagation(); up(); if (!busy) setPicking(true) }}>
         <Bolt filled={zapped} />
         {!note && verb}
       </button>
       {note && sats > 0 && <button type="button" class="note-action zap-count" aria-label={`${formatSats(sats)} sats zapped. Show who zapped`}
         aria-haspopup="dialog" aria-expanded={listing} onClick={e => { e.stopPropagation(); setPicking(false); setListing(!listing) }}>{formatSats(sats)}</button>}
       {error && <span class="zap-error" role="alert">{error}</span>}
-      {picking && <AmountPicker initial={wallet.defaultSats} onZap={send} onClose={() => setPicking(false)} />}
+      {picking && <AmountPicker initial={quick} onZap={send} onClose={() => setPicking(false)} />}
       {list}
     </span>
   )

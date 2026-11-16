@@ -486,7 +486,18 @@ function quoteCard(id) {
 const ACT = (label, title, on) => { const b = el("button", "ghost", label); b.title = title; b.setAttribute("aria-label", title); b.onclick = e => { e.stopPropagation(); on(b) }; return b }
 // Repost, Zap and ⋯ are the shell's own flows (its Send Delay with Undo, its zap picker, its block/report/delete
 // dialogs); the napplet hands over the signed note, the shell checks the signature.
-const shellAct = (action, ev) => n.intent?.invoke(`napplet:note/${action}`, { payload: { event: ev } }).catch(() => {})
+const shellAct = (action, ev, more = {}) => n.intent?.invoke(`napplet:note/${action}`, { payload: { event: ev, ...more } }).catch(() => {})
+// The bolt as the classic ZapButton: a tap zaps your default amount (the shell sends it, the picker only if it can't), a
+// hold or right-click opens the amount picker. The click that ends a hold doesn't also zap.
+function zapButton(ev) {
+  const b = ACT("⚡", "Zap. Hold to choose an amount", () => {}); b.dataset.zap = ev.id
+  let timer = null, held = false
+  b.onpointerdown = () => { held = false; timer = setTimeout(() => { held = true; shellAct("zap", ev) }, 500) }
+  b.onpointerup = b.onpointerleave = () => clearTimeout(timer)
+  b.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); clearTimeout(timer); shellAct("zap", ev) }
+  b.onclick = e => { e.stopPropagation(); if (held) { held = false; return } shellAct("zap", ev, { quick: true }) }
+  return b
+}
 
 function card(ev, { focus = false, depth = 0, by = null } = {}) {
   const shown = repostOf(ev) ?? ev
@@ -504,7 +515,7 @@ function card(ev, { focus = false, depth = 0, by = null } = {}) {
   col.append(CARD_KINDS.includes(shown.kind) ? kindBody(shown) : body(shown))
   const acts = el("div", "acts")
   const reply = el("button", "ghost", "Reply"); reply.onclick = e => { e.stopPropagation(); compose("reply", shown) }
-  const like = likeButton(shown), zap = ACT("⚡", "Zap", () => shellAct("zap", shown)); zap.dataset.zap = shown.id
+  const like = likeButton(shown), zap = zapButton(shown)
   askStats(a, shown)
   acts.append(reply, ACT("⟲", "Repost", () => shellAct("repost", shown)), ACT("❝", "Quote", () => compose("quote", shown)), like,
     zap, ACT("⋯", "More", () => shellAct("menu", shown)))
@@ -688,7 +699,7 @@ function showStats(d) {
   if (!d || !HEX.test(d.id ?? "")) return
   stats.set(d.id, d)
   for (const b of document.querySelectorAll(`button[data-like="${d.id}"]`)) paintLike(b, d)
-  for (const b of document.querySelectorAll(`button[data-zap="${d.id}"]`)) { b.textContent = d.zapSats ? `⚡ ${d.zapSats.toLocaleString("en-US")}` : "⚡"; b.classList.toggle("on", d.zapMine); b.title = d.zapSats ? `Zap · ${d.zapSats.toLocaleString("en-US")} sats` : "Zap" }
+  for (const b of document.querySelectorAll(`button[data-zap="${d.id}"]`)) { b.textContent = d.zapSats ? `⚡ ${d.zapSats.toLocaleString("en-US")}` : "⚡"; b.classList.toggle("on", d.zapMine); b.title = d.zapSats ? `Zap · ${d.zapSats.toLocaleString("en-US")} sats. Hold to choose an amount` : "Zap. Hold to choose an amount" }
 }
 function paintLike(b, d) {
   const mine = d?.like === "sent" || d?.like === "pending"

@@ -25,6 +25,8 @@ export const threadLink = id => `${location.origin}${location.pathname}#/thread/
 export function menuTarget(target, { shiftKey = false, selection = "" } = {}) {
   if (shiftKey || selection || !target?.closest?.(".desk-main")) return null
   if (target.closest("input, textarea, select, [contenteditable], img, video, audio")) return null
+  // The zap bolt's own right-click opens its amount picker (ZapButton); the note's menu must not open over it.
+  if (target.closest(".zap")) return null
   const person = target.closest('a[href^="#/profile/"]')
   if (person) {
     const pk = person.getAttribute("href").slice("#/profile/".length)
