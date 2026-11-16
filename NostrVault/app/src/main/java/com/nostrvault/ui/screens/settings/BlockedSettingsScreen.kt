@@ -17,6 +17,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.BlockedPeople
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.service.NostrService
@@ -91,6 +92,7 @@ fun BlockedSettingsScreen(
     val colors = LocalNostrVaultColors.current
 
     val blocked = config.blockedForActiveAccount()
+    val lists = BlockedPeople.sections(config)
 
     LaunchedEffect(blocked) {
         viewModel.ensureProfiles(blocked)
@@ -160,32 +162,59 @@ fun BlockedSettingsScreen(
 
             Spacer(Modifier.height(24.dp))
 
-            // ── Blocked Accounts ──────────────────────────────────
-            SectionLabel("Blocked Accounts")
-            if (blocked.isEmpty()) {
-                EmptyRow("No blocked accounts.")
-            } else {
-                blocked.forEach { npub ->
-                    val profile = viewModel.profileFor(npub)
-                    AccountRow(
-                        npub = npub,
-                        hex = viewModel.hexFor(npub),
-                        displayName = profile?.bestName ?: (npub.take(12) + "..."),
-                        pictureURL = profile?.pictureURL,
-                        secondaryLine = npub,
-                    ) {
-                        TextButton(onClick = { viewModel.unblock(npub) }) {
-                            Text("Unblock", color = ErrorRed)
-                        }
-                    }
-                }
-            }
+            // ── Public / Private ──────────────────────────────────
+            BlockedSection(
+                title = "Public",
+                note = "Anyone can see these in your block list.",
+                empty = "No public blocks.",
+                npubs = lists.publicBlocks,
+                viewModel = viewModel,
+            )
+            Spacer(Modifier.height(24.dp))
+            BlockedSection(
+                title = "Private",
+                note = "Only you can see these. They are encrypted in your block list.",
+                empty = "No private blocks.",
+                npubs = lists.privateBlocks,
+                viewModel = viewModel,
+            )
 
             Spacer(Modifier.height(32.dp))
         }
     }
 }
 
+
+/** One of the Blocked page's lists (iOS: BlockedSettingsView's Public / Private sections). */
+@Composable
+private fun BlockedSection(
+    title: String,
+    note: String,
+    empty: String,
+    npubs: List<String>,
+    viewModel: BlockedSettingsViewModel,
+) {
+    SectionLabel(title)
+    if (npubs.isEmpty()) {
+        EmptyRow(empty)
+    } else {
+        npubs.forEach { npub ->
+            val profile = viewModel.profileFor(npub)
+            AccountRow(
+                npub = npub,
+                hex = viewModel.hexFor(npub),
+                displayName = profile?.bestName ?: (npub.take(12) + "..."),
+                pictureURL = profile?.pictureURL,
+                secondaryLine = npub,
+            ) {
+                TextButton(onClick = { viewModel.unblock(npub) }) {
+                    Text("Unblock", color = ErrorRed)
+                }
+            }
+        }
+    }
+    Text(text = note, color = SecondaryText, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+}
 
 @Composable
 private fun EmptyRow(text: String) {

@@ -64,4 +64,23 @@ enum BlockedPeople {
         guard isBlocked(author, in: blocked) else { return .shown }
         return isOpenedNote ? .placeholder : .backToOpened
     }
+
+    /// The Blocked page's two lists. Public blocks are the `p` tags of the
+    /// mute list, which any app or person can read; private ones are in its
+    /// encrypted content, which only you can open. Someone in both is shown
+    /// as public, since anyone can already see that block. Each list keeps its
+    /// order and drops repeats; `key` says when two entries are the same
+    /// person (an npub's hex, say). Android: BlockedPeople.sections.
+    struct Sections: Equatable {
+        var publicBlocks: [String]
+        var privateBlocks: [String]
+    }
+
+    static func sections(publicBlocks: [String], privateBlocks: [String],
+                         key: (String) -> String = { $0.lowercased() }) -> Sections {
+        var seen = Set<String>()
+        let shown = publicBlocks.filter { seen.insert(key($0)).inserted }
+        let hidden = privateBlocks.filter { seen.insert(key($0)).inserted }
+        return Sections(publicBlocks: shown, privateBlocks: hidden)
+    }
 }

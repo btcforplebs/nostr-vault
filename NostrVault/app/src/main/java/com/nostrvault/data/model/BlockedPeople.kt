@@ -97,4 +97,31 @@ object BlockedPeople {
             blockedNpubs = if (key == config.ownerNpub && legacy != null) legacy.filter { it != npub } else legacy,
         )
     }
+
+    /**
+     * The Blocked page's two lists. Public blocks are the `p` tags of the mute
+     * list, which any app or person can read; private ones are in its
+     * encrypted content, which only you can open. Someone in both is shown as
+     * public, since anyone can already see that block. Each list keeps its
+     * order and drops repeats; [key] says when two entries are the same person.
+     * iOS: BlockedPeople.sections.
+     */
+    data class Sections(val publicBlocks: List<String>, val privateBlocks: List<String>)
+
+    fun sections(
+        publicBlocks: List<String>,
+        privateBlocks: List<String>,
+        key: (String) -> String = { it.trim().lowercase() },
+    ): Sections {
+        val seen = HashSet<String>()
+        val shown = publicBlocks.filter { seen.add(key(it)) }
+        val hidden = privateBlocks.filter { seen.add(key(it)) }
+        return Sections(shown, hidden)
+    }
+
+    /** The Blocked page's lists for the active account. */
+    fun sections(config: HavenConfig): Sections {
+        val key = config.activeOrOwnerNpub()
+        return sections(config.publicBlockedFor(key), config.privateBlockedNpubsPerAccount[key].orEmpty())
+    }
 }
