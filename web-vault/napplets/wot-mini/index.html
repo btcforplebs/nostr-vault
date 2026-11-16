@@ -46,7 +46,7 @@
 <script>
 /*@nv-theme*/
   const n = window.napplet || {}
-  nvTheme(n)
+  nvTheme(n, { island: "dark" }) // the Web of Trust always draws Dark, as the big globe does
   const $ = id => document.getElementById(id)
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
   const ask = (what, payload = {}) => n.intent ? n.intent.invoke(what, { payload }).then(r => (r && r.ok ? r.data : null)).catch(() => null) : Promise.resolve(null)
