@@ -213,6 +213,8 @@ targets:
         LIBRARY_SEARCH_PATHS: ["$(inherited)", "$(PROJECT_DIR)/build/ios"]
         INFOPLIST_FILE: HavenApp-iOS/Info.plist
         GENERATE_INFOPLIST_FILE: false
+        # Icon follows accent (IconAccent.icons): one per accent preset.
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-Orange AppIcon-Gold AppIcon-Green AppIcon-Teal AppIcon-Blue AppIcon-Purple AppIcon-Pink AppIcon-Red"
         HEADER_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/build", "$(SRCROOT)/build/ios"]
         TARGETED_DEVICE_FAMILY: "1,2"
         CURRENT_PROJECT_VERSION: "34"

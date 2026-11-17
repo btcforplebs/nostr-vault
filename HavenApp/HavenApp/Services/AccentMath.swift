@@ -35,7 +35,7 @@ enum AccentMath {
     }
 
     /// OKLab (Björn Ottosson): changing only L keeps the hue and how colourful it looks.
-    private static func toLab(_ c: RGB) -> (Double, Double, Double) {
+    static func toLab(_ c: RGB) -> (Double, Double, Double) {
         let r = lin(c.r), g = lin(c.g), b = lin(c.b)
         let l = cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
         let m = cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)

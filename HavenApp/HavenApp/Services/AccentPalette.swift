@@ -70,6 +70,9 @@ struct AccentPalette {
         if let cached, cached.hex == hex { return cached.palette }
         let palette = make(hex)
         cached = (hex, palette)
+        // A new accent (picked here, synced, or at launch): the icon follows
+        // when the setting is on. After this render, not during it.
+        DispatchQueue.main.async { IconAccentApply.apply(accentHex: hex) }
         return palette
     }
 
