@@ -349,6 +349,15 @@ object HavenBridge {
     external fun refreshWot(): Boolean
 
     /**
+     * [refreshWot] for a vault on an outside relay (Citrine): the embedded
+     * relay isn't running, so this builds the web without it, reading your
+     * own follow list from [relayURL]. Set the relay env first
+     * ([ExternalWotRebuild]). Same answer and progress as [refreshWot].
+     * Maps to Go: RefreshWotFromRelayC(relayURL)
+     */
+    external fun refreshWotFromRelay(relayURL: String): Boolean
+
+    /**
      * How far the latest rebuild has got, as JSON (wot.Progress): running,
      * phase, batches, batchesDone, lists, found, new, size. See [com.nostrvault.data.model.WotRefreshProgress].
      * Maps to Go: WotRefreshProgressC()

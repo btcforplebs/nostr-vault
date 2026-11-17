@@ -501,7 +501,13 @@ internal fun TrustWebContent(
                 // date" only then, else on why not (iOS rebuildWeb).
                 var saved = false
                 // False when the relay isn't up; throws on a library from before the call existed.
-                val started = withContext(Dispatchers.IO) { runCatching { HavenBridge.refreshWot() }.getOrDefault(false) }
+                // A vault on an outside relay (Citrine) never starts ours: build the web without it.
+                val started = withContext(Dispatchers.IO) {
+                    runCatching {
+                        HavenBridge.refreshWot() ||
+                            com.nostrvault.relay.ExternalWotRebuild.start(appContext, feedService.configStore.config.value)
+                    }.getOrDefault(false)
+                }
                 if (!started) {
                     refreshState = RefreshState(1f, "Relay isn't running. Showing your last saved web.")
                     delay(RELAY_DOWN_HOLD_MS)
