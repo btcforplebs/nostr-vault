@@ -4,7 +4,8 @@ import SwiftUI
 /// Your emoji, each pack, then every Unicode emoji) with a jump strip at the
 /// bottom that follows the scroll. Reacting (`init(onSelect:)`) adds the
 /// editable quick bar and custom emoji; choosing the default reaction
-/// (`init(onSelectEmoji:)`) offers Unicode only.
+/// (`init(onSelectEmoji:)`) offers Unicode only. Reacting also offers
+/// "Make Genmoji" on top where Genmoji can be made (GenmojiReactSheet).
 /// Opens at half height on iPhone; pull up for full. Emoji data: `EmojiCatalog`.
 /// Android: `EmojiPickerSheet.kt`.
 struct EmojiPickerView: View {
@@ -22,6 +23,8 @@ struct EmojiPickerView: View {
     // Editing the quick bar: tap a slot, then any emoji to put there.
     @State private var editingBar = false
     @State private var editSlot: ReactionPick?
+    /// "Make Genmoji" is open (GenmojiReactSheet).
+    @State private var makingGenmoji = false
 
     /// Reacting to a note: custom emoji and the quick bar included.
     init(onSelect: @escaping (ReactionPick) -> Void) {
@@ -44,12 +47,45 @@ struct EmojiPickerView: View {
     private var searching: Bool { !searchText.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
+        Group {
+            #if os(macOS)
+            // A sheet over a popover is fragile on the Mac: show it in place.
+            if makingGenmoji { genmojiSheet } else { picker }
+            #else
+            picker.sheet(isPresented: $makingGenmoji) { genmojiSheet }
+            #endif
+        }
+        #if os(macOS)
+        .frame(width: 380, height: 460)
+        #endif
+        .onAppear { if reacting { EmojiListService.shared.refresh(maxAge: EmojiListService.pickerMaxAge) } }
+    }
+
+    @ViewBuilder private var genmojiSheet: some View {
+        if #available(iOS 18.2, macOS 15.3, *) {
+            GenmojiReactSheet(onCancel: { makingGenmoji = false }) { pick in
+                makingGenmoji = false
+                onSelect(pick)
+                dismiss()
+            }
+        }
+    }
+
+    private var picker: some View {
         let tabs = tabs
-        VStack(spacing: 0) {
+        return VStack(spacing: 0) {
             searchField
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .padding(.bottom, 8)
+
+            if reacting {
+                if #available(iOS 18.2, macOS 15.3, *) {
+                    GenmojiMakeRow(searching: searching) { makingGenmoji = true }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                }
+            }
 
             if reacting && !searching {
                 QuickBarRow(
@@ -73,10 +109,6 @@ struct EmojiPickerView: View {
                 jumpStrip(tabs)
             }
         }
-        #if os(macOS)
-        .frame(width: 380, height: 460)
-        #endif
-        .onAppear { if reacting { EmojiListService.shared.refresh(maxAge: EmojiListService.pickerMaxAge) } }
     }
 
     private var searchField: some View {

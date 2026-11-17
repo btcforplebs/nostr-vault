@@ -23,12 +23,14 @@ final class GenmojiSaver: ObservableObject {
     func reset() { if !isWorking { state = .idle } }
 
     /// `png`: the Genmoji (GenmojiImage.largestFramePNG); `title` names a new set.
-    func save(png: Data, shortcode: String, d: String, title: String) async {
+    /// Returns the saved emoji (to react with), nil when nothing was saved.
+    @discardableResult
+    func save(png: Data, shortcode: String, d: String, title: String) async -> CustomEmoji? {
         let nostr = NostrService.shared
         let me = nostr.activeHexPubkey
         guard FileNote.isHex64(me), ConfigService.shared.activeAccountCanSign else {
             state = .failed("This account can't sign, so it can't publish emoji.")
-            return
+            return nil
         }
         let address = GenmojiSets.address(me: me, d: d)
 
@@ -37,15 +39,15 @@ final class GenmojiSaver: ObservableObject {
         let outcome = await EmojiVaultStore.blossom().uploadForPost(data: png, sha256: sha, contentType: "image/png")
         guard case .hosted(let link) = outcome else {
             state = .failed("None of your media servers took the image, so nothing was published. Check Settings → Media servers.")
-            return
+            return nil
         }
         let url = link.absoluteString
         guard GenmojiSets.isPublicURL(url), await Self.isReachable(link) else {
             state = .failed("The image isn't reachable at a public link yet, so nothing was published. Try again in a moment.")
-            return
+            return nil
         }
         // The account switched while it uploaded: publish nothing for the other one.
-        guard nostr.activeHexPubkey == me else { state = .idle; return }
+        guard nostr.activeHexPubkey == me else { state = .idle; return nil }
 
         state = .working("Saving to \(title)…")
         let emoji = CustomEmoji(shortcode: shortcode, url: url, setAddress: address)
@@ -55,7 +57,7 @@ final class GenmojiSaver: ObservableObject {
         }
         if case .refused(let message, _) = saved {
             state = .failed("\(message) The image is uploaded; try Save again.")
-            return
+            return nil
         }
 
         let library = EmojiListService.shared
@@ -66,6 +68,7 @@ final class GenmojiSaver: ObservableObject {
         }
         _ = await EmojiVaultStore.shared.keep(data: png, mime: "image/png", emoji: [emoji], account: me)
         state = .saved("Saved \(emoji.content) to \(title)")
+        return emoji
     }
 
     /// A HEAD that answers 200: the link really serves the image.

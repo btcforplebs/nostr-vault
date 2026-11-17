@@ -475,6 +475,7 @@
 		35B3ACB355AC14190BBF9158 /* RelayProcessManager+NewsDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FB46C6C2AC828A2B9914601 /* RelayProcessManager+NewsDot.swift */; };
 		35B7147C9A6D81334FD194D0 /* ComposerDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF5D411E889E67C6FF5E16AF /* ComposerDraft.swift */; };
 		35F9738EB414D345100C7694 /* EmojiListParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B51A8C730F9E0715F991CD2 /* EmojiListParse.swift */; };
+		363671A30654A040DD2F2EDB /* GenmojiReactSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A664D7B9DA0F01928BA669B /* GenmojiReactSheet.swift */; };
 		363BC094743519D8269457BB /* QuotedEventsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AB87D6F419A5756C1655631 /* QuotedEventsView.swift */; };
 		364F5056A586F2464485294B /* FeedMediaPager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1712AE584A0D34C1680170F /* FeedMediaPager.swift */; };
 		3662101438D2FDF480D16D36 /* ComposerNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AC19A9CE2169B653C944419 /* ComposerNote.swift */; };
@@ -1020,6 +1021,7 @@
 		761DA014324390987C7661CF /* VaultNoteScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17D5FD74D905BFF2FB07AFF4 /* VaultNoteScope.swift */; };
 		7634F3216D29FD727A0DC681 /* ShareProfileSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14F604AA9C64FCDB6590A3C /* ShareProfileSheet.swift */; };
 		7682D9DBB00E467214FB1150 /* MempoolAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */; };
+		76917C64740ED4AF16FE2C5B /* ImagePlayground.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 88CF7814498AE3BF8A1B20E2 /* ImagePlayground.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
 		76A58FDBA899BE4A39FCCE30 /* NostrService+Moderation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30504C7086C0BB20CEE367D /* NostrService+Moderation.swift */; };
 		76D689C9AEBFE2925BE83094 /* LiveNoteCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD9D44519AE3AFB7DF22C301 /* LiveNoteCleanup.swift */; };
 		76E2CAF186640D463BABC13B /* DMShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ED1DC19A45BC450A2542BC3 /* DMShareHandler.swift */; };
@@ -2007,6 +2009,7 @@
 		E1AABCB5CE4693CABCD5BCB6 /* SharePortalInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C6F7C5E17D19AF53613227 /* SharePortalInbox.swift */; };
 		E1EF7D5F98C250909DFF8B9B /* VaultAuthGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75AFAEE59EB5CE1816CDEE9B /* VaultAuthGate.swift */; };
 		E215B1FE35EB9D31FF48C426 /* QuoteReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528D1E62E799D477438A8E24 /* QuoteReference.swift */; };
+		E217800AD1467E10CD6DC2C3 /* ImagePlayground.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 88CF7814498AE3BF8A1B20E2 /* ImagePlayground.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
 		E22FFB37CAC77A587016D695 /* GlobalSearchLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91CE4EF614B57F02C652177F /* GlobalSearchLogic.swift */; };
 		E232138BB590341785F78521 /* BitcoinSweepEstimate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93478F128B3552096C953E1B /* BitcoinSweepEstimate.swift */; };
 		E24500532C96C5B9C7464787 /* DMFileTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 821257AFB0BA5D75E324187D /* DMFileTransfer.swift */; };
@@ -2047,6 +2050,7 @@
 		E6338FC87334DD4D745AF372 /* RelayProcessManager+BlossomTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A7F917E54752EF9BA14E7B2 /* RelayProcessManager+BlossomTransfer.swift */; };
 		E66930E311700B1D4D32D634 /* NoteRow+ExpandedLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D7F06C12BC798B50FBF8CA0 /* NoteRow+ExpandedLayout.swift */; };
 		E67D7091060430CABF7FDD5F /* WelcomeStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B5F614D06F85D01C096F9F2 /* WelcomeStepView.swift */; };
+		E68435536455512A103BAFA0 /* GenmojiReactSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A664D7B9DA0F01928BA669B /* GenmojiReactSheet.swift */; };
 		E6A1BDD5A7BE0F2B8F84D938 /* ToolbarContent+SharedBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 164722856D65C2DF9F42D76F /* ToolbarContent+SharedBackground.swift */; };
 		E6ABA6BDC5EBBBF273F04D29 /* BlossomURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0A686E5FF7B46AC8AB9776 /* BlossomURI.swift */; };
 		E6B954A06F5DEC06F4C960AE /* MediaListItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C40BA5C7F1973E84E4C8AA9 /* MediaListItem.swift */; };
@@ -2942,6 +2946,7 @@
 		880DB060F395AAD9CE1427E1 /* DMService+Sending.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+Sending.swift"; sourceTree = "<group>"; };
 		8826E9845079D00F1FE9D22A /* LinkPreviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkPreviewCard.swift; sourceTree = "<group>"; };
 		886A3A64328DE20446BEB1C1 /* ShareModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareModel.swift; sourceTree = "<group>"; };
+		88CF7814498AE3BF8A1B20E2 /* ImagePlayground.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ImagePlayground.framework; path = System/Library/Frameworks/ImagePlayground.framework; sourceTree = SDKROOT; };
 		89481C18D3B08E23CC1A680F /* VaultSearchBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultSearchBar.swift; sourceTree = "<group>"; };
 		8998AD992C68DCAF68A30092 /* TrustCardWebButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustCardWebButton.swift; sourceTree = "<group>"; };
 		89A56934F313BFA876DC49BA /* BitcoinSweepDisclaimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepDisclaimerView.swift; sourceTree = "<group>"; };
@@ -3040,6 +3045,7 @@
 		99FE7C711DFEEEC008C26586 /* VaultContentsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultContentsModel.swift; sourceTree = "<group>"; };
 		9A39C0F9DA5BB3A65DCD8BBF /* VaultView+ListSwap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VaultView+ListSwap.swift"; sourceTree = "<group>"; };
 		9A501241428C9A79D3FB81AD /* PendingActionFlush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingActionFlush.swift; sourceTree = "<group>"; };
+		9A664D7B9DA0F01928BA669B /* GenmojiReactSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenmojiReactSheet.swift; sourceTree = "<group>"; };
 		9AD2777B6DB059131373523E /* NostrService+Profiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+Profiles.swift"; sourceTree = "<group>"; };
 		9B105DB51050709A2C0C4A0F /* RelayProcessManager+StopRestart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RelayProcessManager+StopRestart.swift"; sourceTree = "<group>"; };
 		9B16351ED2F5677D2447FC87 /* BlossomMediaCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomMediaCache.swift; sourceTree = "<group>"; };
@@ -3511,6 +3517,7 @@
 			files = (
 				0731D8B3DE085946811D3C1A /* libhaven.a in Frameworks */,
 				C8BF90EF7401FB5C2772C5E4 /* libnvfips.a in Frameworks */,
+				76917C64740ED4AF16FE2C5B /* ImagePlayground.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3520,6 +3527,7 @@
 			files = (
 				4B8B584EB02021A488F995CF /* libhaven_ios.a in Frameworks */,
 				086F056B5209B2DBDFD9A3C7 /* libnvfips.a in Frameworks */,
+				E217800AD1467E10CD6DC2C3 /* ImagePlayground.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3789,6 +3797,7 @@
 		2F6458DDD6182931FDCAB6E1 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				88CF7814498AE3BF8A1B20E2 /* ImagePlayground.framework */,
 				DA8EC80FB31CC3B6EB777D12 /* libhaven_ios.a */,
 				27A87225270090D65AC98D48 /* libhaven.a */,
 				B7AE5C3CB89D22373BCC0664 /* libnvfips.a */,
@@ -4777,6 +4786,7 @@
 				6F4A9C4C8BD9711513C84185 /* ErrorNotificationBanner.swift */,
 				BBCC2C40E48A867FA28814D4 /* FeedThreadCard.swift */,
 				FE65F95458326DF0C43FCEAC /* FilterButton.swift */,
+				9A664D7B9DA0F01928BA669B /* GenmojiReactSheet.swift */,
 				A3A6344C6C038AF79FCEC23D /* HoldToConfirmButton.swift */,
 				5E31B27EC2F18B0F61C3A10A /* IconFilterButton.swift */,
 				442B808DA6E67C6BE24C869B /* InfoButton.swift */,
@@ -5887,6 +5897,7 @@
 				9F2EC82F829202F6D3B19D2D /* GenmojiAddSheet.swift in Sources */,
 				47FA990373A6909FDFD636D7 /* GenmojiField.swift in Sources */,
 				F46CA663712EBDE189072AD3 /* GenmojiImage.swift in Sources */,
+				E68435536455512A103BAFA0 /* GenmojiReactSheet.swift in Sources */,
 				D4B1FA0C27D2825F9AEBF7A0 /* GenmojiSaver.swift in Sources */,
 				A588B35CDED5705E165B2CC2 /* GenmojiSets.swift in Sources */,
 				43E02A6DB11E2B376C20CB18 /* GifGridLayout.swift in Sources */,
@@ -7042,6 +7053,7 @@
 				496BA7FF99B4FA61C9457397 /* GenmojiAddSheet.swift in Sources */,
 				F740F6663B85E3F379DD6506 /* GenmojiField.swift in Sources */,
 				4D402DAC2C8C49A2EA5FEE7B /* GenmojiImage.swift in Sources */,
+				363671A30654A040DD2F2EDB /* GenmojiReactSheet.swift in Sources */,
 				DC086288AE1B4C22C7455AB8 /* GenmojiSaver.swift in Sources */,
 				45071FA73ADFB578758D68FD /* GenmojiSets.swift in Sources */,
 				03770F1D9FA5237A9CC6FBAA /* GifGridLayout.swift in Sources */,

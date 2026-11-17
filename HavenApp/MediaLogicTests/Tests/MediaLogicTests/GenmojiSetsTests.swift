@@ -119,4 +119,18 @@ final class GenmojiSetsTests: XCTestCase {
     func testLargestFramePNGRejectsNonImage() {
         XCTAssertNil(GenmojiImage.largestFramePNG(Data("not an image".utf8)))
     }
+
+    func testMakeRowOnlyWhenReactingSigningAndSupported() {
+        XCTAssertTrue(GenmojiSets.showsMakeRow(reacting: true, searching: false, canSign: true, canMake: true))
+        XCTAssertFalse(GenmojiSets.showsMakeRow(reacting: false, searching: false, canSign: true, canMake: true))
+        XCTAssertFalse(GenmojiSets.showsMakeRow(reacting: true, searching: true, canSign: true, canMake: true))
+        XCTAssertFalse(GenmojiSets.showsMakeRow(reacting: true, searching: false, canSign: false, canMake: true))
+        XCTAssertFalse(GenmojiSets.showsMakeRow(reacting: true, searching: false, canSign: true, canMake: false))
+    }
+
+    func testReactButtonSaysPublic() {
+        XCTAssertTrue(GenmojiSets.reactLabel.localizedCaseInsensitiveContains("publicly"))
+        XCTAssertTrue(GenmojiSets.reactLabel.hasPrefix("React"))
+        XCTAssertTrue(GenmojiSets.reactNote.localizedCaseInsensitiveContains("public"))
+    }
 }

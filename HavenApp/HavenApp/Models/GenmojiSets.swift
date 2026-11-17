@@ -137,4 +137,19 @@ enum GenmojiSets {
     /// The Save button: it publishes, so it says so.
     static func saveLabel(setTitle: String) -> String { "Save publicly to \(setTitle)" }
     static let publicNote = "Emoji sets are public: anyone on Nostr can see and use this Genmoji."
+
+    // MARK: Make Genmoji in the reaction picker
+
+    /// The one button in the picker's Genmoji flow: it uploads, saves to My
+    /// Genmoji and reacts, all public, so it says so.
+    static let reactLabel = "React and save publicly"
+    static let reactNote = "The reaction and My Genmoji are public: anyone on Nostr can see and use this Genmoji."
+
+    /// Whether the reaction picker shows "Make Genmoji": only when reacting
+    /// (not choosing the default reaction), not searching, with an account
+    /// that can sign, where this device can make Genmoji (iOS 18.2 /
+    /// macOS 15.3 with Apple Intelligence, checked by the caller).
+    static func showsMakeRow(reacting: Bool, searching: Bool, canSign: Bool, canMake: Bool) -> Bool {
+        reacting && !searching && canSign && canMake
+    }
 }
