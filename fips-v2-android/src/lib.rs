@@ -771,9 +771,28 @@ pub fn stop() {
     tracing::info!("fips mesh stopped");
 }
 
+/// The last status served, for a poll that finds the state busy.
+static LAST_STATUS: Mutex<String> = Mutex::new(String::new());
+
+/// Never waits: `start` holds the state for the whole node spawn, and this is
+/// polled on the iOS and Mac main thread. A busy state returns the last status.
 pub fn status_json() -> String {
-    let state = state();
-    let status = match state.as_ref() {
+    let state = match STATE.try_lock() {
+        Ok(g) => g,
+        Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+        Err(std::sync::TryLockError::WouldBlock) => {
+            let last = LAST_STATUS.lock().unwrap_or_else(|e| e.into_inner());
+            return if last.is_empty() { "{\"running\":false}".into() } else { last.clone() };
+        }
+    };
+    let json = status_of(state.as_ref());
+    // Stored under the state lock, so an older read never overwrites a newer one.
+    *LAST_STATUS.lock().unwrap_or_else(|e| e.into_inner()) = json.clone();
+    json
+}
+
+fn status_of(state: Option<&Running>) -> String {
+    let status = match state {
         None => Status {
             running: false,
             npub: None,
@@ -1260,6 +1279,17 @@ mod tests {
         assert_eq!(v["reading"], serde_json::json!([]));
         assert_eq!(v["counters"]["served_open"], 0);
         assert_eq!(v["counters"]["read_rx"], 0);
+    }
+
+    #[test]
+    fn status_does_not_wait_on_a_held_state() {
+        let held = state();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || tx.send(status_json()).unwrap());
+        let got = rx.recv_timeout(Duration::from_secs(2)).expect("status_json waited on the state lock");
+        drop(held);
+        let v: serde_json::Value = serde_json::from_str(&got).unwrap();
+        assert!(v.get("running").is_some());
     }
 
     #[test]
