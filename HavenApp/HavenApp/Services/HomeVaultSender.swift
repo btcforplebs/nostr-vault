@@ -431,20 +431,23 @@ final class HomeVaultSender: ObservableObject {
     /// waits for it now, not at the end of its backoff.
     private func watchReach() {
         guard reachTimer == nil else { return }
-        reachPeers = FipsMeshService.shared.connectedPeers()
         reachTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.checkReach() }
+            MainActor.assumeIsolated { _ = Task { await self?.checkReach() } }
+        }
+        Task { [weak self] in
+            let peers = await Task.detached { FipsMeshService.connectedPeers() }.value
+            self?.reachPeers = peers
         }
     }
 
-    private func checkReach() {
+    private func checkReach() async {
         guard queue.contains(where: isLane) else {
             reachTimer?.invalidate()
             reachTimer = nil
             return
         }
         guard UIApplication.shared.applicationState == .active else { return }
-        let peers = FipsMeshService.shared.connectedPeers()
+        let peers = await Task.detached { FipsMeshService.connectedPeers() }.value
         let newly = HomeVaultLogic.newlyInReach(now: peers, before: reachPeers)
         reachPeers = peers
         guard !newly.isEmpty else { return }

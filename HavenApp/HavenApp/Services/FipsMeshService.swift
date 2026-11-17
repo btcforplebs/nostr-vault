@@ -675,7 +675,8 @@ final class FipsMeshService: ObservableObject {
     }
 
     /// Npubs the engine is connected to now, read without touching `status`.
-    func connectedPeers() -> Set<String> {
+    /// Off the main thread: callers read it from a detached task.
+    nonisolated static func connectedPeers() -> Set<String> {
         guard let raw = NvFipsStatusJSON() else { return [] }
         defer { NvFipsFreeString(raw) }
         let now = try? JSONDecoder().decode(Status.self, from: Data(String(cString: raw).utf8))
