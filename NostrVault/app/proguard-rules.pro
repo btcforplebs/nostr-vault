@@ -2,6 +2,8 @@
 
 # Keep JNI bridge methods (called from native code)
 -keep class com.nostrvault.relay.HavenBridge { *; }
+# libnvtranslate.so binds to these names (Translate post)
+-keep class com.nostrvault.service.translate.BergamotNative { *; }
 -keep class com.nostrvault.fips.FipsBridge { *; }
 
 # Keep Kotlin serialization

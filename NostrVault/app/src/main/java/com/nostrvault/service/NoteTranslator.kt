@@ -1,35 +1,34 @@
 package com.nostrvault.service
 
+import android.content.Context
+import android.icu.text.Transliterator
 import android.util.Log
 import android.util.LruCache
-import com.google.android.gms.tasks.Task
-import com.google.mlkit.common.model.DownloadConditions
-import com.google.mlkit.common.model.RemoteModelManager
-import com.google.mlkit.nl.languageid.LanguageIdentification
-import com.google.mlkit.nl.languageid.LanguageIdentificationOptions
-import com.google.mlkit.nl.translate.TranslateLanguage
-import com.google.mlkit.nl.translate.TranslateRemoteModel
-import com.google.mlkit.nl.translate.Translation
-import com.google.mlkit.nl.translate.Translator
-import com.google.mlkit.nl.translate.TranslatorOptions
+import com.nostrvault.service.translate.BergamotNative
+import com.nostrvault.service.translate.LanguageIdentifier
+import com.nostrvault.service.translate.TranslationLanguages
+import com.nostrvault.service.translate.TranslationModelStore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
- * "Translate post", on device, with Google ML Kit: language identification
- * (bundled model) decides whether a note gets the button, and the translator
- * downloads one model per language the first time it is needed. Nothing else
- * leaves the phone — the note text never does.
+ * "Translate post", on device, with Mozilla's Bergamot engine (Firefox
+ * Translations) and fastText language ID; no Google code. Language ID
+ * (bundled model) decides whether a note gets the button; translation
+ * downloads Mozilla's model for each direction the first time it is needed
+ * ([TranslationModelStore]). Nothing else leaves the phone — the note text
+ * never does.
  *
  * Results are cached in memory per note (language) and per note + target
  * (translation), so scrolling back to a note neither re-identifies nor
@@ -37,18 +36,28 @@ import kotlin.coroutines.resumeWithException
  * card's: a card scrolled away mid-translation still fills the cache, and
  * the next card to ask joins the same job instead of starting another.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 @Singleton
-class NoteTranslator @Inject constructor() {
+class NoteTranslator @Inject constructor(
+    @ApplicationContext context: Context,
+    private val models: TranslationModelStore,
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    /** ISO 639-1 codes ML Kit can translate between. */
-    val supportedLanguages: Set<String> by lazy { TranslateLanguage.getAllLanguages().toSet() }
+    /**
+     * Two lanes, each one native call at a time: language ID for the feed's
+     * buttons never waits behind a translation, and Bergamot's service is
+     * single-threaded.
+     */
+    private val idLane = Dispatchers.Default.limitedParallelism(1)
+    private val translateLane = Dispatchers.Default.limitedParallelism(1)
 
-    private val identifier by lazy {
-        LanguageIdentification.getClient(
-            LanguageIdentificationOptions.Builder().setConfidenceThreshold(CONFIDENCE).build(),
-        )
+    private val identifier = LanguageIdentifier(context)
+
+    /** ISO 639-1 codes Mozilla can translate between; empty when the engine is missing. */
+    val supportedLanguages: Set<String> by lazy {
+        if (BergamotNative.isAvailable) TranslationLanguages.SUPPORTED else emptySet()
     }
 
     /** Note key -> translatable source language, or [UNKNOWN]. */
@@ -59,10 +68,13 @@ class NoteTranslator @Inject constructor() {
     private val translations = LruCache<String, String>(300)
     private val translating = ConcurrentHashMap<String, Deferred<String>>()
 
-    /** One open translator per language pair; the least recently used is closed. */
-    private val translators = object : LruCache<String, Translator>(4) {
-        override fun entryRemoved(evicted: Boolean, key: String, oldValue: Translator, newValue: Translator?) {
-            if (oldValue !== newValue) oldValue.close()
+    // Touched only on [translateLane].
+    /** Loaded Bergamot models by config; two cover a pivot, the oldest is freed. */
+    private val loaded = object : LinkedHashMap<String, Long>(4, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>): Boolean {
+            if (size <= MAX_LOADED_MODELS) return false
+            BergamotNative.freeModel(eldest.value)
+            return true
         }
     }
 
@@ -87,10 +99,14 @@ class NoteTranslator @Inject constructor() {
             // finally's remove() can never run before the put.
             scope.async(start = CoroutineStart.LAZY) {
                 try {
-                    val tag = runCatching { identifier.identifyLanguage(text).await() }
-                        .onFailure { Log.w(TAG, "identify failed", it) }
-                        .getOrNull()
-                    val source = NoteTranslationPolicy.sourceLanguage(tag, supportedLanguages)
+                    val guess = withContext(idLane) {
+                        runCatching { identifier.identify(text) }
+                            .onFailure { Log.w(TAG, "identify failed", it) }
+                            .getOrNull()
+                    }
+                    val code = guess?.takeIf { it.probability >= CONFIDENCE }
+                        ?.let { TranslationLanguages.fromLanguageId(it.label) }
+                    val source = NoteTranslationPolicy.sourceLanguage(code, supportedLanguages)
                     languages.put(noteKey, source ?: UNKNOWN)
                     source
                 } finally {
@@ -102,19 +118,15 @@ class NoteTranslator @Inject constructor() {
     }
 
     /** Whether translating [source] to [target] has to download a model first. */
-    suspend fun needsDownload(source: String, target: String): Boolean {
-        val manager = RemoteModelManager.getInstance()
-        return listOf(source, target).any { lang ->
-            runCatching {
-                !manager.isModelDownloaded(TranslateRemoteModel.Builder(lang).build()).await()
-            }.getOrDefault(true)
-        }
+    suspend fun needsDownload(source: String, target: String): Boolean = withContext(Dispatchers.IO) {
+        steps(source, target, sourceText = null).any { (from, to) -> models.installed(from, to) == null }
     }
 
     /**
      * [plainText] translated from [source] into [target], line by line so the
      * note keeps its breaks; lines that are only links or hashtags are kept as
-     * they are. Downloads the language models on first use, on any network.
+     * they are. Downloads the language models from Mozilla on first use, on
+     * any network.
      */
     suspend fun translate(noteKey: String, plainText: String, source: String, target: String): String {
         val cacheKey = "$noteKey|$target"
@@ -124,13 +136,22 @@ class NoteTranslator @Inject constructor() {
             // finally's remove() can never run before the put.
             scope.async(start = CoroutineStart.LAZY) {
                 try {
-                    val translator = translatorFor(source, target)
-                    translator.downloadModelIfNeeded(DownloadConditions.Builder().build()).await()
-                    val lines = mutableListOf<String>()
-                    for (segment in NoteTranslationPolicy.segments(plainText)) {
-                        lines += if (segment.translate) translator.translate(segment.text).await() else segment.text
+                    val installed = steps(source, target, plainText).map { (from, to) -> models.ensure(from, to) }
+                    val segments = NoteTranslationPolicy.segments(plainText)
+                    val inputs = segments.filter { it.translate }.map { it.text }.toTypedArray()
+                    val outputs = if (inputs.isEmpty()) emptyArray() else withContext(translateLane) {
+                        val handles = installed.map { loadModel(it.bergamotConfig()) }
+                        val svc = BergamotNative.service
+                        when (handles.size) {
+                            1 -> BergamotNative.translate(svc, handles[0], inputs)
+                            2 -> BergamotNative.pivot(svc, handles[0], handles[1], inputs)
+                            else -> inputs
+                        }
                     }
-                    val out = lines.joinToString("\n")
+                    var next = 0
+                    val out = segments.joinToString("\n") { segment ->
+                        if (segment.translate) outputs.getOrElse(next++) { segment.text } else segment.text
+                    }
                     translations.put(cacheKey, out)
                     out
                 } finally {
@@ -141,28 +162,42 @@ class NoteTranslator @Inject constructor() {
         return job.await()
     }
 
-    private fun translatorFor(source: String, target: String): Translator = synchronized(translators) {
-        val key = "$source>$target"
-        translators.get(key) ?: Translation.getClient(
-            TranslatorOptions.Builder()
-                .setSourceLanguage(source)
-                .setTargetLanguage(target)
-                .build(),
-        ).also { translators.put(key, it) }
+    private fun loadModel(config: String): Long {
+        loaded[config]?.let { return it }
+        val handle = BergamotNative.loadModel(config)
+        loaded[config] = handle
+        return handle
+    }
+
+    /**
+     * The Mozilla directions for [source] -> [target]. Chinese picks its
+     * script: a note's own (Traditional when converting it to Simplified
+     * changes it), and the reader's from the device locale.
+     */
+    private fun steps(source: String, target: String, sourceText: String?): List<Pair<String, String>> =
+        TranslationLanguages.plan(source, target).map { (from, to) ->
+            TranslationLanguages.mozillaCode(from, traditionalChinese = from == source && isTraditional(sourceText)) to
+                TranslationLanguages.mozillaCode(to, traditionalChinese = to == target && deviceReadsTraditional())
+        }
+
+    private fun isTraditional(text: String?): Boolean {
+        if (text.isNullOrEmpty()) return false
+        return runCatching { Transliterator.getInstance("Hant-Hans").transliterate(text) != text }.getOrDefault(false)
+    }
+
+    private fun deviceReadsTraditional(): Boolean {
+        val locale = Locale.getDefault()
+        if (locale.language != "zh") return false
+        return locale.script == "Hant" || locale.country in setOf("TW", "HK", "MO")
     }
 
     private companion object {
         const val TAG = "NoteTranslator"
         const val UNKNOWN = ""
 
-        /** ML Kit's own default: below this a note is "und" and gets no button. */
-        const val CONFIDENCE = 0.5f
-    }
-}
+        /** Below this fastText's guess is not trusted and the note gets no button. */
+        const val CONFIDENCE = 0.5
 
-/** A Play Services [Task] as a suspend call. */
-private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont ->
-    addOnSuccessListener { cont.resume(it) }
-    addOnFailureListener { cont.resumeWithException(it) }
-    addOnCanceledListener { cont.cancel() }
+        const val MAX_LOADED_MODELS = 2
+    }
 }

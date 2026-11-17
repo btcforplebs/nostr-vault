@@ -2,8 +2,8 @@ package com.nostrvault.service
 
 /**
  * The pure rules behind "Translate post": which notes get the button, which
- * language they translate into, and what the Settings picker offers. No ML Kit
- * in here, so it runs in a plain JVM test; [NoteTranslator] does the on-device
+ * language they translate into, and what the Settings picker offers. No native
+ * engine in here, so it runs in a plain JVM test; [NoteTranslator] does the on-device
  * work.
  */
 object NoteTranslationPolicy {
