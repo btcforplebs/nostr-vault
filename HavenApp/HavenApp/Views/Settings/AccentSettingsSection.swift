@@ -5,6 +5,7 @@ import SwiftUI
 /// (PLANS/NV_LIGHT_MODE_AND_CUSTOM_COLORS.md; web twin: net/accent.js).
 struct AccentSettingsSection: View {
     @EnvironmentObject var configService: ConfigService
+    @AppStorage(IconAccent.followsKey) private var iconFollows = false
 
     private var pickedHex: String { AccentPalette.hex(fromSetting: configService.config.themeColor) }
 
@@ -35,14 +36,29 @@ struct AccentSettingsSection: View {
                 preview(.light)
             }
             .padding(.vertical, 4)
+
+            if IconAccentApply.isSupported {
+                Toggle(isOn: $iconFollows) {
+                    Label("Icon follows accent", systemImage: "app.badge")
+                }
+                .accessibilityIdentifier("appearance.iconFollowsAccent")
+                .onChange(of: iconFollows) { _, _ in IconAccentApply.apply(accentHex: pickedHex) }
+            }
         } header: {
             Text("Accent")
         } footer: {
             Text(AccentPalette.shiftsInLight(pickedHex)
                  ? "This colour is too pale to read as text on white, so in Light mode links and #tags use a deeper shade. Buttons keep the colour."
                  : "Buttons, links and highlights use this colour. Dark mode shows a brighter, neon version.")
+                + Text(iconFollows ? " " + Self.iconNote : "")
         }
     }
+
+    #if os(iOS)
+    private static let iconNote = "The app icon takes the nearest of the eight colours; iPhone asks each time it changes."
+    #else
+    private static let iconNote = "The app's icon takes this colour while Nostr Vault runs."
+    #endif
 
     private func swatch(_ hex: String, name: String) -> some View {
         let on = hex == pickedHex

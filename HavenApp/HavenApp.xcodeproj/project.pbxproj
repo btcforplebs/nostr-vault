@@ -925,6 +925,7 @@
 		6B1C126C919BE5871E5977CD /* MediaPrivacy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C4C43890E8EB9A15FFAD39A /* MediaPrivacy.swift */; };
 		6B39C0CBF5DB41DFD9682525 /* ScopedImportFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A2175A5F0DB416041B4A00A /* ScopedImportFile.swift */; };
 		6B415D28731D3A962FAB0E57 /* NoteDetailViewWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB55D0A09A0123F9C8A2B32 /* NoteDetailViewWrapper.swift */; };
+		6B4617B3CBD0F2E734086DAF /* IconAccentApply.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07DE02205BBB91AC1EBC9ABA /* IconAccentApply.swift */; };
 		6B5FEA48F3529E68873144F1 /* ImportJobsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF18504D84D1E58D74B502E /* ImportJobsService.swift */; };
 		6B6C7CB4A88360314C4D9A52 /* EventInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D343EC33764F0FED0D74697A /* EventInspector.swift */; };
 		6B7C1697E43C11DAD27D850A /* NWCService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19B6B870C61AB1313009408E /* NWCService.swift */; };
@@ -933,6 +934,7 @@
 		6BC778F38E2FDE92505F7968 /* TutorialCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F8CCE0B894EB86F20D564F3 /* TutorialCenter.swift */; };
 		6BF25EB287DA24C1DE56166C /* ActionToastBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 160DAD117DA05D7B6AF3460D /* ActionToastBanner.swift */; };
 		6C588292560F9220E4CFA76D /* DashboardView+ImportSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A07682D0C53235ABE03E3EF /* DashboardView+ImportSections.swift */; };
+		6C76A17FD77F2231C6D694B4 /* IconAccent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1CF15E28999120A248357E4 /* IconAccent.swift */; };
 		6C896FDD3AD5B03A82D8BAC2 /* SwiftNIP46Handshake.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE2003F8C6D98618A746D1E7 /* SwiftNIP46Handshake.swift */; };
 		6C9D84BDDD6C01121D663E89 /* FeedPickerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C1A932217ECF4B07B2089F6 /* FeedPickerMenu.swift */; };
 		6CF9BD996704CA3AA18BE2BB /* RelayConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 674B477FC2EDC213BEA34279 /* RelayConfiguration.swift */; };
@@ -989,6 +991,7 @@
 		736F43963312B7938DA0C3E1 /* HighlightReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E29E19875274ECE1D3381131 /* HighlightReviewView.swift */; };
 		739D9DE2D6F84B968A4B88F8 /* NoteDetailView+EngagementPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7018F50A59F15809E36371C9 /* NoteDetailView+EngagementPanel.swift */; };
 		73AE59BA2106FFA1751992DB /* DMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 775FD3A0FC8C2289FB4BBFE3 /* DMService.swift */; };
+		73C5D051B2FCAFEF83E23A54 /* IconAccent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1CF15E28999120A248357E4 /* IconAccent.swift */; };
 		73C69EA442770FAC406C9494 /* GatedArticle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A66B764FCF1CB44F6DBFBEB /* GatedArticle.swift */; };
 		73C910AED6338C7F8D3EF378 /* ModePostPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1613215C4C17A2C82C64F4 /* ModePostPublisher.swift */; };
 		73DA5629CDA66CE308B85186 /* ArticleClipReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BCCF93729CB6A3A2DD9C2B3 /* ArticleClipReviewView.swift */; };
@@ -1389,6 +1392,7 @@
 		9D8C4B533215C3CB63C3E7E8 /* FilterButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE65F95458326DF0C43FCEAC /* FilterButton.swift */; };
 		9DBA13DB50ECFF3FFF4832F8 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7B2365D506330BA6CF87F8 /* AppearanceSettingsView.swift */; };
 		9DCCCE19A32AA6BA91CFBBF0 /* MeshKeepWarm.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3736EC830D4BBC909C54B4 /* MeshKeepWarm.swift */; };
+		9DDA7B8978BE896AA6F05D8C /* IconAccentApply.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07DE02205BBB91AC1EBC9ABA /* IconAccentApply.swift */; };
 		9DE20CBAB1CAEB1EBD083BCA /* DockClearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476EF8F1B938508F9475B764 /* DockClearance.swift */; };
 		9E3289AFD61B61080FB5B2FD /* RetryableAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8495489F7284415840FE673 /* RetryableAsyncImage.swift */; };
 		9E4140F7B92C109F37813CC1 /* NVZapsTodayCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F3A25C07796E884E71CB032 /* NVZapsTodayCounter.swift */; };
@@ -2359,6 +2363,7 @@
 		062B559615452153EE2E788D /* GenmojiAddCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenmojiAddCard.swift; sourceTree = "<group>"; };
 		06A0BB929DA965323CDD105A /* LinkPreviewCacheKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkPreviewCacheKey.swift; sourceTree = "<group>"; };
 		075378186B28AF0EF05CE1AB /* NotificationReadiness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationReadiness.swift; sourceTree = "<group>"; };
+		07DE02205BBB91AC1EBC9ABA /* IconAccentApply.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconAccentApply.swift; sourceTree = "<group>"; };
 		0802E590CDCCA7978BB8D2C6 /* AvatarThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarThumbnail.swift; sourceTree = "<group>"; };
 		083AB9E96216A0440D26D501 /* LiveNowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNowModel.swift; sourceTree = "<group>"; };
 		0842F86AEFC979CFBDF29054 /* CustomEmojiText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomEmojiText.swift; sourceTree = "<group>"; };
@@ -3370,6 +3375,7 @@
 		E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupRelayChoice.swift; sourceTree = "<group>"; };
 		E13000616CA698B02FE82B9A /* QuotedNoteSkeleton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotedNoteSkeleton.swift; sourceTree = "<group>"; };
 		E1A58EA5A96FF1042528234F /* VaultFollowers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultFollowers.swift; sourceTree = "<group>"; };
+		E1CF15E28999120A248357E4 /* IconAccent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconAccent.swift; sourceTree = "<group>"; };
 		E1E46F82F53A3265979C7F24 /* VideoTileFit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoTileFit.swift; sourceTree = "<group>"; };
 		E20CD71E4D4331E21582E6E2 /* NostrService+ServerListAdoption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+ServerListAdoption.swift"; sourceTree = "<group>"; };
 		E21025C4F8626E1E4FFAB180 /* FeedFilterEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedFilterEngine.swift; sourceTree = "<group>"; };
@@ -5030,6 +5036,8 @@
 				CF2E53E0B250B0C8AE445ECE /* GenmojiSaver.swift */,
 				671F0CF1A73CA1BA693AE904 /* GlobalSearchSession.swift */,
 				CE79015510D8601B89F75C2C /* HomeVaultSender.swift */,
+				E1CF15E28999120A248357E4 /* IconAccent.swift */,
+				07DE02205BBB91AC1EBC9ABA /* IconAccentApply.swift */,
 				427E36EC7A40E85FF4710BBD /* InterestListService.swift */,
 				BBDF2964207ECC2BFAE27EBA /* LabelPublisher.swift */,
 				3EC8D4A0D7C68FF72B9CCF4D /* LeaveNostrService.swift */,
@@ -5948,6 +5956,8 @@
 				772FB4A1BF5A9331EC697F3B /* HomeVaultLogic.swift in Sources */,
 				C5040D31F0EF39592A437F47 /* HomeVaultSection.swift in Sources */,
 				61421A1B93DDAD96F59FC85B /* HomeVaultSender.swift in Sources */,
+				6C76A17FD77F2231C6D694B4 /* IconAccent.swift in Sources */,
+				6B4617B3CBD0F2E734086DAF /* IconAccentApply.swift in Sources */,
 				B812DD60EB0D5F8D72E69A0C /* IconFilterButton.swift in Sources */,
 				717CE51E6C949B7D3950ECBF /* IdentifiableString.swift in Sources */,
 				AD093FA032369C6ECBD22018 /* IdentityInput.swift in Sources */,
@@ -7104,6 +7114,8 @@
 				A24366F094575B0776593231 /* HomeVaultLogic.swift in Sources */,
 				0EA0BA6FC52B56B4C373400C /* HomeVaultSection.swift in Sources */,
 				1DF532BE91E594D23B6D4E6C /* HomeVaultSender.swift in Sources */,
+				73C5D051B2FCAFEF83E23A54 /* IconAccent.swift in Sources */,
+				9DDA7B8978BE896AA6F05D8C /* IconAccentApply.swift in Sources */,
 				F809F887E228DC7489ED5613 /* IconFilterButton.swift in Sources */,
 				A3AA91BCDE3AAC086CFFC1AE /* IdentifiableString.swift in Sources */,
 				1EECC33A8227DE8F3B0F06CF /* IdentityInput.swift in Sources */,
@@ -7972,6 +7984,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 0C8B6FCEDA7D89E7935A6C71 /* Base.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Orange AppIcon-Gold AppIcon-Green AppIcon-Teal AppIcon-Blue AppIcon-Purple AppIcon-Pink AppIcon-Red";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "HavenApp-iOS/HavenApp-iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
@@ -8005,6 +8018,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 0C8B6FCEDA7D89E7935A6C71 /* Base.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Orange AppIcon-Gold AppIcon-Green AppIcon-Teal AppIcon-Blue AppIcon-Purple AppIcon-Pink AppIcon-Red";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "HavenApp-iOS/HavenApp-iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
