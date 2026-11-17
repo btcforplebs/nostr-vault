@@ -25,6 +25,16 @@ class VaultDashboardModelTest {
     }
 
     @Test
+    fun `port row shows the outside relay's port, not ours`() {
+        assertEquals("3355", m.relayPort(useExternalRelay = false, externalAddress = "ws://127.0.0.1:4869", ownPort = 3355))
+        assertEquals("4869", m.relayPort(useExternalRelay = true, externalAddress = "ws://127.0.0.1:4869", ownPort = 3355))
+        assertEquals("443", m.relayPort(true, "wss://relay.example.com", 3355))
+        assertEquals("80", m.relayPort(true, "ws://192.168.1.20", 3355))
+        assertNull(m.relayPort(true, "", 3355))
+        assertNull(m.relayPort(true, null, 3355))
+    }
+
+    @Test
     fun `status words`() {
         assertEquals("Your vault is running", m.statusTitle(RunState.RUNNING))
         assertEquals("Your vault is running", m.statusTitle(RunState.IMPORTING))

@@ -103,6 +103,7 @@ extern char* ComputeCatchUpNotesC(char* follows);
 extern char* ComputeUnderratedNotesC(void);
 extern char* GetFollowersC(const char* owner);
 extern int RefreshWotC(void);
+extern int RefreshWotFromRelayC(char* relayURL);
 extern char* WotRefreshProgressC(void);
 extern char* WotNewcomersC(int from);
 extern char* GetImportLogC(void);
@@ -576,6 +577,15 @@ Java_com_nostrvault_relay_HavenBridge_computeUnderratedNotes(JNIEnv *env, jobjec
 JNIEXPORT jboolean JNICALL
 Java_com_nostrvault_relay_HavenBridge_refreshWot(JNIEnv *env, jobject thiz) {
     return RefreshWotC() == 1 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_nostrvault_relay_HavenBridge_refreshWotFromRelay(JNIEnv *env, jobject thiz, jstring relayURL) {
+    const char *cURL = GET_CSTR(env, relayURL);
+    if (cURL == NULL) return JNI_FALSE;
+    int started = RefreshWotFromRelayC((char*)cURL);
+    REL_CSTR(env, relayURL, cURL);
+    return started == 1 ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jstring JNICALL

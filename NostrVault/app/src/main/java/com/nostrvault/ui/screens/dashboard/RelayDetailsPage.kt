@@ -119,8 +119,10 @@ internal fun RelayDetailsPage(
                     modifier = Modifier.size(14.dp),
                 )
             }
-            DashDivider()
-            ValueRow(NostrVaultIcons.TagIcon, "Port", "${cfg.relayPort}")
+            VaultDashboardModel.relayPort(cfg.useExternalRelay, address, cfg.relayPort)?.let { port ->
+                DashDivider()
+                ValueRow(NostrVaultIcons.TagIcon, "Port", port)
+            }
             DashDivider()
             ValueRow(Icons.Filled.Schedule, "Running for", runningFor)
         }

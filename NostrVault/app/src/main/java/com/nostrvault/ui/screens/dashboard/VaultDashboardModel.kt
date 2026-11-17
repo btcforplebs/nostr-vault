@@ -42,6 +42,24 @@ internal object VaultDashboardModel {
 
     fun fixButtonTitle(state: RunState): String = if (state == RunState.PAUSED) "Start vault" else "Restart vault"
 
+    /**
+     * Relay details' Port row: the port the vault answers on. Our relay's own
+     * port, or, for a vault on an outside relay (Citrine), the port in its
+     * address (the scheme's default when it names none), never our 3355.
+     * Null when the address can't be read, so the row is left out.
+     */
+    fun relayPort(useExternalRelay: Boolean, externalAddress: String?, ownPort: Int): String? {
+        if (!useExternalRelay) return "$ownPort"
+        val uri = runCatching { java.net.URI(externalAddress?.trim().orEmpty()) }.getOrNull() ?: return null
+        if (uri.host.isNullOrEmpty()) return null
+        if (uri.port > 0) return "${uri.port}"
+        return when (uri.scheme?.lowercase()) {
+            "wss", "https" -> "443"
+            "ws", "http" -> "80"
+            else -> null
+        }
+    }
+
     /** "Up 2d 3h", "Up 4h 12m", "Up 7m"; null without a start time. */
     fun uptime(startMs: Long?, nowMs: Long): String? {
         if (startMs == null || startMs <= 0) return null
