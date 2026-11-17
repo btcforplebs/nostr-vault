@@ -11,7 +11,8 @@ enum IconAccent {
     static let followsKey = "iconFollowsAccent"
 
     /// The alternate icon for each preset, in `AccentMath.presets` order (art:
-    /// Frida, RESEARCH/NV_ACCENT_ICONS/<hex>.svg rendered at 1024). The
+    /// Frida, RESEARCH/NV_ACCENT_ICONS/<hex>-light/-dark.png). Each set has a
+    /// light icon and a dark one (iOS 18 picks by appearance). The
     /// names are the asset catalog's `AppIcon-*.appiconset` folders and
     /// project.yml's ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES.
     static let icons: [(hex: String, name: String)] = [
