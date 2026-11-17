@@ -237,6 +237,8 @@ fun AppearanceSettingsScreen(
             AppearanceModeRow(appearanceMode, viewModel::setAppearanceMode)
             Spacer(Modifier.height(32.dp))
             AccentPresetRow(accent, viewModel::setAccent)
+            Spacer(Modifier.height(16.dp))
+            IconFollowsAccentRow(accent)
             Spacer(Modifier.height(32.dp))
 
             // Text size

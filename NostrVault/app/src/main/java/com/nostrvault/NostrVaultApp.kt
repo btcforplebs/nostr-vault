@@ -16,6 +16,8 @@ import com.nostrvault.service.ProfilePicturePrefetcher
 import com.nostrvault.ui.theme.Motion
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Provider
@@ -130,6 +132,13 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
             configStore.config.collect {
                 com.nostrvault.service.LocalBlossomCache.enabled = it.useLocalBlossomCache
             }
+        }
+        // Home-screen icon follows the accent when that is on (IconAccentApply; no-op when already right).
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            configStore.config
+                .map { it.themeColor }
+                .distinctUntilChanged()
+                .collect { com.nostrvault.ui.theme.IconAccentApply.apply(this@NostrVaultApp, it) }
         }
     }
 

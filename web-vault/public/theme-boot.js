@@ -13,5 +13,9 @@
       el.textContent = css
       document.head.appendChild(el)
     }
+    // The tab icon in the accent (src/net/accent-icon.js), before the app loads.
+    var icon = localStorage.getItem("display.accentIcon")
+    var link = icon && document.querySelector('link[rel="icon"]')
+    if (link) link.setAttribute("href", icon)
   } catch (e) {}
 })()
