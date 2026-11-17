@@ -330,8 +330,9 @@ extension NoteDetailView {
                 reposts: rowData.stats.reposts
             ),
             onProfile: { showingProfilePubkey = $0 },
-            onTap: { selectAndScrollToNote(note.id, proxy: proxy) },
-            showsZapButton: true
+            // No zap bolt on short reply lines (Logen 11-17); the main post
+            // and full replies keep theirs.
+            onTap: { selectAndScrollToNote(note.id, proxy: proxy) }
         )
         .id(note.id)
     }
