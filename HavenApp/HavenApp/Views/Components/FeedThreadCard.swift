@@ -177,8 +177,9 @@ struct FeedThreadCard: View {
             ),
             onMissingQuote: actions.fetchMissingNote,
             onProfile: onProfile,
-            onTap: tapAction(for: note),
-            showsZapButton: true
+            // No zap bolt in feed cards (Logen 11-16): it sat under every
+            // line. It stays inside an opened note's thread.
+            onTap: tapAction(for: note)
         )
         // Skipped when only the feed around it redrew; see `CondensedNoteLine`.
         .equatable()
