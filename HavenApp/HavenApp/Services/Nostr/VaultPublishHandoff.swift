@@ -98,7 +98,7 @@ enum VaultPublishHandoff {
 
         func start(url: URL, auth: String, message: String) {
             var request = URLRequest(url: url, timeoutInterval: VaultHandoffDecision.hold)
-            request.setValue("Haven/1.0", forHTTPHeaderField: "User-Agent")
+            request.setValue(RelayUserAgent.value, forHTTPHeaderField: "User-Agent")
             request.setValue("Nostr \(auth)", forHTTPHeaderField: "Authorization")
             let config = URLSessionConfiguration.ephemeral
             config.timeoutIntervalForRequest = VaultHandoffDecision.hold

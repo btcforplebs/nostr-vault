@@ -122,7 +122,7 @@ func loadConfig() Config {
 		RelayBindAddress:                     getEnvString("RELAY_BIND_ADDRESS", "0.0.0.0"),
 		RelaySoftware:                        relaySoftware,
 		RelayVersion:                         getVersion(),
-		UserAgent:                            fmt.Sprintf("Haven/%s (+%s)", getVersion(), relaySoftware),
+		UserAgent:                            relayUserAgent(relaySoftware),
 		PrivateRelayName:                     getEnv("PRIVATE_RELAY_NAME"),
 		PrivateRelayNpub:                     getEnv("PRIVATE_RELAY_NPUB"),
 		PrivateRelayDescription:              getEnv("PRIVATE_RELAY_DESCRIPTION"),
@@ -237,6 +237,11 @@ func applyGoMemLimit(mb int) {
 		return
 	}
 	debug.SetMemoryLimit(int64(mb) << 20)
+}
+
+// relayUserAgent is what other relays see when the engine connects to them.
+func relayUserAgent(software string) string {
+	return fmt.Sprintf("NostrVault/%s (+%s)", getVersion(), software)
 }
 
 func getVersion() string {
