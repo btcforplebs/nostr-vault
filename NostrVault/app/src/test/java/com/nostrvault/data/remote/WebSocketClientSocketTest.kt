@@ -66,6 +66,18 @@ class WebSocketClientSocketTest {
         "ws://$host:${server.port}/"
 
     @Test
+    fun `relay connection names the app in User-Agent`() {
+        server.enqueue(upgrade())
+        server.start(InetAddress.getByName("127.0.0.1"), 0)
+        val c = client(wsUrl())
+        c.connect()
+        val req = server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS)!!
+        val ua = req.getHeader("User-Agent")!!
+        println("Android User-Agent: $ua")
+        assertTrue(ua, Regex("""NostrVault/\S+ \(Android\)""").matches(ua))
+    }
+
+    @Test
     fun `connect on an open or dialling client opens no second socket`() {
         repeat(3) { server.enqueue(upgrade()) }
         server.start(InetAddress.getByName("127.0.0.1"), 0)

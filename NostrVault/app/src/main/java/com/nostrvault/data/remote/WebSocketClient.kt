@@ -54,6 +54,9 @@ class WebSocketClient(
     companion object {
         private const val TAG = "WebSocketClient"
 
+        /** What relays see as the connecting app (okhttp's default is "okhttp/4.12.0"). */
+        internal val RELAY_USER_AGENT = "NostrVault/${BuildConfig.VERSION_NAME} (Android)"
+
         /** Every live client, so a blocklist change reaches sockets already open. */
         private val live: MutableSet<WebSocketClient> =
             java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(java.util.WeakHashMap()))
@@ -296,6 +299,7 @@ class WebSocketClient(
         val request = try {
             Request.Builder()
                 .url(url)
+                .header("User-Agent", RELAY_USER_AGENT)
                 .build()
         } catch (e: IllegalArgumentException) {
             Log.w(TAG, "Invalid WebSocket URL, skipping connect: $url")

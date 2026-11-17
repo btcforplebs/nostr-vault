@@ -201,7 +201,7 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
             }
 
             var request = URLRequest(url: url)
-            request.setValue("Haven/1.0", forHTTPHeaderField: "User-Agent")
+            request.setValue(RelayUserAgent.value, forHTTPHeaderField: "User-Agent")
 
             let sess = self.makeSession()
             self.session = sess
@@ -537,5 +537,20 @@ class TLSSkipSession: NSObject, URLSessionDelegate {
 
     nonisolated func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         LocalTLSTrust.handle(challenge, completionHandler: completionHandler)
+    }
+}
+
+/// The User-Agent every relay connection sends: "NostrVault/<version> (iOS|macOS)".
+/// Relay operators see which app is connecting. Not used for the nostr.build
+/// GIF, link-preview or video requests, which keep their own agents.
+enum RelayUserAgent {
+    static var value: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        #if os(iOS)
+        let platform = "iOS"
+        #else
+        let platform = "macOS"
+        #endif
+        return "NostrVault/\(version) (\(platform))"
     }
 }
