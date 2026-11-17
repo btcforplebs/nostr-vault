@@ -89,6 +89,9 @@ object AccentPalette {
     /** Light keeps the exact colour as text at or above this on white. */
     private const val LIGHT_TEXT_KEEP = 3.5
 
+    /** OKLab (L, a, b) of a colour; the default orange for anything that is not "#rrggbb". */
+    internal fun lab(hex: String): DoubleArray = toLab(rgb(normalize(hex) ?: DEFAULT_HEX))
+
     /** Dark mode's neon of a colour, as "#rrggbb" (twin of neon() in net/accent.js). */
     fun neonHex(hex: String): String = hexOf(neon(rgb(normalize(hex) ?: DEFAULT_HEX)))
 

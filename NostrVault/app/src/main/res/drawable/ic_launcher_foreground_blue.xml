@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from ic_launcher_foreground.xml: accent #2E7DFF, hi #639EFF (RESEARCH/NV_ACCENT_ICONS README). Only the glow and the two outlines change. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <group
+        android:pivotX="512" android:pivotY="548"
+        android:scaleX="0.827" android:scaleY="0.827"
+        android:translateY="-36">
+
+        <!-- Stone arch -->
+        <path android:pathData="M 262 876 L 262 470 A 250 250 0 0 1 762 470 L 762 876 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="302" android:startY="220"
+                    android:endX="622" android:endY="876">
+                    <item android:offset="0" android:color="#FFA8825A"/>
+                    <item android:offset="0.58" android:color="#FF33251A"/>
+                    <item android:offset="1" android:color="#FF33251A"/>
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- Top-lit edge (SVG gradient "e", white .32 -> .10 -> 0) -->
+        <path
+            android:pathData="M 262 876 L 262 470 A 250 250 0 0 1 762 470 L 762 876 Z"
+            android:strokeWidth="10">
+            <aapt:attr name="android:strokeColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="512" android:startY="220"
+                    android:endX="512" android:endY="876">
+                    <item android:offset="0" android:color="#52FFFFFF"/>
+                    <item android:offset="0.5" android:color="#1AFFFFFF"/>
+                    <item android:offset="1" android:color="#00FFFFFF"/>
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- The opening: near-black, then the sunset glow -->
+        <path android:pathData="M 352 876 L 352 488 A 160 160 0 0 1 672 488 L 672 876 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="512" android:startY="328"
+                    android:endX="512" android:endY="876">
+                    <item android:offset="0" android:color="#FF0A0602"/>
+                    <item android:offset="1" android:color="#8C0A0602"/>
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path android:pathData="M 352 876 L 352 488 A 160 160 0 0 1 672 488 L 672 876 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="radial"
+                    android:centerX="512" android:centerY="700"
+                    android:gradientRadius="240">
+                    <item android:offset="0" android:color="#F2639EFF"/>
+                    <item android:offset="0.5" android:color="#572E7DFF"/>
+                    <item android:offset="1" android:color="#002E7DFF"/>
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path
+            android:pathData="M 352 876 L 352 488 A 160 160 0 0 1 672 488 L 672 876 Z"
+            android:strokeColor="#80639EFF"
+            android:strokeWidth="7"/>
+
+        <!-- The keyhole -->
+        <path
+            android:pathData="M 472 742 a 40 40 0 1 0 80 0 a 40 40 0 1 0 -80 0 Z"
+            android:fillColor="#B30A0602"
+            android:strokeColor="#D9639EFF"
+            android:strokeWidth="7"/>
+    </group>
+</vector>

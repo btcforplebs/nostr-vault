@@ -29,6 +29,7 @@ import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
 import { startAppearance } from "./src/net/appearance.js"
 import { startAccent } from "./src/net/accent.js"
+import { startAccentIcon } from "./src/net/accent-icon.js"
 import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard } from "./src/screens/lazy-screens.js"
 import { setDeskLayout, forgetOldSwitch } from "./src/napplet/flag.js"
 import { warmScreens } from "./src/screens/warm-screens.js"
@@ -69,6 +70,7 @@ const bootHash = location.hash
 startNavDepth()
 startAppearance()
 startAccent()
+startAccentIcon()
 if (loadSession() && !BOX) preloadHaven() // a box's vault is the box: no haven.wasm
 
 // 760px and up is the desktop layout (src/desktop). The address is fixed up for the layout before anything renders:
