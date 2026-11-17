@@ -38,6 +38,10 @@ final class IconAccentTests: XCTestCase {
             XCTAssertTrue(line.contains(icon.name), icon.name)
             let png = root.appendingPathComponent("Resources/Assets.xcassets/\(icon.name).appiconset/icon_1024x1024.png")
             XCTAssertTrue(FileManager.default.fileExists(atPath: png.path), png.path)
+            let dark = root.appendingPathComponent("Resources/Assets.xcassets/\(icon.name).appiconset/icon_1024x1024_dark.png")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: dark.path), dark.path)
+            let contents = try String(contentsOf: root.appendingPathComponent("Resources/Assets.xcassets/\(icon.name).appiconset/Contents.json"), encoding: .utf8)
+            XCTAssertTrue(contents.contains("icon_1024x1024_dark.png") && contents.contains("\"dark\""), icon.name)
         }
     }
 
