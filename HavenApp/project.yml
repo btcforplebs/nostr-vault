@@ -148,6 +148,9 @@ targets:
       - sdk: build/libnvfips.a
         embed: false
         implicit: true
+      # Genmoji in the reaction picker reads supportsImagePlayground (macOS 15.1+).
+      - sdk: ImagePlayground.framework
+        weak: true
 
   # ── iOS Target ────────────────────────────────────────────
   HavenApp-iOS:
@@ -248,6 +251,9 @@ targets:
       - framework: build/ios/libnvfips.a
         embed: false
         implicit: true
+      # Genmoji in the reaction picker reads supportsImagePlayground (iOS 18.1+).
+      - sdk: ImagePlayground.framework
+        weak: true
       - target: NostrVaultWidgets
       - target: NostrVaultShare
 
