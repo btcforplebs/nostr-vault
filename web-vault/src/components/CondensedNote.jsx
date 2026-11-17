@@ -9,7 +9,6 @@ import { Mention } from "./NoteText.jsx"
 import { useBlocked, useQuote } from "./QuotedNote.jsx"
 import { repostState } from "../net/blocks.js"
 import { Badges } from "./Badges.jsx"
-import { ZapButton } from "./ZapButton.jsx"
 import { ago } from "./time.js"
 import { mediaType, mediaUrls, tileNote } from "../net/media.js"
 import { imageItem } from "../net/note-media.js"
@@ -115,10 +114,6 @@ function Row({ event, note, placeholder, depth = 0, lines, onOpen }) {
             {!placeholder && quotes(note) && <Mark kind="quote" />}
             {KIND_MARK[note.kind] && <Mark kind={KIND_MARK[note.kind]} />}
           </span>
-          {/* A thread's reply line gets the bolt, as the iPhone's condensed replies do: tap zaps the default, hold picks.
-              Its clicks and keys stay on the bolt, so the line doesn't also open. No wallet and no sats: nothing shows. */}
-          {depth > 0 && !placeholder && <span class="condensed-zap" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
-            onAuxClick={e => e.stopPropagation()}><ZapButton note={note} /></span>}
         </div>
         {parts.length > 0 && <p class={`condensed-text${placeholder ? " muted" : ""}`} style={`-webkit-line-clamp: ${lines ?? 3}`}>
           {parts.map((p, i) => typeof p === "string" ? p : p.pubkey ? <Mention key={i} pubkey={p.pubkey} memoryOnly /> : <span key={i} class="mention">@…</span>)}

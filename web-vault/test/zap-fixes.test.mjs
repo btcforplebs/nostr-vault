@@ -1,5 +1,5 @@
 // The zap list fixes (Logen 11-16): the Reader napplet's tap zaps the default and a hold picks; the desktop's right-click
-// on the bolt opens only the picker; a tap never sends under 1 sat; a thread's condensed reply lines get the bolt.
+// on the bolt opens only the picker; a tap never sends under 1 sat; condensed reply lines carry no bolt.
 import test from "node:test"
 import assert from "node:assert/strict"
 import fs from "node:fs"
@@ -58,9 +58,9 @@ test("desktop: a right-click on the bolt opens only its picker, never the note's
   assert.ok(menu.indexOf('closest(".zap")') < menu.indexOf("[data-note-id]"))
 })
 
-test("a thread's condensed reply lines carry the bolt, and its taps stay on it", () => {
+test("condensed reply lines carry no bolt; full replies and the main post keep theirs", () => {
   const row = src("src/components/CondensedNote.jsx")
-  assert.match(row, /import \{ ZapButton \} from "\.\/ZapButton\.jsx"/)
-  assert.match(row, /\{depth > 0 && !placeholder && <span class="condensed-zap" onClick=\{e => e\.stopPropagation\(\)\} onKeyDown=\{e => e\.stopPropagation\(\)\}/)
-  assert.match(row, /<ZapButton note=\{note\} \/><\/span>\}/)
+  assert.doesNotMatch(row, /ZapButton|condensed-zap/)
+  assert.doesNotMatch(src("src/styles/feeds.css"), /\.condensed-zap/)
+  assert.match(src("src/components/NoteCard.jsx"), /<ZapButton note=\{note\} \/>/)
 })
