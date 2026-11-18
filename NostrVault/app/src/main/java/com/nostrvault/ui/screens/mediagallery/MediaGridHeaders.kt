@@ -15,12 +15,12 @@ import kotlinx.coroutines.flow.*
 /**
  * The heading of the section at the top of the grid, drawn over it once the
  * section's own heading has scrolled under the top edge; the next heading
- * pushes it up as it arrives. Compose's grid has no sticky headers before
- * foundation 1.8, hence an overlay.
+ * pushes it up as it arrives. Compose's staggered grid has no sticky headers,
+ * hence an overlay.
  */
 @Composable
 internal fun PinnedGridHeader(
-    state: androidx.compose.foundation.lazy.grid.LazyGridState,
+    state: androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState,
     sections: List<MediaDateSection>,
     top: androidx.compose.ui.unit.Dp,
 ) {

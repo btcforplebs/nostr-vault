@@ -14,7 +14,11 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed as staggeredItemsIndexed
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -104,7 +108,7 @@ fun MediaGalleryScreen(
                 ?: MediaLayoutMode.GRID,
         )
     }
-    val gridState = rememberLazyGridState()
+    val gridState = rememberLazyStaggeredGridState()
     val listState = rememberLazyListState()
 
     // Where the list is relative to its top: the chrome always shows near it. Tracks
@@ -204,9 +208,22 @@ fun MediaGalleryScreen(
     val sections = remember(filteredItems, sortOption) {
         MediaDateGrouping.sections(filteredItems, sortOption)
     }
-    // Each tile's grid row, so a row holding a portrait video stands taller as one.
-    val gridRows = remember(sections) { vaultGridRows(sections, columns = 3) }
-    val frameRatios = remember { com.nostrvault.ui.components.VideoFrameRatios() }
+    // The mosaic (MediaMosaic.kt): shapes learned before this visit, read once, so nothing on screen moves; local
+    // photos' shapes read from their headers off the main thread before their tiles show.
+    val mosaicSizes = remember { MediaMosaicSizes.of(context) }
+    val shapes = remember { HashMap(mosaicSizes.snapshot()) }
+    val shapedSections by produceState<List<MediaDateSection>?>(initialValue = null, sections) {
+        val unread = sections.flatMap { it.items }.filter { it.localFile != null && it.isImage && it.sha256 !in shapes }
+        if (unread.isNotEmpty()) {
+            val read = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                unread.mapNotNull { item -> item.localFile?.let(MediaMosaicLayout::imageFileAspect)?.let { item.sha256 to it } }
+            }
+            for ((sha, aspect) in read) {
+                if (shapes.putIfAbsent(sha, aspect) == null) mosaicSizes.learn(sha, aspect, 1f)
+            }
+        }
+        value = sections
+    }
 
     GlassScaffold(
         toolbar = {
@@ -407,10 +424,11 @@ fun MediaGalleryScreen(
                     MediaEmptyStateView(emptyState)
                 }
             } else if (layoutMode == MediaLayoutMode.GRID) {
-                // Grid view
-                LazyVerticalGrid(
+                // Grid view: a mosaic, each tile its media's own shape, in the shortest column.
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                LazyVerticalStaggeredGrid(
                     state = gridState,
-                    columns = GridCells.Fixed(3),
+                    columns = StaggeredGridCells.Fixed(MediaMosaicLayout.columnsFor(maxWidth.value)),
                     contentPadding = PaddingValues(
                         top = padding.calculateTopPadding() + 2.dp,
                         start = 2.dp,
@@ -418,35 +436,30 @@ fun MediaGalleryScreen(
                         bottom = padding.calculateBottomPadding() + 88.dp,
                     ),
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalItemSpacing = 2.dp,
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    for (section in sections) {
+                    for (section in shapedSections.orEmpty()) {
                         if (section.title.isNotEmpty()) {
                             item(
                                 key = gridHeaderKey(section.title),
-                                span = { GridItemSpan(maxLineSpan) },
+                                span = StaggeredGridItemSpan.FullLine,
                                 contentType = "header",
                             ) {
                                 MediaSectionHeader(section.title)
                             }
                         }
-                        itemsIndexed(
+                        staggeredItemsIndexed(
                             items = section.items,
                             key = { _, item -> item.sha256 },
                             contentType = { _, _ -> "media" },
                         ) { offset, item ->
                             val index = section.startIndex + offset
-                            val row = gridRows[item.sha256].orEmpty()
                             MediaGridCell(
                                 item = item,
                                 index = index,
-                                tileAspect = com.nostrvault.ui.components.mediaRowTileAspect(
-                                    row.map { if (it.isVideo) frameRatios[it.displayUrl] else null },
-                                ),
-                                onFrameSize = { size ->
-                                    if (item.isVideo) frameRatios.learned(item.displayUrl, size.width, size.height)
-                                },
+                                tileAspect = MediaMosaicLayout.clampedAspect(shapes[item.sha256]),
+                                onFrameSize = { size -> mosaicSizes.learn(item.sha256, size.width, size.height) },
                                 backup = BackupBadgeState(
                                     summary = viewModel.backupSummary(item.sha256, mirrorPresence),
                                     mirrorCount = blossomMirrors.size,
@@ -476,11 +489,12 @@ fun MediaGalleryScreen(
                         }
                     }
                 }
+                }
                 // The grid's headings stay pinned at the top, as iOS's
                 // LazyVGrid(pinnedViews: .sectionHeaders) and the list do.
                 PinnedGridHeader(
                     state = gridState,
-                    sections = sections,
+                    sections = shapedSections.orEmpty(),
                     top = padding.calculateTopPadding() + 2.dp,
                 )
             } else {
