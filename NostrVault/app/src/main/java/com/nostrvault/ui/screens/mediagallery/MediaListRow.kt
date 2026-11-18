@@ -126,15 +126,6 @@ internal fun MediaListRow(
                         fontSize = 12.sp,
                     )
                 }
-                if (item.isLocal) {
-                    Spacer(Modifier.width(6.dp))
-                    Icon(
-                        imageVector = NostrVaultIcons.Blossom,
-                        contentDescription = "Local",
-                        tint = Color(0xFF4CAF50),
-                        modifier = Modifier.size(14.dp),
-                    )
-                }
             }
         }
 
