@@ -572,8 +572,13 @@ struct VaultView: View {
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
             withAnimation(Motion.toggle) { viewMode = .followers }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayActivity)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayActivity)) { note in
             withAnimation(Motion.toggle) { viewMode = .activity }
+            // The WoT globe's "N bounced" counter: straight to Outside your web.
+            if note.object as? ActivityFilter == .outside, activityFilter != .outside {
+                activityFilter = .outside
+                noteFilterToggle(.activity(.outside), nowOn: true)
+            }
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },
