@@ -403,6 +403,13 @@ struct FeedNoteRowData: Equatable {
     /// taken out (`LiveNoteCleanup`), worked out once here instead of on
     /// every body pass of the row. nil only for data built some other way.
     var liveBody: LiveNoteCleanup.Body? = nil
+    /// The notes the body quotes that are found, by id. In the data, not
+    /// looked up in the row's body, so a row that skips unchanged redraws
+    /// still fills its quote card when the quoted note arrives (the
+    /// referenced-note repair re-resolves it, and this differs).
+    var quotedNotes: [String: FeedNote] = [:]
+    /// An empty-content repost whose original no relay returned.
+    var repostUnavailable = false
 
     func with(engagement: PostEngagement?) -> FeedNoteRowData {
         var copy = self
@@ -435,6 +442,9 @@ struct FeedNoteRowData: Equatable {
 
         // Likes, zaps and counts on a repost row belong to the note it carries.
         let original = feedService.originalNote(for: note)
+        // What the row's body shows: an empty-content repost's original once found.
+        let isEmptyRepost = note.kind == 6 && note.content.isEmpty && note.repostedEventId != nil
+        let bodySource = isEmptyRepost ? (resolvedOriginal ?? note) : note
         let lud16 = nostrService.profiles[original.pubkey]?.lud16
         let lud06 = nostrService.profiles[original.pubkey]?.lud06
         let hasLightning = (lud16 != nil && !lud16!.isEmpty) || (lud06 != nil && !lud06!.isEmpty)
@@ -459,9 +469,11 @@ struct FeedNoteRowData: Equatable {
             isFollowed: feedService.followedPubkeySet.contains(displayPubkey),
             isParentFollowed: parentNote.map { feedService.followedPubkeySet.contains($0.pubkey) } ?? false,
             stats: feedService.noteStats[original.id] ?? NoteStats(),
-            liveBody: liveBody(for: (note.kind == 6 && note.content.isEmpty && note.repostedEventId != nil)
-                                    ? (resolvedOriginal ?? note) : note,
-                               feedService: feedService)
+            liveBody: liveBody(for: bodySource, feedService: feedService),
+            quotedNotes: Dictionary(bodySource.quotedEventIds.compactMap { id in
+                feedService.findNote(id: id).map { (id, $0) }
+            }, uniquingKeysWith: { first, _ in first }),
+            repostUnavailable: isEmptyRepost && feedService.unavailableNoteIds.contains(note.repostedEventId ?? "")
         )
     }
 

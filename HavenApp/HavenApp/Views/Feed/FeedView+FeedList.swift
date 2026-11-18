@@ -51,6 +51,12 @@ private struct ReferencedNoteObserver: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: feedService.referencedNoteUpdates) { _, signal in onReferencedNotes(signal.ids) }
+            // A note given up on changes its rows too ("unavailable"): rows
+            // skip unchanged redraws, so they are re-resolved like an arrival.
+            .onChange(of: feedService.unavailableNoteIds) { old, new in
+                let given = new.subtracting(old)
+                if !given.isEmpty { onReferencedNotes(given) }
+            }
     }
 }
 
