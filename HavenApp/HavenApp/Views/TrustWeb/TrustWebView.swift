@@ -172,6 +172,11 @@ struct TrustWebView: View {
                     // the other tabs; this pane is already inset for the bar.
                     myWebHUD.padding(.bottom, -buttonRow.clearing(tabBarHeight))
                 }
+                #else
+                .overlay(alignment: .bottomTrailing) {
+                    // Notes the gate refused (the iPhone's sits over My Web).
+                    if card == nil { GlobeBounceCounter().padding(12) }
+                }
                 #endif
             } else {
                 // A post's globe: the WOT tab's card does the explaining, so it

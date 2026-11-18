@@ -76,6 +76,9 @@ enum GlobeArcs {
         var sort: Sort = .note
         /// How hard a zap's bolt strikes, 0 to 1, by its amount.
         var strength = 0.0
+        /// Refused by the gate (`WebGate`, `.outside`): a small red star that
+        /// stops at your web's shell and bounces back out (`GlobeBounce.swift`).
+        var bounced = false
     }
 
     /// From a relay `EVENT`'s event: its `p` tags in order, once each,
@@ -173,6 +176,8 @@ enum GlobeArcs {
         var strength = 0.0
         /// What it carries: a reaction's star is smaller.
         var sort: Sort = .note
+        /// Refused by the gate: it bounces off your web's shell (`bounceStage`).
+        var bounced = false
     }
 
     /// Where a line is at a moment: its star at `head` (0 at the author, 1 at
@@ -232,8 +237,12 @@ enum GlobeArcs {
             for next in released {
                 // Aimed at no one: it flies into you, where your relay is.
                 for target in next.targets.isEmpty ? [me] : next.targets where target != next.author {
+                    // A refused zap bounces as a star, never strikes as a bolt.
                     lines.append(Line(note: next.id, from: next.author, to: target, toMe: target == me,
-                                      ring: next.ring, born: now, zap: next.zap, strength: next.strength, sort: next.sort))
+                                      ring: next.ring, born: now, zap: next.zap && !next.bounced,
+                                      strength: next.strength, sort: next.sort, bounced: next.bounced))
+                    // A refused note is one red star, at its first target.
+                    if next.bounced { break }
                 }
             }
             retireOverCap(now: now)
@@ -259,7 +268,8 @@ enum GlobeArcs {
         /// only the freshest get faces.
         func faceKeys(limit: Int, except center: String) -> [String] {
             var keys: [String] = []
-            for line in lines.reversed() where line.retired == nil {
+            // A refused stranger never gets a face on your globe.
+            for line in lines.reversed() where line.retired == nil && !line.bounced {
                 for key in [line.from, line.to] where key != center && !keys.contains(key) {
                     guard keys.count < limit else { return keys }
                     keys.append(key)
@@ -276,6 +286,7 @@ enum GlobeArcs {
 
     static func stage(of line: Line, at now: TimeInterval, reduceMotion: Bool = false) -> Stage {
         if line.zap { return boltStage(of: line, at: now, reduceMotion: reduceMotion) }
+        if line.bounced { return bounceStage(of: line, at: now, reduceMotion: reduceMotion) }
         let age = max(0, now - line.born)
         let head = reduceMotion ? 1 : ease(min(1, age / travel))
         let landed = reduceMotion ? age : age - travel
@@ -297,15 +308,18 @@ enum GlobeArcs {
     /// draw that instant twice, which dropped every star before it flew.
     static func isGone(_ line: Line, at now: TimeInterval) -> Bool {
         if let retired = line.retired, now - retired >= retireFade { return true }
+        if line.bounced { return now - line.born >= bounceLife }
         return now - line.born >= (line.zap ? boltLife : travel + hold + fade)
     }
 
     /// True once the star has reached its target.
-    static func hasLanded(_ line: Line, at now: TimeInterval) -> Bool { now - line.born >= travel }
+    /// A bounced star never lands.
+    static func hasLanded(_ line: Line, at now: TimeInterval) -> Bool { !line.bounced && now - line.born >= travel }
 
     /// How brightly an endpoint's face shows: in as its line sets out,
     /// out as it fades.
     static func faceAlpha(of line: Line, at now: TimeInterval) -> Double {
+        if line.bounced { return 0 }
         let age = now - line.born
         let fadeIn = min(1, max(0, age / 0.8))
         return min(fadeIn, stage(of: line, at: now).alpha)

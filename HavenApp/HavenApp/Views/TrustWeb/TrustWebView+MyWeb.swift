@@ -13,6 +13,12 @@ extension TrustWebView {
         return ZStack(alignment: .bottomTrailing) {
             if shown {
                 ChromeFold(anchor: .bottomTrailing) { myWebButton }
+                    // Notes the gate refused, just above: an overlay, so the
+                    // slot's width (shared with the mini player) is the button's.
+                    .overlay(alignment: .topTrailing) {
+                        GlobeBounceCounter()
+                            .alignmentGuide(.top) { d in d[.bottom] + 8 }
+                    }
                     .transition(.scale(scale: 0.85, anchor: .bottomTrailing).combined(with: .opacity))
             }
         }
