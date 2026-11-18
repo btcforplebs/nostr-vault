@@ -311,3 +311,15 @@ test("a relay that says auth-required but never sends a challenge doesn't stall 
     assert.ok(Date.now() - t1 < 150, `the same connection doesn't wait again: ${Date.now() - t1} ms`)
   } finally { net.destroy(); forgetDeclinedAuth() }
 })
+
+test("a forged copy of a wrap sent first does not hide the real one", async () => {
+  const wrap = await wrapFor(rumorFor(pk(B), pk(A), "the real message"), { signer: signerOf(B), crypto: cryptoOf(B), me: pk(B) }, pk(A))
+  const forged = { ...plain(wrap), sig: "0".repeat(128) } // the real id, a signature that fails
+  const log = []
+  const net = new SimplePool({ websocketImplementation: havenInbox(pk(A), [forged, wrap], log) })
+  resetMessages(pk(A))
+  try {
+    await loadMessages({ vault: {}, session, signer: signerOf(A) }, [RELAY], { crypto: cryptoOf(A), chat: fakeChat(), net, wait: 500 })
+    assert.deepEqual([...getMessages().messages.values()].map(m => m.content), ["the real message"])
+  } finally { net.destroy() }
+})

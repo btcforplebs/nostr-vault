@@ -61,6 +61,10 @@ export const COOL_DOWN_MS = [60e3, 120e3, 300e3, 600e3]
  *  querySync, so a slow relay is skipped once any relay of the whole sync is open, not only one of its own read. */
 export const oneAsk = () => ({ open: 0, onOpen: new Set() })
 
+// Each subscribeMap's own "already have it" check, carried to its relays' subscriptions on this key (see subscribeMap
+// and watch): nostr-tools spreads the params into every relay.subscribe, symbol keys included.
+const SEEN_VERIFIED = Symbol("seen verified")
+
 export class LivePool extends SimplePool {
   signerRelays = new Set()
   maxOpenRelays = MAX_OPEN_RELAYS
@@ -168,7 +172,24 @@ export class LivePool extends SimplePool {
     // its first await, which is that call), so the flag is seen by exactly this ask's opens.
     const was = this.quickOpen
     this.quickOpen = params?.quickConnect ? (params.ask ?? oneAsk()) : null
-    try { return super.subscribeMap(requests, params) } finally { this.quickOpen = was }
+    try { return super.subscribeMap(requests, this.verifiedOnce(params)) } finally { this.quickOpen = was }
+  }
+  /**
+   * An id counts as seen only once a copy of it has passed verification. nostr-tools marks an id seen when it
+   * arrives, before the copy is checked (pool.js alreadyHaveEvent, then verifyEvent), so a relay could send a forged
+   * copy of a real event's id first and the real one, from it or any other relay, was skipped as a duplicate. Here
+   * the relays skip only ids already delivered (or the caller's own), every other copy is verified, and onevent gets
+   * each id once: the first copy that passes.
+   */
+  verifiedOnce(params) {
+    const delivered = new Set(), have = params?.alreadyHaveEvent, onevent = params?.onevent
+    const seen = id => delivered.has(id) || !!have?.(id)
+    return {
+      ...params,
+      alreadyHaveEvent: seen, // nostr-tools' own check asks this first; the relays use SEEN_VERIFIED instead (watch)
+      [SEEN_VERIFIED]: seen,
+      onevent: ev => { if (delivered.has(ev.id)) return; delivered.add(ev.id); onevent?.(ev) },
+    }
   }
   publish(relays, event, params) {
     // nostr-tools calls ensureRelay synchronously for each relay here too (only allowConnectingToRelay before it).
@@ -247,6 +268,10 @@ export class LivePool extends SimplePool {
   watch(r) {
     if (!r || this.watched.has(r)) return
     this.watched.add(r)
+    // A subscribeMap's relays skip only what it has delivered verified (verifiedOnce), not nostr-tools' set of every
+    // id that arrived. Every pool relay comes through ensureRelay, which watches it before subscribeMap subscribes.
+    const subscribe = r.subscribe.bind(r)
+    r.subscribe = (filters, params) => subscribe(filters, params?.[SEEN_VERIFIED] ? { ...params, alreadyHaveEvent: params[SEEN_VERIFIED] } : params)
     const keep = () => { if (r.ws && r.ws.readyState !== 3) this.closing.add(r.ws) }
     const close = r.close.bind(r), hardClose = r.handleHardClose.bind(r)
     // A relay the pool closes on purpose is not coming back, so a retry waiting for it would only fire into nothing.

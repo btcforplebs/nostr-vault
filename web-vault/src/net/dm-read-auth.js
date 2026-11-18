@@ -135,8 +135,10 @@ export function authedSubscribe(net, urls, filter, { onevent, oneose, onclose, m
     r.eosed = false
     const sub = relay.subscribe([filter], {
       eoseTimeout: maxWait,
-      alreadyHaveEvent: id => { if (seen.has(id)) return true; seen.add(id); return false },
-      onevent: ev => onevent?.(ev),
+      // Seen only once delivered: the relay asks this before it verifies a copy, so marking here let a forged first
+      // copy hide the real event (as pool.js verifiedOnce).
+      alreadyHaveEvent: id => seen.has(id),
+      onevent: ev => { if (seen.has(ev.id)) return; seen.add(ev.id); onevent?.(ev) },
       // A REQ the relay closed keeps its EOSE timer in nostr-tools: only the current REQ counts.
       oneose: () => { if (r.sub === sub) { r.eosed = true; if (r.answered === relay.connectionPromise) r.tries = 0; check() } },
       onclose: reason => {
