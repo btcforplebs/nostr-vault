@@ -5,6 +5,9 @@ import Photos
 
 struct MediaGridItem: View {
     let item: MediaItem
+    /// The tile's shape, width / height. The Media tab's mosaic passes the
+    /// media's known shape and sets the tile's size itself; 1 is a square.
+    var aspect: Double = 1
     var onDeleteFromMirrors: ((MediaItem) -> Void)? = nil
     var onDeleteEverywhere: ((MediaItem) -> Void)? = nil
     var onMirrorComplete: (() -> Void)? = nil
@@ -28,12 +31,12 @@ struct MediaGridItem: View {
 
     var body: some View {
         Color.clear
-            .aspectRatio(1.0, contentMode: .fit)
+            .aspectRatio(aspect, contentMode: .fit)
             .overlay(
                 Group {
                     // Use item.type instead of url extension checks for Blossom compatibility
                     if item.type == .video {
-                        VideoThumbnailView(url: item.url, mimeType: item.mimeType)
+                        VideoThumbnailView(url: item.url, mimeType: item.mimeType, showsSpinner: false)
                     } else if item.type == .audio {
                         ZStack {
                             Color(red: 0.1, green: 0.1, blue: 0.14)
@@ -62,7 +65,8 @@ struct MediaGridItem: View {
                             .meshMediaNote(for: item)
                     } else {
                         // Default to image for non-video/audio items
-                        RetryableAsyncImage(url: item.url, contentMode: .fill, targetSize: CGSize(width: 250, height: 250))
+                        RetryableAsyncImage(url: item.url, contentMode: .fill, targetSize: CGSize(width: 250, height: 250),
+                                            showsSpinner: false)
                             .meshMediaNote(for: item)
                     }
                 }
@@ -271,6 +275,7 @@ struct MediaGridItem: View {
 extension MediaGridItem: Equatable {
     static func == (lhs: MediaGridItem, rhs: MediaGridItem) -> Bool {
         lhs.item == rhs.item
+            && lhs.aspect == rhs.aspect
             && (lhs.onDeleteFromMirrors == nil) == (rhs.onDeleteFromMirrors == nil)
             && (lhs.onDeleteEverywhere == nil) == (rhs.onDeleteEverywhere == nil)
             && (lhs.onMirrorComplete == nil) == (rhs.onMirrorComplete == nil)
