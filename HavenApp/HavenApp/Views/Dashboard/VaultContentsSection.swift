@@ -22,6 +22,17 @@ struct VaultContentsSection: View {
             storageBar
             DashboardDivider()
             eventRows
+            if let greetings = model.greetings {
+                DashboardDivider()
+                ExpandingRow(
+                    icon: "sun.max.fill",
+                    title: "Good mornings",
+                    value: GreetingCounts.label(gm: greetings.gmAll, pv: greetings.pvAll),
+                    detail: "Today " + GreetingCounts.label(gm: greetings.gmToday, pv: greetings.pvToday),
+                    isExpanded: .constant(false),
+                    canExpand: false
+                ) { EmptyView() }
+            }
             DashboardDivider()
             mediaRow
             DashboardDivider()
