@@ -53,25 +53,13 @@ enum AccountWeb {
         case 3:
             // An older relay or an unreadable file (no links): keep the shared web.
             guard let links else { return shared }
-            let mine = links.follows.map { follows.contains($0) }
-            var counts: [String: Int] = [:]
-            // The relay sorts each entry, so a repeat sits next to itself.
-            for (pubkey, from) in links.links where !web.contains(pubkey) {
-                var counted = 0, previous = -1
-                for index in from where index != previous && mine.indices.contains(index) {
-                    previous = index
-                    if mine[index] { counted += 1 }
-                }
-                if counted > 0 { counts[pubkey] = counted }
-            }
+            let counts = vouchCounts(links: links, follows: follows, excluding: web)
             guard follows.count >= bar else {
                 // Fewer follows than the bar: the relay widens a new account's
                 // web to its follows' follows (newAccountWeb). Do the same from
                 // this account's own follows, not the pool's: anyone one of
                 // them follows, most followed first, capped like the relay.
-                let widened = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-                    .map(\.key)
-                return web.union(widened.prefix(newAccountWebCap))
+                return web.union(widened(counts).prefix(newAccountWebCap))
             }
             for (pubkey, counted) in counts where counted >= bar {
                 web.insert(pubkey)
@@ -80,6 +68,29 @@ enum AccountWeb {
         default:
             return shared
         }
+    }
+
+    /// For everyone in `links` outside `excluding`: how many of `follows`
+    /// follow them. Only those at least one follow follows.
+    static func vouchCounts(links: TrustLinksIndex, follows: Set<String>,
+                            excluding: Set<String>) -> [String: Int] {
+        let mine = links.follows.map { follows.contains($0) }
+        var counts: [String: Int] = [:]
+        // The relay sorts each entry, so a repeat sits next to itself.
+        for (pubkey, from) in links.links where !excluding.contains(pubkey) {
+            var counted = 0, previous = -1
+            for index in from where index != previous && mine.indices.contains(index) {
+                previous = index
+                if mine[index] { counted += 1 }
+            }
+            if counted > 0 { counts[pubkey] = counted }
+        }
+        return counts
+    }
+
+    /// Most followed first, ties by key, so the same people win every time.
+    static func widened(_ counts: [String: Int]) -> [String] {
+        counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.map(\.key)
     }
 }
 
