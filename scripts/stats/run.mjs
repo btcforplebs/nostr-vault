@@ -113,6 +113,7 @@ export async function scanPosters({ relays, pool, q = queryRelays, batch = 100, 
   for (let i = 0; i < authors.length; i += batch) queue.push(authors.slice(i, i + batch))
   const events = []
   const answeredCount = new Map(relays.map(r => [r, 0]))
+  const firstWhy = new Map()
   let filters = 0
   let cutShort = 0
   let read = 0
@@ -121,6 +122,7 @@ export async function scanPosters({ relays, pool, q = queryRelays, batch = 100, 
     const res = await q(relays, { kinds: COUNTED_KINDS, authors: group, since }, { maxPages })
     filters++
     for (const r of res.answered) answeredCount.set(r, answeredCount.get(r) + 1)
+    for (const [r, w] of Object.entries(res.why ?? {})) if (!firstWhy.has(r)) firstWhy.set(r, w)
     if (res.capped?.length && group.length > 1) {
       const half = Math.ceil(group.length / 2)
       queue.unshift(group.slice(0, half), group.slice(half))
@@ -132,7 +134,9 @@ export async function scanPosters({ relays, pool, q = queryRelays, batch = 100, 
     if (filters % 10 === 0) log(`scanned ${read} of ${authors.length}`)
   }
   const answered = relays.filter(r => filters === 0 || answeredCount.get(r) >= Math.ceil(filters * 0.9))
-  return { events, answered, cutShort }
+  // One line per relay for the log: how many filters it answered, and the first reason it failed one.
+  const perRelay = relays.map(r => `${r.replace("wss://", "")} ${answeredCount.get(r)}/${filters}${firstWhy.has(r) ? ` (first failure: ${firstWhy.get(r)})` : ""}`)
+  return { events, answered, cutShort, perRelay }
 }
 
 export async function main(argv = process.argv.slice(2), { q = queryRelays, fetchFn = fetch, nowSec = () => Math.floor(Date.now() / 1000) } = {}) {
@@ -144,6 +148,7 @@ export async function main(argv = process.argv.slice(2), { q = queryRelays, fetc
 
   const { pool, direct } = await buildPool({ relays: RELAYS, known: previous.keys(), seedExtra, firehoseHours: args.firehoseHours, now, q })
   const scan = await scanPosters({ relays: RELAYS, pool, q })
+  for (const line of scan.perRelay ?? []) log(`relay ${line}`)
   log(`relays answering: ${scan.answered.join(" ") || "none"} (${scan.answered.length} of ${RELAYS.length}); authors cut short: ${scan.cutShort}`)
   if (scan.answered.length < MIN_RELAYS) {
     log(`only ${scan.answered.length} relays answered (need ${MIN_RELAYS}); nothing written`)
