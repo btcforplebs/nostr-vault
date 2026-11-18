@@ -144,3 +144,15 @@ test("capHop3: one per author, no replies, at most max(floor, others/5), order k
   assert.equal(out.filter(r => r.v !== "hop3").length, 61)
   assert.deepEqual(out.filter(r => r.v === "inside").map(r => r.a), rows.filter(r => r.v === "inside").map(r => r.a))
 })
+
+test("Tron 2211 lows: a blocked follow vouches for nobody; always as one string is one key; capHop3 drops replies by default", () => {
+  const blockedFollow = FOLLOWS[0]
+  const { web: w } = webLayers({ follows: FOLLOWS, lists: LISTS, blocked: [blockedFollow] })
+  assert.ok(!w.has(CLOSE), "CLOSE had 10 vouches, one from a blocked follow: 9 now")
+  assert.ok(!w.has(blockedFollow))
+  const g = web()
+  assert.equal(judgeNote(note("a"), g, { always: "abc" }), "outside")
+  assert.equal(judgeNote(note(STRANGER), g, { always: STRANGER }), "inside")
+  const rows = [{ ...note(NEAR), tags: [["e", pk(3), "", "reply"]] }, note(NEAR)]
+  assert.equal(capHop3(rows, { verdict: () => "hop3", author: r => r.pubkey }).length, 1)
+})

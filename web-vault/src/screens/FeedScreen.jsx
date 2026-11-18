@@ -17,7 +17,9 @@ import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { backgroundFill } from "../net/vault-ready.js"
 import { markSynced, syncedRecently } from "../net/feed-synced.js"
-import { visibleNotes } from "../net/blocks.js"
+import { feedReach, gateFeed } from "../net/feed-gate.js"
+import { useGateWeb } from "../components/useGateWeb.js"
+import { OutsideFold } from "../components/OutsideFold.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, linkChoice, feedRelays, LINK_PARAMS, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, readsHaven, globalLike, withScope, saveMediaScope, liveFilters, liveKeeps, trustScoped } from "../net/feeds.js"
 import { fetchPopular, audienceKeeps, popularRanks } from "../net/popular.js"
@@ -64,6 +66,7 @@ export function FeedScreen({ ctx }) {
   const [status, setStatus] = useState("")
   const [syncing, setSyncing] = useState(false)
   const { blocked, privateNote } = useBlocks(ctx)
+  const gate = useGateWeb(ctx, blocked)
   const [choice, setChoice] = useState(pickedChoice)
   const [strange, setStrange] = useState(() => heldNotes(pickedChoice()))
   // Expanded / Threaded, one per feed (FeedView+Layout). Re-read when the feed changes.
@@ -454,10 +457,13 @@ export function FeedScreen({ ctx }) {
   const list = following ? notes : strange
   const threaded = layout === "threaded" && hasLayouts(choice.mode)
   const followSet = new Set(follows)
-  const shown = list && visibleNotes(media ? list : applyFilters(popular ? list.filter(n => audienceKeeps(n, audience, followSet)) : list, filters, { threaded }), blocked)
+  // Every note drawn is judged once by the web-of-trust gate (net/feed-gate.js): outside ones fold, blocked ones go.
+  const reach = feedReach(choice)
+  const gated = gateFeed(list && (media ? list : applyFilters(popular ? list.filter(n => audienceKeeps(n, audience, followSet)) : list, filters, { threaded })), gate, { reach })
+  const shown = gated.shown, outside = media ? [] : gated.outside
   // What the pill holds: the notes a sync or a live watch brought that are not on screen yet (Auto-load off, or a post
   // open in place). Media shows no pill, as before.
-  const newCount = media ? 0 : visibleNotes(applyFilters(following ? pending : strangePending, filters, { threaded }), blocked).length
+  const newCount = media ? 0 : gateFeed(applyFilters(following ? pending : strangePending, filters, { threaded }), gate, { reach }).shown.length
   // What is drawn: at most the window (feed-window.js). The whole list stays in memory under the ceiling; only this
   // many cards are in the DOM.
   const drawn = shown ? drawNotes(shown, drawCount) : shown
@@ -547,7 +553,7 @@ export function FeedScreen({ ctx }) {
           : notes === null ? <SkeletonRows label="Opening your vault…" />
           : !notes.length ? syncing ? <SkeletonRows label="Fetching notes from the people you follow…" /> : <p class="empty">No notes saved yet.</p>
           : media ? <Media tiles={tiles} blockedAll={!shown.length} onOlder={older} olderState={olderState} />
-          : <Notes shown={drawn} onOlder={older} olderState={olderState} layout={layout} fetchRoots={rootFetcher(vault, relays)} />
+          : <Notes shown={drawn} outside={outside} foldKey={feedKey(choice)} onOlder={older} olderState={olderState} layout={layout} fetchRoots={rootFetcher(vault, relays)} />
         : choice.mode === "hashtag" && !choice.tag ? <p class="empty">Type a hashtag to see notes tagged with it.</p>
           : popular && !follows.length ? <p class="empty">{account.loaded ? "Popular counts what the people you follow, and the people they follow, liked. Follow someone first." : "Loading your follows…"}</p>
           : global && !follows.length ? <p class="empty">{account.loaded ? "Follow people to build your web of trust" : "Loading your follows…"}</p>
@@ -560,19 +566,23 @@ export function FeedScreen({ ctx }) {
               onOlder={() => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} olderState={olderState} />
           : !strange.length && choice.mode === "list" && choice.authors && !choice.authors.length ? <p class="empty">This list has no one in it, or it didn't come back from your relays.</p>
           : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : global && !choice.everyone ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
-          : <Notes shown={drawn} memoryOnly layout={layout} keepFeedOrder rankOf={rankOf} fetchRoots={rootFetcher(vault, account.relays.read, { save: false })}
+          : <Notes shown={drawn} outside={outside} foldKey={feedKey(choice)} memoryOnly layout={layout} keepFeedOrder rankOf={rankOf} fetchRoots={rootFetcher(vault, account.relays.read, { save: false })}
               olderState={olderState} onOlder={popular ? null : () => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} />}
       </>}
     </main>
   )
 }
 
-/** The notes left after blocks, then Older (none for Popular, which is one ranked page). When every loaded note is
- *  from someone blocked, say so above Older. `memoryOnly`: strangers' notes, so their cards write nothing to /feed. */
-export function Notes({ shown, onOlder, olderState, memoryOnly = false, layout = "expanded", keepFeedOrder = false, fetchRoots, rankOf = null }) {
+/** The notes the gate let in, the folded "Outside your web" section (`outside`), then Older (none for Popular, which
+ *  is one ranked page). When no loaded note is shown, say why above Older. `memoryOnly`: strangers' notes, so their
+ *  cards write nothing to /feed. */
+export function Notes({ shown, outside = [], foldKey = "", onOlder, olderState, memoryOnly = false, layout = "expanded", keepFeedOrder = false, fetchRoots, rankOf = null }) {
   return <>
     {shown.length ? <FeedRows notes={shown} layout={layout} memoryOnly={memoryOnly} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} rankOf={rankOf} />
-      : <p class="empty">Every note loaded here is from someone you blocked.</p>}
+      : <p class="empty">{outside.length ? "Every note loaded here is from outside your web." : "Every note loaded here is from someone you blocked."}</p>}
+    <OutsideFold count={outside.length} resetKey={foldKey}>
+      <FeedRows notes={outside} layout={layout} memoryOnly keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} />
+    </OutsideFold>
     {onOlder && <OlderButton onOlder={onOlder} state={olderState} />}
   </>
 }

@@ -15,6 +15,7 @@
 // (webLayers). The web is never "everyone any follow follows" (popular.js trustSet): that wide set is what let people
 // three hops out through. Pure, so node tests and napplets load it.
 import { replyRefs, repostInner } from "./thread.js"
+import { isReply as isReplyNote } from "./feed-filters.js"
 
 export const VERDICTS = Object.freeze({ inside: "inside", hop3: "hop3", outside: "outside", blocked: "blocked" })
 /** How far a surface reaches. Only a feed has a setting; every other surface is "web". */
@@ -35,10 +36,11 @@ const followedBy = ev => (ev?.tags ?? []).filter(t => t?.[0] === "p" && HEX64.te
  * web: follows, own accounts, and anyone at least `minFollowers` of the follows follow. hop3: followed by at least one
  * follow but fewer than the bar. Fails closed: no lists back is the follows alone, nothing one hop out.
  * A new account (fewer follows than the bar) gets the NEW_ACCOUNT_WEB_CAP most-followed as its web, the rest as hop3.
- * -> { web: Set, hop3: Set }
+ * A `blocked` follow vouches for nobody (as wot.js buildWeb). -> { web: Set, hop3: Set }
  */
-export function webLayers({ follows = [], lists = new Map(), own = [], minFollowers = MIN_FOLLOWERS } = {}) {
-  const followSet = lower(follows)
+export function webLayers({ follows = [], lists = new Map(), own = [], minFollowers = MIN_FOLLOWERS, blocked = [] } = {}) {
+  const skip = lower(blocked)
+  const followSet = new Set([...lower(follows)].filter(f => !skip.has(f)))
   const web = new Set([...followSet, ...lower(own)])
   if (!lists?.size) return { web, hop3: new Set() }
   const counts = new Map()
@@ -150,11 +152,14 @@ export function judge(subject, web, { reach = "web", always = [] } = {}) {
   if (isBlockedSubject(subject, web)) return VERDICTS.blocked
   const signer = String(subject.signer ?? "").toLowerCase()
   if (!signer) return VERDICTS.outside
-  if (web.own.has(signer) || web.whitelist.has(signer) || web.web.has(signer) || [...always].some(k => String(k).toLowerCase() === signer)) return VERDICTS.inside
+  if (web.own.has(signer) || web.whitelist.has(signer) || web.web.has(signer) || alwaysSet(always).has(signer)) return VERDICTS.inside
   if (reach === "everyone") return VERDICTS.inside
   if (reach === "webAndHop3" && web.hop3.has(signer)) return VERDICTS.hop3
   return VERDICTS.outside
 }
+
+// `always` is a list of keys; one key given as a plain string is that key, never its characters.
+const alwaysSet = always => (typeof always === "string" ? lower([always]) : always && typeof always[Symbol.iterator] === "function" ? lower(always) : new Set())
 
 /** judge for a note event. */
 export const judgeNote = (ev, web, { authorOf, reach, always } = {}) => judge(noteSubject(ev, { authorOf }), web, { reach, always })
@@ -169,9 +174,9 @@ export const HOP3_SHARE = 5
 /**
  * `items` with the hop-3 rows rationed, order kept: top-level posts only (a hop-3 reply goes), one per author, and at
  * most max(HOP3_FLOOR, other rows / HOP3_SHARE). Rows past the ration are left out, not folded: they were not refused,
- * only rationed. Other verdicts pass through untouched.
+ * only rationed. Other verdicts pass through untouched. `isReply` defaults to reading the item as a note event.
  */
-export function capHop3(items, { verdict, author, isReply = () => false }) {
+export function capHop3(items, { verdict, author, isReply = item => isReplyNote(item) }) {
   const verdicts = items.map(verdict)
   const others = verdicts.filter(v => v !== VERDICTS.hop3).length
   const cap = Math.max(HOP3_FLOOR, Math.floor(others / HOP3_SHARE))
