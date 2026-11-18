@@ -14,14 +14,14 @@ struct MediaMosaicColumns<Cell: View>: View {
     @ViewBuilder let cell: (MediaItem, Double) -> Cell
 
     var body: some View {
-        let buckets = MediaMosaicLayout.distribute(items, columns: columns, spacing: Double(spacing)) {
-            Self.aspect(of: $0)
-        }
+        // Each shape looked up once per pass, then dealt into columns.
+        let tiles = items.map { Tile(item: $0, aspect: MediaMosaicLayout.clampedAspect(Self.aspect(of: $0))) }
+        let buckets = MediaMosaicLayout.distribute(tiles, columns: columns, spacing: Double(spacing)) { $0.aspect }
         HStack(alignment: .top, spacing: spacing) {
             ForEach(buckets.indices, id: \.self) { index in
                 LazyVStack(spacing: rowSpacing) {
-                    ForEach(buckets[index]) { item in
-                        let aspect = MediaMosaicLayout.clampedAspect(Self.aspect(of: item))
+                    ForEach(buckets[index]) { tile in
+                        let item = tile.item, aspect = tile.aspect
                         if columnWidth > 0 {
                             cell(item, aspect)
                                 .frame(width: columnWidth,
@@ -37,18 +37,35 @@ struct MediaMosaicColumns<Cell: View>: View {
         }
     }
 
-    /// The media's shape as far as it is known before loading: the note's
-    /// imeta `dim`, then the shape the local scan read from the file, then
-    /// any hint a feed note left for this address. Nil draws a square.
+    /// The media's shape as far as it is known before loading: the shape the
+    /// local scan read from the file, then the note's imeta `dim`, then any
+    /// hint a feed note left for this address. Nil draws a square.
     static func aspect(of item: MediaItem) -> Double? {
+        let sizes = MediaMosaicSizes.shared
+        let address = item.url.absoluteString
+        if let known = sizes.aspect(for: address) { return known }
         let hash = MediaCacheService.blossomHash(in: item.url)
-        let key = hash ?? item.url.absoluteString
-        if let known = MediaMosaicSizes.shared.aspect(for: key) { return known }
-        if let ratio = MediaMosaicLayout.aspect(tags: item.tags, url: item.url, hash: hash)
-            ?? MediaHints.shared.hint(for: item.url)?.aspectRatio.map(Double.init) {
-            MediaMosaicSizes.shared.record(ratio, for: key)
-            return ratio
-        }
-        return nil
+        let found = hash.flatMap(sizes.aspect(for:))
+            ?? MediaMosaicLayout.aspect(tags: item.tags, url: item.url, hash: hash)
+            ?? MediaHints.shared.hint(for: item.url)?.aspectRatio.map(Double.init)
+        // Kept under the address too, so the next pass skips the hash match.
+        if let found { sizes.record(found, for: address) }
+        return found
+    }
+
+    private struct Tile: Identifiable {
+        let item: MediaItem
+        let aspect: Double
+        var id: UUID { item.id }
+    }
+}
+
+/// The tab redraws on every filter, relay and feed change; the columns only
+/// change when the run, the count or the width does. The cell closure only
+/// reaches the parent's state, as with `MediaGridItem`.
+extension MediaMosaicColumns: Equatable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.items == rhs.items && lhs.columns == rhs.columns && lhs.columnWidth == rhs.columnWidth
+            && lhs.spacing == rhs.spacing && lhs.rowSpacing == rhs.rowSpacing
     }
 }

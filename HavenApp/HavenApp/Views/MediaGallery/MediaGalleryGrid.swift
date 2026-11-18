@@ -136,6 +136,7 @@ extension MediaGalleryView {
                                     }
                                 }
                             }
+                            .equatable()
                         } header: {
                             mediaSectionHeader(section.title)
                         }
