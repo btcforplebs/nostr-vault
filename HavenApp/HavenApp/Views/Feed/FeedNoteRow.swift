@@ -293,3 +293,18 @@ extension FeedNoteRow {
 }
 
 // FeedMediaThumbnail has been replaced by FeedMediaView (see Components/FeedMediaView.swift)
+
+// MARK: - Skipping unchanged rows
+
+/// Equal when everything the row draws from is equal. The action closures
+/// are left out: the feed makes new ones on every pass, so comparing them
+/// made every row look changed and re-run its body whenever the feed did.
+extension FeedNoteRow: Equatable {
+    static func == (lhs: FeedNoteRow, rhs: FeedNoteRow) -> Bool {
+        lhs.note == rhs.note && lhs.profile == rhs.profile && lhs.rowData == rhs.rowData
+            && lhs.showParent == rhs.showParent && lhs.isReplyToNext == rhs.isReplyToNext
+            && lhs.layoutMode == rhs.layoutMode && lhs.isFocused == rhs.isFocused
+            && lhs.suppressCardStyling == rhs.suppressCardStyling && lhs.avatarSize == rhs.avatarSize
+            && lhs.footer == nil && rhs.footer == nil
+    }
+}

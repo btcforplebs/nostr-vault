@@ -134,6 +134,7 @@ struct FeedView: View {
                 showParent: !parentIsNext,
                 isReplyToNext: parentIsNext
             )
+            .equatable()
         }
         .padding(.horizontal, 16)
     }
