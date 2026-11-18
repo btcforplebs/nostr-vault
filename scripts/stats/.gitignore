@@ -1,0 +1,3 @@
+# The scan's local poster records (public keys and dates): stay on the box that runs the scan, never committed or published.
+posters.json
+*.tmp

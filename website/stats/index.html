@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stats - NOSTR VAULT</title>
+    <meta name="description" content="How many people post from Nostr Vault, counted from public posts. Totals only, no tracking.">
+    <link rel="stylesheet" href="/style.css?v=20261101">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <style>
+        .stats-content { max-width: 800px; margin: 100px auto 60px; padding: 0 20px; color: #fff; line-height: 1.6; }
+        .stats-content h1 {
+            font-size: 2.5rem; margin-bottom: 10px;
+            background: linear-gradient(90deg, #bb86fc, #7b1fa2);
+            -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin: 30px 0; }
+        .stat { background: rgba(187, 134, 252, 0.08); border: 1px solid rgba(187, 134, 252, 0.25); border-radius: 14px; padding: 18px; }
+        .stat-value { font-size: 2.2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .stat-label { opacity: 0.8; font-size: 0.95rem; }
+        .stats-content h2 { font-size: 1.3rem; margin-top: 30px; color: #bb86fc; }
+        .platforms { list-style: none; padding: 0; }
+        .platforms li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+        .platforms li span:last-child { font-variant-numeric: tabular-nums; }
+        .stats-content [hidden] { display: none !important; }
+        .stats-note { opacity: 0.75; font-size: 0.95rem; margin-top: 30px; }
+    </style>
+</head>
+
+<body>
+    <nav>
+        <div class="logo">
+            <a href="/" style="display: flex; align-items: center; text-decoration: none; color: inherit;">
+                <img src="/assets/haven_icon.png" alt="Nostr Vault Logo">
+                <span>NOSTR VAULT</span>
+            </a>
+        </div>
+    </nav>
+    <main class="stats-content">
+        <h1>Stats</h1>
+        <p id="stats-method">Counted from public posts tagged Nostr Vault.</p>
+        <p id="stats-status">Loading…</p>
+        <div class="stats-grid" id="stats-grid" hidden>
+            <div class="stat"><div class="stat-value" data-stat="posting_users">–</div><div class="stat-label">People who have posted from Nostr Vault</div></div>
+            <div class="stat"><div class="stat-value" data-stat="active_7d">–</div><div class="stat-label">Posted in the last 7 days</div></div>
+            <div class="stat"><div class="stat-value" data-stat="active_30d">–</div><div class="stat-label">Posted in the last 30 days</div></div>
+            <div class="stat"><div class="stat-value" data-stat="github_downloads">–</div><div class="stat-label">Downloads from GitHub releases</div></div>
+        </div>
+        <section id="stats-platforms" hidden>
+            <h2>Where they post from</h2>
+            <ul class="platforms" id="platform-list"></ul>
+        </section>
+        <p class="stats-note">How it's counted: the apps add a <code>client</code> tag ("Nostr Vault on iOS", "… on Android"
+            and so on) to the notes you post. Once a day we read public notes on public relays and count the people whose
+            notes carry it. We show totals only: no list of people and no tracking in the apps. People who read but never
+            post, and people we haven't come across yet, aren't counted, so the real number is higher.
+            <span id="stats-updated"></span></p>
+    </main>
+    <script type="module" src="/stats/stats.js"></script>
+</body>
+
+</html>
