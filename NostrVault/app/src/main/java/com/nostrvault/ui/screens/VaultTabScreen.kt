@@ -396,8 +396,8 @@ internal fun VaultModePill(
         }
 
         // The dock hold menu's look (DockMenuPopup), as the feed header's list
-        // (#2234): a red dot on a list with something new, and on Messages
-        // while it has unread ones, the way the Vault tab's hold menu marks them.
+        // (#2234): a red dot on a list with something new, the way the Vault
+        // tab's hold menu marks them, and Messages with its unread count.
         DockMenuPopup(expanded = expanded, onDismiss = { expanded = false }, closeLabel = "Close Vault lists") {
             VaultMode.menu(zapsOnly).forEach { m ->
                 DockHoldMenuRow(
@@ -413,7 +413,8 @@ internal fun VaultModePill(
             }
             if (messages != null) {
                 DockHoldMenuRow(
-                    spec = DockHoldRow(NostrVaultIcons.Messages, "Messages", current = false, hasNews = messages.badge != null),
+                    // With its unread count, as before (Logen 2026-11-03).
+                    spec = DockHoldRow(NostrVaultIcons.Messages, "Messages", current = false, badge = messages.badge),
                     hovered = false,
                     onClick = {
                         expanded = false

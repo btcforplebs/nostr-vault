@@ -33,7 +33,7 @@ class VaultMessagesMenuTest {
     @Test fun `the mode pill's dropdown opens Messages`() {
         val pill = src("ui/screens/VaultTabScreen.kt").substringAfter("internal fun VaultModePill(")
         assertTrue(pill.contains("LocalVaultMessages.current"))
-        assertTrue(pill.contains("Text(\"Messages\", fontWeight = FontWeight.Normal)"))
+        assertTrue(pill.contains("DockHoldRow(NostrVaultIcons.Messages, \"Messages\", current = false, badge = messages.badge)"))
         assertTrue(pill.contains("messages.open()"))
         // The page it opens is the full-screen inbox route.
         assertTrue(src("ui/screens/VaultTabScreen.kt").contains("VaultMessages(unread = unreadDMs, open = { onNavigate(Screen.DMInbox) })"))
