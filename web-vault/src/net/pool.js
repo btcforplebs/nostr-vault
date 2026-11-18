@@ -1,8 +1,6 @@
 // The network side: nostr-tools SimplePool to the user's relays. The UI never renders from here directly;
 // what comes in is written to the in-page Haven and read back from it.
 import { SimplePool } from "nostr-tools/pool"
-import { validateEvent, verifyEvent as verifyInJs } from "nostr-tools/pure"
-import { setNostrWasm, verifyEvent as verifyInWasm } from "nostr-tools/wasm"
 import { normalizeURL } from "nostr-tools/utils"
 import { blocklist } from "./never-connect.js"
 import { relayBudget } from "./relay-budget.js"
@@ -367,33 +365,7 @@ export class LivePool extends SimplePool {
   }
 }
 
-// Every relay event is checked (id = hash of its fields, signature by its pubkey) before the app sees it. nostr-tools'
-// default is pure JS (noble secp256k1) on the main thread: 18.6% of the Feed->Vault switch (perf review 2026-11-18).
-// libsecp256k1 compiled to wasm (nostr-wasm, through nostr-tools/wasm) does the same check, the id recomputed too,
-// several times faster. Until it has loaded, and where it can't, the JS check runs.
-let wasmVerify = false
-const HEX = /^[0-9a-f]*$/
-export const verifierReady = (async () => {
-  if (!globalThis.WebAssembly || !globalThis.DecompressionStream) return false
-  const { initNostrWasm } = await import("nostr-wasm/gzipped")
-  setNostrWasm(await initNostrWasm())
-  return (wasmVerify = true)
-})().catch(() => false)
-
-/** True when `ev` is a well-formed event whose id is the hash of its fields and whose signature is its pubkey's. */
-export function verifyRelayEvent(ev) {
-  if (!wasmVerify) return verifyInJs(ev)
-  // nostr-wasm copies the hex into fixed 32/64-byte slots without checking lengths (a short one would leave the
-  // last event's bytes behind), and reads the fields to hash them: check both first.
-  if (!validateEvent(ev) || typeof ev.id !== "string" || ev.id.length !== 64 || typeof ev.sig !== "string" ||
-    ev.sig.length !== 128 || !HEX.test(ev.id) || !HEX.test(ev.sig)) return false
-  // nostr-wasm's heap can't grow: a valid event over ~946 KB (a kind 3 of ~13k follows) fails there (Tron, PR 2195).
-  // Both are complete checks, so a "no" from wasm is asked again in JS: valid events stay on the fast path, and an
-  // invalid one costs what it did before this file used wasm.
-  return verifyInWasm(ev) || verifyInJs(ev)
-}
-
-export const pool = new LivePool({ enablePing: true, enableReconnect: true, verifyEvent: verifyRelayEvent })
+export const pool = new LivePool({ enablePing: true, enableReconnect: true })
 
 // The apps' read set (iPhone/Mac and Android, Logen 2026-10-31), and a new account's starter list. Without
 // nostr-pub.wellorder.net since 2026-11-12: it hangs the handshake 10-12 s or answers 503 (Tron's slow-load review).
