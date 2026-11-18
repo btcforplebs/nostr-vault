@@ -31,3 +31,8 @@
 .note-card.focused { margin: 0 var(--gutter) 12px; border: 2px solid var(--accent); border-radius: var(--radius);
   background: var(--s1); box-shadow: 0 0 16px rgb(var(--accent-rgb) / .35); }
 .note-card.focused > .note { margin: 0; border: 0; background: none; }
+
+/* Off screen, a measured Feed card skips its drawing; its own last height holds its place (components/card-sizes.js).
+   Off while a menu or picker is open on it: the rule's paint containment would clip the popover. */
+.note-card[data-cv] { content-visibility: auto; contain-intrinsic-size: auto var(--card-h); }
+.note-card[data-cv]:has(.more-menu, .tapback, .zap-picker, .zap-error, .quick-menu) { content-visibility: visible; }

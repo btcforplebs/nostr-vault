@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks"
 import { FeedRows, rootFetcher } from "../components/FeedRows.jsx"
 import { MediaGrid } from "../components/MediaGrid.jsx"
 import { feedPostOpen, savedFeedSpot, useFeedSpot } from "../components/feed-tap.js"
+import { useCardSizes } from "../components/card-sizes.js"
 import { AT_TOP_PX, holdSpot, readingSpot, rebasePins } from "../components/feed-stay.js"
 import { MAX_NOTES, DRAW_NOTES, GROW_PX, capNotes, capOlder, readLimit, drawNotes, nextDraw, freshNotes, insertNotes, mergeReload } from "../net/feed-window.js"
 import { FeedModeMenu, FeedToolbar } from "../components/FeedPickerMenu.jsx"
@@ -513,6 +514,8 @@ export function FeedScreen({ ctx }) {
   const tiles = media && drawn && mediaTiles(drawn.filter(n => n.kind === 1 || n.kind === 6)) // notes, as the iPhone's grid
   // Back from a thread finds the list where it was left (the phone layout draws the Feed again).
   useFeedSpot(spotKey, !!drawn?.length)
+  // Off-screen expanded cards skip their drawing once measured (paint 1.7 -> 0.35 s per 10 s of scroll, perf review 11-18).
+  useCardSizes(screen, !Reader && !media && layout === "expanded")
   // The same toggles the old Feed options menu offered: Auto-load on Following, Replies off on Global only (the iPhone
   // shows them on a threaded feed too, and the switch filters there as well).
   const toggles = Reader || !hasLayouts(choice.mode) ? []
