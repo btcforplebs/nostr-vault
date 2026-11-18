@@ -307,6 +307,7 @@
 		22E115AC3B2BA02029B92A36 /* RelaySaveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B3AD149CCC00D7662019EA1 /* RelaySaveSheet.swift */; };
 		23004E70DDB38018D103B675 /* ProfileShareReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3BAD623C758946DC5D1406 /* ProfileShareReviewView.swift */; };
 		235D949819FB1494455DECFE /* WOTTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87E74FE78BCF7E5FCA1AA9CF /* WOTTabView.swift */; };
+		237B2CBD929D945820733FDA /* DMThreadFollow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB7662249C79F63D6459C08 /* DMThreadFollow.swift */; };
 		237F591A8848414C7E5B15E3 /* RelayProcessManager+FirstRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A8787F8C6DC62731C2BC67B /* RelayProcessManager+FirstRun.swift */; };
 		238BD608CCDE6D9DDEBC5EAA /* InAppBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56A9C462933D5D9AA46C4EBA /* InAppBrowserView.swift */; };
 		2395B169C43428057243B8B4 /* VideoTileFit.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E46F82F53A3265979C7F24 /* VideoTileFit.swift */; };
@@ -1257,6 +1258,7 @@
 		8ECF8568B8F80F5213816DF7 /* MeshDevices.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDFEEEE3A5F4A53B832E01EE /* MeshDevices.swift */; };
 		8EF83AE93E1EC2D3D44EAC15 /* HashtagFeedModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9BF8915977BBEB966F333A8 /* HashtagFeedModel.swift */; };
 		8EFBDFF4744F5A3593CE9C9E /* LocalDvmEndOfListFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF60D0A1EBFCF99E26035328 /* LocalDvmEndOfListFooter.swift */; };
+		8F4E1CACF9EE1F908322F6CC /* DMThreadFollow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB7662249C79F63D6459C08 /* DMThreadFollow.swift */; };
 		8F5A474B71C88E7CC52941EB /* HavenConfig+DMInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3F697CC1A3F0653BB6D0B3 /* HavenConfig+DMInbox.swift */; };
 		8F5ED58EB40D0601CFD82060 /* HoldToConfirmButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A6344C6C038AF79FCEC23D /* HoldToConfirmButton.swift */; };
 		8F8199339D065CB5F1B0D40E /* FeedLayoutMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7B0FCECC367D25BBB73718 /* FeedLayoutMode.swift */; };
@@ -3383,6 +3385,7 @@
 		DC5A48EC3F65D58FED0264EA /* NoteDetailView+Sections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteDetailView+Sections.swift"; sourceTree = "<group>"; };
 		DC6553829D621A65D21C14F7 /* RelayStatusCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayStatusCard.swift; sourceTree = "<group>"; };
 		DC89BDDBB2688F79D256888B /* WavlakeTrackCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WavlakeTrackCard.swift; sourceTree = "<group>"; };
+		DCB7662249C79F63D6459C08 /* DMThreadFollow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMThreadFollow.swift; sourceTree = "<group>"; };
 		DCF78E313D493BA653F26135 /* ShareCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCard.swift; sourceTree = "<group>"; };
 		DD5FA4141163EFF726CBBBD1 /* MacFipsMeshService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFipsMeshService.swift; sourceTree = "<group>"; };
 		DDB3FEB452DBB79FE900D89B /* ZappersListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZappersListView.swift; sourceTree = "<group>"; };
@@ -4566,6 +4569,7 @@
 				E4D67D86F1E9429A57FEB224 /* DMFile.swift */,
 				CF8F05DC86428629E19AEEA3 /* DMReadAuth.swift */,
 				981FAE57C3F293056913DDA7 /* DMSearch.swift */,
+				DCB7662249C79F63D6459C08 /* DMThreadFollow.swift */,
 				1682A24F97C40C3570CB32C1 /* DMTrust.swift */,
 				8A39FE3AB127539B3DE26A7C /* DMUnreadRule.swift */,
 				476EF8F1B938508F9475B764 /* DockClearance.swift */,
@@ -5770,6 +5774,7 @@
 				D4FEBF02D25AA17670907C36 /* DMService.swift in Sources */,
 				3B9603B55AA165569FDAF0D8 /* DMShareAccountRow.swift in Sources */,
 				76E2CAF186640D463BABC13B /* DMShareHandler.swift in Sources */,
+				8F4E1CACF9EE1F908322F6CC /* DMThreadFollow.swift in Sources */,
 				15393DD23237B42966817286 /* DMThreadView.swift in Sources */,
 				734590DDC74F5F7DB7A12EFD /* DMTrust.swift in Sources */,
 				22D217B1EDF268AA149F3B7C /* DMUnreadRule.swift in Sources */,
@@ -6940,6 +6945,7 @@
 				73AE59BA2106FFA1751992DB /* DMService.swift in Sources */,
 				137B460766611AC47BFECD47 /* DMShareAccountRow.swift in Sources */,
 				4F84D2402F6BABCCBBB1ED72 /* DMShareHandler.swift in Sources */,
+				237B2CBD929D945820733FDA /* DMThreadFollow.swift in Sources */,
 				19BDF752BAF456473D9AD1D9 /* DMThreadView.swift in Sources */,
 				08C9F56AA4BB111B5D79DE34 /* DMTrust.swift in Sources */,
 				6E3DEFFBF2246912BC1DF181 /* DMUnreadRule.swift in Sources */,

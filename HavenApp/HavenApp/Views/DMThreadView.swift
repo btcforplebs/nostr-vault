@@ -18,6 +18,10 @@ struct DMThreadView: View {
     @State private var sendStage: String?
     @State private var sendError: String?
     @State private var scrollPosition: String?
+    /// Whether the reader is at the bottom of the chat, and the newest message
+    /// seen. A plain class in `@State`: the bottom marker writes it on every
+    /// scroll frame, and that must not re-render the whole list.
+    @State private var followTracker = FollowTracker()
     @State private var useNIP04: Bool = false
     /// The photo picked for the next message, already prepared for upload.
     @State private var pickedPhotoItem: PhotosPickerItem?
@@ -100,16 +104,40 @@ struct DMThreadView: View {
                                 Spacer()
                                     .frame(height: 0)
                                     .id("bottom")
+                                    // Where the end of the list sits on screen, so a
+                                    // new message only pulls you down when you are
+                                    // already at the bottom (A3, 2026-11-18).
+                                    .background {
+                                        GeometryReader { marker in
+                                            let y = marker.frame(in: .named(Self.scrollSpace)).minY
+                                            Color.clear
+                                                .onAppear { followTracker.update(markerY: y, visibleHeight: geometry.size.height) }
+                                                .onChange(of: y) { _, newY in
+                                                    followTracker.update(markerY: newY, visibleHeight: geometry.size.height)
+                                                }
+                                        }
+                                    }
+                                    .onDisappear { followTracker.isNearBottom = false }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 16)
                         }
+                        .coordinateSpace(name: Self.scrollSpace)
                         .onAppear {
+                            followTracker.newestID = messages.last?.id
                             scrollToBottom(proxy)
                         }
                         .onChange(of: messages.count) { _, _ in
-                            scrollToBottom(proxy)
+                            let newest = messages.last
+                            let follow = DMThreadFollow.shouldFollow(
+                                wasNearBottom: followTracker.isNearBottom,
+                                previousNewestID: followTracker.newestID,
+                                newestID: newest?.id,
+                                newestIsFromMe: newest?.isFromMe ?? false
+                            )
+                            followTracker.newestID = newest?.id
+                            if follow { scrollToBottom(proxy) }
                         }
                     }
                 }
@@ -358,7 +386,21 @@ struct DMThreadView: View {
     private static let becameActive = NSApplication.didBecomeActiveNotification
     #endif
 
+    private static let scrollSpace = "dmThreadScroll"
+
+    private final class FollowTracker {
+        /// Starts true: a chat opens at the bottom.
+        var isNearBottom = true
+        var newestID: String?
+
+        func update(markerY: CGFloat, visibleHeight: CGFloat) {
+            isNearBottom = DMThreadFollow.isNearBottom(bottomMarkerY: markerY, visibleHeight: visibleHeight)
+        }
+    }
+
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        // Heading to the bottom: a message landing mid-scroll still follows.
+        followTracker.isNearBottom = true
         withAnimation {
             proxy.scrollTo("bottom", anchor: .bottom)
         }
