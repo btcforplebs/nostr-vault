@@ -43,6 +43,8 @@ final class GlobeArrivalStream: ObservableObject {
     /// Which start the open connections belong to, so a late stop from an
     /// earlier one leaves a newer one running.
     private var generation = 0
+    /// Who the globe is for: a bounce counts only when it tags you.
+    private var me = ""
     #if DEBUG
     private var stub: Task<Void, Never>?
     #endif
@@ -77,6 +79,7 @@ final class GlobeArrivalStream: ObservableObject {
                show: GlobeArcs.Show = .init()) -> Int {
         stop()
         generation += 1
+        self.me = me
         guard !rings.isEmpty else { return generation }
         #if DEBUG
         meterTick = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -144,7 +147,7 @@ final class GlobeArrivalStream: ObservableObject {
         #if DEBUG
         meter.record(arrival.id, at: Date.timeIntervalSinceReferenceDate)
         #endif
-        if arrival.bounced { GlobeBounceCount.shared.record(arrival.id) }
+        if GlobeArcs.countsAsBounce(arrival, me: me) { GlobeBounceCount.shared.record(arrival.id) }
         arrived.send(arrival)
     }
 
@@ -384,7 +387,7 @@ struct GlobeBounceCounter: View {
             .buttonStyle(.plain)
             .fixedSize()
             .transition(.opacity)
-            .accessibilityLabel(Text("\(count.lastHour) notes from outside your web bounced in the last hour"))
+            .accessibilityLabel(Text("\(GlobeArcs.bounceLabel(count.lastHour)), notes to you from outside your web"))
             .accessibilityHint(Text("Opens Outside your web"))
         }
     }

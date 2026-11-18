@@ -156,9 +156,31 @@ final class GlobeBounceTests: XCTestCase {
         XCTAssertEqual(GlobeArcs.bounceLabel(3), "3 bounced in the last hour")
     }
 
-    func testCounterIsCapped() {
+    func testCounterIsCappedAndSaysSo() {
         var log = GlobeArcs.BounceLog()
         for i in 0..<(GlobeArcs.BounceLog.cap + 10) { log.record("\(i)", at: 1) }
         XCTAssertEqual(log.count(at: 2), GlobeArcs.BounceLog.cap)
+        XCTAssertEqual(GlobeArcs.bounceLabel(log.count(at: 2)), "5000+ bounced in the last hour")
+        XCTAssertEqual(GlobeArcs.bounceLabel(4_999), "4999 bounced in the last hour")
+    }
+
+    /// Tron #2229: the counter opens Outside, which lists what tagged you, so
+    /// it counts only refused notes that tag you, not Global's firehose.
+    func testOnlyARefusedNoteThatTagsYouCounts() {
+        var toMe = GlobeArcs.Arrival(id: "1", author: stranger, targets: [friend, me], ring: .global)
+        toMe.bounced = true
+        XCTAssertTrue(GlobeArcs.countsAsBounce(toMe, me: me))
+
+        var global = GlobeArcs.Arrival(id: "2", author: stranger, targets: [], ring: .global)
+        global.bounced = true
+        XCTAssertFalse(GlobeArcs.countsAsBounce(global, me: me), "aimed at no one: flies red, not counted")
+
+        var atFriend = GlobeArcs.Arrival(id: "3", author: stranger, targets: [friend], ring: .global)
+        atFriend.bounced = true
+        XCTAssertFalse(GlobeArcs.countsAsBounce(atFriend, me: me))
+
+        let letIn = GlobeArcs.Arrival(id: "4", author: friend, targets: [me])
+        XCTAssertFalse(GlobeArcs.countsAsBounce(letIn, me: me), "not refused")
+        XCTAssertFalse(GlobeArcs.countsAsBounce(toMe, me: ""))
     }
 }

@@ -157,8 +157,15 @@ extension GlobeArcs {
         }
     }
 
-    /// The counter's words.
+    /// Whether a bounce counts on "N bounced": only a refused note that tags
+    /// you, the kind the Outside list it opens shows. Global's strangers
+    /// still fly red, uncounted (Tron, #2229).
+    static func countsAsBounce(_ arrival: Arrival, me: String) -> Bool {
+        arrival.bounced && !me.isEmpty && arrival.targets.contains(me)
+    }
+
+    /// The counter's words; at the log's cap, "5000+".
     static func bounceLabel(_ count: Int) -> String {
-        "\(count) bounced in the last hour"
+        count >= BounceLog.cap ? "\(BounceLog.cap)+ bounced in the last hour" : "\(count) bounced in the last hour"
     }
 }
