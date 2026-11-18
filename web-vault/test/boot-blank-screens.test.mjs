@@ -82,8 +82,8 @@ test("a screen whose chunk is still loading draws the screen's box with placehol
   assert.equal(main.attributes["aria-busy"], "true", "and it says it is loading")
   assert.match(root.textContent, /Loading…/)
   chunk.resolve({ Real })
-  await tick()
-  assert.equal(root.textContent, "the slow screen")
+  // Waits for the state, not a fixed 5 ms: preact's effect runs a frame and a timer later, which a busy CI box delays.
+  assert.ok(await until(() => root.textContent === "the slow screen"), root.textContent)
 })
 
 test("offline, a chunk that didn't load says so and comes in on Try again", async () => {
@@ -91,13 +91,11 @@ test("offline, a chunk that didn't load says so and comes in on Try again", asyn
   const Screen = lazyScreen("Retry", () => ++tries === 1 ? Promise.reject(new TypeError("Failed to fetch dynamically imported module")) : Promise.resolve({ Retry: Real }))
   Object.defineProperty(globalThis, "navigator", { value: { onLine: false }, configurable: true })
   const root = mount(h(Screen, { name: "retried" }))
-  await tick()
-  assert.match(root.textContent, /offline, so this screen couldn't load/, "not an empty page")
+  assert.ok(await until(() => /offline, so this screen couldn't load/.test(root.textContent)), `not an empty page: ${root.textContent}`)
   const retry = all(root).find(n => n.localName === "button" && n.textContent === "Try again")
   assert.ok(retry, "with a way out")
   click(retry)
-  await tick()
-  assert.equal(root.textContent, "the retried screen")
+  assert.ok(await until(() => root.textContent === "the retried screen"), root.textContent)
   assert.equal(tries, 2)
 })
 
@@ -122,11 +120,11 @@ test("a screen waits for the stylesheets its chunk added before it draws", async
   const Styled = () => h("main", null, "styled")
   const Screen = lazyScreen("Styled", () => { const l = link(); return Promise.resolve({ Styled, l }) })
   const root = mount(h(Screen))
+  assert.ok(await until(() => links.length > 0), "the chunk ran and added its sheet")
   await tick(20)
   assert.match(root.textContent, /Loading…/, "the chunk is in, its sheet isn't: still the placeholder")
   links[0].fire("load")
-  await tick()
-  assert.equal(root.textContent, "styled")
+  assert.ok(await until(() => root.textContent === "styled"), root.textContent)
 })
 
 test("sheetsIn: nothing pending is no wait; a failed sheet or a slow one doesn't hold the screen", async () => {
