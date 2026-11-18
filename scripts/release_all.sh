@@ -141,21 +141,26 @@ if [ "$SKIP_ANDROID" = 0 ]; then
     # Translate post: Bergamot + fastText (.so) and the language-ID asset, both gitignored.
     (cd "$ANDROID_DIR" && ./build_translate_android.sh)
     (cd "$ANDROID_DIR" && ./gradlew assembleRelease -q)
-    unzip -l "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" | grep -q "lib/arm64-v8a/libnvtranslate.so" \
+    # Each check reads a listing taken once. With pipefail, `unzip -l | grep -q`
+    # fails whenever grep stops reading early (unzip gets SIGPIPE), even on a
+    # match, so a good APK was refused (3.2.3 (104), 2026-11-18).
+    APK_BUILT="$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
+    APK_LISTING="$(unzip -l "$APK_BUILT")"
+    grep -qF "lib/arm64-v8a/libnvtranslate.so" <<< "$APK_LISTING" \
         || die "APK has no libnvtranslate.so — Translate post would be missing"
-    unzip -l "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" | grep -q "assets/translate/lid.176.ftz" \
+    grep -qF "assets/translate/lid.176.ftz" <<< "$APK_LISTING" \
         || die "APK has no lid.176.ftz — Translate post would never show"
     # Zapstore lists Google services from its APK scan; keep the APK free of them.
     if grep -qE "com\.google\.android\.gms|com\.google\.firebase|com\.google\.mlkit" \
         "$ANDROID_DIR/app/build/outputs/mapping/release/mapping.txt"; then
         die "APK contains Google Play services / Firebase / ML Kit classes (mapping.txt)"
     fi
-    unzip -l "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" | grep -q "lib/arm64-v8a/libnvfips.so" \
+    grep -qF "lib/arm64-v8a/libnvfips.so" <<< "$APK_LISTING" \
         || die "APK has no libnvfips.so — the FIPS mesh would be missing"
     # jniLibs are gitignored, so a stale libhaven.so ships silently. Refuse an
     # APK whose Go core predates the per-account signer sessions (#168).
-    unzip -p "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" lib/arm64-v8a/libhaven.so \
-        | strings | grep -q NIP46SignEventWithC \
+    HAVEN_STRINGS="$(unzip -p "$APK_BUILT" lib/arm64-v8a/libhaven.so | strings)"
+    grep -qF NIP46SignEventWithC <<< "$HAVEN_STRINGS" \
         || die "APK's libhaven.so is stale (no NIP46SignEventWithC) — rebuild it from master"
     cp "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" "$APK_PATH"
     APK_SHA256="$(shasum -a 256 "$APK_PATH" | awk '{print $1}')"
