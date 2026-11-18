@@ -1,8 +1,13 @@
 package nostr
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 )
@@ -176,4 +181,86 @@ func storedCopy(evt *Event) bool {
 	verifiedSigs.add(key)
 	storedCopyHits.Add(1)
 	return true
+}
+
+// haven: the verified set above starts empty each launch, so every note the
+// relays send again after a restart was checked again: about 6,500 checks in
+// the first 20 s on Android after the Kotlin side stopped repeating its own
+// (perf round 3, 2026-11-18). SaveVerifiedSigs / LoadVerifiedSigs keep it on
+// disk next to the event stores. The file holds only keys, sha256(hash ||
+// sig) of events that verified, so a loaded key can only ever repeat a
+// "valid" answer for exactly the same bytes; anything else misses and gets
+// the full check. It trusts its folder as much as the event stores beside it
+// already are (their events are served without a second check).
+
+var verifiedSigsMagic = []byte("NVSC0001")
+
+// SaveVerifiedSigs writes the verified set to path through a temp file, so a
+// crash never leaves half a file. It returns how many keys it wrote.
+func SaveVerifiedSigs(path string) (int, error) {
+	verifiedSigs.mu.Lock()
+	keys := make([]sigCacheKey, 0, len(verifiedSigs.cur)+len(verifiedSigs.prev))
+	for k := range verifiedSigs.prev {
+		if _, dup := verifiedSigs.cur[k]; !dup {
+			keys = append(keys, k)
+		}
+	}
+	for k := range verifiedSigs.cur {
+		keys = append(keys, k)
+	}
+	verifiedSigs.mu.Unlock()
+
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".verified-sigs-*")
+	if err != nil {
+		return 0, err
+	}
+	defer os.Remove(tmp.Name())
+	w := bufio.NewWriter(tmp)
+	w.Write(verifiedSigsMagic)
+	for i := range keys {
+		w.Write(keys[i][:])
+	}
+	if err := w.Flush(); err != nil {
+		tmp.Close()
+		return 0, err
+	}
+	if err := tmp.Close(); err != nil {
+		return 0, err
+	}
+	return len(keys), os.Rename(tmp.Name(), path)
+}
+
+// LoadVerifiedSigs adds the keys saved at path to the verified set, as its
+// older generation (a key that is used again moves into the current one). A
+// missing file loads nothing; a foreign one is an error and loads nothing.
+func LoadVerifiedSigs(path string) (int, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if !bytes.HasPrefix(data, verifiedSigsMagic) {
+		return 0, errors.New("not a verified-signatures file")
+	}
+	data = data[len(verifiedSigsMagic):]
+	n := len(data) / len(sigCacheKey{}) // whole keys only
+	if n > 2*sigCacheGeneration {
+		data = data[(n-2*sigCacheGeneration)*len(sigCacheKey{}):]
+		n = 2 * sigCacheGeneration
+	}
+	verifiedSigs.mu.Lock()
+	defer verifiedSigs.mu.Unlock()
+	if verifiedSigs.prev == nil {
+		verifiedSigs.prev = make(map[sigCacheKey]struct{}, n)
+	}
+	for i := 0; i < n; i++ {
+		var k sigCacheKey
+		copy(k[:], data[i*len(k):])
+		if _, ok := verifiedSigs.cur[k]; !ok {
+			verifiedSigs.prev[k] = struct{}{}
+		}
+	}
+	return n, nil
 }

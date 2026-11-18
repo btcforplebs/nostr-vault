@@ -2,7 +2,6 @@ package com.nostrvault.data.model
 
 import com.nostrvault.util.findAllOnce
 import androidx.compose.runtime.Immutable
-import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenQuoteDecoder
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -335,7 +334,7 @@ data class FeedNote(
             repostedBy: String? = null,
             // Checks a kind 6's embedded event; only a verified one lends the
             // row its author (iOS GenericRepost.verifiedEmbedded).
-            verify: (String) -> Boolean = { HavenBridge.verifyEvent(it) },
+            verify: (String) -> Boolean = { com.nostrvault.relay.VerifiedEvents.verify(it) },
         ): FeedNote {
             // A generic repost (16) is a repost of anything but a text note.
             // Every repost rule (reposter-follows membership, the reposts
@@ -498,7 +497,7 @@ data class FeedNote(
             createdAt: Long,
             kind: Int,
             repostedBy: String? = null,
-            verify: (String) -> Boolean = { HavenBridge.verifyEvent(it) },
+            verify: (String) -> Boolean = { com.nostrvault.relay.VerifiedEvents.verify(it) },
         ): FeedNote = FeedNote(
             id = id,
             pubkey = pubkey,

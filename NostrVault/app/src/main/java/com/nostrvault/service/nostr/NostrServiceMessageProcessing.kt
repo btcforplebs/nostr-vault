@@ -1,6 +1,5 @@
 package com.nostrvault.service
 
-import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.withLock
@@ -95,7 +94,9 @@ import com.nostrvault.service.NostrService.Companion.TAG
         // signed kind-0 cannot replace a newer one.
         val diskProfile = if (kind == 0) _profiles.value[pubkey]?.createdAt else null
         if (!replaceableNewest.mayReplace(key, createdAt, id, diskProfile)) return false
-        if (!HavenBridge.verifyEvent(eventObj.toString())) return false
+        // Each relay's copy of an unchanged profile or list passes mayReplace (the same
+        // id ties); VerifiedEvents checks each exact event once, across restarts too.
+        if (!com.nostrvault.relay.VerifiedEvents.verify(eventObj)) return false
         return replaceableNewest.record(key, createdAt, id, diskProfile)
     }
 

@@ -25,6 +25,8 @@ Changes from upstream are listed below. Keep every other file byte-identical to 
 - `relay.go` + `sigcache.go`: the read loop skips `CheckSignature` for an event that is an exact
   copy of one the local store holds (`SetStoredEventLookup`, `storedCopy`): same id, pubkey and
   sig, and both serializations hash to the id. Anything else is verified as before.
+- `sigcache.go`: `SaveVerifiedSigs` / `LoadVerifiedSigs` keep the verified set on disk across
+  launches (keys only, `sha256(hash || sig)` of events that verified).
 - `relay.go`: when the connection context ends, subscriptions are closed with the context's cause
   only, no longer also `r.ConnectionError`. The read loop writes that field as it hits the read
   error, which raced the write loop's read when our own `Close` cancelled first (`go test -race`,
