@@ -2,6 +2,7 @@ package nostr
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"sync"
 	"sync/atomic"
 )
@@ -102,4 +103,77 @@ func ResetSigCache() {
 	verifiedSigs.mu.Unlock()
 	sigCacheHits.Store(0)
 	sigCacheMisses.Store(0)
+}
+
+// haven: after a restart the upstream relays send again notes this device
+// already stores, and each one was verified again: about 3.6 s of CPU in the
+// first 20 s on Android (RESEARCH NV_PERF_REVIEW_2026_11_18_ANDROID_WEB). The
+// verified set above lives in memory only, so it starts empty each launch.
+//
+// storedCopy lets the read loop skip the check for an event that is, byte
+// for byte, one the local store already holds. Every path that writes those
+// stores verified the signature over the stored event's own serialization
+// first (go-nostr's read loop, khatru's EVENT handler, the backup import's
+// importable, mesh copy), or signed it itself. The match is never on the
+// claimed id alone:
+//   - the incoming event's serialization must hash to its claimed id;
+//   - the stored copy's serialization must hash to that same value, so a
+//     stored event whose claimed id was doctored (the read loop checks the
+//     signature over the content, not the id) vouches for nothing else;
+//   - pubkey and sig must be identical strings.
+// So the signature skipped here is one already verified for exactly this
+// pubkey and this hash, and it is added to the verified set above on the
+// same grounds. Anything else gets the full CheckSignature.
+
+var storedEventLookup atomic.Pointer[func(id string) *Event]
+
+var storedCopyHits atomic.Uint64
+
+// SetStoredEventLookup installs the local-store read storedCopy uses: the
+// stored event with this id, or nil. It must only search stores whose every
+// write verified the signature (never the unsigned blob index). Nil turns
+// the skip off.
+func SetStoredEventLookup(lookup func(id string) *Event) {
+	if lookup == nil {
+		storedEventLookup.Store(nil)
+		return
+	}
+	storedEventLookup.Store(&lookup)
+}
+
+// StoredCopyHits reports how many signature checks storedCopy skipped.
+func StoredCopyHits() uint64 { return storedCopyHits.Load() }
+
+func storedCopy(evt *Event) bool {
+	lookup := storedEventLookup.Load()
+	if lookup == nil || len(evt.ID) != 64 || len(evt.PubKey) != 64 || len(evt.Sig) != 128 {
+		return false
+	}
+	msg := sha256.Sum256(evt.Serialize())
+	var id [32]byte
+	if n, err := hex.Decode(id[:], []byte(evt.ID)); err != nil || n != 32 || id != msg {
+		return false
+	}
+	var sig [64]byte
+	if n, err := hex.Decode(sig[:], []byte(evt.Sig)); err != nil || n != 64 {
+		return false
+	}
+	key := sigCacheKeyFor(msg, sig[:])
+	if verifiedSigs.has(key) {
+		// Verified already this launch (another relay's copy): CheckSignature
+		// answers from memory, cheaper than reading the store.
+		return false
+	}
+	stored := (*lookup)(evt.ID)
+	if stored == nil || stored.Sig != evt.Sig || stored.PubKey != evt.PubKey {
+		return false
+	}
+	if sha256.Sum256(stored.Serialize()) != msg {
+		return false
+	}
+	// The same claim the verified set holds: these exact bytes verified. So
+	// the other relays' copies, and the local relay's own check, are free.
+	verifiedSigs.add(key)
+	storedCopyHits.Add(1)
+	return true
 }
