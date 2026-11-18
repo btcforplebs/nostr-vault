@@ -90,6 +90,17 @@ struct DMInboxView: View {
                     .environmentObject(nostrService)
                     .environmentObject(configService)
             }
+            // Switching account closes the open chat, Requests and the new
+            // message sheet, so nothing of the old account's stays open (A5).
+            .onChange(of: configService.activeAccountHexPubkey) { _, _ in
+                openedConversation = nil
+                selectedConversation = nil
+                showingDMThread = false
+                showingCompose = false
+                showingRequests = false
+                showingRequestsInPane = false
+                searchText = ""
+            }
             // A conversation asked for: on arrival, or while already open.
             .onChange(of: route.request, initial: true) { _, _ in
                 if let peer = route.takePeer() { open(peer) }
