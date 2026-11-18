@@ -213,7 +213,40 @@ const scanBudget = 500
 // stop at limit, so a feed read visits roughly limit records. If the wanted
 // authors are sparse in that index, the walk hits its record budget and query
 // finishes with the per-combination ranges (each range's fallback).
+//
+// A tag with at most tagFirstValues values goes first even when authors are
+// given (kinds alone already use the tag): "did I like this note"
+// ({kinds:[6,7,16], authors:[me], #e:[note]}) and Haven's deletion check ({kinds:[5], authors:[...],
+// #e:[id]}) touch a handful of records through the tag index, where the
+// author+kind ranges walk the author's whole history of those kinds (14k+
+// records per card on a desktop Feed scroll, perf review 2026-11-18). The
+// author and kind checks in query drop the rest before decoding. A tag value
+// with many records (a viral note's reactions) runs into the record budget,
+// and query finishes with the ranges plan would otherwise have used (only
+// when those are exact ranges: see hasFallback).
 func plan(filter nostr.Filter) []keyRange {
+	rest := planUntagged(filter)
+	if name, values, ok := narrowestTag(filter.Tags); ok && len(values) <= tagFirstValues &&
+		len(filter.Authors) > 0 && !slices.ContainsFunc(rest, hasFallback) {
+		out := make([]keyRange, 0, len(values))
+		for _, v := range values {
+			out = append(out, keyRange{index: idxTag, prefix: []any{name, v}, fallback: rest})
+		}
+		return out
+	}
+	return rest
+}
+
+// hasFallback: the range stands in for many combinations. plan only puts a tag
+// first in front of exact per-combination ranges, so a spent budget never
+// opens a follows feed's thousands of ranges at once.
+func hasFallback(r keyRange) bool { return r.fallback != nil }
+
+// tagFirstValues is how many values a tag may have and still be walked
+// before the author and kind indexes (see plan).
+const tagFirstValues = 4
+
+func planUntagged(filter nostr.Filter) []keyRange {
 	authors := dedup(filter.Authors)
 	kinds := dedup(filter.Kinds)
 
