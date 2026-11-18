@@ -42,8 +42,11 @@ android-build:
     echo "Building APK..."
     cd {{justfile_directory()}}/NostrVault && ./gradlew assembleRelease
     APK="{{justfile_directory()}}/NostrVault/app/build/outputs/apk/release/app-release.apk"
+    # The listing is read once into a variable: with pipefail, `unzip -l | grep -q`
+    # fails whenever grep stops reading early (unzip gets SIGPIPE), even on a match.
+    LISTING="$(unzip -l "$APK")"
     for f in lib/arm64-v8a/libhaven.so lib/arm64-v8a/libnvtranslate.so assets/translate/lid.176.ftz; do
-        unzip -l "$APK" | grep -q "$f" || { echo "✖ APK has no $f" >&2; exit 1; }
+        grep -qF "$f" <<< "$LISTING" || { echo "✖ APK has no $f" >&2; exit 1; }
     done
 
 # Install Android release APK on connected device
