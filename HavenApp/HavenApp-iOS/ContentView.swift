@@ -7,9 +7,6 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
-    @StateObject private var nostrService = NostrService.shared
-    @StateObject private var statsService = StatsService.shared
-    @StateObject private var feedService = FeedService.shared
 
     @State private var selectedTab = 0
     @State private var pendingMentionNoteId: IdentifiableString?

@@ -9,9 +9,14 @@ import SwiftUI
 /// Android: VaultAccountChipRow.kt (AccountChipRow).
 extension VaultView {
 
-    /// Every account on the device, by hex, in switcher order.
+    /// Every account on the device, by hex, in switcher order. Worked out
+    /// once per account change (`VaultAccountHexes`): the Vault's body asks
+    /// for it a dozen times a pass, and each ask decoded every npub.
     var vaultAccountHexes: [String] {
-        configService.allAccountNpubs.compactMap { Bech32.decode($0)?.hexString.lowercased() }
+        let config = configService.config
+        return VaultAccountHexes.hexes(owner: config.ownerNpub, whitelisted: config.whitelistedNpubs) {
+            configService.allAccountNpubs
+        }
     }
 
     var accountChips: [VaultAccountChip] {
@@ -567,4 +572,38 @@ struct VaultAccountChipView: View {
     }
 
     static let pictureSize: CGFloat = 40
+}
+
+// MARK: - Decoded account hexes
+
+/// The Vault's npub → hex decodes, kept between body passes. The account list
+/// is keyed by the two config fields it is built from, so it is rebuilt only
+/// when an account is added, removed or the owner changes.
+@MainActor
+enum VaultAccountHexes {
+    private static var owner = ""
+    private static var whitelisted: [String] = []
+    private static var hexes: [String] = []
+    private static var built = false
+    private static var decoded: [String: String] = [:]
+
+    /// The lowercased hexes of `npubs()`, rebuilt only when `owner` or
+    /// `whitelisted` differ from the last call's.
+    static func hexes(owner: String, whitelisted: [String], npubs: () -> [String]) -> [String] {
+        if built, owner == self.owner, whitelisted == self.whitelisted { return hexes }
+        self.owner = owner
+        self.whitelisted = whitelisted
+        hexes = npubs().compactMap { hex(of: $0)?.lowercased() }
+        built = true
+        return hexes
+    }
+
+    /// One npub's hex (as Bech32 gives it), decoded once.
+    static func hex(of npub: String) -> String? {
+        if let hex = decoded[npub] { return hex }
+        guard let hex = Bech32.decode(npub)?.hexString else { return nil }
+        if decoded.count > 64 { decoded.removeAll() }
+        decoded[npub] = hex
+        return hex
+    }
 }
