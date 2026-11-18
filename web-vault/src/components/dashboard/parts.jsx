@@ -26,6 +26,7 @@ export const ICONS = {
   shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4",
   server: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01",
   check: "M20 6L9 17l-5-5",
+  sun: "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
 }
 export const Icon = ({ name }) => path(ICONS[name] ?? ICONS.more)
 

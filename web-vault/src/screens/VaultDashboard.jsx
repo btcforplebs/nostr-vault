@@ -21,6 +21,7 @@ import { useBlocks } from "../components/useBlocks.js"
 import { useDmTrust } from "../components/useDmTrust.js"
 import { routeClient, deviceKey } from "../haven/vault.js"
 import { COUNT_ROUTES, countContents, scanMedia, readMedia } from "../net/vault-contents.js"
+import { readGreetings } from "../net/greeting-counts.js"
 import { readHistory, markRan, onHistory } from "../net/vault-history.js"
 import { activityItems } from "../net/relay-activity.js"
 import { snapshotStore } from "../net/follow-backup.js"
@@ -53,6 +54,7 @@ export function useVaultDashboard(ctx) {
   useEffect(() => onHistory(() => setHistory(readHistory(me))), [me])
   const [counts, setCounts] = useState({ contents: null, counting: true, failed: false })
   const [media, setMedia] = useState(null)
+  const [greetings, setGreetings] = useState(null)
   const [storage, setStorage] = useState({})
   const [followSavedAt, setFollowSavedAt] = useState(null)
   const [servers, setServers] = useState(null)
@@ -69,6 +71,8 @@ export function useVaultDashboard(ctx) {
   const look = () => {
     count().catch(() => setCounts({ contents: null, counting: false, failed: true }))
     scanMedia(me).then(setMedia).catch(() => setMedia(null))
+    // Your own GM / Pura Vida notes, from this browser's vault only (net/greeting-counts.js). Can't answer: keep the last.
+    readGreetings(vault.outbox, me).then(g => { if (g) setGreetings(g) })
     navigator.storage?.estimate?.().then(e => setStorage(s => ({ ...s, usage: e.usage }))).catch(() => {})
     navigator.storage?.persisted?.().then(p => setStorage(s => ({ ...s, kept: p }))).catch(() => {})
     snapshotStore(me).all().then(all => setFollowSavedAt(all.length ? toMs(Math.max(...all.map(x => x.savedAt ?? x.created_at))) : null)).catch(() => {})
@@ -123,7 +127,7 @@ export function useVaultDashboard(ctx) {
   const relayCount = uniq([...account.relays.read, ...account.relays.write]).length
   // Building who can reach you: the trust list is empty while follows' lists are still being read.
   const syncing = trusted.size === 0 && (account.follows?.length ?? 0) > 0
-  return { me, counts, media, storage, followSavedAt, servers, jobs, history, historyRelays, setHistoryRelays, look, exportFile, mediaFile, importNotes,
+  return { me, counts, media, greetings, storage, followSavedAt, servers, jobs, history, historyRelays, setHistoryRelays, look, exportFile, mediaFile, importNotes,
     skip: () => skip.current?.abort(), items, startedInMs, relayCount, syncing, trusted: trusted.size, blocked: blocked.size }
 }
 
@@ -131,7 +135,7 @@ export function useVaultDashboard(ctx) {
 export function VaultDashboard({ ctx, napplet = false }) {
   const { vault, session } = ctx
   const d = useVaultDashboard(ctx)
-  const { counts, media, storage, followSavedAt, servers, jobs, history, historyRelays, setHistoryRelays, look, exportFile, mediaFile, importNotes, items, startedInMs, relayCount, syncing } = d
+  const { counts, media, greetings, storage, followSavedAt, servers, jobs, history, historyRelays, setHistoryRelays, look, exportFile, mediaFile, importNotes, items, startedInMs, relayCount, syncing } = d
   const [view, setView] = useState("dashboard") // or "activity" (View All), or "pair" (Link a device)
   const [pairMode, setPairMode] = useState("show") // PairDevice: "show" this browser's code or "scan" the other's
   const pair = mode => { setPairMode(mode); setView("pair") }
@@ -161,7 +165,7 @@ export function VaultDashboard({ ctx, napplet = false }) {
             <ListWipeBanner ctx={ctx} />
             <SafetySection method={session.method} followSavedAt={followSavedAt} backupAt={history.notesBackup} onBackup={exportFile} backupBusy={jobs.export} />
             <ReachSection trusted={d.trusted} blocked={d.blocked} />
-            <ContentsSection {...counts} usage={storage.usage} kept={storage.kept} media={media} onRetry={look} me={session.pubkey} />
+            <ContentsSection {...counts} usage={storage.usage} kept={storage.kept} media={media} onRetry={look} me={session.pubkey} greetings={greetings} />
             {!vault.box && <StillToBringIn ctx={ctx} />}
             <KeepFullSection startDate={IMPORT_START_DATE} history={history} importing={jobs.importing} mediaBusy={jobs.media} exportBusy={jobs.export}
               status={jobs.status} onImport={importNotes} onMedia={mediaFile} onExport={exportFile}
