@@ -10,8 +10,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * Copies in the media your own notes link to on outside servers: your
- * notes are read from this device's relay, page by page, and each link
- * not already here is downloaded and stored, four at a time, under one
+ * notes are read from this device's relay, page by page (only the links
+ * still to copy are kept), and each link not already here is downloaded and stored, four at a time, under one
  * signed upload authorisation. iOS `BlossomService.mirrorFromNoteMedia`.
  * @return how many files were saved.
  */
@@ -25,21 +25,41 @@ internal suspend fun BlossomService.copyNoteMediaIn(
     val relay = configStore.config.value.nostrURL
     if (owner.isEmpty() || relay == null) return@withContext 0
 
-    val notes = NoteMediaScan.collect(owner) { filter ->
+    // Page by page: each page's links are checked as they come, only the
+    // ones to copy are kept, and the page is dropped. Pages run newest
+    // first, so a link's first sighting is its newest note, the date it
+    // carries (iOS). Once the run's downloads are spoken for, the rest of an
+    // old history is not read; the next run picks up from there.
+    val room = (limits.cap.toLong() - limits.started).coerceAtLeast(0)
+    if (room == 0L) {
+        onLogMessage?.invoke("This run's downloads are used up; note media comes next run")
+        return@withContext 0
+    }
+    val picker = NoteMediaScan.Picker { mediaCacheService.isInLocalBlossom(it) }
+    val noteDates = LinkedHashMap<String, Long>() // url to copy -> its newest note's created_at
+    var linkCount = 0
+    val noteCount = NoteMediaScan.forEachPage(owner, { filter ->
         nostrService.queryRawEvents(listOf(filter), listOf(relay), timeoutMs = 8_000L)
+    }) { page ->
+        // A link's hash, known before any download: its name, a note's imeta x, or an earlier run.
+        val imeta = HashMap<String, String>()
+        page.forEach { imeta.putAll(AutoMirrorRules.imetaHashes(it.tags)) }
+        for (note in page) {
+            for (media in nostrService.extractMediaURLs(note.content, note.pubkey, note.tags, note.createdAt)) {
+                linkCount++
+                val url = media.url
+                val had = noteDates[url]
+                if (had != null) {
+                    if (note.createdAt > had) noteDates[url] = note.createdAt
+                } else if (picker.offer(url) { imeta[it] ?: autoMirrorState.hashFor(it) }) {
+                    noteDates[url] = note.createdAt
+                }
+            }
+        }
+        noteDates.size < room
     }
-    val links = notes.flatMap { note ->
-        nostrService.extractMediaURLs(note.content, note.pubkey, note.tags, note.createdAt).map { it.url to note.createdAt }
-    }
-    val urls = links.map { it.first }
-    // Each copy carries its note's created_at; a link in several notes, the newest (iOS).
-    val noteDates = CopiedInDate.newestByKey(links, { it.first }, { it.second })
-    onLogMessage?.invoke("Found ${urls.size} media link(s) in ${notes.size} note(s)")
-    // A link's hash, known before any download: its name, the note's imeta x, or an earlier run.
-    val imeta = notes.fold(HashMap<String, String>()) { acc, n -> acc.apply { putAll(AutoMirrorRules.imetaHashes(n.tags)) } }
-    val toImport = NoteMediaScan.urlsToImport(urls, knownHash = { imeta[it] ?: autoMirrorState.hashFor(it) }) {
-        mediaCacheService.isInLocalBlossom(it)
-    }
+    val toImport = noteDates.keys.toList()
+    onLogMessage?.invoke("Found $linkCount media link(s) in $noteCount note(s)")
     if (toImport.isEmpty()) {
         onLogMessage?.invoke("All note media already exists locally")
         return@withContext 0

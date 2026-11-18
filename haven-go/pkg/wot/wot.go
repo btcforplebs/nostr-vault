@@ -56,6 +56,16 @@ func GetInstance() Model {
 	return val.(Model)
 }
 
+// Has reports whether pubkey is in the web of trust, and false while no
+// model is installed yet. The relay serves before background setup installs
+// one (#2054 waits for the app's first Vault read), so a query or event in
+// that window used to call Has on a nil Model and the panic killed the app
+// (Moto, 2026-11-17). Not ready reads as "not in the web of trust".
+func Has(ctx context.Context, pubkey string) bool {
+	m := GetInstance()
+	return m != nil && m.Has(ctx, pubkey)
+}
+
 // NewCycle installs and returns a fresh ready gate. Call once per relay
 // start cycle, before MarkReady or Initialize.
 func NewCycle() *ReadyGate {

@@ -66,6 +66,26 @@ data class MediaCopyFile(
     }
 
     val isFailed: Boolean get() = status is Status.Failed
+
+    companion object {
+        /** Rows drawn under Copy at most ([shownCopyFiles]). */
+        const val SHOWN_MAX = 100
+    }
+}
+
+/**
+ * The rows the list under Copy draws: the files being sent, then the ones
+ * that failed (each with its reason), then the rest in order, at most [max].
+ * The page is one scrolling column, so every row drawn is kept, thumbnail and
+ * all: 8,000 waiting photos drawn at once ran a Moto out of memory when Copy
+ * opened the list (2026-11-17). The count under it says how many are not drawn.
+ */
+internal fun shownCopyFiles(files: List<MediaCopyFile>, max: Int = MediaCopyFile.SHOWN_MAX): List<MediaCopyFile> {
+    if (files.size <= max) return files
+    val copying = files.filter { it.status == MediaCopyFile.Status.Copying }
+    val failed = files.filter { it.isFailed }
+    val rest = files.filter { it.status != MediaCopyFile.Status.Copying && !it.isFailed }
+    return (copying + failed + rest).take(max)
 }
 
 /** A Blossom server and what the check found about it. */
