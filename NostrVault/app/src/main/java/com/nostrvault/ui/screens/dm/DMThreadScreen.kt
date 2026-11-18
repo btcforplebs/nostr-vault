@@ -284,9 +284,25 @@ fun DMThreadScreen(
         }
     }
 
-    // Scroll to bottom on new messages
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
+    // Opens at the newest message without animating down from the top. A new
+    // message only scrolls the chat when you were already at the bottom or sent
+    // it yourself; reading older messages, nothing pulls you away.
+    // "At the bottom" is whether the previous newest message is still on
+    // screen: true at the bottom, false once scrolled up, whatever the layout
+    // has done with the new one meanwhile.
+    var previousNewestId by remember { mutableStateOf<String?>(null) }
+    val newest = messages.lastOrNull()
+    LaunchedEffect(newest?.id) {
+        if (newest == null) return@LaunchedEffect
+        val before = previousNewestId
+        previousNewestId = newest.id
+        if (before == null) {
+            listState.scrollToItem(messages.size - 1)
+            return@LaunchedEffect
+        }
+        val beforeIndex = messages.indexOfLast { it.id == before }
+        val visible = listState.layoutInfo.visibleItemsInfo.map { it.index }
+        if (DMThreadFollow.followsNewest(beforeIndex in visible, newest.isFromMe)) {
             listState.animateScrollToItem(messages.size - 1)
         }
     }
@@ -566,7 +582,9 @@ private fun MessageBubble(
                                     text = remember(parts.text, profiles) {
                                         NostrMentions.toPlainText(parts.text, profiles)
                                     },
-                                    color = Color.White,
+                                    // Readable on both bubbles in light and dark: their
+                                    // bubble is white in light mode.
+                                    color = if (isFromMe) OnAccent else PrimaryText,
                                     fontSize = 15.sp,
                                     lineHeight = 20.sp,
                                     modifier = Modifier.padding(
@@ -716,4 +734,10 @@ private fun MessageInputBar(
             }
         }
     }
+}
+
+/** When a new newest message makes the open chat scroll to it. */
+internal object DMThreadFollow {
+    /** Only if you were at the bottom already, or you sent it. */
+    fun followsNewest(wasAtBottom: Boolean, newestIsMine: Boolean): Boolean = wasAtBottom || newestIsMine
 }
