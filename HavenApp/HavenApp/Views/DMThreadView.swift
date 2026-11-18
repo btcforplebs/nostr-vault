@@ -99,7 +99,12 @@ struct DMThreadView: View {
                                         mediaZoom: mediaZoom,
                                         onOpenImage: { url, all in
                                             showingMediaUrl = IdentifiableURL(url: url, allURLs: all)
-                                        }
+                                        },
+                                        canRetry: dmService.canResend(message),
+                                        onRetry: {
+                                            Task { await dmService.resendFailed(message.id, in: counterpartyPubkey) }
+                                        },
+                                        onRemove: { dmService.removeFailed(message.id, in: counterpartyPubkey) }
                                     )
                                     .id(message.id)
                                 }
@@ -621,6 +626,10 @@ struct MessageBubbleView: View {
     var mediaZoom: Namespace.ID? = nil
     /// Opens a photo the message carries; the second argument is all of them.
     var onOpenImage: ((URL, [URL]) -> Void)? = nil
+    /// Not sent: whether Try again is offered, and what Try again / Remove do (DMSendStatusLine).
+    var canRetry: Bool = false
+    var onRetry: (() -> Void)? = nil
+    var onRemove: (() -> Void)? = nil
 
     /// The text with its links marked; on a sent (purple) bubble they are
     /// underlined white rather than tinted, so they still read as links.
@@ -745,6 +754,8 @@ struct MessageBubbleView: View {
                     }
                 )
                 .clipShape(message.isFromMe ? AnyShape(sentCorners) : AnyShape(receivedCorners))
+                // Not out yet (or not at all): the bubble reads as not sent.
+                .opacity(message.sendState == nil ? 1 : 0.6)
                 .overlay(
                     Group {
                         if !message.isFromMe && ConfigService.shared.config.useOLED {
@@ -754,10 +765,7 @@ struct MessageBubbleView: View {
                     }
                 )
 
-                Text(message.timestamp.formatted(.relative(presentation: .numeric)))
-                    .font(.appSystem(size: 11))
-                    .foregroundColor(.secondary.opacity(0.7))
-                    .padding(.horizontal, 6)
+                DMSendStatusLine(message: message, canRetry: canRetry, onRetry: onRetry, onRemove: onRemove)
             }
             .frame(maxWidth: containerWidth * 0.75, alignment: message.isFromMe ? .trailing : .leading)
 

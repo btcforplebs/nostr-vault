@@ -109,55 +109,61 @@ extension DMService {
             throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "The account changed before the message was sent"])
         }
 
-        // ── Step 2: show it ── (a file message as its locked link, the same text its self-copy unwraps to)
+        // ── Step 2: show it, as sending ── (a file message as its locked link, the same text its self-copy unwraps to)
         let message = DMMessage(
             id: UUID().uuidString,
             senderPubkey: ownHexPubkey,
             content: shown ?? content,
             timestamp: Date(),
-            isFromMe: true
+            isFromMe: true,
+            sendState: .sending
         )
-        if let idx = conversations.firstIndex(where: { $0.id == recipientHexPubkey }) {
-            conversations[idx].messages.append(message)
-        } else {
-            let conversation = DMConversation(
-                id: recipientHexPubkey,
-                messages: [message],
-                unreadCount: 0
-            )
-            conversations.append(conversation)
+        addSentMessage(message, to: recipientHexPubkey)
+        // Try again signs it afresh: the same text, kind and file tags.
+        resends[message.id] = { [weak self] in
+            try await self?.sendNIP17DM(content: content, to: recipientHexPubkey, rumorKind: rumorKind,
+                                        fileTags: fileTags, shown: shown)
         }
-        sortConversations()
-        saveConversations()
 
         // Its relay notification must not announce your own message.
         if sentSelfWrapIds.count > 500 { sentSelfWrapIds.removeAll() }
         sentSelfWrapIds.insert(selfGiftWrap.id)
 
-        // Publish both to local relay (non-blocking, reuses persistent connection)
-        publishToInbox(giftWrap)
-        publishToInbox(selfGiftWrap)
-
-        // Your own copy goes to your DM inbox list — the same list
-        // every device reads from — never to whichever of your relay
-        // lists a lookup happens to find first. Looking yours up the
-        // way a recipient's is looked up could land on your general
-        // (kind 10002) relays, which no device reads DMs from, so the
-        // message never appeared on your other devices.
-        for relayURL in ownDMInboxRelays() {
-            publishAuthenticated(selfGiftWrap, url: relayURL)
-        }
-
-        // ── Step 3: recipient's relays (lookup in the background) ──
+        // ── Step 3: their relays first (lookup in the background) ──
+        // Your own copy goes out only once one of theirs took the message, so
+        // a refused message never comes back from your own relay looking sent
+        // (web: dms.js). It goes to your DM inbox list, the one every device
+        // reads, never to your general (kind 10002) relays.
         Task { [weak self] in
             guard let self = self else { return }
-            // Already signed by the account that wrote it and shown as sent:
-            // it goes out even if the account changes during the lookup.
+            // Already signed by the account that wrote it: it goes out even if
+            // the account changes during the lookup.
             let rRelays = await self.fetchRecipientDMRelays(recipientHexPubkey)
+            let answer = self.beginDelivery(messageId: message.id, conversation: recipientHexPubkey,
+                                            relayCount: rRelays.count) { [weak self] in
+                guard let self else { return }
+                self.publishToInbox(giftWrap)
+                self.publishToInbox(selfGiftWrap)
+                for relayURL in self.ownDMInboxRelays() {
+                    self.publishAuthenticated(selfGiftWrap, url: relayURL)
+                }
+            }
             for relayURL in rRelays {
-                self.publishAuthenticated(giftWrap, url: relayURL)
+                self.publishAuthenticated(giftWrap, url: relayURL) { accepted, _ in answer(accepted) }
             }
         }
+    }
+
+    /// Puts a message you just wrote into its thread (making the thread if
+    /// it is the first one) and saves.
+    private func addSentMessage(_ message: DMMessage, to recipientHexPubkey: String) {
+        if let idx = conversations.firstIndex(where: { $0.id == recipientHexPubkey }) {
+            conversations[idx].messages.append(message)
+        } else {
+            conversations.append(DMConversation(id: recipientHexPubkey, messages: [message], unreadCount: 0))
+        }
+        sortConversations()
+        saveConversations()
     }
 
     /// Send a NIP-04 legacy DM (for compatibility with older clients)
@@ -187,52 +193,43 @@ extension DMService {
             throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "The account changed before the message was sent"])
         }
 
-        // ── Optimistic UI update (uses real event ID since crypto is already done) ──
+        // ── Show it, as sending (the real event id: the crypto is done) ──
         let message = DMMessage(
             id: event.id,
             senderPubkey: ownHexPubkey,
             content: content,
             timestamp: Date(),
             isFromMe: true,
-            isNIP04: true
+            isNIP04: true,
+            sendState: .sending
         )
-
-        if let idx = conversations.firstIndex(where: { $0.id == recipientHexPubkey }) {
-            conversations[idx].messages.append(message)
-        } else {
-            let conversation = DMConversation(
-                id: recipientHexPubkey,
-                messages: [message],
-                unreadCount: 0
-            )
-            conversations.append(conversation)
+        addSentMessage(message, to: recipientHexPubkey)
+        resends[message.id] = { [weak self] in
+            try await self?.sendNIP04DM(content: content, to: recipientHexPubkey)
         }
-        sortConversations()
-        saveConversations()
 
-        // ── Background network I/O ──
+        // ── Their relays first; your inbox and your own relays once one took it ──
         // No account check here: the event is signed by the account that
-        // wrote it and already shown as sent, so it must go out.
+        // wrote it, so it must go out.
         Task { [weak self] in
             guard let self = self else { return }
-
-            // Publish to local inbox relay
-            if let inboxURL = self.inboxRelayURL()?.absoluteString {
-                self.fireAndForgetPublish(event, url: inboxURL)
-            }
-
-            // Fetch relay lists concurrently, then fire-and-forget to external relays
             async let recipientRelays = self.fetchRecipientDMRelays(recipientHexPubkey)
             async let ownRelays = self.fetchRecipientDMRelays(ownHexPubkey)
-
             let rRelays = await recipientRelays
             let oRelays = await ownRelays
 
-            for relayURL in rRelays {
-                self.fireAndForgetPublish(event, url: relayURL)
+            let answer = self.beginDelivery(messageId: message.id, conversation: recipientHexPubkey,
+                                            relayCount: rRelays.count) { [weak self] in
+                guard let self else { return }
+                if let inboxURL = self.inboxRelayURL()?.absoluteString {
+                    self.fireAndForgetPublish(event, url: inboxURL)
+                }
+                for relayURL in oRelays where !rRelays.contains(relayURL) {
+                    self.fireAndForgetPublish(event, url: relayURL)
+                }
             }
-            for relayURL in oRelays where !rRelays.contains(relayURL) {
-                self.fireAndForgetPublish(event, url: relayURL)
+            for relayURL in rRelays {
+                self.fireAndForgetPublish(event, url: relayURL) { accepted in answer(accepted) }
             }
         }
     }

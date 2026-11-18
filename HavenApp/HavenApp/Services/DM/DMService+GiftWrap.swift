@@ -131,7 +131,8 @@ extension DMService {
                 if isFromMe {
                     let recentThreshold = Date().addingTimeInterval(-30)
                     if let msgIdx = conversations[idx].messages.lastIndex(where: {
-                        $0.isFromMe && $0.content == content && $0.timestamp > recentThreshold
+                        // Never a not-sent one: that copy is a different send.
+                        $0.isFromMe && !$0.isFailed && $0.content == content && $0.timestamp > recentThreshold
                     }) {
                         conversations[idx].messages[msgIdx] = message
                         seenGiftWrapIds.insert(event.id)
