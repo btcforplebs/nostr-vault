@@ -56,6 +56,10 @@ func TestIDBSparseAuthors(t *testing.T) {
 	runSparseAuthors(t, &idbstore.IDBBackend{Name: "sparseauthors"}, idbstore.CursorVisits)
 }
 
+func TestIDBTagFirst(t *testing.T) {
+	runTagFirst(t, &idbstore.IDBBackend{Name: "tagfirst"}, idbstore.CursorVisits)
+}
+
 const persistCount = 500
 
 // persistEvents is deterministic, so phase 2 can rebuild what phase 1 saved.

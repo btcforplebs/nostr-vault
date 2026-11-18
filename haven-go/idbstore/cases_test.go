@@ -338,3 +338,58 @@ func runSparseAuthors(t *testing.T, db eventstore.Store, visits func() int) {
 		}
 	}
 }
+
+// runTagFirst: "did I like or repost this note" and the deletion check name one
+// note (#e) plus authors and kinds. The tag index is walked first, so a reader
+// with thousands of likes visits a handful of records, not all of them. A
+// viral note (more tagged records than the budget) still gives exact answers
+// through the author+kind ranges. visits, when set, reports records visited so
+// far (the browser store).
+func runTagFirst(t *testing.T, db eventstore.Store, visits func() int) {
+	require.NoError(t, db.Init())
+	defer db.Close()
+
+	me, other := pub(skA), pub(skB)
+	note := mk(t, skB, 1, 100)
+	viral := mk(t, skB, 1, 101)
+	all := []*nostr.Event{note, viral}
+	ts := 200
+	for i := 0; i < 3000; i++ { // my likes and reposts of other notes
+		all = append(all, mk(t, skA, []int{7, 6}[i%2], ts, nostr.Tag{"e", fmt.Sprintf("%064x", i)}))
+		ts++
+	}
+	mine := mk(t, skA, 7, ts, nostr.Tag{"e", note.ID}) // my like of note, older than the likes below
+	ts++
+	all = append(all, mine)
+	for i := 0; i < 2000; i++ { // everyone else's reactions to the viral note
+		all = append(all, mk(t, skC, 7, ts, nostr.Tag{"e", viral.ID}))
+		ts++
+	}
+	mineViral := mk(t, skA, 7, 150, nostr.Tag{"e", viral.ID}) // my like of it, older than all of theirs
+	del := mk(t, skB, 5, ts, nostr.Tag{"e", note.ID})
+	all = append(all, mineViral, del)
+	save(t, db, all...)
+
+	measure := func(name string, f nostr.Filter, want []*nostr.Event, most int) {
+		before := 0
+		if visits != nil {
+			before = visits()
+		}
+		require.Equal(t, ids(want), ids(query(t, db, f)), name)
+		if visits != nil {
+			require.LessOrEqual(t, visits()-before, most, name+": records visited")
+		}
+	}
+	measure("liked this note", nostr.Filter{Kinds: []int{6, 7, 16}, Authors: []string{me}, Tags: nostr.TagMap{"e": {note.ID}}, Limit: 20},
+		[]*nostr.Event{mine}, 5)
+	measure("deleted (author and owner)", nostr.Filter{Kinds: []int{5}, Authors: []string{other, me}, Tags: nostr.TagMap{"e": {note.ID}}, Limit: 1},
+		[]*nostr.Event{del}, 5)
+	measure("not liked", nostr.Filter{Kinds: []int{7}, Authors: []string{other}, Tags: nostr.TagMap{"e": {note.ID}}},
+		nil, 5)
+	// 2,000 reactions on the viral note: the tag walk runs out of budget, the
+	// author+kind ranges find the like under it.
+	measure("liked the viral note", nostr.Filter{Kinds: []int{6, 7, 16}, Authors: []string{me}, Tags: nostr.TagMap{"e": {viral.ID}}, Limit: 20},
+		[]*nostr.Event{mineViral}, 1100+3001)
+	measure("two notes", nostr.Filter{Kinds: []int{7}, Authors: []string{me}, Tags: nostr.TagMap{"e": {note.ID, viral.ID}}},
+		[]*nostr.Event{mine, mineViral}, 2*(1100+3001))
+}
