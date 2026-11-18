@@ -4,6 +4,7 @@
 import { SendDelayPicker } from "../../components/SendDelayPicker.jsx"
 import { SettingInfo } from "../../components/SettingInfo.jsx"
 import { Section } from "./Section.jsx"
+import { FeedReachSection } from "./FeedReachSection.jsx"
 
 const Chevron = () => <svg class="settings-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
 
@@ -19,6 +20,7 @@ export function FeedSettingsPage() {
           <Chevron />
         </a>
       </Section>
+      <FeedReachSection />
       <Section label="Posting"><SendDelayPicker /></Section>
       <p class="settings-note muted small">{FEED_NOTE}</p>
     </>

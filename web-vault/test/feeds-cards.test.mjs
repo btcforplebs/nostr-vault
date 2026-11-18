@@ -69,9 +69,20 @@ test("Global and Hashtag cards are memoryOnly; Following cards aren't", () => {
 
 test("when every loaded note is blocked, the message shows and Older is still there", () => {
   const onOlder = () => {}
-  const [msg, older] = elements(Notes({ shown: [], onOlder }))
+  const out = elements(Notes({ shown: [], onOlder }))
+  const [msg] = out, older = out.find(e => e.type === OlderButton)
   assert.equal(msg.type, "p"); assert.match(msg.props.children, /someone you blocked/)
-  assert.equal(older.type, OlderButton); assert.equal(older.props.onOlder, onOlder)
+  assert.equal(older.props.onOlder, onOlder)
+})
+
+test("the gate's outside notes fold under one line, and an all-outside page says so", async () => {
+  const { OutsideFold } = await import("../src/components/OutsideFold.jsx")
+  const outside = [{ id: "9", kind: 1, pubkey: A, created_at: 1, content: "" }]
+  const out = elements(Notes({ shown: [], outside, foldKey: "global", onOlder() {} }))
+  assert.match(out[0].props.children, /outside your web/)
+  const fold = out.find(e => e.type === OutsideFold)
+  assert.equal(fold.props.count, 1); assert.equal(fold.props.resetKey, "global")
+  assert.deepEqual(fold.props.children.props.notes, outside)
 })
 
 test("Popular has no Older: it's one ranked page", () => {
