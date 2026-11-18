@@ -81,6 +81,8 @@ internal fun MediaFeedGrid(
         items(
             count = notes.size,
             key = { notes[it].id },
+            // Video and photo tiles are drawn differently; a recycled slot only takes its own kind.
+            contentType = { if (isVideoUrl(notes[it].mediaURLs.first())) "video" else "image" },
         ) { index ->
             val note = notes[index]
             val rowStart = index - index % GRID_COLUMNS
@@ -104,7 +106,7 @@ internal fun MediaFeedGrid(
         }
 
         if (isLoadingMore) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item(span = { GridItemSpan(maxLineSpan) }, contentType = "loading") {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
