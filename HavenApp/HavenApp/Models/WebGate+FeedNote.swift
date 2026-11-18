@@ -25,12 +25,3 @@ extension WebGate.Subject {
         return subject
     }
 }
-
-extension FeedNote {
-    /// Whether this note `p`-tags `owner`: a reply to them, or a mention.
-    func isAddressed(to owner: String) -> Bool {
-        guard !owner.isEmpty else { return false }
-        let key = owner.lowercased()
-        return tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1].lowercased() == key }
-    }
-}

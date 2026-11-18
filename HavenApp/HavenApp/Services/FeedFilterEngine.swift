@@ -179,20 +179,6 @@ enum FeedFilterEngine {
         return filtered
     }
 
-    /// Notes tagging `owner` from outside the web: what a feed folds under
-    /// its "Outside your web" row. Newest first, blocked and muted left out.
-    /// Only notes addressed to you fold; a stranger's post that merely
-    /// reached a feed is not yours to read and is dropped.
-    static func outsideMentions(notes: [FeedNote], gate: WebGate.Web, owner: String,
-                                authorOf: (String) -> String? = { _ in nil }) -> [FeedNote] {
-        var seen = Set<String>()
-        return notes.filter { note in
-            note.isAddressed(to: owner)
-                && WebGate.judge(.feed(note, authorOf: authorOf), in: gate) == .outside
-                && seen.insert(note.id).inserted
-        }.sorted { $0.createdAt > $1.createdAt }
-    }
-
     /// Filters notes for the media grid view.
     ///
     /// - Parameters:

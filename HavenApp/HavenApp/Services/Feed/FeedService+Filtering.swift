@@ -57,11 +57,6 @@ extension FeedService {
             filteredMediaNotes = newMedia
         }
 
-        // Global lists ask for no notes tagging you, so they have nothing to fold.
-        let outside = isGlobalLikeMode ? [] : FeedFilterEngine.outsideMentions(
-            notes: notes, gate: gate, owner: NostrService.shared.activeHexPubkey,
-            authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey })
-        if outside.map(\.id) != feedOutsideMentions.map(\.id) { feedOutsideMentions = outside }
         refreshVisiblePendingCount(gate: gate)
     }
 

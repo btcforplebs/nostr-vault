@@ -156,9 +156,6 @@ class FeedService: ObservableObject {
     // MARK: - Cached Filtered Notes (avoids O(n) filter on every SwiftUI render)
     @Published var filteredNotes: [FeedNote] = []
     @Published var filteredMediaNotes: [FeedNote] = []
-    /// Notes tagging you from outside your web, in a feed that pulls them in:
-    /// the feed's folded "Outside your web" row (`FeedOutsideRow`).
-    @Published var feedOutsideMentions: [FeedNote] = []
 
     /// Set of note IDs where the parent event is the immediately next item in filteredNotes.
     /// Precomputed to avoid needing `Array(enumerated())` in the view's ForEach.
