@@ -38,7 +38,10 @@ extension TrustWebView {
                              focus: card,
                              focusBridges: cardPath?.all ?? [],
                              onEmptyTap: { closeCard(); searchFocused = false },
-                             liveArcs: isWOTTab, keepsDrifting: isWOTTab,
+                             // Drifts, then sleeps 20 s after the last touch like
+                             // every globe: a WOT tab left open must not keep
+                             // the frame clock at 30 fps (Logen, 11/18).
+                             liveArcs: isWOTTab,
                              // Names off on every globe (Logen, 10/15).
                              showsNames: false)
                 .ignoresSafeArea(edges: isWOTTab ? .all : [])
