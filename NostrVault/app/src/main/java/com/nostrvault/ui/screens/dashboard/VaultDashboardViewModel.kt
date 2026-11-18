@@ -59,6 +59,10 @@ class VaultDashboardViewModel @Inject constructor(
         /** RelayForegroundService's lifecycle prefs: when the relay last started. */
         const val RELAY_PREFS = "relay_lifecycle"
         const val RELAY_LAST_START = "last_start_time"
+        /** The store answers at most 1000 events per filter (haven-go vaultReadMaxLimit). */
+        const val GREETING_PAGE = 1000
+        /** 100,000 of your own notes at most. */
+        const val GREETING_MAX_PAGES = 100
     }
 
     val history: StateFlow<VaultHistory.Snapshot> = historyStore.state
@@ -127,6 +131,10 @@ class VaultDashboardViewModel @Inject constructor(
     private val _relayStartedAt = MutableStateFlow<Long?>(null)
     val relayStartedAt: StateFlow<Long?> = _relayStartedAt.asStateFlow()
 
+    /** Your own GM and Pura Vida notes in the vault (GreetingCounts); null until read. */
+    private val _greetings = MutableStateFlow<GreetingCounts.Counts?>(null)
+    internal val greetings: StateFlow<GreetingCounts.Counts?> = _greetings.asStateFlow()
+
     private var counting = false
 
     init {
@@ -158,6 +166,7 @@ class VaultDashboardViewModel @Inject constructor(
         refreshFollowList()
         readRelayStart()
         loadFiles()
+        loadGreetings()
         if (RelayForegroundService.relayStatus.value != RelayForegroundService.RelayStatus.RUNNING) return
         if (counting) return
         counting = true
@@ -174,6 +183,26 @@ class VaultDashboardViewModel @Inject constructor(
                 counting = false
                 _isCounting.value = false
             }
+        }
+    }
+
+    /**
+     * Counts the active account's own GM and Pura Vida notes straight from the
+     * on-device store (VaultStoreRead): no network, nothing signed. A store
+     * that can't answer yet keeps the last numbers.
+     */
+    private fun loadGreetings() {
+        val owner = nostrService.activeHexPubkey.lowercase()
+        if (owner.isEmpty()) { _greetings.value = null; return }
+        viewModelScope.launch {
+            val counts = withContext(Dispatchers.IO) {
+                val notes = GreetingCounts.readAll(owner, pageSize = GREETING_PAGE, maxPages = GREETING_MAX_PAGES) { filter ->
+                    com.nostrvault.relay.VaultStoreRead.query(listOf(filter))
+                } ?: return@withContext null
+                val todayStart = java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toEpochSecond()
+                GreetingCounts.count(notes, owner, todayStart)
+            }
+            if (counts != null && nostrService.activeHexPubkey.lowercase() == owner) _greetings.value = counts
         }
     }
 
