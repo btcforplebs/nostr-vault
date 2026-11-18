@@ -409,6 +409,20 @@ extension VaultView {
         navigationPath = NavigationPath()
         showingNoteId = nil
         closeVaultSearch()
+        // A feed's "N notes from outside your web" row: the Outside list
+        // itself, no event to find. The iPhone/iPad Vault page keeps it under
+        // Activity; the Mac, which has no Vault page, under Notes.
+        if request.type == "outside" {
+            if vaultTabHostsMedia {
+                viewMode = .activity
+                activityFilter = .outside
+            } else {
+                viewMode = .notes
+                noteScope = .notes
+                contentFilter = .outside
+            }
+            return
+        }
         // A follower alert lands on the Followers list; there is no event to find.
         if request.type == "followers" {
             viewMode = .followers

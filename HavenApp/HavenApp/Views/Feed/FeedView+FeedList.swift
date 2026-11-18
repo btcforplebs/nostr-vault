@@ -159,6 +159,14 @@ extension FeedView {
                                 .padding(.bottom, 8)
                         }
 
+                        if !feedService.feedOutsideMentions.isEmpty {
+                            FeedOutsideRow(count: feedService.feedOutsideMentions.count) {
+                                FeedOutsideRow.openVaultOutside()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 8)
+                        }
+
                         if feedService.feedMode == .media {
                             mediaGridView
                         } else if feedService.feedMode == .articles {

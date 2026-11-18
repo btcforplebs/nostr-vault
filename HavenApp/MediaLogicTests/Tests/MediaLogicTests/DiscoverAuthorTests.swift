@@ -17,8 +17,9 @@ final class DiscoverAuthorTests: XCTestCase {
 
     private func discover(_ notes: [FeedNote]) -> [String] {
         FeedFilterEngine.filterFeedNotes(
-            notes: notes, mode: .discovery, blocked: [], showReposts: true, showReplies: true,
-            followedPubkeys: [follow], wotPubkeys: [widerWeb, follow], popularFilter: .all, popularNoteScores: [:]
+            notes: notes, mode: .discovery, gate: WebGate.Web(own: [], web: [widerWeb, follow]),
+            showReposts: true, showReplies: true,
+            followedPubkeys: [follow], popularFilter: .all, popularNoteScores: [:]
         ).map(\.id)
     }
 

@@ -28,6 +28,8 @@ struct FeedSettingsView: View {
                 Text("What You See")
             }
 
+            FeedReachSettingsSection()
+
             Section {
                 #if os(iOS)
                 NavigationLink {

@@ -34,31 +34,9 @@ extension FeedService {
     /// `notes`, `feedMode`, or relevant config (showReposts / showReplies / blocked).
     func recomputeFilteredNotes() {
         rebuildNoteIndex()
-        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
-        let mutes = MuteListStore.shared.active // muted words, hashtags and threads
-        // Your web with today's follows, so a follow passes Global at once.
-        let trusted = feedTrustedPubkeys
-
-        let allFiltered = FeedFilterEngine.filterFeedNotes(
-            notes: notes,
-            mode: feedMode,
-            articlesGlobal: articlesFeedMode == .global,
-            pollsGlobal: pollsFeedMode == .global,
-            pollStatus: pollStatusFilter,
-            blocked: blocked,
-            showReposts: ConfigService.shared.config.showReposts,
-            showReplies: ConfigService.shared.config.showReplies,
-            followedPubkeys: followedPubkeys,
-            ownPubkey: NostrService.shared.activeHexPubkey,
-            wotPubkeys: trusted,
-            popularFilter: popularFilter,
-            popularNoteScores: popularNoteScores,
-            globalLanguages: Set(ConfigService.shared.config.globalFeedLanguages),
-            globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
-            languageOf: { [unowned self] note in self.language(of: note) },
-            authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
-        ).filter { !mutes.hides($0) }
-        let newFiltered = pagedDvmNotes(allFiltered)
+        // The one gate: the open account's web, blocks and mutes, read once.
+        let gate = feedGate
+        let newFiltered = pagedDvmNotes(feedFiltered(notes, gate: gate))
 
         // Only publish a change when the visible list actually differs.
         // Uses lazy zip to avoid allocating temporary [String] arrays.
@@ -73,65 +51,66 @@ extension FeedService {
             parentIsNextNote = FeedFilterEngine.computeParentIsNext(filteredNotes: newFiltered)
         }
 
-        let newMedia = FeedFilterEngine.filterMediaNotes(
-            notes: notes,
-            blocked: blocked,
-            wotPubkeys: trusted,
-            isGlobalMedia: feedMode == .media && mediaFeedMode == .global,
-            globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
-            authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
-        ).filter { !mutes.hides($0) }
-
+        let newMedia = mediaFiltered(notes, gate: gate)
         if newMedia.count != filteredMediaNotes.count ||
             !zip(newMedia, filteredMediaNotes).allSatisfy({ $0.id == $1.id }) {
             filteredMediaNotes = newMedia
         }
-        refreshVisiblePendingCount()
+
+        // Global lists ask for no notes tagging you, so they have nothing to fold.
+        let outside = isGlobalLikeMode ? [] : FeedFilterEngine.outsideMentions(
+            notes: notes, gate: gate, owner: NostrService.shared.activeHexPubkey,
+            authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey })
+        if outside.map(\.id) != feedOutsideMentions.map(\.id) { feedOutsideMentions = outside }
+        refreshVisiblePendingCount(gate: gate)
     }
 
     /// Re-counts `visiblePendingCount` through the current feed's filter.
     /// Runs when the pending list changes and on every recompute, which is
     /// where the filter's inputs (mode, trust graph, blocked, settings) land.
-    func refreshVisiblePendingCount() {
+    func refreshVisiblePendingCount(gate: WebGate.Web? = nil) {
         let count: Int
         if pendingNotes.isEmpty {
             count = 0
         } else {
-            let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
-            let mutes = MuteListStore.shared.active
-            let authorOf: (String) -> String? = { [unowned self] id in self.findNote(id: id)?.pubkey }
-            if feedMode == .media {
-                count = FeedFilterEngine.filterMediaNotes(
-                    notes: pendingNotes,
-                    blocked: blocked,
-                    wotPubkeys: feedTrustedPubkeys,
-                    isGlobalMedia: mediaFeedMode == .global,
-                    globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
-                    authorOf: authorOf
-                ).filter { !mutes.hides($0) }.count
-            } else {
-                count = FeedFilterEngine.filterFeedNotes(
-                    notes: pendingNotes,
-                    mode: feedMode,
-                    articlesGlobal: articlesFeedMode == .global,
-                    pollsGlobal: pollsFeedMode == .global,
-                    pollStatus: pollStatusFilter,
-                    blocked: blocked,
-                    showReposts: ConfigService.shared.config.showReposts,
-                    showReplies: ConfigService.shared.config.showReplies,
-                    followedPubkeys: followedPubkeys,
-                    ownPubkey: NostrService.shared.activeHexPubkey,
-                    wotPubkeys: feedTrustedPubkeys,
-                    popularFilter: popularFilter,
-                    popularNoteScores: popularNoteScores,
-                    globalLanguages: Set(ConfigService.shared.config.globalFeedLanguages),
-                    globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
-                    languageOf: { [unowned self] note in self.language(of: note) },
-                    authorOf: authorOf
-                ).filter { !mutes.hides($0) }.count
-            }
+            let gate = gate ?? feedGate
+            count = feedMode == .media ? mediaFiltered(pendingNotes, gate: gate).count
+                : feedFiltered(pendingNotes, gate: gate).count
         }
         if count != visiblePendingCount { visiblePendingCount = count }
+    }
+
+    /// The current feed's filter over `list`, through the gate.
+    private func feedFiltered(_ list: [FeedNote], gate: WebGate.Web) -> [FeedNote] {
+        let config = ConfigService.shared.config
+        return FeedFilterEngine.filterFeedNotes(
+            notes: list,
+            mode: feedMode,
+            articlesGlobal: articlesFeedMode == .global,
+            pollsGlobal: pollsFeedMode == .global,
+            pollStatus: pollStatusFilter,
+            gate: gate,
+            reach: currentReach,
+            showReposts: config.showReposts,
+            showReplies: config.showReplies,
+            followedPubkeys: followedPubkeys,
+            ownPubkey: NostrService.shared.activeHexPubkey,
+            popularFilter: popularFilter,
+            popularNoteScores: popularNoteScores,
+            globalLanguages: Set(config.globalFeedLanguages),
+            languageOf: { [unowned self] note in self.language(of: note) },
+            authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
+        )
+    }
+
+    /// The media grid's filter over `list`, through the gate.
+    private func mediaFiltered(_ list: [FeedNote], gate: WebGate.Web) -> [FeedNote] {
+        FeedFilterEngine.filterMediaNotes(
+            notes: list,
+            gate: gate,
+            reach: reach(for: .media, globalLike: mediaFeedMode == .global),
+            authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
+        )
     }
 
     private func language(of note: FeedNote) -> String? {
