@@ -138,11 +138,12 @@ fun DMService.retrySend(counterparty: String, id: String) {
         }
         val unsent = _conversations.value.firstOrNull { it.id == counterparty }
             ?.messages?.firstOrNull { it.id == id } ?: return@launch
-        // Only a bubble that says Not sent: a second tap while this one is going finds it Sending (Tron #2230).
         if (unsent.sendState != DMSendState.FAILED) return@launch
         val words = unsent.resendText ?: return@launch
+        // The old bubble stays Not sent while its words go again, so it is never the copy the
+        // new message's echo dedup collapses onto; a second tap meanwhile is ignored (Tron #2230).
+        if (!resendingIds.add(id)) return@launch
         val key = loadedCacheKey
-        setSendState(key, counterparty, id, DMSendState.SENDING)
         try {
             // As it was sent: a NIP-04 message stays NIP-04. The old bubble goes only once the new
             // one is built; if it can't be (no key, signer refused), the words stay, Not sent.
@@ -151,10 +152,11 @@ fun DMService.retrySend(counterparty: String, id: String) {
                 if (loadedCacheKey == key) removeMessageFromConversation(counterparty, id)
             }
         } catch (e: CancellationException) {
-            setSendState(key, counterparty, id, DMSendState.FAILED, unsent.failure)
             throw e
         } catch (e: Exception) {
             setSendState(key, counterparty, id, DMSendState.FAILED, e.message ?: unsent.failure)
+        } finally {
+            resendingIds.remove(id)
         }
     }
 }
