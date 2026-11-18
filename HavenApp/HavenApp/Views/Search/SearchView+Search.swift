@@ -49,9 +49,15 @@ extension SearchView {
         let now = Date()
         guard force || now.timeIntervalSince(lastDiscoveryRefresh) >= 5 else { return }
         lastDiscoveryRefresh = now
-        cachedTrending = computeTrendingHashtags()
-        cachedSuggested = computeSuggestedProfiles()
-        refreshRecommendations()
+        // Worked out after the frame on screen: on the tab's first open this
+        // ran inside the appear pass, on top of building the whole tab.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1))
+            guard searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            cachedTrending = computeTrendingHashtags()
+            cachedSuggested = computeSuggestedProfiles()
+            refreshRecommendations()
+        }
     }
 
     /// The active account's blocks, applied to everything a search returns.

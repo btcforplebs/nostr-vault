@@ -21,7 +21,7 @@ extension VaultView {
     /// or the owner when none is picked.
     var followersOwnerHex: String {
         let npub = configService.config.activeAccountNpub
-        if !npub.isEmpty, let hex = Bech32.decode(npub)?.hexString { return hex }
+        if !npub.isEmpty, let hex = VaultAccountHexes.hex(of: npub) { return hex }
         return nostrService.ownerHexPubkey
     }
 
