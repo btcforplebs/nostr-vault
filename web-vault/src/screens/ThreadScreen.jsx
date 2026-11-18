@@ -198,7 +198,7 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
               {showOutside ? "Hide" : "Show"} {split.outside.length} {split.outside.length === 1 ? "reply" : "replies"} from outside your web
             </button>}
             {showOutside && showsOutside && split.outside.map(event => <div key={event.id} class="thread-outside"><NoteCard event={event} footer={stats(event)} /></div>)}
-            {!rows.length && !split.outside.length && thread.root && (syncing ? <SkeletonRows count={2} label={LOADING} /> : <p class="empty">No replies yet.</p>)}
+            {!rows.length && (!split.outside.length || !showsOutside) && thread.root && (syncing ? <SkeletonRows count={2} label={LOADING} /> : <p class="empty">No replies yet.</p>)}
           </>}
     </main>
   )
