@@ -100,6 +100,13 @@ func SigCacheStats() (hits, misses uint64) {
 	return sigCacheHits.Load(), sigCacheMisses.Load()
 }
 
+// SigCacheLen reports how many keys the verified set holds. For tests.
+func SigCacheLen() int {
+	verifiedSigs.mu.Lock()
+	defer verifiedSigs.mu.Unlock()
+	return len(verifiedSigs.cur) + len(verifiedSigs.prev)
+}
+
 // ResetSigCache empties the cache and its counters. For tests.
 func ResetSigCache() {
 	verifiedSigs.mu.Lock()
@@ -246,12 +253,18 @@ func LoadVerifiedSigs(path string) (int, error) {
 	}
 	data = data[len(verifiedSigsMagic):]
 	n := len(data) / len(sigCacheKey{}) // whole keys only
-	if n > 2*sigCacheGeneration {
-		data = data[(n-2*sigCacheGeneration)*len(sigCacheKey{}):]
-		n = 2 * sigCacheGeneration
-	}
 	verifiedSigs.mu.Lock()
 	defer verifiedSigs.mu.Unlock()
+	// The set stays within its two generations: keep only the newest keys
+	// (the file ends with the newest) that fit beside what is held now.
+	room := 2*sigCacheGeneration - len(verifiedSigs.cur) - len(verifiedSigs.prev)
+	if room < 0 {
+		room = 0
+	}
+	if n > room {
+		data = data[(n-room)*len(sigCacheKey{}) : n*len(sigCacheKey{})]
+		n = room
+	}
 	if verifiedSigs.prev == nil {
 		verifiedSigs.prev = make(map[sigCacheKey]struct{}, n)
 	}

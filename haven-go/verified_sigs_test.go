@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
@@ -144,4 +145,35 @@ func TestKeepVerifiedSigsLoadsAndSaves(t *testing.T) {
 	}
 	cancel2()
 	<-done2
+}
+
+// A file larger than the set's two generations loads only its newest keys,
+// and loading it again never grows the set past that cap (Tron #2219).
+func TestVerifiedSigsLoadStaysWithinTheCap(t *testing.T) {
+	const gen = 1 << 15
+	path := filepath.Join(t.TempDir(), verifiedSigsFile)
+	big := make([]byte, 0, 8+3*gen*32)
+	big = append(big, "NVSC0001"...)
+	for i := 0; i < 3*gen; i++ {
+		var k [32]byte
+		binary.BigEndian.PutUint64(k[:], uint64(i))
+		big = append(big, k[:]...)
+	}
+	os.WriteFile(path, big, 0o644)
+	nostr.ResetSigCache()
+	evt, _ := sigCacheNote(t, "held now")
+	mustVerify(t, evt, true, "held now")
+	for round := 0; round < 4; round++ {
+		if _, err := nostr.LoadVerifiedSigs(path); err != nil {
+			t.Fatal(err)
+		}
+		if got := nostr.SigCacheLen(); got > 2*gen {
+			t.Fatalf("round %d: set holds %d keys, over the cap %d", round, got, 2*gen)
+		}
+	}
+	// What was held before the load is kept.
+	mustVerify(t, evt, true, "held now, after loads")
+	if hits, _ := nostr.SigCacheStats(); hits != 1 {
+		t.Fatalf("hits=%d, want the held key kept", hits)
+	}
 }
