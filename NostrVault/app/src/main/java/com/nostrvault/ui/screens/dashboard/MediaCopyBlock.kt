@@ -82,9 +82,20 @@ internal fun CopyBlock(
         }
         AnimatedVisibility(visible = showFiles) {
             Column {
-                state.files.forEach { file ->
+                val shown = remember(state.files) { shownCopyFiles(state.files) }
+                shown.forEach { file ->
                     HorizontalDivider(color = TertiaryText.copy(alpha = 0.15f))
                     CopyFileRow(file, hostFor)
+                }
+                val notShown = state.files.size - shown.size
+                if (notShown > 0) {
+                    HorizontalDivider(color = TertiaryText.copy(alpha = 0.15f))
+                    Text(
+                        "$notShown more files, not listed here.",
+                        color = SecondaryText,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
                 }
             }
         }

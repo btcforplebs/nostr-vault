@@ -324,7 +324,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 		// on a 24h ticker) gets that event re-offered and imported this round,
 		// instead of staying hidden behind a stub until process restart.
 		rejects.reevaluate(func(pk string) bool {
-			return !isBlacklisted(pk) && wot.GetInstance().Has(ctx, pk)
+			return !isBlacklisted(pk) && wot.Has(ctx, pk)
 		})
 		var fallback []string
 		if config.NegentropySyncEnabled {
@@ -763,7 +763,7 @@ func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassificatio
 		slog.Debug("🚫discarding imported note from blacklisted pubkey", "pubkey", trustKey, "id", ev.ID)
 		return inboxClassification{reason: rejectBlacklist}
 	}
-	if !wot.GetInstance().Has(ctx, trustKey) && ev.Kind != nostr.KindGiftWrap {
+	if !wot.Has(ctx, trustKey) && ev.Kind != nostr.KindGiftWrap {
 		// Anyone may reply to or quote the owner's own posts: a stranger
 		// answering you is news, where a stranger merely tagging you is the
 		// spam the WoT keeps out.

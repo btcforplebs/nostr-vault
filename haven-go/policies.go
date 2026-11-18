@@ -148,7 +148,7 @@ func MustBeWhitelistedToQuery(ctx context.Context, _ nostr.Filter) (bool, string
 
 func MustBeInWotToQuery(ctx context.Context, _ nostr.Filter) (bool, string) {
 	authenticatedUser := khatru.GetAuthed(ctx)
-	if !wot.GetInstance().Has(ctx, authenticatedUser) {
+	if !wot.Has(ctx, authenticatedUser) {
 		slog.Debug("🚫 query rejected: user is not in the web of trust", "user", authenticatedUser)
 		return true, "restricted: you must be in the web of trust to query this relay"
 	}
@@ -193,7 +193,7 @@ func MustBePrivateReaderToPost(ctx context.Context, event *nostr.Event) (bool, s
 
 func MustBeInWotToPost(ctx context.Context, event *nostr.Event) (bool, string) {
 	// Event from a pubkey in the WoT can always be posted, even if the user is not authenticated
-	if wot.GetInstance().Has(ctx, event.PubKey) {
+	if wot.Has(ctx, event.PubKey) {
 		return false, ""
 	}
 	// Anyone may reply to or quote the owner's own posts (see classifyInboxEvent).
@@ -204,7 +204,7 @@ func MustBeInWotToPost(ctx context.Context, event *nostr.Event) (bool, string) {
 	if authenticatedUser == "" {
 		return true, "auth-required: you must be authenticated to post to this relay"
 	}
-	if !wot.GetInstance().Has(ctx, authenticatedUser) {
+	if !wot.Has(ctx, authenticatedUser) {
 		slog.Debug("🚫 event rejected: user is not in web of trust", "event", event.ID, "pubkey", authenticatedUser)
 		return true, "you must be in the web of trust to post to this relay"
 	}

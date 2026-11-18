@@ -545,8 +545,12 @@ class BlossomService @Inject constructor(
         val mirrors = configStore.config.value.activeBlossomMirrors
         val ownerPubkey = nostrService.ownerHexPubkey
 
-        val allHashes = mutableSetOf<String>()
-        val listed = mutableListOf<BlobDescriptor>() // their upload times date the copies (CopiedInDate)
+        // Only what is missing here is kept, with its earliest upload time on
+        // any server (it dates the copy, CopiedInDate); each server's list is
+        // dropped once read, so thousands of listed files are not all held.
+        val missingSet = LinkedHashSet<String>()
+        val heldHere = HashSet<String>()
+        val uploadedDates = HashMap<String, Long>()
 
         // Sign ONE kind 24242 auth event for the ENTIRE mirror-in and reuse it for
         // both the remote /list and every local /upload. It carries both "t" verbs
@@ -575,16 +579,21 @@ class BlossomService @Inject constructor(
                     continue
                 }
                 val blobs = json.decodeFromString<List<BlobDescriptor>>(body)
-                blobs.mapNotNull { it.sha256 }.forEach { allHashes.add(it) }
-                listed += blobs
+                for (hash in blobs.mapNotNull { it.sha256 }) {
+                    if (hash in missingSet || hash in heldHere) continue
+                    if (mediaCacheService.isInLocalBlossom(hash)) heldHere += hash else missingSet += hash
+                }
+                for ((hash, secs) in CopiedInDate.uploadedByHash(blobs)) {
+                    if ((uploadedDates[hash] ?: Long.MAX_VALUE) > secs) uploadedDates[hash] = secs
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Blob list fetch from $mirror failed: ${e.message}")
                 onUnreachable?.invoke(mirror)
             }
         }
 
-        // Filter to hashes not in local Blossom
-        val missing = allHashes.filter { !mediaCacheService.isInLocalBlossom(it) }
+        val missing = missingSet.toList()
+        uploadedDates.keys.retainAll(missing.mapTo(HashSet()) { it.lowercase() })
         onLogMessage?.invoke("Found ${missing.size} blobs to mirror")
         if (missing.isEmpty()) return@withContext 0
         if (ownVault == null) {
@@ -594,7 +603,6 @@ class BlossomService @Inject constructor(
 
         val completed = java.util.concurrent.atomic.AtomicInteger(0)
         val saved = java.util.concurrent.atomic.AtomicInteger(0)
-        val uploadedDates = CopiedInDate.uploadedByHash(listed)
         coroutineScope {
             for (hash in missing) {
                 if (!limits.take()) break

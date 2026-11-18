@@ -3,6 +3,7 @@ package wot
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -100,5 +101,22 @@ func TestInitializeCancelledDoesNotMarkReady(t *testing.T) {
 	case <-g.Done():
 		t.Fatal("cancelled Initialize must not mark the gate ready")
 	default:
+	}
+}
+
+// Before background setup installs a model the relay is already serving:
+// Has must say "not in the web of trust", not panic on a nil Model (Moto
+// relaunch aborts, 2026-11-17).
+func TestHasBeforeAnyModel(t *testing.T) {
+	saved := wotInstance.Load()
+	wotInstance = atomic.Value{}
+	t.Cleanup(func() {
+		wotInstance = atomic.Value{}
+		if saved != nil {
+			wotInstance.Store(saved)
+		}
+	})
+	if Has(context.Background(), "npub") {
+		t.Fatal("no model yet must read as not in the web of trust")
 	}
 }

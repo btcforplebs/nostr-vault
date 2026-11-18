@@ -38,17 +38,30 @@ internal object NoteMediaScan {
         knownHash: (String) -> String? = { null },
         isStoredLocally: (String) -> Boolean,
     ): List<String> {
-        val seen = LinkedHashSet<String>()
-        val hashes = HashSet<String>()
-        for (url in urls) {
-            val host = runCatching { URI(url).host?.lowercase() }.getOrNull() ?: continue
-            if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) continue
-            if (host in LOCAL_HOSTS) continue
+        val picker = Picker(isStoredLocally)
+        return urls.filter { picker.offer(it, knownHash) }
+    }
+
+    /**
+     * [urlsToImport] one link at a time, so a scan can pick as it reads and
+     * keep only the picks, not every link it saw. Remembers the links and
+     * hashes already picked.
+     */
+    class Picker(private val isStoredLocally: (String) -> Boolean) {
+        private val seen = HashSet<String>()
+        private val hashes = HashSet<String>()
+
+        /** True the first time an outside link not stored here comes by. */
+        fun offer(url: String, knownHash: (String) -> String? = { null }): Boolean {
+            if (url in seen) return false
+            val host = runCatching { URI(url).host?.lowercase() }.getOrNull() ?: return false
+            if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) return false
+            if (host in LOCAL_HOSTS) return false
             val hash = blobHash(url) ?: knownHash(url)?.lowercase()
-            if (hash != null && (isStoredLocally(hash) || !hashes.add(hash))) continue
+            if (hash != null && (isStoredLocally(hash) || !hashes.add(hash))) return false
             seen += url
+            return true
         }
-        return seen.toList()
     }
 
     /** The SHA-256 a Blossom-style link is named by (`…/<64 hex>[.ext]`), lower-cased; null for any other link. */
@@ -71,17 +84,40 @@ internal object NoteMediaScan {
      * [pageFilter]; each next page starts at the oldest note seen (`until` is inclusive, so that note comes again
      * and is not new). It ends on a page with no new note. It used to end on any page shorter than [PAGE], and the
      * store's 250 cap made that the first one: only the newest 250 notes were ever scanned.
+     *
+     * Each page goes to [onPage] and is then dropped, so a 20,000-note history is never held at once. Only the
+     * ids at the page edge are kept: that one second is the only part that can come again. [onPage] returns
+     * false to stop early. Returns how many notes were read.
      */
-    suspend fun collect(owner: String, fetch: suspend (String) -> List<JsonObject>): List<Note> {
-        val notes = LinkedHashMap<String, Note>()
+    suspend fun forEachPage(
+        owner: String,
+        fetch: suspend (String) -> List<JsonObject>,
+        onPage: (List<Note>) -> Boolean,
+    ): Int {
+        var read = 0
         var until: Long? = null
+        // Ids of the notes already read at second `until`: only those can come again.
+        var edge = HashSet<String>()
         for (page in 0 until MAX_PAGES) {
             val fresh = fetch(pageFilter(owner, until)).mapNotNull(::parse)
-                .filter { it.pubkey == owner && notes.putIfAbsent(it.id, it) == null }
+                .filter { it.pubkey == owner && (until == null || it.createdAt <= until!!) && it.id !in edge }
+                .distinctBy { it.id }
             if (fresh.isEmpty()) break
-            until = fresh.minOf { it.createdAt }
+            read += fresh.size
+            val oldest = fresh.minOf { it.createdAt }
+            val atOldest = fresh.filter { it.createdAt == oldest }.mapTo(HashSet()) { it.id }
+            edge = if (oldest == until) edge.apply { addAll(atOldest) } else atOldest
+            until = oldest
+            if (!onPage(fresh)) break
         }
-        return notes.values.toList()
+        return read
+    }
+
+    /** Every note at once ([forEachPage]); for tests and small stores. */
+    suspend fun collect(owner: String, fetch: suspend (String) -> List<JsonObject>): List<Note> {
+        val notes = ArrayList<Note>()
+        forEachPage(owner, fetch) { notes += it; true }
+        return notes
     }
 
     /** id, created_at, content and tags of a raw event; null when it is not a usable note. */
