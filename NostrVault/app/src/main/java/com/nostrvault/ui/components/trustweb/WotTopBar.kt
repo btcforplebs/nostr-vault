@@ -1,8 +1,5 @@
 package com.nostrvault.ui.components
 
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.heightIn
 import com.nostrvault.tutorials.TutorialContent
@@ -114,46 +111,18 @@ internal fun WotTopBar(
                 Icon(NostrVaultIcons.ChevronDown, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(2.5.dp))
             }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                layers.forEach { item ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                "${item.title} · ${compactCount(counts[item] ?: 0)}",
-                                fontWeight = if (item == layer) FontWeight.SemiBold else FontWeight.Normal,
-                            )
-                        },
-                        leadingIcon = { Icon(item.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                        trailingIcon = if (item == layer) {
-                            { Icon(NostrVaultIcons.Check, contentDescription = "Current layer", modifier = Modifier.size(16.dp)) }
-                        } else null,
-                        onClick = {
-                            onLayer(item)
-                            expanded = false
-                        },
-                    )
-                }
-                HorizontalDivider()
-                // Android's list of the layer's people. iOS has no list; it sits
-                // here so the bar has room for the filters.
-                DropdownMenuItem(
-                    text = { Text("See as a list") },
-                    leadingIcon = { Icon(NostrVaultIcons.PeopleList, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    onClick = {
-                        expanded = false
-                        onList()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(if (refreshing) "Rebuilding…" else "Rebuild your web") },
-                    leadingIcon = { Icon(NostrVaultIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    enabled = !refreshing,
-                    onClick = {
-                        expanded = false
-                        onRebuild()
-                    },
-                )
-            }
+            // The dock hold menu's look, as the feed list (WotLayerMenu).
+            WotLayerMenu(
+                expanded = expanded,
+                onDismiss = { expanded = false },
+                layers = layers,
+                current = layer,
+                counts = layers.associateWith { compactCount(counts[it] ?: 0) },
+                onPick = onLayer,
+                onList = onList,
+                refreshing = refreshing,
+                onRebuild = onRebuild,
+            )
         }
         Spacer(Modifier.weight(1f))
         GlassPill(horizontalArrangement = Arrangement.Start) {
