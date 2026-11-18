@@ -83,6 +83,11 @@ struct HavenConfig: Codable, Equatable {
     /// Settings › Feeds › Reach: a feed's raw value to a `WebGate.Reach`
     /// raw value, only where it differs from the default (`FeedReach`).
     var feedReach: [String: String] = [:]
+    /// Feeds › "Show 'Outside your web' under posts" (Logen 2026-11-18). Off:
+    /// a post shows no fold row for replies and quotes from outside your
+    /// web, and a feed no "N notes from outside your web" row. They stay
+    /// in Vault › ··· › Outside your web.
+    var showsOutsideUnderPosts: Bool = true
 
     // Mac relay (iOS only)
     var macRelayURL: String = "" // wss:// URL to a remote Mac Haven relay to sync missed notes
@@ -335,7 +340,7 @@ struct HavenConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, autoplayVideos, vertexLookups, fanfaresAutoCheck, ownerNcryptsec, ownerNsec, showReplies, repliesBackOnV1, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
-        case useOLED, textSizeScale, appearanceMode, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge, feedReach
+        case useOLED, textSizeScale, appearanceMode, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge, feedReach, showsOutsideUnderPosts
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags, showDMTextInNotifications
         case macRelayURL, publicOnWeb, keepFullCopy, fullCopyWifiOnly
@@ -440,6 +445,7 @@ struct HavenConfig: Codable, Equatable {
         globalShowsEveryone = try container.decodeIfPresent(Bool.self, forKey: .globalShowsEveryone) ?? defaults.globalShowsEveryone
         hideNostrVaultBadge = try container.decodeIfPresent(Bool.self, forKey: .hideNostrVaultBadge) ?? defaults.hideNostrVaultBadge
         feedReach = try container.decodeIfPresent([String: String].self, forKey: .feedReach) ?? defaults.feedReach
+        showsOutsideUnderPosts = try container.decodeIfPresent(Bool.self, forKey: .showsOutsideUnderPosts) ?? defaults.showsOutsideUnderPosts
 
         signingMode = try container.decodeIfPresent(String.self, forKey: .signingMode) ?? defaults.signingMode
         nip46BunkerURI = try container.decodeIfPresent(String.self, forKey: .nip46BunkerURI) ?? defaults.nip46BunkerURI

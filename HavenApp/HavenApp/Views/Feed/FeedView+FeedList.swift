@@ -159,7 +159,7 @@ extension FeedView {
                                 .padding(.bottom, 8)
                         }
 
-                        if !feedService.feedOutsideMentions.isEmpty {
+                        if configService.config.showsOutsideUnderPosts && !feedService.feedOutsideMentions.isEmpty {
                             FeedOutsideRow(count: feedService.feedOutsideMentions.count) {
                                 FeedOutsideRow.openVaultOutside()
                             }

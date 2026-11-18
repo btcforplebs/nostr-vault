@@ -163,40 +163,44 @@ struct NoteDetailView: View {
 
     /// Replies under the opened note, at any depth. `feedService.notes` holds
     /// every note in memory, Global's firehose included, so replies go
-    /// through the feed's block rule and spam check. Replies from outside
-    /// your Web of Trust (`TrustGate`, the Global rule) are folded with
-    /// everything under them, behind "Outside your web".
+    /// through the one gate (`WebGate`: blocks, mutes, your web) and the spam
+    /// check. Replies from outside your web are folded with everything under
+    /// them, behind "Outside your web".
     func threadReplySplit(in all: [FeedNote]) -> (inside: [FeedNote], outside: [FeedNote]) {
-        let blocked = configService.activeAccountBlockedHexPubkeys
-        let mutes = MuteListStore.shared.active
-        let trusted = replyTrustSet
+        let gate = replyGate
         let always = replyAlwaysShown
-        // Only a blocked repost needs a note's author by id: built on the
+        // Only a repost or a reply needs a note's author by id: built on the
         // first such lookup, not for all of memory on every redraw.
         var byId: [String: String]?
         func author(of id: String) -> String? {
             if byId == nil { byId = Dictionary(all.map { ($0.id, $0.pubkey) }, uniquingKeysWith: { first, _ in first }) }
             return byId?[id]
         }
+        var verdicts: [String: WebGate.Verdict] = [:]
+        func verdict(_ n: FeedNote) -> WebGate.Verdict {
+            if let v = verdicts[n.id] { return v }
+            let v = WebGate.judge(.feed(n, authorOf: author(of:)), in: gate, always: always)
+            verdicts[n.id] = v
+            return v
+        }
         return ThreadReplyVisibility.split(under: replyTargetId, in: all, id: \.id, parentId: \.parentEventId, isHidden: { n in
-            FeedFilterEngine.involvesBlocked(n, blocked: blocked, authorOf: author(of:))
-                || FeedNote.isNoiseOrSpam(content: n.content, tags: n.tags)
-                || mutes.hides(n)
+            verdict(n) == .blocked || FeedNote.isNoiseOrSpam(content: n.content, tags: n.tags)
         }, isOutside: { n in
-            !TrustGate.allows(n.pubkey, trusted: trusted, always: always)
+            verdict(n) != .inside
         })
     }
 
     /// The replies the thread draws: inside your web, plus the folded ones
-    /// once "Outside your web" is open.
+    /// once "Outside your web" is open (never with the fold rows off).
     func threadReplies(in all: [FeedNote]) -> [FeedNote] {
         let split = threadReplySplit(in: all)
-        return showsOutsideReplies ? split.inside + split.outside : split.inside
+        return showsOutsideReplies && configService.config.showsOutsideUnderPosts
+            ? split.inside + split.outside : split.inside
     }
 
-    /// Your web for replies and quotes: the Global feed's set, nil when the
-    /// shield says Everyone, empty (everyone folded) before there is a graph.
-    var replyTrustSet: Set<String>? { feedService.globalTrustSet() }
+    /// The gate replies and quotes go through: your web, blocks and mutes.
+    /// The Everyone shield is Global's alone; a thread keeps to your web.
+    var replyGate: WebGate.Web { feedService.feedGate }
 
     /// Always shown, whatever the web says: you, and whoever wrote the notes
     /// this thread is about.

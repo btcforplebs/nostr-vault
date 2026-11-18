@@ -89,15 +89,15 @@ enum NotificationPolicy {
     /// means the graph has not loaded and you follow nobody, and then only
     /// your own accounts pass: fails closed, like Android and the web. Gift
     /// wraps (`giftwrap`) carry a throwaway author and the catch-up summary
-    /// carries none, so they are not judged here. Zaps pass too: the relay
-    /// already admitted the receipt on the zapper's standing (haven-go
-    /// inboxTrustKey), and a relay from before that marker change names the
-    /// lightning service, which is never in anyone's Web of Trust.
+    /// carries none, so they are not judged here. A zap is judged like a
+    /// post on the person who paid, whom the relay's marker names (haven-go
+    /// inboxTrustKey): one from outside your web still lands in the Vault's
+    /// Zaps with its amount, but does not alert (the one gate, 2026-11-18).
     /// Follows are judged like posts: only a follower in your web alerts
     /// (Logen 2026-11-14, the Followers page's rule); the rest wait behind
     /// the Followers page's "Outside your web".
     static func authorMayNotify(_ author: String, type: String, trusted: Set<String>, own: Set<String>) -> Bool {
-        if author.isEmpty || type == "giftwrap" || type == "summary" || type == "zap" { return true }
+        if author.isEmpty || type == "giftwrap" || type == "summary" { return true }
         if own.contains(author) { return true }
         return trusted.contains(author)
     }

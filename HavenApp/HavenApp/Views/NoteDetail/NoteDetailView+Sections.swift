@@ -173,11 +173,19 @@ extension NoteDetailView {
     @ViewBuilder
     var otherResponsesSection: some View {
         // Read at draw time, so blocking someone takes their quotes out at once.
-        let visible = BlockedPeople.visibleNotes(otherResponses, blocked: configService.activeAccountBlockedHexPubkeys) { $0.pubkey }
-        // Quotes from outside your web wait behind the same fold as replies.
-        let split = TrustGate.split(visible, author: \.pubkey, trusted: replyTrustSet, always: replyAlwaysShown)
-        let shown = showsOutsideReplies ? split.inside + split.outside : split.inside
-        if !split.outside.isEmpty && !showsOutsideReplies && shown.isEmpty {
+        // One gate: blocked and muted go, outside your web waits behind the
+        // same fold as replies.
+        let gate = replyGate
+        let always = replyAlwaysShown
+        let judged = otherResponses.map { ($0, WebGate.judge(.feed($0), in: gate, always: always)) }
+        let split = (inside: judged.filter { $0.1 == .inside }.map(\.0),
+                     outside: judged.filter { $0.1 == .outside || $0.1 == .hop3 }.map(\.0))
+        // With the fold rows switched off, quotes from outside your web are
+        // only in the Vault's Outside list.
+        let folds = configService.config.showsOutsideUnderPosts
+        let open = showsOutsideReplies && folds
+        let shown = open ? split.inside + split.outside : split.inside
+        if folds && !split.outside.isEmpty && !open && shown.isEmpty {
             outsideWebButton(count: split.outside.count, noun: "quote")
                 .padding(.top, 20)
         }
@@ -190,7 +198,7 @@ extension NoteDetailView {
                     OtherResponseCard(note: response, profile: nostrService.profiles[response.pubkey])
                         .padding(.horizontal, 16)
                 }
-                if !split.outside.isEmpty && !showsOutsideReplies {
+                if folds && !split.outside.isEmpty && !open {
                     outsideWebButton(count: split.outside.count, noun: "quote")
                 }
             }
@@ -204,8 +212,12 @@ extension NoteDetailView {
         // live feed changed.
         let all = allThreadNotes
         let split = threadReplySplit(in: all)
-        let replies = showsOutsideReplies ? split.inside + split.outside : split.inside
-        let outsideCount = showsOutsideReplies ? 0 : split.outside.count
+        // With the fold rows switched off, replies from outside your web are
+        // only in the Vault's Outside list: no row, and never opened.
+        let folds = configService.config.showsOutsideUnderPosts
+        let open = showsOutsideReplies && folds
+        let replies = open ? split.inside + split.outside : split.inside
+        let outsideCount = open || !folds ? 0 : split.outside.count
         let context = contextNoteIds
         // What the views draw from: the opened note, the notes above it, and
         // the replies under it that pass `threadReplies`.

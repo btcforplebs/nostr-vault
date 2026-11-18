@@ -542,6 +542,7 @@
 		3DF818A9990BDF480F1827BE /* BlockedPeople.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8B8BF0CFACC02D638AEDA16 /* BlockedPeople.swift */; };
 		3E132F275589C18543105D96 /* ThreadEngagementQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86B6DE9563AEAC1E8BF203EA /* ThreadEngagementQuery.swift */; };
 		3E1CF7FF7BF9CC321886CD3E /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558FCD15C2C7144DF3D20135 /* EmojiPickerView.swift */; };
+		3E29BA26158C9979FC763CE2 /* WebGate+Zaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13A1DB1083E3B5E7E5B06310 /* WebGate+Zaps.swift */; };
 		3E53AB37D8C661294466026D /* VertexReputation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B5E98764373253F27F8526F /* VertexReputation.swift */; };
 		3EBEC2F605993B37DDB345AB /* NoteRow+EngagementBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CED90605A0EC0CF574801DE /* NoteRow+EngagementBar.swift */; };
 		3F21BB94AF95CD331C1DD1EE /* BlossomService+LocalUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB509F2A30B9B45176A3489 /* BlossomService+LocalUpload.swift */; };
@@ -1108,6 +1109,7 @@
 		7E7815F89FC5E98A810A5A4D /* ImportTourStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3912DD3B5132A5A7C5402A0 /* ImportTourStage.swift */; };
 		7E9AD54AFC01A7B923F0B2B4 /* StatusShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B29B131C5EF9EE3AE8BEE33B /* StatusShareHandler.swift */; };
 		7EA1A6E71CA81B6A995532CE /* ComposeTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3F496906984D6ECD30AED13 /* ComposeTextView.swift */; };
+		7EA9041C51350B538154F138 /* WebGate+Zaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13A1DB1083E3B5E7E5B06310 /* WebGate+Zaps.swift */; };
 		7EE14A48E36B7618196FEC55 /* NWCBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92E2111DB061D2145C10FEC5 /* NWCBackupService.swift */; };
 		7F0AFA0A17295BED2F6018A6 /* NVDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9537B19D8281AE9ABF41514C /* NVDeepLink.swift */; };
 		7F13D2BE9285850ACF41B5A2 /* TutorialProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD57608996E7CA8D632A0147 /* TutorialProgress.swift */; };
@@ -2450,6 +2452,7 @@
 		12FB986CD40CF9532CA6B250 /* HashtagsFeedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashtagsFeedViews.swift; sourceTree = "<group>"; };
 		131AAC224239A2C64C2579FC /* NpubValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NpubValidation.swift; sourceTree = "<group>"; };
 		136058FCB942C2C7E1874129 /* ProfileBioLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileBioLinks.swift; sourceTree = "<group>"; };
+		13A1DB1083E3B5E7E5B06310 /* WebGate+Zaps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WebGate+Zaps.swift"; sourceTree = "<group>"; };
 		140A9D83B992BBCA74D259C2 /* MediaCacheService+Sources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaCacheService+Sources.swift"; sourceTree = "<group>"; };
 		143FB30420F6140DFC7F2A4E /* TrustScopeLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustScopeLock.swift; sourceTree = "<group>"; };
 		1450181E9BA44C1EA1E766D5 /* UploadAuthCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadAuthCache.swift; sourceTree = "<group>"; };
@@ -4800,6 +4803,7 @@
 				C91987BAC69FE261893A95BA /* Wavlake.swift */,
 				F848192E0B5A6F19F740ACDB /* WebGate.swift */,
 				AD8F9A185F050EBA1A7CAE91 /* WebGate+FeedNote.swift */,
+				13A1DB1083E3B5E7E5B06310 /* WebGate+Zaps.swift */,
 				3DEFE8FD51A67D177C07A118 /* WotNewcomers.swift */,
 				5DF3E7F03589E36F93A1077E /* WotRebuildWatch.swift */,
 				50209E071F523E3AF5F22F69 /* YourDevicesLogic.swift */,
@@ -6690,6 +6694,7 @@
 				C2F3A9B7A6FD0B42164286EB /* Wavlake.swift in Sources */,
 				244F6D570738547E17EAC33E /* WavlakeTrackCard.swift in Sources */,
 				E68F06EB0AA644B69A1CF057 /* WebGate+FeedNote.swift in Sources */,
+				3E29BA26158C9979FC763CE2 /* WebGate+Zaps.swift in Sources */,
 				0929AFB67CD25929E6EA3742 /* WebGate.swift in Sources */,
 				DA69EDAF3E78E6E97F38FACF /* WebRoleService.swift in Sources */,
 				7FD9D8FB6010447F28657CEB /* WebSocketClient+LookupConnection.swift in Sources */,
@@ -7825,6 +7830,7 @@
 				BC01754B87DBF7DC16BFBA8E /* Wavlake.swift in Sources */,
 				DB75AAC26D68BF70E8867A40 /* WavlakeTrackCard.swift in Sources */,
 				BACF949E388063B494855596 /* WebGate+FeedNote.swift in Sources */,
+				7EA9041C51350B538154F138 /* WebGate+Zaps.swift in Sources */,
 				68AFE6A8E06823D333CA5D58 /* WebGate.swift in Sources */,
 				E4604A92F5669743FB7A6C3B /* WebRoleService.swift in Sources */,
 				A35F90A84D9356F573F9576C /* WebSocketClient+LookupConnection.swift in Sources */,

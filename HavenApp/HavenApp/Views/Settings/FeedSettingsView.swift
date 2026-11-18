@@ -24,8 +24,11 @@ struct FeedSettingsView: View {
                 Toggle(isOn: $configService.config.autoplayVideos) {
                     Text("Autoplay Videos").settingInfo(.mediaAutoplay)
                 }
+                Toggle("Show \u{201C}Outside your web\u{201D} under posts", isOn: $configService.config.showsOutsideUnderPosts)
             } header: {
                 Text("What You See")
+            } footer: {
+                Text("Replies, quotes and mentions from people outside your web are folded under one line. Turn it off to hide the line too; they stay in Vault \u{203A} \u{00B7}\u{00B7}\u{00B7} \u{203A} Outside your web.")
             }
 
             FeedReachSettingsSection()

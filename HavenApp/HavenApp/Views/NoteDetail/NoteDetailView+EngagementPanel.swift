@@ -17,18 +17,29 @@ extension NoteDetailView {
         let comment: String
     }
 
+    /// Who zapped this note, biggest first, through the one gate: a blocked
+    /// payer's zap goes, and one from outside your web keeps its amount but
+    /// not its comment (`WebGate.zapShow`). The payer is the zap request's
+    /// signer, judged only when that request verifies.
     var parsedZaps: [ZapDetail] {
         var list: [ZapDetail] = []
+        let gate = feedService.feedGate
         for zap in detailedZaps {
             guard let descJson = zap.tags.first(where: { $0.count >= 2 && $0[0] == "description" })?[1],
                   let descData = descJson.data(using: .utf8),
                   let zapReq = try? JSONSerialization.jsonObject(with: descData) as? [String: Any],
                   let senderPubkey = zapReq["pubkey"] as? String else { continue }
-            
+            let subject = WebGate.Subject.zap(requestSigner: senderPubkey,
+                                              verified: NostrEventVerifier.isValid(json: descJson),
+                                              receiptId: zap.id, comment: zapReq["content"] as? String ?? "",
+                                              related: [senderPubkey])
+            let show = WebGate.zapShow(WebGate.judge(subject, in: gate))
+            if show == .hidden { continue }
+
             // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
             let amountSats = Int64(LiveChat.zapAmountSats(receiptTags: zap.tags,
                                                              requestTags: zapReq["tags"] as? [[String]] ?? []))
-            let comment = zapReq["content"] as? String ?? ""
+            let comment = show == .whole ? zapReq["content"] as? String ?? "" : ""
             list.append(ZapDetail(id: zap.id, zapperPubkey: senderPubkey, amountSats: amountSats, comment: comment))
         }
         return list.sorted { $0.amountSats > $1.amountSats }

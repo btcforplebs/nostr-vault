@@ -51,10 +51,10 @@ final class LiveChatService: ObservableObject {
             "#a": [stream.address],
             "limit": 100
         ]
-        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
-        // Chat from outside your web stays out, like Global (`TrustGate`);
-        // the host, the stream's publisher and you always show. Zaps stay.
-        let trusted = FeedService.shared.globalTrustSet()
+        // The one gate (`WebGate.chatRow`): chat from outside your web stays
+        // out; the host, the stream's publisher and you always show. A zap
+        // from outside keeps its amount, not its words.
+        let gate = FeedService.shared.feedGate
         let always: Set<String> = [stream.hostPubkey, stream.authorPubkey, ConfigService.shared.activeAccountHexPubkey]
 
         for url in relayURLs {
@@ -71,7 +71,7 @@ final class LiveChatService: ObservableObject {
                 .compactMap { Self.verifiedRow(message: $0, address: address) }
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] row in
-                    self?.handle(row: row, address: address, blocked: blocked, trusted: trusted, always: always)
+                    self?.handle(row: row, address: address, gate: gate, always: always)
                 }
                 .store(in: &cancellables)
 
@@ -212,14 +212,12 @@ final class LiveChatService: ObservableObject {
                                 verifyRequest: NostrEventVerifier.isValid(json:))
     }
 
-    private func handle(row: LiveChatMessage, address: String, blocked: Set<String>,
-                        trusted: Set<String>?, always: Set<String>) {
+    private func handle(row: LiveChatMessage, address: String, gate: WebGate.Web, always: Set<String>) {
         // A late answer from the stream that was open before.
         guard self.address == address else { return }
-        if let author = row.authorPubkey {
-            guard !blocked.contains(author), !hidden.contains(author) else { return }
-            guard row.isZap || TrustGate.allows(author, trusted: trusted, always: always) else { return }
-        }
+        // Muted from this chat's menu, for this stream only.
+        if let author = row.authorPubkey, hidden.contains(author) { return }
+        guard let row = WebGate.chatRow(row, in: gate, always: always) else { return }
         guard collected[row.id] == nil else { return }
         collected[row.id] = row
         schedulePublish()
