@@ -23,6 +23,9 @@ struct DMThreadView: View {
     /// scroll frame, and that must not re-render the whole list.
     @State private var followTracker = FollowTracker()
     @State private var useNIP04: Bool = false
+    /// The account this chat was opened as. A switch closes the chat and
+    /// drops the draft, and Send refuses (A5, 2026-11-18).
+    @State private var openedAsAccount: String?
     /// The photo picked for the next message, already prepared for upload.
     @State private var pickedPhotoItem: PhotosPickerItem?
     @State private var attachment: PickedAttachment?
@@ -360,7 +363,14 @@ struct DMThreadView: View {
                 Task { await attachPhoto(item) }
             }
             .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
+            .onChange(of: configService.activeAccountHexPubkey) { _, active in
+                guard DMChatAccountGuard.mustClose(openedAs: openedAsAccount, active: active) else { return }
+                messageInput = ""
+                discardAttachment()
+                dismiss()
+            }
             .onAppear {
+                if openedAsAccount == nil { openedAsAccount = configService.activeAccountHexPubkey }
                 if messageInput.isEmpty, let initialMessage { messageInput = initialMessage }
                 dmService.markRead(conversationWith: counterpartyPubkey)
                 dmService.visibleConversation = counterpartyPubkey
@@ -495,6 +505,11 @@ struct DMThreadView: View {
         let trimmed = messageInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let photo = attachment
         guard !trimmed.isEmpty || photo != nil, !isSending else { return }
+        guard DMChatAccountGuard.maySend(openedAs: openedAsAccount,
+                                         active: configService.activeAccountHexPubkey) else {
+            sendError = "You switched account. Open the chat again to send from this one."
+            return
+        }
 
         isSending = true
         let messageToSend = trimmed
