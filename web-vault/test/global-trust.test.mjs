@@ -17,11 +17,12 @@ const trust = new Set([ME, A, B])
 
 test("the Swift Global branch is the rule ported here", () => {
   const src = swift("Services/FeedFilterEngine.swift")
-  const branch = src.slice(src.indexOf("if mode == .global {"), src.indexOf("if mode == .following {"))
-  // Judged on the signer: a repost's reposter, never the author its content names (PR 1926). The web's note.pubkey
-  // is the signer too, and trustShows checks only it (Logen 2026-11-11).
-  assert.match(branch, /if globalRequiresTrust && !wotPubkeys\.contains\(note\.repostedBy \?\? note\.pubkey\) \{ return false \}/)
-  assert.match(branch, /if note\.isReply \{ return false \}/)
+  // Since #2215 every mode asks the one gate (WebGate.judge): Global keeps only `.inside` top-level notes, and the
+  // gate's subject is the signer, a repost's reposter, never the author its content names (PR 1926). The web's
+  // note.pubkey is the signer too (web-gate.js noteSubject).
+  const branch = src.slice(src.indexOf("case .global:"), src.indexOf("case .discovery:"))
+  assert.match(branch, /guard v == \.inside, !note\.isReply else \{ return false \}/)
+  assert.match(src, /repostedBy \?\? note\.pubkey/)
   // Fails closed: the trust set is your saved web plus follows, so with no saved web just your follows, and empty
   // when you follow nobody (PR 1927; the web's globalTrust does the same).
   assert.match(swift("Models/TrustMap.swift"), /static func web\(saved: Set<String>, follows: Set<String>\) -> Set<String> \{\s*saved\.union\(follows\)\s*\}/)
