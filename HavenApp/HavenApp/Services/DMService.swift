@@ -254,6 +254,14 @@ class DMService: ObservableObject {
     /// without decrypting it (a NIP-46 signer may not answer in time).
     var sentSelfWrapIds = Set<String>()
 
+    /// Your messages still waiting on their relays' answers, by message id
+    /// (DMService+SendStatus).
+    var pendingDeliveries: [String: DMService.PendingDelivery] = [:]
+
+    /// How to send a not-sent message again this run, by message id: the same
+    /// text, file tags and kind, signed afresh (DMService+SendStatus).
+    var resends: [String: () async throws -> Void] = [:]
+
     /// One-time catch-up, per account, of your own sent copies stranded on
     /// your general (kind 10002) relays. Before the DM inbox list, a sent
     /// copy could go to those relays when your 10002 was found before your

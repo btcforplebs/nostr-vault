@@ -118,9 +118,13 @@ extension DMService {
     /// is answered with AUTH — signed by the account that is sending, never
     /// the owner on another account's behalf, which would tie the two
     /// accounts together for the relay — and the event is sent once more. Relays that need no AUTH accept it on
-    /// the first try. Logs the outcome; never blocks the caller.
-    func publishAuthenticated(_ event: NostrEvent, url: String) {
-        guard let urlObj = URL(string: url) else { return }
+    /// the first try. Logs the outcome and hands it to `onResult` (accepted,
+    /// the relay's note) once; never blocks the caller.
+    /// `sender` is the account that wrote it (default: the loaded one); AUTH is
+    /// only ever signed as that account (signRelayAuth refuses otherwise).
+    func publishAuthenticated(_ event: NostrEvent, url: String, sender: String? = nil,
+                              onResult: ((Bool, String) -> Void)? = nil) {
+        guard let urlObj = URL(string: url) else { onResult?(false, "bad relay address"); return }
         let client = WebSocketClient()
         client.isTemporary = true
         let eventMsg: String? = {
@@ -128,9 +132,9 @@ extension DMService {
             guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return nil }
             return String(data: data, encoding: .utf8)
         }()
-        guard let eventMsg else { return }
+        guard let eventMsg else { onResult?(false, "could not encode the event"); return }
 
-        let sender = loadedAccountPubkey
+        let sender = sender ?? loadedAccountPubkey
         var challenge: String?
         var authSent = false
         var authEventId: String?
@@ -144,6 +148,7 @@ extension DMService {
             #endif
             client.disconnect()
             subs.removeAll()
+            onResult?(ok, note)
         }
 
         client.messageSubject
@@ -227,11 +232,14 @@ extension DMService {
     /// open until the relay's OK (10 s cap): nos.lol, primal, nostr.mom and
     /// relay.nostr.net drop an event whose socket closes right after it
     /// (measured 2026-10-25: 0 of 4 kept it, 4 of 4 when the OK was awaited).
-    func fireAndForgetPublish(_ event: NostrEvent, url: String) {
+    /// `onResult` hears whether the relay took it (a timeout or a failed
+    /// connection counts as no).
+    func fireAndForgetPublish(_ event: NostrEvent, url: String, onResult: ((Bool) -> Void)? = nil) {
         NostrService.shared.broadcastRawEvent(eventToDict(event), to: [url]) { relay, ok, message in
             #if DEBUG
             if !ok { print("DMService: send to \(relay) not accepted: \(message)") }
             #endif
+            onResult?(ok || message.hasPrefix("duplicate"))
         }
     }
 }

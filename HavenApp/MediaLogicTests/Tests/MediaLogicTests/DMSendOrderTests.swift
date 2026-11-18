@@ -28,7 +28,7 @@ final class DMSendOrderTests: XCTestCase {
 
     func testAGiftWrappedDMIsSignedBeforeItJoinsTheThread() throws {
         let fn = try body(of: "sendNIP17DM", in: try sendingSource())
-        let append = try offset("messages.append(message)", in: fn)
+        let append = try offset("addSentMessage(message", in: fn)
         XCTAssertLessThan(try offset("activePrivateKey()", in: fn), append)
         XCTAssertLessThan(try offset("try await (recipientWrap, selfWrap)", in: fn), append)
         XCTAssertLessThan(try offset("switchGeneration == generation", in: fn), append)
@@ -37,7 +37,7 @@ final class DMSendOrderTests: XCTestCase {
 
     func testALegacyDMIsSignedBeforeItJoinsTheThread() throws {
         let fn = try body(of: "sendNIP04DM", in: try sendingSource())
-        let append = try offset("messages.append(message)", in: fn)
+        let append = try offset("addSentMessage(message", in: fn)
         XCTAssertLessThan(try offset("signEventAsync(", in: fn), append)
         XCTAssertLessThan(try offset("switchGeneration == generation", in: fn), append)
     }

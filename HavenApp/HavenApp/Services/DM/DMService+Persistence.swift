@@ -100,6 +100,23 @@ extension DMService {
         cacheWriter.schedule(cacheFileURL()) { try DMCacheFile.encode(snapshot) }
     }
 
+    /// A sent message's outcome for `account` while another account is
+    /// loaded: read, changed and written on the cache writer's queue, after any
+    /// save of that file still pending, so it never overtakes or loses one.
+    func setSendStateInCache(_ messageId: String, in conversation: String, account: String,
+                             state: DMSendState?, failure: String?) {
+        let url = cacheFileURL(forPubkey: account)
+        cacheWriter.flushThen {
+            var saved = DMCacheFile.read(url)
+            guard let c = saved.firstIndex(where: { $0.id == conversation }),
+                  let m = saved[c].messages.firstIndex(where: { $0.id == messageId }) else { return }
+            saved[c].messages[m].sendState = state
+            saved[c].messages[m].sendFailure = failure
+            guard let data = try? DMCacheFile.encode(saved) else { return }
+            try? PrivateFile.write(data, to: url)
+        }
+    }
+
     private func cacheFileURL(forPubkey pubkey: String? = nil) -> URL {
         guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Haven")

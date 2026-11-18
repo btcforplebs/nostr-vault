@@ -757,6 +757,7 @@
 		57368C0B1B3A9F988A64EA03 /* GatedArticleBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0909C6301A67A52A5CA1E250 /* GatedArticleBody.swift */; };
 		57473C93C84432716881F0CD /* SellerListingsLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58DD627BE3CD8F7939B4F325 /* SellerListingsLoader.swift */; };
 		574D68ADB40B53526033BA03 /* OtherVaultCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87778D726A4A23DA06E1BEA4 /* OtherVaultCopy.swift */; };
+		5757719FCA63206D97ACCD69 /* DMDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 119C1AC400F3B1AAB6F05B07 /* DMDelivery.swift */; };
 		576DA67B5D3E1F93BCB905EA /* RelayProcessManager+OutputCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 538FAA70880DB672A5DBA40F /* RelayProcessManager+OutputCapture.swift */; };
 		5798E8E3945000D8C4A5566E /* MediaCacheService+NotFound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B9F7D8C7003D8BBF7042027 /* MediaCacheService+NotFound.swift */; };
 		57BF98E0375DB253352AD39F /* ConfigFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8E202D004E4592BA82BC0F /* ConfigFileStore.swift */; };
@@ -839,12 +840,14 @@
 		60135B288D01F67F43BF7E6B /* FeedThreadGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 935F68EC9A7EBD1E570211CF /* FeedThreadGrouping.swift */; };
 		608C95B782D0B2715D844A0A /* RelayConfigStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA754FD69CE3C70A03501C91 /* RelayConfigStep.swift */; };
 		6090F54E241EA01472D5E531 /* AppAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 518E7523B8F652B19F1A342A /* AppAppearance.swift */; };
+		6092F8663D1FC26BDBB18125 /* DMService+SendStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = E190901293187475A54BE0E3 /* DMService+SendStatus.swift */; };
 		60B57CA574C71ADCEE8194D3 /* MarketplaceFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D53D58F77A62E4B853B420 /* MarketplaceFeedViews.swift */; };
 		60CD2BD34AE03F7E7B514F04 /* OwnListEdits.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B236B6A447686EC68AEDACB /* OwnListEdits.swift */; };
 		60DBDA8C3680E9974E7386D8 /* FirstAnswer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9186DB5FDE59FC6B87C6C3F8 /* FirstAnswer.swift */; };
 		60DEA99DD39DD7237F900AB0 /* ZapValidationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4AF522091B10161BB09ED4 /* ZapValidationService.swift */; };
 		60EC9BF9AD8AAA44784CF963 /* GlobalFeedEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BE7C8BF88EE91C6E05CD3DF /* GlobalFeedEmptyState.swift */; };
 		6107634D0F024E5CA86830A2 /* TrustWebView+MyWeb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D069FB5194A04D262C4C449C /* TrustWebView+MyWeb.swift */; };
+		613097E277352BF77DAEBEDA /* DMSendStatusLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC76F99AF72151E62332F43D /* DMSendStatusLine.swift */; };
 		613AC454E25815E8143C6724 /* RelayProcessManager+MimeDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5467C5412FB74901660F13 /* RelayProcessManager+MimeDetection.swift */; };
 		61421A1B93DDAD96F59FC85B /* HomeVaultSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE79015510D8601B89F75C2C /* HomeVaultSender.swift */; };
 		6170146EE4DEC312D4DAB61B /* NoteDeletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDDBB29FDB253D22C3F8452 /* NoteDeletion.swift */; };
@@ -1090,6 +1093,7 @@
 		7BF4ECCAF2166AF9161C3117 /* NVLiveNowLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DF96DD396424A23F4A524CE /* NVLiveNowLogic.swift */; };
 		7C08178B71259541EEB6E414 /* QuitGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 970FDDA6C665527B23121662 /* QuitGuard.swift */; };
 		7C227BD34B8AB5B7878BE831 /* PiPManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87C20D37E2726CA2C9EDD10B /* PiPManager.swift */; };
+		7C48A92D442EBF653B2FA274 /* DMDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 119C1AC400F3B1AAB6F05B07 /* DMDelivery.swift */; };
 		7C5B2634D8A0F0C107BAC582 /* FeedNoteRow+Reactions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D3A3A057633F264653666C6 /* FeedNoteRow+Reactions.swift */; };
 		7C6EA0A3A0D30C9E9064BD3E /* GlobeRelayLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A809D2C83A8A632BD817A269 /* GlobeRelayLink.swift */; };
 		7CC18747A782475A7DF8A793 /* RelayActivityBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 797BE98DE5E15BC89A516724 /* RelayActivityBanner.swift */; };
@@ -1688,6 +1692,7 @@
 		BB7114AF3CB645592807AD9B /* AddPinSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5810CA0660B7B0631DDB7F4E /* AddPinSheet.swift */; };
 		BBBEE7D2C258592E87853C76 /* TrustCardWebButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8998AD992C68DCAF68A30092 /* TrustCardWebButton.swift */; };
 		BBC3690909AF7ED45D5AF713 /* StillToBringInSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2801D4ACC69F3FF4C1D2C620 /* StillToBringInSection.swift */; };
+		BBC759E4BF7DEB99EBAFEE37 /* DMService+SendStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = E190901293187475A54BE0E3 /* DMService+SendStatus.swift */; };
 		BBCAC24C43564F431E394A02 /* AccountsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 251CF8F576FE6FC7D5A2306B /* AccountsSettingsView.swift */; };
 		BBD8C5A4D3CCA41A25E9B22D /* MirrorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B03DACD65D976F80B315E19 /* MirrorService.swift */; };
 		BBEB6E9E824AA4B887755B8E /* EventBroadcastSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26251868EAC178C0BAF356A8 /* EventBroadcastSheet.swift */; };
@@ -1975,6 +1980,7 @@
 		DC086288AE1B4C22C7455AB8 /* GenmojiSaver.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2E53E0B250B0C8AE445ECE /* GenmojiSaver.swift */; };
 		DC0B0458630C076A2CFA0CA0 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41A8E188B7B23F83A3EA49AA /* DashboardView.swift */; };
 		DC564055F17E779B59E55881 /* FeedServiceTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19809A765C51F397B19FD14 /* FeedServiceTypes.swift */; };
+		DC772259D55A0ED167A9748A /* DMSendStatusLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC76F99AF72151E62332F43D /* DMSendStatusLine.swift */; };
 		DC9A0FA4F0780BAE878C7E23 /* PagerNeighbors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 264737BC8AA75A18D2E77AF1 /* PagerNeighbors.swift */; };
 		DCBA54C084A1E420260053AF /* TrustWebView+WOTTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A7E86F4A80054401A68579 /* TrustWebView+WOTTabBar.swift */; };
 		DCCBD1B6AD1E5D73AE0FB902 /* ProfileRefreshPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9F1F07AA851FF576668FCB /* ProfileRefreshPlan.swift */; };
@@ -2449,6 +2455,7 @@
 		10FA15B2301FCB6B78E1E8DA /* MediaImportAfterMovingIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaImportAfterMovingIn.swift; sourceTree = "<group>"; };
 		115B057D5AE75AA77A29F3B2 /* AccountBunkerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountBunkerConfig.swift; sourceTree = "<group>"; };
 		118DA8971CC8566F3783F1EE /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
+		119C1AC400F3B1AAB6F05B07 /* DMDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMDelivery.swift; sourceTree = "<group>"; };
 		11DACF33881364138C48F3B4 /* NVShareAction+Display.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NVShareAction+Display.swift"; sourceTree = "<group>"; };
 		125339BC390902958460CB6C /* BlossomService+PostUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+PostUpload.swift"; sourceTree = "<group>"; };
 		12FB986CD40CF9532CA6B250 /* HashtagsFeedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashtagsFeedViews.swift; sourceTree = "<group>"; };
@@ -3406,6 +3413,7 @@
 		E02263EA7B83AAC9AB47B12A /* PullDownToCloseRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PullDownToCloseRule.swift; sourceTree = "<group>"; };
 		E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupRelayChoice.swift; sourceTree = "<group>"; };
 		E13000616CA698B02FE82B9A /* QuotedNoteSkeleton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotedNoteSkeleton.swift; sourceTree = "<group>"; };
+		E190901293187475A54BE0E3 /* DMService+SendStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+SendStatus.swift"; sourceTree = "<group>"; };
 		E1A58EA5A96FF1042528234F /* VaultFollowers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultFollowers.swift; sourceTree = "<group>"; };
 		E1CF15E28999120A248357E4 /* IconAccent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconAccent.swift; sourceTree = "<group>"; };
 		E1E46F82F53A3265979C7F24 /* VideoTileFit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoTileFit.swift; sourceTree = "<group>"; };
@@ -3464,6 +3472,7 @@
 		EC11AD03532022248A5C4583 /* FloatingButtonRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingButtonRow.swift; sourceTree = "<group>"; };
 		EC2FFB887BB8F9193F493F61 /* SetupWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWizardView.swift; sourceTree = "<group>"; };
 		EC33568A91E5B5B737A03D1F /* FeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedService.swift; sourceTree = "<group>"; };
+		EC76F99AF72151E62332F43D /* DMSendStatusLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMSendStatusLine.swift; sourceTree = "<group>"; };
 		EC971B12438093F727E8967F /* Bolt11.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bolt11.swift; sourceTree = "<group>"; };
 		ECB765BB1B85F451DDEABBFF /* ArticleClipShareHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleClipShareHandler.swift; sourceTree = "<group>"; };
 		ED0D438DE03F310940F4D19A /* EventPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventPublisher.swift; sourceTree = "<group>"; };
@@ -3756,6 +3765,7 @@
 			children = (
 				8CB9E79782AB55A41F57E213 /* DMRequestsButton.swift */,
 				0FCAB2E176636514B4B09244 /* DMSearchResultsList.swift */,
+				EC76F99AF72151E62332F43D /* DMSendStatusLine.swift */,
 				6A7402147FAE2D5DA87D95EF /* DMVideoAttachment.swift */,
 				86280F518C19B6E049A10780 /* LockedDMPhotoTile.swift */,
 				815D8551A1F99279C8A2143D /* LockedDMVideoTile.swift */,
@@ -4126,6 +4136,7 @@
 			isa = PBXGroup;
 			children = (
 				5F8EABAA202673763CC700C7 /* DMCacheFile.swift */,
+				119C1AC400F3B1AAB6F05B07 /* DMDelivery.swift */,
 			);
 			path = DM;
 			sourceTree = "<group>";
@@ -5222,6 +5233,7 @@
 				9B66DBC6F906E98DB63E2AAD /* DMService+Publishing.swift */,
 				B5AF9325362206BD88D81991 /* DMService+Reconnect.swift */,
 				880DB060F395AAD9CE1427E1 /* DMService+Sending.swift */,
+				E190901293187475A54BE0E3 /* DMService+SendStatus.swift */,
 				64BAF7CD86FC5EBA575A0824 /* DMService+SignerPolicy.swift */,
 			);
 			path = DM;
@@ -5756,6 +5768,7 @@
 				7B915DA0CC385068311E2B60 /* DMCatchUp.swift in Sources */,
 				8FD246ECCA98B192DA4F35E1 /* DMChatAccountGuard.swift in Sources */,
 				4F3CAF2E7950AE6814FDD0B8 /* DMConversation.swift in Sources */,
+				5757719FCA63206D97ACCD69 /* DMDelivery.swift in Sources */,
 				E517147123B85E1EE77189AE /* DMFile.swift in Sources */,
 				63ED94EF7F6477247BB93B8D /* DMFileTransfer.swift in Sources */,
 				67938D55AFB00C021B910C99 /* DMInboxView.swift in Sources */,
@@ -5765,6 +5778,7 @@
 				52521913F3FEB93B2EAED973 /* DMReviewView.swift in Sources */,
 				F821231B9CCC459A4A2BAF00 /* DMSearch.swift in Sources */,
 				D876E7AC5F7A98C86CB92CB0 /* DMSearchResultsList.swift in Sources */,
+				DC772259D55A0ED167A9748A /* DMSendStatusLine.swift in Sources */,
 				F3C9E614C2F1210872FA3B7B /* DMService+Conversations.swift in Sources */,
 				FBCF14F6C8AABAE90DDC2EA9 /* DMService+ExternalFetch.swift in Sources */,
 				4D4F65FFA3B6C568ACC21D09 /* DMService+GiftWrap.swift in Sources */,
@@ -5774,6 +5788,7 @@
 				02E4607DB895BC1BF47BC315 /* DMService+Persistence.swift in Sources */,
 				358A1A18DE8227A6CC491966 /* DMService+Publishing.swift in Sources */,
 				3C92F74F6D8341C0B3C6101F /* DMService+Reconnect.swift in Sources */,
+				BBC759E4BF7DEB99EBAFEE37 /* DMService+SendStatus.swift in Sources */,
 				8FBA9847BECCEC77C835E371 /* DMService+Sending.swift in Sources */,
 				A9B920B944467163F1F215D3 /* DMService+SignerPolicy.swift in Sources */,
 				D4FEBF02D25AA17670907C36 /* DMService.swift in Sources */,
@@ -6928,6 +6943,7 @@
 				417A107EDCE8ED4BB06C8C3D /* DMCatchUp.swift in Sources */,
 				A4A4A36358D5DF5225F268F6 /* DMChatAccountGuard.swift in Sources */,
 				CB0EBB49C9E66A3BBBB9F5F1 /* DMConversation.swift in Sources */,
+				7C48A92D442EBF653B2FA274 /* DMDelivery.swift in Sources */,
 				9B68AC8D69813A0AC6418E45 /* DMFile.swift in Sources */,
 				E24500532C96C5B9C7464787 /* DMFileTransfer.swift in Sources */,
 				52B1CF6FDF93928ECC60D213 /* DMInboxView.swift in Sources */,
@@ -6937,6 +6953,7 @@
 				797FFD28D7E7A5ED98E1C34A /* DMReviewView.swift in Sources */,
 				B1D354490E477F58BAC8F6A2 /* DMSearch.swift in Sources */,
 				2B6C4CD31CFCC63C1AB4AA6D /* DMSearchResultsList.swift in Sources */,
+				613097E277352BF77DAEBEDA /* DMSendStatusLine.swift in Sources */,
 				B584E2B874D869370E468154 /* DMService+Conversations.swift in Sources */,
 				5384D881E60795935AD9044E /* DMService+ExternalFetch.swift in Sources */,
 				F287853E144CD0FA91C4CAAB /* DMService+GiftWrap.swift in Sources */,
@@ -6946,6 +6963,7 @@
 				4CB97B6BED6A0C7F9B4117B0 /* DMService+Persistence.swift in Sources */,
 				D6DB303C4F4CADFF7AF5053B /* DMService+Publishing.swift in Sources */,
 				D50939A6B0EB9A8CEED1E6D6 /* DMService+Reconnect.swift in Sources */,
+				6092F8663D1FC26BDBB18125 /* DMService+SendStatus.swift in Sources */,
 				EE564FD8E0ABB41D221F9393 /* DMService+Sending.swift in Sources */,
 				20B79D60254DD561EAD2AB53 /* DMService+SignerPolicy.swift in Sources */,
 				73AE59BA2106FFA1751992DB /* DMService.swift in Sources */,
