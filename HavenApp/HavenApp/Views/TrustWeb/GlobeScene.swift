@@ -373,8 +373,10 @@ final class GlobeScene: ObservableObject {
 
     /// A note reached the relay: it takes its turn on the globe. The board
     /// keeps only what is waiting or on a line, so this stays small.
+    /// While the spin is paused nothing new flies, red or not: it is dropped,
+    /// not held, so a touch that starts the spin again brings no burst.
     func arrive(_ arrival: GlobeArcs.Arrival) {
-        guard liveArcs, hasLoaded else { return }
+        guard liveArcs, hasLoaded, !camera.spinPaused(now: Date.timeIntervalSinceReferenceDate) else { return }
         board.add(arrival)
         wake()
     }

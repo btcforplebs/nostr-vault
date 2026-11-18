@@ -737,6 +737,16 @@ struct GlobeCamera {
         return drift != 0 || (drifts && (keepsDrifting || now - lastTouch < Self.sleepAfter))
     }
 
+    /// The spin is paused: nobody is turning it, nothing is gliding, and its
+    /// drift has stopped (untouched `sleepAfter`, or spinning off). No
+    /// arrival flies then, so the clock can sleep (Logen 7eee63d2, "stop
+    /// flying thing when we pause spinning"). Reduce Motion is not a pause:
+    /// right after a touch its stars still fade in place.
+    func spinPaused(now: TimeInterval) -> Bool {
+        if dragging || flyTarget != nil || spin != .zero || drift != 0 { return false }
+        return !drifts || (!keepsDrifting && now - lastTouch >= Self.sleepAfter)
+    }
+
     /// Whether the idle drift should be turning now: right after a let-go,
     /// or once untouched for `driftAfter`, until the clock may sleep.
     private func driftsNow(at now: TimeInterval) -> Bool {
