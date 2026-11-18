@@ -17,6 +17,7 @@ import { prepareVideo, isVideoFile } from "../net/dm-video.js"
 import { markRead } from "../net/dm-read.js"
 import { lockedFileServers, mediaServers, uploadPhoto } from "../net/upload.js"
 import { useMessages, SignerTrouble, AuthTrouble, OpenMore } from "./MessagesScreen.jsx"
+import { useChatScroll } from "../components/chat-scroll.js"
 
 /** Return sends, as on the Mac app and every desktop chat; Shift or Option + Return is a new line. On a touch screen
  *  Return is a new line and Send is the button, as on the iPhone. Never mid-composition (an IME's Return picks a word). */
@@ -39,6 +40,7 @@ export function ConversationScreen({ ctx, peer }) {
   const [preparing, setPreparing] = useState(false) // a photo being redrawn: Send waits for it
   const [dragging, setDragging] = useState(false)
   const end = useRef(null)
+  const thread = useRef(null)
   const picker = useRef(null)
   const field = useRef(null)
   // Grows with the text up to five lines, then scrolls (DMThreadView lineLimit(1...5)); back to one line once sent.
@@ -52,7 +54,8 @@ export function ConversationScreen({ ctx, peer }) {
   useEffect(() => { fetchProfiles(ctx.vault, [peer], uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {}) }, [peer])
   // Their DM relays and mine, looked up now so the first Send goes straight out.
   useEffect(() => { if (!note) warmDmRelays(ctx, peer) }, [peer, note])
-  useEffect(() => { end.current?.scrollIntoView?.({ block: "end" }) }, [rows.length])
+  // To the bottom only while you are there or just sent; reading older ones, nothing moves you (chat-scroll.js, A3).
+  useChatScroll({ end, thread, rows, me, key: peer })
   // What's on screen is read: on opening, and as messages land while the tab is in front (DMThreadView markAsRead).
   useEffect(() => {
     const read = () => { if (document.visibilityState !== "hidden" && !isBlocked) markRead(me, rows) }
@@ -106,11 +109,11 @@ export function ConversationScreen({ ctx, peer }) {
       <OpenMore ctx={ctx} more={more} />
       {hasLegacy(rows) && <div class="status-line" role="note">Some messages use NIP-04 (legacy encryption). New messages default to NIP-17.</div>}
       {isBlocked && <div class="status-line">You blocked this person on your phone, so their messages are hidden here.</div>}
-      <div class="dm-thread">
+      <div class="dm-thread" ref={thread}>
         {!rows.length && !note && (loaded ? <p class="empty">Start a conversation</p> : <BubbleSkeletons />)}
         {rows.map(m => {
           const bubble = (
-          <div key={m.from === me ? m.id : undefined} class={`dm-bubble${m.from === me ? " mine" : ""}${m.pending ? " pending" : ""}${m.failed ? " failed" : ""}`}>
+          <div key={m.from === me ? m.id : undefined} data-id={m.from === me ? m.id : undefined} class={`dm-bubble${m.from === me ? " mine" : ""}${m.pending ? " pending" : ""}${m.failed ? " failed" : ""}`}>
             {/* depth={1} stops DM text building quote cards, which would query relays the sender names and write
                 into /feed; dm keeps video links and nostr:npub as plain text (the iPhone does), and a stranger's
                 images wait for a tap. */}
@@ -123,7 +126,7 @@ export function ConversationScreen({ ctx, peer }) {
           // Their messages carry their face at the bubble's foot (DMThreadView's 28 pt avatar). A stranger's picture
           // still waits (`follows`): drawn here it would tell their server you opened the conversation.
           return m.from === me ? bubble : (
-            <div key={m.id} class="dm-line"><span class="dm-face"><Avatar pubkey={peer} size={28} load={follows} /></span>{bubble}</div>
+            <div key={m.id} data-id={m.id} class="dm-line"><span class="dm-face"><Avatar pubkey={peer} size={28} load={follows} /></span>{bubble}</div>
           )
         })}
         <div ref={end} class="dm-end" />

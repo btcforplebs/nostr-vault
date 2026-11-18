@@ -144,6 +144,15 @@ function partsOf(content) {
 /** The preview line: a photo's link reads as "Photo", a video's as "Video". */
 const previewOf = content => partsOf(content).map(x => x.photo ? "Photo" : x.video ? "Video" : x.text.replace(/\s+/g, " ").trim()).join(" · ")
 function ago(ts, now = Date.now() / 1000) { const s = Math.max(0, now - ts); return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d` }
+/** The classic thread's rule (components/chat-scroll.js): follow to the bottom only while the reader is there, or for
+ *  their own just-sent message; reading older ones, nothing moves them. */
+const NEAR_END_PX = 160
+const followsEnd = (atEnd, mine) => !!atEnd || !!mine
+/** A bubble can be reused across draws while nothing it shows changed. */
+/** A message landing in the chat on screen is read at once (A4; the classic thread and the apps do this): the open chat,
+ *  the page in front. */
+const readsOnArrival = (open, m, hidden) => !!open && m?.conversationId === open && !hidden
+const bubbleKey = (m, load) => `${m.id}|${m.status ?? ""}|${m.retrying ? 1 : 0}|${load ? 1 : 0}`
 // ---- end pure ----
 
 const n = window.napplet || {}
@@ -217,7 +226,7 @@ $("tReq").onclick = () => { showReq = true; clearSearch(); $("tInbox").setAttrib
 
 function show(which) { for (const s of ["inbox", "new", "thread"]) $(s).hidden = s !== which; scrollTo(0, which === "thread" ? document.body.scrollHeight : 0) }
 async function openThread(pk, url) {
-  open = pk; msgs = []; cursor = null
+  open = pk; msgs = []; cursor = null; drawn = new Map()
   $("tname").textContent = nameOf(pk); avatar($("tav"), pk, url || convs.find(c => c.id === pk)?.participants[0].avatar)
   $("bubbles").replaceChildren(el("div", "day", "Loading…")); $("text").value = ""; clearPhoto(); $("tnote").hidden = true; syncSend()
   show("thread")
@@ -226,13 +235,29 @@ async function openThread(pk, url) {
   drawThread(true)
   loadList() // its unread count is gone now
 }
+// Bubbles already drawn in the open thread, by bubbleKey: a redraw (Older messages, a new one landing) reuses them, so
+// the list isn't rebuilt and loaded photos stay. Emptied when another thread opens.
+let drawn = new Map()
+const atEnd = () => innerHeight + scrollY >= document.body.scrollHeight - NEAR_END_PX
+// The shell marks a chat read when its newest page is asked for (dm-dispatch.js messagesPage): asked again, for one
+// message, whenever something lands in the chat on screen or the page comes back to the front with it open.
+const markOpenRead = () => { if (open && n.dm) n.dm.messages({ conversationId: open, limit: 1 }).catch(() => {}) }
+document.addEventListener("visibilitychange", () => { if (!document.hidden) markOpenRead() })
 function drawThread(toEnd) {
   $("older").hidden = !cursor
+  // Not following the end: the bubble being read, and where it sits, so it stays there after this draw.
+  const anchor = toEnd ? null : [...$("bubbles").querySelectorAll(".b[data-id]")].find(b => b.getBoundingClientRect().bottom > 0)
+  const anchorTop = anchor?.getBoundingClientRect().top
   const out = []; let day = ""
+  const keep = new Map()
   for (const m of msgs) {
     const d = dayOf(m.createdAt); if (d !== day) { day = d; out.push(el("div", "day", d)) }
     const mine = m.senderPubkey === me
+    const key = bubbleKey(m, mine || follows.get(open))
+    const had = drawn.get(key)
+    if (had) { keep.set(key, had); out.push(had); continue }
     const b = el("div", `b${mine ? " mine" : ""}${m.status === "failed" ? " failed" : ""}`)
+    b.dataset.id = m.id
     fill(b, m.content, mine || follows.get(open))
     b.append(el("time", "", m.status === "failed" ? (m.retrying ? "Sending again…" : "Not sent") : new Date(m.createdAt * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })))
     // The classic thread's "Not sent · Try again · Remove" (ConversationScreen.jsx).
@@ -241,11 +266,14 @@ function drawThread(toEnd) {
       go.type = rm.type = "button"; go.onclick = () => tryAgain(m); rm.onclick = () => tryAgain(m, true)
       row.append(go, rm); b.append(row)
     }
+    keep.set(key, b)
     out.push(b)
   }
+  drawn = keep
   if (pending && pending.to === open) { const b = el("div", "b mine pending"); if (pending.text) b.append(pending.text); b.append(el("time", "", pending.video ? "Sending video…" : "Sending photo…")); out.push(b) }
   $("bubbles").replaceChildren(...(out.length ? out : [el("div", "day", "No messages yet. Say hello.")]))
   if (toEnd) scrollTo(0, document.body.scrollHeight)
+  else if (anchor?.isConnected) { const d = anchor.getBoundingClientRect().top - anchorTop; if (Math.abs(d) >= 1) scrollBy(0, d) }
 }
 /** A bubble's text and photos. Photos load through the shell (this frame has no network): at once from you or someone
  *  you follow, after a tap from anyone else, as the classic thread does (NoteText images). */
@@ -384,7 +412,9 @@ $("go").onclick = () => { const pk = pubkeyOf($("to").value); if (pk) openThread
   me = st.ownerPubkey
   $("status").textContent = "Opening your messages…"
   n.dm.onMessage(m => {
-    if (open && m.conversationId === open) { msgs = mergeThread(msgs, [m]); drawThread(true) }
+    // Reading older messages: a new one lands without pulling you down (A3); at the bottom, or your own, it follows.
+    if (open && m.conversationId === open) { const follow = followsEnd(atEnd(), m.senderPubkey === me); msgs = mergeThread(msgs, [m]); drawThread(follow) }
+    if (readsOnArrival(open, m, document.hidden)) markOpenRead()
     clearTimeout(window.__lt); window.__lt = setTimeout(loadList, 300)
   })
   await n.dm.subscribe({}).catch(() => {})
