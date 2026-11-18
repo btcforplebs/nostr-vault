@@ -7,22 +7,25 @@ extension DMService {
     struct PendingDelivery {
         var tally: DMDelivery
         let conversation: String
+        /// The account that sent it: the outcome goes to its thread even if
+        /// another account is loaded by the time the relays answer.
+        let account: String
         /// Runs once, when the first relay of theirs takes it.
         let onDelivered: () -> Void
     }
 
     /// Starts waiting on `relayCount` relays for message `messageId` in
     /// `conversation`. Returns the callback each relay's answer goes to.
-    func beginDelivery(messageId: String, conversation: String, relayCount: Int,
+    func beginDelivery(messageId: String, conversation: String, account: String, relayCount: Int,
                        onDelivered: @escaping () -> Void) -> (Bool) -> Void {
         let tally = DMDelivery(relayCount: relayCount)
         if let outcome = tally.outcome {
             // No relays at all: not sent, nothing to wait for.
-            pendingDeliveries[messageId] = PendingDelivery(tally: tally, conversation: conversation, onDelivered: onDelivered)
+            pendingDeliveries[messageId] = PendingDelivery(tally: tally, conversation: conversation, account: account, onDelivered: onDelivered)
             settle(messageId, outcome)
             return { _ in }
         }
-        pendingDeliveries[messageId] = PendingDelivery(tally: tally, conversation: conversation, onDelivered: onDelivered)
+        pendingDeliveries[messageId] = PendingDelivery(tally: tally, conversation: conversation, account: account, onDelivered: onDelivered)
         DispatchQueue.main.asyncAfter(deadline: .now() + DMDelivery.deadline) { [weak self] in
             Task { @MainActor in self?.recordDelivery(messageId, accepted: nil) }
         }
@@ -41,13 +44,21 @@ extension DMService {
 
     private func settle(_ messageId: String, _ outcome: DMDelivery.Outcome) {
         guard let pending = pendingDeliveries.removeValue(forKey: messageId) else { return }
-        switch outcome {
-        case .delivered:
-            setSendState(messageId, in: pending.conversation, state: nil, failure: nil)
+        let (state, failure): (DMSendState?, String?) = {
+            if case .failed(let why) = outcome { return (.failed, why) }
+            return (nil, nil)
+        }()
+        if pending.account == loadedAccountPubkey {
+            setSendState(messageId, in: pending.conversation, state: state, failure: failure)
+        } else {
+            // Another account is loaded (its threads are in memory now): the
+            // outcome goes into the sender's cache file instead.
+            setSendStateInCache(messageId, in: pending.conversation, account: pending.account,
+                                state: state, failure: failure)
+        }
+        if case .delivered = outcome {
             resends.removeValue(forKey: messageId)
             pending.onDelivered()
-        case .failed(let why):
-            setSendState(messageId, in: pending.conversation, state: .failed, failure: why)
         }
     }
 

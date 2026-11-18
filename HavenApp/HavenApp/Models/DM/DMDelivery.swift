@@ -15,8 +15,9 @@ struct DMDelivery {
 
     /// How long a send may wait for any answer at all. A relay whose socket
     /// never connects never answers, so without this the bubble could say
-    /// "Sending…" for good. Longer than one relay's own 15 s wait.
-    static let deadline: TimeInterval = 20
+    /// "Sending…" for good. Longer than one relay's own wait: 15 s in all for
+    /// NIP-17, and for NIP-04 10 s that only start once the socket connects.
+    static let deadline: TimeInterval = 30
 
     static func noRelays() -> String { "Not delivered: no relays found for them." }
 

@@ -120,7 +120,10 @@ extension DMService {
     /// accounts together for the relay — and the event is sent once more. Relays that need no AUTH accept it on
     /// the first try. Logs the outcome and hands it to `onResult` (accepted,
     /// the relay's note) once; never blocks the caller.
-    func publishAuthenticated(_ event: NostrEvent, url: String, onResult: ((Bool, String) -> Void)? = nil) {
+    /// `sender` is the account that wrote it (default: the loaded one); AUTH is
+    /// only ever signed as that account (signRelayAuth refuses otherwise).
+    func publishAuthenticated(_ event: NostrEvent, url: String, sender: String? = nil,
+                              onResult: ((Bool, String) -> Void)? = nil) {
         guard let urlObj = URL(string: url) else { onResult?(false, "bad relay address"); return }
         let client = WebSocketClient()
         client.isTemporary = true
@@ -131,7 +134,7 @@ extension DMService {
         }()
         guard let eventMsg else { onResult?(false, "could not encode the event"); return }
 
-        let sender = loadedAccountPubkey
+        let sender = sender ?? loadedAccountPubkey
         var challenge: String?
         var authSent = false
         var authEventId: String?

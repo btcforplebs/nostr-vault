@@ -129,6 +129,11 @@ extension DMService {
         if sentSelfWrapIds.count > 500 { sentSelfWrapIds.removeAll() }
         sentSelfWrapIds.insert(selfGiftWrap.id)
 
+        // Captured now, while the account that wrote it is the loaded one: the
+        // lookup and the first OK can take 20 s, and an account switched to
+        // meanwhile must never get this copy or prove itself for it.
+        let ownRelays = ownDMInboxRelays()
+
         // ── Step 3: their relays first (lookup in the background) ──
         // Your own copy goes out only once one of theirs took the message, so
         // a refused message never comes back from your own relay looking sent
@@ -140,16 +145,19 @@ extension DMService {
             // the account changes during the lookup.
             let rRelays = await self.fetchRecipientDMRelays(recipientHexPubkey)
             let answer = self.beginDelivery(messageId: message.id, conversation: recipientHexPubkey,
-                                            relayCount: rRelays.count) { [weak self] in
+                                            account: ownHexPubkey, relayCount: rRelays.count) { [weak self] in
                 guard let self else { return }
-                self.publishToInbox(giftWrap)
-                self.publishToInbox(selfGiftWrap)
-                for relayURL in self.ownDMInboxRelays() {
-                    self.publishAuthenticated(selfGiftWrap, url: relayURL)
+                // The device's inbox connection belongs to whichever account is loaded.
+                if self.switchGeneration == generation {
+                    self.publishToInbox(giftWrap)
+                    self.publishToInbox(selfGiftWrap)
+                }
+                for relayURL in ownRelays {
+                    self.publishAuthenticated(selfGiftWrap, url: relayURL, sender: ownHexPubkey)
                 }
             }
             for relayURL in rRelays {
-                self.publishAuthenticated(giftWrap, url: relayURL) { accepted, _ in answer(accepted) }
+                self.publishAuthenticated(giftWrap, url: relayURL, sender: ownHexPubkey) { accepted, _ in answer(accepted) }
             }
         }
     }
@@ -208,6 +216,9 @@ extension DMService {
             try await self?.sendNIP04DM(content: content, to: recipientHexPubkey)
         }
 
+        // The local inbox as it is now, for the account that wrote it.
+        let inboxURL = inboxRelayURL()?.absoluteString
+
         // ── Their relays first; your inbox and your own relays once one took it ──
         // No account check here: the event is signed by the account that
         // wrote it, so it must go out.
@@ -219,9 +230,9 @@ extension DMService {
             let oRelays = await ownRelays
 
             let answer = self.beginDelivery(messageId: message.id, conversation: recipientHexPubkey,
-                                            relayCount: rRelays.count) { [weak self] in
+                                            account: ownHexPubkey, relayCount: rRelays.count) { [weak self] in
                 guard let self else { return }
-                if let inboxURL = self.inboxRelayURL()?.absoluteString {
+                if self.switchGeneration == generation, let inboxURL {
                     self.fireAndForgetPublish(event, url: inboxURL)
                 }
                 for relayURL in oRelays where !rRelays.contains(relayURL) {
