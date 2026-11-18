@@ -337,7 +337,7 @@ fun <T> DockHoldMenuOverlay(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Shade.copy(alpha = 0.28f))
+                    .background(DockMenuDim)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -376,21 +376,13 @@ fun <T> DockHoldMenuOverlay(
         ) {
             AnimatedVisibility(
                 visible = open,
-                enter = fadeIn(DockHold.swiftSpring(0.22f, 0.84f)) +
-                    scaleIn(DockHold.swiftSpring(0.22f, 0.84f), initialScale = 0.6f, transformOrigin = origin),
-                exit = fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.6f, transformOrigin = origin),
+                enter = dockMenuEnter(origin),
+                exit = dockMenuExit(origin),
                 modifier = Modifier
                     .align(align)
                     .offset { IntOffset(xPx, -bottomPx.roundToInt()) },
             ) {
-                // iOS: applyGlassRect(cornerRadius: 22) + shadow(.black 0.35, radius 18, y 6).
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier
-                        .shadow(18.dp, RoundedCornerShape(22.dp), ambientColor = Shade.copy(alpha = 0.35f), spotColor = Shade.copy(alpha = 0.35f))
-                        .glassRectBackground(cornerRadius = 22.dp, isOled = LocalOledMode.current)
-                        .padding(6.dp),
-                ) {
+                DockMenuPanel {
                     for (item in items.reversed()) {
                         val spec = row(item)
                         DockHoldMenuRow(
@@ -402,12 +394,7 @@ fun <T> DockHoldMenuOverlay(
                                 onPick(item)
                             },
                         )
-                        if (spec.dividerBelow) {
-                            HorizontalDivider(
-                                color = PrimaryText.copy(alpha = 0.15f),
-                                modifier = Modifier.width(210.dp).padding(horizontal = 10.dp, vertical = 3.dp),
-                            )
-                        }
+                        if (spec.dividerBelow) DockMenuDivider()
                     }
                 }
             }
@@ -415,11 +402,48 @@ fun <T> DockHoldMenuOverlay(
     }
 }
 
+/**
+ * The menu's card: glass, 22 dp corners, a soft shadow, 6 dp inside, rows
+ * 2 dp apart. Shared by every menu that should look like the dock's (the
+ * feed header's list too), so they stay matched.
+ * iOS: applyGlassRect(cornerRadius: 22) + shadow(.black 0.35, radius 18, y 6).
+ */
 @Composable
-private fun DockHoldMenuRow(
+internal fun DockMenuPanel(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = modifier
+            .shadow(18.dp, RoundedCornerShape(22.dp), ambientColor = Shade.copy(alpha = 0.35f), spotColor = Shade.copy(alpha = 0.35f))
+            .glassRectBackground(cornerRadius = 22.dp, isOled = LocalOledMode.current)
+            .padding(6.dp),
+    ) { content() }
+}
+
+/** The thin line that ends a group of rows. */
+@Composable
+internal fun DockMenuDivider() {
+    HorizontalDivider(
+        color = PrimaryText.copy(alpha = 0.15f),
+        modifier = Modifier.width(210.dp).padding(horizontal = 10.dp, vertical = 3.dp),
+    )
+}
+
+/** Open and close, the dock menu's: a quick spring up from [origin], a short fade out. */
+internal fun dockMenuEnter(origin: TransformOrigin) =
+    fadeIn(DockHold.swiftSpring(0.22f, 0.84f)) +
+        scaleIn(DockHold.swiftSpring(0.22f, 0.84f), initialScale = 0.6f, transformOrigin = origin)
+
+internal fun dockMenuExit(origin: TransformOrigin) =
+    fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.6f, transformOrigin = origin)
+
+/** The dim behind an open menu. */
+internal val DockMenuDim: Color get() = Shade.copy(alpha = 0.28f)
+
+@Composable
+internal fun DockHoldMenuRow(
     spec: DockHoldRow,
     hovered: Boolean,
-    onPlaced: (Rect) -> Unit,
+    onPlaced: ((Rect) -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val accent = LocalNostrVaultColors.current.primary
@@ -436,7 +460,7 @@ private fun DockHoldMenuRow(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .onGloballyPositioned { onPlaced(it.boundsInRoot()) }
+            .then(if (onPlaced != null) Modifier.onGloballyPositioned { onPlaced(it.boundsInRoot()) } else Modifier)
             .scale(scale)
             .width(210.dp)
             .height(if (spec.subtitle == null) 42.dp else 50.dp)

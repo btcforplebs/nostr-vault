@@ -136,48 +136,15 @@ internal fun FeedTopBar(
                 }
             }
 
-            DropdownMenu(
+            FeedPickerMenu(
                 expanded = feedModeExpanded,
-                onDismissRequest = { feedModeExpanded = false },
-            ) {
-                menuModes.forEach { mode ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = mode.displayName,
-                                fontWeight = if (mode == feedMode) FontWeight.SemiBold else FontWeight.Normal,
-                            )
-                        },
-                        leadingIcon = { Icon(mode.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                        trailingIcon = if (mode == feedMode) {
-                            { Icon(NostrVaultIcons.Check, contentDescription = "Current feed", modifier = Modifier.size(16.dp)) }
-                        } else null,
-                        onClick = {
-                            onModeChange(mode)
-                            feedModeExpanded = false
-                        },
-                    )
-                }
-                HorizontalDivider()
-                // Your network's day. Activity only; feed settings are in Settings > Feed.
-                DropdownMenuItem(
-                    text = { Text("Dashboard") },
-                    leadingIcon = { Icon(NostrVaultIcons.GridLayout, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    onClick = {
-                        feedModeExpanded = false
-                        onOpenDashboard()
-                    },
-                )
-                // Last, at the bottom of the list it edits (iOS #303).
-                DropdownMenuItem(
-                    text = { Text("Edit Feeds") },
-                    leadingIcon = { Icon(NostrVaultIcons.EditFeeds, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    onClick = {
-                        feedModeExpanded = false
-                        onEditFeeds()
-                    },
-                )
-            }
+                onDismiss = { feedModeExpanded = false },
+                modes = menuModes,
+                current = feedMode,
+                onPick = onModeChange,
+                onOpenDashboard = onOpenDashboard,
+                onEditFeeds = onEditFeeds,
+            )
         }
 
         // Folded, the floating "New Posts" button becomes a small pill centred
