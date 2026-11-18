@@ -83,6 +83,7 @@
 		08D9A388C6C2B4D4591E8ADB /* FeedService+NoteFetching.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9852A8A522D03AE3C54D2C57 /* FeedService+NoteFetching.swift */; };
 		08E5B9D792CEEF0BBB4B3796 /* ActivityTargetFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9646E91993C4D774E5F139 /* ActivityTargetFetcher.swift */; };
 		090916803D10991F913A0536 /* FeedService+NoteOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D83DCFAA64AE6EE183AAB63 /* FeedService+NoteOperations.swift */; };
+		0929AFB67CD25929E6EA3742 /* WebGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F848192E0B5A6F19F740ACDB /* WebGate.swift */; };
 		09966BFEF20CC4935928C389 /* LiveNowModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 083AB9E96216A0440D26D501 /* LiveNowModel.swift */; };
 		09CB11E9A2910514821C1006 /* UploadAuthCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1450181E9BA44C1EA1E766D5 /* UploadAuthCache.swift */; };
 		09CE702BB2D2168BE7DBBA41 /* EveryoneBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE754D297405B0C13943D892 /* EveryoneBanner.swift */; };
@@ -905,6 +906,7 @@
 		6814DBA708E44A94F8A812F1 /* VaultModeLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EE02D17B251A319CA3CAA1A /* VaultModeLists.swift */; };
 		686EE5082CCB234DF3CC056F /* ListMergeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F64A10CB00EB5F885628A70 /* ListMergeView.swift */; };
 		6870E10A5F5EE4981B2B9B00 /* NotificationRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = A757B80073FA3D8B05BABC7D /* NotificationRoute.swift */; };
+		68AFE6A8E06823D333CA5D58 /* WebGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F848192E0B5A6F19F740ACDB /* WebGate.swift */; };
 		68B07631D12BD4CAFDE6AF86 /* NIP49Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75ABEDE255E82775CCD37559 /* NIP49Service.swift */; };
 		68B6097E7D0D0D915F2C9FAF /* MeshQRCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A3F35A589A5F015A971F7D /* MeshQRCode.swift */; };
 		68B9084DB6D148FEFCE2C608 /* ConfigService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1810634848EE1957C7E49DAF /* ConfigService.swift */; };
@@ -3482,6 +3484,7 @@
 		F7FCD916FF45FB514C228BAB /* SearchFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFilter.swift; sourceTree = "<group>"; };
 		F8152C31E47774D859AE128B /* MacRelaySyncStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelaySyncStatusView.swift; sourceTree = "<group>"; };
 		F8222A5F6E491EA57892ADC3 /* TrustMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustMap.swift; sourceTree = "<group>"; };
+		F848192E0B5A6F19F740ACDB /* WebGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebGate.swift; sourceTree = "<group>"; };
 		F8495489F7284415840FE673 /* RetryableAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryableAsyncImage.swift; sourceTree = "<group>"; };
 		F84CE7CFC2F8380A8CC6B14D /* DashboardBreakdowns.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardBreakdowns.swift; sourceTree = "<group>"; };
 		F898B6C30AFB74BB4011E597 /* MeshKeySigner+FileNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeshKeySigner+FileNotes.swift"; sourceTree = "<group>"; };
@@ -4777,6 +4780,7 @@
 				E1E46F82F53A3265979C7F24 /* VideoTileFit.swift */,
 				18605ACA49472CAC235200F3 /* VideoTimeLeft.swift */,
 				C91987BAC69FE261893A95BA /* Wavlake.swift */,
+				F848192E0B5A6F19F740ACDB /* WebGate.swift */,
 				3DEFE8FD51A67D177C07A118 /* WotNewcomers.swift */,
 				5DF3E7F03589E36F93A1077E /* WotRebuildWatch.swift */,
 				50209E071F523E3AF5F22F69 /* YourDevicesLogic.swift */,
@@ -6661,6 +6665,7 @@
 				13F5AD97D4722D42C522E076 /* WalletSetupStep.swift in Sources */,
 				C2F3A9B7A6FD0B42164286EB /* Wavlake.swift in Sources */,
 				244F6D570738547E17EAC33E /* WavlakeTrackCard.swift in Sources */,
+				0929AFB67CD25929E6EA3742 /* WebGate.swift in Sources */,
 				DA69EDAF3E78E6E97F38FACF /* WebRoleService.swift in Sources */,
 				7FD9D8FB6010447F28657CEB /* WebSocketClient+LookupConnection.swift in Sources */,
 				4F12CB28845F57A334AECA84 /* WebSocketClient.swift in Sources */,
@@ -7790,6 +7795,7 @@
 				13FDBCE7E18749AB453C7A9F /* WalletSetupStep.swift in Sources */,
 				BC01754B87DBF7DC16BFBA8E /* Wavlake.swift in Sources */,
 				DB75AAC26D68BF70E8867A40 /* WavlakeTrackCard.swift in Sources */,
+				68AFE6A8E06823D333CA5D58 /* WebGate.swift in Sources */,
 				E4604A92F5669743FB7A6C3B /* WebRoleService.swift in Sources */,
 				A35F90A84D9356F573F9576C /* WebSocketClient+LookupConnection.swift in Sources */,
 				8ADB489FAB643EBB11BB577E /* WebSocketClient.swift in Sources */,
