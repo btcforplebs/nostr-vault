@@ -211,7 +211,6 @@ class DMService: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let feed = FeedService.shared
-            _ = feed.relayTabTrustedPubkeys()  // loads the saved graph if not yet
             feed.$wotPubkeys
                 .combineLatest(feed.$followedPubkeys)
                 .receive(on: DispatchQueue.main)
@@ -219,6 +218,10 @@ class DMService: ObservableObject {
                     self?.dmTrusted = wot.union(follows.map { $0.lowercased() })
                 }
                 .store(in: &self.cancellables)
+            // The saved graph, read and parsed off the main thread; the sink
+            // above takes it when it lands. Read here synchronously, it held
+            // a cold launch's first feed rows back by about 130 ms.
+            if feed.wotPubkeys.isEmpty { await feed.loadWotPubkeysInBackgroundIfChanged() }
         }
 
         // Auto-connect when relay becomes available
