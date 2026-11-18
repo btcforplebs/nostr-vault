@@ -104,9 +104,10 @@ object FeedThreadGrouping {
     fun build(
         notes: List<FeedNote>,
         keepFeedOrder: Boolean = false,
+        memo: FeedThreadMemo? = null,
         resolveNote: (String) -> FeedNote? = { null },
     ): List<FeedThread> {
-        if (notes.isEmpty()) return emptyList()
+        if (notes.isEmpty()) { memo?.clear(); return emptyList() }
 
         // Everything we can see: the feed plus any ancestor we can resolve.
         val pool = LinkedHashMap<String, FeedNote>()
@@ -195,19 +196,29 @@ object FeedThreadGrouping {
             pool[root]?.let { add(it, root) }
         }
 
-        val threads = order.mapNotNull { root ->
+        // A thread whose members are the same notes as last build is reused
+        // whole (FeedThreadMemo); only the touched ones are laid out again.
+        val built = order.mapNotNull { root ->
             val members = grouped[root] ?: return@mapNotNull null
-            val rootNote = members.firstOrNull { it.id == root }
-            val entries = flatten(members, root)
-            val latest = members.maxOfOrNull { it.createdAt } ?: Date(0)
-            FeedThread(rootId = root, root = rootNote, entries = entries, latestActivity = latest)
+            members to (memo?.reuse(root, members) ?: thread(root, members))
         }
+        memo?.keep(built)
+        val threads = built.map { it.second }
 
         if (keepFeedOrder) return threads
+        val firstSeen = HashMap<String, Int>(order.size * 2)
+        order.forEachIndexed { i, root -> firstSeen[root] = i }
         return threads.sortedWith(
             compareByDescending<FeedThread> { it.latestActivity }
-                .thenBy { order.indexOf(it.rootId) }
+                .thenBy { firstSeen[it.rootId] ?: -1 }
         )
+    }
+
+    private fun thread(root: String, members: List<FeedNote>): FeedThread {
+        val rootNote = members.firstOrNull { it.id == root }
+        val entries = flatten(members, root)
+        val latest = members.maxOfOrNull { it.createdAt } ?: Date(0)
+        return FeedThread(rootId = root, root = rootNote, entries = entries, latestActivity = latest)
     }
 
     /**

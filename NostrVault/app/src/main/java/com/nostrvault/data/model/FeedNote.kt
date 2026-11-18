@@ -113,13 +113,16 @@ data class FeedNote(
      * ComposeNoteScreen writes, and mirrors iOS NoteDetailView.threadRootId.
      * Used to fetch the whole thread subtree when a mid-thread reply is opened.
      */
-    val threadRootId: String
-        get() = if (displayKind == FeedHighlight.KIND) {
+    val threadRootId: String by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        // Parsed once per note: the feed asks it of every note on each
+        // regroup and cache trim (perf review 2026-11-18, item 2).
+        if (displayKind == FeedHighlight.KIND) {
             // Its `e` tag names the passage's source, not a thread root.
             effectiveEventId
         } else {
             NIP10Thread.rootEventId(kind, tags) ?: effectiveEventId
         }
+    }
 
     /**
      * The event id engagement and replies actually target: for a kind-6

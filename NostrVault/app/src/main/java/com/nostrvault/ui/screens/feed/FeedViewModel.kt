@@ -35,6 +35,7 @@ import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.ui.components.PopularRank
 import com.nostrvault.ui.notification.NotificationManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import com.nostrvault.data.model.FeedThreadMemo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -48,7 +49,7 @@ import javax.inject.Inject
  * ViewModel for the main feed screen.
  * Bridges FeedService + NostrService state into composable-friendly flows.
  */
-@OptIn(FlowPreview::class)
+@OptIn(FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class FeedViewModel @Inject constructor(
     private val feedService: FeedService,
@@ -447,20 +448,22 @@ class FeedViewModel @Inject constructor(
      * the whole cache, keeps quoted notes and repost originals (which arrive
      * constantly and change no thread) from regrouping the timeline.
      */
-    private val resolvedAncestorIds: Flow<Set<String>> = combine(
-        filteredNotes,
-        feedService.parentNotesCache,
-    ) { notes, cache ->
-        if (cache.isEmpty()) return@combine emptySet()
-        val gaps = buildSet {
-            for (note in notes) {
-                note.parentEventId?.let { add(it) }
-                add(note.threadRootId)
-            }
-        }
-        cache.keys.intersect(gaps)
+    private val resolvedAncestorIds: Flow<Set<String>> = threadedModeEnabled.flatMapLatest { threaded ->
+        // Only Threaded View groups; the other layouts never read this.
+        if (!threaded) return@flatMapLatest flowOf(emptySet())
+        combine(
+            // The gaps once per note list, not again for every parent fetched.
+            filteredNotes.map { FeedAncestorBatch.gaps(it) },
+            feedService.parentNotesCache,
+        ) { gaps, cache -> FeedAncestorBatch.resolved(gaps, cache) }
+            .distinctUntilChanged()
+            // Parents arrive one by one while scrolling: one regroup per window.
+            .batched(FeedAncestorBatch.WINDOW_MS)
     }.distinctUntilChanged()
         .flowOn(Dispatchers.Default)
+
+    /** The threads the last grouping built, so a regroup lays out only the changed ones. */
+    private val threadMemo = FeedThreadMemo()
 
     /**
      * The viewer's blocks, as hex pubkeys, for surfaces that have to filter
@@ -546,7 +549,7 @@ class FeedViewModel @Inject constructor(
                 notes
             }
             val threads = FeedThreadGrouping.withoutBlocked(
-                FeedThreadGrouping.build(pool, keepFeedOrder = fetchesReplies) { id ->
+                FeedThreadGrouping.build(pool, keepFeedOrder = fetchesReplies, memo = threadMemo) { id ->
                     // A blocked author's post is never pulled in as context.
                     feedService.findNote(id)?.takeIf { it.pubkey !in blocked }
                 },
