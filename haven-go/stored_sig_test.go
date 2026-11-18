@@ -257,6 +257,18 @@ func TestStoredCopyBlobIndexDoesNotVouch(t *testing.T) {
 	rec.Sig = strings.Repeat("0", 128) // unsigned, as the blob index keeps them
 	storeRaw(t, blob, rec)
 	storedIDsRead(t)
+	// Read the blob store's id set too, so only the searched-store list can
+	// keep it out: if it were ever searched, this record would be delivered.
+	set := storedIDSetFor(blob.(*gatedDB))
+	for i := 0; !set.ready.Load(); i++ {
+		if i > 500 {
+			t.Fatal("blob id set never became ready")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !blob.(*gatedDB).mayHoldID(rec.ID) {
+		t.Fatal("setup: the blob set should hold the record")
+	}
 
 	if got := received(t, []nostr.Event{rec}); got["blob record"] {
 		t.Fatal("an unsigned record was delivered because the blob index holds it")

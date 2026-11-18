@@ -31,7 +31,8 @@ func storedEventByID(id string) *nostr.Event {
 		// Most events are new: the store's id set read at launch answers
 		// those in memory, with no read transaction or timer
 		// (stored_sig_probe.go). Only a possible copy is read for real.
-		if g, ok := db.(*gatedDB); ok && !g.mayHoldID(id) {
+		g, ok := db.(*gatedDB)
+		if !ok || !g.mayHoldID(id) {
 			continue
 		}
 		if ctx == nil {
