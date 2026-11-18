@@ -4,13 +4,16 @@ import AVFoundation
 struct VideoThumbnailView: View {
     let url: URL
     let mimeType: String?
+    /// False draws a still tile while loading (see RetryableAsyncImage).
+    var showsSpinner: Bool = true
     @State private var thumbnail: PlatformImage?
     @State private var isLoading: Bool
     @State private var id = UUID()
 
-    init(url: URL, mimeType: String? = nil) {
+    init(url: URL, mimeType: String? = nil, showsSpinner: Bool = true) {
         self.url = url
         self.mimeType = mimeType
+        self.showsSpinner = showsSpinner
         // Seed from cache so we never show a loading flash on subsequent renders.
         let cached = MediaCacheService.shared.memoryThumbnail(for: url)
         _thumbnail = State(initialValue: cached)
@@ -40,9 +43,11 @@ struct VideoThumbnailView: View {
                             endPoint: .bottomTrailing
                         )
 
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(.white.opacity(0.6))
+                        if showsSpinner {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.white.opacity(0.6))
+                        }
 
                         Image(systemName: "play.circle.fill")
                             .font(.appSystem(size: 40))

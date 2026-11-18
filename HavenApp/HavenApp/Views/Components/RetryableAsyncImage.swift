@@ -8,16 +8,20 @@ struct RetryableAsyncImage: View {
     let url: URL
     let contentMode: ContentMode
     var targetSize: CGSize? = nil
+    /// False draws a still tile while loading. A grid of many cells skips a
+    /// spinner per cell: each one is a UIKit view of its own to build and lay out.
+    var showsSpinner: Bool = true
     @State private var id = UUID()
     @State private var retryCount = 0
     @State private var cachedImage: PlatformImage?
     @State private var isLoading = false
     @State private var phase: MeshMediaPhase = .loading
 
-    init(url: URL, contentMode: ContentMode, targetSize: CGSize? = nil) {
+    init(url: URL, contentMode: ContentMode, targetSize: CGSize? = nil, showsSpinner: Bool = true) {
         self.url = url
         self.contentMode = contentMode
         self.targetSize = targetSize
+        self.showsSpinner = showsSpinner
         // Seed from in-memory cache for instant rendering
         _cachedImage = State(initialValue: MediaCacheService.shared.cachedImage(for: url))
         _isLoading = State(initialValue: false)
@@ -36,7 +40,7 @@ struct RetryableAsyncImage: View {
                     ZStack {
                         Rectangle().fill(Color.gray.opacity(0.1))
                         if phase == .loading {
-                            ProgressView().controlSize(.small)
+                            if showsSpinner { ProgressView().controlSize(.small) }
                         } else {
                             MeshMediaStatusView(phase: phase)
                         }
@@ -52,7 +56,7 @@ struct RetryableAsyncImage: View {
                         case .empty:
                             ZStack {
                                 Rectangle().fill(Color.gray.opacity(0.1))
-                                ProgressView().controlSize(.small)
+                                if showsSpinner { ProgressView().controlSize(.small) }
                             }
                         case .success(let image):
                             image.resizable()

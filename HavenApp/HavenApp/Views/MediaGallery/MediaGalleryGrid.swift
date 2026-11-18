@@ -100,20 +100,29 @@ extension MediaGalleryView {
         Group {
             if mediaLayoutMode == .grid {
                 #if os(macOS)
-                let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
+                let columnCount = 4
+                let spacing: CGFloat = 8
                 #else
                 // Three across on a phone; the iPad's wider pane gets more
                 // tiles instead of three stretched ones.
-                let columns = AdaptiveLayout.columns(width: gridWidth, ideal: 180,
-                                                     spacing: 6, minimum: 3, maximum: 6)
+                let spacing: CGFloat = 6
+                let columnCount = AdaptiveGridLayout.columnCount(
+                    forWidth: Double(AdaptiveLayout.layoutWidth(gridWidth)), ideal: 180,
+                    spacing: Double(spacing), minimum: 3, maximum: 6)
                 #endif
+                let columnWidth = CGFloat(MediaMosaicLayout.columnWidth(
+                    forWidth: Double(gridWidth), columns: columnCount, spacing: Double(spacing)))
 
-                LazyVGrid(columns: columns, spacing: 8, pinnedViews: [.sectionHeaders]) {
+                // A mosaic: each photo keeps its own shape (MediaMosaicColumns).
+                LazyVStack(spacing: 8, pinnedViews: [.sectionHeaders]) {
                     ForEach(mediaSections) { section in
                         Section {
-                            ForEach(section.items) { item in
+                            MediaMosaicColumns(items: section.items, columns: columnCount,
+                                               columnWidth: columnWidth, spacing: spacing,
+                                               rowSpacing: 8) { item, aspect in
                                 MediaGridItem(
                                     item: item,
+                                    aspect: aspect,
                                     onDeleteFromMirrors: { deleteMediaFromMirrors(item: $0) },
                                     onDeleteEverywhere: { deleteMediaEverywhere(item: $0) },
                                     onMirrorComplete: { loadLocalMedia(force: true) }
@@ -127,14 +136,13 @@ extension MediaGalleryView {
                                     }
                                 }
                             }
+                            .equatable()
                         } header: {
                             mediaSectionHeader(section.title)
                         }
                     }
                 }
-                #if os(iOS)
                 .measureWidth { gridWidth = $0 }
-                #endif
                 .padding(.horizontal, 8)
             } else {
                 LazyVStack(spacing: 8, pinnedViews: [.sectionHeaders]) {

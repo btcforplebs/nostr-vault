@@ -400,6 +400,12 @@ extension MediaGalleryView {
                             mediaType = .unknown
                         }
 
+                        // The photo's shape from its header, so the mosaic sizes its tile before it loads.
+                        if mediaType == .image {
+                            MediaMosaicSizes.shared.recordImageFile(
+                                fileURL, key: MediaCacheService.blossomHash(in: serveURL) ?? serveURL.absoluteString)
+                        }
+
                         return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: ownerHex, tags: nil, mimeType: mimeType)
                     }
                 }.value
