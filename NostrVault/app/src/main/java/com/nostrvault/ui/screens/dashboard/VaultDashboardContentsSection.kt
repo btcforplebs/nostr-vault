@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PermMedia
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -60,6 +61,7 @@ internal fun VaultDashboardContentsSection(viewModel: VaultDashboardViewModel) {
     val relayStatus by RelayForegroundService.relayStatus.collectAsState()
     val relayData by viewModel.statsService.storageSize.collectAsState()
     val blossom by viewModel.statsService.blossomSize.collectAsState()
+    val greetings by viewModel.greetings.collectAsState()
 
     var expanded by rememberSaveable { mutableStateOf(setOf<String>()) }
     fun toggle(id: String) { expanded = if (id in expanded) expanded - id else expanded + id }
@@ -97,6 +99,19 @@ internal fun VaultDashboardContentsSection(viewModel: VaultDashboardViewModel) {
             }
         } else {
             CountStatus(isCounting, countFailed, publicOnly, privateMissing, relayStatus, viewModel::approvePrivateCounts)
+        }
+
+        greetings?.let { gm ->
+            DashDivider()
+            ExpandingRow(
+                icon = Icons.Filled.WbSunny,
+                title = "Good mornings",
+                value = GreetingCounts.label(gm.gmAll, gm.pvAll, ::count),
+                detail = "Today " + GreetingCounts.label(gm.gmToday, gm.pvToday, ::count),
+                expanded = false,
+                canExpand = false,
+                onToggle = {},
+            ) {}
         }
 
         DashDivider()
