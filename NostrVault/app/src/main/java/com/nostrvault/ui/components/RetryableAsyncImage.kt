@@ -1,6 +1,8 @@
 package com.nostrvault.ui.components
 
 import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import com.nostrvault.fips.meshAuthor
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -38,15 +40,22 @@ fun RetryableAsyncImage(
     var retryKey by remember { mutableIntStateOf(0) }
     var loadState by remember { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
     val context = LocalContext.current
+    // Built once per picture and retry, not on every recomposition of the tile.
+    val request = remember(context, model, retryKey, meshAuthor) {
+        ImageRequest.Builder(context)
+            .data(model)
+            .setParameter("retry", retryKey, memoryCacheKey = null)
+            .meshAuthor(meshAuthor)
+            .crossfade(false) // Instant rendering from cache
+            .build()
+    }
+    // Only this picture's mesh phase: a tile no longer recomposes when another
+    // picture's phase changes, and a URL with no blob hash never listens at all.
+    val meshPhase by rememberMeshPhase(model as? String)
 
     Box(modifier = modifier) {
         AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(model)
-                .setParameter("retry", retryKey, memoryCacheKey = null)
-                .meshAuthor(meshAuthor)
-                .crossfade(false) // Instant rendering from cache
-                .build(),
+            model = request,
             contentDescription = contentDescription,
             contentScale = contentScale,
             onState = {
@@ -56,8 +65,6 @@ fun RetryableAsyncImage(
             modifier = Modifier.fillMaxSize(),
         )
 
-        val meshPhases by com.nostrvault.fips.MeshMediaStatus.phases.collectAsState()
-        val meshPhase = com.nostrvault.fips.MeshMediaStatus.phaseFor(meshPhases, model as? String)
         if (meshPhase != null) {
             MeshMediaStatusOverlay(url = model as? String, compact = true, modifier = Modifier.matchParentSize())
         } else if ((loadState as? AsyncImagePainter.State.Error)?.result?.throwable is com.nostrvault.service.DMFileLoader.TooBig) {
@@ -102,4 +109,14 @@ fun RetryableAsyncImage(
             }
         }
     }
+}
+
+/** [url]'s mesh phase, recomposing only when that one phase changes. */
+@Composable
+private fun rememberMeshPhase(url: String?): State<com.nostrvault.fips.MeshMediaPhase?> {
+    val hash = remember(url) { url?.let { com.nostrvault.fips.FipsMediaRouter.sha256In(it) } }
+    if (hash == null) return remember { mutableStateOf(null) }
+    val phases = com.nostrvault.fips.MeshMediaStatus.phases
+    val flow = remember(hash) { phases.map { it[hash] }.distinctUntilChanged() }
+    return flow.collectAsState(initial = phases.value[hash])
 }
