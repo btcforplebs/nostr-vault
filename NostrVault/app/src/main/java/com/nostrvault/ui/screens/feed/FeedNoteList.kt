@@ -101,7 +101,9 @@ internal fun FeedNoteList(
             },
     ) {
         if (isThreaded) {
-            items(feedThreads, key = { it.rootId }) { thread ->
+            // A card with replies under it is a different shape from a lone post,
+            // so a recycled slot is only reused for its own shape.
+            items(feedThreads, key = { it.rootId }, contentType = { if (it.entries.size > 1) "thread" else "single" }) { thread ->
                 FeedThreadCard(
                     thread = thread,
                     profileFor = { pubkey -> allProfiles[pubkey] },
@@ -153,7 +155,7 @@ internal fun FeedNoteList(
                 )
             }
         } else {
-        items(items = notes, key = { it.id }) { note ->
+        items(items = notes, key = { it.id }, contentType = { feedRowContentType(it) }) { note ->
             FeedFullNoteRow(
                 note = note,
                 viewModel = viewModel,
@@ -179,7 +181,7 @@ internal fun FeedNoteList(
         }
 
         if (isLoadingMore) {
-            item {
+            item(contentType = "loading") {
                 // iOS: a small spinner and "Loading..." in monospace.
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -209,7 +211,7 @@ internal fun FeedNoteList(
         // the tap line too, until the reader scrolls back up past it. After the loading row, so the end of
         // the feed never shows a screen of blank before "Loading...".
         if (keepsTapRoom()) {
-            item(key = "tap_line_room") {
+            item(key = "tap_line_room", contentType = "tap_line_room") {
                 Spacer(Modifier.height(TapAnchor.roomBelow(viewportHeight, listTop, listBottom)))
             }
         }
@@ -218,3 +220,10 @@ internal fun FeedNoteList(
 
 /** Space above and below each feed row (iOS: 12 pt between rows). */
 private val FeedRowGap = 6.dp
+
+/** Row shape for LazyColumn slot reuse: reposts, posts with media and plain posts lay out differently. */
+internal fun feedRowContentType(note: com.nostrvault.data.model.FeedNote): String = when {
+    note.kind == 6 || note.kind == 16 -> "repost"
+    note.mediaURLs.isNotEmpty() -> "media"
+    else -> "note"
+}
