@@ -10,7 +10,14 @@ import { refusalText, parse, build, newSecret } from "../src/net/mesh-pairing.js
 import { sealHello } from "../src/net/pair-hello.js"
 
 const memStorage = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) } }
-const settle = () => new Promise(r => setTimeout(r, 20))
+// Every listener the fake relay called that is still working (opening, checking words, sealing a reply): settle waits
+// for them, not a fixed 20 ms, which a busy CI box overran (Accept path / scan path failing with the flow mid-step).
+const inFlight = new Set()
+const wait = ms => new Promise(r => setTimeout(r, ms))
+const settle = async () => {
+  await wait(20)
+  for (let i = 0; i < 250 && inFlight.size; i++) { await Promise.allSettled([...inFlight]); await wait(20) }
+}
 
 /** A relay: everything sent reaches every listener for its p tag; `log` keeps each send. */
 function bus() {
@@ -18,7 +25,15 @@ function bus() {
   return {
     log,
     net: {
-      send: async ev => { log.push(ev); for (const s of [...subs]) if (ev.tags.some(t => t[0] === "p" && t[1] === s.hex)) s.cb(ev); return 1 },
+      send: async ev => {
+        log.push(ev)
+        for (const s of [...subs]) {
+          if (!ev.tags.some(t => t[0] === "p" && t[1] === s.hex)) continue
+          const p = s.cb(ev)
+          if (p && typeof p.then === "function") { inFlight.add(p); p.then(() => inFlight.delete(p), () => inFlight.delete(p)) }
+        }
+        return 1
+      },
       listen: (hex, cb) => { const s = { hex, cb }; subs.add(s); return () => subs.delete(s) },
     },
     get listeners() { return subs.size },
