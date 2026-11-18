@@ -117,3 +117,12 @@ test("a tile hides only when every server says 404 and the vault lacks it", () =
   assert.equal(tileState([], false), "hidden")
   assert.equal(tileState([500], false), "dimmed")
 })
+
+test("a tile carries a note's dim (Media's mosaic sizes the tile from it); the newest note that has one", () => {
+  const s = new FileNotesState()
+  s.apply(note("n1", { at: 100, tags: [["url", `https://a.example/${sha}`], ["dim", "1080x1920"]] }))
+  s.apply(note("n2", { at: 200, tags: [["url", `https://b.example/${sha}`]] }))
+  assert.equal(s.tiles()[0].dim, "1080x1920")
+  s.apply(note("n3", { x: other, at: 300, tags: [["url", `https://a.example/${other}`]] }))
+  assert.equal("dim" in s.tiles().find(t => t.sha256 === other), false)
+})

@@ -272,3 +272,7 @@ button.default-reaction:active { transform: none; }
 .accent-preview-mode { font: var(--t-cap); color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
 .accent-preview-link { font: var(--t-sub); color: var(--accent-text); }
 .accent-preview-fill { padding: 6px 14px; border-radius: 999px; background: var(--accent-grad); color: var(--on-accent); font: 600 13px var(--font); }
+/* Vault › Media as a mosaic (BlossomGallery Mosaic, net/media-mosaic.js): columns of tiles, each as tall as its file's
+   known shape (an inline aspect-ratio), so nothing moves when a picture loads. */
+.vault-grid.mosaic { display: flex; align-items: flex-start; gap: 3px; }
+.mosaic-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 3px; }

@@ -22,8 +22,10 @@
   button:disabled { opacity: .45; cursor: default; }
   #status { padding: 8px 14px 0; color: var(--muted); font-size: 13px; min-height: 1em; }
   h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 14px 14px 6px; text-transform: none; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 3px; padding: 0 3px; }
-  .tile { position: relative; aspect-ratio: 1; background: var(--s1); border: 0; border-radius: 0; padding: 0; overflow: hidden; min-height: 0; display: block; }
+  /* A mosaic (the app's net/media-mosaic.js): columns of tiles, each as tall as its file's known shape. */
+  .grid { display: flex; align-items: flex-start; gap: 3px; padding: 0 3px; }
+  .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .tile { position: relative; aspect-ratio: 1; background: var(--s1); border: 0; border-radius: 0; padding: 0; overflow: hidden; min-height: 0; display: block; width: 100%; }
   .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .tile .k { position: absolute; left: 6px; bottom: 6px; font-size: 12px; color: #fff; background: rgba(0,0,0,.55); border-radius: 6px; padding: 1px 6px; }
   .tile .n { position: absolute; right: 6px; top: 6px; font-size: 11px; color: #fff; background: rgba(0,0,0,.55); border-radius: 6px; padding: 1px 5px; }
@@ -105,7 +107,8 @@ function mergeLists(lists) {
     if (!HEX.test(b?.sha256 ?? "") || typeof b.url !== "string" || !/^https?:\/\//i.test(b.url)) continue
     const have = by.get(b.sha256)
     if (have) { if (!have.servers.includes(server)) have.servers.push(server); continue }
-    by.set(b.sha256, { sha256: b.sha256, url: b.url, type: String(b.type ?? ""), size: Number(b.size) || 0, uploaded: Number(b.uploaded) || 0, servers: [server] })
+    const dim = DIM.test(b.dim ?? "") ? b.dim : nip94Dim(b.nip94) // the shell's row has dim; a raw descriptor, nip94
+    by.set(b.sha256, { sha256: b.sha256, url: b.url, type: String(b.type ?? ""), size: Number(b.size) || 0, uploaded: Number(b.uploaded) || 0, servers: [server], ...(dim ? { dim } : {}) })
   }
   return [...by.values()].map(b => ({ ...b, kind: kindOf(b) })).sort((a, b) => b.uploaded - a.uploaded)
 }
@@ -159,8 +162,11 @@ const health = (st, pending = false) => (st === "ok" ? "Healthy" : !st && pendin
 function withNoteTiles(files, tiles, emojiOnly) {
   const listed = new Set(files.map(b => b.sha256)), hidden = new Set(emojiOnly ?? [])
   const added = (tiles ?? []).filter(t => HEX.test(t?.sha256 ?? "") && !listed.has(t.sha256) && /^https?:\/\//i.test(t.url ?? ""))
-    .map(t => { const b = { sha256: t.sha256, url: t.url, type: String(t.type ?? ""), size: Number(t.size) || 0, uploaded: Number(t.uploaded) || 0, servers: [], fromNote: true }; return { ...b, kind: kindOf(b) } })
-  const all = added.length ? [...added, ...files].sort((a, b) => b.uploaded - a.uploaded) : files
+    .map(t => { const b = { sha256: t.sha256, url: t.url, type: String(t.type ?? ""), size: Number(t.size) || 0, uploaded: Number(t.uploaded) || 0, servers: [], fromNote: true, ...(DIM.test(t.dim ?? "") ? { dim: t.dim } : {}) }; return { ...b, kind: kindOf(b) } })
+  // A listed file without a size of its own takes its note's, for the mosaic.
+  const dims = new Map((tiles ?? []).filter(t => DIM.test(t?.dim ?? "")).map(t => [t.sha256, t.dim]))
+  const sized = dims.size ? files.map(b => (!b.dim && dims.has(b.sha256) ? { ...b, dim: dims.get(b.sha256) } : b)) : files
+  const all = added.length ? [...added, ...sized].sort((a, b) => b.uploaded - a.uploaded) : sized
   return hidden.size ? all.filter(b => !hidden.has(b.sha256)) : all
 }
 /** Byte ranges for a big file, each small enough to come through the shell well inside the shim's 30 s wait. */
@@ -170,6 +176,31 @@ function rangesOf(size, chunk = CHUNK) {
   const out = []
   for (let start = 0; start < size; start += chunk) out.push({ start, end: Math.min(size, start + chunk) - 1 })
   return out
+}
+// The mosaic, as the app's net/media-mosaic.js (Apple's MediaMosaicLayout): shapes clamped to 1:2 .. 2:1, square when
+// unknown; each tile to the shortest column so far, ties to the left; columns by width (3 on a phone, up to 6).
+const DIM = /^\d{1,6}x\d{1,6}$/
+function nip94Dim(nip94) {
+  const v = Array.isArray(nip94) ? (nip94.find(t => Array.isArray(t) && t[0] === "dim") || [])[1] : nip94?.dim
+  return typeof v === "string" && DIM.test(v) ? v : undefined
+}
+const clampAspect = a => (Number.isFinite(a) && a > 0 ? Math.min(Math.max(a, 0.5), 2) : 1)
+function aspectFromDim(dim) {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*$/i.exec(typeof dim === "string" ? dim : "")
+  if (!m) return null
+  const w = Number(m[1]), h = Number(m[2])
+  return w > 0 && h > 0 ? w / h : null
+}
+const columnsFor = width => (width < 600 ? 3 : width < 900 ? 4 : width < 1200 ? 5 : 6)
+function deal(items, columns, aspectOf) {
+  const k = Math.max(1, columns | 0), cols = Array.from({ length: k }, () => []), filled = new Array(k).fill(0)
+  for (const item of items) {
+    let s = 0
+    for (let i = 1; i < k; i++) if (filled[i] < filled[s] - 1e-4) s = i
+    cols[s].push(item)
+    filled[s] += 1 / clampAspect(aspectOf(item)) + 0.03
+  }
+  return cols
 }
 // ---- end pure ----
 
@@ -181,6 +212,24 @@ let said = {}, noteTiles = [], emojiOnly = [] // said: server -> "ok" or why not
 const handled = new Set() // "New" files copied or deleted here: the shell's later tile lists keep them, so they're kept out
 const listed = () => withNoteTiles(files, noteTiles.filter(t => !handled.has(t.sha256)), emojiOnly)
 const thumbs = new Map()
+// Shapes learned from pictures that loaded, by hash, kept in this napplet's storage. Read once at start, so a shape
+// learned now never moves a tile on screen; the next visit uses it. Written in batches.
+let shapes = new Map(), learned = null, learnTimer = 0, columns = 3
+const shapeOf = b => (b.kind === "photo" || b.kind === "gif" || b.kind === "video" ? shapes.get(b.sha256) ?? aspectFromDim(b.dim) : 1)
+function learn(sha256, w, h) {
+  if (!HEX.test(sha256) || !(w > 0) || !(h > 0) || shapes.has(sha256)) return
+  ;(learned ??= new Map()).set(sha256, Math.round(w / h * 1000) / 1000)
+  if (!learnTimer) learnTimer = setTimeout(async () => {
+    learnTimer = 0
+    const add = learned; learned = null
+    let all = {}
+    try { all = JSON.parse((await n.storage?.getItem("shapes")) || "{}") || {} } catch {}
+    for (const [k, a] of add) { delete all[k]; all[k] = a }
+    const keys = Object.keys(all)
+    for (const k of keys.slice(0, Math.max(0, keys.length - 3000))) delete all[k]
+    n.storage?.setItem("shapes", JSON.stringify(all)).catch(() => {})
+  }, 1500)
+}
 const status = t => { $("status").textContent = t }
 
 async function load() {
@@ -232,7 +281,8 @@ function pump() {
 }
 function tile(b) {
   const t = el("button", "tile"); t.type = "button"; t.setAttribute("aria-label", `${b.kind} ${bytes(b.size)}`)
-  if (b.kind === "photo" || b.kind === "gif") { const i = el("img"); i.alt = ""; i.dataset.src = b.url; seen.observe(i); t.append(i) }
+  t.style.aspectRatio = String(clampAspect(shapeOf(b)))
+  if (b.kind === "photo" || b.kind === "gif") { const i = el("img"); i.alt = ""; i.dataset.src = b.url; i.onload = () => learn(b.sha256, i.naturalWidth, i.naturalHeight); seen.observe(i); t.append(i) }
   else t.append(el("div", "ph", b.kind === "video" ? "▶" : b.kind === "audio" ? "♪" : "▢"))
   if (b.kind !== "photo") t.append(el("span", "k", b.kind === "gif" ? "GIF" : b.kind === "video" ? `Video ${bytes(b.size)}` : bytes(b.size)))
   if (b.fromNote) { const x = el("span", "new", "New"); x.title = "Just added from one of your devices"; t.append(x) }
@@ -243,7 +293,12 @@ function tile(b) {
 function draw() {
   drawStats()
   const all = listed(), shown = all.filter(FILTERS[filter])
-  const parts = sections(shown, sort).flatMap(s => { const g = el("div", "grid"); g.append(...s.blobs.map(tile)); return s.day ? [el("h2", "", s.day), g] : [g] })
+  columns = columnsFor($("grid").clientWidth || innerWidth)
+  const parts = sections(shown, sort).flatMap(s => {
+    const g = el("div", "grid")
+    g.append(...deal(s.blobs, columns, shapeOf).map(col => { const c = el("div", "col"); c.append(...col.map(tile)); return c }))
+    return s.day ? [el("h2", "", s.day), g] : [g]
+  })
   $("grid").replaceChildren(...(parts.length ? parts : [el("p", "empty", loading ? "" : all.length ? "Nothing of this kind." : "No files on your media servers yet. Upload one, or post a picture.")]))
 }
 
@@ -396,6 +451,8 @@ $("refresh").onclick = load
   nvTheme(n)
   const s = await n.storage?.getItem("sort").catch(() => null)
   if (s && ["newest", "oldest", "type"].includes(s)) { sort = s; $("sort").value = s }
+  try { shapes = new Map(Object.entries(JSON.parse((await n.storage?.getItem("shapes").catch(() => null)) || "{}") || {}).filter(([k, a]) => HEX.test(k) && a > 0)) } catch {}
+  addEventListener("resize", () => { if (columnsFor($("grid").clientWidth || innerWidth) !== columns) draw() })
   // The Vault's Media pill picks the filter (napplet:media/open { filter }).
   n.intent?.onDelivery?.(d => {
     if (d?.archetype !== "media") return

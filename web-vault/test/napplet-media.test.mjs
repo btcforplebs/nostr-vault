@@ -171,7 +171,7 @@ test("media pane: Posted in rows carry no tags or signature; live tiles map to t
   const src = fs.readFileSync(new URL("../src/napplet/MediaPane.jsx", import.meta.url), "utf8")
   // MediaPane.jsx is JSX (not loadable in node): its shapes are checked in its source.
   assert.match(src, /return \{ id: ev\.id, pubkey: ev\.pubkey, createdAt: ev\.created_at, name: [^\n]*, preview: notePreview\(ev\.content\)\.slice\(0, 160\) \}/)
-  assert.match(src, /export const tileRows = tiles => tiles\.filter\(t => t\?\.urls\?\.length\)\.map\(t => \(\{ sha256: t\.sha256, url: t\.urls\[0\], type: t\.mime, size: t\.size, uploaded: t\.createdAt \}\)\)/)
+  assert.match(src, /export const tileRows = tiles => tiles\.filter\(t => t\?\.urls\?\.length\)\.map\(t => \(\{ sha256: t\.sha256, url: t\.urls\[0\], type: t\.mime, size: t\.size, uploaded: t\.createdAt, \.\.\.\(t\.dim \? \{ dim: t\.dim \} : \{\}\) \}\)\)/)
   assert.match(src, /actions: \{ media: \["open", "notes", "tiles"\] \}/)
   assert.match(src, /archetype: "note", actions: \["open"\][\s\S]*location\.hash = `#\/thread\/\$\{p\.id\}`/)
 })
@@ -183,4 +183,20 @@ test("media: a video streams from the napplet origin's worker when it controls t
   assert.match(html2, /n\.resource\.bytes\(`\$\{s\.url\}#nv-bytes=\$\{d\.start\}-\$\{end\}`\)/)
   assert.match(html2, /if \(part\.size !== end - d\.start \+ 1\) throw/)
   assert.match(html2, /function hide\(\) \{\n  streams\.clear\(\)/)
+})
+
+test("blossom: a listed file's dim (for the napplet's mosaic) passes through; anything else in it doesn't", async () => {
+  const { h } = (() => {
+    const deps = {
+      pubkey: ME, servers: async () => [S1], now: () => 0, ask: async () => true, mirror: async () => [], remove: async () => [],
+      list: async server => ({ blobs: [
+        { sha256: H("1"), url: `${server}/${H("1")}`, size: 1, type: "image/png", uploaded: 2, dim: "640x480" },
+        { sha256: H("2"), url: `${server}/${H("2")}`, size: 1, type: "image/png", uploaded: 1, dim: "<b>640x480</b>" },
+      ], status: { [server]: "ok" } }),
+    }
+    return { h: blossomHandler({ grant: defaultGrant({ firstParty: true }), who: { title: "Media" }, deps }) }
+  })()
+  const got = (await h({ type: "blossom.list", id: "1", request: { server: S1, pubkey: ME } })).result.blobs
+  assert.deepEqual(got.map(b => b.dim), ["640x480", undefined])
+  assert.deepEqual(Object.keys(got[0]).sort(), ["dim", "sha256", "size", "type", "uploaded", "url"])
 })
