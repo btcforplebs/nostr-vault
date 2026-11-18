@@ -113,6 +113,12 @@ extension HavenConfig {
     /// The signing mode `activeNpub` would sign with if it were active: the
     /// same rules as activeSigningMode(), for any account.
     func signingMode(for activeNpub: String) -> String {
+        // Setup not finished: a signer just picked on the first screen is
+        // saved only in the shared nip46 fields. An owner left over from an
+        // earlier install has no entry of its own yet, so read the shared
+        // fields for it, or the connect is refused before it starts.
+        if setupBunkerApplies(to: activeNpub) { return "nip46" }
+
         // Check explicit user preference first
         if let preferred = accountSigningModes[activeNpub] {
             // Validate the preference is still usable
@@ -137,5 +143,12 @@ extension HavenConfig {
         }
 
         return "local"
+    }
+
+    /// Whether `npub` signs with the bunker in the shared nip46 fields because
+    /// setup is still running (or no account exists yet).
+    private func setupBunkerApplies(to npub: String) -> Bool {
+        guard !hasCompletedSetup, npub.isEmpty || npub == ownerNpub else { return false }
+        return signingMode == "nip46" && (!nip46SignerPubkey.isEmpty || !nip46BunkerURI.isEmpty)
     }
 }

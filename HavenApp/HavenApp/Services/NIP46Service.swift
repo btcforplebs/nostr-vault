@@ -73,6 +73,11 @@ class NIP46Service: ObservableObject {
             #if DEBUG
             print("[NIP46] connect() FAILED guard — activeSigningMode=\(config.activeSigningMode()) bunkerURI.isEmpty=\(config.nip46BunkerURI.isEmpty) signerPK.isEmpty=\(config.nip46SignerPubkey.isEmpty) relayURL.isEmpty=\(config.nip46RelayURL.isEmpty)")
             #endif
+            // Release builds too: stdout lands in relay.log, so a refused
+            // connect shows up there instead of failing without a trace.
+            let line = "NIP-46: connect refused, no signer found for this account (mode=\(config.activeSigningMode()), setupDone=\(config.hasCompletedSetup), link=\(!config.nip46BunkerURI.isEmpty), signer=\(!config.nip46SignerPubkey.isEmpty))"
+            print(line)
+            RelayProcessManager.shared.addLog(line, level: "ERROR")
             throw NIP46Error.invalidBunkerURI
         }
 
@@ -209,7 +214,9 @@ class NIP46Service: ObservableObject {
             : ConfigService.shared.config.activeAccountNpub
         // Adopting only applies when there is genuinely no account to compare
         // against; otherwise the signer must answer for the account it is for.
-        let adopting = adoptSignerAccount && accountNpub.isEmpty
+        // Before setup finishes, an owner left over from an earlier install is
+        // not that account: the first-screen sign-in picks the account.
+        let adopting = adoptSignerAccount && (accountNpub.isEmpty || !config.hasCompletedSetup)
         let accountMismatch = !adopting && (expectedHex.isEmpty || pubkey != expectedHex)
         if accountMismatch || nowNpub != accountNpub {
             // A signer that answered for the wrong account is closed. A login
