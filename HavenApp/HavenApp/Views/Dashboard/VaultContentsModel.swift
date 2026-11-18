@@ -26,9 +26,12 @@ final class VaultContentsModel: ObservableObject {
     @Published private(set) var publicOnly = false
     @Published private(set) var media: Media?
     @Published private(set) var cache: StatsService.CacheBreakdown?
+    /// Your own GM and Pura Vida notes in the vault (GreetingCounts); nil until read.
+    @Published private(set) var greetings: GreetingCounts.Counts?
 
     func load(owner: String, relayManager: RelayProcessManager, configService: ConfigService, statsService: StatsService) async {
         async let files: Void = loadFiles(relayManager: relayManager, configService: configService, statsService: statsService)
+        async let greetingsRead: Void = loadGreetings(owner: owner)
         if relayManager.isRunning && !owner.isEmpty {
             isCounting = true
             publicOnly = !RelayCounter.ownerCanAuth()
@@ -39,6 +42,24 @@ final class VaultContentsModel: ObservableObject {
             isCounting = false
         }
         await files
+        await greetingsRead
+    }
+
+    /// Counts `owner`'s own GM and Pura Vida notes straight from the on-device
+    /// store (QueryVaultC): no network, nothing signed. A store that can't
+    /// answer yet keeps the last numbers.
+    func loadGreetings(owner: String) async {
+        let owner = owner.lowercased()
+        guard !owner.isEmpty else { greetings = nil; return }
+        // The store answers at most 1000 events per filter (haven-go vaultReadMaxLimit).
+        let notes = await GreetingCounts.readAll(author: owner, pageSize: 1000, maxPages: 100) { filter in
+            await NostrService.storeEvents(filter: filter)?.map {
+                GreetingCounts.Note(id: $0.id, pubkey: $0.pubkey, kind: $0.kind, createdAt: $0.created_at, content: $0.content)
+            }
+        }
+        guard let notes else { return }
+        let todayStart = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970)
+        greetings = GreetingCounts.count(notes, author: owner, todayStart: todayStart)
     }
 
     func loadFiles(relayManager: RelayProcessManager, configService: ConfigService, statsService: StatsService) async {
