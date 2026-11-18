@@ -41,7 +41,8 @@ import com.nostrvault.service.DMService.Companion.TAG
             if (isDuplicate) return
 
             val updatedMessages = (conv.messages + message).sortedBy { it.timestamp }
-            val unread = if (alerts) conv.unreadCount + 1 else conv.unreadCount
+            // A message that lands in the chat on screen is read as it arrives.
+            val unread = if (alerts && visibleConversation != counterparty) conv.unreadCount + 1 else conv.unreadCount
             current[existingIndex] = conv.copy(
                 messages = updatedMessages,
                 unreadCount = unread,
@@ -51,7 +52,7 @@ import com.nostrvault.service.DMService.Companion.TAG
                 DMConversation(
                     id = counterparty,
                     messages = listOf(message),
-                    unreadCount = if (alerts) 1 else 0,
+                    unreadCount = if (alerts && visibleConversation != counterparty) 1 else 0,
                 )
             )
         }
