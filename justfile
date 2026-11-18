@@ -33,8 +33,18 @@ android-build:
     done
     echo "Building libnvfips.so (FIPS mesh)..."
     {{justfile_directory()}}/NostrVault/build_fips_v2_android.sh
+    # Translate post (Bergamot + fastText) and its language-ID model are
+    # gitignored like libhaven, so an APK built without them works but never
+    # shows Translate (3.2.3 (103) on the Moto, 2026-11-18). Same steps and
+    # checks as scripts/release_all.sh.
+    echo "Building libnvtranslate.so + lid.176.ftz (Translate post)..."
+    {{justfile_directory()}}/NostrVault/build_translate_android.sh
     echo "Building APK..."
     cd {{justfile_directory()}}/NostrVault && ./gradlew assembleRelease
+    APK="{{justfile_directory()}}/NostrVault/app/build/outputs/apk/release/app-release.apk"
+    for f in lib/arm64-v8a/libhaven.so lib/arm64-v8a/libnvtranslate.so assets/translate/lid.176.ftz; do
+        unzip -l "$APK" | grep -q "$f" || { echo "✖ APK has no $f" >&2; exit 1; }
+    done
 
 # Install Android release APK on connected device
 android-install:
