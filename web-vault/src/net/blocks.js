@@ -12,7 +12,7 @@ import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, relayLists, BROADCAST_RELAYS, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./pool.js"
 import { askRelay, editKnown, MAX_SKEW } from "./follows.js"
 import { checkSigned } from "./sync.js"
-import { replyRefs, repostInner } from "./thread.js"
+import { isBlockedSubject, isMutedNote as gateMuted, gateWeb, noteSubject } from "./web-gate.js"
 import { findExtension } from "../signer/nip07.js"
 import { groupNotifications, classify } from "./notifications.js"
 
@@ -49,22 +49,8 @@ export function muteSet(pubkeys = [], tags = []) {
 /** True when `blocked` hides anything: people, or muted words, hashtags or threads. */
 export const blocksAny = blocked => !!blocked && (blocked.size > 0 || blocked.words?.length > 0 || blocked.hashtags?.size > 0 || blocked.threads?.size > 0)
 
-/** True when a note's own words, hashtags or thread are muted. A plain Set (no mutes) never mutes. */
-export function isMutedNote(ev, blocked) {
-  if (!ev || !blocked) return false
-  const { words, hashtags, threads } = blocked
-  if (threads?.size) {
-    if (threads.has(ev.id)) return true
-    const { root, parent } = replyRefs(ev)
-    if ((root && threads.has(root)) || (parent && threads.has(parent))) return true
-  }
-  if (hashtags?.size && (ev.tags ?? []).some(t => t[0] === "t" && hashtags.has(String(t[1] ?? "").toLowerCase().replace(/^#/, "")))) return true
-  if (words?.length) {
-    const text = String(ev.content ?? "").toLowerCase()
-    if (text && words.some(w => text.includes(w))) return true
-  }
-  return false
-}
+/** True when a note's own words, hashtags or thread are muted (the gate's rule, web-gate.js). */
+export const isMutedNote = (ev, blocked) => !!blocked && gateMuted(ev, blocked)
 
 /** NIP-04 ciphertext carries "?iv="; anything else is taken as NIP-44. */
 export const isNip04 = s => /\?iv=/.test(s)
@@ -172,29 +158,20 @@ export async function showBlockList(ctx, ev) {
   if (state.pubkey === ctx.session.pubkey) await apply(ctx.session.pubkey, ev, await decrypterFor(ctx.session, { signer: ctx.signer }))
 }
 
-/** A repost or reaction whose `e` tag points at a muted thread. */
-const isMutedThreadRef = (ev, blocked) => !!blocked?.threads?.size && (ev.tags ?? []).some(t => t[0] === "e" && blocked.threads.has(String(t[1] ?? "").toLowerCase()))
-
 /** True when a note is a blocked person's, a repost of one (someone you follow can repost a blocked person), or a reply
  *  to one, when `authorOf` knows who wrote the parent (the iPhone's FeedFilterEngine.isBlocked). A repost whose note
  *  doesn't check is hidden if its p tag names a blocked person, but a p tag never clears one: the card checks the note
- *  it fetches by id instead (repostState). */
+ *  it fetches by id instead (repostState). Step 1 of the one gate (web-gate.js isBlockedSubject), so this and the gate
+ *  can't disagree. */
 export function isBlockedNote(ev, blocked, authorOf = () => null) {
   if (!ev || !blocksAny(blocked)) return false
-  if (blocked.has(String(ev.pubkey).toLowerCase())) return true
-  if (ev.kind === 6 || ev.kind === 16) {
-    const inner = repostInner(ev)
-    if (inner) return blocked.has(inner.pubkey.toLowerCase()) || isMutedNote(inner, blocked) || isMutedThreadRef(ev, blocked)
-    return blocked.has((ev.tags ?? []).find(t => t[0] === "p")?.[1]?.toLowerCase()) || isMutedThreadRef(ev, blocked)
-  }
-  if (isMutedNote(ev, blocked)) return true
-  if (ev.kind === 1111) {
-    const answered = (ev.tags ?? []).find(t => t[0] === "p")?.[1]?.toLowerCase()
-    if (answered && blocked.has(answered)) return true
-  }
-  const parent = ev.kind === 1 ? replyRefs(ev).parent : null
-  const parentAuthor = parent && authorOf(parent)
-  return !!parentAuthor && blocked.has(String(parentAuthor).toLowerCase())
+  return isBlockedSubject(noteSubject(ev, { authorOf }), blockWeb(blocked))
+}
+// The block list as the gate reads it, built once per list (the screens filter hundreds of notes against one list).
+const blockWebs = new WeakMap()
+function blockWeb(blocked) {
+  if (!blockWebs.has(blocked)) blockWebs.set(blocked, gateWeb({ blocked }))
+  return blockWebs.get(blocked)
 }
 
 /** What a repost card shows for the note it fetched by id: "loading", "missing" (not found, or not a kind `kinds`
