@@ -51,3 +51,13 @@ test("a short signature right after a good event is refused (no leftover bytes)"
   assert.equal(verifyRelayEvent({ ...plain(good), sig: "" }), false)
   assert.equal(verifyRelayEvent({ ...plain(good), sig: good.sig.slice(0, 64) }), false)
 })
+
+test("a valid event too big for the wasm heap (14,000 follows) passes, and wasm still works after", async () => {
+  await verifierReady
+  const tags = Array.from({ length: 14000 }, (_, i) => ["p", i.toString(16).padStart(64, "0")])
+  const big = plain(signed(sk, { kind: 3, tags, content: "" }))
+  assert.ok(JSON.stringify(big).length > 1_000_000)
+  assert.equal(verifyRelayEvent(big), true)
+  assert.equal(verifyRelayEvent({ ...plain(big), content: "x" }), false, "and a changed copy is still refused")
+  for (const [name, ev, want] of cases()) assert.equal(verifyRelayEvent(ev), want, name + " (after the big one)")
+})

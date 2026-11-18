@@ -387,7 +387,10 @@ export function verifyRelayEvent(ev) {
   // last event's bytes behind), and reads the fields to hash them: check both first.
   if (!validateEvent(ev) || typeof ev.id !== "string" || ev.id.length !== 64 || typeof ev.sig !== "string" ||
     ev.sig.length !== 128 || !HEX.test(ev.id) || !HEX.test(ev.sig)) return false
-  return verifyInWasm(ev)
+  // nostr-wasm's heap can't grow: a valid event over ~946 KB (a kind 3 of ~13k follows) fails there (Tron, PR 2195).
+  // Both are complete checks, so a "no" from wasm is asked again in JS: valid events stay on the fast path, and an
+  // invalid one costs what it did before this file used wasm.
+  return verifyInWasm(ev) || verifyInJs(ev)
 }
 
 export const pool = new LivePool({ enablePing: true, enableReconnect: true, verifyEvent: verifyRelayEvent })
