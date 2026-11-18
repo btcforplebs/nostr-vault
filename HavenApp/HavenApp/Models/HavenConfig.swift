@@ -80,6 +80,9 @@ struct HavenConfig: Codable, Equatable {
     /// the vault mark beside the author's name on posts sent from Nostr Vault.
     /// Off by default, so the logo shows.
     var hideNostrVaultBadge: Bool = false
+    /// Settings › Feeds › Reach: a feed's raw value to a `WebGate.Reach`
+    /// raw value, only where it differs from the default (`FeedReach`).
+    var feedReach: [String: String] = [:]
 
     // Mac relay (iOS only)
     var macRelayURL: String = "" // wss:// URL to a remote Mac Haven relay to sync missed notes
@@ -332,7 +335,7 @@ struct HavenConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, autoplayVideos, vertexLookups, fanfaresAutoCheck, ownerNcryptsec, ownerNsec, showReplies, repliesBackOnV1, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
-        case useOLED, textSizeScale, appearanceMode, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge
+        case useOLED, textSizeScale, appearanceMode, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge, feedReach
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags, showDMTextInNotifications
         case macRelayURL, publicOnWeb, keepFullCopy, fullCopyWifiOnly
@@ -436,6 +439,7 @@ struct HavenConfig: Codable, Equatable {
         translateTargetLanguage = try container.decodeIfPresent(String.self, forKey: .translateTargetLanguage) ?? defaults.translateTargetLanguage
         globalShowsEveryone = try container.decodeIfPresent(Bool.self, forKey: .globalShowsEveryone) ?? defaults.globalShowsEveryone
         hideNostrVaultBadge = try container.decodeIfPresent(Bool.self, forKey: .hideNostrVaultBadge) ?? defaults.hideNostrVaultBadge
+        feedReach = try container.decodeIfPresent([String: String].self, forKey: .feedReach) ?? defaults.feedReach
 
         signingMode = try container.decodeIfPresent(String.self, forKey: .signingMode) ?? defaults.signingMode
         nip46BunkerURI = try container.decodeIfPresent(String.self, forKey: .nip46BunkerURI) ?? defaults.nip46BunkerURI

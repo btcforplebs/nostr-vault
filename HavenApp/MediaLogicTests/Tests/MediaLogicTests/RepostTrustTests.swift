@@ -21,8 +21,9 @@ final class RepostTrustTests: XCTestCase {
         // showReposts must be true: false drops every kind 6 and would pass
         // this without the fix.
         FeedFilterEngine.filterFeedNotes(
-            notes: notes, mode: .global, blocked: [], showReposts: true, showReplies: true,
-            followedPubkeys: [], wotPubkeys: [trusted], popularFilter: .all, popularNoteScores: [:]
+            notes: notes, mode: .global, gate: WebGate.Web(own: [], web: [trusted]),
+            showReposts: true, showReplies: true,
+            followedPubkeys: [], popularFilter: .all, popularNoteScores: [:]
         )
     }
 

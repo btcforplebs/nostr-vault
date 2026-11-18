@@ -57,4 +57,40 @@ final class TrustedWebMemo: @unchecked Sendable {
         last = (saved, follows, scope, generation, web)
         return web
     }
+
+    private var lastLayers: (saved: Set<String>, follows: [String], scope: AccountWebScope, generation: Int,
+                             layers: (web: Set<String>, hop3: Set<String>))?
+
+    /// The one gate's web and the hop past it (`WebGate.layers`), from the
+    /// same graph, links and depth, remembered like `web`.
+    func layers(saved: Set<String>, follows: [String], scope: AccountWebScope) -> (web: Set<String>, hop3: Set<String>) {
+        lock.lock(); defer { lock.unlock() }
+        if let lastLayers, lastLayers.saved == saved, lastLayers.follows == follows, lastLayers.scope == scope,
+           lastLayers.generation == generation {
+            return lastLayers.layers
+        }
+        let layers = WebGate.layers(saved: saved, follows: Set(follows), links: links, depth: depth, scope: scope)
+        lastLayers = (saved, follows, scope, generation, layers)
+        return layers
+    }
+
+    private var lastGate: (saved: Set<String>, follows: [String], scope: AccountWebScope, generation: Int,
+                           whitelist: Set<String>, blocked: Set<String>, mutes: MuteList, gate: WebGate.Web)?
+
+    /// The whole gate for one account, remembered: feeds read it on every
+    /// recompute, and building it lowercases sets of thousands of keys.
+    func gate(saved: Set<String>, follows: [String], scope: AccountWebScope, whitelist: Set<String>,
+              blocked: Set<String>, mutes: MuteList) -> WebGate.Web {
+        let layers = self.layers(saved: saved, follows: follows, scope: scope)
+        lock.lock(); defer { lock.unlock() }
+        if let lastGate, lastGate.saved == saved, lastGate.follows == follows, lastGate.scope == scope,
+           lastGate.generation == generation, lastGate.whitelist == whitelist, lastGate.blocked == blocked,
+           lastGate.mutes == mutes {
+            return lastGate.gate
+        }
+        let gate = WebGate.Web(own: scope.owners, whitelist: whitelist, web: layers.web, hop3: layers.hop3,
+                               blocked: blocked, mutes: mutes)
+        lastGate = (saved, follows, scope, generation, whitelist, blocked, mutes, gate)
+        return gate
+    }
 }

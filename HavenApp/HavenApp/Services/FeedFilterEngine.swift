@@ -39,18 +39,22 @@ enum FeedFilterEngine {
     // MARK: - Feed Note Filtering
 
     /// Filters and sorts notes for the main feed based on mode and user preferences.
+    /// Who may appear is the one gate's (`WebGate`): blocked people, muted
+    /// words, hashtags and threads, and anyone outside the account's web never
+    /// reach a feed through here. The mode then picks which of the rest it
+    /// holds (follows only, never replies, and so on).
     ///
     /// - Parameters:
     ///   - notes: All notes currently in memory.
-    ///   - mode: The active feed mode (following, discovery, global, popular, media).
-    ///   - blocked: Hex pubkeys the user has blocked.
+    ///   - mode: The active feed mode.
+    ///   - gate: The open account's web, blocks and mutes (`FeedService.feedGate`).
+    ///   - reach: How far this feed reaches (`FeedService.reach(for:)`).
     ///   - showReposts: Whether kind-6 reposts should be visible.
     ///   - showReplies: Whether replies should be visible.
     ///   - followedPubkeys: Hex pubkeys the user follows.
-    ///   - wotPubkeys: Web-of-Trust pubkey set (for global feed filtering).
-    ///   - popularFilter: Sub-filter for the Popular feed (all / follows / non-follows).
-    ///   - popularNoteScores: Popularity scores keyed by note ID (from the DVM).
-    /// - Returns: Filtered and sorted array of notes ready for display.
+    ///   - popularFilter: Filter for popular feed (all, follows, non-follows).
+    ///   - popularNoteScores: Note ID to engagement score mapping for popular sorting.
+    /// - Returns: Filtered (and for popular mode, sorted) notes.
     static func filterFeedNotes(
         notes: [FeedNote],
         mode: FeedMode,
@@ -58,22 +62,24 @@ enum FeedFilterEngine {
         pollsGlobal: Bool = false,
         pollStatus: PollStatusFilter = .all,
         now: Date = Date(),
-        blocked: Set<String>,
+        gate: WebGate.Web,
+        reach: WebGate.Reach = .web,
         showReposts: Bool,
         showReplies: Bool,
         followedPubkeys: [String],
         ownPubkey: String = "",
-        wotPubkeys: Set<String>,
         popularFilter: PopularFilter,
         popularNoteScores: [String: Double],
         globalLanguages: Set<String> = [],
-        globalRequiresTrust: Bool = true,
         languageOf: (FeedNote) -> String? = { _ in nil },
         authorOf: (String) -> String? = { _ in nil }
     ) -> [FeedNote] {
         // A follow list runs to a thousand keys; checked per note as an
         // Array it was most of a rebuild's cost.
         let followedPubkeys = Set(followedPubkeys)
+        func verdict(_ note: FeedNote) -> WebGate.Verdict {
+            WebGate.judge(.feed(note, authorOf: authorOf), in: gate, reach: reach)
+        }
 
         // Articles: long-form only, one event per
         // `pubkey:d` address. 30023 is a parameterized-replaceable kind, so an
@@ -81,13 +87,12 @@ enum FeedFilterEngine {
         // both would otherwise show as separate rows.
         if mode == .articles {
             let longForm = notes.filter { note in
-                if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
                 guard note.kind == 30023 else { return false }
-                // Global articles trust the same graph as Global, and fail
-                // closed the same way; Following keeps to the follow set.
-                if articlesGlobal {
-                    return !globalRequiresTrust || wotPubkeys.contains(note.repostedBy ?? note.pubkey)
-                }
+                let v = verdict(note)
+                if v == .blocked { return false }
+                // Global articles trust the same web as Global; Following
+                // keeps to the follow set.
+                if articlesGlobal { return v == .inside }
                 return note.pubkey == ownPubkey || followedPubkeys.contains(note.pubkey)
             }
             return dedupeAddressable(longForm)
@@ -96,67 +101,62 @@ enum FeedFilterEngine {
         // Polls: NIP-88 polls only, newest first, scoped like Articles.
         if mode == .polls {
             return notes.filter { note in
-                if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
                 guard let poll = note.poll, pollStatus.admits(poll, now: now) else { return false }
-                if pollsGlobal {
-                    return !globalRequiresTrust || wotPubkeys.contains(note.repostedBy ?? note.pubkey)
-                }
+                let v = verdict(note)
+                if v == .blocked { return false }
+                if pollsGlobal { return v == .inside }
                 return note.pubkey == ownPubkey || followedPubkeys.contains(note.pubkey)
             }
         }
 
         var filtered = notes.filter { note in
-            if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
             if note.kind == 6 && !showReposts { return false }
-            // Catch Up: someone unfollowed since it was computed goes now.
-            if mode == .catchUp { return followedPubkeys.isEmpty || followedPubkeys.contains(note.pubkey) }
-            // Underrated holds top-level posts, as Popular does, and only
-            // people this account doesn't follow: the relay leaves out the
-            // follows of every account it holds, this the active one's
-            // (Logen 2026-11-06).
-            if mode == .underrated {
+            let v = verdict(note)
+            if v == .blocked { return false }
+            // Judged on the signer: a repost's reposter, never the author its
+            // content names (an unsigned claim).
+            let author = note.repostedBy ?? note.pubkey
+            switch mode {
+            case .catchUp:
+                // Your follows, as the relay picked them. Someone unfollowed
+                // since it was computed goes now; an empty follow list shows
+                // nobody rather than everyone.
+                return followedPubkeys.contains(note.pubkey) && v == .inside
+            case .underrated:
+                // Top-level posts from people this account doesn't follow
+                // (Logen 2026-11-06), in its web, or one hop out where its
+                // reach allows (rationed below).
                 return !note.isReply && note.pubkey != ownPubkey && !followedPubkeys.contains(note.pubkey)
-            }
-            if mode == .popular {
+                    && (v == .inside || v == .hop3)
+            case .popular:
                 let isFollowed = followedPubkeys.contains(note.pubkey)
                 if popularFilter == .follows && !isFollowed { return false }
                 if popularFilter == .nonFollows && isFollowed { return false }
-                return !note.isReply
-            }
-            if mode == .global {
-                // Fail CLOSED. `wotPubkeys` empty used to mean "no trust data,
-                // so admit everyone", which handed a brand-new account the open
-                // firehose — measured at two thirds spam on the default seed
-                // relays. An unusable graph now shows nothing and the caller
-                // says so, rather than quietly showing the worst of Nostr.
-                // Empty means either "not built yet" or "the owner follows
-                // nobody"; nothing else may build a graph, so both show nothing.
-                // "Everyone" (opted into behind a warning) skips the graph.
-                // Judged on the signer: a repost's reposter, never the author
-                // its content names (an unsigned claim, as Following does).
-                if globalRequiresTrust && !wotPubkeys.contains(note.repostedBy ?? note.pubkey) { return false }
-                if note.isReply { return false }
+                return !note.isReply && v == .inside
+            case .global:
+                // Fail CLOSED: the gate's web is the follows alone until a
+                // graph loads, never the open firehose. "Everyone" (behind a
+                // warning) is reach `.everyone`.
+                guard v == .inside, !note.isReply else { return false }
                 // Narrowed to chosen languages: notes whose language can't
                 // be told (short, links only) stay. See FeedLanguageDetector.
                 if globalLanguages.isEmpty { return true }
                 return FeedLanguageDetector.admits(detected: languageOf(note), allowed: globalLanguages)
-            }
-            if mode == .discovery {
-                // Discover is the wider web minus your follows. The feed also
-                // pulls in every note that tags you, so a key outside the web
-                // must be dropped here or anyone could write into it by
-                // replying to you (Android FeedFilterEngine.kt DISCOVERY).
-                let author = note.repostedBy ?? note.pubkey
-                if followedPubkeys.contains(author) || !wotPubkeys.contains(author) { return false }
-            }
-            if mode == .following {
-                // For reposts, membership is judged by the reposter (the follow
-                // who boosted it), not the original author. Your own notes stay
-                // although your list need not follow you. Excluding non-follows
-                // here makes an unfollowed author's notes vanish the moment the
-                // set changes.
-                let author = note.repostedBy ?? note.pubkey
+            case .discovery:
+                // The wider web minus your follows. The feed also pulls in
+                // every note that tags you, so the gate drops anyone outside
+                // the web (Android FeedFilterEngine.kt DISCOVERY).
+                if followedPubkeys.contains(author) || v != .inside { return false }
+            case .following:
+                // Your own notes stay although your list need not follow you.
+                // Excluding non-follows here makes an unfollowed author's notes
+                // vanish the moment the set changes.
                 if author != ownPubkey && !followedPubkeys.contains(author) { return false }
+            default:
+                // Every other list (Media, Reels, Music, Recipes, Live,
+                // Marketplace, Hashtags) draws from the same notes, which
+                // include notes tagging you from anyone: only the web's.
+                if v != .inside { return false }
             }
             return showReplies || !note.isReply
         }
@@ -172,30 +172,45 @@ enum FeedFilterEngine {
             }
         }
 
+        if reach == .webAndHop3 {
+            filtered = WebGate.capHop3(filtered, verdict: verdict, author: { $0.repostedBy ?? $0.pubkey },
+                                       isReply: \.isReply)
+        }
         return filtered
+    }
+
+    /// Notes tagging `owner` from outside the web: what a feed folds under
+    /// its "Outside your web" row. Newest first, blocked and muted left out.
+    /// Only notes addressed to you fold; a stranger's post that merely
+    /// reached a feed is not yours to read and is dropped.
+    static func outsideMentions(notes: [FeedNote], gate: WebGate.Web, owner: String,
+                                authorOf: (String) -> String? = { _ in nil }) -> [FeedNote] {
+        var seen = Set<String>()
+        return notes.filter { note in
+            note.isAddressed(to: owner)
+                && WebGate.judge(.feed(note, authorOf: authorOf), in: gate) == .outside
+                && seen.insert(note.id).inserted
+        }.sorted { $0.createdAt > $1.createdAt }
     }
 
     /// Filters notes for the media grid view.
     ///
     /// - Parameters:
     ///   - notes: All notes currently in memory.
-    ///   - blocked: Hex pubkeys the user has blocked.
-    ///   - wotPubkeys: Web-of-Trust pubkey set (for global media filtering).
-    ///   - isGlobalMedia: Whether the media tab is in global mode.
-    /// - Returns: Notes containing media, sorted by date.
+    ///   - gate: The open account's web, blocks and mutes.
+    ///   - reach: The Media feed's reach; `.everyone` for Global with the shield off.
+    /// - Returns: Notes containing media from the web, sorted by date.
     static func filterMediaNotes(
         notes: [FeedNote],
-        blocked: Set<String>,
-        wotPubkeys: Set<String>,
-        isGlobalMedia: Bool,
-        globalRequiresTrust: Bool = true,
+        gate: WebGate.Web,
+        reach: WebGate.Reach = .web,
         authorOf: (String) -> String? = { _ in nil }
     ) -> [FeedNote] {
         notes.filter { note in
-            if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
-            // Fail closed for the same reason as the Global feed above.
-            if isGlobalMedia && globalRequiresTrust && !wotPubkeys.contains(note.repostedBy ?? note.pubkey) { return false }
-            return !note.mediaURLs.isEmpty
+            // Following and Global media alike: the notes tagging you from
+            // anyone sit in the same list, so the gate judges every one.
+            guard !note.mediaURLs.isEmpty else { return false }
+            return WebGate.judge(.feed(note, authorOf: authorOf), in: gate, reach: reach) == .inside
         }.sorted {
             if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
             return $0.id > $1.id

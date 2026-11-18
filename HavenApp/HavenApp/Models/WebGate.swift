@@ -87,15 +87,39 @@ enum WebGate {
         var parentId: String?
         var content: String
         var tags: [[String]]
+        /// Other notes the row stands for, checked against muted threads only:
+        /// the post a repost shows.
+        var otherIds: [String]
 
         init(signer: String, related: [String] = [], id: String = "", parentId: String? = nil,
-             content: String = "", tags: [[String]] = []) {
+             content: String = "", tags: [[String]] = [], otherIds: [String] = []) {
             self.signer = signer
             self.related = related
             self.id = id
             self.parentId = parentId
             self.content = content
             self.tags = tags
+            self.otherIds = otherIds
+        }
+
+        /// A note as a row shows it, the one way every surface builds one so
+        /// none can drift (Tron, #2213). A repost is the reposter's row: the
+        /// reposter signs, the original author is only checked for blocks,
+        /// and the mute list reads the post shown (its text, tags and id).
+        /// - Parameters:
+        ///   - author: who wrote the text shown (a repost's original author).
+        ///   - repostedBy: the reposter, for a repost.
+        ///   - originalId: the post a repost shows, when the row is a repost.
+        ///   - parentAuthor: the author of the note a reply answers, if known.
+        static func note(id: String, author: String, content: String, tags: [[String]],
+                         parentId: String? = nil, repostedBy: String? = nil, originalId: String? = nil,
+                         parentAuthor: String? = nil) -> Subject {
+            let signer = repostedBy ?? author
+            var related: [String] = []
+            if author != signer, !author.isEmpty { related.append(author) }
+            if let parentAuthor, !parentAuthor.isEmpty { related.append(parentAuthor) }
+            return Subject(signer: signer, related: related, id: id, parentId: parentId,
+                           content: content, tags: tags, otherIds: originalId.map { [$0] } ?? [])
         }
 
         /// A zap is judged on the zap request's signer, and only when that
@@ -114,7 +138,7 @@ enum WebGate {
         if isBlocked(subject, signer: signer, in: web) { return .blocked }
         guard !signer.isEmpty else { return .outside }
         if web.own.contains(signer) || web.whitelist.contains(signer) || web.web.contains(signer)
-            || always.contains(signer) || always.contains(subject.signer) {
+            || lowered(always).contains(signer) {
             return .inside
         }
         switch reach {
@@ -136,8 +160,12 @@ enum WebGate {
                 return true
             }
         }
-        return web.mutes.hides(id: subject.id, content: subject.content, tags: subject.tags,
-                               parentId: subject.parentId)
+        if web.mutes.hides(id: subject.id, content: subject.content, tags: subject.tags,
+                           parentId: subject.parentId) {
+            return true
+        }
+        return !web.mutes.threads.isEmpty
+            && subject.otherIds.contains { web.mutes.threads.contains($0.lowercased()) }
     }
 
     // MARK: - Hop 3, rationed
@@ -201,7 +229,7 @@ enum WebGate {
 
     fileprivate static func lowered(_ keys: Set<String>) -> Set<String> {
         // Most keys arrive lowercase already: skip the copy when they all do.
-        guard keys.contains(where: { $0.contains(where: \.isUppercase) }) else { return keys.subtracting([""]) }
+        guard keys.contains(where: { $0.utf8.contains { $0 >= 65 && $0 <= 90 } }) else { return keys.subtracting([""]) }
         return Set(keys.map { $0.lowercased() }).subtracting([""])
     }
 }
