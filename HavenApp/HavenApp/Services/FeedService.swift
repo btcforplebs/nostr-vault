@@ -447,6 +447,8 @@ class FeedService: ObservableObject {
     var didRestoreCachedFeed = false
     /// The one-time cold-start load has been kicked off for this launch.
     var didStartInitialLoad = false
+    /// Writes the "feed rows shown" startup mark once (`markFirstFeedRows`).
+    private var feedRowsMark: AnyCancellable?
 
     private init() {
         // FeedService no longer manages profiles; NostrService does.
@@ -463,6 +465,7 @@ class FeedService: ObservableObject {
         // relay reports running — three seconds of launch with an empty feed.
         // The relay-dependent half still waits; see the readiness sink below.
         DispatchQueue.main.async { [weak self] in self?.prewarmFromCache() }
+        markFirstFeedRows()
 
         // Listen to active account changes to reload the feed automatically.
         // We snapshot the previous account's state into memory and either
@@ -648,4 +651,20 @@ class FeedService: ObservableObject {
 
     /// Authors whose relay list was already requested, so each is asked once.
     var relayListRequested = Set<String>()
+}
+
+// MARK: - Startup mark
+
+extension FeedService {
+    /// "⏱ startup feed rows shown": the first time this process's feed has
+    /// rows, timed once the frame that draws them is out (the hop past the
+    /// current run-loop turn, whose commit puts them on screen).
+    fileprivate func markFirstFeedRows() {
+        feedRowsMark = $filteredNotes.first { !$0.isEmpty }.sink { _ in
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(1))
+                RelayProcessManager.shared.startupMark("feed rows shown")
+            }
+        }
+    }
 }
