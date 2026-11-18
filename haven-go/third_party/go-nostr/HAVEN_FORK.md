@@ -22,6 +22,9 @@ Changes from upstream are listed below. Keep every other file byte-identical to 
 - `relay.go`: the writer goroutine no longer sets `Connection` to nil when the connection ends
   (that write raced the read loop and `close()`); `Subscribe` also checks
   `IsConnected()`.
+- `relay.go` + `sigcache.go`: the read loop skips `CheckSignature` for an event that is an exact
+  copy of one the local store holds (`SetStoredEventLookup`, `storedCopy`): same id, pubkey and
+  sig, and both serializations hash to the id. Anything else is verified as before.
 - `relay.go`: when the connection context ends, subscriptions are closed with the context's cause
   only, no longer also `r.ConnectionError`. The read loop writes that field as it hits the read
   error, which raced the write loop's read when our own `Close` cancelled first (`go test -race`,

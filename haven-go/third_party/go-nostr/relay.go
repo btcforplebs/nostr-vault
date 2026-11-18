@@ -285,8 +285,10 @@ func (r *Relay) ConnectWithTLS(ctx context.Context, tlsConfig *tls.Config) error
 						continue
 					}
 
-					// check signature, ignore invalid, except from trusted (AssumeValid) relays
-					if !r.AssumeValid {
+					// check signature, ignore invalid, except from trusted (AssumeValid) relays.
+					// haven: an exact copy of an event the local store already
+					// holds was verified when it went in (sigcache.go storedCopy).
+					if !r.AssumeValid && !storedCopy(&env.Event) {
 						if ok, _ := env.Event.CheckSignature(); !ok {
 							InfoLogger.Printf("{%s} bad signature on %s\n", r.URL, env.Event.ID)
 							continue
