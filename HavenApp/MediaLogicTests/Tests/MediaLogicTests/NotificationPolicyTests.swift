@@ -223,8 +223,13 @@ final class NotificationAuthorTrustTests: XCTestCase {
         // Own events, gift wraps and the summary are not held back.
         XCTAssertTrue(NotificationPolicy.authorMayNotify("me", type: "zap", trusted: trusted, own: ["me"]))
         XCTAssertTrue(NotificationPolicy.authorMayNotify("throwaway", type: "giftwrap", trusted: trusted, own: []))
-        // The receipt is signed by the lightning service, never in anyone's WoT.
-        XCTAssertTrue(NotificationPolicy.authorMayNotify("lnurl-service", type: "zap", trusted: trusted, own: []))
+        // A zap is judged on the payer the relay's marker names (haven-go
+        // inboxTrustKey): a friend's alerts, a stranger's does not. A request
+        // that does not verify leaves the lightning service named: nobody's
+        // web, so no alert (the one gate, 2026-11-18).
+        XCTAssertTrue(NotificationPolicy.authorMayNotify("friend", type: "zap", trusted: trusted, own: []))
+        XCTAssertFalse(NotificationPolicy.authorMayNotify("stranger", type: "zap", trusted: trusted, own: []))
+        XCTAssertFalse(NotificationPolicy.authorMayNotify("lnurl-service", type: "zap", trusted: trusted, own: []))
         // A follow is judged like a post: only a follower in your web alerts,
         // and with no graph yet nobody but your own accounts does.
         XCTAssertTrue(NotificationPolicy.authorMayNotify("friend", type: "follow", trusted: ["friend"], own: []))

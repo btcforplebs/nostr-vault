@@ -181,7 +181,10 @@ struct VaultActivity: Identifiable, Equatable {
                 let sats = Int64(LiveChat.zapAmountSats(receiptTags: event.tags, requestTags: request?.tags ?? []))
                 // The note comes from the signed request, as the Zaps list reads it.
                 let target = request.flatMap { firstTag("e", in: $0.tags) } ?? firstTag("e", in: event.tags)
-                let comment = (request?.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                // From outside your web a zap keeps its amount, never its
+                // words (the one gate, 2026-11-18, `WebGate.zapShow`).
+                let comment = isOutside(sender) ? ""
+                    : (request?.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 // A receipt is always to you: a note not in memory yet is
                 // yours unless it is known to be someone else's.
                 if let target, comment.isEmpty, myText[target] != nil || authorOf[target] == nil {

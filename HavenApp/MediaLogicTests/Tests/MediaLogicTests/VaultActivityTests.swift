@@ -176,6 +176,21 @@ final class VaultActivityTests: XCTestCase {
         XCTAssertEqual(lines[2].preview, "zap me")
     }
 
+    /// The one gate (2026-11-18): a zap from outside your web keeps its
+    /// amount and loses its words, so it folds with the post's other zaps.
+    func testZapFromOutsideKeepsTheAmountNotTheComment() {
+        let events = [event("post", me, at: 100, content: "zap me"),
+                      zapReceipt("z1", from: ann, on: "post", sats: 21, at: 110),
+                      zapReceipt("z2", from: cat, on: "post", sats: 5, at: 130, comment: "buy my airdrop")]
+        let inside = build(events)
+        XCTAssertEqual(inside.first(where: { $0.id == "z2" })?.preview, "buy my airdrop", "positive control")
+        let lines = build(events, isOutside: { $0 == self.cat })
+        XCTAssertFalse(lines.contains { $0.preview.contains("airdrop") })
+        XCTAssertEqual(lines.map(\.id), ["zap-post"])
+        XCTAssertEqual(lines[0].sats, 26)
+        XCTAssertEqual(Set(lines[0].actors), [ann, cat])
+    }
+
     func testZapsOnMyPostsLeaveOutBlockedSendersAndKeepTheRest() {
         let zaps = [
             VaultActivity.Zap(sender: ann, target: "p1", sats: 21, at: 110),
