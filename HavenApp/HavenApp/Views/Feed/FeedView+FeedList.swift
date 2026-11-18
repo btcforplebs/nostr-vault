@@ -51,6 +51,12 @@ private struct ReferencedNoteObserver: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: feedService.referencedNoteUpdates) { _, signal in onReferencedNotes(signal.ids) }
+            // A note given up on changes its rows too ("unavailable"): rows
+            // skip unchanged redraws, so they are re-resolved like an arrival.
+            .onChange(of: feedService.unavailableNoteIds) { old, new in
+                let given = new.subtracting(old)
+                if !given.isEmpty { onReferencedNotes(given) }
+            }
     }
 }
 
@@ -123,20 +129,17 @@ extension FeedView {
         }
     }
 
-    /// A feed row with a zero-height marker at its top, the same target and
-    /// position record a thread line has, so a layout switch can hold it.
+    /// A feed row with a zero-height marker at its top, the target a layout
+    /// switch scrolls back to. No per-row geometry reader: its position was
+    /// only read by the condensed feed's open-in-place tap, which is gone
+    /// (thread cards record their own lines), and the reader ran on every
+    /// row every scroll frame, about 15% of the main thread while scrolling.
     private func heldRow<Row: View>(_ noteId: String, @ViewBuilder row: () -> Row) -> some View {
         VStack(spacing: 0) {
             Color.clear
                 .frame(height: 0)
                 .id(ThreadLineTops.anchorId(for: noteId))
             row()
-        }
-        .onGeometryChange(for: CGFloat.self) {
-            $0.frame(in: .named(ThreadLineTops.coordinateSpace)).minY
-        } action: { [threadLineTops] y in
-            threadLineTops.tops[noteId] = y
-            threadLineTops.lineMoved(noteId, to: y)
         }
     }
 

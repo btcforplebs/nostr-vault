@@ -321,8 +321,15 @@ extension FeedView {
     /// preview replaces its skeleton immediately instead of waiting for an
     /// unrelated change to force a rebuild.
     func refreshRowsForReferencedNotes(_ arrivedIds: Set<String>) {
-        resolveRows(matching: ReferencedNoteRepair.rowsNeedingRepair(
-            notes: rowNotesToScan, arrivedIds: arrivedIds))
+        var rows = ReferencedNoteRepair.rowsNeedingRepair(notes: rowNotesToScan, arrivedIds: arrivedIds)
+        // An empty-content repost draws its original's quotes, which the
+        // rule above (the row's own references) does not see.
+        for note in rowNotesToScan where note.kind == 6 && note.content.isEmpty {
+            guard let refId = note.repostedEventId, let original = feedService.findNote(id: refId),
+                  original.quotedEventIds.contains(where: arrivedIds.contains) else { continue }
+            rows.insert(note.id)
+        }
+        resolveRows(matching: rows)
     }
 
     /// A fetched ancestor changes the *shape* of the timeline, not just a row:

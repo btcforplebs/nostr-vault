@@ -40,13 +40,15 @@ extension FeedNoteRow {
     /// An empty-content repost whose original no relay returned (deleted, or
     /// never reached anywhere we ask). Without this it said "Loading" forever.
     var repostedNoteIsUnavailable: Bool {
-        guard isWaitingForRepostedNote, let refId = note.repostedEventId else { return false }
-        return FeedService.shared.unavailableNoteIds.contains(refId)
+        // From the row data, so a row that skips unchanged redraws still
+        // turns when the original is given up on (FeedView re-resolves it).
+        isWaitingForRepostedNote && rowData.repostUnavailable
     }
 
     /// The body's text, media and links, without the links a live stream it
     /// embeds already draws in its card. Unchanged for any other note.
     var liveCleanBody: LiveNoteCleanup.Body {
+        if let body = rowData.liveBody { return body }
         let source = bodySource
         return LiveNoteCleanup.cleaned(content: source.content, mediaURLs: source.mediaURLs,
                                        linkURLs: source.linkURLs, find: actions.findNote)
@@ -157,7 +159,7 @@ extension FeedNoteRow {
         if !bodySource.quotedEventIds.isEmpty, !(bodySource.kind == 30023 && isFocused) {
             VStack(spacing: 8) {
                 ForEach(bodySource.quotedEventIds, id: \.self) { quoteId in
-                    if let quotedNote = actions.findNote(quoteId) {
+                    if let quotedNote = rowData.quotedNotes[quoteId] ?? actions.findNote(quoteId) {
                         // QuotedNoteView decides what a tap does: streams play,
                         // a quote of someone you blocked does nothing.
                         QuotedNoteView(note: quotedNote, opensThread: true)
