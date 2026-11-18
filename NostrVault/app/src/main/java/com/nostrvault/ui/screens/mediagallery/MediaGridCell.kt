@@ -7,7 +7,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -144,18 +143,6 @@ internal fun MediaGridCell(
                 contentDescription = "Video",
                 tint = Color.White.copy(alpha = 0.85f),
                 modifier = Modifier.size(32.dp),
-            )
-        }
-
-        // Source indicator dot (green = local blossom)
-        if (item.isLocal) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp)
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .then(Modifier.background(Color(0xFF4CAF50))),
             )
         }
 
