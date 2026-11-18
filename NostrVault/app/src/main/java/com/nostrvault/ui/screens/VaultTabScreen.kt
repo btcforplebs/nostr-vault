@@ -13,9 +13,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
+import com.nostrvault.ui.navigation.DockHoldMenuRow
+import com.nostrvault.ui.navigation.DockHoldRow
+import com.nostrvault.ui.navigation.DockMenuDivider
+import com.nostrvault.ui.navigation.DockMenuPopup
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -394,19 +395,14 @@ internal fun VaultModePill(
             }
         }
 
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        // The dock hold menu's look (DockMenuPopup), as the feed header's list
+        // (#2234): a red dot on a list with something new, and on Messages
+        // while it has unread ones, the way the Vault tab's hold menu marks them.
+        DockMenuPopup(expanded = expanded, onDismiss = { expanded = false }, closeLabel = "Close Vault lists") {
             VaultMode.menu(zapsOnly).forEach { m ->
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(m.displayName, fontWeight = if (m == mode) FontWeight.SemiBold else FontWeight.Normal)
-                            if (m in allNew) Text("New", color = ErrorRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    },
-                    leadingIcon = { Icon(m.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    trailingIcon = if (m == mode) {
-                        { Icon(NostrVaultIcons.Check, contentDescription = "Current list", modifier = Modifier.size(16.dp)) }
-                    } else null,
+                DockHoldMenuRow(
+                    spec = DockHoldRow(m.icon, m.displayName, current = m == mode, hasNews = m in allNew),
+                    hovered = false,
                     onClick = {
                         expanded = false
                         // "Vault" is the tab's own list, not one of the relay
@@ -416,38 +412,19 @@ internal fun VaultModePill(
                 )
             }
             if (messages != null) {
-                val badge = messages.badge
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Messages", fontWeight = FontWeight.Normal)
-                            if (badge != null) {
-                                Text(
-                                    badge,
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier
-                                        .background(ErrorRed, CircleShape)
-                                        .padding(horizontal = 6.dp, vertical = 1.dp),
-                                )
-                            }
-                        }
-                    },
-                    leadingIcon = { Icon(NostrVaultIcons.Messages, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    modifier = Modifier.semantics {
-                        contentDescription = if (badge != null) "Messages, ${messages.unread} unread" else "Messages"
-                    },
+                DockHoldMenuRow(
+                    spec = DockHoldRow(NostrVaultIcons.Messages, "Messages", current = false, hasNews = messages.badge != null),
+                    hovered = false,
                     onClick = {
                         expanded = false
                         messages.open()
                     },
                 )
             }
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text("Vault Dashboard") },
-                leadingIcon = { Icon(NostrVaultIcons.TabVault, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            DockMenuDivider()
+            DockHoldMenuRow(
+                spec = DockHoldRow(NostrVaultIcons.TabVault, "Vault Dashboard", current = false),
+                hovered = false,
                 onClick = {
                     expanded = false
                     onOpenDashboard()
