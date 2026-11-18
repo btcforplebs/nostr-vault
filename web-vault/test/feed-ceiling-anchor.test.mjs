@@ -76,7 +76,8 @@ test.after(() => vite.close())
 
 Object.defineProperty(globalThis.navigator, "onLine", { value: false, configurable: true }) // Haven only: no relay top-up
 const tick = (ms = 0) => new Promise(r => setTimeout(r, ms))
-const until = async (cond, what) => { for (let i = 0; i < 400; i++) { if (cond()) return; await tick(5) } assert.fail(`timed out waiting for ${what}`) }
+// A time budget, not a count of 5 ms waits: on a busy CI box each wait runs long and 400 of them ran out (Tron, #2200).
+const until = async (cond, what, ms = 10_000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (cond()) return; await tick(5) } if (!cond()) assert.fail(`timed out waiting for ${what}`) }
 const hex = (n, w = 64) => n.toString(16).padStart(w, "0")
 const me = hex(1)
 const now = Math.floor(Date.now() / 1000)
@@ -102,7 +103,10 @@ test("Following's Older keeps the note being read where it is when the ceiling d
     const reading = before[count - 4].attributes["data-note-id"]
     fireOlder()
     await until(() => cards(el).length !== count || cards(el)[0].attributes["data-note-id"] !== head, `Older page ${step + 1}`)
-    await tick(10) // the layout effect's pin, and the draw window catching up
+    // The layout effect's pin and the draw window catching up: wait for the note being read to be drawn again (a
+    // fixed 10 ms was a race on a busy box), then let one more frame run before checking where it sits.
+    await until(() => cards(el).some(c => c.attributes["data-note-id"] === reading), `the note being read after Older page ${step + 1}`)
+    await tick(10)
     const after = cards(el)
     const card = after.find(c => c.attributes["data-note-id"] === reading)
     assert.ok(card, `the note being read is still drawn after Older page ${step + 1}`)
