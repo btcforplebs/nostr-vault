@@ -47,6 +47,7 @@ extension FeedNoteRow {
     /// The body's text, media and links, without the links a live stream it
     /// embeds already draws in its card. Unchanged for any other note.
     var liveCleanBody: LiveNoteCleanup.Body {
+        if let body = rowData.liveBody { return body }
         let source = bodySource
         return LiveNoteCleanup.cleaned(content: source.content, mediaURLs: source.mediaURLs,
                                        linkURLs: source.linkURLs, find: actions.findNote)

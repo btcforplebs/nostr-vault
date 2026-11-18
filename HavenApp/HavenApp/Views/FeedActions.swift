@@ -399,6 +399,10 @@ struct FeedNoteRowData: Equatable {
     /// Likes, reposts, replies and zap sats, when the screen fetched them
     /// (`ProfileEngagementStore`). nil leaves the row without a numbers line.
     var engagement: PostEngagement? = nil
+    /// The row's body text, media and links with a live stream's own links
+    /// taken out (`LiveNoteCleanup`), worked out once here instead of on
+    /// every body pass of the row. nil only for data built some other way.
+    var liveBody: LiveNoteCleanup.Body? = nil
 
     func with(engagement: PostEngagement?) -> FeedNoteRowData {
         var copy = self
@@ -454,8 +458,19 @@ struct FeedNoteRowData: Equatable {
             isOwnNote: note.pubkey == nostrService.activeHexPubkey,
             isFollowed: feedService.followedPubkeySet.contains(displayPubkey),
             isParentFollowed: parentNote.map { feedService.followedPubkeySet.contains($0.pubkey) } ?? false,
-            stats: feedService.noteStats[original.id] ?? NoteStats()
+            stats: feedService.noteStats[original.id] ?? NoteStats(),
+            liveBody: liveBody(for: (note.kind == 6 && note.content.isEmpty && note.repostedEventId != nil)
+                                    ? (resolvedOriginal ?? note) : note,
+                               feedService: feedService)
         )
+    }
+
+    /// `FeedNoteRow.liveCleanBody` for the note the row's body shows.
+    private static func liveBody(for source: FeedNote, feedService: FeedService) -> LiveNoteCleanup.Body {
+        LiveNoteCleanup.cleaned(content: source.content, mediaURLs: source.mediaURLs,
+                                linkURLs: source.linkURLs,
+                                find: { id in MainActor.assumeIsolated { feedService.findNote(id: id) } })
+            ?? LiveNoteCleanup.Body(content: source.content, mediaURLs: source.mediaURLs, linkURLs: source.linkURLs)
     }
 }
 
