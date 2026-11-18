@@ -90,6 +90,32 @@ class DMThreadViewModel @Inject constructor(
 
     val myPubkey: String get() = configStore.activeAccountHexPubkey.value
 
+    /**
+     * The account this thread is open for. Switching account closes it: the
+     * draft and photo are dropped and [closedBySwitch] tells the screen to go
+     * back, so nothing typed for one account goes out as another (Messages
+     * check A5).
+     */
+    private var openedFor: String = configStore.activeAccountHexPubkey.value
+    private val _closedBySwitch = MutableStateFlow(false)
+    val closedBySwitch = _closedBySwitch.asStateFlow()
+
+    internal fun onActiveAccount(hex: String) {
+        if (hex.isEmpty() || hex == openedFor) return
+        if (openedFor.isEmpty()) {
+            openedFor = hex // the first account loading, not a switch
+            return
+        }
+        openedFor = hex
+        messageField.clearText()
+        setAttachedImage(null)
+        _closedBySwitch.value = true
+    }
+
+    /** Whether a send begun for [startedFor] may still go out now. */
+    private fun stillSameAccount(startedFor: String) =
+        startedFor.isNotEmpty() && configStore.activeAccountHexPubkey.value == startedFor
+
     /** Whether this conversation already contains any NIP-04 (legacy) messages. */
     val hasNIP04Messages: StateFlow<Boolean> = messages
         .map { msgs -> msgs.any { it.isNIP04 } }
@@ -129,6 +155,7 @@ class DMThreadViewModel @Inject constructor(
     }
 
     init {
+        viewModelScope.launch { configStore.activeAccountHexPubkey.collect { onActiveAccount(it) } }
         viewModelScope.launch {
             nostrService.fetchMissingProfiles(listOf(counterpartyPubkey))
             dmService.markConversationRead(counterpartyPubkey)
@@ -172,6 +199,8 @@ class DMThreadViewModel @Inject constructor(
         val text = messageField.text.toString().trim()
         val image = _attachedImage.value
         if ((text.isBlank() && image == null) || _isSending.value) return
+        val account = openedFor
+        if (!stillSameAccount(account)) return
 
         viewModelScope.launch {
             _isSending.value = true
@@ -182,6 +211,7 @@ class DMThreadViewModel @Inject constructor(
                 // A NIP-17 photo or video is locked (kind 15, DMLockedPhoto): its words go first as
                 // their own message, the file one second after so it sorts below them.
                 if (image != null && !_useNIP04.value) {
+                    if (!stillSameAccount(account)) return@launch
                     DMLockedPhoto.send(context, image, text, counterpartyPubkey, blossomService, dmService) { wordsSent = true }
                     DMPastedImage.discard(image)
                     return@launch
@@ -196,6 +226,8 @@ class DMThreadViewModel @Inject constructor(
                         append(imageUrl)
                     }
                 }
+                // An account switch during the upload: it was written as the old account.
+                if (!stillSameAccount(account)) return@launch
                 if (content.isNotEmpty()) {
                     dmService.sendMessage(counterpartyPubkey, content, _useNIP04.value)
                 }
@@ -257,6 +289,9 @@ fun DMThreadScreen(
             viewModel.setMessageText(initialMessage)
         }
     }
+    // Another account now: this chat was the old account's (Messages check A5).
+    val closedBySwitch by viewModel.closedBySwitch.collectAsState()
+    LaunchedEffect(closedBySwitch) { if (closedBySwitch) onBack?.invoke() }
     val messages by viewModel.messages.collectAsState()
     val counterpartyProfile by viewModel.counterpartyProfile.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
