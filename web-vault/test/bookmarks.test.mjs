@@ -61,5 +61,5 @@ test("the note menu has Bookmark, and Vault › Bookmarks is a page with the iPh
   assert.match(src("screens/VaultPagesMenu.jsx"), /BOOKMARKS_PAGE = \{ id: "bookmarks", title: "Bookmarks", href: "#\/bookmarks" \}/)
   const main = readFileSync(new URL("../main.jsx", import.meta.url), "utf8")
   assert.match(main, /\{route === "bookmarks" && <BookmarksScreen ctx=\{ctx\} \/>\}/)
-  assert.match(src("desktop/DesktopShell.jsx"), /const marks = view\.route === "bookmarks"/, "the desktop's Bookmarks is the Reader's (plan step 6a)")
+  assert.match(src("desktop/DesktopShell.jsx"), /view\.route === "bookmarks" \? <BookmarksScreen ctx=\{ctx\} \/>/)
 })

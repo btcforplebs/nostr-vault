@@ -103,13 +103,11 @@ test("storage clear is one exact scope (a prefix range would wipe pub:foobar wit
   assert.match(src, /clear: scope => tx\("readwrite", s => s\.delete\(IDBKeyRange\.bound\(\[scope, ""\], \[scope, \[\]\]\)\)\)/)
 })
 
-test("no Apps page and no switch (plan step 11): not in the Vault menu, no #/apps or ?shell=1 page; an old #/apps link opens + Add", () => {
+test("Apps page: in the Vault menu only while the napplet switch is on; #/apps routed on phone and desktop", () => {
   const read = p => fs.readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
-  assert.doesNotMatch(read("src/screens/VaultPagesMenu.jsx"), /APPS_PAGE|nappletsOn/)
-  assert.doesNotMatch(read("main.jsx"), /NappletShell|shell=1|"apps"/)
-  assert.doesNotMatch(read("src/desktop/DesktopShell.jsx"), /NappletShell/)
-  assert.equal(fs.existsSync(new URL("../src/napplet/NappletShell.jsx", import.meta.url)), false)
+  assert.match(read("src/screens/VaultPagesMenu.jsx"), /nappletsOn\(\) \|\| current === APPS_PAGE\.id/)
+  assert.match(read("main.jsx"), /route === "apps" && <NappletShell/)
+  // Desktop with side columns: #/apps opens + Add (plan step 3); a narrow desktop window keeps the page.
+  assert.match(read("src/desktop/DesktopShell.jsx"), /view\.route === "apps" \? \(space \? null : <NappletShell/)
   assert.match(read("src/desktop/DesktopShell.jsx"), /const toAdd = space && view\.route === "apps"/)
-  // A narrow window has no side columns for + Add: an old #/apps link is the Feed there, not an empty page.
-  assert.match(read("src/desktop/DesktopShell.jsx"), /FULL\.has\(parsed\.route\) && \(parsed\.route !== "apps" \|\| space\)/)
 })

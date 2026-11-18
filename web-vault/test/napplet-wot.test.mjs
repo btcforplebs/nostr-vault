@@ -80,11 +80,10 @@ test("find: by name word or key start, follows first", () => {
   assert.deepEqual(plain(box.findPeople(web, names, "Lee An")), [O[1]]) // a whole name with its space
 })
 
-test("the WoT tab is the WoT napplet on the desktop (plan step 11), See their web included; the phone keeps its screen; no network domain", () => {
-  const main = read("main.jsx"), desk = read("src/desktop/DesktopShell.jsx")
-  assert.match(desk, /\{view\.route === "wot" \? <div class="desk-full"><WotPane ctx=\{ctx\} open=\{[^\n]*root=\{\/\^#\\\/wot\\\/\[0-9a-f\]\{64\}\\\/web\/\.test\(location\.hash\) \? view\.arg : null\} \/><\/div>/)
-  assert.doesNotMatch(desk, /WotScreen/)
-  assert.match(main, /\{route === "wot" && <WotScreen ctx=\{ctx\}/)
+test("the WoT tab swaps with the switch on, See their web included; the napplet has no network domain", () => {
+  const main = read("main.jsx")
+  assert.match(main, /const wotInNapplet = \(\) => nappletsOn\(\)/)
+  assert.match(main, /<WotPane ctx=\{ctx\} open=\{wotAddress\(\)\.open \?\? null\} root=\{wotAddress\(\)\.root \?\? null\} \/>/)
   assert.match(read("src/napplet/first-party-list.js"), /dTag: WOT_DTAG, [^\n]*domains: \["resource", "intent", "theme"\]/)
 })
 
