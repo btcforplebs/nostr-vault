@@ -68,6 +68,8 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         com.nostrvault.relay.StartupMarks.mark("app create")
         warmUpOffMain()
+        // Signature checks that passed last run are not repeated (VerifiedEvents).
+        com.nostrvault.relay.VerifiedEvents.attach(noBackupFilesDir)
         // The saved feed is read while Hilt builds the app, for the first frame.
         com.nostrvault.service.FeedSnapshotPreload.start(this)
         super.onCreate()

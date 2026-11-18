@@ -8,7 +8,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /** Each event's signature is checked once; anything that differs, or fails, is checked again. */
 class VerifiedEventsTest {
@@ -70,6 +73,85 @@ class VerifiedEventsTest {
         assertTrue(VerifiedEvents.verify(text, check))
         assertTrue(VerifiedEvents.verify(text, check))
         assertFalse(VerifiedEvents.verify("not json", check))
+        assertEquals(1, calls)
+    }
+
+    // Kept on disk: a restart is memory cleared, then the file loaded again.
+
+    @get:Rule val tmp = TemporaryFolder()
+
+    private fun restart(dir: File) {
+        VerifiedEvents.saveNow()
+        VerifiedEvents.clearForTest()
+        VerifiedEvents.attachNowForTest(dir)
+    }
+
+    @Test
+    fun `a note that passed last run is not checked again after a restart`() {
+        val dir = tmp.newFolder()
+        VerifiedEvents.attachNowForTest(dir)
+        assertTrue(VerifiedEvents.verify(event(), check))
+        restart(dir)
+        assertTrue(VerifiedEvents.verify(event(reordered = true), check))
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun `a failure is never written, so it is refused again after a restart`() {
+        val dir = tmp.newFolder()
+        VerifiedEvents.attachNowForTest(dir)
+        val bad = event(sig = "d".repeat(128))
+        assertFalse(VerifiedEvents.verify(bad, check))
+        restart(dir)
+        assertFalse(VerifiedEvents.verify(bad, check))
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun `a forged copy of a remembered note is still checked and refused`() {
+        val dir = tmp.newFolder()
+        VerifiedEvents.attachNowForTest(dir)
+        assertTrue(VerifiedEvents.verify(event(), check))
+        restart(dir)
+        // Same id and sig as the remembered note, other content.
+        assertFalse(VerifiedEvents.verify(event(content = "forged"), check))
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun `a foreign or damaged file is ignored`() {
+        val dir = tmp.newFolder()
+        File(dir, "verified_events.bin").writeBytes(ByteArray(100) { 7 })
+        VerifiedEvents.attachNowForTest(dir)
+        assertTrue(VerifiedEvents.verify(event(), check))
+        assertEquals(1, calls)
+        // A file cut mid-key keeps only whole keys.
+        VerifiedEvents.saveNow()
+        val f = File(dir, "verified_events.bin")
+        f.writeBytes(f.readBytes().copyOf(f.length().toInt() - 5))
+        assertEquals(0, VerifiedEvents.readKeys(f).size)
+    }
+
+    @Test
+    fun `a file cut mid-key keeps the whole keys before the cut`() {
+        val dir = tmp.newFolder()
+        VerifiedEvents.attachNowForTest(dir)
+        for (c in listOf("one", "two", "three")) VerifiedEvents.verify(event(content = c)) { true }
+        VerifiedEvents.saveNow()
+        val f = File(dir, "verified_events.bin")
+        val full = VerifiedEvents.readKeys(f)
+        assertEquals(3, full.size)
+        f.writeBytes(f.readBytes().copyOf(f.length().toInt() - 5))
+        assertEquals(full.take(2), VerifiedEvents.readKeys(f))
+    }
+
+    @Test
+    fun `passes from before the file loaded are kept`() {
+        val dir = tmp.newFolder()
+        assertTrue(VerifiedEvents.verify(event(), check)) // before attach
+        VerifiedEvents.attachNowForTest(dir)
+        restart(dir)
+        assertTrue(VerifiedEvents.verify(event(), check))
         assertEquals(1, calls)
     }
 }

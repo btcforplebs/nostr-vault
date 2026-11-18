@@ -463,6 +463,7 @@ func (l *lifecycleManager) startCycle(setup func(c *relayCycle) error) error {
 		return err
 	}
 	l.current.Store(c)
+	c.spawn("verified-sigs", func() { keepVerifiedSigs(c.ctx, verifiedSigsPath()) })
 	return nil
 }
 
