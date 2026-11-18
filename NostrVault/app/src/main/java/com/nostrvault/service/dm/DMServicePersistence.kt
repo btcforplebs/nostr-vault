@@ -25,7 +25,8 @@ import com.nostrvault.service.DMService.Companion.TAG
                 if (!file.exists()) { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: loadCache no file key=$key"); return@launch }
 
                 val content = file.readText()
-                val rawConvos = json.decodeFromString<List<DMConversation>>(content)
+                // A send cut off before any relay answered loads as "Not sent" (DMDelivery).
+                val rawConvos = json.decodeFromString<List<DMConversation>>(content).withInterruptedSendsFailed()
 
                 // One-time repair: earlier builds decrypted inbound NIP-17 gift
                 // wraps with a SINGLE nip44 decrypt and stored the still-encrypted

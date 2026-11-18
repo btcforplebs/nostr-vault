@@ -41,6 +41,9 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.DMMessage
 import com.nostrvault.service.DMService
+import com.nostrvault.service.canRetry
+import com.nostrvault.service.removeUnsent
+import com.nostrvault.service.retrySend
 import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.components.AvatarImage
@@ -194,6 +197,11 @@ class DMThreadViewModel @Inject constructor(
     }
 
     fun toggleProtocol() { _useNIP04.value = !_useNIP04.value }
+
+    /** "Not sent" bubbles (DMDelivery): Try again, and Remove. */
+    fun canRetry(message: DMMessage) = dmService.canRetry(message)
+    fun retrySend(id: String) = dmService.retrySend(counterpartyPubkey, id)
+    fun removeUnsent(id: String) = dmService.removeUnsent(counterpartyPubkey, id)
 
     fun sendMessage() {
         val text = messageField.text.toString().trim()
@@ -451,6 +459,10 @@ fun DMThreadScreen(
                             message = message,
                             isFromMe = message.senderPubkey == viewModel.myPubkey,
                             profiles = profiles,
+                            onRetry = if (viewModel.canRetry(message)) {
+                                { viewModel.retrySend(message.id) }
+                            } else null,
+                            onRemove = { viewModel.removeUnsent(message.id) },
                         )
                     }
                 }
@@ -527,6 +539,8 @@ private fun MessageBubble(
     message: DMMessage,
     isFromMe: Boolean,
     profiles: Map<String, FeedProfile> = emptyMap(),
+    onRetry: (() -> Unit)? = null,
+    onRemove: () -> Unit = {},
 ) {
     val colors = LocalNostrVaultColors.current
     val oled = LocalOledMode.current
@@ -659,12 +673,17 @@ private fun MessageBubble(
                     }
                 }
                 Spacer(Modifier.height(3.dp))
-                Text(
-                    // iOS: relative, "5 minutes ago".
-                    text = RelativeTime.numeric(message.timestamp, System.currentTimeMillis() / 1000),
-                    color = SecondaryText.copy(alpha = 0.7f),
-                    fontSize = 11.sp,
-                )
+                val sendState = message.sendState
+                if (isFromMe && sendState != null) {
+                    DMSendFooter(sendState, message.failure, onRetry, onRemove)
+                } else {
+                    Text(
+                        // iOS: relative, "5 minutes ago".
+                        text = RelativeTime.numeric(message.timestamp, System.currentTimeMillis() / 1000),
+                        color = SecondaryText.copy(alpha = 0.7f),
+                        fontSize = 11.sp,
+                    )
+                }
             }
         }
     }

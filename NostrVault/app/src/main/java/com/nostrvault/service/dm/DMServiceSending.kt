@@ -28,6 +28,9 @@ import com.nostrvault.service.DMService.Companion.TAG
             senderPubkey = nostrService.activeHexPubkey,
             isFromMe = true,
             isNIP04 = false,
+            sendState = DMSendState.SENDING,
+            // A locked photo's link carries its key: never resent as words.
+            resendText = if (file == null) content else null,
         )
         withContext(Dispatchers.Main.immediate) {
             addMessageToConversation(recipientHexPubkey, optimisticMessage)
@@ -135,26 +138,11 @@ import com.nostrvault.service.DMService.Companion.TAG
                     sentSelfWrapIds.add(it)
                 }
 
-                // Publish to local /chat relay
-                val config = configStore.config.value
-                val chatUrl = config.localRelayURL("chat")
-                chatUrl?.let {
-                    inboxClient?.send("[\"EVENT\",$recipientEvent]")
-                    inboxClient?.send("[\"EVENT\",$selfEvent]")
-                }
-
-                // Your own copy goes to your DM inbox list — the list every
-                // device reads from, Mac relay first — never to whichever of
-                // your relay lists a lookup finds first. Resolving it like a
-                // recipient's could land on your general (kind 10002) relays,
-                // which no device reads DMs from, so the message never showed
-                // on your other devices.
-                for (relayUrl in ownDMInboxRelays(ownHexPubkey)) {
-                    publishAuthenticated(selfEvent, relayUrl, ownHexPubkey)
-                }
-
-                for (relayUrl in recipientRelays) {
-                    publishAuthenticated(recipientEvent, relayUrl, ownHexPubkey)
+                // Their relays first; your own copy (the vault, and your DM inbox
+                // list, which every device reads from) only once one of theirs took
+                // it. The bubble says "Sending…" meanwhile (dm/DMDelivery.kt).
+                scope.launch {
+                    deliverNIP17(cacheKey, recipientHexPubkey, optimisticId, recipientEvent, selfEvent, recipientRelays, ownHexPubkey)
                 }
             } catch (e: CancellationException) {
                 if (!publishing) takeBackOptimisticSend(cacheKey, recipientHexPubkey, optimisticId)
@@ -167,15 +155,18 @@ import com.nostrvault.service.DMService.Companion.TAG
                     takeBackOptimisticSend(cacheKey, recipientHexPubkey, optimisticId)
                     throw e
                 }
+                setSendState(cacheKey, recipientHexPubkey, optimisticId, DMSendState.FAILED, e.message ?: "It didn't go out.")
             }
         }
     }
 
     internal suspend fun DMService.sendNIP04DM(content: String, recipientHexPubkey: String) {
         val generation = switchGeneration
+        val cacheKey = loadedCacheKey
 
         withContext(Dispatchers.IO) {
             var publishing = false
+            var publishedId: String? = null
             try {
                 val encrypted = when (dmCryptoMode()) {
                     DMCrypto.AMBER -> amberSignerService.nip04Encrypt(content, recipientHexPubkey)
@@ -205,6 +196,7 @@ import com.nostrvault.service.DMService.Companion.TAG
 
                 if (switchGeneration != generation) throw DMAccountSwitchedException()
                 publishing = true
+                publishedId = event.id
 
                 // Optimistic UI
                 val message = DMMessage(
@@ -214,38 +206,28 @@ import com.nostrvault.service.DMService.Companion.TAG
                     senderPubkey = event.pubkey,
                     isFromMe = true,
                     isNIP04 = true,
+                    sendState = DMSendState.SENDING,
+                    resendText = content,
                 )
                 withContext(Dispatchers.Main.immediate) {
                     addMessageToConversation(recipientHexPubkey, message)
                 }
 
-                // Publish to local relay
+                // Their relays first; the vault and your own relays (a kind 4 has
+                // no self-copy, so your other devices read it there) once one of
+                // theirs took it (dm/DMDelivery.kt).
                 val eventJson = serializeEvent(event)
-                val config = configStore.config.value
-                config.localInboxURL?.let {
-                    nip04Client?.send("[\"EVENT\",$eventJson]")
-                }
-
-                // Fire-and-forget to recipient's relays
                 val recipientRelays = fetchRecipientDMRelays(recipientHexPubkey)
-                for (relayUrl in recipientRelays) {
-                    fireAndForgetPublish(eventJson, relayUrl)
-                }
-
-                // Also publish to our OWN relays so other devices on this account can
-                // fetch the message we just sent. A kind-4 event carries no self-copy,
-                // so without this the sent message is stranded on the local relay.
-                val ownHexPubkey = nostrService.activeHexPubkey
-                val ownRelays = fetchRecipientDMRelays(ownHexPubkey)
-                for (relayUrl in ownRelays) {
-                    if (relayUrl in recipientRelays) continue
-                    fireAndForgetPublish(eventJson, relayUrl)
+                val ownRelays = fetchRecipientDMRelays(nostrService.activeHexPubkey)
+                scope.launch {
+                    deliverNIP04(cacheKey, recipientHexPubkey, event.id, eventJson, recipientRelays, ownRelays)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "NIP-04 send failed: ${e.message}")
                 if (!publishing) throw e
+                setSendState(cacheKey, recipientHexPubkey, publishedId ?: return@withContext, DMSendState.FAILED, e.message ?: "It didn't go out.")
             }
         }
     }

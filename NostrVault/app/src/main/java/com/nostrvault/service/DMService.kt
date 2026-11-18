@@ -236,6 +236,20 @@ class DMService @Inject constructor(
     internal val externalFetchRunning = java.util.concurrent.atomic.AtomicBoolean(false)
     internal var hasStarted = false
     internal var saveJob: Job? = null
+
+    /**
+     * Publishes one DM event to one relay and answers "accepted" or why not
+     * (dm/DMDelivery.kt). A sender answers NIP-42 AUTH; null sends without it.
+     * Tests replace it.
+     */
+    internal var publishDM: suspend (eventJson: String, relayUrl: String, senderHex: String?) -> String =
+        { eventJson, relayUrl, senderHex ->
+            if (senderHex != null) publishAuthenticatedResult(eventJson, relayUrl, senderHex)
+            else publishAwaitOk(eventJson, relayUrl)
+        }
+
+    /** Try again for each "Not sent" message still in memory: the same signed copy, published again. */
+    internal val sendRetries = java.util.concurrent.ConcurrentHashMap<String, suspend () -> Unit>()
     internal var pendingSaveJob: Job? = null
     /** The last account switch's save of the old inbox (see takeBackOptimisticSend). */
     internal var switchSaveJob: Job? = null
@@ -382,7 +396,8 @@ class DMService @Inject constructor(
      * Sends a DM. Throws when the message could not be built (no key, a
      * signer that refused, encryption failed) so the screen can show iOS's
      * "Failed to Send" alert and hand the text back; nothing was published
-     * then. Once publishing starts, relay failures are only logged.
+     * then. Once it is built it returns, and the bubble shows "Sending…" until
+     * one of their relays takes it, or "Not sent" with Try again (dm/DMDelivery.kt).
      *
      * The send runs on this service's scope, not the caller's: leaving the
      * thread mid-send used to cancel it after your own copy went out but

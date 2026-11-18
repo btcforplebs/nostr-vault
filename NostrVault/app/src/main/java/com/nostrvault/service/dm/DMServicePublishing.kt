@@ -79,9 +79,17 @@ import com.nostrvault.service.DMService.Companion.TAG
      * resending before the AUTH is accepted can lose the race.)
      */
     internal fun DMService.publishAuthenticated(eventJson: String, relayUrl: String, senderHex: String) {
-        val eventId = runCatching { json.parseToJsonElement(eventJson).jsonObject["id"]?.jsonPrimitive?.contentOrNull }.getOrNull() ?: return
-        scope.launch(Dispatchers.IO) {
-            val client = WebSocketClient(url = relayUrl, scope = this, autoReconnect = false)
+        scope.launch { publishAuthenticatedResult(eventJson, relayUrl, senderHex) }
+    }
+
+    /** [publishAuthenticated], waiting for the relay: "accepted", or why it didn't take it. */
+    internal suspend fun DMService.publishAuthenticatedResult(eventJson: String, relayUrl: String, senderHex: String): String {
+        val eventId = runCatching { json.parseToJsonElement(eventJson).jsonObject["id"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+            ?: return "not an event"
+        return withContext(Dispatchers.IO) {
+            // Its own scope, ended below: a caller waits on this, and must not on a socket job.
+            val clientScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+            val client = WebSocketClient(url = relayUrl, scope = clientScope, autoReconnect = false)
             val result = try {
                 withTimeoutOrNull(15_000) {
                     val outcome = CompletableDeferred<String>()
@@ -140,8 +148,10 @@ import com.nostrvault.service.DMService.Companion.TAG
                 "failed: ${e.message}"
             } finally {
                 client.disconnect()
+                clientScope.cancel()
             }
             Log.d(TAG, "DM wrap ${eventId.take(8)} -> $relayUrl: $result")
+            result
         }
     }
 
@@ -152,9 +162,17 @@ import com.nostrvault.service.DMService.Companion.TAG
      * (measured 2026-10-25: 0 of 4 kept it, 4 of 4 when the OK was awaited).
      */
     internal fun DMService.fireAndForgetPublish(eventJson: String, relayUrl: String) {
-        val eventId = runCatching { json.parseToJsonElement(eventJson).jsonObject["id"]?.jsonPrimitive?.contentOrNull }.getOrNull() ?: return
-        scope.launch(Dispatchers.IO) {
-            val client = WebSocketClient(url = relayUrl, scope = this, autoReconnect = false)
+        scope.launch { publishAwaitOk(eventJson, relayUrl) }
+    }
+
+    /** [fireAndForgetPublish], waiting for the relay: "accepted", or why it didn't take it. */
+    internal suspend fun DMService.publishAwaitOk(eventJson: String, relayUrl: String): String {
+        val eventId = runCatching { json.parseToJsonElement(eventJson).jsonObject["id"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+            ?: return "not an event"
+        return withContext(Dispatchers.IO) {
+            // Its own scope, ended below: a caller waits on this, and must not on a socket job.
+            val clientScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+            val client = WebSocketClient(url = relayUrl, scope = clientScope, autoReconnect = false)
             val result = try {
                 withTimeoutOrNull(10_000) {
                     coroutineScope {
@@ -184,8 +202,10 @@ import com.nostrvault.service.DMService.Companion.TAG
                 "failed: ${e.message}"
             } finally {
                 client.disconnect()
+                clientScope.cancel()
             }
             if (result != "accepted") Log.w(TAG, "DM send ${eventId.take(8)} -> $relayUrl: $result")
+            result
         }
     }
 
