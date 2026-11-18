@@ -90,3 +90,66 @@ test("a dropped socket fails its query and the next query opens a new one", asyn
   assert.equal(opened, 2)
   closeAll(Dropping)
 })
+
+test("a failed query says why: a relay's CLOSED message, or a timeout", async () => {
+  class Closing {
+    constructor() { setTimeout(() => this.onopen?.(), 0) }
+    send(text) { const [type, sub] = JSON.parse(text); if (type === "REQ") setTimeout(() => this.onmessage?.({ data: JSON.stringify(["CLOSED", sub, "rate-limited: slow down"]) }), 0) }
+    close() {}
+  }
+  const closed = await query("wss://c", {}, { WebSocketImpl: Closing })
+  assert.equal(closed.why, "CLOSED rate-limited: slow down")
+  const res = await queryRelays(["wss://c"], {}, { WebSocketImpl: Closing })
+  assert.deepEqual(res.why, { "wss://c": "CLOSED rate-limited: slow down" })
+  closeAll(Closing)
+  const { FakeSocket } = fakeRelay(notes(1), { eose: false })
+  assert.equal((await query("wss://t", {}, { WebSocketImpl: FakeSocket, timeoutMs: 20 })).why, "timeout")
+  closeAll(FakeSocket)
+})
+
+test("a page whose socket drops is asked once more on a fresh socket", async () => {
+  let opened = 0
+  const all = notes(3)
+  class DropFirst {
+    constructor() { this.n = ++opened; setTimeout(() => this.onopen?.(), 0) }
+    send(text) {
+      const [type, sub, f] = JSON.parse(text)
+      if (type !== "REQ") return
+      // The first socket dies before answering; the second answers in full.
+      if (this.n === 1) return setTimeout(() => this.onclose?.(), 0)
+      const hits = all.filter(n => !f.until || n.created_at <= f.until)
+      setTimeout(() => { for (const n of hits) this.onmessage?.({ data: JSON.stringify(["EVENT", sub, n]) }); this.onmessage?.({ data: JSON.stringify(["EOSE", sub]) }) }, 0)
+    }
+    close() {}
+  }
+  const res = await queryPaged("wss://d", { kinds: [1] }, { WebSocketImpl: DropFirst, pageSize: 10 })
+  assert.equal(res.ok, true)
+  assert.equal(res.events.length, 3)
+  assert.equal(opened, 2)
+  closeAll(DropFirst)
+  opened = 0
+  const noRetry = await queryPaged("wss://e", { kinds: [1] }, { WebSocketImpl: DropFirst, pageSize: 10, retry: false })
+  assert.equal(noRetry.ok, false, "positive control: without the retry the drop loses the page")
+  closeAll(DropFirst)
+})
+
+test("a relay that can't be reached is skipped after 3 failed connects, and closeAll forgets that", async () => {
+  let tries = 0
+  class Down { constructor() { tries++; setTimeout(() => this.onerror?.(), 0) } send() {} close() {} }
+  const whys = []
+  for (let i = 0; i < 5; i++) whys.push((await query("wss://down", {}, { WebSocketImpl: Down })).why)
+  assert.equal(tries, 3)
+  assert.deepEqual(whys, ["could not connect", "could not connect", "could not connect", "skipped: could not connect 3 times", "skipped: could not connect 3 times"])
+  closeAll(Down)
+  await query("wss://down", {}, { WebSocketImpl: Down })
+  assert.equal(tries, 4)
+})
+
+test("a connect failure is not retried as a page (it would only wait twice)", async () => {
+  let tries = 0
+  class Down { constructor() { tries++; setTimeout(() => this.onerror?.(), 0) } send() {} close() {} }
+  const res = await queryPaged("wss://down2", { kinds: [1] }, { WebSocketImpl: Down })
+  assert.equal(res.ok, false)
+  assert.equal(tries, 1)
+  closeAll(Down)
+})
