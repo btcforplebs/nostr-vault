@@ -152,7 +152,11 @@ test("no panel left polling on its own timer, past visibility", () => {
     const src = readFileSync(join(SRC, f), "utf8")
     assert.ok(!/\bsetInterval\(/.test(src), `${f} ticks on a bare timer; use lookInFront (components/auto-look.js)`)
   }
-  for (const f of ["desktop/space/LiveNow.jsx", "screens/SearchLiveNow.jsx", "desktop/space/MyDevices.jsx", "components/dashboard/YourDevicesSection.jsx", "components/VaultButton.jsx", "desktop/Sidebar.jsx", "desktop/space/useVaultLines.js"])
+  for (const f of ["desktop/space/LiveNow.jsx", "screens/SearchLiveNow.jsx", "desktop/space/MyDevices.jsx", "components/dashboard/YourDevicesSection.jsx", "components/VaultButton.jsx", "desktop/space/useVaultLines.js"])
     assert.match(readFileSync(join(SRC, f), "utf8"), /lookInFront\(/, f)
+  // The rail's foot no longer recounts the vault on a timer: each count walked and decoded every matching record, 8.9 s
+  // of main thread per idle 10 s on the desktop (perf review 2026-11-18). The Vault Dashboard has the counts.
+  const side = readFileSync(join(SRC, "desktop/Sidebar.jsx"), "utf8")
+  assert.doesNotMatch(side, /lookInFront\(|\.count\(/, "desktop/Sidebar.jsx: no polled event count")
   assert.match(readFileSync(join(SRC, "desktop/space/WotMini.jsx"), "utf8"), /onListsProgress\(/, "the web's loading line moves with the download, not a 1 s scan")
 })

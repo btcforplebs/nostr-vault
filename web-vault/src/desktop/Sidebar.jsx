@@ -8,7 +8,6 @@ import { useEffect, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
 import { useProfile } from "../components/useProfile.js"
-import { lookInFront } from "../components/auto-look.js"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { badgeCount, useUnreadTotal } from "../components/useUnreadTotal.js"
 import { useVaultUnread } from "../components/useVaultUnread.js"
@@ -67,7 +66,7 @@ export function Sidebar({ ctx, side, rail }) {
       <span class="side-gap" aria-hidden="true" />
       {row("settings", "Settings", "g ,")}
       <HelpRows rail={rail} />
-      <RelayFoot ctx={ctx} rail={rail} />
+      <RelayFoot rail={rail} />
     </nav>
   )
 }
@@ -150,37 +149,26 @@ const SwitchName = ({ account }) => {
   return <span class="side-switch-name">{p?.display_name || p?.name || npubEncode(account.pubkey).slice(0, 12) + "…"}</span>
 }
 
-/** The in-page relay's status and event count; Restart reloads the page, which restarts the relay. */
-function RelayFoot({ ctx, rail }) {
-  const { vault, session } = ctx
-  const [count, setCount] = useState(null)
+/**
+ * The in-page relay's status; Restart reloads the page, which restarts the relay. No event count here: Haven's count
+ * walks and decodes every matching record (no native IDB count), and the footer recounting every 15 s kept the main
+ * thread busy 8.9 s of every 10 s on an idle desktop (perf review 2026-11-18). The Vault Dashboard has the counts.
+ */
+function RelayFoot({ rail }) {
   const [online, setOnline] = useState(navigator.onLine)
-  const follows = useRef(ctx.account.follows)
-  follows.current = ctx.account.follows
   useEffect(() => {
-    let live = true
-    const tick = async () => {
-      const [own, feed] = await Promise.all([
-        vault.outbox.count({ authors: [session.pubkey] }).catch(() => 0),
-        follows.current.length ? vault.feed.count({ kinds: [1, 6], authors: follows.current }).catch(() => 0) : 0,
-      ])
-      if (live) setCount((Number(own) || 0) + (Number(feed) || 0))
-    }
-    tick()
-    const stop = lookInFront(tick, { every: 15_000 })
     const net = () => setOnline(navigator.onLine)
     addEventListener("online", net); addEventListener("offline", net)
-    return () => { live = false; stop(); removeEventListener("online", net); removeEventListener("offline", net) }
+    return () => { removeEventListener("online", net); removeEventListener("offline", net) }
   }, [])
   const state = online ? "Running" : "Running · offline"
   return (
     <div class="side-foot">
-      <a class="side-relay" href="#/relay" title={rail ? `Vault: ${state}${count != null ? ` · ${count.toLocaleString()} events` : ""}` : "Vault Dashboard"} aria-label={`Vault ${state}`}>
+      <a class="side-relay" href="#/relay" title={rail ? `Vault: ${state}` : "Vault Dashboard"} aria-label={`Vault ${state}`}>
         <span class={online ? "dot on" : "dot booting"} />
         <span class="side-label">{state}</span>
       </a>
       <div class="side-label side-relay-row">
-        <span class="muted small">{count == null ? "…" : `${count.toLocaleString()} events`}</span>
         <button type="button" class="small side-restart" title="Reload the page, which restarts your vault" onClick={() => location.reload()}>Restart</button>
       </div>
     </div>
