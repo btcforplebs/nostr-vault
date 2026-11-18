@@ -3,7 +3,7 @@
 // says how many of your servers hold it. A tile opens the file with Copy link, the servers that hold it, the notes on your
 // vault that use it ("Posted in N notes", net/media-notes.js: the phone's swipe up), Copy to the servers missing
 // it, and Delete from mirrors (every media server, any other that listed it and the server in its link, after asking). "In your notes" keeps the pictures your notes carry.
-import { useEffect, useRef, useState } from "preact/hooks"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { emptyMediaReason } from "../net/media-empty-reason.js"
 import { mediaServers } from "../net/upload.js"
@@ -18,6 +18,7 @@ import { Avatar } from "../components/Avatar.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { ago } from "../components/time.js"
 import { vaultNotesUsing, notePreview } from "../net/media-notes.js"
+import { clampAspect, columnsFor, deal, learnShape, shapeOf, shapesNow } from "../net/media-mosaic.js"
 if (import.meta.env) import("../styles/blossom.css")
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
@@ -98,6 +99,18 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
     const onChange = (tiles, state) => { setNoteTiles(tiles); setEmojiOnly(state?.emojiOnly() ?? new Set()) }
     return watchFileNotes({ haven: vault.haven, owner: me, auth: challenge => sealMeshAuth({ challenge }), onChange })
   }, [me, vault])
+  // The mosaic (net/media-mosaic.js): shapes learned before this visit, read once, and columns from the width.
+  const shapes = useMemo(() => shapesNow(), [])
+  const [box, setBox] = useState(null) // the page's element once drawn (a callback ref: it comes after the loading state)
+  const [columns, setColumns] = useState(3)
+  useLayoutEffect(() => {
+    if (!box) return
+    const fit = () => setColumns(columnsFor(box.clientWidth))
+    fit()
+    const watch = typeof ResizeObserver === "function" ? new ResizeObserver(fit) : null
+    watch?.observe(box)
+    return () => watch?.disconnect()
+  }, [box])
   // Uploads, deletes and copies change the list on screen; the kept one follows (its age doesn't).
   useEffect(() => { if (found?.done) shown.set(me, { servers, found, at: shown.get(me)?.at ?? Date.now() }) }, [found])
 
@@ -115,7 +128,7 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
     setFound(x => ({ ...x, blobs: f(note && !x.blobs.some(b => b.sha256 === sha) ? [note, ...x.blobs] : x.blobs) }))
   }
   return (
-    <div class="blossom">
+    <div class="blossom" ref={setBox}>
       <BlossomStats blobs={found.blobs} servers={servers} status={found.status} pending={!found.done} />
       <BlossomUpload ctx={ctx} servers={servers} onAdded={added => setFound(x => ({ ...x, blobs: [...added, ...x.blobs.filter(b => !added.some(a => a.sha256 === b.sha256))] }))} />
       {note && <div class="status-line">{note}</div>}
@@ -131,21 +144,32 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
         : groups.map(g => (
         <section key={g.day || "all"}>
           {g.day && <div class="section-label blossom-day">{g.day}</div>}
-          <div class="vault-grid">
-            {g.blobs.map(b => (
-              <button key={b.sha256} class="vault-thumb blossom-tile" onClick={() => setOpen(b.sha256)} aria-label={`${isAudio(b) ? "audio" : b.kind}${g.day ? ` uploaded ${g.day}` : ""}`}>
-                <Thumb blob={b} />
-                {b.kind === "video" && <span class="blossom-play" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M8 5.5v13l11-6.5z" fill="currentColor" /></svg></span>}
-                {b.fromNote ? <span class="blossom-badge" title="Just added from one of your devices">New</span>
-                  : servers.length > 0 && <span class="blossom-badge" title={b.servers.length < servers.length ? "Not on every server" : "On every server"}>{b.servers.length}/{servers.length}</span>}
-              </button>
-            ))}
-          </div>
+          <Mosaic blobs={g.blobs} columns={columns} shapes={shapes} tile={(b, aspect) => (
+            <button key={b.sha256} class="vault-thumb blossom-tile" style={{ aspectRatio: String(aspect) }} onClick={() => setOpen(b.sha256)} aria-label={`${isAudio(b) ? "audio" : b.kind}${g.day ? ` uploaded ${g.day}` : ""}`}
+              onLoadCapture={e => learnShape(b.sha256, e.target.naturalWidth, e.target.naturalHeight)}
+              onLoadedMetadataCapture={e => learnShape(b.sha256, e.target.videoWidth, e.target.videoHeight)}>
+              <Thumb blob={b} />
+              {b.kind === "video" && <span class="blossom-play" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M8 5.5v13l11-6.5z" fill="currentColor" /></svg></span>}
+              {b.fromNote ? <span class="blossom-badge" title="Just added from one of your devices">New</span>
+                : servers.length > 0 && <span class="blossom-badge" title={b.servers.length < servers.length ? "Not on every server" : "On every server"}>{b.servers.length}/{servers.length}</span>}
+            </button>
+          )} />
         </section>
       ))}
       {current && <Viewer ctx={ctx} blob={current} servers={servers} order={order} onStep={setOpen} onClose={() => setOpen(null)}
         onDeleted={msg => { update(current.sha256, l => l.filter(b => b.sha256 !== current.sha256)); setOpen(null); setNote(msg) }}
         onMirrored={held => update(current.sha256, l => l.map(b => b.sha256 === current.sha256 ? { ...b, servers: held } : b))} />}
+    </div>
+  )
+}
+
+/** One section as a mosaic: `columns` columns, each tile as tall as its file's known shape (square when unknown, or
+ *  for a file that isn't a picture or video), so a tile never changes size when its picture loads. */
+function Mosaic({ blobs, columns, shapes, tile }) {
+  const aspectOf = b => (b.kind === "other" ? 1 : shapeOf(b, shapes))
+  return (
+    <div class="vault-grid mosaic">
+      {deal(blobs, columns, aspectOf).map((col, i) => <div key={i} class="mosaic-col">{col.map(b => tile(b, clampAspect(aspectOf(b))))}</div>)}
     </div>
   )
 }

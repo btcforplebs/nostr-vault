@@ -16,6 +16,7 @@ export const isHex64 = s => typeof s === "string" && HEX64.test(s)
 const strTags = ev => (Array.isArray(ev?.tags) ? ev.tags : []).map(t => (Array.isArray(t) ? t.filter(v => typeof v === "string") : []))
 const all = (tags, name) => tags.filter(t => t.length >= 2 && t[0] === name).map(t => t[1])
 const first = (tags, name) => all(tags, name)[0]
+const DIM = /^\d{1,6}x\d{1,6}$/
 const createdAt = ev => (Number.isFinite(ev?.created_at) ? Math.trunc(ev.created_at) : 0)
 const httpsLink = u => {
   if (!u.toLowerCase().startsWith("https://")) return false
@@ -35,7 +36,8 @@ export function parseFileNote(ev) {
   const ps = all(t, "p")
   if (ps.length !== 1 || !isHex64(ps[0])) return null
   const urls = [...all(t, "url"), ...all(t, "fallback")].filter(httpsLink)
-  return { id: ev.id, signer: ev.pubkey, createdAt: createdAt(ev), sha256: x, mime: m, size: size || 0, owner: ps[0], urls }
+  const dim = first(t, "dim") // NIP-94 "1920x1080": Media sizes the tile before the picture loads (media-mosaic.js)
+  return { id: ev.id, signer: ev.pubkey, createdAt: createdAt(ev), sha256: x, mime: m, size: size || 0, owner: ps[0], urls, ...(DIM.test(dim ?? "") ? { dim } : {}) }
 }
 
 /** A kind 5 on /files: it names the notes it deletes, says k 1063, and the hash it is about. Null otherwise. */
@@ -124,14 +126,15 @@ export class FileNotesState {
   }
 
   /** One tile per hash, newest first: { sha256, mime, size, createdAt: newest note's, urls: every live note's links,
-   *  newest note first, each once }. */
+   *  newest note first, each once, and dim when a note gave one }. */
   tiles() {
     const byHash = new Map()
     for (const n of this.notes.values()) byHash.set(n.sha256, [...(byHash.get(n.sha256) ?? []), n])
     const newestFirst = (a, b) => (a.createdAt !== b.createdAt ? b.createdAt - a.createdAt : a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
     return [...byHash].map(([sha256, group]) => {
       const ordered = group.sort(newestFirst)
-      return { sha256, mime: ordered[0].mime, size: ordered[0].size, createdAt: ordered[0].createdAt, urls: [...new Set(ordered.flatMap(n => n.urls))] }
+      const dim = ordered.find(n => n.dim)?.dim
+      return { sha256, mime: ordered[0].mime, size: ordered[0].size, createdAt: ordered[0].createdAt, urls: [...new Set(ordered.flatMap(n => n.urls))], ...(dim ? { dim } : {}) }
     }).sort((a, b) => (a.createdAt !== b.createdAt ? b.createdAt - a.createdAt : a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0))
   }
 

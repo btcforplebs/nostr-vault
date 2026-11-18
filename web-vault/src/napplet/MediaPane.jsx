@@ -27,7 +27,7 @@ export const postedRows = (notes, profile = getProfile) => notes.slice(0, MAX_PO
   return { id: ev.id, pubkey: ev.pubkey, createdAt: ev.created_at, name: String(p?.display_name || p?.name || "").slice(0, 80), preview: notePreview(ev.content).slice(0, 160) }
 })
 /** file-notes-live.js tiles -> the napplet's rows (its withNoteTiles merges them as the classic mergeNoteTiles). */
-export const tileRows = tiles => tiles.filter(t => t?.urls?.length).map(t => ({ sha256: t.sha256, url: t.urls[0], type: t.mime, size: t.size, uploaded: t.createdAt }))
+export const tileRows = tiles => tiles.filter(t => t?.urls?.length).map(t => ({ sha256: t.sha256, url: t.urls[0], type: t.mime, size: t.size, uploaded: t.createdAt, ...(t.dim ? { dim: t.dim } : {}) }))
 
 export function MediaPane({ ctx, filter = "all" }) {
   const host = useRef(null)

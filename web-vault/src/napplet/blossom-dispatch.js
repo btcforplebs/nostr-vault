@@ -50,7 +50,8 @@ export function blossomHandler({ grant, who, deps }) {
         const got = await deps.list(server, deps.pubkey)
         const st = got.status?.[server]
         if (st && st !== "ok") return reply(m, { ...fail(502, st), blobs: [] })
-        return reply(m, { ok: true, status: 200, blobs: (got.blobs ?? []).map(b => ({ url: b.url, sha256: b.sha256, size: b.size, type: b.type, uploaded: b.uploaded })) })
+        // `dim` (the server's NIP-94 "1920x1080", blossom-gallery.js nip94Dim) sizes the napplet's mosaic tile.
+        return reply(m, { ok: true, status: 200, blobs: (got.blobs ?? []).map(b => ({ url: b.url, sha256: b.sha256, size: b.size, type: b.type, uploaded: b.uploaded, ...(/^\d{1,6}x\d{1,6}$/.test(b.dim ?? "") ? { dim: b.dim } : {}) })) })
       }
       case "blossom.mirror": {
         const server = await own(r.server)

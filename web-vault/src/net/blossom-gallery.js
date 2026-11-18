@@ -42,8 +42,11 @@ export function mediaType(blob) {
 export function mergeNoteTiles(blobs, tiles) {
   const listed = new Set(blobs.map(b => b.sha256))
   const added = tiles.filter(t => !listed.has(t.sha256) && t.urls.length)
-    .map(t => ({ sha256: t.sha256, url: t.urls[0], type: t.mime, size: t.size, uploaded: t.createdAt, kind: mediaType({ type: t.mime, url: t.urls[0] }), servers: [], fromNote: true }))
-  return added.length ? [...added, ...blobs].sort((a, b) => b.uploaded - a.uploaded) : blobs
+    .map(t => ({ sha256: t.sha256, url: t.urls[0], type: t.mime, size: t.size, uploaded: t.createdAt, kind: mediaType({ type: t.mime, url: t.urls[0] }), servers: [], fromNote: true, ...(t.dim ? { dim: t.dim } : {}) }))
+  // A listed file without a size of its own takes its note's (Media's mosaic sizes the tile from it).
+  const dims = new Map(tiles.filter(t => t.dim).map(t => [t.sha256, t.dim]))
+  const sized = dims.size ? blobs.map(b => (!b.dim && dims.has(b.sha256) ? { ...b, dim: dims.get(b.sha256) } : b)) : blobs
+  return added.length ? [...added, ...sized].sort((a, b) => b.uploaded - a.uploaded) : sized
 }
 
 /** Media without the saved emoji images (`hidden`: FileNotesState.emojiOnly(), every note for them an emoji note):
@@ -76,13 +79,20 @@ const noteNeedsAuth = server => {
 /** For tests: forget what was learned. */
 export const resetListAuth = () => { needsAuth = new Set(); listAuths.clear() }
 
+/** A descriptor's NIP-94 `dim` (BUD-08: `nip94` is a list of tags; some servers send an object), or undefined. */
+export function nip94Dim(nip94) {
+  const v = Array.isArray(nip94) ? nip94.find(t => Array.isArray(t) && t[0] === "dim")?.[1] : nip94?.dim
+  return typeof v === "string" && /^\d{1,6}x\d{1,6}$/.test(v) ? v : undefined
+}
+
 /** Lists merged by hash, newest first: [{ server, ...descriptor }] -> [{ sha256, url, type, size, uploaded, kind, servers }]. */
 function merge(lists) {
   const by = new Map()
   for (const b of lists.flat()) {
     const have = by.get(b.sha256)
     if (have) { if (!have.servers.includes(b.server)) have.servers.push(b.server); continue }
-    by.set(b.sha256, { sha256: b.sha256, url: b.url, type: b.type ?? "", size: Number(b.size) || 0, uploaded: Number(b.uploaded) || 0, servers: [b.server] })
+    const dim = nip94Dim(b.nip94)
+    by.set(b.sha256, { sha256: b.sha256, url: b.url, type: b.type ?? "", size: Number(b.size) || 0, uploaded: Number(b.uploaded) || 0, servers: [b.server], ...(dim ? { dim } : {}) })
   }
   return [...by.values()].map(b => ({ ...b, kind: mediaType(b) })).sort((a, b) => b.uploaded - a.uploaded)
 }
