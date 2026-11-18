@@ -242,4 +242,27 @@ class DMDeliveryTest {
         advanceUntilIdle()
         assertEquals(DMSendState.FAILED, mine().sendState)
     }
+
+    @Test
+    fun `a resend of the words leaves the old bubble Not sent, so the dedup can't swallow it`() = runTest(dispatcher) {
+        service.setSendState(null, them, id, DMSendState.FAILED, INTERRUPTED_SEND)
+        advanceUntilIdle()
+        val seen = Collections.synchronizedList(mutableListOf<DMSendState?>())
+        val watch = launch {
+            service._conversations.collect { c ->
+                c.firstOrNull { it.id == them }?.messages?.firstOrNull { it.id == id }?.let { seen += it.sendState }
+            }
+        }
+        service.retrySend(them, id)
+        var waited = 0
+        advanceUntilIdle()
+        while (service.resendingIds.contains(id) && waited++ < 300) {
+            Thread.sleep(10)
+            advanceUntilIdle()
+        }
+        advanceUntilIdle()
+        watch.cancel()
+        assertFalse("old bubble went Sending during the resend: $seen", DMSendState.SENDING in seen)
+        assertFalse(service.resendingIds.contains(id))
+    }
 }

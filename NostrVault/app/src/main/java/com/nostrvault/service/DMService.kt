@@ -250,6 +250,9 @@ class DMService @Inject constructor(
 
     /** Try again for each "Not sent" message still in memory: the same signed copy, published again. */
     internal val sendRetries = java.util.concurrent.ConcurrentHashMap<String, suspend () -> Unit>()
+
+    /** "Not sent" messages whose words are being sent again right now (DMDelivery.retrySend). */
+    internal val resendingIds: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     internal var pendingSaveJob: Job? = null
     /** The last account switch's save of the old inbox (see takeBackOptimisticSend). */
     internal var switchSaveJob: Job? = null
