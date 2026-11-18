@@ -260,3 +260,34 @@ test("messages napplet: a locked video link is a video; previews say Video", asy
   assert.equal(box.previewOf(video), "Video")
   assert.equal(box.previewOf(photo), "Photo")
 })
+
+
+// A3 + A4 (Messages UX check 2026-11-18): the napplet's chat follows new messages to the bottom only while you are
+// there (or for your own), reuses bubbles across draws (Older messages doesn't rebuild the list), and a message
+// landing in the chat on screen is marked read through the newest page (which the shell marks read).
+test("messages napplet: follows the end only at the bottom or for your own; reads what lands in the open chat", async () => {
+  const html = fs.readFileSync(new URL("../napplets/messages/index.html", import.meta.url), "utf8")
+  const box = {}
+  vm.runInNewContext(`${html.slice(html.indexOf("// ---- pure"), html.indexOf("// ---- end pure ----"))}\n;Object.assign(box, { followsEnd, readsOnArrival, bubbleKey })`, { box, Date })
+  assert.equal(box.followsEnd(true, false), true)
+  assert.equal(box.followsEnd(false, true), true, "your own")
+  assert.equal(box.followsEnd(false, false), false, "reading older ones: stays")
+  assert.equal(box.readsOnArrival(ANN, { conversationId: ANN }, false), true)
+  assert.equal(box.readsOnArrival(ANN, { conversationId: EVE }, false), false, "another chat")
+  assert.equal(box.readsOnArrival(ANN, { conversationId: ANN }, true), false, "page hidden")
+  assert.equal(box.readsOnArrival(null, { conversationId: ANN }, false), false, "inbox")
+  const m = { id: "x", status: null }
+  assert.equal(box.bubbleKey(m, true), box.bubbleKey({ ...m }, true), "same message, same bubble")
+  assert.notEqual(box.bubbleKey(m, true), box.bubbleKey({ ...m, status: "failed" }, true), "a changed status redraws it")
+  assert.match(html, /if \(open && m\.conversationId === open\) \{ const follow = followsEnd\(atEnd\(\), m\.senderPubkey === me\)/)
+  assert.match(html, /if \(readsOnArrival\(open, m, document\.hidden\)\) markOpenRead\(\)/)
+  assert.match(html, /n\.dm\.messages\(\{ conversationId: open, limit: 1 \}\)/)
+  assert.doesNotMatch(html, /drawThread\(true\) \}\n    clearTimeout/, "an arriving message no longer always pulls to the bottom")
+})
+
+test("dm: asking for the newest page again marks it read again (what the napplet does when a message lands)", async () => {
+  const { ask, calls } = rig()
+  await ask("dm.messages", { conversationId: ANN, limit: 50 })
+  await ask("dm.messages", { conversationId: ANN, limit: 1 })
+  assert.equal(calls.read.length, 2)
+})

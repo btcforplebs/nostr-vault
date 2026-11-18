@@ -29,7 +29,7 @@ test("inbox row as the iPhone's: unread dot on the face, accent time, count only
 
 test("their bubbles carry their face (DMThreadView), and a stranger's picture still waits", () => {
   const conv = readFileSync(new URL("../src/screens/ConversationScreen.jsx", import.meta.url), "utf8")
-  assert.match(conv, /<div key=\{m\.id\} class="dm-line"><span class="dm-face"><Avatar pubkey=\{peer\} size=\{28\} load=\{follows\} \/><\/span>\{bubble\}<\/div>/)
+  assert.match(conv, /<div key=\{m\.id\} data-id=\{m\.id\} class="dm-line"><span class="dm-face"><Avatar pubkey=\{peer\} size=\{28\} load=\{follows\} \/><\/span>\{bubble\}<\/div>/)
   assert.match(conv, /return m\.from === me \? bubble :/, "your own bubbles have no face")
   assert.match(conv, /const follows = ctx\.account\.follows\.includes\(peer\)/)
 })
