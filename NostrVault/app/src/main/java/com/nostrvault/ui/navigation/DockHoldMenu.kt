@@ -309,6 +309,8 @@ data class DockHoldRow(
     val subtitle: String? = null,
     /** A thin line under this row, as drawn: ends a group (the account menu's settings, above the accounts). */
     val dividerBelow: Boolean = false,
+    /** A count after the name, in a red pill (Messages' unread, "99+"). */
+    val badge: String? = null,
 )
 
 /**
@@ -501,6 +503,16 @@ internal fun DockHoldMenuRow(
             spec.subtitle?.let {
                 Text(it, color = tint.copy(alpha = 0.7f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+        }
+        spec.badge?.let {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                it,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.background(ErrorRed, CircleShape).padding(horizontal = 6.dp, vertical = 1.dp),
+            )
         }
         if (spec.current) {
             Spacer(Modifier.width(16.dp))
