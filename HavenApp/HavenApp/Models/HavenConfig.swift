@@ -85,8 +85,7 @@ struct HavenConfig: Codable, Equatable {
     var feedReach: [String: String] = [:]
     /// Feeds › "Show 'Outside your web' under posts" (Logen 2026-11-18). Off:
     /// a post shows no fold row for replies and quotes from outside your
-    /// web, and a feed no "N notes from outside your web" row. They stay
-    /// in Vault › ··· › Outside your web.
+    /// web. They stay in Vault › ··· › Outside your web.
     var showsOutsideUnderPosts: Bool = true
 
     // Mac relay (iOS only)

@@ -139,22 +139,4 @@ final class FeedGateTests: XCTestCase {
         XCTAssertEqual(run([repost], .following), ["r"], "positive control: shown without the mute")
         XCTAssertEqual(run([repost], .following, gate: gate(mutes: muted)), [], "the post a repost shows")
     }
-
-    // MARK: - The fold
-
-    func testOutsideMentionsAreStrangersTaggingYou() {
-        let notMine = note("n", by: stranger)
-        let blockedSpam = note("bs", by: hop, replyTo: myPost, tags: [["p", me]])
-        let inWeb = note("iw", by: webbie, replyTo: myPost, tags: [["p", me]])
-        let later = note("later", by: stranger, tags: [["p", me.uppercased()]], at: 60)
-        let folded = FeedFilterEngine.outsideMentions(notes: [spam, notMine, blockedSpam, inWeb, later, spam],
-                                                      gate: gate(blocked: [hop]), owner: me)
-        XCTAssertEqual(folded.map(\.id), ["later", "spam"], "newest first, once each, none blocked or in the web")
-    }
-
-    func testHop3MentionFoldsToo() {
-        let hopReply = note("h", by: hop, replyTo: myPost, tags: [["p", me]])
-        XCTAssertEqual(FeedFilterEngine.outsideMentions(notes: [hopReply], gate: gate(), owner: me).map(\.id), ["h"],
-                       "hop 3 is outside wherever the surface does not reach it")
-    }
 }
