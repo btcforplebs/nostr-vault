@@ -9,6 +9,7 @@ import { isBlockedNote, visibleReplies } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { useWebTrust } from "../components/useWebTrust.js"
 import { splitOutside } from "../net/web-trust.js"
+import { useShowsOutside } from "../components/OutsideFold.jsx"
 import { ArticleReader } from "../readers/ArticlesScreen.jsx"
 import { SkeletonRows } from "../components/FeedExtras.jsx"
 import { compose, myReaction, onActionState } from "../net/actions.js"
@@ -57,6 +58,7 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
   const extra = useRef([])
   const { blocked } = useBlocks(ctx)
   const web = useWebTrust(ctx)
+  const showsOutside = useShowsOutside() // Settings: "Show 'Outside your web' under posts"
   const [showOutside, setShowOutside] = useState(false)
   useEffect(() => setShowOutside(false), [id])
 
@@ -191,12 +193,12 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
                 <Focus on={event.id === focused?.id}><NoteCard event={event} footer={stats(event)} /></Focus>
               </div>
             ))}
-            {split.outside.length > 0 && <button type="button" class="thread-outside-toggle" aria-expanded={showOutside}
+            {split.outside.length > 0 && showsOutside && <button type="button" class="thread-outside-toggle" aria-expanded={showOutside}
               onClick={() => setShowOutside(v => !v)}>
               {showOutside ? "Hide" : "Show"} {split.outside.length} {split.outside.length === 1 ? "reply" : "replies"} from outside your web
             </button>}
-            {showOutside && split.outside.map(event => <div key={event.id} class="thread-outside"><NoteCard event={event} footer={stats(event)} /></div>)}
-            {!rows.length && !split.outside.length && thread.root && (syncing ? <SkeletonRows count={2} label={LOADING} /> : <p class="empty">No replies yet.</p>)}
+            {showOutside && showsOutside && split.outside.map(event => <div key={event.id} class="thread-outside"><NoteCard event={event} footer={stats(event)} /></div>)}
+            {!rows.length && (!split.outside.length || !showsOutside) && thread.root && (syncing ? <SkeletonRows count={2} label={LOADING} /> : <p class="empty">No replies yet.</p>)}
           </>}
     </main>
   )

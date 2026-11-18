@@ -10,6 +10,7 @@ import { AuthorName } from "../components/NoteCard.jsx"
 import { Dialog, ReportDialog } from "../components/Moderation.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { useWebTrust } from "../components/useWebTrust.js"
+import { foldedZap } from "../net/outside-switch.js"
 import { useWallet } from "../components/ZapButton.jsx"
 import { fetchProfiles, getProfile } from "../net/profiles.js"
 import { pool } from "../net/pool.js"
@@ -65,11 +66,14 @@ export function useLiveChat(ctx, s) {
     }).catch(() => live && setRows([]))
     return () => { live = false; sub?.close() }
   }, [s.address, blocked.size])
-  // Only people in your web of trust, and the host, speak here (net/web-trust.js). A zap naming nobody still shows.
+  // Only people in your web of trust, and the host, speak here (the one gate, net/web-gate.js). A zap keeps its
+  // amount, but its words and face show only when its verified sender is inside: one naming nobody, or from outside
+  // your web, is an amount alone (call 4, outside-switch.js foldedZap).
   const web = useWebTrust(ctx)
   const host = [s.host, s.author].filter(Boolean)
   return {
-    rows: rows && rows.filter(r => !(r.who && (muted.has(r.who) || !web.inside(r.who, host)))),
+    rows: rows && rows.filter(r => !(r.who && muted.has(r.who)))
+      .flatMap(r => (r.who && web.inside(r.who, host) ? [r] : r.zap && !(r.who && web.verdict(r.who, host) === "blocked") ? [foldedZap(r)] : [])),
     sent: ev => { store.current?.evs.set(ev.id, ev); store.current?.redraw() },
     mute: pk => setMuted(m => new Set([...m, pk])),
   }

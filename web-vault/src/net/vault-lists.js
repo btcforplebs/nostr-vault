@@ -167,7 +167,8 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
       if (sender === me || blocked.has(sender)) continue
       const sats = zapSats(ev)
       const target = (req && firstE(req)) || firstE(ev)
-      const comment = (req?.content ?? "").trim()
+      // A zap from outside your web keeps its amount; its words go (the one gate, call 4).
+      const comment = out(sender) ? "" : (req?.content ?? "").trim()
       if (target && myText.has(target) && !comment) fold("zap", target, sender, ev.created_at, { sats })
       else singles.push({ id: ev.id, kind: "zap", actors: [sender], created_at: ev.created_at, openId: target && myText.has(target) ? target : null,
         preview: comment || (target && myText.get(target)) || "", emojis: [], sats, images: comment ? [] : (target && myImages.get(target)) || [], imagesBy: me })
