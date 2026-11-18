@@ -15,8 +15,9 @@ import { faceCache, FACE_PX } from "../net/face-cache.js"
 import { fraction } from "../net/wot.js"
 import {
   RADIUS, newCamera, moving, drag, flick, zoomBy, zoomNow, flyTo, facing, direction, home, step, projector, outline,
-  faceShown, faceRadius, dotLight, seatFade, faceSize, seats, onScreen, hit, OUTER_ALPHA, LAYER_WEIGHTS, SIZE, STAR, RIM, STAR_DAY, RIM_DAY, globeDay, starAlpha,
+  faceShown, faceRadius, dotLight, seatFade, faceSize, seats, hit, OUTER_ALPHA, LAYER_WEIGHTS, SIZE, STAR, RIM, STAR_DAY, RIM_DAY, globeDay, starAlpha,
 } from "../net/wot-globe.js"
+import { lightBand, pointProjector, StarBands } from "./wot-globe-stars.js"
 
 /** New pictures a frame may start loading: a fast spin brings faces into seats faster than they need decoding at once;
  *  the rest show their coloured disc a frame or two longer. */
@@ -34,6 +35,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
   const cam = useRef(newCamera())
   const size = useRef({ w: 0, h: 0 })
   const drawn = useRef([])
+  const stars = useRef(null) // this globe's StarBands and star records, reused frame to frame (wot-globe-stars.js)
   const fades = useRef(new Map()) // follow pk -> seat fade 0..1
   const fading = useRef(false)
   const frame = useRef(0), last = useRef(0)
@@ -75,37 +77,43 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     const shade = pk => (!lit || lit.has(pk) || pinned(pk) ? 1 : DIMMED)
 
     // Project everyone once; stars go into a few brightness bands per kind, so a big web is a handful of fills. A layer
-    // the picker put out isn't drawn, and can't be tapped.
+    // the picker put out isn't drawn, and can't be tapped. Nothing is allocated per star (wot-globe-stars.js): the
+    // point and the star records are reused, and only faces get new objects.
+    if (!stars.current) stars.current = { bands: new StarBands(), recs: [], scene: null, target: null, weight: null }
+    const st = stars.current, { bands, recs } = st
+    bands.reset()
+    // Each node's weight depends on the scene and the open card, not on the camera: worked out once, not every frame.
+    if (st.scene !== scene.current || st.target !== target) {
+      st.scene = scene.current; st.target = target
+      st.weight = new Float64Array(nodes.length)
+      nodes.forEach((node, i) => { st.weight[i] = node.layer === "me" ? 0 : pinned(node.pk) ? 1 : weights[node.layer] * shade(node.pk) })
+    }
+    const into = { x: 0, y: 0, depth: 0, scale: 0 }, put = pointProjector(k, w, h), zoomed = Math.min(k.zoom, 1.8)
+    const left = -40, top = -40, right = w + 40, bottom = h + 40 // onScreen's 40 pt margin, inline
     const out = [], faces = []
-    const bands = new Map() // "kind|weight|band" -> [p]
-    for (const node of nodes) {
-      if (node.layer === "me") continue
-      const weight = pinned(node.pk) ? 1 : weights[node.layer] * shade(node.pk)
+    for (let i = 0; i < nodes.length; i++) {
+      const weight = st.weight[i]
       if (!weight) continue
-      const p = project(node.p)
-      if (!p || !onScreen(p.x, p.y, w, h)) continue
+      const node = nodes[i]
+      if (!put(node.p, into) || into.x < left || into.y < top || into.x > right || into.y > bottom) continue
       // While a path is traced its people are faces whether or not they had a seat as one (GlobeScene traceBridges).
       if (traced ? traced.has(node.pk) : node.face && shade(node.pk) === 1) {
-        const lead = node.layer === "follow"
+        const p = { ...into }, lead = node.layer === "follow"
         const kind = node.pk === target ? "traced" : traced ? "bridge" : lead ? "follow" : "outer"
         faces.push({ pk: node.pk, node, kind, x: p.x, y: p.y, depth: p.depth, r: faceSize(kind === "traced" ? "traced" : lead ? "follow" : "outer", p, k.zoom),
           lead: lead || !!traced, alpha: Math.min(1, (lead || traced ? 1 : OUTER_ALPHA) * weight) })
         continue
       }
-      const light = dotLight(p.depth)
       const kind = traced?.has(node.pk) ? "hot" : node.layer === "follow" ? "ring" : node.layer
-      const key = `${kind}|${weight}|${Math.min(3, Math.floor((light - 0.35) / 0.65 * 4))}`
-      const list = bands.get(key)
-      if (list) list.push(p); else bands.set(key, [p])
-      out.push({ node, x: p.x, y: p.y, depth: p.depth, face: false })
+      bands.add(kind, weight, lightBand(into.depth), into.x, into.y, SIZE[kind === "hot" ? "ring" : kind] * into.scale * zoomed)
+      const rec = recs[out.length] ?? (recs[out.length] = { node: null, x: 0, y: 0, depth: 0, face: false })
+      rec.node = node; rec.x = into.x; rec.y = into.y; rec.depth = into.depth
+      out.push(rec)
     }
-    for (const [key, list] of bands) {
-      const [kind, weight, b] = key.split("|"), star = STARS[kind], s0 = SIZE[kind === "hot" ? "ring" : kind]
-      g.beginPath()
-      for (const p of list) { const s = s0 * p.scale * Math.min(k.zoom, 1.8); g.moveTo(p.x + s, p.y); g.arc(p.x, p.y, s, 0, 2 * Math.PI) }
-      g.fillStyle = `rgb(${star[0]} ${star[1]} ${star[2]} / ${Math.min(1, starAlpha(star, 0.35 + 0.65 * (+b + 0.5) / 4) * +weight)})`
-      g.fill()
-    }
+    bands.draw(g, ({ kind, weight, band }) => {
+      const star = STARS[kind]
+      return `rgb(${star[0]} ${star[1]} ${star[2]} / ${Math.min(1, starAlpha(star, 0.35 + 0.65 * (band + 0.5) / 4) * weight)})`
+    })
 
     // Seats: who shows a face this frame, each fading in or out over a quarter second. You hold the middle seat, so a
     // face rolling across you fades rather than covering you.
