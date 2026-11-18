@@ -8,6 +8,7 @@ import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,6 +84,8 @@ class DMDeliveryTest {
 
     @After
     fun tearDown() {
+        // Nothing of this service may resume on Main after resetMain (it would fail a later test).
+        service.scope.cancel()
         unmockkObject(CredentialStore)
         Dispatchers.resetMain()
     }
@@ -181,5 +184,62 @@ class DMDeliveryTest {
     fun `a locked photo after a restart can only be removed`() {
         val photo = DMMessage("p", "https://x/y#key", 3, me, isFromMe = true, sendState = DMSendState.FAILED, failure = "f")
         assertFalse(service.canRetry(photo))
+    }
+
+    // Tron #2230 must-fixes.
+
+    @Test
+    fun `a second Try again while the first is going sends nothing more`() = runTest(dispatcher) {
+        deliver()
+        advanceUntilIdle()
+        val before = published.size
+        answer = { "accepted" }
+        answerDelay = { 1_000 }
+        service.retrySend(them, id)
+        runCurrent()
+        service.retrySend(them, id) // double tap
+        advanceUntilIdle()
+        // One more round to their two relays, plus your copy: no second message.
+        assertEquals(2, published.drop(before).count { it.first == recipientWrap })
+        val mineNow = service._conversations.value.first { it.id == them }.messages
+        assertEquals(listOf(id), mineNow.map { it.id })
+        assertNull(mineNow.single().sendState)
+    }
+
+    @Test
+    fun `Try again after a restart keeps the words when the message can't be built`() = runTest(dispatcher) {
+        // No key on this device: sendDM throws before anything is published.
+        service.setSendState(null, them, id, DMSendState.FAILED, INTERRUPTED_SEND)
+        advanceUntilIdle()
+        service.retrySend(them, id)
+        // The build runs on the real IO dispatcher: wait for it, a bounded while.
+        var waited = 0
+        advanceUntilIdle()
+        while (mine().sendState == DMSendState.SENDING && waited++ < 300) {
+            Thread.sleep(10)
+            advanceUntilIdle()
+        }
+        advanceUntilIdle()
+        val kept = service._conversations.value.first { it.id == them }.messages.single { it.id == id }
+        assertEquals(DMSendState.FAILED, kept.sendState)
+        assertEquals("hello", kept.resendText)
+    }
+
+    @Test
+    fun `a Not sent bubble never swallows a new message with the same words`() = runTest(dispatcher) {
+        service.setSendState(null, them, id, DMSendState.FAILED, "x")
+        advanceUntilIdle()
+        service.addMessageToConversation(
+            them, DMMessage("new", "hello", 1_700_000_001, me, isFromMe = true, sendState = DMSendState.SENDING),
+        )
+        assertEquals(listOf(id, "new"), service._conversations.value.first { it.id == them }.messages.map { it.id })
+    }
+
+    @Test
+    fun `a publish cut off by a cancel still counts, so it never stays Sending`() = runTest(dispatcher) {
+        service.publishDM = { _, _, _ -> throw kotlinx.coroutines.CancellationException("gone") }
+        deliver()
+        advanceUntilIdle()
+        assertEquals(DMSendState.FAILED, mine().sendState)
     }
 }

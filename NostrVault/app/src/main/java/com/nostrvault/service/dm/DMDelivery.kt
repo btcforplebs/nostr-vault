@@ -27,15 +27,18 @@ internal suspend fun DMService.firstAccepted(eventJson: String, urls: List<Strin
     val left = AtomicInteger(urls.size)
     for (url in urls) {
         scope.launch {
-            val result = try {
-                publishDM(eventJson, url, senderHex)
+            var taken = false
+            try {
+                taken = publishDM(eventJson, url, senderHex) == "accepted"
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                "failed: ${e.message}"
+                taken = false
+            } finally {
+                // Counted however it ended (a cancel too), so the bubble never waits forever.
+                if (taken) delivered.complete(true)
+                else if (left.decrementAndGet() == 0) delivered.complete(false)
             }
-            if (result == "accepted") delivered.complete(true)
-            else if (left.decrementAndGet() == 0) delivered.complete(false)
         }
     }
     return delivered.await()
@@ -135,10 +138,24 @@ fun DMService.retrySend(counterparty: String, id: String) {
         }
         val unsent = _conversations.value.firstOrNull { it.id == counterparty }
             ?.messages?.firstOrNull { it.id == id } ?: return@launch
+        // Only a bubble that says Not sent: a second tap while this one is going finds it Sending (Tron #2230).
+        if (unsent.sendState != DMSendState.FAILED) return@launch
         val words = unsent.resendText ?: return@launch
-        withContext(Dispatchers.Main.immediate) { removeMessageFromConversation(counterparty, id) }
-        // As it was sent: a NIP-04 message stays NIP-04.
-        runCatching { sendDM(words, counterparty, useNIP04 = unsent.isNIP04) }
+        val key = loadedCacheKey
+        setSendState(key, counterparty, id, DMSendState.SENDING)
+        try {
+            // As it was sent: a NIP-04 message stays NIP-04. The old bubble goes only once the new
+            // one is built; if it can't be (no key, signer refused), the words stay, Not sent.
+            sendDM(words, counterparty, useNIP04 = unsent.isNIP04)
+            withContext(Dispatchers.Main.immediate) {
+                if (loadedCacheKey == key) removeMessageFromConversation(counterparty, id)
+            }
+        } catch (e: CancellationException) {
+            setSendState(key, counterparty, id, DMSendState.FAILED, unsent.failure)
+            throw e
+        } catch (e: Exception) {
+            setSendState(key, counterparty, id, DMSendState.FAILED, e.message ?: unsent.failure)
+        }
     }
 }
 

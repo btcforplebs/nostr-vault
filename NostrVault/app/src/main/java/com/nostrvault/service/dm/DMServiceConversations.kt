@@ -35,6 +35,8 @@ import com.nostrvault.service.DMService.Companion.TAG
             // and got re-decrypted (re-prompting Amber) on every refresh.
             val isDuplicate = message.isFromMe && conv.messages.any { existing ->
                 existing.isFromMe &&
+                    // A Not sent bubble is never the copy a new message echoes (its Try again resends).
+                    existing.sendState != DMSendState.FAILED &&
                     existing.content == message.content &&
                     kotlin.math.abs(existing.timestamp - message.timestamp) < OPTIMISTIC_DEDUP_THRESHOLD_MS / 1000
             }
