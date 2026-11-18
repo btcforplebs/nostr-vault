@@ -580,7 +580,7 @@ export function Notes({ shown, outside = [], foldKey = "", onOlder, olderState, 
   return <>
     {shown.length ? <FeedRows notes={shown} layout={layout} memoryOnly={memoryOnly} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} rankOf={rankOf} />
       : <p class="empty">{outside.length ? "Every note loaded here is from outside your web." : "Every note loaded here is from someone you blocked."}</p>}
-    <OutsideFold count={outside.length} resetKey={foldKey}>
+    <OutsideFold count={outside.length} resetKey={foldKey} underPost>
       <FeedRows notes={outside} layout={layout} memoryOnly keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} />
     </OutsideFold>
     {onOlder && <OlderButton onOlder={onOlder} state={olderState} />}

@@ -1,34 +1,14 @@
-import { useEffect, useState } from "preact/hooks"
-import { trustSet } from "../net/popular.js"
-import { insideWeb } from "../net/web-trust.js"
+import { useBlocks } from "./useBlocks.js"
+import { useGateWeb } from "./useGateWeb.js"
+import { judge, VERDICTS } from "../net/web-gate.js"
 
-// The web of trust for what other people send (net/web-trust.js): one set per account and follow list, shared by
-// every screen that asks (the follows' contact lists are cached by wot.js followLists). Null until it is in; a failed
-// load stays null, so the screens keep showing only you and your follows rather than everyone.
-let latest = { key: "", trust: null }
-let loading = null
-const listeners = new Set()
-
+// Inside your web for what other people send (thread replies, live chat, zappers, article comments, Tagged): the one
+// gate (net/web-gate.js), with the open account's web, its own keys and its blocks. Until the follows' lists are in it
+// fails closed to you and your follows, so a stranger never shows and then goes. `also`: keys this view always shows
+// (the note's author, the stream's host). A blocked person is never inside.
 export function useWebTrust(ctx) {
-  const me = ctx?.session?.pubkey ?? null
-  const follows = ctx?.account?.follows ?? []
-  const key = `${me}:${follows.length}:${follows[0] ?? ""}:${follows[follows.length - 1] ?? ""}`
-  const [, setTick] = useState(0)
-  useEffect(() => {
-    const bump = () => setTick(t => t + 1)
-    listeners.add(bump)
-    return () => listeners.delete(bump)
-  }, [])
-  useEffect(() => {
-    if (!me || latest.key === key || loading?.key === key) return
-    const run = { key }
-    loading = run
-    trustSet(me, follows).then(trust => {
-      if (loading !== run) return
-      latest = { key, trust }
-      for (const cb of listeners) cb()
-    }).catch(() => {}).finally(() => { if (loading === run) loading = null })
-  }, [key])
-  const trust = latest.key === key ? latest.trust : null
-  return { trust, inside: (pk, also = []) => insideWeb(pk, trust, { me, follows, also }) }
+  const { blocked } = useBlocks(ctx)
+  const gate = useGateWeb(ctx, blocked)
+  const verdict = (pk, also = []) => judge({ signer: pk ?? "", related: [], muted: [], refs: [] }, gate, { always: also })
+  return { gate, verdict, inside: (pk, also = []) => verdict(pk, also) === VERDICTS.inside }
 }

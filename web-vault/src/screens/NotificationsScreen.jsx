@@ -2,7 +2,7 @@
 // article or highlight, newest first, one row each, as the iPhone's Vault list shows them (VaultActivityList).
 // Read from the user's read relays; nothing here signs. The note each row is about comes from Haven's outbox
 // (the user's own notes) or the network. Reuses .note / .note-head / .repost-line from app.css.
-import { useEffect, useRef, useState } from "preact/hooks"
+import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { Faces, Who } from "../components/ActivityFaces.jsx"
 import { Mention, NoteText } from "../components/NoteText.jsx"
 import { ago } from "../components/time.js"
@@ -14,6 +14,8 @@ import { outsideCount } from "../net/outside-fold.js"
 import { useNotifications, aboutYourPost } from "./useNotifications.js"
 import "../styles/notifications.css"
 import { ReactionText } from "../components/CustomEmoji.jsx"
+import { useWebTrust } from "../components/useWebTrust.js"
+import { zapWords } from "../net/outside-switch.js"
 
 export { Faces, Who, MAX_FACES } from "../components/ActivityFaces.jsx"
 
@@ -21,7 +23,10 @@ export { Faces, Who, MAX_FACES } from "../components/ActivityFaces.jsx"
 export function NotificationsScreen({ ctx, vaultMenu = false }) {
   const { session } = ctx
   const [filter, setFilter] = useState("all") // "all" | "mentions" (VaultToolbar: All / Mentions)
-  const { shown, outside, notes, status, loading, more, loadMore, unreadSince, known } = useNotifications(ctx, filter)
+  const { shown: rows, outside, notes, status, loading, more, loadMore, unreadSince, known } = useNotifications(ctx, filter)
+  // A zap from outside your web keeps its amount; its words go (the one gate, call 4).
+  const web = useWebTrust(ctx)
+  const shown = useMemo(() => rows && zapWords(rows, pk => web.inside(pk)), [rows, web.gate])
   const end = useRef(null)
   useEffect(() => {
     const el = end.current
