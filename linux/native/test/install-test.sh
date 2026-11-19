@@ -1,31 +1,63 @@
 #!/bin/sh
-# Install test for the nostr-vault .deb on a real systemd machine (a CI runner or a throwaway VM; never a box in use:
-# it installs, starts and reinstalls the vault on port 8080). Throwaway keys only, from keytool (test/keytool).
-#   sudo KT=/path/to/keytool sh linux/native/test/install-test.sh <deb> [headless|desktop]
-# Exits 1 if any check fails, or if it can't run at all (no deb, no keytool, 8080 already taken).
+# Install test for the nostr-vault package on a real systemd machine (a CI runner, a systemd container or a throwaway
+# VM; never a box in use: it installs, starts and reinstalls the vault on port 8080). Throwaway keys only, from keytool
+# (test/keytool). The package is a .deb (apt), an .rpm (dnf, Fedora) or a .pkg.tar.zst (pacman, Arch).
+#   sudo KT=/path/to/keytool sh linux/native/test/install-test.sh <package> [headless|desktop]
+# Exits 1 if any check fails, or if it can't run at all (no package, no keytool, 8080 already taken).
 set -u
-DEB=${1:-}; MODE=${2:-headless}; KT=${KT:-}
+PKG=${1:-}; MODE=${2:-headless}; KT=${KT:-}
 pass=0; fail=0
 ok() { echo "PASS: $*"; pass=$((pass+1)); }
 no() { echo "FAIL: $*"; fail=$((fail+1)); }
 chk() { d=$1; shift; if "$@" >/dev/null 2>&1; then ok "$d"; else no "$d"; fi; }
 abort() { echo "ABORT: $*"; echo "RESULT pass=$pass fail=$fail (aborted)"; exit 1; }
 [ "$(id -u)" = 0 ] || abort "run as root"
-[ -s "$DEB" ] || abort "no .deb at '$DEB'"
+[ -s "$PKG" ] || abort "no package at '$PKG'"
 [ -x "$KT" ] && "$KT" gen | grep -q npub1 || abort "keytool missing or broken (KT=$KT)"
 ss -Hltn 'sport = :8080' | grep -q . && abort "port 8080 is already taken here"
 export DEBIAN_FRONTEND=noninteractive
 echo "== $(. /etc/os-release; echo "$PRETTY_NAME") $(uname -m) glibc $(ldd --version | head -1 | awk '{print $NF}')"
-cp "$DEB" /tmp/nv.deb && chmod 644 /tmp/nv.deb
-want=$(dpkg-deb -f /tmp/nv.deb Version)
-apt-get update -q >/dev/null 2>&1
-if [ "$MODE" = desktop ]; then rec=--install-recommends; else rec=--no-install-recommends; fi
-if apt-get install -y -q $rec /tmp/nv.deb >/tmp/apt.log 2>&1; then ok "apt install ($rec)"; else no "apt install"; tail -15 /tmp/apt.log; echo "RESULT pass=$pass fail=$fail"; exit 1; fi
-chk "installed version is the .deb's ($want)" test "$(dpkg-query -W -f '${Version}' nostr-vault)" = "$want"
+# One package manager per package kind: pm_* below are the only places that differ.
+case "$PKG" in
+  *.deb) PM=apt NV=/tmp/nv.deb ;;
+  *.rpm) PM=dnf NV=/tmp/nv.rpm ;;
+  *.pkg.tar.zst) PM=pacman NV=/tmp/nv.pkg.tar.zst ;;
+  *) abort "not a .deb, .rpm or .pkg.tar.zst: $PKG" ;;
+esac
+command -v $PM >/dev/null || abort "$PKG needs $PM, and this system has none"
+cp "$PKG" "$NV" && chmod 644 "$NV"
+pm_file_version() { case $PM in
+  apt) dpkg-deb -f "$NV" Version ;;
+  dnf) rpm -qp --qf '%{VERSION}-%{RELEASE}' "$NV" ;;
+  pacman) pacman -Qp "$NV" | cut -d' ' -f2 ;; esac; }
+pm_installed_version() { case $PM in
+  apt) dpkg-query -W -f '${Version}' nostr-vault ;;
+  dnf) rpm -q --qf '%{VERSION}-%{RELEASE}' nostr-vault ;;
+  pacman) pacman -Q nostr-vault | cut -d' ' -f2 ;; esac; }
+pm_has() { case $PM in # pm_has <the GTK package's name on apt> <on dnf> <on pacman>
+  apt) dpkg -s "$1" 2>/dev/null | grep -q "Status: install ok" ;;
+  dnf) rpm -q "$2" >/dev/null 2>&1 ;;
+  pacman) pacman -Q "$3" >/dev/null 2>&1 ;; esac; }
+pm_install() { case $PM in # pm_install [reinstall]
+  apt) if [ -n "${1:-}" ]; then apt-get install -y -q --reinstall "$NV"; else apt-get install -y -q $rec "$NV"; fi ;;
+  dnf) if [ -n "${1:-}" ]; then dnf reinstall -y -q "$NV"; else dnf install -y -q $rec "$NV"; fi ;;
+  pacman) pacman -U --noconfirm "$NV" ;; esac; }
+pm_remove() { case $PM in
+  apt) apt-get remove -y -q nostr-vault ;; dnf) dnf remove -y -q nostr-vault ;; pacman) pacman -R --noconfirm nostr-vault ;; esac; }
+want=$(pm_file_version)
+case $PM in
+  apt) apt-get update -q >/dev/null 2>&1
+    if [ "$MODE" = desktop ]; then rec=--install-recommends; else rec=--no-install-recommends; fi ;;
+  dnf) if [ "$MODE" = desktop ]; then rec=--setopt=install_weak_deps=True; else rec=--setopt=install_weak_deps=False; fi ;;
+  pacman) pacman -Sy --noconfirm >/dev/null 2>&1; rec="(optdepends are never installed)"
+    [ "$MODE" = desktop ] && abort "pacman never installs optdepends: run the desktop test with them installed by hand" ;;
+esac
+if pm_install >/tmp/pm.log 2>&1; then ok "$PM install ($rec)"; else no "$PM install"; tail -15 /tmp/pm.log; echo "RESULT pass=$pass fail=$fail"; exit 1; fi
+chk "installed version is the package's ($want)" test "$(pm_installed_version)" = "$want"
 chk "user nvvault uid 10002" test "$(id -u nvvault)" = 10002
 chk "user nvmesh uid 10001" test "$(id -u nvmesh)" = 10001
 chk "vault not running before setup" sh -c '! systemctl -q is-active nostr-vault'
-if [ "$MODE" = headless ]; then chk "headless: no GTK pulled in" sh -c '! dpkg -s gir1.2-gtk-3.0 2>/dev/null | grep -q "Status: install ok"'; fi
+if [ "$MODE" = headless ]; then if pm_has gir1.2-gtk-3.0 gtk3 gtk3; then no "headless: GTK pulled in"; else ok "headless: no GTK pulled in"; fi; fi
 
 set -- $("$KT" gen); OSK=$1 ONPUB=$2
 echo "throwaway owner $ONPUB"
@@ -58,7 +90,7 @@ chk "8080 on all addresses" sh -c "ss -Hltn 'sport = :8080' | awk '{print \$4}' 
 chk "engine 3355 loopback only" sh -c "ss -Hltn 'sport = :3355' | awk '{print \$4}' | grep -q . && ! ss -Hltn 'sport = :3355' | awk '{print \$4}' | grep -vq '^127.0.0.1:'"
 chk "mesh door 8081 loopback only" sh -c "ss -Hltn 'sport = :8081' | awk '{print \$4}' | grep -q . && ! ss -Hltn 'sport = :8081' | awk '{print \$4}' | grep -vq '^127.0.0.1:'"
 chk "web app served on 8080" sh -c "curl -fsS http://127.0.0.1:8080/ | grep -qi '<html'"
-IP=$(hostname -I | awk '{print $1}')
+IP=$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | head -1)
 chk "8080 reachable on the machine's address $IP" sh -c "curl -fsS -o /dev/null http://$IP:8080/"
 U=http://127.0.0.1:8080/api/box/status
 code=$(curl -s -o /dev/null -w '%{http_code}' $U)
@@ -71,7 +103,7 @@ echo "-- owner status: $(echo "$st" | head -c 400)"
 chk "box API answers the owner with the box npub" sh -c "[ -n '$MNPUB' ] && echo '$st' | grep -q '$MNPUB'"
 
 # Reinstall in place keeps the mesh key; a crash restarts.
-apt-get install -y -q --reinstall /tmp/nv.deb >/dev/null 2>&1 && ok "reinstall" || no "reinstall"
+pm_install reinstall >/dev/null 2>&1 && ok "reinstall" || no "reinstall"
 sleep 6
 chk "after reinstall: same mesh npub" sh -c "[ -n '$MNPUB' ] && [ \"\$(cat $D/mesh/npub)\" = '$MNPUB' ]"
 chk "after reinstall: vault active" systemctl -q is-active nostr-vault
@@ -83,9 +115,10 @@ if [ "$MODE" = desktop ]; then
   chk "python gi + webkit present" python3 -c 'import gi; gi.require_version("Gtk","3.0"); gi.require_version("WebKit2","4.1"); from gi.repository import Gtk, WebKit2'
 fi
 # Remove leaves the data (the owner's notes) and stops the services.
-apt-get remove -y -q nostr-vault >/dev/null 2>&1 && ok "remove" || no "remove"
+pm_remove >/dev/null 2>&1 && ok "remove" || no "remove"
 chk "after remove: vault stopped" sh -c '! systemctl -q is-active nostr-vault'
 chk "after remove: data kept" test -s $D/mesh/npub
+chk "after remove: settings kept" grep -q "^NV_OWNER=$ONPUB" /etc/nostr-vault/vault.env
 [ "$fail" = 0 ] || journalctl -u nostr-vault -u nostr-vault-mesh --no-pager -n 60
 echo "RESULT pass=$pass fail=$fail"
 [ "$fail" = 0 ]

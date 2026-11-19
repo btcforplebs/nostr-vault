@@ -1,8 +1,10 @@
-name: Linux .deb
+name: Linux .deb, .rpm and Arch
 
 # Builds the nostr-vault .deb for amd64 and arm64 (linux/native/build.sh, on Debian 12 as its header asks, each arch
-# on its own runner so nothing is cross-built), then installs each one on a fresh Ubuntu runner with systemd and runs
-# linux/native/test/install-test.sh against it. Publishes nothing: the .debs are run artifacts (14 days).
+# on its own runner so nothing is cross-built), and from the same files the Fedora .rpm and the Arch package
+# (linux/native/nfpm.sh). Then installs each one and runs linux/native/test/install-test.sh against it: the .deb on a
+# fresh Ubuntu runner, the .rpm and Arch package in Fedora and Arch containers booted with systemd, which are then
+# restarted to check the vault comes back on boot. Publishes nothing: the packages are run artifacts (14 days).
 on:
   workflow_dispatch:
   push:
@@ -28,11 +30,12 @@ jobs:
     runs-on: ${{ matrix.runner }}
     container: debian:bookworm
     steps:
-      - name: Build tools (as linux/mesh/Dockerfile, plus dpkg-dev)
+      - name: Build tools (as linux/mesh/Dockerfile, plus dpkg-dev; rpm and zstd to read the .rpm and Arch package back)
         run: |
           apt-get update -q
           apt-get install -y -q --no-install-recommends git curl ca-certificates build-essential clang libclang-dev \
-            libnftnl-dev libmnl-dev libdbus-1-dev pkg-config dpkg-dev binutils python3 xz-utils
+            libnftnl-dev libmnl-dev libdbus-1-dev pkg-config dpkg-dev binutils python3 xz-utils \
+            rpm zstd
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # build.sh's version is the commit count
@@ -54,8 +57,10 @@ jobs:
           curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
           "$HOME/.cargo/bin/rustup" toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' linux/mesh/rust-toolchain.toml)" --profile minimal
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: nfpm (makes the .rpm and the Arch package)
+        run: GOTOOLCHAIN=auto GOBIN=/usr/local/bin go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.49.0
       - name: Build
-        run: linux/native/build.sh ${{ matrix.arch }}
+        run: NV_PKG_FORMATS="rpm archlinux" linux/native/build.sh ${{ matrix.arch }}
       - name: What was built
         run: |
           cd linux/native/out
@@ -63,6 +68,18 @@ jobs:
           cat nostr-vault-linux.json
           for d in *.deb; do dpkg-deb -I "$d" control | grep -E '^(Version|Architecture|Depends):'; done
           test "$(dpkg-deb -f nostr-vault_*_${{ matrix.arch }}.deb Architecture)" = ${{ matrix.arch }}
+          # One of each, for this arch, the same version as the .deb.
+          case ${{ matrix.arch }} in amd64) m=x86_64 ;; arm64) m=aarch64 ;; esac
+          v=$(dpkg-deb -f nostr-vault_*_${{ matrix.arch }}.deb Version)
+          test "$(ls *.rpm)" = "nostr-vault-$v-1.$m.rpm"
+          test "$(ls *.pkg.tar.zst)" = "nostr-vault-$v-1-$m.pkg.tar.zst"
+          # The same files in all three (the units under /usr/lib in the two others, for their /lib symlink).
+          dpkg-deb -c nostr-vault_*.deb | awk '$1 !~ /^d/ {print $NF}' | sed 's|^\./|/|; s|^/lib/systemd|/usr/lib/systemd|' | sort >deb.list
+          rpm -qp --qf '[%{FILEMODES:perms} %{FILENAMES}\n]' *.rpm | awk '$1 !~ /^d/ {print $2}' | sort >rpm.list
+          tar --zstd -tf *.pkg.tar.zst | grep -v '/$' | grep -v '^\.' | sed 's|^|/|' | sort >arch.list
+          wc -l deb.list rpm.list arch.list
+          diff deb.list rpm.list && diff deb.list arch.list
+          rm deb.list rpm.list arch.list
       - uses: actions/upload-artifact@v4
         with:
           name: nostr-vault-deb-${{ matrix.arch }}
@@ -98,6 +115,75 @@ jobs:
       - name: Install test (headless)
         run: sudo KT="$RUNNER_TEMP/keytool" sh linux/native/test/install-test.sh debs/nostr-vault_*_${{ matrix.arch }}.deb headless
 
+  # The .rpm on Fedora and the Arch package on Arch, each arch on its own runner, in a container that boots systemd.
+  # install-test.sh as for the .deb (install, setup, reinstall, remove), then install again over the kept settings
+  # and restart the container: the vault and its mesh must come back on their own, as after a reboot.
+  install-test-rpm-arch:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { distro: fedora, arch: amd64, runner: ubuntu-24.04, image: "fedora:latest", pkg: "*.x86_64.rpm" }
+          - { distro: fedora, arch: arm64, runner: ubuntu-24.04-arm, image: "fedora:latest", pkg: "*.aarch64.rpm" }
+          - { distro: arch, arch: amd64, runner: ubuntu-24.04, image: "archlinux:latest", pkg: "*-x86_64.pkg.tar.zst" }
+          # Arch Linux ARM: no official image; menci/archlinuxarm is rebuilt daily from its official tarball.
+          - { distro: arch, arch: arm64, runner: ubuntu-24.04-arm, image: "menci/archlinuxarm:latest", pkg: "*-aarch64.pkg.tar.zst" }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: linux/native/test
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nostr-vault-deb-${{ matrix.arch }}
+          path: pkgs
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - name: Throwaway-key tool (static, for the container)
+        run: cd linux/native/test/keytool && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/keytool" .
+      - name: Boot a ${{ matrix.distro }} container with systemd
+        run: |
+          case ${{ matrix.distro }} in
+            fedora) prep='dnf install -y -q systemd procps-ng iproute util-linux curl findutils && dnf clean all' ;;
+            arch) prep="sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf && pacman -Syu --noconfirm --needed systemd procps-ng iproute2 util-linux curl findutils && pacman -Scc --noconfirm" ;;
+          esac
+          printf 'FROM %s\nRUN %s\n' "${{ matrix.image }}" "$prep" | docker build -t nv-test -
+          docker run -d --name nv --privileged --cgroupns=private --stop-signal SIGRTMIN+3 -e container=docker \
+            --tmpfs /run --tmpfs /run/lock --tmpfs /tmp -v "$PWD:/w:ro" -v "$RUNNER_TEMP/keytool:/usr/local/bin/keytool:ro" \
+            nv-test /usr/lib/systemd/systemd
+          docker exec nv systemctl is-system-running --wait || true
+          docker exec nv sh -c '. /etc/os-release; echo "$PRETTY_NAME $(uname -m)"'
+      - name: Install test (headless)
+        run: |
+          p=$(cd pkgs && ls ${{ matrix.pkg }}); echo "$p"
+          docker exec nv env KT=/usr/local/bin/keytool sh /w/linux/native/test/install-test.sh "/w/pkgs/$p" headless
+      - name: Start at boot
+        run: |
+          p=$(cd pkgs && ls ${{ matrix.pkg }})
+          case ${{ matrix.distro }} in
+            fedora) docker exec nv dnf install -y -q --setopt=install_weak_deps=False "/w/pkgs/$p" ;;
+            arch) docker exec nv pacman -U --noconfirm "/w/pkgs/$p" ;;
+          esac
+          docker exec nv systemctl -q is-enabled nostr-vault nostr-vault-mesh
+          docker stop -t 60 nv && docker start nv
+          docker exec nv systemctl is-system-running --wait || true
+          docker exec nv sh -c 'echo "booted $(cut -d. -f1 /proc/uptime)s ago"
+            for i in $(seq 1 30); do
+              if systemctl -q is-active nostr-vault nostr-vault-mesh && curl -fsS http://127.0.0.1:8080/ | grep -qi "<html"; then
+                echo "PASS: vault and mesh came back on boot, web app served"; exit 0
+              fi
+              sleep 2
+            done
+            echo "FAIL: not back after boot"; systemctl status --no-pager nostr-vault nostr-vault-mesh nostr-vault-prepare
+            journalctl -b --no-pager -u nostr-vault -u nostr-vault-mesh -u nostr-vault-prepare -n 60; exit 1'
+      - name: Container log
+        if: failure()
+        run: docker logs nv 2>&1 | tail -80 || true
+
   # The release's file set: both .debs and ONE manifest listing both (each build job's manifest names only its own).
   release-files:
     needs: build
@@ -109,7 +195,7 @@ jobs:
           path: parts
       - name: Merge the manifests
         run: |
-          mkdir out && cp parts/*/*.deb out/
+          mkdir out && cp parts/*/*.deb out/ # the .deb release only: the .rpm and Arch package aren't released yet
           python3 -I - parts/*/nostr-vault-linux.json <<'PY'
           import hashlib, json, sys
           ms = [json.load(open(p)) for p in sys.argv[1:]]
