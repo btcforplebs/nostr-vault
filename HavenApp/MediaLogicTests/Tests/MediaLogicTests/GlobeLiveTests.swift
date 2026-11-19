@@ -18,9 +18,8 @@ final class GlobeLiveTests: XCTestCase {
         XCTAssertFalse(LiveArcsSetting.isOn(defaults))
         defaults.set(true, forKey: LiveArcsSetting.key)
         XCTAssertTrue(LiveArcsSetting.isOn(defaults))
-        // Its own key, apart from the feeds' and sorts' switches.
-        let keys = [LiveArcsSetting.key, LiveArcsSetting.spinKey] + GlobeArcs.Ring.allCases.map(LiveArcsSetting.key)
-            + GlobeArcs.Sort.allCases.map(LiveArcsSetting.key)
+        // Its own key, apart from My Web's other two and the cut switches.
+        let keys = [LiveArcsSetting.key, LiveArcsSetting.friendsKey, LiveArcsSetting.extrasKey] + LiveArcsSetting.retiredKeys
         XCTAssertEqual(Set(keys).count, keys.count)
     }
 
@@ -33,7 +32,14 @@ final class GlobeLiveTests: XCTestCase {
         for key in LiveArcsSetting.retiredKeys { XCTAssertNil(defaults.object(forKey: key), key) }
         XCTAssertFalse(LiveArcsSetting.isOn(defaults))
         XCTAssertFalse(LiveArcsSetting.retiredKeys.contains(LiveArcsSetting.key))
-        XCTAssertEqual(LiveArcsSetting.retiredKeys.count, GlobeArcs.Ring.allCases.count + GlobeArcs.Sort.allCases.count + 1)
+        XCTAssertEqual(LiveArcsSetting.retiredKeys.count, 9)
+        // Today's two switches keep what they were set to: the cleanup runs
+        // on every globe appear.
+        defaults.set(false, forKey: LiveArcsSetting.friendsKey)
+        defaults.set(false, forKey: LiveArcsSetting.extrasKey)
+        LiveArcsSetting.retireCutSwitches(defaults)
+        XCTAssertEqual(defaults.object(forKey: LiveArcsSetting.friendsKey) as? Bool, false)
+        XCTAssertEqual(defaults.object(forKey: LiveArcsSetting.extrasKey) as? Bool, false)
     }
 
     func testEachArrivalKnowsWhatItIs() {
@@ -75,28 +81,19 @@ final class GlobeLiveTests: XCTestCase {
     func testTheSwitchesPickWhatFlies() {
         var show = GlobeArcs.Show()
         XCTAssertTrue(GlobeArcs.Sort.allCases.allSatisfy(show.allows))
-        show.replies = false
-        show.zaps = false
-        XCTAssertEqual(GlobeArcs.Sort.allCases.filter(show.allows), [.note, .repost, .reaction])
-        show.reactions = false
-        XCTAssertFalse(show.allows(.reaction))
+        // Likes, reposts and zaps off: notes and replies still fly.
+        show.extras = false
+        XCTAssertEqual(GlobeArcs.Sort.allCases.filter(show.allows), [.note, .reply])
+        // Friends of friends is about who, not what.
+        show = GlobeArcs.Show(friends: false, extras: true)
+        XCTAssertTrue(GlobeArcs.Sort.allCases.allSatisfy(show.allows))
     }
 
     func testASortSwitchedOffIsNotAskedFor() {
         var show = GlobeArcs.Show()
-        XCTAssertEqual(show.noteKinds, [1, 1111, 7])
-        XCTAssertEqual(show.wideKinds, [1, 1111, 7, 6, 16])
-        show.reactions = false
-        show.reposts = false
-        XCTAssertEqual(show.noteKinds, [1, 1111])
-        XCTAssertEqual(show.wideKinds, [1, 1111])
-        // Notes and replies share kind 1: either keeps it.
-        show.notes = false
-        XCTAssertEqual(show.noteKinds, [1, 1111])
-        show.replies = false
-        XCTAssertEqual(show.noteKinds, [])
-        show.reposts = true
-        XCTAssertEqual(show.wideKinds, [6, 16])
+        XCTAssertEqual(show.authorKinds, [1, 1111, 7, 6, 16])
+        show.extras = false
+        XCTAssertEqual(show.authorKinds, [1, 1111])
         // A different set of switches is a different REQ.
         XCTAssertNotEqual(show, GlobeArcs.Show())
     }

@@ -62,6 +62,8 @@ struct TrustGlobeCanvas: View {
     @State private var probe = GlobeStormProbe()
     #endif
     @AppStorage(LiveArcsSetting.key) private var liveArcsOn = LiveArcsSetting.defaultOn
+    @AppStorage(LiveArcsSetting.friendsKey) private var friendsOn = true
+    @AppStorage(LiveArcsSetting.extrasKey) private var extrasOn = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.globeDay) private var day
     @State private var appIsActive = true
@@ -167,7 +169,7 @@ struct TrustGlobeCanvas: View {
         }
         .onDisappear { onScreen = false }
         .onChange(of: layer) { _, layer in scene.focus(layer) }
-        .task(id: liveArcs && liveArcsOn && clockAllowed ? LiveRequest(rings: rings, show: show) : nil) {
+        .task(id: liveArcs && liveArcsOn && clockAllowed ? show : nil) {
             // Listens while the switch is on, the globe is on screen and
             // uncovered, and the app is in front; leaving the tab or the app,
             // or a sheet over the globe, cancels this and closes the
@@ -176,7 +178,7 @@ struct TrustGlobeCanvas: View {
             // never flies as a burst (Android stops on pause too).
             guard liveArcs && liveArcsOn && clockAllowed else { return }
             scene.setLiveArcs(true)
-            let token = arrivals.start(me: me, rings: rings, show: show)
+            let token = arrivals.start(me: me, show: show)
             while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
             // A quick off and on can start the next run before this one ends.
             if arrivals.stop(token) { scene.setLiveArcs(false) }
@@ -224,17 +226,8 @@ struct TrustGlobeCanvas: View {
     /// False while a sheet or another app covers the globe: the clock stops.
     private var clockAllowed: Bool { onScreen && running && appIsActive }
 
-    /// Every sort flies (the My Web switches were cut, Logen 11/12).
-    private var show: GlobeArcs.Show { GlobeArcs.Show() }
-
-    /// What the live REQ asks for; a change reopens it.
-    private struct LiveRequest: Equatable {
-        let rings: Set<GlobeArcs.Ring>
-        let show: GlobeArcs.Show
-    }
-
-    /// Every feed's notes fly.
-    private var rings: Set<GlobeArcs.Ring> { Set(GlobeArcs.Ring.allCases) }
+    /// The My Web switches beside Live stars; a change reopens the live REQ.
+    private var show: GlobeArcs.Show { GlobeArcs.Show(friends: friendsOn, extras: extrasOn) }
 
     /// Turns the globe under the finger.
     private func drag(in size: CGSize) -> some Gesture {

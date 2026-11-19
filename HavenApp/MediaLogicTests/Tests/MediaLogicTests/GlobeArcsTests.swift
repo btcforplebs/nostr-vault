@@ -219,60 +219,116 @@ final class GlobeArcsTests: XCTestCase {
         }
     }
 
-    func testEachFeedSetsOutFromItsOwnShellWidestLast() {
-        let follows: Set = [key(1), me], discover: Set = [key(2)]
-        XCTAssertEqual(GlobeArcs.ring(of: key(1), follows: follows, discover: discover), .following)
-        XCTAssertEqual(GlobeArcs.ring(of: me, follows: follows, discover: discover), .following)
-        XCTAssertEqual(GlobeArcs.ring(of: key(2), follows: follows, discover: discover), .discover)
-        XCTAssertEqual(GlobeArcs.ring(of: key(3), follows: follows, discover: discover), .global)
+    /// Rules 1-3 of RESEARCH/NV_GLOBE_STARS_FINAL.md: hop 1 and 2 fly as
+    /// plain stars, anyone further out flies only a zap, nothing is red.
+    func testHopsOneAndTwoFlyAndFurtherOutOnlyZaps() {
+        let follows: Set = [key(1), me]
+        let web = WebGate.Web(own: [me], web: [key(1), key(2)], hop3: [key(3)], blocked: [key(4)])
+        func ring(_ author: String, zap: Bool = false, sort: GlobeArcs.Sort = .note, to targets: [String] = [],
+                  show: GlobeArcs.Show = .init()) -> GlobeArcs.Ring? {
+            let arrival = GlobeArcs.Arrival(id: key(900), author: author, targets: targets, zap: zap, sort: zap ? .zap : sort)
+            return GlobeArcs.ring(of: arrival, event: ["content": "gm", "tags": [[String]]()], in: web,
+                                  follows: follows, show: show)
+        }
+        XCTAssertEqual(ring(key(1)), .following)
+        XCTAssertEqual(ring(me), .following)
+        XCTAssertEqual(ring(key(2)), .friends)
+        // Hop 3 and strangers: no notes, likes or reposts; a zap flies.
+        XCTAssertNil(ring(key(3)))
+        XCTAssertNil(ring(key(3), sort: .reaction))
+        XCTAssertNil(ring(key(5), sort: .repost))
+        XCTAssertEqual(ring(key(3), zap: true), .outside)
+        XCTAssertEqual(ring(key(5), zap: true), .outside)
+        XCTAssertEqual(ring(key(2), zap: true), .friends)
+        // Blocked or muted: nothing, not even a zap.
+        XCTAssertNil(ring(key(4)))
+        XCTAssertNil(ring(key(4), zap: true))
+        // A stranger's zap to someone you blocked doesn't fly either.
+        XCTAssertNil(ring(key(5), zap: true, to: [key(4)]))
+        XCTAssertEqual(ring(key(5), zap: true, to: [key(1)]), .outside)
+        // Friends of friends off: only follows' notes, and zaps from further out.
+        let followsOnly = GlobeArcs.Show(friends: false, extras: true)
+        XCTAssertNil(ring(key(2), show: followsOnly))
+        XCTAssertEqual(ring(key(1), show: followsOnly), .following)
+        XCTAssertEqual(ring(key(2), zap: true, show: followsOnly), .outside)
+        // Likes, reposts and zaps off.
+        let notesOnly = GlobeArcs.Show(friends: true, extras: false)
+        XCTAssertNil(ring(key(1), sort: .reaction, show: notesOnly))
+        XCTAssertNil(ring(key(5), zap: true, show: notesOnly))
+        XCTAssertEqual(ring(key(2), sort: .reply, show: notesOnly), .friends)
         let radii = GlobeArcs.Ring.allCases.map(\.radius)
         XCTAssertEqual(radii, radii.sorted())
         XCTAssertEqual(Set(radii).count, radii.count)
         // The line keeps its note's feed.
         var board = GlobeArcs.Board()
         var a = GlobeArcs.arrival(note(1, by: key(3)), now: now)!
-        a.ring = .global
+        a.ring = .outside
         board.add(a)
         board.step(now: 0, me: me)
-        XCTAssertEqual(board.lines.map(\.ring), [.global])
+        XCTAssertEqual(board.lines.map(\.ring), [.outside])
     }
 
-    func testABusyGlobalNeverPushesOutYourFollows() {
+    func testABusyGlobeNeverPushesOutYourFollows() {
         var board = GlobeArcs.Board()
         var mine = GlobeArcs.arrival(note(0, by: key(1), to: [me]), now: now)!
         mine.ring = .following
         board.add(mine)
         board.step(now: 0, me: me)
-        for n in 1...(GlobeArcs.maxLines + 40) {
-            var a = GlobeArcs.arrival(note(n, by: key(n + 100)), now: now)!
-            a.ring = n % 3 == 0 ? .discover : .global
-            board.add(a)
+        // Three seconds of full slots, each note to four people: 96 lines.
+        var n = 0
+        for second in 1...3 {
+            for _ in 0..<Int(GlobeArcs.starsPerSecond) {
+                n += 1
+                var a = GlobeArcs.arrival(note(n, by: key(n + 100), to: (1...4).map { key(n * 10 + $0 + 5_000) }), now: now)!
+                a.ring = n % 2 == 0 ? .friends : .outside
+                board.add(a)
+            }
+            XCTAssertEqual(board.step(now: Double(second), me: me).count, Int(GlobeArcs.starsPerSecond))
         }
-        board.step(now: 1, me: me)
         let standing = board.lines.filter { $0.retired == nil }
         XCTAssertEqual(standing.count, GlobeArcs.maxLines)
         // Your follow's line stands, though it is the oldest on the globe.
         XCTAssertTrue(standing.contains { $0.note == mine.id })
-        // Global gives way before Discover does.
-        XCTAssertTrue(board.lines.filter { $0.retired != nil }.allSatisfy { $0.ring == .global })
-        XCTAssertEqual(standing.filter { $0.ring == .discover }.count, (GlobeArcs.maxLines + 40) / 3)
+        // The outer ring gives way before friends of friends do.
+        XCTAssertTrue(board.lines.filter { $0.retired != nil }.allSatisfy { $0.ring == .outside })
+        XCTAssertEqual(standing.filter { $0.ring == .friends }.count, n / 2 * 4)
     }
 
-    /// The storm (Logen, 10/15): every arrival flies at once, no queue.
-    func testEveryArrivalFliesAtOnce() {
+    /// The one safety cap (rule 5): at most `starsPerSecond` new stars a
+    /// second, your follows' first; the rest wait for the next free slot.
+    func testAtMostEightNewStarsASecondFollowsFirst() {
         var board = GlobeArcs.Board()
-        for n in 0..<50 { board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!) }
-        XCTAssertEqual(board.step(now: 0, me: me).count, 50)
-        XCTAssertEqual(board.lines.count, 50)
+        for n in 0..<10 {
+            var a = GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!
+            a.ring = .friends
+            board.add(a)
+        }
+        for n in 10..<16 { board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!) }
+        let first = board.step(now: 0, me: me)
+        XCTAssertEqual(first.count, 8)
+        XCTAssertEqual(first.prefix(6).map(\.ring), Array(repeating: .following, count: 6))
+        XCTAssertEqual(board.waiting.count, 8)
+        // Half a second later: half a second's slots.
+        XCTAssertEqual(board.step(now: 0.5, me: me).count, 4)
+        XCTAssertEqual(board.step(now: 1, me: me).count, 4)
         XCTAssertTrue(board.waiting.isEmpty)
-        XCTAssertTrue(board.isBusy)
+    }
+
+    /// No per-person limit (Logen 2026-11-19 00:40Z): every note flies, even
+    /// several from one person at once.
+    func testEveryNoteFromOnePersonFlies() {
+        var board = GlobeArcs.Board()
+        for n in 0..<5 { board.add(GlobeArcs.arrival(note(n, by: key(1), to: [me]), now: now)!) }
+        XCTAssertEqual(board.step(now: 0, me: me).count, 5)
+        XCTAssertEqual(board.lines.count, 5)
+        XCTAssertEqual(Set(board.lines.map(\.note)).count, 5)
     }
 
     func testABurstBetweenFramesKeepsAtMostACapsWorth() {
         var board = GlobeArcs.Board()
-        for n in 0..<(GlobeArcs.maxLines + 30) { board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!) }
-        XCTAssertEqual(board.waiting.count, GlobeArcs.maxLines)
-        XCTAssertEqual(board.waiting.last?.id, key(1000 + GlobeArcs.maxLines + 29))
+        for n in 0..<(GlobeArcs.maxWaiting + 30) { board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!) }
+        XCTAssertEqual(board.waiting.count, GlobeArcs.maxWaiting)
+        XCTAssertEqual(board.waiting.last?.id, key(1000 + GlobeArcs.maxWaiting + 29))
     }
 
     func testStandingLinesNeverPassTheCap() {
@@ -284,7 +340,13 @@ final class GlobeArcsTests: XCTestCase {
             XCTAssertLessThanOrEqual(board.lines.filter { $0.retired == nil }.count, GlobeArcs.maxLines)
             t += 0.01
         }
-        // Retired lines fade out quickly, so what is drawn stays near the cap.
+        // Let the backlog on (8 a second), then the retired lines fade out
+        // quickly, so what is drawn stays near the cap.
+        while !board.waiting.isEmpty {
+            t += 1
+            board.step(now: t, me: me)
+            XCTAssertLessThanOrEqual(board.lines.filter { $0.retired == nil }.count, GlobeArcs.maxLines)
+        }
         board.step(now: t + GlobeArcs.retireFade, me: me)
         XCTAssertLessThanOrEqual(board.lines.count, GlobeArcs.maxLines)
     }
@@ -316,10 +378,12 @@ final class GlobeArcsTests: XCTestCase {
         // in front): no more than a cap's worth wait.
         var board = GlobeArcs.Board()
         for n in 0..<2_000 { board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!) }
-        XCTAssertEqual(board.waiting.count, GlobeArcs.maxLines)
-        // Let on and faded out, they all go.
+        XCTAssertEqual(board.waiting.count, GlobeArcs.maxWaiting)
+        // Let on (two seconds of slots) and faded out, they all go.
         board.step(now: 0, me: me)
-        board.step(now: GlobeArcs.life, me: me)
+        board.step(now: 1, me: me)
+        XCTAssertTrue(board.waiting.isEmpty)
+        board.step(now: 1 + GlobeArcs.life, me: me)
         XCTAssertTrue(board.isIdle)
     }
 

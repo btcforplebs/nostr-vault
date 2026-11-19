@@ -140,28 +140,24 @@ extension GlobeArcs {
         }
     }
 
-    /// The globe's filters on one read relay. Discover and Global are one
-    /// filter with no authors, the relay's whole live stream: every note
-    /// is sorted to its feed by its author here, so the whole of your wider
-    /// web is in it (not just the first 1,500) and it costs one
-    /// subscription however big the web is. Your follows alone keep to
-    /// their authors, a filter of up to 500 each.
-    static func storm(rings: Set<Ring>, show: Show, follows: [String], since: Int,
+    /// The globe's filters on one read relay: your follows' and friends of
+    /// friends' activity by author (`askedAuthors`), up to 500 a filter, and
+    /// with the small stuff on, zap receipts with no authors (a receipt is
+    /// signed by the LNURL server, so it can't be asked for by zapper).
+    /// `authors` nil asks for notes with no authors: too many people to name.
+    static func storm(show: Show, authors: [String]?, since: Int,
                       authorsPerFilter: Int = 500) -> [[String: Any]] {
-        var kinds = show.wideKinds
-        if show.zaps { kinds.append(zapKind) }
-        guard !kinds.isEmpty, !rings.isEmpty else { return [] }
-        if rings.contains(.discover) || rings.contains(.global) {
-            return [["kinds": kinds, "since": since]]
+        let kinds = show.authorKinds
+        var filters: [[String: Any]]
+        if let authors {
+            filters = stride(from: 0, to: authors.count, by: authorsPerFilter).map {
+                ["kinds": kinds, "since": since,
+                 "authors": Array(authors[$0..<min($0 + authorsPerFilter, authors.count)])]
+            }
+        } else {
+            filters = [["kinds": kinds, "since": since]]
         }
-        // Following only: zap receipts carry the LNURL server's key, so they
-        // stay one authorless filter of their own.
-        let noteKinds = show.wideKinds
-        var filters: [[String: Any]] = noteKinds.isEmpty ? [] : stride(from: 0, to: follows.count, by: authorsPerFilter).map {
-            ["kinds": noteKinds, "since": since,
-             "authors": Array(follows[$0..<min($0 + authorsPerFilter, follows.count)])]
-        }
-        if show.zaps { filters.append(["kinds": [zapKind], "since": since]) }
+        if show.extras { filters.append(["kinds": [zapKind], "since": since]) }
         return filters
     }
 

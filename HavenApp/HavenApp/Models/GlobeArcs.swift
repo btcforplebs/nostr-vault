@@ -1,18 +1,25 @@
 import Foundation
 import simd
 
-/// Live arrival arcs on the Web of Trust globe. Every note reaching the
-/// relay flies a star. A reply, quote or repost flies between its two
-/// parties: from its author to each person it is aimed at. A note aimed at
-/// no one flies into you at the center. Where a star sets out says which
-/// feed it came from: your follows from the ring, Discover from the next
-/// shell out, Global from the outer haze (Logen, 10/14).
+/// Live arrival arcs on the Web of Trust globe (rules:
+/// RESEARCH/NV_GLOBE_STARS_FINAL.md, Logen 2026-11-19). Your follows' and
+/// your friends of friends' activity flies as plain stars; from anyone
+/// further out only a zap flies. A reply, quote or repost flies between its
+/// two parties: from its author to each person it is aimed at. A note aimed
+/// at no one flies into you at the center. Where a star sets out says how
+/// far out its author is: your follows from the ring, friends of friends
+/// from the next shell out, a zap from further out from the outer haze.
+/// Every one of their notes flies; only `starsPerSecond` keeps a flood off.
 enum GlobeArcs {
-    /// Most lines on the globe at once: a safety cap, high enough that a
-    /// busy network reads as a storm (Logen, 10/15), low enough that the
-    /// phone keeps drawing smoothly. Past it the widest feed's oldest lines
-    /// are sent on their way out early, Global first.
-    static let maxLines = 300
+    /// Most lines on the globe at once. With `starsPerSecond` new notes at
+    /// most, this is a full globe. Past it the furthest ring's oldest lines
+    /// are sent on their way out early.
+    static let maxLines = 80
+    /// New stars a second at most, your follows' first: the one safety cap
+    /// (no per-person limit, Logen 2026-11-19 00:40Z).
+    static let starsPerSecond = 8.0
+    /// Arrivals held for the next free slot; past it the furthest ring's go.
+    static let maxWaiting = 16
     /// People one note draws lines to: a reply to a crowd stays a few lines.
     static let maxTargets = 4
     /// A star travels from its author to its target over this long,
@@ -38,25 +45,22 @@ enum GlobeArcs {
     /// person reposted.
     static let repostKinds = [6, 16]
 
-    /// The feed a note came in on, which sets where its star starts.
+    /// How far out an arrival's author is, which sets where its star starts.
     enum Ring: String, CaseIterable, Comparable {
-        case following, discover, global
-
-        var title: String {
-            switch self {
-            case .following: "Following"
-            case .discover: "Discover"
-            case .global: "Global"
-            }
-        }
+        /// You and your follows (hop 1).
+        case following
+        /// Your web of trust's friends of friends (hop 2).
+        case friends
+        /// Anyone further out: only their zaps fly.
+        case outside
 
         /// Off the globe, an author's star starts on this shell. Your follows
         /// start where their own star is, on the ring.
         var radius: Double {
             switch self {
             case .following: TrustMap.ringRadius
-            case .discover: TrustMap.closeRadius
-            case .global: TrustMap.outerRadius
+            case .friends: TrustMap.closeRadius
+            case .outside: TrustMap.outerRadius
             }
         }
 
@@ -64,7 +68,7 @@ enum GlobeArcs {
         private var order: Int { Self.allCases.firstIndex(of: self) ?? 0 }
     }
 
-    /// One note: who wrote it, who it is aimed at, and the feed it came in on.
+    /// One note: who wrote it, who it is aimed at, and how far out they are.
     struct Arrival: Equatable {
         let id: String
         let author: String
@@ -76,9 +80,6 @@ enum GlobeArcs {
         var sort: Sort = .note
         /// How hard a zap's bolt strikes, 0 to 1, by its amount.
         var strength = 0.0
-        /// Refused by the gate (`WebGate`, `.outside`): a small red star that
-        /// stops at your web's shell and bounces back out (`GlobeBounce.swift`).
-        var bounced = false
     }
 
     /// From a relay `EVENT`'s event: its `p` tags in order, once each,
@@ -148,12 +149,6 @@ enum GlobeArcs {
         kind == NIP10Thread.commentKind || (kind == 1 && NIP10Thread.parentEventId(kind: kind, tags: tags) != nil)
     }
 
-    /// Which feed a note's author belongs to: yours and your follows' are
-    /// Following, your wider web's Discover, anyone else's Global.
-    static func ring(of author: String, follows: Set<String>, discover: Set<String>) -> Ring {
-        follows.contains(author) ? .following : discover.contains(author) ? .discover : .global
-    }
-
     static func isKey(_ s: String) -> Bool {
         s.utf8.count == 64 && s.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) || (65...70).contains($0) }
     }
@@ -165,7 +160,7 @@ enum GlobeArcs {
         let to: String
         /// Aimed at you, or at no one and so flying into you.
         let toMe: Bool
-        /// The feed its note came in on: where its star sets out.
+        /// How far out its author is: where its star sets out.
         var ring: Ring = .following
         let born: TimeInterval
         /// Set when a newer line needs the room: it fades from here.
@@ -176,8 +171,6 @@ enum GlobeArcs {
         var strength = 0.0
         /// What it carries: a reaction's star is smaller.
         var sort: Sort = .note
-        /// Refused by the gate: it bounces off your web's shell (`bounceStage`).
-        var bounced = false
     }
 
     /// Where a line is at a moment: its star at `head` (0 at the author, 1 at
@@ -191,16 +184,20 @@ enum GlobeArcs {
         let landing: Double
     }
 
-    /// Everything live on the globe. Every arrival flies on the next frame:
-    /// there is no queue, only the line cap (Logen, 10/15).
+    /// Everything live on the globe. An arrival flies at the next frame
+    /// with a free slot: `starsPerSecond` at most, your follows first
+    /// (Logen, 2026-11-19).
     struct Board {
         private(set) var lines: [Line] = []
-        /// Arrived since the last frame: let on, all of them, at the next.
+        /// Arrived, waiting for a free slot.
         private(set) var waiting: [Arrival] = []
         private var seen: Set<String> = []
         private var seenOrder: [String] = []
         /// Ids remembered to drop a note another relay sends again.
         static let seenCap = 4_096
+        /// Slots for new stars, refilled at `starsPerSecond`.
+        private var slots = GlobeArcs.starsPerSecond
+        private var lastStep: TimeInterval?
 
         var isIdle: Bool { lines.isEmpty && waiting.isEmpty }
 
@@ -208,9 +205,8 @@ enum GlobeArcs {
         var isBusy: Bool { lines.count + waiting.count >= GlobeArcs.busyLines }
 
         /// Takes a note in; one already seen (another relay sent it too) is
-        /// skipped. Between two frames at most a cap's worth wait, the
-        /// widest feed's oldest going first, so a busy Global never pushes
-        /// out a note from someone you follow.
+        /// skipped. At most `maxWaiting` wait, the furthest ring's oldest going first,
+        /// so a busy friend of a friend never pushes out someone you follow.
         mutating func add(_ arrival: Arrival) {
             guard seen.insert(arrival.id).inserted else { return }
             seenOrder.append(arrival.id)
@@ -220,37 +216,43 @@ enum GlobeArcs {
                 seenOrder.removeFirst(old)
             }
             waiting.append(arrival)
-            if waiting.count > GlobeArcs.maxLines, let widest = waiting.map(\.ring).max(),
-               let i = waiting.firstIndex(where: { $0.ring == widest }) {
+            if waiting.count > GlobeArcs.maxWaiting, let furthest = waiting.map(\.ring).max(),
+               let i = waiting.firstIndex(where: { $0.ring == furthest }) {
                 waiting.remove(at: i)
             }
         }
 
-        /// Lets every waiting note on and drops what has faded. Returns the
-        /// notes let on.
+        /// Lets waiting notes on as slots allow and drops what has faded.
+        /// Returns the notes let on.
         @discardableResult
         mutating func step(now: TimeInterval, me: String) -> [Arrival] {
             lines.removeAll { GlobeArcs.isGone($0, at: now) }
+            let dt = lastStep.map { max(0, now - $0) } ?? 0
+            lastStep = now
+            slots = min(GlobeArcs.starsPerSecond, slots + dt * GlobeArcs.starsPerSecond)
             guard !waiting.isEmpty else { return [] }
-            let released = waiting
+            // Your follows first, then friends of friends, then zaps from further out.
+            let queue = waiting.enumerated().sorted { ($0.element.ring, $0.offset) < ($1.element.ring, $1.offset) }.map(\.element)
             waiting = []
-            for next in released {
+            var released: [Arrival] = []
+            for next in queue {
+                guard slots >= 1 else { waiting.append(next); continue }
+                slots -= 1
+                released.append(next)
                 // Aimed at no one: it flies into you, where your relay is.
                 for target in next.targets.isEmpty ? [me] : next.targets where target != next.author {
-                    // A refused zap bounces as a star, never strikes as a bolt.
                     lines.append(Line(note: next.id, from: next.author, to: target, toMe: target == me,
-                                      ring: next.ring, born: now, zap: next.zap && !next.bounced,
-                                      strength: next.strength, sort: next.sort, bounced: next.bounced))
-                    // A refused note is one red star, at its first target.
-                    if next.bounced { break }
+                                      ring: next.ring, born: now, zap: next.zap,
+                                      strength: next.strength, sort: next.sort))
                 }
             }
             retireOverCap(now: now)
             return released
         }
 
-        /// Over the cap, the widest feed's oldest standing lines start their
-        /// fade now: Global gives way first, then Discover, then your follows.
+        /// Over the cap, the furthest ring's oldest standing lines start
+        /// their fade now: zaps from outside give way first, then friends of
+        /// friends, then your follows.
         private mutating func retireOverCap(now: TimeInterval) {
             var over = lines.lazy.filter { $0.retired == nil }.count - GlobeArcs.maxLines
             guard over > 0 else { return }
@@ -264,12 +266,11 @@ enum GlobeArcs {
         }
 
         /// Whose pictures to show: the ends of the newest lines, up to
-        /// `limit` people. A storm's hundreds of lines keep their stars;
-        /// only the freshest get faces.
+        /// `limit` people. A storm's lines keep their stars; only the
+        /// freshest get faces.
         func faceKeys(limit: Int, except center: String) -> [String] {
             var keys: [String] = []
-            // A refused stranger never gets a face on your globe.
-            for line in lines.reversed() where line.retired == nil && !line.bounced {
+            for line in lines.reversed() where line.retired == nil {
                 for key in [line.from, line.to] where key != center && !keys.contains(key) {
                     guard keys.count < limit else { return keys }
                     keys.append(key)
@@ -286,7 +287,6 @@ enum GlobeArcs {
 
     static func stage(of line: Line, at now: TimeInterval, reduceMotion: Bool = false) -> Stage {
         if line.zap { return boltStage(of: line, at: now, reduceMotion: reduceMotion) }
-        if line.bounced { return bounceStage(of: line, at: now, reduceMotion: reduceMotion) }
         let age = max(0, now - line.born)
         let head = reduceMotion ? 1 : ease(min(1, age / travel))
         let landed = reduceMotion ? age : age - travel
@@ -308,18 +308,15 @@ enum GlobeArcs {
     /// draw that instant twice, which dropped every star before it flew.
     static func isGone(_ line: Line, at now: TimeInterval) -> Bool {
         if let retired = line.retired, now - retired >= retireFade { return true }
-        if line.bounced { return now - line.born >= bounceLife }
         return now - line.born >= (line.zap ? boltLife : travel + hold + fade)
     }
 
     /// True once the star has reached its target.
-    /// A bounced star never lands.
-    static func hasLanded(_ line: Line, at now: TimeInterval) -> Bool { !line.bounced && now - line.born >= travel }
+    static func hasLanded(_ line: Line, at now: TimeInterval) -> Bool { now - line.born >= travel }
 
     /// How brightly an endpoint's face shows: in as its line sets out,
     /// out as it fades.
     static func faceAlpha(of line: Line, at now: TimeInterval) -> Double {
-        if line.bounced { return 0 }
         let age = now - line.born
         let fadeIn = min(1, max(0, age / 0.8))
         return min(fadeIn, stage(of: line, at: now).alpha)

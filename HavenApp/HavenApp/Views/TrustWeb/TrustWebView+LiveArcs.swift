@@ -5,7 +5,8 @@ import simd
 extension TrustWebView {
     // MARK: - Live arcs
 
-    /// The bar's switch for live arrival arcs, like the feed's Auto-load.
+    /// The bar's switch for live stars, like the feed's Auto-load; My Web
+    /// has it again with the other two (`LiveStarsSwitches`).
     var liveArcsButton: some View { LiveArcsToggle() }
 }
 
@@ -13,74 +14,53 @@ private struct LiveArcsToggle: View {
     @AppStorage(LiveArcsSetting.key) private var on = LiveArcsSetting.defaultOn
 
     var body: some View {
-        IconFilterButton(icon: "antenna.radiowaves.left.and.right", tooltip: "Live arrivals",
+        IconFilterButton(icon: "antenna.radiowaves.left.and.right", tooltip: "Live stars",
                          isSelected: on, color: .havenPurple) { on.toggle() }
-            .accessibilityLabel(Text("Live arrivals"))
+            .accessibilityLabel(Text("Live stars"))
             .accessibilityValue(Text(on ? "On" : "Off"))
-            .accessibilityHint(Text("A star flies across the globe for each new note"))
+            .accessibilityHint(Text("A star flies across the globe for each new note in your web"))
             .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
-/// Notes arriving, as globe arrivals, each marked with the feed it belongs
-/// to. Your follows' notes: when the feed has their timeline open
-/// (Following, or Media on Following) they come from its own live
-/// subscriptions, which stay open whichever tab is on screen: one stream, no
-/// second set of connections. In every other feed mode the feed carries no
-/// follows' notes, so the globe asks for them itself. Which of the two is
-/// re-picked whenever the feed mode or your device relay changes. Everything
-/// else comes from one wider REQ on each of your read relays. Every REQ
-/// rides the feed's own open connection to its relay (`GlobeRelayLink`):
-/// the globe opens no connections of its own.
+/// Your web's activity as globe arrivals (RESEARCH/NV_GLOBE_STARS_FINAL.md,
+/// Logen 2026-11-19): one REQ on each of your read relays asks for your
+/// follows' and, with Friends of friends on, your friends of friends' notes
+/// by author, plus zap receipts. The gate (`GlobeArcs.ring`) is the one hop
+/// check: whoever it doesn't place inside your web flies only a zap, and is
+/// never drawn red. Every REQ rides the feed's own open connection to its
+/// relay (`GlobeRelayLink`): the globe opens no connections of its own.
 @MainActor
 final class GlobeArrivalStream: ObservableObject {
     let arrived = PassthroughSubject<GlobeArcs.Arrival, Never>()
-    /// Watches what decides the source; lives for the whole start.
-    private var watch: AnyCancellable?
-    /// The current source's REQs and sinks.
-    private var links: [GlobeRelayLink] = []
-    private var cancellables: Set<AnyCancellable> = []
     /// Which start the open connections belong to, so a late stop from an
     /// earlier one leaves a newer one running.
     private var generation = 0
-    /// Who the globe is for: a bounce counts only when it tags you.
-    private var me = ""
+    private var links: [GlobeRelayLink] = []
+    /// Who is asked for now, and you and your follows, for placing stars.
+    private var asked: [String]?
+    private var follows: Set<String> = []
+    /// Re-reads your web as follows and the graph load or change.
+    private var webWatch: AnyCancellable?
     #if DEBUG
     private var stub: Task<Void, Never>?
-    #endif
-
-    /// Most authors one filter names.
-    private static let authorsPerFilter = 500
-    /// The wider REQ on each read relay, apart from the follows' source.
-    private var wideLinks: [GlobeRelayLink] = []
-    #if DEBUG
     /// Arrivals per minute, for the globe's debug readout.
     @Published private(set) var perMinute = 0
     private var meter = GlobeArcs.RateMeter()
     private var meterTick: Timer?
     #endif
-    /// How far back a note in the feed still counts as just arrived, for
-    /// authors whose clocks run a little slow.
-    private static let freshWindow: TimeInterval = 60
 
-    /// Where arrivals come from.
-    private enum Source: Equatable {
-        /// The feed's own live timeline.
-        case feed
-        /// The globe's own REQ; `inbox` is your device relay's, when it is up.
-        case own(inbox: URL?)
-    }
+    /// Most authors one filter names.
+    private static let authorsPerFilter = 500
+    /// How often your web is read again with nothing published: the graph's
+    /// links can land without a change to the lists watched.
+    private static let webRecheck: TimeInterval = 30
 
-    /// Opens the connections for the feeds in `rings`; returns the token
-    /// that stops them.
+    /// Opens the REQs `show` asks for; returns the token that stops them.
     @discardableResult
-    /// A sort switched off in My Web isn't asked for at all (`show`).
-    func start(me: String, rings: Set<GlobeArcs.Ring> = Set(GlobeArcs.Ring.allCases),
-               show: GlobeArcs.Show = .init()) -> Int {
+    func start(me: String, show: GlobeArcs.Show = .init()) -> Int {
         stop()
         generation += 1
-        self.me = me
-        guard !rings.isEmpty else { return generation }
         #if DEBUG
         meterTick = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -89,8 +69,6 @@ final class GlobeArrivalStream: ObservableObject {
                 if rate != self.perMinute { self.perMinute = rate }
             }
         }
-        #endif
-        #if DEBUG
         // For looking at the arcs without anyone posting: made-up notes from
         // people on the globe. Nothing is published.
         // `-GlobeArcsStorm <per second>`: a stress feed, that many a second.
@@ -100,22 +78,45 @@ final class GlobeArrivalStream: ObservableObject {
             return generation
         }
         #endif
+        open(me: me, show: show)
+        // A globe opened before your follows or graph loaded (a cold start on
+        // WoT, an account switch), or a new follow: ask again for who is in
+        // your web now, once the lists settle, and every `webRecheck`.
         let feed = FeedService.shared
-        let relay = RelayProcessManager.shared
-        let people = Self.people(feed, me: me)
-        openWide(feed, me: me, rings: rings, people: people, show: show)
-        guard rings.contains(.following) else { return generation }
-        watch = Publishers.CombineLatest4(feed.$feedMode, feed.$mediaFeedMode, relay.$isRunning, relay.$isBooting)
+        let changed = feed.$followedPubkeys.map { _ in () }
+            .merge(with: feed.$wotPubkeys.map { _ in () }, feed.$extendedNetworkPubkeys.map { _ in () })
+            .debounce(for: .seconds(2), scheduler: DispatchQueue.main)
+        let tick = Timer.publish(every: Self.webRecheck, on: .main, in: .common).autoconnect().map { _ in () }
+        webWatch = changed.merge(with: tick)
             .receive(on: DispatchQueue.main)
-            .map { mode, media, _, _ -> Source in
-                // The hop above runs this after the change is stored (@Published
-                // fires in willSet), so the relay's flags read here are the new ones.
-                let carriesFollows = mode == .following || (mode == .media && media == .following)
-                return carriesFollows && feed.localInboxURL != nil ? .feed : .own(inbox: feed.localInboxURL)
-            }
-            .removeDuplicates()
-            .sink { [weak self] source in self?.open(source, me: me, show: show) }
+            .sink { [weak self] in self?.open(me: me, show: show) }
         return generation
+    }
+
+    /// Opens the REQs for who is in your web now; leaves them be when that
+    /// hasn't changed. A reopen asks from then, so nothing replays.
+    private func open(me: String, show: GlobeArcs.Show) {
+        let feed = FeedService.shared
+        let follows = Set(feed.followedPubkeys.map { $0.lowercased() }).union([me.lowercased()])
+        let authors = GlobeArcs.askedAuthors(follows: follows, web: feed.feedGate.web, friends: show.friends)
+        self.follows = follows
+        guard links.isEmpty || authors != asked else { return }
+        asked = authors
+        links.forEach { $0.close() }
+        links = []
+        let filters = GlobeArcs.storm(show: show, authors: authors, since: Int(Date().timeIntervalSince1970),
+                                      authorsPerFilter: Self.authorsPerFilter)
+        for url in feed.externalRelayURLs {
+            links.append(GlobeRelayLink(url: url, filters: filters) { [weak self] event in
+                // A zap's request must be signed by its zapper.
+                guard let self, var arrival = GlobeArcs.arrival(event, verifyZap: NostrEventVerifier.isValid(json:)) else { return }
+                // Judged on the gate as it is now, so a block or a mute counts at once.
+                guard let ring = GlobeArcs.ring(of: arrival, event: event, in: FeedService.shared.feedGate,
+                                                follows: self.follows, show: show) else { return }
+                arrival.ring = ring
+                self.emit(arrival)
+            })
+        }
     }
 
     /// Closes the connections, unless `token` is from an earlier start.
@@ -123,10 +124,10 @@ final class GlobeArrivalStream: ObservableObject {
     @discardableResult
     func stop(_ token: Int? = nil) -> Bool {
         if let token, token != generation { return false }
-        watch = nil
-        closeSource()
-        wideLinks.forEach { $0.close() }
-        wideLinks = []
+        webWatch = nil
+        links.forEach { $0.close() }
+        links = []
+        asked = nil
         #if DEBUG
         stub?.cancel()
         stub = nil
@@ -136,141 +137,12 @@ final class GlobeArrivalStream: ObservableObject {
         return true
     }
 
-    private func closeSource() {
-        cancellables.removeAll()
-        links.forEach { $0.close() }
-        links = []
-    }
-
     /// Every arrival goes out through here.
     private func emit(_ arrival: GlobeArcs.Arrival) {
         #if DEBUG
         meter.record(arrival.id, at: Date.timeIntervalSinceReferenceDate)
         #endif
-        if GlobeArcs.countsAsBounce(arrival, me: me) { GlobeBounceCount.shared.record(arrival.id) }
         arrived.send(arrival)
-    }
-
-    /// The gate's say on an arrival, the one rule every feed uses
-    /// (`WebGate.judge`, step 7 of RESEARCH/NV_ONE_WOT_GATE.md): let in, sent
-    /// back off your web's shell in red, or nothing. Read at each arrival,
-    /// so a block, a mute or a new follow counts at once.
-    private static func judged(_ arrival: GlobeArcs.Arrival, event: [String: Any],
-                               reach: WebGate.Reach = .web) -> GlobeArcs.Arrival? {
-        GlobeArcs.judged(arrival, event: event, in: FeedService.shared.feedGate, reach: reach)
-    }
-
-    private func open(_ source: Source, me: String, show: GlobeArcs.Show) {
-        closeSource()
-        let feed = FeedService.shared
-        GlobeBounceCount.shared.use(account: me)
-        switch source {
-        case .feed: watchFeed(feed, me: me)
-        case .own(let inbox): ask(feed, inbox: inbox, me: me, kinds: show.noteKinds)
-        }
-    }
-
-    /// New notes as the feed takes them in: yours, your follows', and those
-    /// that tag you (the feed's are from your device relay's inbox, which
-    /// already keeps strangers out). Notes land in `pendingNotes` or `notes`
-    /// depending on their age and the feed's scroll, so both are watched;
-    /// both are newest first, so only their fresh heads are read. What is
-    /// already there when the globe opens has arrived, so it doesn't fly.
-    private func watchFeed(_ feed: FeedService, me: String) {
-        let follows = Set(feed.followedPubkeys).union([me])
-        func fresh(_ notes: [FeedNote]) -> ArraySlice<FeedNote> {
-            let cutoff = Date().addingTimeInterval(-Self.freshWindow)
-            return notes.prefix { $0.createdAt >= cutoff }
-        }
-        // Seen ids and when they were written; only the fresh window is kept.
-        var seen: [String: Date] = [:]
-        for note in fresh(feed.notes) + fresh(feed.pendingNotes) { seen[note.id] = note.createdAt }
-        feed.$pendingNotes.merge(with: feed.$notes)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] notes in
-                for note in fresh(notes) where note.repostedBy == nil && seen[note.id] == nil {
-                    seen[note.id] = note.createdAt
-                    guard var arrival = GlobeArcs.arrival(note.event),
-                          follows.contains(arrival.author) || arrival.targets.contains(me) else { continue }
-                    // A note to you from your web flies on Following; one the
-                    // gate refuses bounces.
-                    arrival.ring = .following
-                    if let judged = Self.judged(arrival, event: note.event) { self?.emit(judged) }
-                }
-                if seen.count > 256 {
-                    let cutoff = Date().addingTimeInterval(-Self.freshWindow)
-                    seen = seen.filter { $0.value >= cutoff }
-                }
-                // More than that inside one minute: keep the newest. The board
-                // drops a repeat id itself.
-                if seen.count > 256 {
-                    seen = Dictionary(uniqueKeysWithValues: seen.sorted { $0.value > $1.value }.prefix(256).map { ($0.key, $0.value) })
-                }
-            }
-            .store(in: &cancellables)
-    }
-
-    /// Notes to you, when the feed isn't carrying your follows. Yours and
-    /// your follows' own notes come in on the wider REQ (`openWide`), from
-    /// the same read relays. Notes to you come from your device relay's
-    /// inbox when it is up; when it isn't, from the read relays, where
-    /// anyone can tag you. Either way the gate judges each: your web's fly,
-    /// a stranger's bounce.
-    private func ask(_ feed: FeedService, inbox: URL?, me: String, kinds: [Int]) {
-        // An empty kinds list would match everything on some relays.
-        guard !kinds.isEmpty else { return }
-        let toMe: [String: Any] = ["kinds": kinds, "since": Int(Date().timeIntervalSince1970), "#p": [me]]
-        let urls = inbox.map { [$0] } ?? feed.externalRelayURLs
-        for url in urls {
-            links.append(GlobeRelayLink(url: url, filters: [toMe]) { [weak self] event in
-                guard var arrival = GlobeArcs.arrival(event) else { return }
-                arrival.ring = .following
-                if let judged = Self.judged(arrival, event: event) { self?.emit(judged) }
-            })
-        }
-    }
-
-    /// Who belongs to which feed: you and your follows, then all of your
-    /// wider web (the Discover feed's people, or your saved web while those
-    /// aren't worked out yet).
-    private static func people(_ feed: FeedService, me: String) -> (follows: Set<String>, discover: Set<String>) {
-        let follows = Set(feed.followedPubkeys).union([me])
-        let wider = feed.extendedNetworkPubkeys.isEmpty
-            ? Set(feed.feedTrustedPubkeys) : Set(feed.extendedNetworkPubkeys)
-        return (follows, wider.subtracting(follows))
-    }
-
-    /// The wider REQ on every one of your read relays: your follows'
-    /// notes, reposts (the feed shows a repost as the note reposted, so it
-    /// can't say when one is made), reactions and zaps, and the Discover and
-    /// Global feeds when they're on, as one stream sorted here by author
-    /// (`GlobeArcs.storm`).
-    /// Global keeps to your web, as the Global feed does, unless that is set
-    /// to Everyone.
-    private func openWide(_ feed: FeedService, me: String, rings: Set<GlobeArcs.Ring>,
-                          people: (follows: Set<String>, discover: Set<String>), show: GlobeArcs.Show) {
-        // A note the feed's timeline also carries flies once: the board
-        // drops a repeat id.
-        let filters = GlobeArcs.storm(rings: rings, show: show, follows: people.follows.sorted(),
-                                      since: Int(Date().timeIntervalSince1970), authorsPerFilter: Self.authorsPerFilter)
-        guard !filters.isEmpty else { return }
-        // How far each ring reaches: its feed's Reach (Everyone for Global
-        // with the shield off), so the globe refuses what that feed refuses.
-        let reach: [GlobeArcs.Ring: WebGate.Reach] = [
-            .following: .web,
-            .discover: feed.reach(for: .discovery, globalLike: false),
-            .global: feed.reach(for: .global, globalLike: true),
-        ]
-        for url in feed.externalRelayURLs {
-            wideLinks.append(GlobeRelayLink(url: url, filters: filters) { [weak self] event in
-                // A zap's request must be signed by its zapper.
-                guard var arrival = GlobeArcs.arrival(event, verifyZap: NostrEventVerifier.isValid(json:)) else { return }
-                arrival.ring = GlobeArcs.ring(of: arrival.author, follows: people.follows, discover: people.discover)
-                guard rings.contains(arrival.ring),
-                      let judged = Self.judged(arrival, event: event, reach: reach[arrival.ring] ?? .web) else { return }
-                self?.emit(judged)
-            })
-        }
     }
 
     #if DEBUG
@@ -298,111 +170,22 @@ final class GlobeArrivalStream: ObservableObject {
                 default: targets = []
                 }
                 let id = (0..<4).map { _ in String(format: "%016llx", UInt64.random(in: 0...UInt64.max)) }.joined()
-                // Every feed in turn, so each shell's stars show.
-                let ring = GlobeArcs.Ring.allCases[n % GlobeArcs.Ring.allCases.count]
                 // Every third one a zap, to someone: a bolt rather than a star.
                 // Every fourth a reaction: a smaller star, to one person.
                 // A storm is mostly notes and reactions, as the network is.
                 let zap = storm > 0 ? n % 25 == 0 : n % 3 == 0
                 let reaction = !zap && (storm > 0 ? n % 3 == 0 : n % 4 == 0)
+                // Follows and friends of friends in turn; only a zap comes from outside.
+                let ring: GlobeArcs.Ring = zap && n % 2 == 0 ? .outside : n % 2 == 0 ? .following : .friends
                 let zapped = targets.first ?? people.filter { $0 != author }.randomElement()!
-                var arrival = GlobeArcs.Arrival(id: id, author: author, targets: zap || reaction ? [zapped] : targets, ring: ring,
-                                                zap: zap, sort: zap ? .zap : reaction ? .reaction : .note,
-                                                strength: GlobeArcs.zapStrength(sats: [21, 1_000, 21_000, 100_000].randomElement()!))
-                // Every fifth a made-up stranger the gate refused: it bounces.
-                if n % 5 == 4 {
-                    arrival = GlobeArcs.Arrival(id: id, author: String(id.reversed()), targets: [me], ring: .global)
-                    arrival.bounced = true
-                }
-                emit(arrival)
+                emit(GlobeArcs.Arrival(id: id, author: author, targets: zap || reaction ? [zapped] : targets, ring: ring,
+                                       zap: zap, sort: zap ? .zap : reaction ? .reaction : .note,
+                                       strength: GlobeArcs.zapStrength(sats: [21, 1_000, 21_000, 100_000].randomElement()!)))
             }
             try? await Task.sleep(for: storm > 0 ? .milliseconds(100) : .milliseconds(Int.random(in: 900...2000)))
         }
     }
     #endif
-}
-
-/// "N bounced in the last hour" under the WoT tab's globe: notes the gate
-/// refused, each once. Shared, so the counter and the globe's stream agree
-/// whichever view is up; a switch of account starts it again.
-@MainActor
-final class GlobeBounceCount: ObservableObject {
-    static let shared = GlobeBounceCount()
-    @Published private(set) var lastHour = 0
-    private var log = GlobeArcs.BounceLog()
-    private var account = ""
-    /// Counts down as bounces age out of the hour; only while there are some.
-    private var tick: Timer?
-
-    func use(account: String) {
-        guard account != self.account else { return }
-        self.account = account
-        log.clear()
-        refresh()
-    }
-
-    func record(_ id: String) {
-        guard log.record(id, at: Date.timeIntervalSinceReferenceDate) else { return }
-        refresh()
-    }
-
-    private func refresh() {
-        let count = log.count(at: Date.timeIntervalSinceReferenceDate)
-        if count != lastHour { lastHour = count }
-        if count == 0 {
-            tick?.invalidate()
-            tick = nil
-        } else if tick == nil {
-            tick = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.refresh() }
-            }
-        }
-    }
-}
-
-/// The small, faint counter, just above the My Web button: no badge, no
-/// sound. A tap opens "Outside your web" in the Vault, where what tagged you
-/// from outside is listed.
-struct GlobeBounceCounter: View {
-    @ObservedObject private var count = GlobeBounceCount.shared
-    @AppStorage(LiveArcsSetting.key) private var liveArcsOn = LiveArcsSetting.defaultOn
-
-    var body: some View {
-        if liveArcsOn && count.lastHour > 0 {
-            Button(action: Self.openOutside) {
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(LiveArcsPainter.bounceColor)
-                        .frame(width: 5, height: 5)
-                    Text(GlobeArcs.bounceLabel(count.lastHour))
-                        .font(.appSystem(size: 11, weight: .medium))
-                        .monospacedDigit()
-                }
-                .foregroundStyle(.white.opacity(0.6))
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(.black.opacity(0.25), in: Capsule())
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .fixedSize()
-            .transition(.opacity)
-            .accessibilityLabel(Text("\(GlobeArcs.bounceLabel(count.lastHour)), notes to you from outside your web"))
-            .accessibilityHint(Text("Opens Outside your web"))
-        }
-    }
-
-    /// The Vault, on Activity's "Outside your web" filter.
-    static func openOutside() {
-        NotificationCenter.default.post(name: .havenOpenVault, object: nil)
-        // After the Vault's own switch to its first list (iPhone posts it on
-        // the next turn), so Outside is where it lands.
-        DispatchQueue.main.async {
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .havenOpenRelayActivity, object: ActivityFilter.outside)
-            }
-        }
-    }
 }
 
 /// Draws the live arcs for one frame. The globe hands it where everyone is
@@ -448,42 +231,24 @@ struct LiveArcsPainter {
         path.addEllipse(in: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r))
     }
 
-    /// A refused note's star: red, small and faint (`GlobeBounce.swift`).
-    static let bounceColor = Color(red: 0.93, green: 0.28, blue: 0.28)
-
     /// Shooting stars, their faint trails, and the lights where they land:
-    /// over the stars and threads, under the faces. Refused notes' red
-    /// stars go first, under the rest.
+    /// over the stars and threads, under the faces.
     func drawLines(_ context: inout GraphicsContext) {
-        let lines = board.lines
-        let bounced = lines.filter(\.bounced)
-        if !bounced.isEmpty {
-            draw(bounced, in: &context, color: Self.bounceColor, brightness: GlobeArcs.bounceBrightness,
-                 samples: GlobeArcs.arcSamples(lines: lines.count))
-        }
-        draw(bounced.isEmpty ? lines : lines.filter { !$0.bounced }, in: &context, color: starColor, brightness: 1,
-             samples: GlobeArcs.arcSamples(lines: lines.count))
+        draw(board.lines, in: &context, color: starColor, samples: GlobeArcs.arcSamples(lines: board.lines.count))
     }
 
-    private func draw(_ lines: [GlobeArcs.Line], in context: inout GraphicsContext, color: Color,
-                      brightness: Double, samples: Int) {
+    private func draw(_ lines: [GlobeArcs.Line], in context: inout GraphicsContext, color: Color, samples: Int) {
         let unit = max(0.8, k)
         // Lights breathe slowly while they stay.
         let breath = reduceMotion ? 1 : 0.82 + 0.18 * sin(now * 2 * .pi / 2.6)
         var trails = Batch(), tails = Batch(), cores = Batch(), glows = Batch(), rings = Batch()
         var bolts: [GlobeBoltPainter.Shape] = []
         for line in lines {
-            let raw = GlobeArcs.stage(of: line, at: now, reduceMotion: reduceMotion)
-            let stage = brightness < 1
-                ? GlobeArcs.Stage(head: raw.head, trail: raw.trail * brightness, alpha: raw.alpha * brightness, landing: raw.landing)
-                : raw
+            let stage = GlobeArcs.stage(of: line, at: now, reduceMotion: reduceMotion)
             guard stage.alpha > 0.01 else { continue }
             let a = place(line.from, line.ring), b = place(line.to, nil)
-            // A bounced star's whole way is in to the shell: its stage runs
-            // over that part of the curve.
-            let span = line.bounced ? GlobeArcs.shellHit(from: a, to: b, facing: facing) : 1
             func at(_ t: Double) -> GlobeScene.Projected? {
-                project(GlobeArcs.point(from: a, to: b, at: t * span, facing: facing))
+                project(GlobeArcs.point(from: a, to: b, at: t, facing: facing))
             }
             // A zap is a lightning bolt, not a star.
             if line.zap {
@@ -503,16 +268,13 @@ struct LiveArcsPainter {
                     }
                 }
             }
-            // A reaction's star, tail and landing are smaller than a note's;
-            // so is a bounced one.
-            let sizeIndex = line.bounced ? 1 : Self.sizeIndex(line), size = Self.size(sizeIndex)
+            // A reaction's star, tail and landing are smaller than a note's.
+            let sizeIndex = Self.sizeIndex(line), size = Self.size(sizeIndex)
             // In flight: the star and its short tail, brightest at the star.
-            // A bounced one is always in flight; at the shell, its turn.
-            if stage.head < 1 || line.bounced, let head = at(stage.head) {
+            if stage.head < 1, let head = at(stage.head) {
                 // Round the back a star dims smoothly, never switches.
                 let behind = GlobeEdge.arc(depth: head.depth)
-                // A bounced star's tail runs over a shorter curve: as long on screen.
-                let start = max(0, stage.head - GlobeArcs.tailLength / max(span, 0.2))
+                let start = max(0, stage.head - GlobeArcs.tailLength)
                 var last = at(start)?.point
                 for step in 1...Self.tailSteps {
                     let t = start + (stage.head - start) * Double(step) / Double(Self.tailSteps)
