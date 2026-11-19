@@ -31,7 +31,7 @@ modules:
       env:
         CGO_ENABLED: '0'
         GOTOOLCHAIN: local
-        GOFLAGS: -mod=mod
+        GOFLAGS: -mod=mod -modcacherw # writable cache: flatpak-builder deletes the build dir after
         GOPROXY: file:///run/build/nostr-vault/gomod
         GOSUMDB: 'off' # go.sum still checks every module's hash
         GOMODCACHE: /run/build/nostr-vault/.gomodcache
