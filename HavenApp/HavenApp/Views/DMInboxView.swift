@@ -48,6 +48,17 @@ struct DMInboxView: View {
         }
     }
 
+    /// New message: pick the person and their chat opens (B2). Opened once
+    /// the sheet is down, so the push lands on the inbox and not the sheet.
+    private var newChatPicker: some View {
+        DMNewChatPicker { pubkey in
+            showingCompose = false
+            DispatchQueue.main.async { open(pubkey) }
+        }
+        .environmentObject(nostrService)
+        .environmentObject(configService)
+    }
+
     private var isSearching: Bool { !DMSearch.normalizedQuery(searchText).isEmpty }
 
     /// The tray in the top-right: Requests pushed, or swapped into the iPad's left pane.
@@ -130,11 +141,7 @@ struct DMInboxView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingCompose) {
-                MessageComposerView(recipientPubkey: nil)
-                    .environmentObject(nostrService)
-                    .environmentObject(configService)
-            }
+            .sheet(isPresented: $showingCompose) { newChatPicker }
             #else
             .navigationTitle(String(localized: "dm.inbox.title"))
             .toolbar {
@@ -172,10 +179,7 @@ struct DMInboxView: View {
                 }
             }
             .sheet(isPresented: $showingCompose) {
-                MacComposeView()
-                    .environmentObject(nostrService)
-                    .environmentObject(configService)
-                    .frame(minWidth: 400, minHeight: 350)
+                newChatPicker.frame(minWidth: 400, minHeight: 350)
             }
             #endif
     }
@@ -452,170 +456,6 @@ extension DMInboxView {
         .background(Color.platformWindowBackground.ignoresSafeArea())
     }
 }
-
-// MARK: - macOS Compose View
-
-#if os(macOS)
-struct MacComposeView: View {
-    @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject var nostrService: NostrService
-    @EnvironmentObject var configService: ConfigService
-    @StateObject private var dmService = DMService.shared
-
-    @State private var selectedRecipient: String?
-    @State private var messageText = ""
-    @State private var searchText = ""
-    @State private var isSending = false
-    @State private var sendError: String?
-
-    private var searchResults: [String] {
-        if searchText.count < 2 { return [] }
-        return Array(nostrService.profiles.keys.filter { pubkey in
-            let profile = nostrService.profiles[pubkey]
-            let name = profile?.bestName ?? ""
-            return name.lowercased().contains(searchText.lowercased()) ||
-                   pubkey.lowercased().contains(searchText.lowercased())
-        }.prefix(10))
-    }
-
-    private var canSend: Bool {
-        !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        selectedRecipient != nil
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text(String(localized: "dm.compose.title"))
-                    .font(.appSystem(size: 15, weight: .semibold))
-                Spacer()
-                Button(String(localized: "dm.compose.cancel")) { dismiss() }
-                    .foregroundColor(.accentText)
-                    .keyboardShortcut(.cancelAction)
-            }
-            .padding()
-
-            Divider()
-
-            // Recipient
-            if let recipient = selectedRecipient {
-                HStack(spacing: 10) {
-                    Text(String(localized: "dm.compose.to"))
-                        .font(.appSystem(size: 12, weight: .semibold))
-                        .foregroundColor(.secondary)
-                    AvatarView(url: nostrService.profiles[recipient]?.pictureURL, pubkey: recipient, size: 24)
-                    Text(nostrService.profiles[recipient]?.bestName ?? String(recipient.prefix(8)) + "...")
-                        .font(.appSystem(size: 13, weight: .medium))
-                    Spacer()
-                    Button(action: { selectedRecipient = nil; searchText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary.opacity(0.6))
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    TextField(String(localized: "dm.compose.searchPlaceholder"), text: $searchText)
-                        .textFieldStyle(.plain)
-                        .padding(10)
-                        .background(Color.secondary.opacity(0.1))
-                        .cornerRadius(8)
-
-                    if !searchResults.isEmpty {
-                        ScrollView {
-                            VStack(spacing: 0) {
-                                ForEach(searchResults, id: \.self) { pubkey in
-                                    Button(action: { selectedRecipient = pubkey; searchText = "" }) {
-                                        HStack(spacing: 10) {
-                                            AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 28)
-                                            Text(nostrService.profiles[pubkey]?.bestName ?? String(pubkey.prefix(8)))
-                                                .font(.appSystem(size: 13))
-                                                .foregroundColor(.primary)
-                                            Spacer()
-                                        }
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 6)
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                        .frame(maxHeight: 150)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-            }
-
-            Divider()
-
-            // Message
-            TextEditor(text: $messageText)
-                .font(.appSystem(size: 13))
-                .scrollContentBackground(.hidden)
-                .padding(12)
-                .frame(minHeight: 100)
-
-            Divider()
-
-            // Send
-            HStack {
-                Spacer()
-                Button(action: sendMessage) {
-                    if isSending {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                    } else {
-                        HStack(spacing: 6) {
-                            Image(systemName: "paperplane.fill")
-                            Text(String(localized: "dm.compose.send"))
-                        }
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.havenPurple)
-                .disabled(!canSend || isSending)
-            }
-            .padding()
-        }
-        .alert(String(localized: "dm.compose.sendFailed"), isPresented: Binding<Bool>(
-            get: { sendError != nil },
-            set: { if !$0 { sendError = nil } }
-        )) {
-            Button(String(localized: "dm.compose.ok")) { sendError = nil }
-        } message: {
-            if let sendError = sendError {
-                Text(sendError)
-            }
-        }
-    }
-
-    private func sendMessage() {
-        guard let recipient = selectedRecipient else { return }
-        isSending = true
-        let content = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        Task {
-            do {
-                try await dmService.sendDM(content: content, to: recipient)
-                await MainActor.run { dismiss() }
-            } catch {
-                #if DEBUG
-                print("Failed to send message: \(error)")
-                #endif
-                await MainActor.run {
-                    isSending = false
-                    sendError = error.localizedDescription
-                }
-            }
-        }
-    }
-}
-#endif
 
 // MARK: - Conversation Row
 
