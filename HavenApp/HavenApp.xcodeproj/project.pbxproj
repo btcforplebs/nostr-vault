@@ -1613,6 +1613,7 @@
 		B1FB09DF1783A4326584D426 /* ComposeView+Chrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6EE10E9C93BC7D32CD6D065 /* ComposeView+Chrome.swift */; };
 		B214FDD53C7C0AD906BCEC1B /* MacModeComposeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDC471CDEB623A380FC45C62 /* MacModeComposeButton.swift */; };
 		B2473820C7E6731993675705 /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118DA8971CC8566F3783F1EE /* NowPlayingView.swift */; };
+		B2522A1EDA5A8634D440D10D /* DMBlockedNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63656F79DB488FE9FB6ACC67 /* DMBlockedNotice.swift */; };
 		B2560F4961E6746935CE3E8E /* TutorialContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 451C1EC5891AAECA7401505F /* TutorialContent.swift */; };
 		B269F0CA9A5435B3EA0A9922 /* BlossomDashboardMirrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD2828F9DD6C5EB7FA5ADE4 /* BlossomDashboardMirrors.swift */; };
 		B274CA36A12F025B5F22264C /* LiveNow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD9985D2718F64F8D0F52630 /* LiveNow.swift */; };
@@ -2083,6 +2084,7 @@
 		E50C4B4F8787584FC7E29EA2 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 848045286D78E78658D43BE3 /* MenuBarView.swift */; };
 		E517147123B85E1EE77189AE /* DMFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4D67D86F1E9429A57FEB224 /* DMFile.swift */; };
 		E519A9B9314848736E9115CC /* NWCService+PayInvoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = F720A3057EBF19D5EE421C52 /* NWCService+PayInvoice.swift */; };
+		E51A6CCC42FBDC8F458326F5 /* DMBlockedNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63656F79DB488FE9FB6ACC67 /* DMBlockedNotice.swift */; };
 		E5439312A59DE5AFE1C0FF61 /* VaultSessionCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C421342CE309F6D5E901538 /* VaultSessionCore.swift */; };
 		E54F88B2EDF294AB94CCB491 /* RailEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95CEF2310C98ACF1EC0E34C6 /* RailEditSheet.swift */; };
 		E5641EAC3823ADC19D08F76E /* MacSyncSettingsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCBDC2A4AF4AEB828097AEC /* MacSyncSettingsPage.swift */; };
@@ -2838,6 +2840,7 @@
 		621A96E074FD92012D0EEB20 /* MacFipsMeshSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFipsMeshSettingsView.swift; sourceTree = "<group>"; };
 		62A3D186CE8979899BC73398 /* WotNewcomersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WotNewcomersView.swift; sourceTree = "<group>"; };
 		62B1CCA082F36A09EF426579 /* MarketScopeGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketScopeGate.swift; sourceTree = "<group>"; };
+		63656F79DB488FE9FB6ACC67 /* DMBlockedNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMBlockedNotice.swift; sourceTree = "<group>"; };
 		64074B113CDD8831C2CD4942 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		64608CF1EFDCD7211E9AAE04 /* ShareInboxTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInboxTrigger.swift; sourceTree = "<group>"; };
 		648E05F35CCEDA3203E337DF /* SetupOwnerKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupOwnerKey.swift; sourceTree = "<group>"; };
@@ -3796,6 +3799,7 @@
 		28A092FAEB50D5552EA120E9 /* DM */ = {
 			isa = PBXGroup;
 			children = (
+				63656F79DB488FE9FB6ACC67 /* DMBlockedNotice.swift */,
 				8CB9E79782AB55A41F57E213 /* DMRequestsButton.swift */,
 				0FCAB2E176636514B4B09244 /* DMSearchResultsList.swift */,
 				EC76F99AF72151E62332F43D /* DMSendStatusLine.swift */,
@@ -5807,6 +5811,7 @@
 				20E36A7DBF7BA868620F56D2 /* CustomEmojiText.swift in Sources */,
 				B2889A6B902C69E8612485A8 /* CustomZapSheet.swift in Sources */,
 				AF1084AE6F3D5DE5D5F5DFC1 /* DMAttachment.swift in Sources */,
+				E51A6CCC42FBDC8F458326F5 /* DMBlockedNotice.swift in Sources */,
 				40745A5B21FBDBE389A58977 /* DMCacheFile.swift in Sources */,
 				7B915DA0CC385068311E2B60 /* DMCatchUp.swift in Sources */,
 				8FD246ECCA98B192DA4F35E1 /* DMChatAccountGuard.swift in Sources */,
@@ -6993,6 +6998,7 @@
 				952B3B5AF968D120A42C007D /* CustomEmojiText.swift in Sources */,
 				07D3B5A3AB257E7D23940245 /* CustomZapSheet.swift in Sources */,
 				79102C2AF9825055F7FF1310 /* DMAttachment.swift in Sources */,
+				B2522A1EDA5A8634D440D10D /* DMBlockedNotice.swift in Sources */,
 				7F2D52895F58CEFCE40949A0 /* DMCacheFile.swift in Sources */,
 				417A107EDCE8ED4BB06C8C3D /* DMCatchUp.swift in Sources */,
 				A4A4A36358D5DF5225F268F6 /* DMChatAccountGuard.swift in Sources */,

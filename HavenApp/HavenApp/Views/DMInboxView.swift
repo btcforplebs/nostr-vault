@@ -704,6 +704,9 @@ struct ConversationRow: View {
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
+        // A name, not `abcd1234…`, for someone whose profile isn't loaded
+        // yet (B6). Queued and batched by NostrService.
+        .onAppear { nostrService.fetchMissingProfiles(for: [conversation.id]) }
     }
 }
 

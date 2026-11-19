@@ -20,6 +20,23 @@ final class DMMessagesBatchTests: XCTestCase {
         XCTAssertTrue(try source("HavenApp/Views/DMThreadView.swift").contains(".scrollDismissesKeyboard(.interactively)"))
     }
 
+    /// B6: rows and the chat header fetch a profile that isn't loaded.
+    func testNamesAreFetched() throws {
+        XCTAssertTrue(try source("HavenApp/Views/DMInboxView.swift")
+            .contains(".onAppear { nostrService.fetchMissingProfiles(for: [conversation.id]) }"))
+        XCTAssertTrue(try source("HavenApp/Views/DMThreadView.swift")
+            .contains("nostrService.fetchMissingProfiles(for: [counterpartyPubkey])"))
+    }
+
+    /// B3: a chat with someone blocked shows no history and takes no message.
+    func testBlockedChatTakesNoMessage() throws {
+        let thread = try source("HavenApp/Views/DMThreadView.swift")
+        XCTAssertTrue(thread.contains("!isBlocked && !isSending"))
+        XCTAssertTrue(thread.contains("isBlocked ? [] : conversation?.messages ?? []"))
+        XCTAssertTrue(thread.contains(".disabled(isBlocked)"))
+        XCTAssertTrue(thread.contains("DMBlockedNotice()"))
+    }
+
     func source(_ path: String) throws -> String {
         let app = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
