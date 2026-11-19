@@ -42,14 +42,15 @@ class GlobeArcsTest {
         assertEquals(listOf(me), arrival(note(1, key(1), listOf(me)))?.targets)
     }
 
-    @Test fun aNoteNamingSeveralPeopleIsOneLineEachOnceWithoutTheAuthor() {
-        val a = arrival(note(1, key(1), listOf(key(2), key(3), key(2), key(1))))
-        assertEquals(listOf(key(2), key(3)), a?.targets)
+    @Test fun aNoteNamingSeveralPeopleIsOneLineToTheFirstWhoIsNotTheAuthor() {
+        val a = arrival(note(1, key(1), listOf(key(1), key(2), key(3))))
+        assertEquals(listOf(key(2)), a?.targets)
     }
 
-    @Test fun aNoteNamingACrowdIsCapped() {
+    @Test fun aNoteNamingACrowdIsOneLine() {
+        assertEquals(1, GlobeArcs.MAX_TARGETS)
         val a = arrival(note(1, key(1), (2..20).map(::key)))
-        assertEquals(GlobeArcs.MAX_TARGETS, a?.targets?.size)
+        assertEquals(listOf(key(2)), a?.targets)
     }
 
     @Test fun aReplyFliesToThePersonItAnswersNotTheWholeThread() {
@@ -240,30 +241,33 @@ class GlobeArcsTest {
         }
     }
 
-    @Test fun eachFeedSetsOutFromItsOwnShellWidestLast() {
+    @Test fun eachHopSetsOutFromItsOwnShellFurthestLast() {
         val follows = setOf(key(1), me)
-        val discover = setOf(key(2))
-        assertEquals(GlobeArcs.Ring.FOLLOWING, GlobeArcs.ring(key(1), follows, discover))
-        assertEquals(GlobeArcs.Ring.FOLLOWING, GlobeArcs.ring(me, follows, discover))
-        assertEquals(GlobeArcs.Ring.DISCOVER, GlobeArcs.ring(key(2), follows, discover))
-        assertEquals(GlobeArcs.Ring.GLOBAL, GlobeArcs.ring(key(3), follows, discover))
+        val web = setOf(key(2))
+        assertEquals(GlobeArcs.Ring.FOLLOWS, GlobeArcs.ring(key(1), follows, web))
+        assertEquals(GlobeArcs.Ring.FOLLOWS, GlobeArcs.ring(me, follows, web))
+        assertEquals(GlobeArcs.Ring.WEB, GlobeArcs.ring(key(2), follows, web))
+        assertEquals(GlobeArcs.Ring.OUTSIDE, GlobeArcs.ring(key(3), follows, web))
         val radii = GlobeArcs.Ring.entries.map { it.radius }
         assertEquals(radii.sorted(), radii)
         assertEquals(radii.size, radii.toSet().size)
-        // The line keeps its note's feed.
+        // The line keeps its author's ring.
         val board = GlobeArcs.Board()
-        board.add(arrival(note(1, key(3)))!!.copy(ring = GlobeArcs.Ring.GLOBAL))
+        board.add(arrival(note(1, key(3)))!!.copy(ring = GlobeArcs.Ring.OUTSIDE))
         board.step(0.0, me)
-        assertEquals(listOf(GlobeArcs.Ring.GLOBAL), board.lines.map { it.ring })
+        assertEquals(listOf(GlobeArcs.Ring.OUTSIDE), board.lines.map { it.ring })
     }
 
-    @Test fun aBusyGlobalNeverPushesOutYourFollows() {
-        val board = GlobeArcs.Board()
-        val mine = arrival(note(0, key(1), listOf(me)))!!.copy(ring = GlobeArcs.Ring.FOLLOWING)
+    /** A board with no rate cap, to reach the line cap. */
+    private fun uncapped() = GlobeArcs.Board(burst = 10_000.0)
+
+    @Test fun aBusyOutsideNeverPushesOutYourFollows() {
+        val board = uncapped()
+        val mine = arrival(note(0, key(1), listOf(me)))!!.copy(ring = GlobeArcs.Ring.FOLLOWS)
         board.add(mine)
         board.step(0.0, me)
         for (n in 1..(GlobeArcs.MAX_LINES + 40)) {
-            val ring = if (n % 3 == 0) GlobeArcs.Ring.DISCOVER else GlobeArcs.Ring.GLOBAL
+            val ring = if (n % 3 == 0) GlobeArcs.Ring.WEB else GlobeArcs.Ring.OUTSIDE
             board.add(arrival(note(n, key(n + 100)))!!.copy(ring = ring))
         }
         board.step(1.0, me)
@@ -271,23 +275,49 @@ class GlobeArcsTest {
         assertEquals(GlobeArcs.MAX_LINES, standing.size)
         // Your follow's line stands, though it is the oldest on the globe.
         assertTrue(standing.any { it.note == mine.id })
-        // Global gives way before Discover does.
-        assertTrue(board.lines.filter { it.retired != null }.all { it.ring == GlobeArcs.Ring.GLOBAL })
-        assertEquals((GlobeArcs.MAX_LINES + 40) / 3, standing.count { it.ring == GlobeArcs.Ring.DISCOVER })
+        // Outside gives way before friends of friends do.
+        assertTrue(board.lines.filter { it.retired != null }.all { it.ring == GlobeArcs.Ring.OUTSIDE })
+        assertEquals((GlobeArcs.MAX_LINES + 40) / 3, standing.count { it.ring == GlobeArcs.Ring.WEB })
     }
 
-    @Test fun everyArrivalFliesAtOnce() {
+    /** Rule 5: at most 8 new stars a second, burst 8; over the cap is dropped, not queued. */
+    @Test fun eightNewStarsASecondTheRestDropped() {
         val board = GlobeArcs.Board()
         for (n in 0 until 50) board.add(arrival(note(n, key(n + 1), listOf(me)))!!)
-        assertEquals(50, board.step(0.0, me).size)
-        assertEquals(50, board.lines.size)
-        // Kotlin's `waiting` is private: nothing left waiting means the next step lets nothing on.
-        assertTrue(board.step(0.0, me).isEmpty())
-        assertTrue(board.isBusy)
+        val first = board.step(0.0, me)
+        assertEquals(GlobeArcs.BURST.toInt(), first.size)
+        // In arrival order, and the rest are gone: the next frame lets nothing on.
+        assertEquals((0 until 8).map { key(1000 + it) }, first.map { it.id })
+        assertTrue(board.step(0.01, me).isEmpty())
+        // Half a second later 4 more may fly.
+        for (n in 50 until 60) board.add(arrival(note(n, key(n + 1), listOf(me)))!!)
+        assertEquals(4, board.step(0.51, me).size)
+        // A quiet spell never builds more than a burst.
+        for (n in 60 until 100) board.add(arrival(note(n, key(n + 1), listOf(me)))!!)
+        assertEquals(GlobeArcs.BURST.toInt(), board.step(100.0, me).size)
+    }
+
+    @Test fun overTheRateCapHopOneGoesFirst() {
+        val board = GlobeArcs.Board()
+        for (n in 0 until 10) board.add(arrival(note(n, key(n + 100)))!!.copy(ring = GlobeArcs.Ring.WEB))
+        for (n in 10 until 13) board.add(arrival(note(n, key(n + 100)))!!.copy(ring = GlobeArcs.Ring.FOLLOWS))
+        val released = board.step(0.0, me)
+        assertEquals(8, released.size)
+        assertEquals(List(3) { GlobeArcs.Ring.FOLLOWS } + List(5) { GlobeArcs.Ring.WEB }, released.map { it.ring })
+        // The friends of friends let on are the first that came.
+        assertEquals((0 until 5).map { key(1000 + it) }, released.drop(3).map { it.id })
+    }
+
+    /** Rule 5 (Logen 00:40Z): no limit per person. Every note from the same author flies. */
+    @Test fun noLimitPerPerson() {
+        val board = GlobeArcs.Board()
+        for (n in 0 until 8) board.add(arrival(note(n, key(1), listOf(me)))!!)
+        assertEquals(8, board.step(0.0, me).size)
+        assertEquals(8, board.lines.count { it.from == key(1) })
     }
 
     @Test fun aBurstBetweenFramesKeepsAtMostACapsWorth() {
-        val board = GlobeArcs.Board()
+        val board = uncapped()
         for (n in 0 until GlobeArcs.MAX_LINES + 30) board.add(arrival(note(n, key(n + 1), listOf(me)))!!)
         // Kotlin's `waiting` is private: read it from what the next step lets on.
         val waiting = board.step(0.0, me)
@@ -296,7 +326,7 @@ class GlobeArcsTest {
     }
 
     @Test fun standingLinesNeverPassTheCap() {
-        val board = GlobeArcs.Board()
+        val board = uncapped()
         var t = 0.0
         for (n in 0 until 400) {
             board.add(arrival(note(n, key(n + 1), listOf(key(1000 + n), key(2000 + n))))!!)
@@ -309,8 +339,23 @@ class GlobeArcsTest {
         assertTrue(board.lines.size <= GlobeArcs.MAX_LINES)
     }
 
+    /** At the full rate a note line lives TRAVEL + HOLD + FADE, so the line cap is a safety net. */
+    @Test fun theRateCapStaysUnderTheLineCap() {
+        val life = GlobeArcs.TRAVEL + GlobeArcs.HOLD + GlobeArcs.FADE
+        assertTrue(GlobeArcs.BURST + GlobeArcs.RATE * life < GlobeArcs.MAX_LINES)
+        val board = GlobeArcs.Board()
+        var t = 0.0
+        var n = 0
+        while (t < 30.0) {
+            repeat(3) { board.add(arrival(note(n, key(n + 1), listOf(me)))!!); n++ }
+            board.step(t, me)
+            assertTrue(board.lines.none { it.retired != null })
+            t += 1.0 / 60
+        }
+    }
+
     @Test fun aStarTravelsLandsAndItsTrailFadesFirst() {
-        val line = GlobeArcs.Line(key(9), key(1), me, true, GlobeArcs.Ring.FOLLOWING, 0.0, GlobeArcs.Sort.NOTE)
+        val line = GlobeArcs.Line(key(9), key(1), me, true, GlobeArcs.Ring.FOLLOWS, 0.0, GlobeArcs.Sort.NOTE)
         assertEquals(0.0, GlobeArcs.stage(line, 0.0).alpha, 0.0)
         val mid = GlobeArcs.stage(line, GlobeArcs.TRAVEL / 2)
         assertEquals(0.5, mid.head, 0.001)
@@ -331,7 +376,7 @@ class GlobeArcsTest {
     }
 
     @Test fun notesHeldNeverOutgrowTheCap() {
-        val board = GlobeArcs.Board()
+        val board = uncapped()
         for (n in 0 until 2_000) board.add(arrival(note(n, key(n + 1), listOf(me)))!!)
         // Kotlin's `waiting` is private: what the step lets on is what waited.
         assertEquals(GlobeArcs.MAX_LINES, board.step(0.0, me).size)
@@ -417,12 +462,12 @@ class GlobeArcsTest {
         assertEquals(filters, sent)
     }
 
-    /** A relay sending your key in uppercase hex still lands your note on Following, not Global (Tron, PR 738). */
+    /** A relay sending your key in uppercase hex still lands your note on your follows' ring (Tron, PR 738). */
     @Test fun anUppercaseKeyFromARelayIsStillYours() {
         val upper = "AB" + key(9).drop(2).uppercase()
         val loud = arrival(note(1, by = upper))!!
         assertEquals("ab" + key(9).drop(2), loud.author)
-        assertEquals(GlobeArcs.Ring.FOLLOWING, GlobeArcs.ring(loud.author, follows = setOf("ab" + key(9).drop(2)), discover = emptySet()))
+        assertEquals(GlobeArcs.Ring.FOLLOWS, GlobeArcs.ring(loud.author, follows = setOf("ab" + key(9).drop(2)), web = emptySet()))
     }
 
 }

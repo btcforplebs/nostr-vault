@@ -13,15 +13,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import com.nostrvault.data.model.GlobeArcs
-import com.nostrvault.data.model.GlobeLive
 import com.nostrvault.data.model.LiveArcsSetting
 import com.nostrvault.ui.screens.dashboard.IconFilterButton
 
 /**
- * Live arrivals, kept across launches with iOS's key ([LiveArcsSetting]):
- * the bar's antenna is the one switch, and every feed and sort flies (My
- * Web's feed and sort switches were cut, Logen 11/12).
+ * Live stars, kept across launches with iOS's keys ([LiveArcsSetting]): the
+ * bar's antenna and My Web's "Live stars" are one switch; My Web also has
+ * Friends of friends and Likes, reposts and zaps (Logen 11/19).
  */
 @Stable
 internal class LiveArcsState(context: Context) {
@@ -29,12 +27,22 @@ internal class LiveArcsState(context: Context) {
         .also(LiveArcsSetting::retireCutSwitches)
     var on by mutableStateOf(LiveArcsSetting.isOn(prefs))
         private set
-    val rings: Set<GlobeArcs.Ring> = GlobeArcs.Ring.entries.toSet()
-    val show = GlobeLive.Show()
+    var show by mutableStateOf(LiveArcsSetting.show(prefs))
+        private set
 
     fun switchOn(value: Boolean) {
         prefs.edit().putBoolean(LiveArcsSetting.KEY, value).apply()
         on = value
+    }
+
+    fun switchFriendsOfFriends(value: Boolean) {
+        prefs.edit().putBoolean(LiveArcsSetting.FRIENDS_KEY, value).apply()
+        show = show.copy(friendsOfFriends = value)
+    }
+
+    fun switchExtras(value: Boolean) {
+        prefs.edit().putBoolean(LiveArcsSetting.EXTRAS_KEY, value).apply()
+        show = show.copy(extras = value)
     }
 }
 

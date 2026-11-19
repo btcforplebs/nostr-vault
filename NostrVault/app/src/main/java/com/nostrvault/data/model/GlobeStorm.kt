@@ -116,35 +116,36 @@ object GlobeStorm {
     }
 
     /**
-     * The globe's filters on one read relay. Discover and Global are one filter
-     * with no authors, the relay's whole live stream: every note is sorted to its
-     * feed by its author here, so the whole of your wider web is in it and it
-     * costs one subscription however big the web is. Your follows alone keep to
-     * their authors, a filter of up to [authorsPerFilter] each.
+     * The globe's filters on one relay (Logen 11/19): your web's activity by
+     * author, [authorsPerFilter] each, so the relay sends only that and not its
+     * whole live stream. Past [maxAuthors] it is one authorless filter, sorted on
+     * the phone by the same check. With [GlobeLive.Show.extras], one authorless
+     * filter for zap receipts too: a receipt is signed by the LNURL server, not
+     * the zapper, and a zap from anyone flies.
      */
-    fun storm(
-        rings: Set<GlobeArcs.Ring>,
+    fun filters(
+        authors: List<String>,
         show: GlobeLive.Show,
-        follows: List<String>,
         since: Long,
         authorsPerFilter: Int = AUTHORS_PER_FILTER,
+        maxAuthors: Int = MAX_AUTHORS,
     ): List<JsonObject> {
-        val noteKinds = show.wideKinds
-        val kinds = noteKinds + if (show.zaps) listOf(GlobeArcs.ZAP_KIND) else emptyList()
-        // An empty kinds list would match everything on some relays.
-        if (kinds.isEmpty() || rings.isEmpty()) return emptyList()
         fun filter(kinds: List<Int>, authors: List<String>?) = buildJsonObject {
             put("kinds", JsonArray(kinds.map { JsonPrimitive(it) }))
             put("since", since)
             if (authors != null) put("authors", JsonArray(authors.map { JsonPrimitive(it) }))
         }
-        if (GlobeArcs.Ring.DISCOVER in rings || GlobeArcs.Ring.GLOBAL in rings) return listOf(filter(kinds, null))
-        // Following only: zap receipts carry the LNURL server's key, so they stay
-        // one authorless filter of their own.
-        val byAuthor = if (noteKinds.isEmpty()) emptyList() else follows.chunked(authorsPerFilter).map { filter(noteKinds, it) }
-        return byAuthor + if (show.zaps) listOf(filter(listOf(GlobeArcs.ZAP_KIND), null)) else emptyList()
+        val kinds = show.authorKinds
+        val byAuthor = when {
+            authors.isEmpty() -> emptyList()
+            authors.size > maxAuthors -> listOf(filter(kinds, null))
+            else -> authors.chunked(authorsPerFilter).map { filter(kinds, it) }
+        }
+        return byAuthor + if (show.extras) listOf(filter(listOf(GlobeArcs.ZAP_KIND), null)) else emptyList()
     }
 
     /** Most authors one filter names (iOS `GlobeArrivalStream.authorsPerFilter`). */
     const val AUTHORS_PER_FILTER = 500
+    /** Past this many authors (10 filters) the globe asks for everyone's and sorts on the phone. */
+    const val MAX_AUTHORS = 5_000
 }

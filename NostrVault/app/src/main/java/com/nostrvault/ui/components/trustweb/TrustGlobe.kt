@@ -179,9 +179,7 @@ internal fun TrustGlobe(
     LaunchedEffect(live, active) {
         scene.setLiveArcs(live != null && active)
         if (live == null || !active) return@LaunchedEffect
-        live.stream.arrivals(live.me, live.rings, live.show).collect { arrival ->
-            if (live.show.allows(arrival.sort)) scene.arrive(arrival)
-        }
+        live.stream.arrivals(live.me, live.show).collect(scene::arrive)
     }
 
     // Pictures for who just got a face, an arc's end among them.

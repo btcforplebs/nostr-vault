@@ -853,6 +853,17 @@ class GlobeCamera {
     }
 
     /**
+     * The spin is paused: nobody is turning it, nothing is gliding, and its
+     * drift has stopped (untouched [SLEEP_AFTER], or spinning off). No arrival
+     * flies then, so the clock can sleep (iOS `spinPaused`, #2233). Reduce
+     * Motion is not a pause: right after a touch its stars still fade in place.
+     */
+    fun spinPaused(now: Double): Boolean {
+        if (dragging || flyTarget != null || !spin.isZero || drift != 0.0) return false
+        return !drifts || (!keepsDrifting && now - lastTouch >= SLEEP_AFTER)
+    }
+
+    /**
      * Whether the idle drift should be turning now: right after a let-go, or
      * once untouched for [DRIFT_AFTER], until the clock may sleep.
      */
