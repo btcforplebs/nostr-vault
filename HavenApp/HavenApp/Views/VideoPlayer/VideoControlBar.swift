@@ -4,8 +4,9 @@ import AVFoundation
 
 // MARK: - VideoControlBar
 
-/// Bottom control rail for the full-screen player:
-/// play/pause · elapsed · scrubber · duration · mute · PiP.
+/// Bottom control rail for the full-screen player: a row of extras (skip,
+/// speed, captions, AirPlay, PiP; VideoExtraControls) over
+/// play/pause · elapsed · scrubber · duration · mute.
 struct VideoControlBar: View {
     let player: AVPlayer
     /// Non-nil shows the PiP button (iOS devices where PiP is currently possible).
@@ -15,6 +16,8 @@ struct VideoControlBar: View {
     /// Play for a live stream: rejoins the broadcast instead of `play()`,
     /// which does nothing on an item left behind the live window.
     var onResumeLive: (() -> Void)? = nil
+    /// Live, or someone else's player: no skip or speed.
+    var isLive: Bool = false
 
     @State private var isPlaying: Bool = true
     @State private var isMuted: Bool = false
@@ -23,6 +26,21 @@ struct VideoControlBar: View {
     @State private var timeObserver: Any?
 
     var body: some View {
+        VStack(spacing: 2) {
+            VideoExtraControls(player: player, isLive: isLive, onPiP: onPiP, onInteract: onInteract)
+            mainRow
+        }
+        .onReceive(player.publisher(for: \.timeControlStatus)) { status in
+            isPlaying = (status != .paused)
+        }
+        .onAppear {
+            isMuted = player.isMuted
+            startObserving()
+        }
+        .onDisappear { stopObserving() }
+    }
+
+    private var mainRow: some View {
         HStack(spacing: 12) {
             Button {
                 onInteract?()
@@ -64,28 +82,7 @@ struct VideoControlBar: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-
-            if let onPiP = onPiP {
-                Button {
-                    onPiP()
-                } label: {
-                    Image(systemName: "pip.enter")
-                        .font(.appSystem(size: 15, weight: .medium))
-                        .foregroundColor(.white)
-                        .frame(width: 34, height: 34)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
         }
-        .onReceive(player.publisher(for: \.timeControlStatus)) { status in
-            isPlaying = (status != .paused)
-        }
-        .onAppear {
-            isMuted = player.isMuted
-            startObserving()
-        }
-        .onDisappear { stopObserving() }
     }
 
     private func startObserving() {

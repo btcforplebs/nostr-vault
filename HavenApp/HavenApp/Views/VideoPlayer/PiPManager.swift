@@ -120,6 +120,12 @@ extension PiPManager: AVPictureInPictureControllerDelegate {
             // PiP window closed: end playback and hand audio back to other apps.
             playerLayer?.player?.pause()
             playerLayer?.player?.isMuted = true
+            if let player = playerLayer?.player {
+                // Back to 1× for the feed card that shares it, and the lock
+                // screen goes back to the music (FullScreenVideoPlayer).
+                player.defaultRate = 1
+                MainActor.assumeIsolated { VideoNowPlaying.shared.end(player: player) }
+            }
             // Only clear full-screen ownership if it's still ours — a new full-screen
             // video may have claimed it while stopping this PiP.
             if VideoPlayerCache.shared.activeFullScreenURL == activeURL {

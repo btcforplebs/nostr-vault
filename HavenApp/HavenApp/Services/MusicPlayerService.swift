@@ -66,7 +66,7 @@ final class MusicPlayerService: ObservableObject {
     /// it was played in.
     @Published private(set) var isShuffled = false
     @Published var repeatMode: RepeatMode = .off {
-        didSet { MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled = hasNext }
+        didSet { refreshRemoteCommandStates() }
     }
     private var unshuffledQueue: [PlayerTrack] = []
 
@@ -184,7 +184,7 @@ final class MusicPlayerService: ObservableObject {
             index = 0
             isShuffled = true
         }
-        MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled = hasNext
+        refreshRemoteCommandStates()
     }
 
     /// Off → repeat all → repeat one → off.
@@ -315,10 +315,7 @@ final class MusicPlayerService: ObservableObject {
         }
         elapsed = 0
         duration = Double(track.duration ?? 0)
-        let commands = MPRemoteCommandCenter.shared()
-        commands.changePlaybackPositionCommand.isEnabled = !track.isLive
-        commands.nextTrackCommand.isEnabled = hasNext
-        commands.previousTrackCommand.isEnabled = !track.isLive
+        refreshRemoteCommandStates()
         player.replaceCurrentItem(with: item)
         loadArtwork(for: track)
         if autoplay { startPlayback() } else { updateNowPlaying() }
@@ -411,33 +408,59 @@ final class MusicPlayerService: ObservableObject {
     private func configureRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
+            // A full-screen clip holds the lock screen (VideoNowPlaying).
+            guard !VideoNowPlaying.isActive else { return .commandFailed }
             Task { @MainActor in self?.resume() }
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
+            // A full-screen clip holds the lock screen (VideoNowPlaying).
+            guard !VideoNowPlaying.isActive else { return .commandFailed }
             Task { @MainActor in self?.pause() }
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            // A full-screen clip holds the lock screen (VideoNowPlaying).
+            guard !VideoNowPlaying.isActive else { return .commandFailed }
             Task { @MainActor in self?.togglePlayPause() }
             return .success
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
+            // A full-screen clip holds the lock screen (VideoNowPlaying).
+            guard !VideoNowPlaying.isActive else { return .commandFailed }
             Task { @MainActor in self?.next() }
             return .success
         }
         center.previousTrackCommand.addTarget { [weak self] _ in
+            // A full-screen clip holds the lock screen (VideoNowPlaying).
+            guard !VideoNowPlaying.isActive else { return .commandFailed }
             Task { @MainActor in self?.previous() }
             return .success
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard !VideoNowPlaying.isActive else { return .commandFailed }
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             Task { @MainActor in self?.seek(to: event.positionTime) }
             return .success
         }
     }
 
-    private func updateNowPlaying() {
+    /// Next, Previous and the scrub bar, for the track as it is now. Left
+    /// alone while a full-screen clip holds the lock screen; VideoNowPlaying
+    /// calls this when it gives it back, so a queue change meanwhile counts.
+    func refreshRemoteCommandStates() {
+        guard !VideoNowPlaying.isActive else { return }
+        let commands = MPRemoteCommandCenter.shared()
+        let seekable = current?.isLive != true
+        commands.changePlaybackPositionCommand.isEnabled = seekable
+        commands.nextTrackCommand.isEnabled = hasNext
+        commands.previousTrackCommand.isEnabled = seekable
+    }
+
+    /// Also called by VideoNowPlaying when a full-screen clip gives the
+    /// lock screen back.
+    func updateNowPlaying() {
+        guard !VideoNowPlaying.isActive else { return }
         guard let track = current else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
