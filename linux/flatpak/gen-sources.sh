@@ -55,7 +55,7 @@ for d, _dirs, files in os.walk(top):
         h = hashlib.sha256(data).hexdigest()  # .mod and .zip: as served, and go.sum checks both again at build time
         srcs.append({"type": "file", "url": f"https://proxy.golang.org/{rel}/{f}", "sha256": h,
                      "dest": f"gomod/{rel}", "dest-filename": f})
-srcs.sort(key=lambda s: s["url"])
+srcs.sort(key=lambda s: (s["dest"], s["dest-filename"]))
 json.dump(srcs, open(out, "w"), indent=1)
 print(f"gen-sources: {len(srcs)} Go module files")
 PY
