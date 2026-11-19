@@ -46,12 +46,16 @@ final class VideoPlayerControlsTests: XCTestCase {
     /// instead of getting a stale snapshot.
     func testClosedWhileLoadingAndFreshMusicButtons() throws {
         let full = try source("HavenApp/Views/VideoPlayer/FullScreenVideoPlayer.swift")
-        XCTAssertEqual(full.components(separatedBy: "guard stillOnScreen else { return }").count - 1, 2,
+        XCTAssertEqual(full.components(separatedBy: "guard stillOnScreen else { return standDown(").count - 1, 2,
                        "both the URL and the mesh path check after their await")
-        for begin in ["guard stillOnScreen else { return }\n            self.player = cachedPlayer",
-                      "guard stillOnScreen else { return }\n        player = meshPlayer"] {
+        for begin in ["guard stillOnScreen else { return standDown(cachedPlayer) }\n            self.player = cachedPlayer",
+                      "guard stillOnScreen else { return standDown(meshPlayer) }\n        player = meshPlayer"] {
             XCTAssertTrue(full.contains(begin), begin)
         }
+        let standDown = try XCTUnwrap(full.range(of: "private func standDown(_ prepared: AVPlayer) {"))
+        let body = full[standDown.upperBound...].prefix(400)
+        XCTAssertTrue(body.contains("prepared.isMuted = true"), "the feed card stays muted")
+        XCTAssertTrue(body.contains("AudioSessionManager.shared.enableMixingWithOthers()"), "other apps get their audio back")
         let now = try source("HavenApp/Services/VideoNowPlaying.swift")
         XCTAssertFalse(now.contains("savedEnabled"))
         XCTAssertTrue(now.contains("MusicPlayerService.shared.refreshRemoteCommandStates()"))

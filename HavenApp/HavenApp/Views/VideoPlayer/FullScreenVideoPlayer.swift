@@ -159,6 +159,19 @@ struct FullScreenVideoPlayer: View {
     /// taken by a clip that is gone (Tron, #2255).
     private var stillOnScreen: Bool { VideoPlayerCache.shared.activeFullScreenURL == url }
 
+    /// The player came back after close with full-screen sound policy
+    /// applied: put it back as the feed card's (muted), and give other apps
+    /// their audio back unless another full-screen clip or PiP owns it now
+    /// (Tron, #2255 follow-up).
+    private func standDown(_ prepared: AVPlayer) {
+        prepared.isMuted = true
+        guard VideoPlayerCache.shared.activeFullScreenURL == nil else { return }
+        #if os(iOS)
+        guard !PiPManager.shared.isPiPActive else { return }
+        #endif
+        AudioSessionManager.shared.enableMixingWithOthers()
+    }
+
 
     private func rejoinLive() {
         guard let player else { return }
@@ -196,7 +209,7 @@ struct FullScreenVideoPlayer: View {
         }
         meshFile = file
         let meshPlayer = await VideoPlaybackService.shared.preparedPlayer(for: file, mimeHint: mimeType, intent: .fullScreen)
-        guard stillOnScreen else { return }
+        guard stillOnScreen else { return standDown(meshPlayer) }
         player = meshPlayer
         meshPlayer.play()
         VideoNowPlaying.shared.begin(player: meshPlayer, title: Self.nowPlayingTitle, isLive: isLive)
@@ -209,7 +222,7 @@ struct FullScreenVideoPlayer: View {
             let cachedPlayer = await VideoPlaybackService.shared.preparedPlayer(
                 for: url, mimeHint: mimeType, intent: .fullScreen
             )
-            guard stillOnScreen else { return }
+            guard stillOnScreen else { return standDown(cachedPlayer) }
             self.player = cachedPlayer
             cachedPlayer.play()
             VideoNowPlaying.shared.begin(player: cachedPlayer, title: Self.nowPlayingTitle, isLive: isLive)
