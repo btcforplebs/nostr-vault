@@ -61,7 +61,8 @@ for f in APKBUILD README.md nostr-vault-setup nostr-vault.initd nostr-vault-mesh
 done
 sed -i "s/^pkgver=.*/pkgver=$version/" "$d/APKBUILD"
 export PACKAGER="Nostr Vault CI <nostr-vault@users.noreply.github.com>"
-abuild-keygen -a -i -n >/dev/null  # -i: into /etc/apk/keys, so abuild can index its repo
+abuild-keygen -a -n >/dev/null
+cp "$HOME"/.abuild/*.rsa.pub /etc/apk/keys/  # so abuild can index its repo (keygen -i wants doas)
 (cd "$d" && abuild -F -d -P "$work/repo")
 apk=$(find "$work/repo" -name "nostr-vault-$version-r*.apk" | head -1)
 [ -n "$apk" ] || die "abuild made no apk"
