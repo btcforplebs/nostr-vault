@@ -198,7 +198,7 @@ class App(Gtk.Application):
     def do_command_line(self, cmd):
         args = cmd.get_arguments()[1:]
         if "--tray" in args:
-            if self.indicator is None and not fp:  # a Flatpak with no tray runs on as a background app  # no tray here: a window is the only way to see the vault
+            if self.indicator is None and not fp:  # no tray: show the window (a Flatpak runs on in the background)
                 self.show(None)
             return 0
         route = None
