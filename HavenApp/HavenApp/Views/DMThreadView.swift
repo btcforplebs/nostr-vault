@@ -52,7 +52,13 @@ struct DMThreadView: View {
     }
 
     private var canSend: Bool {
-        !isSending && (attachment != nil || !messageInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        !isBlocked && !isSending && (attachment != nil || !messageInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    /// Someone you blocked: the inbox hides the chat, so it shows no history
+    /// and takes no message; a send used to go out and the chat vanished (B3).
+    private var isBlocked: Bool {
+        BlockedPeople.isBlocked(counterpartyPubkey, in: configService.activeAccountBlockedHexPubkeys)
     }
 
     private var conversation: DMConversation? {
@@ -60,7 +66,7 @@ struct DMThreadView: View {
     }
 
     private var messages: [DMMessage] {
-        conversation?.messages ?? []
+        isBlocked ? [] : conversation?.messages ?? []
     }
 
     private var counterpartyProfile: FeedProfile? {
@@ -155,7 +161,9 @@ struct DMThreadView: View {
                     }
                 }
                 .overlay {
-                    if messages.isEmpty {
+                    if isBlocked {
+                        DMBlockedNotice()
+                    } else if messages.isEmpty {
                         Text("Start a conversation")
                             .font(.appSystem(size: 15))
                             .foregroundColor(.secondary)
@@ -309,6 +317,8 @@ struct DMThreadView: View {
                 #else
                 .background(Color.platformWindowBackground)
                 #endif
+                .disabled(isBlocked)
+                .opacity(isBlocked ? 0.5 : 1)
             }
             .background(Color.platformWindowBackground.ignoresSafeArea())
             // A photo or video dragged in from Photos, Files or Safari goes out
@@ -391,6 +401,8 @@ struct DMThreadView: View {
                 if messageInput.isEmpty, let initialMessage { messageInput = initialMessage }
                 dmService.markRead(conversationWith: counterpartyPubkey)
                 dmService.visibleConversation = counterpartyPubkey
+                // The header's name for someone not loaded yet (B6).
+                nostrService.fetchMissingProfiles(for: [counterpartyPubkey])
             }
             .onDisappear {
                 if dmService.visibleConversation == counterpartyPubkey {
