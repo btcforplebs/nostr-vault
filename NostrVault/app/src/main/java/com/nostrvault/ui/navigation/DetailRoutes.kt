@@ -149,8 +149,12 @@ internal fun NavGraphBuilder.detailRoutes(
         ),
     ) {
         NewMessageScreen(
-            // As on iOS, sending closes the composer back to where it opened.
-            onMessageSent = { navController.popBackStack() },
+            // The new chat opens in place of the composer (B2), so you see the message you just sent.
+            onMessageSent = { pubkey ->
+                navController.navigate(Screen.DMThread.createRoute(pubkey)) {
+                    popUpTo(Screen.NewMessage.route) { inclusive = true }
+                }
+            },
             onBack = { navController.popBackStack() },
         )
     }

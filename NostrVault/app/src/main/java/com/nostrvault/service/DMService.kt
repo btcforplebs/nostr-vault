@@ -414,6 +414,8 @@ class DMService @Inject constructor(
         /** A locked photo: NIP-17 only (kind 15). */
         file: DMFileSend? = null,
     ) {
+        // Nothing goes to someone blocked: the inbox would only hide the chat after (B3).
+        if (isBlocked(recipientHexPubkey)) throw DMBlockedRecipientException()
         scope.async {
             if (useNIP04 && file == null) {
                 sendNIP04DM(content, recipientHexPubkey)
