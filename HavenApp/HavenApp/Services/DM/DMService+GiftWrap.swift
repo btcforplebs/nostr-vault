@@ -129,10 +129,10 @@ extension DMService {
                 // If this is our own message returning from the relay, replace the
                 // optimistic placeholder (which has a UUID id) with the real event.
                 if isFromMe {
-                    let recentThreshold = Date().addingTimeInterval(-30)
+                    // However long the signer took (DMEchoMatch, B12).
                     if let msgIdx = conversations[idx].messages.lastIndex(where: {
-                        // Never a not-sent one: that copy is a different send.
-                        $0.isFromMe && !$0.isFailed && $0.content == content && $0.timestamp > recentThreshold
+                        DMEchoMatch.isEcho(id: $0.id, isFromMe: $0.isFromMe, isFailed: $0.isFailed,
+                                           content: $0.content, echoContent: content)
                     }) {
                         conversations[idx].messages[msgIdx] = message
                         seenGiftWrapIds.insert(event.id)
