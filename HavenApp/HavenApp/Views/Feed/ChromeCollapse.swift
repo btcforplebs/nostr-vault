@@ -35,7 +35,18 @@ final class ChromeCollapse {
     /// immediately instead of dragging the bars along with the deceleration.
     static let flingVelocity: CGFloat = 400
 
+    /// The shell has no dock to fold (the iPad landscape rail, the iPhone
+    /// Duo's rail): the bars and the screen's Post button stay shown, since
+    /// no folded dock would bring a compose button back.
+    private(set) var keepsOpen = false
+
     private init() {}
+
+    func setKeepsOpen(_ open: Bool) {
+        guard open != keepsOpen else { return }
+        keepsOpen = open
+        if open { set(0) }
+    }
 
     /// Opacity of what the fold hides: gone by 60%.
     static func fadeOut(_ p: CGFloat) -> Double { Double(max(0, 1 - p / 0.6)) }

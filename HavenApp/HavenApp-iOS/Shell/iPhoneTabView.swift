@@ -383,6 +383,11 @@ struct iPhoneTabView: View {
         .onChange(of: selectedTab, initial: true) { _, tab in
             VaultSection.shared.isOnScreen = tab == 4
         }
+        // No dock beside a side rail, so nothing would bring Post back once
+        // the bars folded: keep them open there.
+        .onChange(of: showsSpace, initial: true) { _, rail in
+            ChromeCollapse.shared.setKeepsOpen(!DockInset.chromeFolds(sideRail: rail))
+        }
         .onDisappear { buttonRow.update(chromeHeight: 0) }
     }
 }

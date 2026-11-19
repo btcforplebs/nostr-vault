@@ -37,12 +37,19 @@ struct NoteDetailViewWrapper: View {
                             }
                         }
                     }
+                    // Quoted notes and response cards push inside the sheet.
+                    .navigationDestination(for: FeedNote.self) { NoteDetailView(note: $0) }
             }
             .onAppear {
                 fetchNote()
             }
             // A sheet: links stay out of the stack it covers.
             .environment(\.pushNoteID, nil)
+            #if os(iOS)
+            // Notes tapped in it push here, not into the iPad note column
+            // hidden behind the sheet. (The Mac's note sheet swaps on purpose.)
+            .environment(\.noteDetailSelection, nil)
+            #endif
         }
     }
 
