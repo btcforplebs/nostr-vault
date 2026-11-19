@@ -35,14 +35,15 @@ import java.io.File
      */
     internal fun FeedService.relayTabTrustedPubkeysImpl(): Set<String> {
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
-        return TrustMap.web(_wotPubkeys.value, feedAuthorSet())
+        return TrustMap.withoutBlocked(TrustMap.web(_wotPubkeys.value, feedAuthorSet()), blockedHexForActiveAccount())
     }
 
     internal fun FeedService.globalTrustSetImpl(): Set<String>? {
         if (configStore.config.value.globalShowsEveryone) return null
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
         // Your follows too, so someone you just followed passes right away.
-        return TrustMap.web(_wotPubkeys.value, feedAuthorSet())
+        // Someone you blocked (in public or privately) is out of your web, whoever vouches for them.
+        return TrustMap.withoutBlocked(TrustMap.web(_wotPubkeys.value, feedAuthorSet()), blockedHexForActiveAccount())
     }
 
     internal fun FeedService.loadWotPubkeysImpl() {

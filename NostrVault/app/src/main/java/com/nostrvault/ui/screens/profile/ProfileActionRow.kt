@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DoNotTouch
 import androidx.compose.material.icons.outlined.PanTool
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -49,6 +50,10 @@ internal fun ProfileActionRow(
     /** Their page on the web (Brainstorm), to check trust off the device. */
     webLink: com.nostrvault.ui.components.NostrWebLinks.WebLink? = null,
     onOpenWebLink: () -> Unit = {},
+    /** ··· › Nuclear unfollow; null hides it (your own profile). */
+    onNuclearUnfollow: (() -> Unit)? = null,
+    /** ··· › Private block; null hides it. Hidden while they're blocked: Unblock is there instead. */
+    onPrivateBlock: (() -> Unit)? = null,
     /**
      * Your own profile opened from a note or a list rather than the Profile
      * tab: it shows you as others see you, with a way to the tab, where
@@ -141,6 +146,21 @@ internal fun ProfileActionRow(
                             },
                             onClick = { menuOpen = false; onBlock() },
                         )
+                        // Nuclear unfollow + Private block (RESEARCH/NV_NUCLEAR_UNFOLLOW_SPEC.md).
+                        onNuclearUnfollow?.let { nuke ->
+                            DropdownMenuItem(
+                                text = { Text("Nuclear unfollow", color = ErrorRed) },
+                                leadingIcon = { Icon(Icons.Filled.PersonRemove, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp)) },
+                                onClick = { menuOpen = false; nuke() },
+                            )
+                        }
+                        if (!isBlocked) onPrivateBlock?.let { privateBlock ->
+                            DropdownMenuItem(
+                                text = { Text("Private block") },
+                                leadingIcon = { Icon(Icons.Outlined.VisibilityOff, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                onClick = { menuOpen = false; privateBlock() },
+                            )
+                        }
                     }
                 }
             }

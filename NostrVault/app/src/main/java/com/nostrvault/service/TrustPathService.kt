@@ -237,6 +237,31 @@ class TrustPathService @Inject constructor(
         return if (answered.get()) emptyList() else null
     }
 
+    /** Every follow of yours who follows someone; [complete] false when a relay stopped answering part way. */
+    data class AllBridges(val bridges: List<String>, val complete: Boolean)
+
+    /**
+     * Every one of your follows who follows [author], for Nuclear unfollow: the relay's
+     * `wot_links.json` when it has them (no cap, no round trip), else every batch of follow
+     * lists the relays give ([moreBridgeLists]). null when nothing could be checked.
+     */
+    suspend fun allBridges(author: String): AllBridges? {
+        val me = this.me
+        val follows = myFollows()
+        val followSet = follows.toSet()
+        linkedBridges(author, me, followSet)?.let { return AllBridges(it, complete = true) }
+        val lists = ArrayList<ContactList>()
+        val seen = HashSet<String>()
+        repeat(MAX_BRIDGE_BATCHES) {
+            val more = moreBridgeLists(author, follows, seen)
+                ?: return if (lists.isEmpty()) null else AllBridges(TrustPath.allBridges(author, me, followSet, lists), complete = false)
+            if (more.isEmpty()) return AllBridges(TrustPath.allBridges(author, me, followSet, lists), complete = true)
+            lists += more
+            seen += more.map { it.pubkey }
+        }
+        return AllBridges(TrustPath.allBridges(author, me, followSet, lists), complete = false)
+    }
+
     /**
      * "Look deeper": 3-hop routes, you → a follow → someone → the author. Two
      * requests on one relay, a few MB of follow lists, so only on tap. Null
@@ -337,6 +362,8 @@ class TrustPathService @Inject constructor(
     private fun relayKey(url: String) = url.trim().lowercase().trimEnd('/')
 
     private companion object {
+        /** Batches of follow lists asked for at most, a few hundred people's lists in all. */
+        const val MAX_BRIDGE_BATCHES = 40
         /** Public relays tried before giving up on finding more bridges. */
         const val MAX_RELAYS = 3
         /** Under the phone relay's 1,000-event cap (Badger), so it is honoured. */
