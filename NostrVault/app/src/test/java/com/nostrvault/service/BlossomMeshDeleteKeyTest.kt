@@ -16,14 +16,12 @@ import org.junit.Test
 
 /**
  * Delete everywhere over the mesh is signed by this device's mesh key: one delete naming every target and one get for
- * the HEAD (contract §2.1, Apple #1803). The owner's token only without a mesh key, or for a vault that refuses the
- * device form without X-Mesh-Devices (#1804), and then signed once.
+ * the HEAD (contract §2.1, Apple #1803). Never the account key (Logen, 2026-11-19: fail closed).
  */
 class BlossomMeshDeleteKeyTest {
     private val server = MockWebServer()
     private val sha = "d".repeat(64)
     private val npub = "npub1qgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpq2yz0cn"
-    private var ownerSigns = 0
 
     @After
     fun stop() = server.shutdown()
@@ -40,7 +38,6 @@ class BlossomMeshDeleteKeyTest {
     private fun auth(device: Boolean) = MeshDeleteAuth(
         device = if (device) "dev-delete" else null,
         deviceCheck = if (device) "dev-get" else null,
-        signOwner = { ownerSigns++; "owner" },
     )
 
     private fun requests(n: Int) = List(n) { server.takeRequest().let { "${it.method} ${it.getHeader("Authorization")}" } }
@@ -51,43 +48,26 @@ class BlossomMeshDeleteKeyTest {
         server.enqueue(MockResponse().setResponseCode(404))
         assertTrue(service().deleteOnMeshDevice(npub, sha, auth(device = true)))
         assertEquals(listOf("DELETE Nostr dev-delete", "HEAD Nostr dev-get"), requests(2))
-        assertEquals(0, ownerSigns)
     }
 
     @Test
-    fun `a vault with its paired set gets no owner token`() = runBlocking {
+    fun `a vault that refuses the mesh key gets no owner token, with or without its paired set`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(401).addHeader("X-Mesh-Devices", "set"))
         server.enqueue(MockResponse().setResponseCode(200))
-        assertFalse(service().deleteOnMeshDevice(npub, sha, auth(device = true)))
-        assertEquals(2, server.requestCount)
-        assertEquals(0, ownerSigns)
-    }
-
-    @Test
-    fun `a vault without the set gets one owner retry`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(403))
         server.enqueue(MockResponse().setResponseCode(200))
-        server.enqueue(MockResponse().setResponseCode(204))
-        server.enqueue(MockResponse().setResponseCode(404))
-        assertTrue(service().deleteOnMeshDevice(npub, sha, auth(device = true)))
+        val svc = service()
+        assertFalse(svc.deleteOnMeshDevice(npub, sha, auth(device = true)))
+        assertFalse(svc.deleteOnMeshDevice(npub, sha, auth(device = true)))
         assertEquals(
-            listOf("DELETE Nostr dev-delete", "HEAD Nostr dev-get", "DELETE Nostr owner", "HEAD Nostr owner"),
+            listOf("DELETE Nostr dev-delete", "HEAD Nostr dev-get", "DELETE Nostr dev-delete", "HEAD Nostr dev-get"),
             requests(4),
         )
-        assertEquals(1, ownerSigns)
     }
 
     @Test
-    fun `without a mesh key the owner's token is signed once for every device`() = runBlocking {
-        val a = auth(device = false)
-        repeat(2) {
-            server.enqueue(MockResponse().setResponseCode(204))
-            server.enqueue(MockResponse().setResponseCode(404))
-        }
-        val svc = service()
-        assertTrue(svc.deleteOnMeshDevice(npub, sha, a))
-        assertTrue(svc.deleteOnMeshDevice(npub, sha, a))
-        assertEquals(1, ownerSigns)
-        assertEquals("DELETE Nostr owner", requests(1).single())
+    fun `without a mesh key nothing is sent and the device is left`() = runBlocking {
+        assertFalse(service().deleteOnMeshDevice(npub, sha, auth(device = false)))
+        assertEquals(0, server.requestCount)
     }
 }

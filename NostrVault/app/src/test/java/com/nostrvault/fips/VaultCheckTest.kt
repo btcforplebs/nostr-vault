@@ -11,14 +11,6 @@ class VaultCheckTest {
     private val sha = "a".repeat(64)
 
     @Test
-    fun `the check is the owner's get for that blob, five minutes`() {
-        assertEquals(
-            listOf(listOf("t", "get"), listOf("x", sha), listOf("expiration", "1300")),
-            VaultCheck.authTags(sha, nowSeconds = 1000),
-        )
-    }
-
-    @Test
     fun `the HEAD carries the auth, and goes unsigned only when signing failed`() {
         val signed = VaultCheck.request("http://127.0.0.1:4000", sha, "QUJD")
         assertEquals("HEAD", signed.method)
