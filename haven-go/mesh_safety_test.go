@@ -124,8 +124,12 @@ func TestMeshBlobGetOnlyPubliclyNamed(t *testing.T) {
 		j, _ := json.Marshal(ev)
 		return base64.StdEncoding.EncodeToString(j)
 	}
-	if got := get(mesh.URL, http.MethodGet, private, signed(sk)); got != 200 {
-		t.Errorf("owner-signed GET over the mesh: %d, want 200", got)
+	if got := get(mesh.URL, http.MethodGet, private, signed(sk)); got != 403 {
+		t.Errorf("account-signed GET over the mesh: %d, want 403", got)
+	}
+	device := strings.TrimPrefix(meshDeviceBlobAuth(t, "get", private, time.Now().Add(4*time.Minute)), "Nostr ")
+	if got := get(mesh.URL, http.MethodGet, private, device); got != 200 {
+		t.Errorf("paired phone's GET over the mesh: %d, want 200", got)
 	}
 	if got := get(mesh.URL, http.MethodGet, private, signed(nostr.GeneratePrivateKey())); got != 404 {
 		t.Errorf("stranger-signed GET over the mesh: %d, want 404", got)

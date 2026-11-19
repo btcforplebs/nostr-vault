@@ -73,11 +73,11 @@ SetMeshDevicesC({"self": "<this vault's mesh npub>", "devices": [{"npub": "<mesh
 - The signer is in A's paired set and is not A. Anyone else is 403.
 - The token is **bound to the signer**. A `device` tag is not needed; if present it must equal the signer (401).
 
-**Old form, kept until every app sends the device form** (marked `TODO(mesh-key)` in the engine, then removed): the
-owner signs, with `["device", <B's own mesh npub>]` instead of `p`; a proof without it is 401.
+**The account key never starts a copy** (Logen, 2026-11-19: fail closed). The old owner-signed form (with
+`["device", <B's mesh npub>]`) is gone: a proof signed by the owner's account key is 403.
 
 If the check fails: 401 for a missing, bad, stale, replayed or misaddressed proof; 403 for a valid proof from a key
-that is neither a paired device nor (old form) the owner.
+that is not a paired device (the account key included).
 
 ### 2.1 Blossom over the mesh (upload, get / check, delete)
 
@@ -106,7 +106,10 @@ short-lived; and the id has **not been seen before it expires** (no replay: 409,
 so §4 and `copyOwnMediaSet` count it. A device's delete removes only the owner's record: a blob whose records are by
 another key stays.
 
-The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
+**No account key over the mesh** (Logen, 2026-11-19: fail closed). On the ports only the mesh reaches (the door,
+the iPhone's own-devices port), a Blossom request signed by the account key is 403. On the relay port from loopback
+(Mac, Android, the box) the vault's own app arrives the same way, so the engine cannot refuse it there; the apps hold
+that line and never sign a mesh send with the account key: no mesh key, or a refusal, means the blob waits.
 
 ### 2.2 Publish for me (the vault sends the phone's posts)
 

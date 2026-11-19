@@ -30,7 +30,7 @@ func TestMeshHeadIsNoOracle(t *testing.T) {
 	body := []byte("a photo no note names yet")
 	sum := sha256.Sum256(body)
 	hash := hex.EncodeToString(sum[:])
-	if code := meshPut(t, door, blossomUploadAuth(t, h.ownerSK, body), body); code != http.StatusOK {
+	if code := meshPut(t, door, meshDeviceUploadAuth(t, body), body); code != http.StatusOK {
 		t.Fatalf("owner upload: %d", code)
 	}
 
@@ -100,8 +100,11 @@ func TestMeshHeadIsNoOracle(t *testing.T) {
 	if code, _ := head(door, "Nostr "+base64.StdEncoding.EncodeToString(oj)); code != http.StatusNotFound {
 		t.Errorf("HEAD with an owner get re-pointed at this blob: %d, want 404", code)
 	}
-	if code, n := head(door, getAuth(h.ownerSK, hash, time.Hour)); code != http.StatusOK || n != fmt.Sprint(len(body)) {
-		t.Errorf("owner-signed HEAD over the mesh: %d, length %q; want 200", code, n)
+	if code, _ := head(door, getAuth(h.ownerSK, hash, time.Hour)); code != http.StatusForbidden {
+		t.Errorf("account-signed HEAD over the mesh: %d; want 403", code)
+	}
+	if code, n := head(door, meshDeviceBlobAuth(t, "get", hash, time.Now().Add(4*time.Minute))); code != http.StatusOK || n != fmt.Sprint(len(body)) {
+		t.Errorf("paired phone's HEAD over the mesh: %d, length %q; want 200", code, n)
 	}
 	// The owner's own app, and own devices on the relay port, are not the door.
 	if code, _ := head(own.URL, ""); code != http.StatusOK {
