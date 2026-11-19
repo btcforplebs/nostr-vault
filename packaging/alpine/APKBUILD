@@ -8,7 +8,7 @@ pkgdesc="Your own Nostr vault on this machine: relay, Blossom media, the web app
 url="https://github.com/btcforplebs/nostr-vault"
 arch="x86_64 aarch64"
 license="MIT"
-# The shared libraries nv-mesh links (libnftnl, libmnl, libdbus, libgcc) are added by abuild from the binary.
+# The shared libraries the programs link (musl, libgcc for nv-mesh) are added by abuild from the binaries.
 depends="curl ca-certificates openrc musl-utils"
 install="$pkgname.pre-install $pkgname.post-install $pkgname.post-upgrade $pkgname.pre-deinstall"
 options="!check !strip"
