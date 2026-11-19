@@ -7,7 +7,8 @@
 # nostr-vault-alpine.json (version, apk sha256). Nothing is published.
 #
 # The programs are the .deb's (linux/native/build.sh), built here against musl: havend and haven-engine pure Go
-# (static), nv-mesh Rust linked against Alpine's libnftnl, libmnl and libdbus (dynamic: -crt-static off).
+# (static), nv-mesh Rust against musl (dynamic, -crt-static off: proc macros and build scripts need it; at run time
+# it needs only musl and libgcc, as scanelf shows below).
 # NV_APK_VERSION overrides the version (default: the app's MARKETING_VERSION + "_p" + the commit count).
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
@@ -40,8 +41,8 @@ export GOTOOLCHAIN=auto GOFLAGS=-buildvcs=false
 (cd "$root/haven-go" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X 'main.version=$version ($commit)'" -o "$bin/havend" ./cmd/havend \
   && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -tags nolmdb -o "$bin/haven-engine" .)
 
-# 2. nv-mesh: the pinned Rust (linux/mesh/rust-toolchain.toml), the musl host target, linked dynamically against
-# Alpine's libraries (a static musl build can't load libdbus/libnftnl from the system).
+# 2. nv-mesh: the pinned Rust (linux/mesh/rust-toolchain.toml), the musl host target, linked dynamically
+# (-crt-static off, as Alpine's own Rust does).
 rustup-init -y -q --profile minimal --default-toolchain none >/dev/null
 . "$HOME/.cargo/env"
 rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' "$root/linux/mesh/rust-toolchain.toml")" --profile minimal

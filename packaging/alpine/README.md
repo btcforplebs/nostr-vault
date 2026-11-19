@@ -13,7 +13,7 @@ nostr-vault-setup --owner npub1…                     # starts it now and on ev
 
 | | |
 |---|---|
-| The vault | `/usr/lib/nostr-vault/`: havend, haven-engine (static Go), nv-mesh (Rust, musl, links Alpine's libnftnl, libmnl, libdbus), prepare (the `.deb`'s, as is). `/usr/share/nostr-vault/web`: the web app. `/usr/bin/nostr-vault-setup` (the OpenRC twin of the `.deb`'s: same options and checks). |
+| The vault | `/usr/lib/nostr-vault/`: havend, haven-engine (static Go), nv-mesh (Rust, musl; needs only musl and libgcc at run time), prepare (the `.deb`'s, as is). `/usr/share/nostr-vault/web`: the web app. `/usr/bin/nostr-vault-setup` (the OpenRC twin of the `.deb`'s: same options and checks). |
 | Services | `/etc/init.d/nostr-vault` (havend as `nvvault`, port `NV_PORT`; its start runs `prepare` first) and `/etc/init.d/nostr-vault-mesh` (nv-mesh as `nvmesh`; it needs `nostr-vault`, so stopping the vault stops the mesh). Both under supervise-daemon (a crash restarts in 2 s), nice 10, no new privileges, no capabilities. |
 | Users | `nvvault` (uid 10002) and `nvmesh` (10001), the container's uids when they are free, so a Docker box's data dir works as it is. |
 
