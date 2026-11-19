@@ -235,6 +235,23 @@ fun NostrVaultNavHost(
     PendingDeepLinkEffect(isSetupComplete, configStore, feedService, navController)
     WotOpenEffect(navController)
 
+    // Quick taps on a tab: the third is a triple-tap (TabTapCounter).
+    val tabTaps = remember { TabTapCounter() }
+    fun tripleTap(screen: Screen) {
+        // Over a note opened from the tab: back to the tab's own page first.
+        navController.popBackStack(screen.route, inclusive = false)
+        if (screen == Screen.Feed) {
+            // The Following feed, at its top. The feed applies the pick; the
+            // scroll request then tops whichever list it lands on.
+            if (FeedTabPicker.shownMode != com.nostrvault.data.model.FeedMode.FOLLOWING) FeedTabPicker.request.value = com.nostrvault.data.model.FeedMode.FOLLOWING
+            feedService.requestScrollToTop()
+        } else {
+            // The main Vault page, at its top (VaultTopRequest waits for it).
+            VaultTopRequest.pending = true
+            openVaultMode(com.nostrvault.data.model.VaultMode.ACTIVITY)
+        }
+    }
+
     // The bars fold with the scroll, following the finger, where the iPhone
     // folds them (see [foldsChromeOnScroll]); "disable tab bar animation"
     // keeps them shown.
@@ -355,6 +372,7 @@ fun NostrVaultNavHost(
                     hasUnreadDMs = unreadDMs > 0,
                     hasNewRelayActivity = relayActivity,
                     onNavigate = { screen ->
+                        tabTaps.tap(screen, android.os.SystemClock.uptimeMillis())
                         // The dot goes to where the news is, not to the list
                         // you left. The list clears once it is on screen.
                         if (screen == Screen.Dashboard && relayActivity) {
@@ -372,6 +390,11 @@ fun NostrVaultNavHost(
                         }
                     },
                     onReselect = { screen ->
+                        val triple = tabTaps.tap(screen, android.os.SystemClock.uptimeMillis())
+                        if (triple && (screen == Screen.Feed || screen == Screen.Dashboard)) {
+                            tripleTap(screen)
+                            return@BottomNavBar
+                        }
                         // Over a note opened from the Feed or the Vault: back
                         // to the tab (iOS clears its path). The next tap goes
                         // to the top, so a double tap is back and up. Read

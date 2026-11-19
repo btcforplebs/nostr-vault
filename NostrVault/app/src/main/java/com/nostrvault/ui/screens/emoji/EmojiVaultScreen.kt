@@ -89,7 +89,14 @@ fun EmojiVaultScreen(
             }
         },
     ) { padding ->
+        // Tapping the Vault tab again goes to the top, as on every Vault page.
+        val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+        androidx.compose.runtime.LaunchedEffect(gridState) {
+            com.nostrvault.ui.navigation.TabReselect.of(com.nostrvault.ui.navigation.Screen.Dashboard)
+                .collect { gridState.animateScrollToItem(0) }
+        }
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Adaptive(56.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 start = 12.dp, end = 12.dp, top = padding.calculateTopPadding() + 8.dp, bottom = padding.calculateBottomPadding() + 24.dp,
