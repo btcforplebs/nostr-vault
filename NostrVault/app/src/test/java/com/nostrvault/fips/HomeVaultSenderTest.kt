@@ -122,7 +122,7 @@ class HomeVaultSenderTest {
 
     /** Tod / Tron #1048 #2: the "already on the vault" check is signed once per blob, local signer only. */
     @Test
-    fun `the vault check is signed once with a local signer and never with Amber or a bunker`() = runBlocking {
+    fun `the vault check is never signed with the account key, local signer or not`() = runBlocking {
         for (local in listOf(true, false)) {
             val signed = mutableListOf<List<List<String>>>()
             val s = sender().apply {
@@ -130,12 +130,8 @@ class HomeVaultSenderTest {
                 signer = { _, _, tags -> signed += tags; "{}" }
             }
             s.ensureOnVault("b".repeat(64))  // the mesh is off in a unit test: nothing is reached
-            if (local) {
-                assertEquals(1, signed.size)
-                assertTrue(listOf("t", "get") in signed.single() && listOf("x", "b".repeat(64)) in signed.single())
-            } else {
-                assertEquals("no prompt for a remote signer", 0, signed.size)
-            }
+            // Fail closed (Logen, 2026-11-19): only this phone's mesh key signs a mesh check.
+            assertEquals("local=$local", 0, signed.size)
         }
     }
 
