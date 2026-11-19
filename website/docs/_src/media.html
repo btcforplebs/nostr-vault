@@ -10,9 +10,9 @@
   "description": "Media servers (Blossom) in Nostr Vault: where photos go when you post, adding and removing servers, Auto-Mirror and Import media, the live Media tab across your devices, cache settings, and uploading from the share sheet.",
   "checked": "Nostr Vault 3.2.2",
   "labels": {
-    "ios": ["Import media", "Import", "Keep it full", "Picture or video post", "Keep a private copy", "Follow, mute or add to a list", "Save for later", "Pay or zap", "Send privately", "Add to the upload queue", "Picture in Picture", "Media Servers", "Add to my media servers", "Save", "Waiting to send", "Try sending now", "Auto-Mirror Media", "Offline Copies", "Autoplay Videos", "Feed", "Back up media", "Clear cache", "Added for You", "Your Vaults on the Mesh", "Magic Paste", "Files", "Pick from your media", "Add to the upload queue", "Suggested", "Delete from media servers", "Delete everywhere"],
+    "ios": ["Import media", "Import", "Keep it full", "Picture or video post", "Keep a private copy", "Follow, mute or add to a list", "Save for later", "Pay or zap", "Send privately", "Add to the upload queue", "Picture in Picture", "Media Servers", "Add to my media servers", "Save", "Waiting to send", "Try sending now", "Auto-Mirror Media", "Offline Copies", "Autoplay Videos", "Feed", "Back up media", "Clear cache", "Added for You", "Your Vaults on the Mesh", "Magic Paste", "Files", "Pick from your media", "Add to the upload queue", "Suggested", "Delete from media servers", "Delete everywhere", "Copy", "Share"],
     "mac": ["Media Servers", "Waiting to send", "Try sending now", "Auto-Mirror Media", "Autoplay Videos", "Import media", "Back up media", "Clear cache"],
-    "android": ["Import media", "Import", "Keep it full", "Picture or video post", "Keep a private copy", "Open profile", "Save for later", "Pay", "Send privately", "Picture in picture", "Media Servers", "Media & Cache", "Try sending now", "Mirror Now", "Auto-Mirror Media", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache", "Use Local Blossom Cache", "YOUR VAULTS", "Pick from your media", "Delete from media servers", "Delete everywhere"],
+    "android": ["Import media", "Import", "Keep it full", "Picture or video post", "Keep a private copy", "Open profile", "Save for later", "Pay", "Send privately", "Picture in picture", "Media Servers", "Media & Cache", "Try sending now", "Auto-Mirror Media", "Your Media", "Test", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache", "Use Local Blossom Cache", "YOUR VAULTS", "Pick from your media", "Delete from media servers", "Delete everywhere"],
     "web": ["Media Servers", "Add", "Remove", "Save and publish", "Discard changes", "Test", "Load photos over the mesh", "Delete from media servers"]
   }
 }
@@ -73,6 +73,10 @@
     publish</strong>, or <strong>Discard changes</strong>. The web app uploads to the server marked <em>first</em> first. If you
     have never published a list, it starts from two default servers. It also needs at least one server in
     the list.</p>
+<p><strong>Android</strong> (since 3.2.3) has the same one page as the iPhone: each server shows a health dot and a
+    status line with <strong>Test</strong>, the page tests them all when it opens, and <strong>Your Media</strong>
+    shows how many files are stored, how many wait to copy, and copies them to your servers. The old second media
+    servers page under Advanced is gone.</p>
 <p>There is no button to reorder servers. In the web app, a server you add goes to the end of the list.</p>
 </section>
 
@@ -83,10 +87,10 @@
     if a server goes away. It looks in two places: the file lists of your media servers, and the photo and video links
     in your own notes, wherever they are hosted.</p>
 <ul>
-    <li><strong>Auto-Mirror Media</strong> (on the Media Servers page; under <span class="ui">Offline Copies</span> on
-        iPhone, iPad and Mac) does it for you. It is off until you turn it on. It runs when you open the app.</li>
-    <li>To run it by hand, use <strong>Import media</strong> on the Vault dashboard (on Android also
-        <strong>Mirror Now</strong> on the Media Servers page).</li>
+    <li><strong>Auto-Mirror Media</strong> (on the Media Servers page, under <span class="ui">Offline Copies</span>)
+        does it for you. It is off until you turn it on. It runs when you open the app.</li>
+    <li>To run it by hand, use <strong>Import media</strong> on the Vault dashboard. Since 3.2.3 that's the only
+        button for it on every app: Android's old Mirror Now on the Media Servers page is gone.</li>
 </ul>
 <p>A run keeps to a few rules, so it never floods your phone, your servers or your signer:</p>
 <ul>
@@ -156,6 +160,11 @@
         your other devices shows here. Off, a file loads when you open it.</li>
     <li>Delete everywhere removes it from your other devices' Media tabs too.</li>
     <li>When you add media to a post, <span class="ui">Pick from your media</span> opens full height on Android.</li>
+    <li><strong>iPhone, iPad and Mac</strong> lay the Media tab out as a mosaic, each tile sized to its photo before
+        the photo loads, so the grid doesn't jump.</li>
+    <li><strong>iPhone and iPad:</strong> a photo or clip you open, in the feed, a message, the Media tab or a profile,
+        has the same buttons along the bottom: <strong>Copy</strong> (the photo or clip itself), <strong>Save</strong>,
+        <strong>Share</strong> and &bull;&bull;&bull;, which holds the link, Mirror and Delete when they apply.</li>
 </ul>
 </section>
 

@@ -1,0 +1,77 @@
+<!--page
+{
+  "title": "A Linux box in My Devices",
+  "nav": "Linux box (beta)",
+  "section": "mesh",
+  "order": 4.5,
+  "description": "Link a Nostr Vault Linux box to your phone or Mac by its mesh address, what the box's own page shows, how the box keeps its own key, and what runs on it.",
+  "checked": "Nostr Vault 3.2.3 and Nostr Vault for Linux beta 1",
+  "labels": {
+    "ios": ["Add a device", "Paste instead", "This is", "Name (optional)", "Add", "Mobile vault · new posts", "Desktop vault · full history"],
+    "android": ["Add a device", "Paste instead", "This is", "Add", "Mobile vault · new posts", "Desktop vault · full history"],
+    "web": ["This Box", "Status", "Storage", "Mesh", "My Devices", "Public on the web", "Update", "This box", "Approved", "Waiting",
+            "Move vault to…", "Mesh address", "Make this vault public on the web", "Check for update and install"]
+  }
+}
+-->
+<p>A Linux box (see <a href="/docs/start/linux/">Get started on Linux</a>) joins your devices like a Mac does, but it
+    has no camera and no code to scan. You add it once, by its mesh address, from your phone or Mac.</p>
+
+<h2 id="link">Link the box</h2>
+<ol class="steps">
+    <li>Get the box's address. On the box's page (Settings &rarr; <span class="ui">This Box</span>) copy
+        <span class="ui">This box</span> under <span class="ui">My Devices</span>. On a desktop, the tray's
+        <strong>Copy box npub</strong> does the same.</li>
+    <li>On your phone or Mac, open <span class="path">Settings &rarr; Your Devices</span> (or Mesh settings) and tap
+        <span class="ui">Add a device</span>.</li>
+    <li>Tap <span class="ui">Paste instead</span> and paste the address.</li>
+    <li>Under <span class="ui">This is</span>, choose what the box does. <span class="ui">Mobile vault · new posts</span>
+        is the default, and what the box's page suggests: it keeps your new posts and media.
+        <span class="ui">Desktop vault · full history</span> keeps all your history and syncs both ways, like a
+        Mac.</li>
+    <li>Give it a name if you like, and tap <span class="ui">Add</span>.</li>
+</ol>
+<p>This adds the box on that device only. Do it on each phone or Mac that should use the box. The box lets in the
+    devices your account lists, so there's nothing to approve on the box itself.</p>
+<div class="done"><p><strong>You're done when</strong> the box's page shows your device as
+    <span class="ui">Approved</span> (<span class="ui">Waiting</span> until it has reached the box), and the box
+    shows in reach under Your Devices.</p></div>
+
+<h2 id="page">The box's page</h2>
+<p>Open the vault's address (for example <code>http://raspberrypi.local:8080/</code>), sign in as the owner, and go
+    to Settings &rarr; <span class="ui">This Box</span>. Only the owner's account can read it.</p>
+<ul>
+    <li><span class="ui">Status</span>: how long it has run, its version, memory and disk.</li>
+    <li><span class="ui">Storage</span>: the vault folder, space used and free, and
+        <span class="ui">Move vault to…</span> another folder or drive. The box stops serving while it copies.</li>
+    <li><span class="ui">Mesh</span>: whether the mesh is connected, how many peers, and the box's
+        <span class="ui">Mesh address</span>.</li>
+    <li><span class="ui">My Devices</span>: the box's own address, and each of your devices that has reached it.</li>
+    <li><span class="ui">Public on the web</span>: for a box with its own web address,
+        <span class="ui">Make this vault public on the web</span> puts it in your relay list and DM inbox. A box with no
+        web address is reached only by your own devices over the mesh. More on
+        <a href="/docs/mesh/sync/#public-web">Public on the web</a>.</li>
+    <li><span class="ui">Update</span>: <span class="ui">Check for update and install</span>. In the beta, updates are
+        manual: run the installer again on the box.</li>
+</ul>
+
+<h2 id="keys">Keys: what the box holds</h2>
+<ul>
+    <li>The box never holds your secret key. It knows only your npub, which says whose vault it is.</li>
+    <li>On its first start it makes its own mesh key, readable only by the mesh service. That key is how your
+        devices recognise the box.</li>
+    <li>Your own devices reach the whole vault. Anyone else on the mesh reaches only a small, rate-limited door.
+        Nothing publishes your home IP address.</li>
+</ul>
+
+<h2 id="services">What runs on the box</h2>
+<p>For the curious: the package installs three system services.</p>
+<ul>
+    <li><code>nostr-vault</code> runs <strong>havend</strong>, the vault: your relay, the media server, the web app and
+        the box's page, on port 8080. It runs the relay engine on the machine itself, on port 3355.</li>
+    <li><code>nostr-vault-mesh</code> runs the mesh, with the same settings as the Mac app.</li>
+    <li><code>nostr-vault-prepare</code> sets up the vault folder once at start.</li>
+</ul>
+<p>Each runs as its own user with no special rights, on a read-only system with only its own folders writable.
+    Settings are in <code>/etc/nostr-vault/vault.env</code> (no secrets in it). The details are in
+    <a href="https://github.com/btcforplebs/nostr-vault/blob/master/linux/native/README.md">linux/native/README.md</a>.</p>

@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FAQ — Nostr Vault Docs</title>
-    <meta name="description" content="Nostr Vault FAQ: which version is current, can I use my existing Nostr account, which relays my posts go to, do I need a Mac, is my home IP public, who can see my photos, losing a phone, what the web app does, is it free.">
+    <meta name="description" content="Nostr Vault FAQ: which version is current, is there a Linux version, can I use my existing Nostr account, which relays my posts go to, do I need a Mac, is my home IP public, who can see my photos, losing a phone, what the web app does, is it free.">
     <link rel="canonical" href="https://nostrvault.app/docs/faq/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/faq/">
     <meta property="og:title" content="FAQ — Nostr Vault Docs">
-    <meta property="og:description" content="Nostr Vault FAQ: which version is current, can I use my existing Nostr account, which relays my posts go to, do I need a Mac, is my home IP public, who can see my photos, losing a phone, what the web app does, is it free.">
+    <meta property="og:description" content="Nostr Vault FAQ: which version is current, is there a Linux version, can I use my existing Nostr account, which relays my posts go to, do I need a Mac, is my home IP public, who can see my photos, losing a phone, what the web app does, is it free.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -61,6 +61,8 @@
                     <li><a href="/docs/start/android/">Android</a></li>
                     <li><a href="/docs/start/mac/">Mac</a></li>
                     <li><a href="/docs/start/web/">Web browser</a></li>
+                    <li><a href="/docs/start/linux/">Linux (beta)</a></li>
+                    <li><a href="/docs/start/raspberry-pi/">Raspberry Pi (beta)</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -87,6 +89,7 @@
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
                     <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
+                    <li><a href="/docs/mesh/linux-box/">Linux box (beta)</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
@@ -131,17 +134,26 @@
             <p class="eyebrow">Help</p>
             <h1>Questions, <span>answered</span></h1>
             <p class="docs-lede">Short answers to what people ask most.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#which-version-is-current">Which version is current?</a></li><li><a href="#is-it-free-is-it-open-source">Is it free? Is it open source?</a></li><li><a href="#what-is-the-vault">What is the vault?</a></li><li><a href="#can-i-use-my-existing-nostr-account">Can I use my existing Nostr account?</a></li><li><a href="#which-relays-do-my-posts-go-to">Which relays do my posts go to?</a></li><li><a href="#do-i-need-a-mac">Do I need a Mac?</a></li><li><a href="#why-does-posting-a-photo-still-need-a-server">Why does posting a photo still need a server?</a></li><li><a href="#is-my-home-ip-public">Is my home IP public?</a></li><li><a href="#who-can-see-my-photos-over-the-mesh">Who can see my photos over the mesh?</a></li><li><a href="#what-if-i-lose-my-phone">What if I lose my phone?</a></li><li><a href="#why-do-links-open-inside-the-app">Why do links open inside the app?</a></li><li><a href="#why-don-t-message-alerts-show-the-text">Why don't message alerts show the text?</a></li><li><a href="#what-can-the-web-app-do">What can the web app do?</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#which-version-is-current">Which version is current?</a></li><li><a href="#is-there-a-linux-version">Is there a Linux version?</a></li><li><a href="#is-it-free-is-it-open-source">Is it free? Is it open source?</a></li><li><a href="#what-is-the-vault">What is the vault?</a></li><li><a href="#can-i-use-my-existing-nostr-account">Can I use my existing Nostr account?</a></li><li><a href="#which-relays-do-my-posts-go-to">Which relays do my posts go to?</a></li><li><a href="#do-i-need-a-mac">Do I need a Mac?</a></li><li><a href="#why-does-posting-a-photo-still-need-a-server">Why does posting a photo still need a server?</a></li><li><a href="#is-my-home-ip-public">Is my home IP public?</a></li><li><a href="#who-can-see-my-photos-over-the-mesh">Who can see my photos over the mesh?</a></li><li><a href="#what-if-i-lose-my-phone">What if I lose my phone?</a></li><li><a href="#why-do-links-open-inside-the-app">Why do links open inside the app?</a></li><li><a href="#why-don-t-message-alerts-show-the-text">Why don't message alerts show the text?</a></li><li><a href="#what-can-the-web-app-do">What can the web app do?</a></li></ul></div>
 
             <article class="docs-article">
                 <section id="version">
                 <h2 id="which-version-is-current">Which version is current?</h2>
-                <p>3.2.2. The Android and Mac builds are on <a href="https://github.com/btcforplebs/nostr-vault/releases">GitHub</a>;
-                    the App Store and Zapstore show the version they have on their own pages. 3.0 added the mesh, which connects
-                    your own devices directly; 3.1.0 added a new composer and your own choice of relays; 3.2.0 links your devices
-                    with two scans and copies your whole vault to a new one; 3.2.2 opens links inside the app, adds Your Devices in
-                    Settings and keeps your drafts encrypted. See <a class="inline" href="/docs/whats-new/#v3-2-2">What's
-                    new</a>.</p>
+                <p>3.2.3, on iPhone, iPad, Mac, Android and the web, with Linux in beta. The Android builds and the Linux beta are on
+                    <a href="https://github.com/btcforplebs/nostr-vault/releases">GitHub</a>; the App Store and Zapstore show the
+                    version they have on their own pages. 3.0 added the mesh, which connects your own devices directly; 3.1.0 added a
+                    new composer and your own choice of relays; 3.2.0 links your devices with two scans and copies your whole vault
+                    to a new one; 3.2.2 opens links inside the app, adds Your Devices in Settings and keeps your drafts encrypted;
+                    3.2.3 adds private blocks, nuclear unfollow, one web-of-trust gate on every feed, light mode and Nostr Vault for
+                    Linux. See <a class="inline" href="/docs/whats-new/#v3-2-3">What's new</a>.</p>
+                </section>
+
+                <section id="linux">
+                <h2 id="is-there-a-linux-version">Is there a Linux version?</h2>
+                <p>Yes, in beta since 3.2.3. It turns a Raspberry Pi, a mini PC, a home server or a desktop into your always-on
+                    vault, with a window and tray icon on a desktop. There's a .deb for Debian, Ubuntu and Raspberry Pi OS (arm64
+                    and amd64); other systems run it in Docker. See <a class="inline" href="/docs/start/linux/">Get started on
+                    Linux</a>.</p>
                 </section>
 
                 <section id="free">
@@ -184,7 +196,7 @@
 
                 <section id="mac">
                 <h2 id="do-i-need-a-mac">Do I need a Mac?</h2>
-                <p>No. Your phone runs its own vault. A Mac is an optional extra: as <strong>Desktop vault &middot; full history</strong> it can hold a
+                <p>No. Your phone runs its own vault. A Mac or a <a class="inline" href="/docs/start/linux/">Linux box</a> is an optional extra: as <strong>Desktop vault &middot; full history</strong> it can hold a
                     full copy and serve your photos while it's on. A spare phone in <strong>Mobile vault mode</strong> can do the same
                     job.</p>
                 </section>
@@ -237,8 +249,7 @@
                 <p>The web app at <a href="https://nostrvault.app/vault/">nostrvault.app/vault/</a> reads your feeds, posts,
                     including photos, and has a WoT tab and Edit Feeds. It signs in with a browser extension, a bunker or
                     read-only, and <strong>Create an account</strong> makes a new account with a key kept in this browser. It keeps
-                    a copy of your notes in the browser, which the browser may clear; your phone's vault is the real one. It
-                    doesn't have the trust settings.</p>
+                    a copy of your notes in the browser, which the browser may clear; your phone's vault is the real one.</p>
                 </section>
             </article>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">

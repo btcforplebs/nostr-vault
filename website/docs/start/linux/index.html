@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/start/linux.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Get started on Linux — Nostr Vault Docs</title>
+    <meta name="description" content="Install the Nostr Vault beta on a Linux machine: the .deb for Debian, Ubuntu and Raspberry Pi OS (arm64 or amd64), Docker on Arch, Fedora and others, the desktop window and tray, and what works in the beta.">
+    <link rel="canonical" href="https://nostrvault.app/docs/start/linux/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/start/linux/">
+    <meta property="og:title" content="Get started on Linux — Nostr Vault Docs">
+    <meta property="og:description" content="Install the Nostr Vault beta on a Linux machine: the .deb for Debian, Ubuntu and Raspberry Pi OS (arm64 or amd64), Docker on Arch, Fedora and others, the desktop window and tray, and what works in the beta.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css?v=20261101">
+    <link rel="stylesheet" href="/menu.css?v=20261025">
+    <link rel="stylesheet" href="/docs/docs.css?v=20261025">
+    <script src="/docs/docs.js?v=20261025" defer></script>
+    <script src="/menu.js?v=20261107" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+        </div>
+        <div class="actions">
+            <a href="/docs/" class="pill pill-docs">Docs</a>
+            <a href="/vault/" class="pill pill-web">Open web app</a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Get started</p>
+                <ul>
+                    <li><a href="/docs/start/iphone/">iPhone and iPad</a></li>
+                    <li><a href="/docs/start/android/">Android</a></li>
+                    <li><a href="/docs/start/mac/">Mac</a></li>
+                    <li><a href="/docs/start/web/">Web browser</a></li>
+                    <li><a href="/docs/start/linux/" aria-current="page">Linux (beta)</a></li>
+                    <li><a href="/docs/start/raspberry-pi/">Raspberry Pi (beta)</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/keys/">Keys and accounts</a></li>
+                    <li><a href="/docs/keys/signers/">Signers</a></li>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Using the app</p>
+                <ul>
+                    <li><a href="/docs/feeds/">Feeds</a></li>
+                    <li><a href="/docs/messages/">Messages</a></li>
+                    <li><a href="/docs/notifications/">How notifications arrive</a></li>
+                    <li><a href="/docs/web-of-trust/">Web of trust</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh</a></li>
+                    <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
+                    <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
+                    <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
+                    <li><a href="/docs/mesh/linux-box/">Linux box (beta)</a></li>
+                    <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
+                    <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
+                    <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
+                    <li><a href="/docs/browser-relay/">Browser vault</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Your vault</p>
+                <ul>
+                    <li><a href="/docs/vault/">Your vault</a></li>
+                    <li><a href="/docs/vault/who-can-reach-you/">Who Can Reach You</a></li>
+                    <li><a href="/docs/backup/">Backup and restore</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                    <li><a href="/docs/share-links/">Share links</a></li>
+                    <li><a href="/docs/share-links/profile/">Share your profile</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
+                    <li><a href="/docs/faq/">FAQ</a></li>
+                    <li><a href="/docs/whats-new/">What's new</a></li>
+                    <li><a href="/docs/roadmap/">Roadmap</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Get started</p>
+            <h1>Get started on Linux</h1>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#needs">What you need</a></li><li><a href="#install">Install with one command</a></li><li><a href="#deb">Or install the .deb yourself</a></li><li><a href="#desktop">On a desktop: the window</a></li><li><a href="#open">Open your vault and link it</a></li><li><a href="#day-to-day">Day to day</a></li><li><a href="#docker">Already running the Docker box?</a></li><li><a href="#beta">What works, and what's still beta</a></li></ul></div>
+
+            <article class="docs-article">
+                <p>Nostr Vault for Linux turns a Linux machine into your always-on vault: a Raspberry Pi, a mini PC, a home server
+                    or a desktop. It runs on the machine itself, with no Docker, and starts when the machine does. On a desktop it
+                    also has a window and a tray icon, like the Mac app. Your phones and computers reach it on your home network and
+                    over the <a href="/docs/mesh/">mesh</a>.</p>
+                <div class="note">
+                    <p><strong>This is a beta.</strong> Linux is new in 3.2.3 and comes as a GitHub pre-release,
+                        <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.1">v3.2.3-linux-beta.1</a>.
+                        What works and what doesn't yet is at the <a href="#beta">end of this page</a>.</p>
+                </div>
+
+                <h2 id="needs">What you need</h2>
+                <ul>
+                    <li>A 64-bit machine: <strong>arm64</strong> (a Raspberry Pi 4 or 5) or <strong>amd64</strong> (x86-64). A
+                        32-bit system is refused.</li>
+                    <li><strong>Debian 12</strong> or newer, <strong>Ubuntu 22.04</strong> or newer, or <strong>Raspberry Pi OS
+                        12</strong> (64-bit). These get the native package.</li>
+                    <li>On <strong>Arch, Fedora</strong> and other systems without apt, the installer runs the vault in Docker
+                        instead. Native packages for those come later.</li>
+                    <li>Your <strong>npub</strong>, the public key of the account that owns the vault. The machine never gets your
+                        secret key.</li>
+                    <li>Room to store your notes and media. A USB SSD is much better than an SD card; see
+                        <a href="/docs/start/raspberry-pi/">Raspberry Pi</a>.</li>
+                </ul>
+
+                <h2 id="install">Install with one command</h2>
+                <p>Open a terminal on the machine (or ssh into it) and paste this. It installs the beta from its release:</p>
+                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>curl -fsSL https://raw.githubusercontent.com/btcforplebs/nostr-vault/master/linux/install.sh | NV_NATIVE=1 NV_RELEASE=https://github.com/btcforplebs/nostr-vault/releases/download/v3.2.3-linux-beta.1 sh</code></pre>
+                <p>Keep the <code>NV_RELEASE=</code> part while Linux is in beta. Without it the installer looks at the newest full
+                    release, which doesn't carry the Linux package yet, and sets the vault up in Docker instead.</p>
+                <p>The installer asks two questions:</p>
+                <ol class="steps">
+                    <li><strong>Where should your vault live?</strong> It suggests the drive with the most free space. If that is
+                        an SD card it warns you first and asks before it carries on.</li>
+                    <li><strong>Your npub.</strong> Only that account can manage the vault. Nobody can claim it by visiting first.</li>
+                </ol>
+                <p>Then it downloads the package for your machine, checks it against the sha256 in the release, installs it, starts
+                    the vault and prints the address to open, for example <code>http://192.168.1.20:8080/</code> and
+                    <code>http://&lt;machine name&gt;.local:8080/</code>.</p>
+                <p>On a machine with a desktop, the installer adds the window and tray. On a machine with no screen it leaves
+                    them out.</p>
+
+                <h2 id="deb">Or install the .deb yourself</h2>
+                <p>Download the file for your machine from the
+                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.1">beta release</a>:
+                    <code>…_arm64.deb</code> for a Raspberry Pi or other ARM board, <code>…_amd64.deb</code> for a normal PC. Then:</p>
+                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>sudo apt install ./nostr-vault_3.2.3+6534_arm64.deb
+                sudo nostr-vault-setup --owner npub1…</code></pre>
+                <p>On a machine with no screen, add <code>--no-install-recommends</code> to the first line so apt skips the window's
+                    libraries. <code>nostr-vault-setup</code> also takes <code>--data /path</code> for where the vault lives and
+                    <code>--port</code> (8080 to start).</p>
+
+                <h2 id="desktop">On a desktop: the window</h2>
+                <p>You can skip the terminal on a desktop. Install the package, then open <strong>Nostr Vault</strong> from your
+                    apps. The first page, <strong>Welcome to Nostr Vault</strong>, asks the same two questions: <strong>Your
+                    npub</strong> and <strong>Where your vault lives</strong>. Click <strong>Start my vault</strong>. Your computer
+                    asks for your password once, to set the vault up as a service, and the window opens the vault when it's
+                    ready.</p>
+                <p>The window is the web app, served by your own vault: Feed, Vault, My Devices and Settings. Closing it doesn't
+                    stop the vault. The tray icon shows the vault's status (for example <strong>Vault running · 2 devices on the
+                    mesh</strong>) and has <strong>Open Nostr Vault</strong>, <strong>New Note</strong>, Feed, Vault, My Devices,
+                    Settings and <strong>Copy box npub</strong>.</p>
+
+                <h2 id="open">Open your vault and link it</h2>
+                <ol class="steps">
+                    <li>On a phone or computer on the same network, open the address the installer printed. Sign in with your Nostr
+                        account, the one whose npub you gave.</li>
+                    <li>In Settings, <span class="ui">This Box</span> &rarr; <span class="ui">Status, storage, mesh, devices and
+                        updates</span> shows the box's own page. Copy <strong>This box</strong> under
+                        <span class="ui">My Devices</span>.</li>
+                    <li>On your phone or Mac, add the box to My Devices by that address. The steps are on
+                        <a href="/docs/mesh/linux-box/#link">A Linux box in My Devices</a>.</li>
+                </ol>
+                <div class="done"><p><strong>You're done when</strong> your phone shows the box in reach under Your Devices, and the
+                    box's page lists your phone as <strong>Approved</strong>.</p></div>
+
+                <h2 id="day-to-day">Day to day</h2>
+                <ul>
+                    <li><strong>Logs:</strong> <code>journalctl -fu nostr-vault -u nostr-vault-mesh</code></li>
+                    <li><strong>Stop or start:</strong> <code>sudo systemctl stop nostr-vault</code> (the mesh stops with it) and
+                        <code>sudo systemctl start nostr-vault</code></li>
+                    <li><strong>Settings:</strong> <code>sudo nostr-vault-setup --show</code>; change them with
+                        <code>sudo nostr-vault-setup --owner … --data … --port …</code></li>
+                    <li><strong>Update:</strong> run the installer again, or <code>apt install</code> a newer .deb. Your data, owner and
+                        port stay. <span class="ui">Check for update and install</span> on the box's page says the same for now.</li>
+                    <li><strong>Move the vault</strong> to another drive with <strong>Move vault to…</strong> on the box's page.
+                        Choosing a different folder in the installer starts an empty vault there instead (it asks first).</li>
+                </ul>
+
+                <h2 id="docker">Already running the Docker box?</h2>
+                <p>A machine that runs the older Docker box keeps it when you run the installer, and the installer updates it. To
+                    move to the native app, run the install command above: its <code>NV_NATIVE=1</code> stops the container and
+                    installs the package on the same data, owner and port.</p>
+
+                <h2 id="beta">What works, and what's still beta</h2>
+                <p><strong>Works now:</strong></p>
+                <ul>
+                    <li>Your vault as a relay and media server on your network, started on boot, with the web app on
+                        <code>http://&lt;machine&gt;:8080/</code>.</li>
+                    <li>The mesh: your phones and Macs reach the box away from home once it's in My Devices. The box makes its own
+                        mesh key and only lets in your own devices.</li>
+                    <li>The desktop window and tray, on a machine with a desktop.</li>
+                    <li>The box's page: status, storage and <strong>Move vault to…</strong>, the mesh, your devices, and
+                        <a href="/docs/mesh/sync/#public-web">Public on the web</a> for a box with its own web address.</li>
+                    <li>Moving a Docker box to native on the same data.</li>
+                </ul>
+                <p><strong>Not yet:</strong></p>
+                <ul>
+                    <li>No in-app updates. Run the installer again to update.</li>
+                    <li>The download is checked against a sha256 from the same release. That catches a broken download, not a forged
+                        one, because releases aren't signed yet.</li>
+                    <li>No native package for Arch or Fedora yet; they get Docker.</li>
+                    <li>The plain installer, without <code>NV_RELEASE=</code>, only installs native once a full release carries the
+                        Linux package.</li>
+                </ul>
+                <p>Something wrong? Open an issue on <a href="https://github.com/btcforplebs/nostr-vault/issues">GitHub</a> with the
+                    output of <code>journalctl -u nostr-vault -u nostr-vault-mesh --since today</code>.</p>
+            </article>
+            <p class="docs-checked">Checked against Nostr Vault 3.2.3 for Linux (beta 1).</p>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/start/web/"><span>Previous</span>Web browser</a>
+                <a class="next" href="/docs/start/raspberry-pi/"><span>Next</span>Raspberry Pi (beta)</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>

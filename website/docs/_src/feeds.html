@@ -9,9 +9,9 @@
   "lede": "Nostr has no algorithm picking for you. Nostr Vault gives you a set of feeds, each a different way to look at Nostr, and you decide which ones you see and in what order.",
   "description": "Nostr Vault feeds: Following, Discover, Global, Popular, Media and the rest; Edit Feeds; the Web of Trust shield; languages; reposts, replies and auto-load; and how a new account fills its feed.",
   "labels": {
-    "ios": ["Following", "Catch Up", "Underrated", "Collapse Menu on Scroll", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Web of Trust", "Everyone", "Everyone is locked", "All languages", "Auto-load", "Reposts", "Replies", "Threaded View", "Build your wider network", "Back to your web", "Open Links in Nostr Vault", "Feed & Display", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only", "Show ranks", "Report Post", "Block User", "Let's fill it", "Your Feeds", "Fill Your Feed"],
-    "android": ["Following", "Catch Up", "Underrated", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Everyone", "Sensitive Content Warning", "All languages", "Build your wider network", "Open Links in Nostr Vault", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only"],
-    "web": ["Following", "Discover", "Global", "Popular", "Media", "diVines", "Polls", "Articles", "Recipes", "Marketplace", "Live", "Music", "Edit Feeds", "Reset to Default", "Back to your web"]
+    "ios": ["Following", "Catch Up", "Underrated", "Collapse Menu on Scroll", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Web of Trust", "Everyone", "Everyone is locked", "All languages", "Auto-load", "Reposts", "Replies", "Threaded View", "Build your wider network", "Back to your web", "Open Links in Nostr Vault", "Feed & Display", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only", "Show ranks", "Report Post", "Block User", "Let's fill it", "Your Feeds", "Fill Your Feed", "Reach", "Your web", "Your web + a few one hop out", "Outside your web", "Appearance", "Mode", "Dark", "Light", "Match Phone", "Match iPad", "Match Mac", "Accent", "Any Colour", "Icon follows accent", "Photos, videos and the trust globe stay dark in every mode.", "Private block"],
+    "android": ["Following", "Catch Up", "Underrated", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Everyone", "Sensitive Content Warning", "All languages", "Build your wider network", "Open Links in Nostr Vault", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only", "Appearance", "Dark", "Light", "Match Phone", "Custom colour", "Icon Follows Accent", "Photos, videos and the trust globe stay dark in every mode.", "Private block"],
+    "web": ["Following", "Discover", "Global", "Popular", "Media", "diVines", "Polls", "Articles", "Recipes", "Marketplace", "Live", "Music", "Edit Feeds", "Reset to Default", "Back to your web", "Reach", "+ a few one hop out", "Outside your web", "Appearance", "Accent", "Dark", "Light", "Auto", "Private block"]
   }
 }
 -->
@@ -31,7 +31,8 @@
     <li><strong>Global</strong>: everyone in your <a class="inline" href="/docs/web-of-trust/">web of trust</a>,
         without replies.</li>
     <li><strong>Hashtags</strong>: the hashtags you follow.</li>
-    <li><strong>Popular</strong>: what's getting the most replies, reposts, likes and zaps.</li>
+    <li><strong>Popular</strong>: what's getting the most replies, reposts, likes and zaps. On iPhone, iPad, Mac
+        and the web it shows only your web.</li>
     <li><strong>Media</strong>: photos and videos.</li>
     <li><strong>diVines</strong>: short looping videos.</li>
     <li><strong>Articles</strong>: long-form posts. An edited article shows once.</li>
@@ -70,6 +71,29 @@
     opens. If you had already turned Everyone on, it stays on.</p>
 <p>If your web isn't built yet, Global and Media stay empty. Hashtags and Live show everyone instead, so you
     can find your first people. Live still leaves out adult streams.</p>
+</section>
+
+<section id="reach">
+<p class="eyebrow">New in 3.2.3</p>
+<h2>Reach: how far a feed goes</h2>
+<p>On iPhone, iPad, Mac and the web, every feed now goes through the same check against your web of trust. A
+    note from outside your web never lands in a feed, not even one that tags you. Those wait in the Vault under
+    <strong>Outside your web</strong>.</p>
+<p>Discover, Global, Popular, Underrated and Media each have a <strong>Reach</strong> setting under
+    <span class="path">Settings &rarr; Feed</span> (on the web: Following, Discover, Global, Hashtags, Popular,
+    Media and Relay feeds):</p>
+<ul>
+    <li><strong>Your web</strong>: your follows and the people enough of them follow. This is where most feeds
+        start.</li>
+    <li><strong>Your web + a few one hop out</strong> (web: <strong>+ a few one hop out</strong>): also a few
+        posts from one step further out, at most one per person and never replies. Underrated starts here.</li>
+</ul>
+<p>Following and Catch Up are your follows, so they have no Reach. Global's Everyone shield still shows everyone,
+    except people you blocked or muted.</p>
+<p>Under a post, replies and quotes from outside your web fold into one <strong>Outside your web</strong> line.
+    A switch under <span class="path">Settings &rarr; Feed</span> (Show &ldquo;Outside your web&rdquo; under
+    posts, on to start) hides that line; the notes stay in the Vault.</p>
+<p>Android has the per-account web and the Everyone shield, but not Reach yet.</p>
 </section>
 
 <section id="tune">
@@ -140,6 +164,16 @@
     <li><strong>New Posts Pill</strong>: turn off to wait until you pull down.</li>
     <li><strong>Zaps Only</strong>: hides likes and reactions and turns off their notifications.</li>
 </ul>
+<h3 id="appearance">Light mode and accent colour</h3>
+<p>Since 3.2.3, <span class="path">Settings &rarr; Appearance</span> has a <strong>Mode</strong> picker:
+    <strong>Dark</strong>, <strong>Light</strong>, or follow your device (<strong>Match Phone</strong>,
+    <strong>Match iPad</strong> or <strong>Match Mac</strong>; on the web, <strong>Auto</strong>). Light mode is a
+    warm paper look. Photos, videos and the trust globe stay dark in every mode.</p>
+<p><strong>Accent</strong> picks the colour of buttons, links and highlights: eight ready-made colours, or any
+    colour from the wheel (<strong>Any Colour</strong> on iPhone, iPad and Mac, <strong>Custom colour</strong> on
+    Android). Dark mode shows a brighter, neon version. On iPhone, iPad, Mac and Android, <strong>Icon follows
+    accent</strong> (Android: <strong>Icon Follows Accent</strong>) changes the app icon to match; the iPhone asks
+    each time it changes.</p>
 </section>
 
 <section id="spam">
@@ -149,7 +183,9 @@
     <li>Empty posts, long runs of the same character, short posts stuffed with hashtags or mentions, and known
         spam words are dropped before you see them.</li>
     <li>From a post's menu, tap <strong>Block User</strong> to hide someone everywhere, including their reposts
-        and replies, or <strong>Report Post</strong>.</li>
+        and replies, or <strong>Report Post</strong>. A profile's &bull;&bull;&bull; menu also has
+        <strong>Private block</strong>, which nobody else can see. See
+        <a class="inline" href="/docs/web-of-trust/#block">Block, private block and nuclear unfollow</a>.</li>
     <li>Until you have a web of trust, Live leaves out adult streams. diVines leaves out videos marked with a content warning.</li>
 </ul>
 </section>
