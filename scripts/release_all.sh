@@ -62,6 +62,26 @@ confirm() {
     [[ "$reply" =~ ^[Yy] ]]
 }
 
+# Gradle needs a JDK. An agent or ssh shell often has none (macOS's
+# /usr/bin/java stub then fails), and the Android stage used to find out only
+# at `gradlew`, after the Go, Rust and C++ builds. Use JAVA_HOME, else a
+# working `java`, else Android Studio's bundled JBR.
+ANDROID_STUDIO_JBR="${ANDROID_STUDIO_JBR:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+find_java() { # prints a short description of the JDK in use; fails when none
+    if [ -n "${JAVA_HOME:-}" ]; then
+        "$JAVA_HOME/bin/java" -version >/dev/null 2>&1 && { echo "JAVA_HOME=$JAVA_HOME"; return 0; }
+        return 1
+    fi
+    if command -v java >/dev/null 2>&1 && java -version >/dev/null 2>&1; then
+        echo "java on PATH"; return 0
+    fi
+    if "$ANDROID_STUDIO_JBR/bin/java" -version >/dev/null 2>&1; then
+        export JAVA_HOME="$ANDROID_STUDIO_JBR"
+        echo "Android Studio JBR ($JAVA_HOME)"; return 0
+    fi
+    return 1
+}
+
 # ── secrets / env ────────────────────────────────────────────────────────────
 if [ -f "$ROOT/.release.env" ]; then
     # shellcheck source=/dev/null
@@ -113,6 +133,7 @@ if [ "$CHECK_ONLY" = 1 ]; then
     done
     [ -n "${SIGN_WITH:-}" ]     && echo "  ✓ SIGN_WITH set (zapstore signing)"     || echo "  ✗ SIGN_WITH unset — zsp will prompt or fail"
     [ -n "${NAK_AUTH_ARGS:-}" ] && echo "  ✓ NAK_AUTH_ARGS set (blossom upload)"   || echo "  ✗ NAK_AUTH_ARGS unset — Blossom upload will be manual"
+    if JAVA_DESC="$(find_java)"; then echo "  ✓ JDK: $JAVA_DESC"; else echo "  ✗ no JDK (set JAVA_HOME) — the Android build would fail"; fi
     [ -f "$ANDROID_DIR/local.properties" ] && echo "  ✓ local.properties (keystore)" || echo "  ✗ NostrVault/local.properties missing — Android signing will fail"
     if security find-identity -v -p codesigning 2>/dev/null | grep -q "$MAC_SIGN_ID"; then
         echo "  ✓ $MAC_SIGN_ID"
@@ -125,6 +146,15 @@ if [ "$CHECK_ONLY" = 1 ]; then
         echo "  ✗ no notarytool profile — recipients must clear quarantine by hand"
     fi
     exit 0
+fi
+
+# Fail now, not after the native builds, when the Android stage cannot run.
+if [ "$SKIP_ANDROID" = 0 ]; then
+    JAVA_DESC="$(find_java)" || die "No JDK: JAVA_HOME is unset or broken, no working java on PATH, and no Android Studio JBR at $ANDROID_STUDIO_JBR. Set JAVA_HOME, or pass --skip-android."
+    # find_java's export ran in the subshell; repeat it here.
+    if [ -z "${JAVA_HOME:-}" ] && [ "$JAVA_DESC" != "java on PATH" ]; then export JAVA_HOME="$ANDROID_STUDIO_JBR"; fi
+    echo "  JDK     : $JAVA_DESC"
+    [ -x "$ANDROID_DIR/gradlew" ] || die "No executable $ANDROID_DIR/gradlew"
 fi
 
 confirm "Release build $BUILD as $TAG?" || die "Aborted."
