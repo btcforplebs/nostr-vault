@@ -50,6 +50,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
+import com.nostrvault.service.blockedPubkeys
+import com.nostrvault.service.isBlocked
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -98,26 +100,20 @@ class NewMessageViewModel @Inject constructor(
     val sendError: StateFlow<String?> = _sendError.asStateFlow()
     fun clearSendError() { _sendError.value = null }
 
-    /** Search results: npub decode (single hit) or name/pubkey substring filter (cap 10). */
+    /** Search results: an npub, nprofile or hex key (one hit), or a name search; never someone blocked (DMRecipientInput). */
     val searchResults: StateFlow<List<String>> =
         combine(_searchText, nostrService.profiles) { query, profs ->
-            val q = query.trim()
-            if (q.length < 2) return@combine emptyList()
-            val lower = q.lowercase()
-
-            if (lower.startsWith("npub1")) {
-                HavenBridge.decodeNpub(q)?.let { return@combine listOf(it) }
-            }
-
-            profs.keys.filter { pubkey ->
-                val name = profs[pubkey]?.bestName ?: ""
-                name.lowercase().contains(lower) || pubkey.lowercase().contains(lower)
-            }.take(10)
+            DMRecipientInput.results(query, profs, dmService.blockedPubkeys())
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** The recipient is someone you blocked (opened from their profile): sending is off (B3). */
+    val recipientBlocked: StateFlow<Boolean> =
+        _selectedRecipient.map { it != null && dmService.isBlocked(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val canSend: StateFlow<Boolean> =
-        combine(_messageText, _selectedRecipient, _attachedImage) { msg, recipient, image ->
-            recipient != null && (msg.trim().isNotEmpty() || image != null)
+        combine(_messageText, _selectedRecipient, _attachedImage, recipientBlocked) { msg, recipient, image, blocked ->
+            recipient != null && !blocked && (msg.trim().isNotEmpty() || image != null)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     init {
@@ -223,6 +219,7 @@ fun NewMessageScreen(
     val canSend by viewModel.canSend.collectAsState()
     val attachedImage by viewModel.attachedImage.collectAsState()
     val sendError by viewModel.sendError.collectAsState()
+    val recipientBlocked by viewModel.recipientBlocked.collectAsState()
     val colors = LocalNostrVaultColors.current
 
     sendError?.let { DMSendFailedDialog(it, onDismiss = viewModel::clearSendError) }
@@ -266,6 +263,14 @@ fun NewMessageScreen(
                     // Null hides the X: a recipient locked from a profile can't be cleared.
                     onClear = if (viewModel.recipientLocked) null else viewModel::clearRecipient,
                 )
+                if (recipientBlocked) {
+                    Text(
+                        com.nostrvault.service.DMBlockedRecipientException.MESSAGE,
+                        color = SecondaryText,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
             } else {
                 RecipientSearch(
                     searchText = searchText,
@@ -347,14 +352,15 @@ fun NewMessageScreen(
                 IconButton(
                     onClick = {
                         imagePicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            // Photos and videos, as in a chat (B12; DMLockedPhoto locks either).
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
                         )
                     },
                     enabled = !isSending,
                 ) {
                     Icon(
                         imageVector = NostrVaultIcons.Media,
-                        contentDescription = "Attach image",
+                        contentDescription = "Attach photo or video",
                         tint = colors.primary,
                     )
                 }
@@ -441,6 +447,16 @@ private fun RecipientSearch(
                         }
                     }
                 }
+            }
+            // Nothing matched: say how to reach someone not loaded here (B2), instead of a blank card.
+            if (DMRecipientInput.showsNoMatch(searchText, results)) {
+                HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
+                Text(
+                    DMRecipientInput.NO_MATCH,
+                    color = SecondaryText,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(12.dp),
+                )
             }
         }
     }
