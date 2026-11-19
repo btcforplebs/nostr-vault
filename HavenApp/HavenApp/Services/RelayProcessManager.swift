@@ -234,7 +234,13 @@ class RelayProcessManager: ObservableObject {
     /// list's news, and the unread DMs it shows (they stay unread).
     func markVaultDashboardViewed(dmUnread: Int) {
         markRelayViewed(.activity)
-        if dmUnreadSeen != dmUnread { dmUnreadSeen = dmUnread }
+        markDMsSeen(unread: dmUnread)
+    }
+
+    /// The unread DMs on screen now have been seen: the dot lights again only
+    /// for more. The dashboard, the Vault list and Messages call it.
+    func markDMsSeen(unread: Int) {
+        if dmUnreadSeen != unread { dmUnreadSeen = unread }
     }
 
     /// How long the HTTP check keeps trying once the flags say running.

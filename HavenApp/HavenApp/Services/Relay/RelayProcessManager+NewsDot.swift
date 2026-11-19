@@ -82,7 +82,8 @@ extension RelayProcessManager {
         let next = newsAccounts.switchAccount(from: previous, to: account,
                                               modes: newActivityModes, dmSeen: dmUnreadSeen)
         if newActivityModes != next.modes { newActivityModes = next.modes }
-        if dmUnreadSeen != next.dmSeen { dmUnreadSeen = next.dmSeen }
+        // The DM seen count is saved per account and loaded on the switch by
+        // VaultNewsState; the ledger's in-memory copy would reset it to 0.
     }
 
     // MARK: - Last visit per account and list

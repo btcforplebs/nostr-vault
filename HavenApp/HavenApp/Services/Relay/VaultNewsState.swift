@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// The Vault tab's news dot state, apart from `RelayProcessManager` so a
@@ -6,7 +7,18 @@ import Foundation
 @MainActor
 final class VaultNewsState: ObservableObject {
     static let shared = VaultNewsState()
-    private init() {}
+    private var cancellable: AnyCancellable?
+
+    private init() {
+        // The active account's saved count, at launch and on every switch,
+        // before anything reads the dot for the new account.
+        cancellable = ConfigService.shared.$activeAccountHexPubkey
+            .removeDuplicates()
+            .sink { [weak self] account in self?.load(account: account) }
+    }
+
+    /// The account `dmUnreadSeen` belongs to.
+    private var account = ""
 
     /// The Vault lists that events from OTHERS landed in, via your inbox/chat
     /// relay, since you last looked at each. The Vault tab's red dot shows
@@ -15,5 +27,13 @@ final class VaultNewsState: ObservableObject {
     var hasNewRelayActivity: Bool { !newActivityModes.isEmpty }
     /// Unread DMs the Vault Dashboard has already shown: the tab's dot
     /// lights for more than this (VaultNewsDot).
-    @Published var dmUnreadSeen = 0
+    @Published var dmUnreadSeen = 0 {
+        didSet { if dmUnreadSeen != oldValue { VaultNewsDot.saveSeen(dmUnreadSeen, account: account) } }
+    }
+
+    private func load(account next: String) {
+        account = next.lowercased()
+        let saved = VaultNewsDot.savedSeen(account: account)
+        if dmUnreadSeen != saved { dmUnreadSeen = saved }
+    }
 }

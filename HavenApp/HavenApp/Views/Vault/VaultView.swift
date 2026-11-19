@@ -439,6 +439,11 @@ struct VaultView: View {
         }
         .onChange(of: modeInSight, initial: true) { old, mode in
             if let mode { relayManager.markRelayViewed(mode) }
+            // The Vault list and Messages show the unread DMs, so they see
+            // them too, as the dashboard does (VaultNewsDot).
+            if mode == .activity || mode == .messages {
+                relayManager.markDMsSeen(unread: DMService.shared.totalUnreadCount)
+            }
             if mode == .activity { activityVisit(arriving: true) } else if old == .activity { activityVisit(arriving: false) }
         }
         .onChange(of: relayManager.newActivityModes) { _, _ in
