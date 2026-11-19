@@ -291,3 +291,21 @@ test("dm: asking for the newest page again marks it read again (what the napplet
   await ask("dm.messages", { conversationId: ANN, limit: 1 })
   assert.equal(calls.read.length, 2)
 })
+
+// B8 + B12 (Messages UX check 2026-11-18): the napplet's Return follows the classic thread's rules (no send on a touch
+// screen or mid-IME, keyCode 229 included), and a fast A -> B open never draws A's page under B.
+test("messages napplet: Return sends only with a keyboard and never mid-composition; a late page for another chat is dropped", () => {
+  const html = fs.readFileSync(new URL("../napplets/messages/index.html", import.meta.url), "utf8")
+  const box = {}
+  vm.runInNewContext(`${html.slice(html.indexOf("// ---- pure"), html.indexOf("// ---- end pure ----"))}\n;Object.assign(box, { sendsOnEnter })`, { box, Date })
+  const key = (x = {}) => ({ key: "Enter", shiftKey: false, altKey: false, isComposing: false, keyCode: 13, ...x })
+  assert.equal(box.sendsOnEnter(key(), false), true)
+  assert.equal(box.sendsOnEnter(key(), true), false, "iPad touch: Return is a new line")
+  assert.equal(box.sendsOnEnter(key({ isComposing: true }), false), false, "IME composing")
+  assert.equal(box.sendsOnEnter(key({ keyCode: 229 }), false), false, "Safari IME reports 229")
+  assert.equal(box.sendsOnEnter(key({ shiftKey: true }), false), false)
+  assert.equal(box.sendsOnEnter(key({ altKey: true }), false), false)
+  assert.match(html, /\$\("text"\)\.onkeydown = e => \{ if \(sendsOnEnter\(e, coarse\(\)\)\)/)
+  assert.match(html, /page = await n\.dm\.messages\(\{ conversationId: pk, limit: 50 \}\) \} catch \(e\) \{ if \(open !== pk\) return;[^\n]*\n  if \(open !== pk\) return\n  msgs = mergeThread\(\[\], page\.messages\)/)
+  assert.match(html, /if \(!page \|\| open !== at\) return/, "Older messages for a chat you left")
+})

@@ -234,12 +234,13 @@ export function MessagesScreen({ ctx, vaultMenu = false }) {
           <div class="empty"><strong>No Messages Yet</strong><p class="small">{requests.length ? <>Start an encrypted conversation with New message above.<br />Requests from people outside your Web of Trust are behind the tray at the top.</> : <>Start an encrypted conversation<br />with New message above</>}</p></div>
         ))
         : list.map(c => { const unread = counts.get(c.peer) ?? 0; return (
-          <a key={c.peer} class={unread ? "dm-row unread" : "dm-row"} href={`#/dm/${c.peer}`} aria-label={unread ? `${unread} unread` : undefined}>
+          <a key={c.peer} class={unread ? "dm-row unread" : "dm-row"} href={`#/dm/${c.peer}`}>
             {/* A stranger's picture waits: their server would learn your IP the moment the list draws. As DMInboxView's
                 row: an unread dot on the face, the time in the accent while unread, the count only past 1, two lines. */}
             <span class="dm-avatar"><Avatar pubkey={c.peer} size={44} load={ctx.account.follows.includes(c.peer)} />{unread > 0 && <span class="dm-dot" aria-hidden="true" />}</span>
             <span class="dm-row-text">
-              <span class="dm-row-head"><AuthorName pubkey={c.peer} /><time class="note-time dm-time" datetime={new Date(c.last.at * 1000).toISOString()}>{ago(c.last.at)}</time></span>
+              {/* The row reads as its name, last message and time; the unread count is said after the name, never instead of it (B12). */}
+              <span class="dm-row-head"><AuthorName pubkey={c.peer} />{unread > 0 && <span class="sr-only">, {unread} unread</span>}<time class="note-time dm-time" datetime={new Date(c.last.at * 1000).toISOString()}>{ago(c.last.at)}</time></span>
               <span class="dm-row-foot">
                 <span class="dm-row-last">{(c.hit ?? c.last).from === ctx.session.pubkey ? "You: " : ""}{lastPreview((c.hit ?? c.last).content)}</span>
                 {unread > 1 && <span class="dm-unread">{unread > 99 ? "99+" : unread}</span>}

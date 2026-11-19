@@ -153,6 +153,10 @@ const followsEnd = (atEnd, mine) => !!atEnd || !!mine
  *  the page in front. */
 const readsOnArrival = (open, m, hidden) => !!open && m?.conversationId === open && !hidden
 const bubbleKey = (m, load) => `${m.id}|${m.status ?? ""}|${m.retrying ? 1 : 0}|${load ? 1 : 0}`
+/** Return sends, as on the classic thread (ConversationScreen.jsx sendsOnEnter); Shift or Option + Return is a new line.
+ *  On a touch screen (an iPad) Return is a new line and Send is the button; never mid-composition (an IME's Return
+ *  picks a word, and Safari reports it as keyCode 229 with isComposing false). */
+const sendsOnEnter = (e, touch) => e.key === "Enter" && !e.shiftKey && !e.altKey && !e.isComposing && e.keyCode !== 229 && !touch
 // ---- end pure ----
 
 const n = window.napplet || {}
@@ -231,7 +235,11 @@ async function openThread(pk, url) {
   $("bubbles").replaceChildren(el("div", "day", "Loading…")); $("text").value = ""; clearPhoto(); $("tnote").hidden = true; syncSend()
   show("thread")
   if (!labels.has(pk)) askName(pk)
-  try { const page = await n.dm.messages({ conversationId: pk, limit: 50 }); msgs = mergeThread([], page.messages); cursor = page.cursor ?? null } catch (e) { msgs = []; $("bubbles").replaceChildren(el("div", "day", `Couldn't open it: ${e.message}`)); return }
+  // A fast A -> B open: A's page may come back after B's opened. Only the chat still open draws (B12).
+  let page
+  try { page = await n.dm.messages({ conversationId: pk, limit: 50 }) } catch (e) { if (open !== pk) return; msgs = []; $("bubbles").replaceChildren(el("div", "day", `Couldn't open it: ${e.message}`)); return }
+  if (open !== pk) return
+  msgs = mergeThread([], page.messages); cursor = page.cursor ?? null
   drawThread(true)
   loadList() // its unread count is gone now
 }
@@ -331,7 +339,7 @@ function photoOf(url) {
     .then(src => { if (src) i.src = src; else i.replaceWith(el("span", "", "This photo couldn't load.")) })
   return i
 }
-$("olderBtn").onclick = async () => { const page = await n.dm.messages({ conversationId: open, cursor, limit: 50 }).catch(() => null); if (!page) return; msgs = mergeThread(msgs, page.messages); cursor = page.cursor ?? null; drawThread(false) }
+$("olderBtn").onclick = async () => { const at = open; const page = await n.dm.messages({ conversationId: at, cursor, limit: 50 }).catch(() => null); if (!page || open !== at) return; msgs = mergeThread(msgs, page.messages); cursor = page.cursor ?? null; drawThread(false) }
 $("back").onclick = () => { open = null; show("inbox"); loadList() }
 const syncSend = () => { $("send").disabled = sending || (!$("text").value.trim() && !photo) }
 // One photo per message (the classic thread's rule): picked, pasted or dropped. The shell redraws it without its
@@ -356,7 +364,8 @@ $("thread").addEventListener("dragleave", () => $("thread").classList.remove("dr
 $("thread").addEventListener("drop", e => { $("thread").classList.remove("drop"); const f = [...(e.dataTransfer?.files ?? [])].find(x => !x.type || /^(image|video)\//.test(x.type)); if (f) { e.preventDefault(); setPhoto(f) } })
 $("text").oninput = () => { syncSend(); $("text").style.height = "auto"; $("text").style.height = `${Math.min(160, $("text").scrollHeight)}px` }
 // No <form>: the frame's sandbox has no allow-forms, so a submit never reaches its handler.
-$("text").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendNow() } }
+const coarse = () => globalThis.matchMedia?.("(pointer: coarse)").matches ?? false
+$("text").onkeydown = e => { if (sendsOnEnter(e, coarse())) { e.preventDefault(); sendNow() } }
 $("send").onclick = () => sendNow()
 /** Try again (or Remove) a message that wasn't sent. The shell keeps its own failed messages with their resend (a photo
  *  that never uploaded uploads again); one it never kept (the send was refused before it began) comes back to the box. */
