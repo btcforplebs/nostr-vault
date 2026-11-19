@@ -145,8 +145,18 @@ extension RelayProcessManager {
     }
     #endif
 
+    /// True while stdout goes to relay.log (captureOutput .. restoreOutput).
+    nonisolated(unsafe) static var stdoutToRelayLog = false
+
     /// Public method to add logs from other services
     nonisolated func addLog(_ message: String, level: String = "INFO") {
+        // Zap and NWC lines go to relay.log too, so a zap that looked failed can be read back
+        // off the device. Written to stdout, they come back into Settings > Logs through the log
+        // parser like the relay's own lines, so they are not added here a second time.
+        if Self.stdoutToRelayLog, ZapLogLine.isZapLine(message) {
+            FileHandle.standardOutput.write(Data(ZapLogLine.line(message, level: level).utf8))
+            return
+        }
         let entry = LogEntry(timestamp: Date(), level: level, message: message)
         Task { @MainActor in
             self.logStore.append(entry)

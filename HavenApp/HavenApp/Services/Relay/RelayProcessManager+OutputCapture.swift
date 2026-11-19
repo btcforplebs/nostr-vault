@@ -68,11 +68,13 @@ extension RelayProcessManager {
             }
             pump.attach(pipe, as: .stdout)
             pump.attach(errPipe, as: .stderr)
+            Self.stdoutToRelayLog = true
         }
     }
 
     /// Restores stdout/stderr to their original file descriptors and tears down the pipe.
     func restoreOutput() {
+        Self.stdoutToRelayLog = false
         if savedStdout >= 0 {
             dup2(savedStdout, STDOUT_FILENO)
             close(savedStdout)
