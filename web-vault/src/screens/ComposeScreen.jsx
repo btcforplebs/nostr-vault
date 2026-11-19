@@ -39,6 +39,7 @@ import { EMPTY_DRAFT, addPhotos, hasSomethingToPost, photoToken, placeBody, remo
 import { ComposeAttachments } from "./compose/ComposeAttachments.jsx"
 import { ComposePreview } from "./compose/ComposePreview.jsx"
 import { isMedia, isVideo } from "./compose/media-kind.js"
+import { useKeyboardFrame } from "../components/keyboard-frame.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/compose.css")
@@ -133,32 +134,7 @@ function videoSize(file) {
 
 let nextPhoto = 0
 
-// An on-screen keyboard shrinks only the visual viewport, so 100vh can't see it, and iOS Safari scrolls the page to
-// the caret instead: the sheet's bar went up under the status bar and the tools down under the keyboard. While a
-// keyboard is up, the sheet is pinned to what's visible. Zoom shrinks the visual viewport too, so the keyboard is
-// what's left of the layout viewport once zoom is cancelled (height * scale).
-const KEYBOARD_MIN = 120
-export function keyboardFrame(vv, layoutHeight) {
-  if (!vv || layoutHeight - vv.height * vv.scale < KEYBOARD_MIN) return null
-  return { top: vv.offsetTop, height: vv.height }
-}
-
-function useKeyboardFrame(on) {
-  const [frame, setFrame] = useState(null)
-  useEffect(() => {
-    const vv = globalThis.visualViewport
-    if (!on || !vv) return
-    const update = () => setFrame(f => {
-      const next = keyboardFrame(vv, document.documentElement.clientHeight)
-      return f?.top === next?.top && f?.height === next?.height ? f : next
-    })
-    update()
-    vv.addEventListener("resize", update)
-    vv.addEventListener("scroll", update)
-    return () => { vv.removeEventListener("resize", update); vv.removeEventListener("scroll", update) }
-  }, [on])
-  return frame
-}
+export { keyboardFrame } from "../components/keyboard-frame.js"
 
 /** `fixed`: the reply or quote to write, instead of the one in the address (the desktop's inline reply under a thread).
  *  `inline`: drawn small, with no title and no copy of the note above it, since the thread is right there. */
