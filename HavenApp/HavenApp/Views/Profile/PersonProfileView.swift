@@ -35,6 +35,8 @@ struct PersonProfileView: View, Equatable {
     private var feedService: FeedService { .shared }
 
     @State private var showingMessageComposer = false
+    @State private var showingNuclearUnfollow = false
+    @State private var confirmingPrivateBlock = false
     @State private var zapSheetContext: ZapSheetContext?
     @State private var zapBurst = false
     @State private var showingTrustWeb = false
@@ -108,6 +110,18 @@ struct PersonProfileView: View, Equatable {
                 #if os(macOS)
                 .frame(minWidth: 440, minHeight: 400)
                 #endif
+        }
+        .sheet(isPresented: $showingNuclearUnfollow) {
+            NuclearUnfollowView(target: pubkey, name: displayName)
+                .environmentObject(nostrService)
+        }
+        .confirmationDialog("Block \(displayName) privately?", isPresented: $confirmingPrivateBlock,
+                            titleVisibility: .visible) {
+            Button("Private block", role: .destructive) {
+                if let npub = ProfileFormat.npub(pubkey) { configService.blockPrivately(npub) }
+            }
+        } message: {
+            Text("They stay out of your Web of Trust, notifications and globe. You keep following everyone, and only you can see this block.")
         }
         .sheet(item: $zapSheetContext) { context in
             CustomZapSheet(defaultAmount: context.defaultAmount) { amount, comment in
@@ -289,6 +303,16 @@ struct PersonProfileView: View, Equatable {
                 OpenInWebButton(link: link)
             }
             Divider()
+            // Cuts them and the people you follow who let them into your web
+            // (RESEARCH/NV_NUCLEAR_UNFOLLOW_SPEC.md).
+            Button(role: .destructive) { showingNuclearUnfollow = true } label: {
+                Label("Nuclear unfollow", systemImage: "person.2.slash")
+            }
+            if !isBlockedAnyway {
+                Button(role: .destructive) { confirmingPrivateBlock = true } label: {
+                    Label("Private block", systemImage: "eye.slash")
+                }
+            }
             Button(role: isBlocked ? nil : .destructive, action: toggleBlock) {
                 Label(isBlocked ? "Unblock" : "Block",
                       systemImage: isBlocked ? "hand.raised.slash" : "hand.raised")
@@ -301,6 +325,11 @@ struct PersonProfileView: View, Equatable {
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("More")
+    }
+
+    /// Blocked in public or in private: no Private block entry then.
+    private var isBlockedAnyway: Bool {
+        BlockedPeople.isBlocked(pubkey, in: configService.activeAccountBlockedHexPubkeys)
     }
 
     private var isBlocked: Bool {
