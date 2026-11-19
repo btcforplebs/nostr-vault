@@ -26,7 +26,7 @@ class StatsService: ObservableObject {
         baseRelayNotesStored = relayManager.eventsStored
 
         // Observe RelayProcessManager for new incoming events (real-time updates)
-        relayManager.$eventsStored
+        RelayCounters.shared.$eventsStored
             .receive(on: DispatchQueue.main)
             .sink { [weak self] (newNoteCount: Int) in
                 guard let self = self else { return }

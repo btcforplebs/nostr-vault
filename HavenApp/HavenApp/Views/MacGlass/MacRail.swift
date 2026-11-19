@@ -10,6 +10,8 @@ import SwiftUI
 struct MacRail: View {
     @ObservedObject var configService: ConfigService
     @ObservedObject var relayManager: RelayProcessManager
+    /// Connection count, read through relayManager; observed here so it stays live.
+    @ObservedObject private var relayCounters = RelayCounters.shared
     @ObservedObject private var nostrService = NostrService.shared
     @Binding var selectedTab: MenuBarView.Tab
     @Binding var settingsPaneRequest: SettingsView.SettingsTab?

@@ -12,6 +12,8 @@ struct BottomTabBar: View {
 
     @ObservedObject var configService: ConfigService
     @ObservedObject var relayManager: RelayProcessManager
+    /// The news dot, read through relayManager; observed here so it stays live.
+    @ObservedObject private var vaultNews = VaultNewsState.shared
     @ObservedObject var nostrService: NostrService
     @ObservedObject var dmService: DMService
     @ObservedObject var feedService: FeedService

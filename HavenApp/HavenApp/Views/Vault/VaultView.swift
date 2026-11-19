@@ -6,6 +6,8 @@ struct VaultView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var relayManager: RelayProcessManager
+    /// The news dot, read through relayManager; observed here so it stays live.
+    @ObservedObject private var vaultNews = VaultNewsState.shared
     @ObservedObject var vaultSection = VaultSection.shared
     /// Read, not watched: FeedService publishes on every feed and relay
     /// change, and the Vault shows none of it but two counts.

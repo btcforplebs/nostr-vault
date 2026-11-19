@@ -122,6 +122,27 @@ struct VaultNewsAccounts<Mode: Hashable> {
         guard let lastVisit else { return !createdAt.isEmpty }
         return createdAt.contains { $0 > lastVisit }
     }
+
+    /// An event from someone other than your accounts (`own`, lowercased)
+    /// with a `p` tag for `account` (lowercased).
+    static func isFromOthersTagging(pubkey: String, tags: [[String]], account: String, own: Set<String>) -> Bool {
+        !own.contains(pubkey.lowercased())
+            && tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1].lowercased() == account }
+    }
+
+    /// The newest `createdAt` per list in `modes` among `events` that count
+    /// (`counts`); a list with none is left out. One pass, no main actor, so
+    /// the dot's scan can run in the background.
+    static func newest<E>(in events: [E], modes: Set<Mode>, listing: (E) -> Mode?,
+                          counts: (E) -> Bool, createdAt: (E) -> Int64) -> [Mode: Int64] {
+        var newest: [Mode: Int64] = [:]
+        for event in events {
+            guard let mode = listing(event), modes.contains(mode), counts(event) else { continue }
+            let date = createdAt(event)
+            newest[mode] = max(newest[mode] ?? date, date)
+        }
+        return newest
+    }
 }
 
 /// QueryVaultC's answer: {"events":[...]} or {"error":...}.

@@ -154,6 +154,8 @@ struct VaultModePill: View {
     @ObservedObject private var section = VaultSection.shared
     @ObservedObject private var dmService = DMService.shared
     @EnvironmentObject var relayManager: RelayProcessManager
+    /// The news dot, read through relayManager; observed here so it stays live.
+    @ObservedObject private var vaultNews = VaultNewsState.shared
 
     /// Modes with something new since you last looked: the relay half's own
     /// dots, what others sent that lit the Vault tab's dot, and Messages

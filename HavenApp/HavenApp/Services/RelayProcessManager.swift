@@ -58,19 +58,36 @@ class RelayProcessManager: ObservableObject {
     /// Logs are in a separate observable so only LogsView redraws on log changes.
     let logStore = LogStore()
 
-    // Metrics
-    @Published var memoryUsage: Double = 0
-    @Published var cpuUsage: Double = 0
-    @Published var activeConnections: Int = 0
-    @Published var eventsStored: Int = 0
-    /// The Vault lists that events from OTHERS landed in, via your inbox/chat
-    /// relay, since you last looked at each. The Vault tab's red dot shows
-    /// while any remain; the mode pill marks which.
-    @Published var newActivityModes: Set<VaultMode> = []
-    var hasNewRelayActivity: Bool { !newActivityModes.isEmpty }
-    /// Unread DMs the Vault Dashboard has already shown: the tab's dot
-    /// lights for more than this (VaultNewsDot).
-    @Published var dmUnreadSeen = 0
+    // Metrics and the news dot live in their own observables (RelayCounters,
+    // VaultNewsState): they change on every stored event, and everything
+    // observing this manager, the feed included, redrew for each. These
+    // forward so writers stay as they were; a view showing one observes
+    // its own object.
+    var memoryUsage: Double {
+        get { RelayCounters.shared.memoryUsage }
+        set { RelayCounters.shared.memoryUsage = newValue }
+    }
+    var cpuUsage: Double {
+        get { RelayCounters.shared.cpuUsage }
+        set { RelayCounters.shared.cpuUsage = newValue }
+    }
+    var activeConnections: Int {
+        get { RelayCounters.shared.activeConnections }
+        set { RelayCounters.shared.activeConnections = newValue }
+    }
+    var eventsStored: Int {
+        get { RelayCounters.shared.eventsStored }
+        set { RelayCounters.shared.eventsStored = newValue }
+    }
+    var newActivityModes: Set<VaultMode> {
+        get { VaultNewsState.shared.newActivityModes }
+        set { VaultNewsState.shared.newActivityModes = newValue }
+    }
+    var hasNewRelayActivity: Bool { VaultNewsState.shared.hasNewRelayActivity }
+    var dmUnreadSeen: Int {
+        get { VaultNewsState.shared.dmUnreadSeen }
+        set { VaultNewsState.shared.dmUnreadSeen = newValue }
+    }
     /// The other accounts' dots, kept while they're not on screen
     /// (RelayProcessManager+NewsDot).
     var newsAccounts = VaultNewsAccounts<VaultMode>()

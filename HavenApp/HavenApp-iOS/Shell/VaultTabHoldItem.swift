@@ -11,6 +11,8 @@ struct VaultTabHoldItem<Label: View>: View {
     let selected: Bool
     let zapsOnly: Bool
     @ObservedObject var relayManager: RelayProcessManager
+    /// The news dot, read through relayManager; observed here so it stays live.
+    @ObservedObject private var vaultNews = VaultNewsState.shared
     /// Puts the Vault tab on screen (the tab's own tap when it isn't).
     let onTap: () -> Void
     /// On the Duo's side rail: the menu opens beside the tab.

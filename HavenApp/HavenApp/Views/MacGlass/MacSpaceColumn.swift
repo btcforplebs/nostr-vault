@@ -9,6 +9,8 @@ import SwiftUI
 struct MacSpaceColumn: View {
     @ObservedObject var configService: ConfigService
     @ObservedObject var relayManager: RelayProcessManager
+    /// Connection count, read through relayManager; observed here so it stays live.
+    @ObservedObject private var relayCounters = RelayCounters.shared
     @ObservedObject private var statsService = StatsService.shared
     @ObservedObject private var mesh = MacFipsMeshService.shared
     @ObservedObject private var outbox = MediaPostQueue.shared
