@@ -149,13 +149,14 @@ jobs:
         run: |
           case ${{ matrix.distro }} in
             fedora) prep='dnf install -y -q systemd procps-ng iproute util-linux curl findutils && dnf clean all' ;;
-            arch) prep="sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf && pacman -Syu --noconfirm --needed systemd procps-ng iproute2 util-linux curl findutils && pacman -Scc --noconfirm" ;;
+            # pacman's download sandbox (Landlock) can't start inside docker build.
+            arch) prep="sed -i -e 's/^CheckSpace/#CheckSpace/' -e '/^\\[options\\]/a DisableSandbox' /etc/pacman.conf && pacman -Syu --noconfirm --needed systemd procps-ng iproute2 util-linux curl findutils && pacman -Scc --noconfirm" ;;
           esac
           printf 'FROM %s\nRUN %s\n' "${{ matrix.image }}" "$prep" | docker build -t nv-test -
           docker run -d --name nv --privileged --cgroupns=private --stop-signal SIGRTMIN+3 -e container=docker \
             --tmpfs /run --tmpfs /run/lock --tmpfs /tmp -v "$PWD:/w:ro" -v "$RUNNER_TEMP/keytool:/usr/local/bin/keytool:ro" \
             nv-test /usr/lib/systemd/systemd
-          docker exec nv systemctl is-system-running --wait || true
+          for i in $(seq 1 30); do case $(docker exec nv systemctl is-system-running --wait 2>/dev/null) in running|degraded) break ;; esac; sleep 1; done
           docker exec nv sh -c '. /etc/os-release; echo "$PRETTY_NAME $(uname -m)"'
       - name: Install test (headless)
         run: |
@@ -170,15 +171,17 @@ jobs:
           esac
           docker exec nv systemctl -q is-enabled nostr-vault nostr-vault-mesh
           docker stop -t 60 nv && docker start nv
-          docker exec nv systemctl is-system-running --wait || true
-          docker exec nv sh -c 'echo "booted $(cut -d. -f1 /proc/uptime)s ago"
-            for i in $(seq 1 30); do
+          # Up to 3 minutes: the units wait for network-online.target, which a container may reach only when
+          # systemd-networkd-wait-online gives up (2 minutes), as on a real machine with no network manager.
+          for i in $(seq 1 30); do case $(docker exec nv systemctl is-system-running --wait 2>/dev/null) in running|degraded) break ;; esac; sleep 1; done
+          docker exec nv sh -c 'systemctl list-jobs --no-pager
+            for i in $(seq 1 90); do
               if systemctl -q is-active nostr-vault nostr-vault-mesh && curl -fsS http://127.0.0.1:8080/ | grep -qi "<html"; then
                 echo "PASS: vault and mesh came back on boot, web app served"; exit 0
               fi
               sleep 2
             done
-            echo "FAIL: not back after boot"; systemctl status --no-pager nostr-vault nostr-vault-mesh nostr-vault-prepare
+            echo "FAIL: not back after boot"; systemctl list-jobs --no-pager; systemctl status --no-pager nostr-vault nostr-vault-mesh nostr-vault-prepare
             journalctl -b --no-pager -u nostr-vault -u nostr-vault-mesh -u nostr-vault-prepare -n 60; exit 1'
       - name: Container log
         if: failure()
