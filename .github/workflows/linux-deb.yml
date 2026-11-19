@@ -88,3 +88,68 @@ jobs:
         run: cd debs && python3 -c 'import json,hashlib; m=json.load(open("nostr-vault-linux.json")); assert m["files"]; [print(f, "ok") if hashlib.sha256(open(f,"rb").read()).hexdigest()==h else exit(f+" sha mismatch") for f,h in m["files"].items()]'
       - name: Install test (headless)
         run: sudo KT="$RUNNER_TEMP/keytool" sh linux/native/test/install-test.sh debs/nostr-vault_*_${{ matrix.arch }}.deb headless
+
+  # The release's file set: both .debs and ONE manifest listing both (each build job's manifest names only its own).
+  release-files:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nostr-vault-deb-*
+          path: parts
+      - name: Merge the manifests
+        run: |
+          mkdir out && cp parts/*/*.deb out/
+          python3 -I - parts/*/nostr-vault-linux.json <<'PY'
+          import hashlib, json, sys
+          ms = [json.load(open(p)) for p in sys.argv[1:]]
+          vs = {m["version"] for m in ms}
+          assert len(vs) == 1, f"the arches built different versions: {vs}"
+          files = {}
+          for m in ms: files.update(m["files"])
+          assert len(files) == 2, files
+          for f, h in files.items():
+              assert hashlib.sha256(open("out/" + f, "rb").read()).hexdigest() == h, f
+          json.dump({"version": vs.pop(), "files": dict(sorted(files.items()))}, open("out/nostr-vault-linux.json", "w"), indent=1)
+          PY
+          cat out/nostr-vault-linux.json; ls -l out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nostr-vault-linux-release-files
+          path: out/
+          retention-days: 14
+
+  # The installer people run (linux/install.sh), from a folder (NV_DEB_DIR) holding the merged release files.
+  installer-test:
+    needs: release-files
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: linux
+      - uses: actions/download-artifact@v4
+        with:
+          name: nostr-vault-linux-release-files
+          path: rel
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - run: cd linux/native/test/keytool && go build -o "$RUNNER_TEMP/keytool" .
+      - name: install.sh, unattended, from the folder
+        run: |
+          set -- $("$RUNNER_TEMP/keytool" gen); npub=$2
+          NV_DEB_DIR="$PWD/rel" NV_OWNER=$npub NV_DATA_HOST=/var/lib/nostr-vault NV_DESKTOP=0 NV_YES=1 sh linux/install.sh
+          sleep 8
+          want=$(python3 -c 'import json; print(json.load(open("rel/nostr-vault-linux.json"))["version"])')
+          got=$(dpkg-query -W -f '${Version}' nostr-vault)
+          echo "installed $got, manifest $want"; test -n "$want"; test "$got" = "$want"
+          systemctl is-active nostr-vault nostr-vault-mesh
+          grep -x "NV_OWNER=$npub" /etc/nostr-vault/vault.env
+          curl -fsS http://127.0.0.1:8080/ | grep -qi '<html'
+          echo "installer path OK on $(uname -m)"
