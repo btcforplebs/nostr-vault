@@ -3,7 +3,9 @@
 // Settings switch on: a NIP-F1 .fips link at once, an https photo after its server fails when the imeta gives its
 // hash and the author lists a fipsmesh:// vault. A box saying "Loading image over FIPS…" while it loads (never the dead
 // https image's broken icon), "Couldn't reach the owner's vault" if the photo is a vault link (.fips) and the read gave
-// up. An https photo that fails stays the plain broken image, whether or not a vault was asked for a copy.
+// up. The author's vaults are looked up first, so the mesh box only shows when there is a vault to ask: an https photo
+// whose server fails and whose author lists none says "Photo not found"; one whose vault was asked and failed stays the
+// plain broken image.
 // Leaving the page stops its read and lets its blob: URL go. When the gate changes (a follow added, the switch
 // flipped) a photo still waiting re-checks it: one now allowed starts, one no longer allowed stops.
 import { useEffect, useRef, useState } from "preact/hooks"
@@ -20,9 +22,10 @@ const NEAR = "600px" // start the read this far before the photo scrolls into vi
  *  `onError`: the caller's, run only when the image stays broken (no mesh try follows). `media`, `allowed`, `gate`:
  *  tests. */
 export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAllowed, gate = onMeshGate, onError: broken, ...img }) {
-  const first = () => (fipsRef(item.url) ? (allowed(author) ? "wait" : "failed") : "web")
-  // "web": the url itself; "wait": a mesh read is due; "mesh": src is a blob: URL; "failed": not read (the gate);
-  // "unreached": the read gave up
+  const first = () => (fipsRef(item.url) ? (allowed(author) ? "lookup" : "failed") : "web")
+  // "web": the url itself; "lookup": asking whether the author lists a vault (no mesh yet); "wait": a mesh read is
+  // due; "mesh": src is a blob: URL; "failed": not read (the gate); "unreached": the read gave up; "missing": an https
+  // photo whose server failed and whose author lists no vault to ask
   const [state, setState] = useState(first)
   const [src, setSrc] = useState(state === "web" ? item.url : undefined)
   const [why, setWhy] = useState("")
@@ -44,14 +47,29 @@ export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAl
   useEffect(() => {
     if (!ver) return
     const ok = allowed(author)
-    if (ok && gated.current) { gated.current = false; setState("wait") }
-    else if (!ok && state === "wait") {
+    if (ok && gated.current) { gated.current = false; setState("lookup") }
+    else if (!ok && (state === "wait" || state === "lookup")) {
       gated.current = true
       // An https photo goes back to its own (broken) image; only a .fips link has nothing else to show.
       if (fipsRef(item.url)) { setWhy("mesh photos are off for this note"); setState("failed") }
       else { setSrc(item.url); setState("web") }
     }
   }, [ver])
+
+  // The vault first: the mesh box only shows once the author lists one to ask (Logen 2026-11-19: a 404 https photo
+  // showed "Loading image over the mesh…", then a vault message, from an author with no vault at all).
+  useEffect(() => {
+    if (state !== "lookup") return
+    let live = true
+    const done = src => {
+      if (!live) return
+      const next = afterLookup(src, item)
+      if (next !== "wait") { tried.current = true; setWhy("the author lists no vault") }
+      setState(next)
+    }
+    Promise.resolve(media.source ? media.source(item, author) : true).then(done, () => done(undefined))
+    return () => { live = false }
+  }, [state, item.url])
 
   useEffect(() => {
     if (state !== "wait") return
@@ -78,12 +96,12 @@ export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAl
 
   // A web photo whose server fails gets one mesh try when there is a hash to ask for and the author may use the mesh.
   const onError = e => {
-    if (state === "web" && item.x && !tried.current && allowed(author)) return setState("wait")
+    if (state === "web" && item.x && !tried.current && allowed(author)) return setState("lookup")
     if (state === "web" && item.x && !tried.current) gated.current = true // a later follow or the switch can still start a mesh try
     broken?.(e)
   }
 
-  if (state === "wait" || state === "failed" || state === "unreached") return <MeshBox state={state} item={item} why={why} box={box} />
+  if (state !== "web" && state !== "mesh") return <MeshBox state={state} item={item} why={why} box={box} />
   return <img src={src} alt="" referrerpolicy="no-referrer" onError={onError} {...img} />
 }
 
@@ -92,13 +110,20 @@ export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAl
  *  "failed" when there was no vault to ask, "unreached" when its vault was asked and didn't answer. */
 export const afterMeshFail = (e, item) => (fipsRef(item.url) ? (noVault(e) ? "failed" : "unreached") : "web")
 
+/** After asking for the author's vaults: read over the mesh when there is one; else an https photo is "missing" (its
+ *  server failed, nothing else has it) and a .fips link "failed" (not reachable, as before). */
+export const afterLookup = (src, item) => (src ? "wait" : fipsRef(item.url) ? "failed" : "missing")
+
 export const LOADING_TEXT = "Loading image over the mesh…"
+export const MISSING_TEXT = "Photo not found"
 export const UNREACHED_TEXT = "Couldn't reach the owner's vault"
 
 /** What stands in the photo's place while it isn't one: loading over the mesh, not read, or the read gave up. */
 export function MeshBox({ state, item, why = "", box }) {
   if (state === "wait") return <span ref={box} class="media-mesh" style={ratio(item)} role="status"><Spinner /><span class="media-mesh-text">{LOADING_TEXT}</span></span>
-  const text = state === "unreached" ? UNREACHED_TEXT : "Photo not reachable"
+  // Asking whether there is a vault: the photo's place held, quietly (no spinner or mesh words yet).
+  if (state === "lookup") return <span class="media-mesh" style={ratio(item)} aria-busy="true" />
+  const text = state === "unreached" ? UNREACHED_TEXT : state === "missing" ? MISSING_TEXT : "Photo not reachable"
   return <span class="media-mesh failed" style={ratio(item)} title={why || text}><span class="media-mesh-text">{text}</span></span>
 }
 
