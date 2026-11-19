@@ -38,7 +38,7 @@ jobs:
       - name: Tools
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends flatpak flatpak-builder xvfb
+          sudo apt-get install -y -q --no-install-recommends flatpak flatpak-builder elfutils xvfb # elfutils: eu-strip, which flatpak-builder runs on the host
           # Ubuntu 24.04 blocks the unprivileged user namespaces bubblewrap needs.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           pipx install "git+https://github.com/flatpak/flatpak-builder-tools.git@9d86d336a39b9af38b86f114b6ce5820fe260f91#subdirectory=node"
