@@ -96,7 +96,7 @@ final class GlobeStormTests: XCTestCase {
     /// A reconnect, or the app coming back, asks from then: what was missed
     /// meanwhile never replays as a burst of stars.
     func testAskingAgainAsksFromNowAndKeepsTheRestOfEachFilter() {
-        let storm = GlobeArcs.storm(rings: [.following], show: .init(), follows: (0..<3).map(key), since: 100)
+        let storm = GlobeArcs.storm(show: .init(), authors: (0..<3).map(key).sorted(), since: 100)
         let toMe: [String: Any] = ["kinds": [1], "since": 100, "#p": [me]]
         let again = GlobeArcs.filters(storm + [toMe], since: 5_000)
         XCTAssertEqual(again.count, storm.count + 1)
@@ -111,36 +111,33 @@ final class GlobeStormTests: XCTestCase {
 
     // MARK: What the globe asks each relay for
 
-    func testDiscoverAndGlobalAreOneAuthorlessFilterSoTheWholeWebFits() {
-        let follows = (0..<1_200).map(key)
-        for rings: Set<GlobeArcs.Ring> in [[.discover], [.global], [.following, .discover, .global]] {
-            let filters = GlobeArcs.storm(rings: rings, show: .init(), follows: follows, since: 100)
-            XCTAssertEqual(filters.count, 1)
-            XCTAssertNil(filters[0]["authors"])
-            XCTAssertEqual(Set(filters[0]["kinds"] as? [Int] ?? []), [1, 1111, 7, 6, 16, GlobeArcs.zapKind])
-            XCTAssertEqual(filters[0]["since"] as? Int, 100)
-        }
-    }
-
-    func testFollowingAloneKeepsToItsAuthors() {
-        let follows = (0..<1_200).map(key)
-        let filters = GlobeArcs.storm(rings: [.following], show: .init(), follows: follows, since: 100)
+    /// Rule 4: relays are asked for your web's people by author, not for
+    /// their whole live stream.
+    func testYourWebIsAskedForByAuthor() {
+        let authors = (0..<1_200).map(key)
+        let filters = GlobeArcs.storm(show: .init(), authors: authors, since: 100)
         let byAuthor = filters.filter { $0["authors"] != nil }
         XCTAssertEqual(byAuthor.map { ($0["authors"] as? [String])?.count }, [500, 500, 200])
+        XCTAssertTrue(byAuthor.allSatisfy { $0["kinds"] as? [Int] == [1, 1111, 7, 6, 16] && $0["since"] as? Int == 100 })
         // Zap receipts carry the LNURL server's key: one filter of their own.
         XCTAssertEqual(filters.filter { $0["authors"] == nil }.map { $0["kinds"] as? [Int] }, [[GlobeArcs.zapKind]])
     }
 
-    func testASwitchedOffSortIsNeverAskedFor() {
-        var show = GlobeArcs.Show()
-        show.reactions = false
-        show.zaps = false
-        show.reposts = false
-        let kinds = GlobeArcs.storm(rings: [.global], show: show, follows: [], since: 0).first?["kinds"] as? [Int]
-        XCTAssertEqual(kinds, [1, 1111])
-        let none = GlobeArcs.Show(notes: false, replies: false, reposts: false, reactions: false, zaps: false)
-        XCTAssertTrue(GlobeArcs.storm(rings: [.global], show: none, follows: [], since: 0).isEmpty)
-        XCTAssertTrue(GlobeArcs.storm(rings: [], show: .init(), follows: [], since: 0).isEmpty)
+    func testFollowsFirstThenFriendsOfFriendsUnlessSwitchedOff() {
+        let follows: Set = [key(1), key(2)], web: Set = [key(1), key(2), key(3)]
+        XCTAssertEqual(GlobeArcs.askedAuthors(follows: follows, web: web, friends: true), [key(1), key(2)].sorted() + [key(3)])
+        XCTAssertEqual(GlobeArcs.askedAuthors(follows: follows, web: web, friends: false), [key(1), key(2)].sorted())
+        // A web too big to name is asked for with no authors (sorted out on arrival).
+        let huge = Set((0...GlobeArcs.maxFilterAuthors).map(key))
+        XCTAssertNil(GlobeArcs.askedAuthors(follows: follows, web: huge, friends: true))
+        let filters = GlobeArcs.storm(show: .init(), authors: nil, since: 0)
+        XCTAssertEqual(filters.map { $0["authors"] == nil }, [true, true])
+    }
+
+    func testLikesRepostsAndZapsOffAreNeverAskedFor() {
+        let show = GlobeArcs.Show(friends: true, extras: false)
+        let filters = GlobeArcs.storm(show: show, authors: [key(1)], since: 0)
+        XCTAssertEqual(filters.map { $0["kinds"] as? [Int] }, [[1, 1111]])
     }
 
     // MARK: Drawing a storm cheaply

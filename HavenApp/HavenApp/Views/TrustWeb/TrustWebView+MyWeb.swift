@@ -13,12 +13,6 @@ extension TrustWebView {
         return ZStack(alignment: .bottomTrailing) {
             if shown {
                 ChromeFold(anchor: .bottomTrailing) { myWebButton }
-                    // Notes the gate refused, just above: an overlay, so the
-                    // slot's width (shared with the mini player) is the button's.
-                    .overlay(alignment: .topTrailing) {
-                        GlobeBounceCounter()
-                            .alignmentGuide(.top) { d in d[.bottom] + 8 }
-                    }
                     .transition(.scale(scale: 0.85, anchor: .bottomTrailing).combined(with: .opacity))
             }
         }
@@ -122,8 +116,8 @@ extension TrustWebView {
 
 /// My Web: what the WOT tab's globe holds, in numbers, and who is new in it.
 /// A row puts that part of your web on the globe and closes the page; a face
-/// opens that person's card. No switches: the bar's antenna is the one for
-/// live arrivals (the rest were cut, Logen 11/12).
+/// opens that person's card. Live stars has its three switches here
+/// (`LiveStarsSwitches`); the bar's antenna is the first of them.
 struct MyWebDashboardView: View {
     let me: String
     let counts: [TrustMap.Layer: Int]
@@ -182,6 +176,7 @@ struct MyWebDashboardView: View {
                              detail: followsBackDetail,
                              count: followsBack, selected: filters.contains(.followsBack)) { onFilter(.followsBack) }
                 }
+                DashboardSection(title: "Live stars") { LiveStarsSwitches() }
                 DashboardSection(title: "Upkeep") {
                     DashboardRow(icon: "arrow.clockwise", title: "Rebuild your web",
                                  detail: rebuiltText, state: .info) {

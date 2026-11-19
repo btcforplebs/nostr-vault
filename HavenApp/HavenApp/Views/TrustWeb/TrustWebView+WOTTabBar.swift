@@ -37,7 +37,8 @@ extension TrustWebView {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 2) { ForEach(TrustMap.Filter.allCases, id: \.self) { filterButton($0) } }
             }
-            ToolbarItem(placement: .primaryAction) { liveArcsButton }
+            // The Mac has no My Web page: the antenna is a menu of its three switches.
+            ToolbarItem(placement: .primaryAction) { LiveStarsMenu() }
         }
         #endif
     }

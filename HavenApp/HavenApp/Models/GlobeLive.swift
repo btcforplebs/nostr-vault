@@ -1,7 +1,7 @@
 import Foundation
 
 /// What flies on the globe, by sort, and how hard a zap strikes: the My Web
-/// dashboard's Live arrivals switches beyond the three feeds.
+/// dashboard's switches beside Live stars.
 extension GlobeArcs {
     /// What an arrival is.
     enum Sort: String, CaseIterable {
@@ -14,32 +14,27 @@ extension GlobeArcs {
         case zap
     }
 
-    /// Which sorts fly. All on unless switched off.
+    /// The My Web switches beyond Live stars itself: friends of friends,
+    /// and the small stuff (likes, reposts and zaps). Both on unless
+    /// switched off.
     struct Show: Hashable {
-        var notes = true
-        var replies = true
-        var reposts = true
-        var reactions = true
-        var zaps = true
+        /// Friends of friends (hop 2) fly; off, only your follows do.
+        var friends = true
+        /// Likes, reposts and zaps fly; off, only notes and replies do.
+        var extras = true
 
         func allows(_ sort: Sort) -> Bool {
             switch sort {
-            case .note: notes
-            case .reply: replies
-            case .repost: reposts
-            case .reaction: reactions
-            case .zap: zaps
+            case .note, .reply: true
+            case .repost, .reaction, .zap: extras
             }
         }
 
-        /// The kinds to ask relays for by author or for you: notes and
-        /// replies are both kind 1 (and 1111), so either keeps them.
-        var noteKinds: [Int] {
-            (notes || replies ? GlobeArcs.kinds : []) + (reactions ? [GlobeArcs.reactionKind] : [])
+        /// The kinds asked for by author: notes and replies, and with the
+        /// small stuff on, reactions and reposts.
+        var authorKinds: [Int] {
+            GlobeArcs.kinds + (extras ? [GlobeArcs.reactionKind] + GlobeArcs.repostKinds : [])
         }
-
-        /// The wide REQ's kinds: the notes' and, with Reposts on, reposts.
-        var wideKinds: [Int] { noteKinds + (reposts ? GlobeArcs.repostKinds : []) }
     }
 
     /// NIP-25 reactions (likes, emoji).
@@ -65,37 +60,26 @@ extension GlobeArcs {
     }
 }
 
-/// Whether notes fly across the WOT globe as they reach the relay, and from
-/// which feeds. Kept across launches, like Auto-load. The bar's antenna is
-/// the only switch: every feed and every sort flies.
+/// Live stars on the WOT globe and the two switches beside it in My Web
+/// (on the Mac, in the bar's antenna menu). Kept across launches. All three
+/// start on, and are stored only once someone flips them.
 enum LiveArcsSetting {
+    /// Live stars, also the bar's antenna.
     static let key = "wotLiveArcs"
-    /// Live arrivals start on (Logen, 10/15). The switch is only stored once
-    /// someone flips it, so a new install and anyone who never touched it
-    /// get on, and anyone who turned it off keeps it off.
     static let defaultOn = true
-
-    /// Each feed's own switch. All three start on.
-    static func key(_ ring: GlobeArcs.Ring) -> String {
-        "wotLiveArcs." + ring.rawValue
-    }
-
-    /// Each sort's own switch (new notes, replies, reposts, reactions,
-    /// zaps). All on.
-    static func key(_ sort: GlobeArcs.Sort) -> String {
-        "wotLiveArcs.sort." + sort.rawValue
-    }
-
-    /// The globe's idle spin. On.
-    static let spinKey = "wotGlobeSpin"
+    /// Friends of friends (hop 2).
+    static let friendsKey = "wotStars.friends"
+    /// Likes, reposts and zaps.
+    static let extrasKey = "wotStars.extras"
 
     /// The feed, sort and spin switches My Web had until 11/12, when Logen had
-    /// them cut: everything flies now, and Reduce Motion stills the globe. A
-    /// value someone stored would have no switch left to undo it, so it goes.
-    /// The antenna (`key`) is not among them: it keeps what it was set to.
-    static var retiredKeys: [String] {
-        GlobeArcs.Ring.allCases.map { key($0) } + GlobeArcs.Sort.allCases.map { key($0) } + [spinKey]
-    }
+    /// them cut. A value someone stored would have no switch left to undo it,
+    /// so it goes. Neither the antenna (`key`) nor today's switches are among them.
+    static let retiredKeys = [
+        "wotLiveArcs.following", "wotLiveArcs.discover", "wotLiveArcs.global",
+        "wotLiveArcs.sort.note", "wotLiveArcs.sort.reply", "wotLiveArcs.sort.repost",
+        "wotLiveArcs.sort.reaction", "wotLiveArcs.sort.zap", "wotGlobeSpin",
+    ]
 
     static func retireCutSwitches(_ defaults: UserDefaults = .standard) {
         for retired in retiredKeys { defaults.removeObject(forKey: retired) }
