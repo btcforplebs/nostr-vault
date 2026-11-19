@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Docs — Nostr Vault</title>
-    <meta name="description" content="Nostr Vault docs: getting started on iPhone, Android, Mac and the web, your keys and signers, the mesh, My Devices and Mobile vault mode.">
+    <meta name="description" content="Nostr Vault docs: getting started on iPhone, Android, Mac, Linux (beta) and the web, your keys and signers, the mesh, My Devices and Mobile vault mode.">
     <link rel="canonical" href="https://nostrvault.app/docs/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/">
     <meta property="og:title" content="Docs — Nostr Vault">
-    <meta property="og:description" content="Nostr Vault docs: getting started on iPhone, Android, Mac and the web, your keys and signers, the mesh, My Devices and Mobile vault mode.">
+    <meta property="og:description" content="Nostr Vault docs: getting started on iPhone, Android, Mac, Linux (beta) and the web, your keys and signers, the mesh, My Devices and Mobile vault mode.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -25,7 +25,7 @@
     <script src="/menu.js?v=20261107" defer></script>
 </head>
 
-<body class="docs-body" data-aliases="{&quot;#developers&quot;:&quot;/docs/developers/&quot;,&quot;#mesh&quot;:&quot;/docs/mesh/#mesh&quot;,&quot;#server&quot;:&quot;/docs/mesh/#server&quot;,&quot;#devices&quot;:&quot;/docs/mesh/#devices&quot;,&quot;#kiosk&quot;:&quot;/docs/mesh/#kiosk&quot;,&quot;#share&quot;:&quot;/docs/mesh/#share&quot;,&quot;#privacy&quot;:&quot;/docs/mesh/#privacy&quot;,&quot;#status&quot;:&quot;/docs/mesh/#status&quot;}">
+<body class="docs-body" data-aliases="{&quot;#developers&quot;:&quot;/docs/developers/&quot;,&quot;#mesh&quot;:&quot;/docs/mesh/#mesh&quot;,&quot;#server&quot;:&quot;/docs/mesh/#server&quot;,&quot;#devices&quot;:&quot;/docs/mesh/#devices&quot;,&quot;#kiosk&quot;:&quot;/docs/mesh/#kiosk&quot;,&quot;#share&quot;:&quot;/docs/mesh/#share&quot;,&quot;#privacy&quot;:&quot;/docs/mesh/#privacy&quot;,&quot;#status&quot;:&quot;/docs/mesh/#status&quot;,&quot;#linux&quot;:&quot;/docs/start/linux/&quot;}">
 
     <nav>
         <a class="logo" href="/" aria-label="Nostr Vault home">
@@ -61,6 +61,8 @@
                     <li><a href="/docs/start/android/">Android</a></li>
                     <li><a href="/docs/start/mac/">Mac</a></li>
                     <li><a href="/docs/start/web/">Web browser</a></li>
+                    <li><a href="/docs/start/linux/">Linux (beta)</a></li>
+                    <li><a href="/docs/start/raspberry-pi/">Raspberry Pi (beta)</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -87,6 +89,7 @@
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
                     <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
+                    <li><a href="/docs/mesh/linux-box/">Linux box (beta)</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
@@ -130,7 +133,7 @@
         <main class="docs-main docs-home">
             <p class="eyebrow">Docs</p>
             <h1>Nostr Vault <span>Docs</span></h1>
-            <p class="docs-lede">How to set up Nostr Vault on your iPhone, Android phone, Mac or browser, and how each part works, in plain words.</p>
+            <p class="docs-lede">How to set up Nostr Vault on your iPhone, Android phone, Mac, Linux box or browser, and how each part works, in plain words.</p>
 
             <article class="docs-article">
                 <h2 id="start">Start here</h2>
@@ -139,10 +142,12 @@
                     <a href="/docs/start/android/">Android<span>Zapstore or APK, Android 8+</span></a>
                     <a href="/docs/start/mac/">Mac<span>Mac App Store, macOS 14+</span></a>
                     <a href="/docs/start/web/">Web browser<span>Nothing to install</span></a>
+                    <a href="/docs/start/linux/">Linux and Raspberry Pi<span>Beta: .deb for arm64 and amd64</span></a>
                 </div>
 
-                <p class="note">New in 3.2.2: links open inside the app, Your Devices in Settings, encrypted drafts, and a new Mac
-                    window. See <a class="inline" href="/docs/whats-new/#v3-2-2">What's new</a>.</p>
+                <p class="note">New in 3.2.3: private blocks, nuclear unfollow, one web-of-trust gate on every feed, messages
+                    that say when they're sent, light mode and your own accent colour, zaps that tell the truth, and Nostr Vault for
+                    Linux in beta. See <a class="inline" href="/docs/whats-new/#v3-2-3">What's new</a>.</p>
 
                 <div class="docs-hub">
                             <section class="docs-hub-group">
@@ -163,6 +168,14 @@
                                     <a class="docs-card" href="/docs/start/web/">
                                         <h3>Use Nostr Vault in a browser</h3>
                                         <p>Open the Nostr Vault web app at nostrvault.app/vault/, create an account or sign in with a browser extension, a bunker link or read-only, and know what the web app keeps in your browser.</p>
+                                    </a>
+                                    <a class="docs-card" href="/docs/start/linux/">
+                                        <h3>Get started on Linux</h3>
+                                        <p>Install the Nostr Vault beta on a Linux machine: the .deb for Debian, Ubuntu and Raspberry Pi OS (arm64 or amd64), Docker on Arch, Fedora and others, the desktop window and tray, and what works in the beta.</p>
+                                    </a>
+                                    <a class="docs-card" href="/docs/start/raspberry-pi/">
+                                        <h3>Nostr Vault on a Raspberry Pi</h3>
+                                        <p>Run your Nostr Vault on a Raspberry Pi 4 or 5 with no screen: 64-bit Raspberry Pi OS, a USB SSD instead of the SD card, the install command, the address to open and the ports it uses.</p>
                                     </a>
                                 </div>
                             </section>
@@ -200,7 +213,7 @@
                                     </a>
                                     <a class="docs-card" href="/docs/web-of-trust/">
                                         <h3>Your web of trust</h3>
-                                        <p>Nostr Vault's web of trust: one web per account, the WoT tab globe, layers (Following, Vouched, Further out), Find someone, trust paths, My Web, what is folded from outside your web, and Follow Distance and Minimum Followers explained.</p>
+                                        <p>Nostr Vault's web of trust: one web per account, one gate for every feed with per-feed Reach, nuclear unfollow and private block, the WoT tab globe, layers (Following, Vouched, Further out), Find someone, trust paths, My Web, what is folded from outside your web, and Follow Distance and Minimum Followers explained.</p>
                                     </a>
                                 </div>
                             </section>
@@ -222,6 +235,10 @@
                                     <a class="docs-card" href="/docs/mesh/home-vault/">
                                         <h3>Mobile and desktop vaults</h3>
                                         <p>A mobile or desktop vault is the always-on one: a Mac, Linux box, Pi, box or spare phone that stays on. What each kind does, and how to turn a spare phone into a mobile vault with Mobile vault mode.</p>
+                                    </a>
+                                    <a class="docs-card" href="/docs/mesh/linux-box/">
+                                        <h3>A Linux box in My Devices</h3>
+                                        <p>Link a Nostr Vault Linux box to your phone or Mac by its mesh address, what the box's own page shows, how the box keeps its own key, and what runs on it.</p>
                                     </a>
                                     <a class="docs-card" href="/docs/mesh/photo-server/">
                                         <h3>Your Mac as your photo server</h3>
@@ -284,11 +301,11 @@
                                     </a>
                                     <a class="docs-card" href="/docs/faq/">
                                         <h3>FAQ</h3>
-                                        <p>Nostr Vault FAQ: which version is current, can I use my existing Nostr account, which relays my posts go to, do I need a Mac, is my home IP public, who can see my photos, losing a phone, what the web app does, is it free.</p>
+                                        <p>Nostr Vault FAQ: which version is current, is there a Linux version, can I use my existing Nostr account, which relays my posts go to, do I need a Mac, is my home IP public, who can see my photos, losing a phone, what the web app does, is it free.</p>
                                     </a>
                                     <a class="docs-card" href="/docs/whats-new/">
                                         <h3>What's new</h3>
-                                        <p>Nostr Vault release notes for iPhone, iPad, Mac, Android and the web: 3.2.2 with the in-app browser, Your Devices and encrypted drafts, 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.</p>
+                                        <p>Nostr Vault release notes for iPhone, iPad, Mac, Android, the web and Linux: 3.2.3 with private block, nuclear unfollow, one web-of-trust gate, zaps and messages you can count on, light mode and the Linux beta, 3.2.2 with the in-app browser, Your Devices and encrypted drafts, 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.</p>
                                     </a>
                                     <a class="docs-card" href="/docs/roadmap/">
                                         <h3>Roadmap</h3>

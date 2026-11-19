@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/start/raspberry-pi.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nostr Vault on a Raspberry Pi — Nostr Vault Docs</title>
+    <meta name="description" content="Run your Nostr Vault on a Raspberry Pi 4 or 5 with no screen: 64-bit Raspberry Pi OS, a USB SSD instead of the SD card, the install command, the address to open and the ports it uses.">
+    <link rel="canonical" href="https://nostrvault.app/docs/start/raspberry-pi/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/start/raspberry-pi/">
+    <meta property="og:title" content="Nostr Vault on a Raspberry Pi — Nostr Vault Docs">
+    <meta property="og:description" content="Run your Nostr Vault on a Raspberry Pi 4 or 5 with no screen: 64-bit Raspberry Pi OS, a USB SSD instead of the SD card, the install command, the address to open and the ports it uses.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css?v=20261101">
+    <link rel="stylesheet" href="/menu.css?v=20261025">
+    <link rel="stylesheet" href="/docs/docs.css?v=20261025">
+    <script src="/docs/docs.js?v=20261025" defer></script>
+    <script src="/menu.js?v=20261107" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+        </div>
+        <div class="actions">
+            <a href="/docs/" class="pill pill-docs">Docs</a>
+            <a href="/vault/" class="pill pill-web">Open web app</a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Get started</p>
+                <ul>
+                    <li><a href="/docs/start/iphone/">iPhone and iPad</a></li>
+                    <li><a href="/docs/start/android/">Android</a></li>
+                    <li><a href="/docs/start/mac/">Mac</a></li>
+                    <li><a href="/docs/start/web/">Web browser</a></li>
+                    <li><a href="/docs/start/linux/">Linux (beta)</a></li>
+                    <li><a href="/docs/start/raspberry-pi/" aria-current="page">Raspberry Pi (beta)</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/keys/">Keys and accounts</a></li>
+                    <li><a href="/docs/keys/signers/">Signers</a></li>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Using the app</p>
+                <ul>
+                    <li><a href="/docs/feeds/">Feeds</a></li>
+                    <li><a href="/docs/messages/">Messages</a></li>
+                    <li><a href="/docs/notifications/">How notifications arrive</a></li>
+                    <li><a href="/docs/web-of-trust/">Web of trust</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh</a></li>
+                    <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
+                    <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
+                    <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
+                    <li><a href="/docs/mesh/linux-box/">Linux box (beta)</a></li>
+                    <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
+                    <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
+                    <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
+                    <li><a href="/docs/browser-relay/">Browser vault</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Your vault</p>
+                <ul>
+                    <li><a href="/docs/vault/">Your vault</a></li>
+                    <li><a href="/docs/vault/who-can-reach-you/">Who Can Reach You</a></li>
+                    <li><a href="/docs/backup/">Backup and restore</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                    <li><a href="/docs/share-links/">Share links</a></li>
+                    <li><a href="/docs/share-links/profile/">Share your profile</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
+                    <li><a href="/docs/faq/">FAQ</a></li>
+                    <li><a href="/docs/whats-new/">What's new</a></li>
+                    <li><a href="/docs/roadmap/">Roadmap</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Get started</p>
+            <h1>Nostr Vault on a Raspberry Pi</h1>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#hardware">What to use</a></li><li><a href="#install">Install</a></li><li><a href="#ports">Ports and your router</a></li><li><a href="#tips">Keeping it healthy</a></li></ul></div>
+
+            <article class="docs-article">
+                <p>A Raspberry Pi on a shelf makes a good always-on vault: it uses little power, stays on, and your phones reach it
+                    at home and over the mesh. This page adds the Pi details to <a href="/docs/start/linux/">Get started on
+                    Linux</a>.</p>
+
+                <h2 id="hardware">What to use</h2>
+                <ul>
+                    <li><strong>A Raspberry Pi 4 or 5.</strong> The vault is capped at 1.5 GB of memory and the mesh at
+                        512 MB, so a model with more memory leaves room for other things.</li>
+                    <li><strong>Raspberry Pi OS 12 (Bookworm), 64-bit.</strong> The 32-bit system won't install: the vault needs
+                        arm64. Raspberry Pi OS Lite, with no desktop, is fine.</li>
+                    <li><strong>A USB SSD for the vault.</strong> A vault writes all the time. An SD card wears out and is slow; a
+                        USB SSD lasts much longer. Plug it in before you install, and the installer suggests it because it has the
+                        most free space. If you choose the SD card anyway, it warns you and asks first.</li>
+                    <li><strong>A wired network</strong> if you can. Wi-Fi works too.</li>
+                </ul>
+
+                <h2 id="install">Install</h2>
+                <ol class="steps">
+                    <li>Set up the Pi with Raspberry Pi Imager, turn on SSH, and log in from your computer:
+                        <code>ssh you@raspberrypi.local</code>.</li>
+                    <li>Paste the install command from <a href="/docs/start/linux/#install">Get started on Linux</a>. On a Pi with
+                        no desktop it installs only the vault, not the window.</li>
+                    <li>For <strong>Where should your vault live?</strong>, take the suggested folder on your SSD (for example
+                        <code>/media/you/ssd/nostr-vault</code>). For <strong>Your npub</strong>, paste your account's npub.</li>
+                    <li>When it's done it prints the address. Open <code>http://raspberrypi.local:8080/</code> (or the IP address it
+                        printed) on your phone or computer, sign in, and link the box: see
+                        <a href="/docs/mesh/linux-box/#link">A Linux box in My Devices</a>.</li>
+                </ol>
+
+                <h2 id="ports">Ports and your router</h2>
+                <ul>
+                    <li>The vault answers on port <strong>8080</strong> on your network. Pick another with
+                        <code>sudo nostr-vault-setup --port …</code>.</li>
+                    <li>The engine (3355) and the mesh door (8081) listen only on the Pi itself.</li>
+                    <li>Nothing opens a port on your router. Away from home, your own devices reach the Pi over the mesh, and the Pi
+                        answers only them.</li>
+                </ul>
+
+                <h2 id="tips">Keeping it healthy</h2>
+                <ul>
+                    <li>The vault starts by itself when the Pi boots. If the Pi loses power, it comes back on its own.</li>
+                    <li>Watch it with <code>journalctl -fu nostr-vault -u nostr-vault-mesh</code>, or open the box's page in
+                        Settings for memory, disk and mesh status.</li>
+                    <li>Running out of room? Plug in a bigger drive and use <strong>Move vault to…</strong> on the box's page.</li>
+                    <li>To update, run the install command again. Your data, owner and port stay.</li>
+                </ul>
+            </article>
+            <p class="docs-checked">Checked against Nostr Vault 3.2.3 for Linux (beta 1).</p>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/start/linux/"><span>Previous</span>Linux (beta)</a>
+                <a class="next" href="/docs/keys/"><span>Next</span>Keys and accounts</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>

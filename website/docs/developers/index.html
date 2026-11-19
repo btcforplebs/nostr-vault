@@ -61,6 +61,8 @@
                     <li><a href="/docs/start/android/">Android</a></li>
                     <li><a href="/docs/start/mac/">Mac</a></li>
                     <li><a href="/docs/start/web/">Web browser</a></li>
+                    <li><a href="/docs/start/linux/">Linux (beta)</a></li>
+                    <li><a href="/docs/start/raspberry-pi/">Raspberry Pi (beta)</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -87,6 +89,7 @@
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
                     <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
+                    <li><a href="/docs/mesh/linux-box/">Linux box (beta)</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
@@ -174,9 +177,10 @@
                     <li><code>web-relay/</code>: the <a href="/docs/browser-relay/">browser vault</a>.</li>
                     <li><code>fips-bridge/</code>, <code>fips-v2/</code> and <code>fips-v2-android/</code>: the mesh (FIPS)
                         engine embedded in the apps, and its probes (Rust).</li>
-                    <li><code>linux/</code>: a <code>Dockerfile</code> to build the vault for a Linux box yourself (no published image yet).</li>
-                    <li><code>linux/</code> also has <code>install.sh</code>, which sets up a vault on a Linux box. Updates are
-                        manual: run it again.</li>
+                    <li><code>linux/</code>: Nostr Vault for Linux. <code>linux/native/build.sh arm64 amd64</code> builds the
+                        .deb packages on Debian 12; <code>install.sh</code> installs one (or the Docker box from the
+                        <code>Dockerfile</code>) and is also the update: run it again. See
+                        <a href="/docs/start/linux/">Get started on Linux</a>.</li>
                     <li><code>docs/</code>: the NIP drafts, including NIP-F1, and the contracts between the apps and the
                         vault.</li>
                 </ul>

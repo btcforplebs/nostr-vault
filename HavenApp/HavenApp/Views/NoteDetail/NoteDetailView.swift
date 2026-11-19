@@ -13,9 +13,11 @@ struct NoteDetailView: View {
         let config = ConfigService.shared.config
         _openedAs = State(initialValue: PostingAccount.resolve(active: config.activeAccountNpub, owner: config.ownerNpub))
     }
-    /// The account active when this note was opened. Opening another
-    /// account's Vault line switches to it first, so replies from here are
-    /// that account's even if the active account changes while reading.
+    /// The account replies from here post as: the one active when the note
+    /// opened (opening another account's Vault line switches to it first),
+    /// then whichever account a switch makes active. A switch while reading
+    /// keeps the note open and moves the reply to the new account, never the
+    /// old one (Logen 2026-11-19).
     @State private var openedAs: String
     @StateObject var feedService = FeedService.shared
     @EnvironmentObject var nostrService: NostrService
@@ -453,6 +455,9 @@ struct NoteDetailView: View {
             if profile == nil {
                 nostrService.fetchMissingProfiles(for: [note.pubkey])
             }
+        }
+        .onChange(of: configService.config.activeAccountNpub) { _, active in
+            openedAs = PostingAccount.resolve(active: active, owner: configService.config.ownerNpub)
         }
         .onDisappear {
             threadClient?.disconnect()

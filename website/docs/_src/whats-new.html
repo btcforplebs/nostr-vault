@@ -6,21 +6,99 @@
   "order": 9,
   "eyebrow": "Help",
   "h1": "What's new in <span>Nostr Vault</span>",
-  "lede": "The release notes for iPhone, iPad, Mac, Android and the web, newest first. Where a change is on only some of the apps, it says which.",
-  "description": "Nostr Vault release notes for iPhone, iPad, Mac, Android and the web: 3.2.2 with the in-app browser, Your Devices and encrypted drafts, 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.",
+  "lede": "The release notes for iPhone, iPad, Mac, Android, the web and Linux, newest first. Where a change is on only some of the apps, it says which.",
+  "description": "Nostr Vault release notes for iPhone, iPad, Mac, Android, the web and Linux: 3.2.3 with private block, nuclear unfollow, one web-of-trust gate, zaps and messages you can count on, light mode and the Linux beta, 3.2.2 with the in-app browser, Your Devices and encrypted drafts, 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.",
   "labels": {
-    "ios": ["Leave the mesh?", "Open Links in Nostr Vault", "Your Devices", "Back to your web", "Build your wider network", "Show message text", "Save",
-            "Link a device", "Copy from my other vault", "Look up and back up my lists", "Catch Up", "Underrated", "Import media", "Attach photo or video",
-            "Live now", "On this day", "Your space", "Edit rail", "Picture in Picture", "Delete Account", "Leave Nostr Forever", "Bookmark", "Bookmarks", "Requests",
-            "Hide Nostr Vault logo on posts", "Save for later", "Send privately", "Create an account", "Bring an account", "Add a comment (optional)", "Plebs vs Zombies", "Preview", "Edit", "Use recommended", "Mesh", "Desktop vault · full history", "Sync now", "Open in Fanfares", "Already unlocked?", "Save", "Delete from media servers", "Delete everywhere", "Share as a note", "No signing key"],
-    "mac": ["Open Nostr Vault", "New Note", "Open Links in Nostr Vault", "Show message text", "Your Devices", "Mesh", "Desktop vault · full history", "Open in Fanfares", "Already unlocked?"],
-    "android": ["Leave the mesh?", "Open Links in Nostr Vault", "Your Devices", "Build your wider network", "Show message text",
-                "Link a device", "No, copy from my other vault", "Look up and back up my lists", "Catch Up", "Underrated", "Import media", "Attach photo or video",
-                "Live now", "On this day", "Picture in picture", "Bookmarks", "Requests", "Hide Nostr Vault logo on posts", "Create an account", "Bring an account", "Add a comment (optional)", "Plebs vs Zombies", "Preview", "Edit", "Use recommended", "Mesh", "Desktop vault · full history", "Delete from media servers", "Delete everywhere", "Share as a note"],
-    "web": ["Delete from media servers", "Share as a note", "Your space", "Bookmarks", "Requests", "Look up and back up my lists", "I have a password-locked key (ncryptsec)", "Hide Nostr Vault logo on posts"]
+    "ios": ["Leave the mesh?", "Open Links in Nostr Vault", "Your Devices", "Back to your web", "Build your wider network", "Show message text", "Save", "Link a device", "Copy from my other vault", "Look up and back up my lists", "Catch Up", "Underrated", "Import media", "Attach photo or video", "Live now", "On this day", "Your space", "Edit rail", "Picture in Picture", "Delete Account", "Leave Nostr Forever", "Bookmark", "Bookmarks", "Requests", "Hide Nostr Vault logo on posts", "Save for later", "Send privately", "Create an account", "Bring an account", "Add a comment (optional)", "Plebs vs Zombies", "Preview", "Edit", "Use recommended", "Mesh", "Desktop vault · full history", "Sync now", "Open in Fanfares", "Already unlocked?", "Save", "Delete from media servers", "Delete everywhere", "Share as a note", "No signing key", "Private block", "Block Someone", "Block privately", "Public", "Private", "Nuclear unfollow", "Show list", "Are you sure?", "Backup saved ✓", "Zapped", "Sending…", "Not sent", "Try again", "Dark", "Light", "Accent", "In your vault", "Relay details", "Photo not found", "Outside your web", "Blocked", "Reach", "Your web", "Your web + a few one hop out", "Sent, waiting for your wallet", "Zap…", "Remove", "New Message", "Your old sets", "Find emoji sets", "Add Genmoji", "Make Genmoji", "Copy", "Share", "Appearance", "Mesh settings"],
+    "mac": ["Open Nostr Vault", "New Note", "Open Links in Nostr Vault", "Show message text", "Your Devices", "Mesh", "Desktop vault · full history", "Open in Fanfares", "Already unlocked?", "Private block", "Block Someone", "Block privately", "Public", "Private", "Nuclear unfollow", "Show list", "Are you sure?", "Backup saved ✓", "Zapped", "Sending…", "Not sent", "Try again", "Dark", "Light", "Accent", "In your vault", "Relay details", "Photo not found", "Outside your web", "Blocked", "Reach", "Your web", "Your web + a few one hop out", "Sent, waiting for your wallet", "Zap…", "Remove", "Appearance", "Mesh settings"],
+    "android": ["Leave the mesh?", "Open Links in Nostr Vault", "Your Devices", "Build your wider network", "Show message text", "Link a device", "No, copy from my other vault", "Look up and back up my lists", "Catch Up", "Underrated", "Import media", "Attach photo or video", "Live now", "On this day", "Picture in picture", "Bookmarks", "Requests", "Hide Nostr Vault logo on posts", "Create an account", "Bring an account", "Add a comment (optional)", "Plebs vs Zombies", "Preview", "Edit", "Use recommended", "Mesh", "Desktop vault · full history", "Delete from media servers", "Delete everywhere", "Share as a note", "Private block", "Block Someone", "Block privately", "Public", "Private", "Nuclear unfollow", "Show list", "Are you sure?", "Backup saved ✓", "Zapped", "Sending…", "Not sent", "Try again", "Dark", "Light", "Accent", "In your vault", "Relay details", "Photo not found", "Outside your web", "Blocked", "New Message", "Your old sets", "Translate", "Appearance", "Mesh settings"],
+    "web": ["Delete from media servers", "Share as a note", "Your space", "Bookmarks", "Requests", "Look up and back up my lists", "I have a password-locked key (ncryptsec)", "Hide Nostr Vault logo on posts", "Private block", "Block Someone", "Block privately", "Public", "Private", "Nuclear unfollow", "Show list", "Are you sure?", "Backup saved ✓", "Zapped", "Sending…", "Not sent", "Try again", "Dark", "Light", "Accent", "In your vault", "Relay details", "Photo not found", "Outside your web", "Blocked", "Reach", "Your web", "Your web + a few one hop out", "Show \"Outside your web\" under posts", "Appearance", "Mesh settings"]
   }
 }
 -->
+
+<section id="v3-2-3">
+<p class="eyebrow">Android (build 108) &middot; iPhone, iPad and Mac (build 37) &middot; the web &middot; Linux beta</p>
+<h2>3.2.3</h2>
+<p>3.2.3 puts you in charge of who reaches you, and makes zaps and messages say what really happened.</p>
+<ul>
+    <li><strong>Private block.</strong> <strong>Private block</strong> in a person's profile &bull;&bull;&bull; menu
+        blocks them without anyone else seeing it: the block goes only in the encrypted part of your block list. In
+        <span class="path">Settings &rarr; Blocked</span>, <strong>Block Someone</strong> has a <strong>Block
+        privately</strong> switch, and the list shows <strong>Public</strong> and <strong>Private</strong> blocks
+        apart. If the list can't be fetched or signed, nothing is saved and the app says so. (iPhone, iPad, Mac,
+        Android and the web.)</li>
+    <li><strong>Nuclear unfollow.</strong> <strong>Nuclear unfollow</strong> in a profile's &bull;&bull;&bull; menu
+        finds everyone you follow who also follows that person, lights them on the globe, and lists them with
+        <strong>Show list</strong>. Untick anyone you want to keep. The app always asks first, and asks
+        <strong>Are you sure?</strong> again at 25 people or more. It saves your old follow list to your vault
+        before it changes anything (<strong>Backup saved ✓</strong>), and you can undo. (iPhone, iPad, Mac, Android
+        and the web.)</li>
+    <li><strong>One web-of-trust gate for everything.</strong> Every feed, reply list, quote list and zap list now
+        goes through the same rule: your own web, with your blocks and mutes. Notes that tag you no longer slip a
+        stranger into a feed. Popular shows only your web. Discover, Global, Popular, Underrated and Media each get
+        a <strong>Reach</strong>: <strong>Your web</strong> or <strong>Your web + a few one hop out</strong>
+        (Underrated starts one hop out). A zap from outside your web shows its amount but not its comment, and
+        doesn't send an alert. Replies and quotes from outside your web fold into one line under the post; turn
+        that line off with <strong>Show "Outside your web" under posts</strong> in Feed settings, and they stay
+        in Vault &rarr; Outside. (iPhone, iPad, Mac and the web.) See <a class="inline" href="/docs/web-of-trust/">Web
+        of trust</a>.</li>
+    <li><strong>The globe shows the gate.</strong> Stars fly only from your own web; one hop further out, only
+        zaps fly. A note the gate turns away bounces off your web in red. (iPhone, iPad and Mac; Android has the
+        simpler stars.)</li>
+    <li><strong>Followers split by your web.</strong> The Followers page shows the followers in your web. The rest
+        are under &bull;&bull;&bull; &rarr; <strong>Outside your web</strong>, and only followers in your web count
+        toward the red dot and follow alerts. (All apps.)</li>
+    <li><strong>Zaps that tell the truth.</strong> A slow wallet no longer looks like a failed zap. The app waits
+        about 90 seconds for your wallet and watches for the zap receipt at the same time. While it waits it says
+        <strong>Sent, waiting for your wallet</strong> (Android: "Sent. Your wallet hasn't confirmed yet"), then
+        shows <strong>Zapped</strong> and lights the bolt when the receipt arrives. Zapping the same note again
+        while one is still on its way asks first, so nothing pays twice. Hold the bolt to pick your own amount; on
+        the Mac you can also right-click and choose <strong>Zap…</strong>. The smallest zap is 1 sat. (iPhone, iPad,
+        Mac, Android and the web.) See <a class="inline" href="/docs/wallet/">Wallet and zaps</a>.</li>
+    <li><strong>Messages you can count on.</strong> Every message says <strong>Sending…</strong> until a relay takes
+        it, or <strong>Not sent</strong> with <strong>Try again</strong> (iPhone, iPad and Mac also offer
+        <strong>Remove</strong>). Your own message never shows twice with a slow signer, names replace npubs, drafts
+        stay put, a received PDF or other file opens, and a new message no longer pulls you down while you read
+        older ones. Switching account closes the open chat. <strong>New Message</strong> finds people by name or
+        any key, and you can't message someone you blocked. Photos and videos in messages are sent locked
+        (encrypted, NIP-17 kind 15), and a GIF's hidden metadata is stripped before it goes. See
+        <a class="inline" href="/docs/messages/">Messages</a>.</li>
+    <li><strong>Light mode and your own accent colour.</strong> <span class="path">Settings &rarr;
+        Appearance</span> chooses <strong>Dark</strong>, <strong>Light</strong> or Match Phone, and an
+        <strong>Accent</strong>: eight ready-made colours or a colour wheel. The app icon follows the accent. The
+        Web of Trust globe always draws dark. (iPhone, iPad, Mac, Android and the web.)</li>
+    <li><strong>Custom emoji.</strong> A new Emoji page keeps your emoji sets: save copies, import a zip, add or
+        remove sets, and get <strong>Your old sets</strong> back from list history. iPhone, iPad and Mac can also
+        <strong>Find emoji sets</strong>, <strong>Add Genmoji</strong> and <strong>Make Genmoji</strong> from the
+        reaction picker (iOS 18 and macOS 15). The web app shows custom emoji in notes, names and reactions.</li>
+    <li><strong>Good mornings.</strong> The Vault dashboard's <strong>In your vault</strong> card counts your GM
+        and PV posts, all time and today, from your own vault. (All apps.)</li>
+    <li><strong>Vault dashboard tidied.</strong> Mesh settings live under Your devices, and Media Servers has one
+        page; Advanced is now just <strong>Relay details</strong>. (Mac, Android and the web, as on iPhone.)</li>
+    <li><strong>Media as a mosaic.</strong> Vault &rarr; Media lays photos out as a mosaic, sized before they load,
+        so nothing jumps. (All apps.)</li>
+    <li><strong>iPhone and iPad viewers.</strong> The feed, messages, the Media page and profile media share one
+        viewer with one row of buttons: <strong>Copy</strong> copies the photo or clip itself, then
+        <strong>Share</strong>, with the link, Mirror and Delete under &bull;&bull;&bull;. Photos stay upright and
+        clips show the time left.</li>
+    <li><strong>Translate without Google (Android).</strong> The <strong>Translate</strong> button under posts now uses Mozilla's
+        on-device translation, downloaded from Mozilla, so the app has no Google code.</li>
+    <li><strong>Faster to open.</strong> The vault starts sooner and your saved notes show at once after a cold
+        launch. On Android, triple-tap Feed or Vault to go back to the top.</li>
+    <li><strong>Nostr Vault for Linux (beta).</strong> Your vault on a Raspberry Pi, a mini PC, a home server or a
+        desktop, as a .deb for 64-bit ARM and x86 that starts on boot, with a window and a tray icon on a desktop.
+        See <a class="inline" href="/docs/start/linux/">Get started on Linux</a>.</li>
+</ul>
+<h3>Fixes</h3>
+<ul>
+    <li>A photo whose author has no vault to ask says <strong>Photo not found</strong> instead of spinning.</li>
+    <li>Android: copying thousands of files to a new device no longer runs out of memory.</li>
+    <li>Android: signatures the vault already checked aren't checked again after a relaunch.</li>
+    <li>Sign-in with a bunker on the first screen works on a phone that had an old install.</li>
+    <li>Switching account on iPhone keeps the open note, and a reply goes out as the new account.</li>
+</ul>
+</section>
 
 <section id="v3-2-2">
 <p class="eyebrow">Android (build 98) and Mac &middot; iPhone and iPad</p>

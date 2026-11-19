@@ -15,6 +15,7 @@ Before building the release, ensure the version number is updated across the pro
 ### Release Notes & Changelog
 1. **`CHANGELOG.md`**: Add a new section for the upcoming version (e.g., `## [2.3.0] - YYYY-MM-DD`). Move any unreleased changes into this section and group them by `Added`, `Changed`, `Fixed`, etc.
 2. **`HavenApp/RELEASE_NOTES.md`**: Update the header to match the new version (e.g., `# Haven App v2.3.0 Release Notes`) and summarize the key changes for this specific release.
+3. **Docs updated, before you ship**: the docs site (`website/docs/_src/`) covers this version on every platform (iPhone/iPad, Mac, Android, web, Linux): a What's new entry, every page the release changed, new platforms on the home/start/FAQ lists. `node website/docs/_tools/build.mjs`, then `--check` and `--labels` clean against master, merged before any submit or publish.
 
 ---
 
