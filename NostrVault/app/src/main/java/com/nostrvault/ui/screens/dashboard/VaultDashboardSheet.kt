@@ -29,15 +29,16 @@ private const val RELAY_DASHBOARD_TUTORIAL_LAYER = "relayDashboard"
 // Vault Dashboard sheet
 // ═══════════════════════════════════════════════════════════════════
 
-/** The Vault Dashboard sheet's pages: the dashboard, and the two Advanced pages inside it. */
-private enum class VaultDashboardPage { MAIN, RELAY_DETAILS, MEDIA_DETAILS }
+/** The Vault Dashboard sheet's pages: the dashboard, and the Advanced page inside it. */
+private enum class VaultDashboardPage { MAIN, RELAY_DETAILS }
 
 /**
  * The Vault Dashboard (v2, iOS `VaultDashboardView`): one page that says
  * whether your vault is OK. The Vault tab presents it over either half: the
  * pill's last entry, the floating Vault button and the folded bar's corner
- * button all open it. Advanced holds Relay details (where the relay is) and
- * Media servers (iOS MediaServersPage).
+ * button all open it. Advanced holds Relay details (where the relay is);
+ * media server health and Copy to servers live on Vault settings › Media
+ * Servers, as on iPhone (#1986).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,13 +96,8 @@ internal fun VaultDashboardSheet(
                 logStore = logStore,
                 onOpenScreen = openPage,
                 onOpenRelayDetails = { page = VaultDashboardPage.RELAY_DETAILS },
-                onOpenMediaDetails = { page = VaultDashboardPage.MEDIA_DETAILS },
             )
             VaultDashboardPage.RELAY_DETAILS -> RelayDetailsPage(onBack = { page = VaultDashboardPage.MAIN })
-            VaultDashboardPage.MEDIA_DETAILS -> MediaServersPage(
-                onBack = { page = VaultDashboardPage.MAIN },
-                onOpenSettings = { openPage(Screen.BlossomSettings) },
-            )
         }
         TutorialStage(
             account = { viewModel.nostrService.activeHexPubkey },

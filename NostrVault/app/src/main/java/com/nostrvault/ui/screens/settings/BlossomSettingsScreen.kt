@@ -20,7 +20,6 @@ import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.QueuedMediaPost
 import com.nostrvault.data.model.WaitingPostStopReason
-import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaPostQueue
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.theme.*
@@ -41,13 +40,7 @@ class BlossomSettingsViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
     private val mediaPostQueue: MediaPostQueue,
-    private val blossomService: BlossomService,
 ) : ViewModel() {
-
-    /** The shared mirror-from-servers run (Mirror Now, dashboard, auto-mirror). */
-    val mirrorRun: StateFlow<BlossomService.MirrorRun> = blossomService.mirrorRun
-
-    fun mirrorNow() { blossomService.runMirror() }
 
     private val _autoMirror = MutableStateFlow(configStore.config.value.autoMirrorMedia)
     val autoMirror = _autoMirror.asStateFlow()
@@ -145,6 +138,7 @@ fun BlossomSettingsScreen(
     onBack: () -> Unit,
     onOpenFipsMesh: () -> Unit = {},
     viewModel: BlossomSettingsViewModel = hiltViewModel(),
+    health: com.nostrvault.ui.screens.dashboard.MediaCopyViewModel = hiltViewModel(),
 ) {
     val draft by viewModel.draft.collectAsState()
     val mirrors = draft.mirrors
@@ -153,7 +147,7 @@ fun BlossomSettingsScreen(
     val macRelayHttps by viewModel.macRelayHttps.collectAsState()
     val publishStatus by viewModel.publishStatus.collectAsState()
     val waitingPosts by viewModel.waitingPosts.collectAsState()
-    val mirrorRun by viewModel.mirrorRun.collectAsState()
+    val healthState by health.state.collectAsState()
     val autoMirror by viewModel.autoMirror.collectAsState()
     val vaults by viewModel.vaults.collectAsState()
     val colors = LocalNostrVaultColors.current
@@ -162,14 +156,15 @@ fun BlossomSettingsScreen(
     // Leaving with unsaved changes asks Save or Discard: nothing is stored or published without Save.
     BackHandler(enabled = changes > 0) { leaving = true }
     val back = { if (changes > 0) leaving = true else onBack() }
-    val offlineCopies: @Composable () -> Unit = {
-        OfflineCopiesSection(
-            run = mirrorRun,
-            hasMirrors = mirrors.isNotEmpty() || !macRelayHttps.isNullOrBlank(),
-            autoMirror = autoMirror,
-            onMirrorNow = viewModel::mirrorNow,
-            onAutoMirrorChange = viewModel::setAutoMirror,
-        )
+    // A saved list change (Save here, or another device's list adopted) is
+    // what uploads use: check those servers again.
+    // (The model checks once by itself when it is made.)
+    var checkedFor by remember { mutableStateOf(draft.savedMirrors) }
+    LaunchedEffect(draft.savedMirrors) {
+        if (draft.savedMirrors != checkedFor) { checkedFor = draft.savedMirrors; health.load() }
+    }
+    val healthFor: (String) -> Pair<com.nostrvault.ui.screens.dashboard.MediaServer?, String> = { url ->
+        MediaServersHealth.lookup(url, draft.savedMirrors, healthState.servers)
     }
 
     Scaffold(
@@ -242,6 +237,8 @@ fun BlossomSettingsScreen(
                         }
                     }
                 }
+                val desktop = healthState.servers.firstOrNull { it.url == macRelayHttps }
+                ServerHealthLine(desktop, "Not checked yet") { health.test(macRelayHttps!!) }
             }
 
             // Every server plain http: uploads and their auth headers go out unencrypted (Tron #1451).
@@ -363,6 +360,8 @@ fun BlossomSettingsScreen(
                             url = mirror,
                             onRemove = { viewModel.removeMirror(mirror) },
                         )
+                        val (server, missing) = healthFor(mirror)
+                        ServerHealthLine(server, missing) { server?.let { health.test(it.url) } }
                         HorizontalDivider(
                             color = SeparatorColor,
                             thickness = 0.5.dp,
@@ -372,7 +371,8 @@ fun BlossomSettingsScreen(
                 }
                 if (vaults.isNotEmpty()) item { YourVaultsSection(vaults, viewModel::setVaultListed) }
                 item { SuggestedMediaServersSection(mirrors, viewModel::addSuggested) }
-                item { offlineCopies() }
+                item { YourMediaSection(health) }
+                item { OfflineCopiesSection(autoMirror, viewModel::setAutoMirror) }
                 item { FipsSection(onOpenFipsMesh) }
             }
         }
@@ -451,15 +451,13 @@ private fun FipsSection(onOpenFipsMesh: () -> Unit) {
 }
 
 /**
- * "Offline Copies": Mirror from Servers (Mirror Now) and the Auto-Mirror
- * Media switch, as in iOS BlossomSettingsView.
+ * "Offline Copies": the Auto-Mirror Media switch, as in iOS
+ * BlossomSettingsView since the media settings trim (#1986). Its by-hand twin
+ * is Import media on the Vault Dashboard, the one button for it.
  */
 @Composable
 private fun OfflineCopiesSection(
-    run: BlossomService.MirrorRun,
-    hasMirrors: Boolean,
     autoMirror: Boolean,
-    onMirrorNow: () -> Unit,
     onAutoMirrorChange: (Boolean) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -476,46 +474,7 @@ private fun OfflineCopiesSection(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Mirror from Servers", color = PrimaryText, fontSize = 15.sp)
-                Text(
-                    text = when {
-                        run.running -> run.status
-                        run.lastResult.isNotEmpty() -> run.lastResult
-                        else -> "Download your media from your media servers into your vault"
-                    },
-                    color = SecondaryText,
-                    fontSize = 12.sp,
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = onMirrorNow,
-                enabled = !run.running && hasMirrors,
-                shape = RoundedCornerShape(6.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-            ) {
-                if (run.running) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        strokeWidth = 2.dp,
-                        color = PrimaryText,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(run.progress?.let { "${(it * 100).toInt()}%" } ?: "Mirroring", fontSize = 13.sp)
-                } else {
-                    Text("Mirror Now", fontSize = 13.sp)
-                }
-            }
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 16.dp),
+                .padding(start = 16.dp, end = 8.dp, top = 4.dp),
         ) {
             Text("Auto-Mirror Media", color = PrimaryText, fontSize = 15.sp)
             InfoButton(SettingsHelp.SHARE_AUTO_MIRROR)
@@ -526,8 +485,16 @@ private fun OfflineCopiesSection(
                 colors = SwitchDefaults.colors(checkedTrackColor = colors.primary),
             )
         }
+        Text(
+            OFFLINE_COPIES_FOOTER,
+            color = SecondaryText,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
+        )
     }
 }
+
+internal const val OFFLINE_COPIES_FOOTER = "To import now, use Import media on the dashboard."
 
 /** Under Your Vaults: how a vault gets on the list, and that nothing else puts it there. */
 internal const val YOUR_VAULTS_FOOTER = "Readers can fetch your photos from a vault you add here, over the mesh. " +
@@ -584,7 +551,7 @@ private fun MirrorRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 4.dp),
     ) {
         Icon(
             imageVector = NostrVaultIcons.Blossom,

@@ -179,6 +179,8 @@ class MediaCopyViewModel @Inject constructor(
                 )
             }
             if (mirrors.isEmpty()) return@launch
+            // Each server's dot from the start, as on iPhone (MediaServersModel.load's testAll).
+            mirrors.forEach { test(it) }
             val hashes = localFiles.keys.toList()
             var done = 0
             _state.update { it.copy(scan = 0 to hashes.size) }
