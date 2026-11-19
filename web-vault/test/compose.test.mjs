@@ -166,6 +166,18 @@ test("suggestions: follows first, then names starting with the query, then short
   assert.deepEqual(rankPeople("nobody", [A, B, C], [A]), [])
 })
 
+// B3 + B12 (Messages UX check 2026-11-18): the New message / mention picker never offers someone you blocked, and a
+// stranger's picture waits (their server would learn your IP as you type), as on the inbox rows.
+test("suggestions: blocked people are never offered; strangers' pictures don't load", () => {
+  assert.deepEqual(rankPeople("alp", [A, B, C], [A], new Set([B])), [A, C])
+  assert.deepEqual(rankPeople("", [A], [A], new Set([A])), [])
+  const src = readFileSync(new URL("../src/components/MentionPicker.jsx", import.meta.url), "utf8")
+  assert.match(src, /rankPeople\(query, \[\.\.\.follows, \.\.\.found\], follows, blocked\)/)
+  assert.match(src, /<Avatar pubkey=\{pk\} size=\{28\} load=\{follows\.includes\(pk\) \|\| pk === ctx\.session\?\.pubkey\} \/>/)
+  const thread = readFileSync(new URL("../src/screens/ConversationScreen.jsx", import.meta.url), "utf8")
+  assert.doesNotMatch(thread, /blocked this person on your phone/, "a block made on the web isn't 'on your phone'")
+})
+
 test("a post with a mention and photos: reply tags, the mention's p tag once, a link and an imeta per photo", () => {
   const author = generateSecretKey()
   const parent = finalizeEvent({ kind: 1, created_at: 1, tags: [], content: "root" }, author)
