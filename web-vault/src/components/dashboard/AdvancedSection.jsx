@@ -1,7 +1,7 @@
-// "Advanced" (VaultDashboardView advancedSection): Relay details, Mesh settings (today's relay screen, where Who Can
-// Reach You and the pairing link live; plan §6) and Media servers. The browser's relay has no
-// address or port, so Relay details is how long it has run and how long it took to start.
-import { ExpandingRow, Line, Section, SettingRow } from "./parts.jsx"
+// "Advanced" (VaultDashboardView advancedSection): Relay details only. Mesh settings lives in Your devices and Media
+// Servers in Vault settings, one home each (RESEARCH/NV_VAULT_SETTINGS_DUPLICATES_2026_11_19.md). The browser's relay
+// has no address or port, so Relay details is how long it has run and how long it took to start.
+import { ExpandingRow, Line, Section } from "./parts.jsx"
 import { uptimeLine } from "./StatusCard.jsx"
 
 export function AdvancedSection({ start = performance.timeOrigin, startedInMs }) {
@@ -12,8 +12,6 @@ export function AdvancedSection({ start = performance.timeOrigin, startedInMs })
         {Number.isFinite(startedInMs) && <Line title="Started in" value={`${startedInMs} ms`} />}
         <Line title="Runs in" value="This browser tab" />
       </ExpandingRow>
-      <SettingRow icon="antenna" title="Mesh settings" href="#/relay" />
-      <SettingRow icon="photo" title="Media servers" href="#/settings/media-servers" />
     </Section>
   )
 }

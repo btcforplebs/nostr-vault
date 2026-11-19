@@ -1,8 +1,9 @@
 // "Your devices" (plan §6), under the status card: the user's own devices this browser knows, each with its green dot
 // when it is on the mesh (my-devices.js, as the Your space panel), and the two ways to link one more by two scans
-// (PairDevice.jsx): show this browser's code, or scan the other device's.
+// (PairDevice.jsx): show this browser's code, or scan the other device's. Mesh settings is linked here, its one home on
+// the dashboard as on the phone and Mac (YourDevicesSection.swift); Advanced no longer has it.
 import { useEffect, useState } from "preact/hooks"
-import { Section } from "./parts.jsx"
+import { Section, SettingRow } from "./parts.jsx"
 import { lookInFront } from "../auto-look.js"
 import { loadMyDevices, deviceStatus, statusLine, REFRESH_MS } from "../../desktop/space/my-devices.js"
 import { deviceRows, pairedDevices } from "../../net/pair-devices.js"
@@ -27,6 +28,11 @@ export function YourDevicesSection({ ctx, onPair, load = loadMyDevices }) {
   const data = useYourDevices(ctx, load)
   const now = Math.floor(Date.now() / 1000)
   const rows = deviceRows(data?.devices, pairedDevices()).map(d => ({ d, s: deviceStatus(data.adverts.get(d.hex), now, { checked: data.checked }) }))
+  return <YourDevicesView data={data} rows={rows} now={now} onPair={onPair} />
+}
+
+/** What Your devices draws, from what useYourDevices read (split out so it can be checked without a render). */
+export function YourDevicesView({ data, rows, now, onPair }) {
   const onMesh = rows.filter(r => r.s.state === "online" || r.s.state === "connected").length
   return (
     <Section title="Your devices" detail={rows.length ? `${onMesh} of ${rows.length} on the mesh` : undefined}>
@@ -44,6 +50,7 @@ export function YourDevicesSection({ ctx, onPair, load = loadMyDevices }) {
         <button type="button" class="dash-button" onClick={() => onPair("show")}>Show my code</button>
         <button type="button" class="dash-button" onClick={() => onPair("scan")}>Scan a code</button>
       </div>
+      <SettingRow icon="antenna" title="Mesh settings" href="#/relay" />
     </Section>
   )
 }
