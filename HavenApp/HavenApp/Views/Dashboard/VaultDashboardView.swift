@@ -9,6 +9,8 @@ import SwiftUI
 /// and a Storage Overview repeating the tiles.
 struct VaultDashboardView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
+    /// Connection count, read through relayManager; observed here so it stays live.
+    @ObservedObject private var relayCounters = RelayCounters.shared
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var statsService: StatsService
