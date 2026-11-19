@@ -274,11 +274,8 @@ struct TrustWebView: View {
             get: { messagePubkey.map { IdentifiableString(id: $0) } },
             set: { messagePubkey = $0?.id }
         )) { p in
-            #if os(iOS)
-            MessageComposerView(recipientPubkey: p.id)
-            #else
-            DMThreadView(counterpartyPubkey: p.id)
-            #endif
+            // The real chat, as from a profile (B1).
+            DMThreadView(counterpartyPubkey: p.id, showsClose: true)
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { profilePubkey.map { IdentifiableString(id: $0) } },

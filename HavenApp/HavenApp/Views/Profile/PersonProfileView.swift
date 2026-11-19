@@ -98,19 +98,17 @@ struct PersonProfileView: View, Equatable {
                 }
             }
         }
-        .sheet(isPresented: $showingMessageComposer) {
-            MessageComposerView(recipientPubkey: pubkey)
-                .environmentObject(nostrService)
-                .environmentObject(configService)
-        }
-        #else
-        .sheet(isPresented: $showingMessageComposer) {
-            DMThreadView(counterpartyPubkey: pubkey)
-                .environmentObject(nostrService)
-                .environmentObject(configService)
-                .frame(minWidth: 440, minHeight: 400)
-        }
         #endif
+        // The real chat, its history and photos included, empty for someone
+        // new (B1, 2026-11-19). It used to be a text-only sheet on iOS.
+        .sheet(isPresented: $showingMessageComposer) {
+            DMThreadView(counterpartyPubkey: pubkey, showsClose: true)
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+                #if os(macOS)
+                .frame(minWidth: 440, minHeight: 400)
+                #endif
+        }
         .sheet(item: $zapSheetContext) { context in
             CustomZapSheet(defaultAmount: context.defaultAmount) { amount, comment in
                 zap(amount: amount, comment: comment)
