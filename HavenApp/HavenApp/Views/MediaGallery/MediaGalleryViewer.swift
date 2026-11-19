@@ -40,7 +40,6 @@ struct MediaItemRenderer: View {
                 // page on screen gets one, so the pages either side stay quiet.
                 if isOnScreen {
                     FullScreenVideoPlayer(url: mediaItem.url, mimeType: mediaItem.mimeType, onPiPStart: onPiPStart)
-                        .turnsSidewaysForWideClip(mediaItem.url)
                 } else {
                     Color.black
                 }

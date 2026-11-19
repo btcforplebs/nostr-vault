@@ -1,5 +1,4 @@
 import SwiftUI
-import AVFoundation
 #if os(iOS)
 import UIKit
 #endif
@@ -9,9 +8,10 @@ import UIKit
 ///
 /// The clip page on screen holds a slot and gives it up when it is paged
 /// away or the viewer starts to close (`LandscapeCount.pageHolds`); photos
-/// never hold one. A landscape clip turns the screen
-/// sideways by itself (Logen, 2026-11-11: "auto-turn go"). iPad and Mac are
-/// left alone: they are never held upright.
+/// never hold one. The screen turns only when you turn the phone (Logen,
+/// 2026-11-19: no auto-turn for wide clips, replacing the 11-11 one) or tap
+/// Live's Full screen. iPad and Mac are left alone: they are never held
+/// upright.
 @MainActor
 enum LandscapeAllowance {
     private static var count = LandscapeCount()
@@ -51,32 +51,6 @@ enum LandscapeAllowance {
         guard isPhone, count.allowsLandscape else { return }
         turn(to: .landscapeRight)
         #endif
-    }
-
-    /// Turns the screen sideways when the clip at `url` is wider than tall.
-    /// Reads only the clip's header; a clip that cannot be read stays upright.
-    static func turnSidewaysIfWide(_ url: URL) async {
-        #if os(iOS)
-        guard isPhone else { return }
-        // The clip's own view can appear a moment before the viewer around it
-        // opens its slot, so the slot is checked after the read, not before.
-        guard let size = await displaySize(ofVideoAt: url),
-              LandscapeCount.turnsSideways(size),
-              !Task.isCancelled else { return }
-        turnSideways()
-        #endif
-    }
-
-    /// The clip's shape as shown: `naturalSize` is before rotation, so a
-    /// phone-shot portrait clip would read as landscape without the transform.
-    nonisolated static func displaySize(ofVideoAt url: URL) async -> CGSize? {
-        let asset = AVURLAsset(url: url)
-        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
-              let natural = try? await track.load(.naturalSize),
-              let transform = try? await track.load(.preferredTransform)
-        else { return nil }
-        let oriented = natural.applying(transform)
-        return CGSize(width: abs(oriented.width), height: abs(oriented.height))
     }
 
     #if os(iOS)
@@ -119,14 +93,6 @@ extension View {
     /// Letting go while `closing` turns the phone upright at once.
     func landscapeSlot(held: Bool, closing: Bool = false) -> some View {
         modifier(LandscapeSlot(held: held, closing: closing))
-    }
-
-    /// Turns the screen sideways once a wide clip at `url` is showing.
-    func turnsSidewaysForWideClip(_ url: URL?) -> some View {
-        task(id: url) {
-            guard let url else { return }
-            await LandscapeAllowance.turnSidewaysIfWide(url)
-        }
     }
 }
 
