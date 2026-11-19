@@ -332,7 +332,9 @@ class GatedArticleService @Inject constructor(
             is ZapSendService.ZapError.InvoiceFailed,
             is ZapSendService.ZapError.WrongInvoiceAmount,
             is ZapSendService.ZapError.SignFailed,
-            is ZapSendService.ZapError.NoWallet -> true
+            is ZapSendService.ZapError.NoWallet,
+            // Held to ask before zapping a note again: the wallet was never asked.
+            is ZapSendService.ZapError.StillPending -> true
             is ZapSendService.ZapError.PaymentFailed -> error.notPaid
             else -> false
         }

@@ -47,18 +47,20 @@ fun ZapPill(notification: ZapNotification, onTap: () -> Unit = {}) {
         ZapStatus.SENDING -> PillTone.ACCENT
         ZapStatus.SUCCESS -> PillTone.SUCCESS
         is ZapStatus.FAILED -> PillTone.ERROR
+        is ZapStatus.PENDING -> PillTone.NEUTRAL
     }
     val label = when (status) {
         ZapStatus.SENDING -> "Zapping ${notification.recipientName}"
         ZapStatus.SUCCESS -> "Zapped ${notification.recipientName}"
         is ZapStatus.FAILED -> status.message.ifBlank { "Zap failed" }
+        is ZapStatus.PENDING -> status.message
     }
     BasePill(
         icon = if (status is ZapStatus.FAILED) NostrVaultIcons.Alert else NostrVaultIcons.Zap,
         label = label,
         tone = tone,
-        trailingText = if (status is ZapStatus.FAILED) null else "${notification.amountSats} sats",
-        maxLines = if (status is ZapStatus.FAILED) 2 else 1,
+        trailingText = if (status is ZapStatus.FAILED || status is ZapStatus.PENDING) null else "${notification.amountSats} sats",
+        maxLines = if (status is ZapStatus.FAILED || status is ZapStatus.PENDING) 2 else 1,
         onClick = if (status is ZapStatus.FAILED) onTap else null,
     )
 }

@@ -31,7 +31,7 @@ class ZapSendServiceInvoiceAmountTest {
     private val nwc = mockk<NWCService>(relaxed = true)
     private val config = mockk<ConfigStore>()
     private val feed = mockk<FeedService>(relaxed = true)
-    private val service = ZapSendService(nostr, nwc, config, feed)
+    private val service = ZapSendService(nostr, nwc, config, feed, mockk(relaxed = true))
 
     @Before fun setUp() {
         every { config.config } returns MutableStateFlow(HavenConfig(nwcURI = "nostr+walletconnect://x"))

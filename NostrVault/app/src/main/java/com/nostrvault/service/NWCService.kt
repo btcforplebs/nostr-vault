@@ -97,7 +97,9 @@ class NWCService @Inject constructor(
             method = "pay_invoice",
             params = NWCParams(invoice = bolt11),
         )
-        paidPreimage(sendNWCRequest(request))
+        // A phone wallet or a slow route can take well over 15 s; the zap's
+        // receipt still confirms it after this (ZapConfirm).
+        paidPreimage(sendNWCRequest(request, ZapConfirm.WALLET_WAIT_MS))
     }
 
     /**
@@ -171,11 +173,11 @@ class NWCService @Inject constructor(
     // Core NWC request/response
     // ══════════════════════════════════════════════════════════════════
 
-    private suspend fun sendNWCRequest(request: NWCRequest): NWCResponse =
-        sendNWCRequest(json.encodeToString(NWCRequest.serializer(), request))
+    private suspend fun sendNWCRequest(request: NWCRequest, timeoutMs: Long = TIMEOUT_MS): NWCResponse =
+        sendNWCRequest(json.encodeToString(NWCRequest.serializer(), request), timeoutMs)
 
-    /** Sends one already-encoded NIP-47 request payload and awaits its reply. */
-    private suspend fun sendNWCRequest(payloadJson: String): NWCResponse {
+    /** Sends one already-encoded NIP-47 request payload and awaits its reply, for up to [timeoutMs]. */
+    private suspend fun sendNWCRequest(payloadJson: String, timeoutMs: Long = TIMEOUT_MS): NWCResponse {
         val connectionUri = configStore.config.value.nwcURI
             ?: throw NWCNotSentException("No NWC connection configured")
         val connection = parseURI(connectionUri)
@@ -253,7 +255,7 @@ class NWCService @Inject constructor(
 
             // Timeout
             nwcScope.launch {
-                delay(TIMEOUT_MS)
+                delay(timeoutMs)
                 if (completed.compareAndSet(false, true)) {
                     client.disconnect()
                     cont.resumeWithException(NWCTimeoutException())
