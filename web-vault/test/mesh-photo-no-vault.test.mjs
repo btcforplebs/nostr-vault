@@ -19,7 +19,7 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { afterMeshFail } = await import("../src/components/MediaImage.jsx")
+const { afterMeshFail, afterLookup, MeshBox, MISSING_TEXT } = await import("../src/components/MediaImage.jsx")
 
 const A = "a1".repeat(32), SHA = "487dc1578912f424773b0befc4eff491f026f0f24652f1d4ff66a85639455217"
 const SK = generateSecretKey(), P = getPublicKey(SK)
@@ -54,6 +54,33 @@ test("after a failed mesh try: https -> its own broken image; a .fips link -> no
 
 test("MediaImage: a web photo whose try found no vault gets no second try, so it can't loop", () => {
   const src = readFileSync(new URL("../src/components/MediaImage.jsx", import.meta.url), "utf8")
-  assert.match(src, /state === "web" && item\.x && !tried\.current && allowed\(author\)\) return setState\("wait"\)/)
+  assert.match(src, /state === "web" && item\.x && !tried\.current && allowed\(author\)\) return setState\("lookup"\)/)
+  assert.match(src, /if \(next !== "wait"\) \{ tried\.current = true; setWhy\("the author lists no vault"\) \}/)
   assert.match(src, /if \(next === "web"\) \{ tried\.current = true; setSrc\(item\.url\) \}/)
+})
+
+// Logen 2026-11-19: a 404 https photo from an author with no vault showed "Loading image over the mesh…" and then a
+// vault message. The vault is looked up first now; the mesh box only shows when there is one to ask.
+test("the author's vault is looked up first: a vault -> the mesh read; none -> 'Photo not found' (.fips: not reachable)", async () => {
+  const none = createFipsMedia({ allow: () => true, startReader: deadVault, query: listing([]) })
+  const some = createFipsMedia({ allow: () => true, startReader: deadVault, query: listing([A]) })
+  assert.equal(afterLookup(await none.source(photo, P), photo), "missing")
+  assert.equal(afterLookup(await some.source(photo, P), photo), "wait", "a listed vault: now the spinner and the read")
+  assert.equal(afterLookup(await none.source(fips, P), fips), "failed", "a .fips link with no listed vault: not reachable")
+  assert.equal(afterLookup(await none.source({ url: photo.url }, P), { url: photo.url }), "missing", "no hash: nothing to ask")
+  const kids = n => [n?.props?.children].flat(Infinity).filter(Boolean)
+  const text = n => (typeof n === "string" ? n : kids(n).map(text).join(""))
+  const missing = MeshBox({ state: "missing", item: photo })
+  assert.equal(text(missing), "Photo not found"); assert.equal(MISSING_TEXT, "Photo not found")
+  assert.match(missing.props.class, /failed/)
+  const lookup = MeshBox({ state: "lookup", item: { ...photo, width: 4, height: 3 } })
+  assert.equal(text(lookup), "", "while asking: no spinner, no mesh words")
+  assert.deepEqual(lookup.props.style, { aspectRatio: "4 / 3" })
+})
+
+test("MediaImage asks for the vault (source) before it shows the mesh box", () => {
+  const src = readFileSync(new URL("../src/components/MediaImage.jsx", import.meta.url), "utf8")
+  assert.match(src, /const first = \(\) => \(fipsRef\(item\.url\) \? \(allowed\(author\) \? "lookup" : "failed"\) : "web"\)/)
+  assert.match(src, /if \(state !== "lookup"\) return[\s\S]*media\.source\(item, author\)[\s\S]*setState\(next\)/)
+  assert.doesNotMatch(src, /return setState\("wait"\)/, "an onError never jumps straight to the mesh box")
 })
