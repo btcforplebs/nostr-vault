@@ -3,7 +3,7 @@
 // SpaceLayoutTests.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { defaultLayout, normalize, shownPanels, hiddenPanels, setOn, setOpen, moveBy, moveBefore, sameLayout, readLayout, writeLayout, LAYOUT_V, SYNC_D, setPins, resetPanels, clampAt, MAX_SKEW_S } from "../src/desktop/space/space-layout.js"
+import { defaultLayout, defaultPanels, DEFAULT_OFF, DEFAULTS_V, normalize, shownPanels, hiddenPanels, setOn, setOpen, moveBy, moveBefore, sameLayout, readLayout, writeLayout, LAYOUT_V, SYNC_D, setPins, resetPanels, clampAt, MAX_SKEW_S } from "../src/desktop/space/space-layout.js"
 import { defaultPins } from "../src/desktop/rail/rail-favs.js"
 import { PANEL_IDS } from "../src/desktop/space/panel-ids.js"
 import { readFileSync } from "node:fs"
@@ -23,8 +23,36 @@ test("the panel ids are the ones the iPad shares, in the default order", () => {
   assert.equal(SYNC_D, "nostr-vault-space-layout")
 })
 
-test("the default layout: the default pins, every panel in order, shown and open", () => {
-  assert.deepEqual(defaultLayout(IDS), { v: LAYOUT_V, at: 0, pins: defaultPins(), panels: IDS.map(id => ({ id, on: true, open: true })) })
+test("the default layout: the default pins, every panel in order, open; Web of Trust, Messages and My devices off", () => {
+  assert.deepEqual(defaultLayout(IDS), { v: LAYOUT_V, defaults: DEFAULTS_V, at: 0, pins: defaultPins(), panels: [{ id: "live-vault", on: true, open: true }, { id: "wot-mini", on: false, open: true }, { id: "messages", on: false, open: true }] })
+  const d = defaultLayout(SHIPPED)
+  assert.deepEqual(shownPanels(d, SHIPPED).map(p => p.id), ["live-vault", "live-now", "on-this-day"])
+  // Off, not gone: "+ add" offers them.
+  assert.deepEqual(hiddenPanels(d, SHIPPED), ["wot-mini", "messages", "my-devices"])
+  assert.deepEqual(DEFAULT_OFF, ["wot-mini", "messages", "my-devices"])
+  assert.equal(DEFAULTS_V, 2)
+  // Reset gives the same panels.
+  assert.deepEqual(resetPanels(setOn(d, "messages", true, 4), SHIPPED, 5).panels, defaultPanels(SHIPPED))
+})
+
+test("a layout saved before the new default: the three are switched off once, then stay as the user sets them", () => {
+  const all = SHIPPED.map(id => ({ id, on: true, open: true }))
+  const old = normalize({ v: 1, at: 40, pins: [], panels: [...all, { id: "zaps-in", on: true, open: true }], theme: 1 }, SHIPPED)
+  assert.equal(old.defaults, DEFAULTS_V)
+  assert.equal(old.v, 1, "v stays 1: an older app reads a higher v as a newer format")
+  assert.equal(old.at, 40, "the switch-off is not an edit")
+  assert.equal(old.theme, 1)
+  assert.deepEqual(shownPanels(old, SHIPPED).map(p => p.id), ["live-vault", "live-now", "on-this-day"])
+  assert.equal(old.panels.find(p => p.id === "zaps-in").on, true, "only the three are touched")
+  // Messages added back: read again, it stays on (the marker went in with the edit).
+  const s = store(), me = "d".repeat(64)
+  writeLayout(me, setOn(old, "messages", true, 41), s)
+  assert.deepEqual(shownPanels(readLayout(me, SHIPPED, s), SHIPPED).map(p => p.id), ["live-vault", "messages", "live-now", "on-this-day"])
+  // Already marked: nothing is switched off; an unknown higher marker is kept.
+  assert.deepEqual(normalize({ v: 1, defaults: 2, panels: all }, SHIPPED).panels, all)
+  assert.equal(normalize({ v: 1, defaults: 3, panels: all }, SHIPPED).defaults, 3)
+  // A panel missing from an old layout still arrives on (only the switch-off can turn one off).
+  assert.equal(normalize({ v: 1, defaults: 2, panels: [{ id: "live-vault" }] }, SHIPPED).panels.find(p => p.id === "messages").on, true)
 })
 
 test("the pins ride in the same layout: kept through normalize, and an edit of them moves `at`", () => {
@@ -49,7 +77,7 @@ test("normalize: not an object or no whole-number v is the default; a newer v is
 })
 
 test("normalize: bad panel entries and repeats drop out; on/open default to true; extra fields kept", () => {
-  const l = normalize({ v: 1, at: 50, panels: [{ id: "messages", on: false, h: 3 }, null, [], { id: "" }, { id: 7 }, { id: "messages" }, { id: "live-vault", open: false }, { id: "wot-mini", on: "yes" }] }, IDS)
+  const l = normalize({ v: 1, defaults: 2, at: 50, panels: [{ id: "messages", on: false, h: 3 }, null, [], { id: "" }, { id: 7 }, { id: "messages" }, { id: "live-vault", open: false }, { id: "wot-mini", on: "yes" }] }, IDS)
   assert.deepEqual(l.panels, [{ id: "messages", on: false, open: true, h: 3 }, { id: "live-vault", on: true, open: false }, { id: "wot-mini", on: true, open: true }])
 })
 
@@ -75,16 +103,17 @@ test("normalize clamps at to whole seconds from 0 to now + 15 min (the iPad's ma
 })
 
 test("normalize: an id from a newer app is kept but not drawn; a panel added later goes in at its place, shown", () => {
-  const l = normalize({ v: 1, at: 9, panels: [{ id: "zaps-in" }, { id: "messages" }, { id: "live-vault" }] }, IDS)
+  const l = normalize({ v: 1, defaults: 2, at: 9, panels: [{ id: "zaps-in" }, { id: "messages" }, { id: "live-vault" }] }, IDS)
   // wot-mini comes after live-vault in panels.js, so it goes in after it.
   assert.deepEqual(ids(l), ["zaps-in", "messages", "live-vault", "wot-mini"])
   assert.deepEqual(shownPanels(l, IDS).map(p => p.id), ["messages", "live-vault", "wot-mini"])
   // Nothing before it known: at the top.
-  assert.deepEqual(ids(normalize({ v: 1, panels: [{ id: "messages" }] }, IDS)), ["live-vault", "wot-mini", "messages"])
+  assert.deepEqual(ids(normalize({ v: 1, defaults: 2, panels: [{ id: "messages" }] }, IDS)), ["live-vault", "wot-mini", "messages"])
 })
 
 test("take a panel off, add it back where it was; collapse one", () => {
-  let l = setOn(defaultLayout(IDS), "wot-mini", false, 10)
+  const allOn = { ...defaultLayout(IDS), panels: IDS.map(id => ({ id, on: true, open: true })) }
+  let l = setOn(allOn, "wot-mini", false, 10)
   assert.equal(l.at, 10)
   assert.deepEqual(shownPanels(l, IDS).map(p => p.id), ["live-vault", "messages"])
   assert.deepEqual(hiddenPanels(l, IDS), ["wot-mini"])
@@ -93,12 +122,12 @@ test("take a panel off, add it back where it was; collapse one", () => {
   assert.deepEqual(hiddenPanels(l, IDS), [])
   l = setOpen(l, "messages", false, 12)
   assert.equal(l.panels.find(p => p.id === "messages").open, false)
-  assert.ok(!sameLayout(l, defaultLayout(IDS)))
-  assert.ok(sameLayout(setOpen(l, "messages", true, 13), defaultLayout(IDS)))
+  assert.ok(!sameLayout(l, allOn))
+  assert.ok(sameLayout(setOpen(l, "messages", true, 13), allOn))
 })
 
 test("up/down moves among the drawn panels, stepping over hidden and unknown ones; ends do nothing", () => {
-  const l = normalize({ v: 1, panels: [{ id: "live-vault" }, { id: "zaps-in" }, { id: "wot-mini", on: false }, { id: "messages" }] }, IDS)
+  const l = normalize({ v: 1, defaults: 2, panels: [{ id: "live-vault" }, { id: "zaps-in" }, { id: "wot-mini", on: false }, { id: "messages" }] }, IDS)
   const up = moveBy(l, "messages", -1, IDS, 5)
   assert.deepEqual(ids(up), ["messages", "zaps-in", "wot-mini", "live-vault"])
   assert.equal(up.at, 5)

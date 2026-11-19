@@ -12,7 +12,8 @@ const APP = appCardId(`${PUB}:clock`)
 const ours = id => IDS.includes(id)
 const drawable = id => ours(id) || id === APP
 const col = (l, side) => columnCards(l, side, drawable).map(p => p.id)
-const base = () => defaultLayout(IDS)
+// Every panel on: a layout saved before the 2026-11-19 default, already through its one-time switch-off (marker set).
+const base = () => ({ ...defaultLayout(IDS), panels: IDS.map(id => ({ id, on: true, open: true })) })
 
 test("a layout from before this step: every card on the right, the left column empty", () => {
   const l = base()
@@ -98,11 +99,15 @@ test("removing an app takes its card from the layout", () => {
   assert.equal(dropApp(b, `${PUB}:clock`), b)
 })
 
-test("Reset: our six on the right, in order; the left column empty; no app cards; the pins untouched", () => {
+test("Reset: our six on the right, in order, three of them off; the left column empty; no app cards; the pins untouched", () => {
   const changed = addCard(moveAcross(setSize(base(), "live-now", "L", 1), "messages", 2), APP, LEFT, 3)
   assert.equal(isDefaultColumns(changed, IDS), false)
   const r = resetColumns({ ...changed, pins: [{ type: "hashtag", t: "x" }] }, IDS, 4)
   assert.equal(isDefaultColumns(r, IDS), true)
+  assert.deepEqual(col(r, RIGHT), ["live-vault", "live-now", "on-this-day"])
+  // A fresh account's layout is the default one, so it shows no Reset (both columns.js rules use defaultPanels).
+  assert.equal(isDefaultColumns(defaultLayout(IDS), IDS), true)
+  assert.equal(isDefaultColumns(base(), IDS), false)
   assert.deepEqual(r.pins, [{ type: "hashtag", t: "x" }])
   assert.deepEqual(col(r, LEFT), [])
 })

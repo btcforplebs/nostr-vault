@@ -16,8 +16,17 @@ export const SYNC_D = "nostr-vault-space-layout"
  *  this, so a device whose clock runs fast can't win every later comparison. */
 export const MAX_SKEW_S = 15 * 60
 
-/** The layout before any edit: the default pins, every panel in panels.js's order, shown and open. */
-export const defaultLayout = (ids, at = 0) => ({ v: LAYOUT_V, at, pins: defaultPins(), panels: ids.map(id => ({ id, on: true, open: true })) })
+/** The panels that start off (Logen 2026-11-19): in the list, so "+ add" offers them, but not drawn until added. */
+export const DEFAULT_OFF = ["wot-mini", "messages", "my-devices"]
+/** The `defaults` marker of a layout that has had DEFAULT_OFF applied once. Not `v`: an older app reads a higher `v`
+ *  as a newer format and draws its own default instead (docs "Default panels"). */
+export const DEFAULTS_V = 2
+
+/** The default panels: every panel in panels.js's order, open, shown unless it is in DEFAULT_OFF. */
+export const defaultPanels = ids => ids.map(id => ({ id, on: !DEFAULT_OFF.includes(id), open: true }))
+
+/** The layout before any edit: the default pins and the default panels. */
+export const defaultLayout = (ids, at = 0) => ({ v: LAYOUT_V, defaults: DEFAULTS_V, at, pins: defaultPins(), panels: defaultPanels(ids) })
 
 /** `at` as whole seconds from 0 to `now + MAX_SKEW_S`; 0 when missing or not a number. */
 export function clampAt(at, now = Math.floor(Date.now() / 1000)) {
@@ -30,7 +39,8 @@ export function clampAt(at, now = Math.floor(Date.now() / 1000)) {
  * a whole number: the default. `v` above ours: null, a newer format to leave alone (draw the default, write nothing
  * over it). Otherwise every top-level key is kept; pins go through normalizePins; bad panel entries and repeats drop
  * out, unknown ids and fields stay, a missing known panel goes in after the known one before it (at the top when none
- * is), shown and open; `at` is clamped (clampAt).
+ * is), shown and open; `at` is clamped (clampAt). A layout without `defaults: DEFAULTS_V` (saved before the default
+ * changed) has the DEFAULT_OFF panels switched off once and gets the marker, so after that they stay as the user sets them.
  */
 export function normalize(saved, ids, { now } = {}) {
   if (!saved || typeof saved !== "object" || Array.isArray(saved)) return defaultLayout(ids)
@@ -50,7 +60,9 @@ export function normalize(saved, ids, { now } = {}) {
     const at = before ? panels.findIndex(p => p.id === before) + 1 : 0
     panels.splice(at, 0, { id, on: true, open: true })
   })
-  return { ...saved, v: LAYOUT_V, at: clampAt(saved.at, now), pins: normalizePins(saved.pins), panels }
+  const marked = typeof saved.defaults === "number" && saved.defaults >= DEFAULTS_V
+  const out = marked ? panels : panels.map(p => (DEFAULT_OFF.includes(p.id) ? { ...p, on: false } : p))
+  return { ...saved, v: LAYOUT_V, defaults: marked ? saved.defaults : DEFAULTS_V, at: clampAt(saved.at, now), pins: normalizePins(saved.pins), panels: out }
 }
 
 const now = () => Math.floor(Date.now() / 1000)
@@ -62,7 +74,7 @@ export const shownPanels = (layout, ids) => layout.panels.filter(p => p.on && id
 export const hiddenPanels = (layout, ids) => ids.filter(id => layout.panels.some(p => p.id === id && !p.on))
 
 /** Reset Your space's panels (the pins stay as they are). */
-export const resetPanels = (layout, ids, at) => edit(layout, defaultLayout(ids).panels, at)
+export const resetPanels = (layout, ids, at) => edit(layout, defaultPanels(ids), at)
 
 /** Show or hide a panel. A panel shown again goes back where it was. */
 export const setOn = (layout, id, on, at) => edit(layout, layout.panels.map(p => (p.id === id ? { ...p, on } : p)), at)
