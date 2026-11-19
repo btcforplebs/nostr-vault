@@ -1,5 +1,5 @@
 #!/bin/sh
-# Assemble the one nostr-vault .deb (build.sh runs this):
+# Assemble the one nostr-vault .deb, and from the same files the .rpm and Arch package (build.sh runs this):
 #   package.sh <arm64|amd64> <version> <bin dir: havend haven-engine nv-mesh> <web dir> <out dir>
 # One package for every machine: the vault and its mesh (system services), plus the desktop window and tray. The
 # window's GTK/WebKit libraries are Recommends, so a Pi with no screen (or apt --no-install-recommends) leaves them
@@ -32,14 +32,23 @@ icons=$root/HavenApp/Resources/Assets.xcassets/AppIcon.appiconset
 for s in 32 128 256 512; do f 644 "$icons/icon_${s}x${s}.png" "usr/share/icons/hicolor/${s}x${s}/apps/nostr-vault.png"; done
 
 f 644 "$here/README.md" usr/share/doc/nostr-vault/README.md
-for s in postinst prerm postrm; do f 755 "$here/debian/$s" "DEBIAN/$s"; done
-printf '/etc/xdg/autostart/nostr-vault-tray.desktop\n' >"$pkg/DEBIAN/conffiles"
 
 # The newest glibc symbol any of the three programs asks for: measured from the binaries, not assumed.
 # readelf, not objdump: it reads either arch's ELF on any build machine.
 glibc=$(for p in havend haven-engine nv-mesh; do readelf -W --dyn-syms "$bin/$p" 2>/dev/null; done \
   | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -u -t. -k1,1n -k2,2n | tail -1)
 [ -n "$glibc" ] || { echo "package: couldn't read nv-mesh's glibc needs (readelf)" >&2; exit 1; }
+
+# The same tree as a Fedora .rpm and/or an Arch package too, when NV_PKG_FORMATS lists rpm / archlinux (the .deb is
+# always built).
+for fmt in ${NV_PKG_FORMATS:-deb}; do
+  case "$fmt" in deb) ;; rpm|archlinux) "$here/nfpm.sh" "$fmt" "$arch" "$version" "$pkg" "$glibc" "$out" ;;
+    *) echo "package: unknown format $fmt" >&2; exit 1 ;; esac
+done
+
+for s in postinst prerm postrm; do f 755 "$here/debian/$s" "DEBIAN/$s"; done
+printf '/etc/xdg/autostart/nostr-vault-tray.desktop\n' >"$pkg/DEBIAN/conffiles"
+
 cat >"$pkg/DEBIAN/control" <<CTL
 Package: nostr-vault
 Version: $version
