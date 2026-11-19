@@ -345,9 +345,6 @@ struct iPhoneTabView: View {
                 noteSplit("Pick a note from the relay to read it here.", closesOn: .havenOpenDMInbox) {
                     VaultView()
                 }
-                // Rebuilt per account, as Profile is: an open chat, its draft
-                // and pushed pages don't survive a switch (A5).
-                .id(activeHex)
             }
             .toolbar(.hidden, for: .tabBar)
             .tag(4)

@@ -140,7 +140,8 @@ struct ComposeView: View {
     /// The account this note is for (npub), when it isn't simply whichever is
     /// active: a reply from a note opened as another account. nil = active.
     var postAs: String? = nil
-    /// `postAs`, or the account picked from the avatar menu since.
+    /// `postAs`, or the account made active since (the avatar menu, the
+    /// account switcher, a notification tap). The typed text stays.
     @State var postAsPicked: String? = nil
     
     struct Attachment: Identifiable {
@@ -302,6 +303,13 @@ struct ComposeView: View {
                 Button("Save Draft") { performDismiss() }
                 Button("Discard", role: .destructive) { discardDraftAndDismiss() }
                 Button("Keep Editing", role: .cancel) { }
+            }
+            // A switch while this is open (the account switcher, a
+            // notification tap) moves the note to the new account: the typed
+            // text stays, and the avatar and signer are the new account's.
+            // Post still locks the account it signs with (postNote).
+            .onChange(of: configService.config.activeAccountNpub) { _, active in
+                postAsPicked = PostingAccount.resolve(active: active, owner: configService.config.ownerNpub)
             }
             .onAppear {
                 // A reply for another account's note: be that account before
