@@ -10,7 +10,11 @@ struct ZapNotification: Identifiable {
 
     enum ZapStatus: Equatable {
         case sending
+        /// Sent to the wallet, no answer yet: it may still pay, and our receipt will say so.
+        case pending
         case success
+        /// No answer and no receipt in time. Not "failed": it may still have paid.
+        case unconfirmed
         case failed(String)
     }
 }
@@ -44,6 +48,22 @@ class ZapNotificationManager: ObservableObject {
                 withAnimation(Motion.bannerOut) {
                     self?.notifications.removeAll { $0.id == id }
                 }
+            }
+        }
+    }
+
+    /// Stays up until the receipt comes (markSuccess) or the wait ends (markUnconfirmed).
+    func markPending(id: UUID) {
+        guard let idx = notifications.firstIndex(where: { $0.id == id }) else { return }
+        withAnimation(Motion.fade) { notifications[idx].status = .pending }
+    }
+
+    func markUnconfirmed(id: UUID) {
+        guard let idx = notifications.firstIndex(where: { $0.id == id }) else { return }
+        withAnimation(Motion.fade) { notifications[idx].status = .unconfirmed }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            withAnimation(Motion.bannerOut) {
+                self?.notifications.removeAll { $0.id == id }
             }
         }
     }
@@ -129,8 +149,11 @@ struct ZapPill: View {
                     guard let loop = Motion.ambientPulse else { return }
                     withAnimation(loop) { pulseOpacity = 0.4 }
                 }
-        case .success:
+        case .success, .pending:
             Image(systemName: "bolt.fill")
+                .font(PillSize.regular.iconFont)
+        case .unconfirmed:
+            Image(systemName: "clock")
                 .font(PillSize.regular.iconFont)
         case .failed:
             Image(systemName: "xmark")
@@ -141,7 +164,9 @@ struct ZapPill: View {
     private var pillLabel: String {
         switch notification.status {
         case .sending: return "Zapping \(notification.recipientName)"
+        case .pending: return "Sent, waiting for your wallet"
         case .success: return "Zapped \(notification.recipientName)"
+        case .unconfirmed: return "Zap not confirmed yet"
         case .failed:  return "Zap failed"
         }
     }
@@ -149,7 +174,9 @@ struct ZapPill: View {
     private var tone: PillTone {
         switch notification.status {
         case .sending: return .accent
+        case .pending: return .accent
         case .success: return .success
+        case .unconfirmed: return .neutral
         case .failed:  return .error
         }
     }

@@ -399,7 +399,8 @@ struct LiveStreamPlayerView: View {
                     addressTag: stream.address
                 )
             } catch {
-                zapFailure = error.localizedDescription
+                // Sent and waiting, or not zapped again: the zap pill says so, no alert.
+                if (error as? ZapService.ZapError)?.isQuiet != true { zapFailure = error.localizedDescription }
             }
         }
     }
