@@ -13,6 +13,10 @@ on:
       - "linux/mesh/**"
       - ".github/workflows/linux-deb.yml"
 
+# Read-only token: the build runs npm, cargo build scripts and rustup, and the repo default is write.
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
@@ -32,7 +36,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # build.sh's version is the commit count
+          persist-credentials: false
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: No token left in the checkout (the build runs third-party code)
+        run: |
+          if git config --get-regexp 'http\..*extraheader'; then echo "checkout left a token in .git/config"; exit 1; fi
       - uses: actions/setup-go@v5
         with:
           go-version-file: haven-go/go.mod
@@ -74,6 +82,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: linux/native/test
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: nostr-vault-deb-${{ matrix.arch }}
@@ -132,6 +141,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: linux
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: nostr-vault-linux-release-files
@@ -141,6 +151,20 @@ jobs:
           go-version: stable
           cache: false
       - run: cd linux/native/test/keytool && go build -o "$RUNNER_TEMP/keytool" .
+      - name: A wrong NV_RELEASE with NV_NATIVE=1 stops, and never falls back to Docker
+        run: |
+          set -- $("$RUNNER_TEMP/keytool" gen); npub=$2
+          had_docker=$(command -v docker >/dev/null && echo 1 || echo 0)
+          if NV_NATIVE=1 NV_RELEASE=https://github.com/btcforplebs/nostr-vault/releases/download/no-such-tag \
+            NV_OWNER=$npub NV_DATA_HOST=/var/lib/nostr-vault NV_DESKTOP=0 NV_YES=1 sh linux/install.sh >out.log 2>&1; then
+            cat out.log; echo "install.sh succeeded with a tag that doesn't exist"; exit 1
+          fi
+          cat out.log
+          grep -q "couldn't get the release manifest" out.log
+          # (not `! cmd`: bash -e ignores a negated command's failure)
+          if grep -qi docker out.log; then echo "it went to Docker"; exit 1; fi
+          if dpkg -s nostr-vault >/dev/null 2>&1; then echo "it installed something"; exit 1; fi
+          echo "stopped as it should; runner had docker before: $had_docker"
       - name: install.sh, unattended, from the folder
         run: |
           set -- $("$RUNNER_TEMP/keytool" gen); npub=$2
