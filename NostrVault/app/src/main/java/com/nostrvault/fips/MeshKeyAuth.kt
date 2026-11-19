@@ -108,27 +108,6 @@ object MeshKeyAuth {
         DeviceRole.BROWSER -> "browser"
     }
 
-    /**
-     * The header a vault adds to a 401/403 for a Blossom request over the mesh once it has its paired set (haven-go
-     * mesh_devices_signal.go, #1804). Its refusal is then final for the device key.
-     */
-    const val PAIRED_SET_HEADER = "X-Mesh-Devices"
-
-    /**
-     * The vault turned the device form down and has no paired set yet (an older build, or a box before havend passes
-     * the set): one retry with the owner's form, for as long as vaults accept it. A vault that has its set says so
-     * ([PAIRED_SET_HEADER], any case) and gets no account-key token (Tron, #1803). TODO(mesh-key): remove with the
-     * owner form.
-     */
-    fun retriesWithOwnerForm(status: Int, headerNames: Collection<String>): Boolean {
-        if (status != 401 && status != 403) return false
-        return headerNames.none { it.equals(PAIRED_SET_HEADER, ignoreCase = true) }
-    }
-
-    /** [retriesWithOwnerForm] for an OkHttp answer. */
-    fun retriesWithOwnerForm(response: okhttp3.Response): Boolean =
-        retriesWithOwnerForm(response.code, response.headers.names())
-
     private fun unique(values: List<String>): List<String> {
         val seen = mutableSetOf<String>()
         return values.map { it.trim() }.filter { it.isNotEmpty() && seen.add(it) }

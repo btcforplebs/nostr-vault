@@ -494,15 +494,11 @@ object HomeVaultRules {
     }
 
     /**
-     * Whether a send over the mesh waits for the owner's signer. Never: a blob signs with this device's mesh key, and
-     * falls back to the owner's form only with a local key ([meshKeyOnly]), so a bunker or Amber is never asked and
-     * nothing waits for a tap. Events are already signed; a file note signs with the mesh key.
+     * Whether a send over the mesh waits for the owner's signer. Never: a blob signs with this device's mesh key only,
+     * so no signer is asked and nothing waits for a tap. Events are already signed; a file note signs with the mesh key.
      */
     @Suppress("UNUSED_PARAMETER")
     fun needsOwnerSignature(item: HomeVaultQueue.Item): Boolean = false
-
-    /** Whether a blob over the mesh signs with the mesh key only: a feed Mirror always, anything with a remote signer. */
-    fun meshKeyOnly(item: HomeVaultQueue.Item, localSigner: Boolean): Boolean = item.meshKeyOnly || !localSigner
 
     const val MAX_AGE_MS = 14L * 24 * 60 * 60_000L
     const val MAX_ATTEMPTS = 40
@@ -510,11 +506,15 @@ object HomeVaultRules {
     /** An HTTP status for a Blossom PUT /upload. */
     fun uploadOutcome(code: Int): HomeVaultSend = when (code) {
         in 200..299 -> HomeVaultSend.SENT
-        // Not the owner's key, no length, or too large: sending again changes nothing.
+        // 401/403: the vault turned this phone's mesh key down (it does not know this phone yet, or is an older build with
+        // no paired set). The blob waits for it, never re-sent with the account key (Logen, 2026-11-19: fail closed);
+        // dropping it would leave the vault without the photo and nothing saying so.
+        401, 403 -> HomeVaultSend.RETRY
+        // No length, too large, or a type it won't take: sending again changes nothing.
         // 400 is not here: the door answers it for a body cut mid-transfer, and a
         // kiosk build whose port spoke TLS answered it to every upload (iOS #1135);
         // both are about this try, not the blob (iOS HomeVaultLogic.uploadResult).
-        401, 403, 411, 413, 415 -> HomeVaultSend.REJECTED
+        411, 413, 415 -> HomeVaultSend.REJECTED
         // 404/405 included: a vault on older code has no upload door on the
         // mesh yet, and keeps what waits until it does.
         else -> HomeVaultSend.RETRY

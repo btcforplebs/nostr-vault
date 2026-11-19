@@ -113,11 +113,12 @@ class MeshMirrorSendTest {
     }
 
     @Test
-    fun `a refusal is final, with no owner-key retry`() {
+    fun `a refused mesh key keeps it queued and waiting, with no owner-key retry`() {
         server.enqueue(MockResponse().setResponseCode(404))
-        server.enqueue(MockResponse().setResponseCode(403)) // no X-Mesh-Devices: a post upload would retry as the owner
+        server.enqueue(MockResponse().setResponseCode(403)) // the vault does not take this phone's mesh key yet
         val results = mirror(sender(), setOf(vault))
-        assertEquals(MeshMirrorOutcome.REFUSED, results.single().outcome)
+        assertEquals(MeshMirrorOutcome.WAITING, results.single().outcome)
+        assertEquals(sha, queued().single().key)
         assertEquals(2, server.requestCount)
         assertEquals(emptyList<Any>(), ownerSigned)
     }

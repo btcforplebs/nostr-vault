@@ -36,6 +36,7 @@ class BlossomDeleteReportTest {
     private val servers = mutableListOf<ServerSocket>()
     /** The tags of every token the service asked to have signed. */
     private val signedTags = mutableListOf<List<List<String>>>()
+    private val meshReceivers = mutableListOf<String>()
     private val tempDirs = mutableListOf<File>()
     /** The account each token was locked to (signEventAsync lockedTo). */
     private val signedAs = mutableListOf<com.nostrvault.data.model.PostingAccount.Lock?>()
@@ -126,7 +127,10 @@ class BlossomDeleteReportTest {
             kind = 24242, tags = listOf(listOf("t", "delete")), content = "Blossom delete", sig = "s".repeat(128),
             )
         }
-        return BlossomService(configStore, signer, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true))
+        return BlossomService(configStore, signer, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true)).apply {
+            // A unit test has no engine-made mesh key: stand-in tokens, recording who they name.
+            meshDeleteAuth = { _, receivers -> meshReceivers += receivers; MeshDeleteAuth("dev-delete", "dev-get") }
+        }
     }
 
     private fun dataDir(withBlob: Boolean): File {
@@ -401,9 +405,9 @@ class BlossomDeleteReportTest {
         val svc = service(emptyList(), macs = listOf(mac))
         svc.meshIngress = { meshVault() }
         assertTrue(svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = true).allDeleted)
-        val tags = signedTags.single()
-        assertEquals(listOf(listOf("server", "$macNpub.fips")), tags.filter { it[0] == "server" })
-        assertTrue(tags.none { it[0] == "u" })  // the ingress URL carries a token: never signed into an event
+        assertEquals(listOf(macNpub), meshReceivers)
+        // Fail closed (Logen, 2026-11-19): the account signs nothing for a mesh delete.
+        assertEquals(emptyList<Any>(), signedTags)
     }
 
     // ── This device ─────────────────────────────────────────────

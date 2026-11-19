@@ -73,17 +73,6 @@ class MeshKeyAuthTest {
     }
 
     @Test
-    fun `the owner form is tried only on a 401 or 403 without the paired-set header`() {
-        assertTrue(MeshKeyAuth.retriesWithOwnerForm(401, listOf("Content-Type")))
-        assertTrue(MeshKeyAuth.retriesWithOwnerForm(403, emptyList()))
-        assertFalse(MeshKeyAuth.retriesWithOwnerForm(401, listOf("X-Mesh-Devices")))
-        assertFalse(MeshKeyAuth.retriesWithOwnerForm(403, listOf("x-mesh-devices")))
-        assertFalse(MeshKeyAuth.retriesWithOwnerForm(404, emptyList()))
-        assertFalse(MeshKeyAuth.retriesWithOwnerForm(500, emptyList()))
-        assertFalse(MeshKeyAuth.retriesWithOwnerForm(200, emptyList()))
-    }
-
-    @Test
     fun `the set is the owner's devices with their roles`() {
         val other = "npub1qszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszq764t2k"
         val config = HavenConfig(
