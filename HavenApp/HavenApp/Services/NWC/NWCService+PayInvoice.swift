@@ -60,6 +60,12 @@ extension NWCService {
             let wsClient = WebSocketClient()
             wsClient.isTemporary = true
             var isCompleted = false
+            // Once `pay_invoice` is out the wallet may pay at any time, so no answer from here on
+            // is "may still pay" (ZapWaitOutcome), not a failure.
+            var requestSent = false
+            let noAnswer: () -> Error = {
+                ZapWaitOutcome.noAnswer(requestSent: requestSent) == .pending ? NWCError.sentNoReply : NWCError.notConnected
+            }
             
             let reqMsg = ["EVENT", [
                 "id": signedEvent.id,
@@ -133,7 +139,7 @@ extension NWCService {
                                         RelayProcessManager.shared.addLog("NWC: Relay returned error: \(nwcErr.message)", level: "ERROR")
                                         continuation.resume(throwing: NSError(domain: "NWC", code: 1, userInfo: [NSLocalizedDescriptionKey: nwcErr.message]))
                                     } else {
-                                        RelayProcessManager.shared.addLog("NWC: pay_invoice reply had no preimage", level: "ERROR")
+                                        RelayProcessManager.shared.addLog("NWC: pay_invoice reply had no preimage; waiting for the receipt", level: "WARN")
                                         continuation.resume(throwing: NWCError.noPreimage)
                                     }
                                 }
@@ -175,17 +181,28 @@ extension NWCService {
                         RelayProcessManager.shared.addLog("NWC: Sending request", level: "DEBUG")
                         wsClient.send(text: subStr)
                         wsClient.send(text: reqStr)
+                        requestSent = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + ZapWait.reply) {
+                            if !isCompleted {
+                                isCompleted = true
+                                wsClient.disconnect()
+                                _ = cancellable
+                                _ = stateCancellable
+                                RelayProcessManager.shared.addLog("NWC: No reply \(Int(ZapWait.reply))s after pay_invoice; the wallet may still pay", level: "WARN")
+                                continuation.resume(throwing: NWCError.sentNoReply)
+                            }
+                        }
                     } else if state == .error {
                         if !isCompleted {
                             isCompleted = true
-                            RelayProcessManager.shared.addLog("NWC: Connection error", level: "ERROR")
-                            continuation.resume(throwing: NWCError.notConnected)
+                            RelayProcessManager.shared.addLog("NWC: Connection error (request sent: \(requestSent))", level: "ERROR")
+                            continuation.resume(throwing: noAnswer())
                         }
                     } else if state == .disconnected {
                         if !isCompleted {
                             isCompleted = true
-                            RelayProcessManager.shared.addLog("NWC: WebSocket disconnected prematurely", level: "ERROR")
-                            continuation.resume(throwing: NWCError.notConnected)
+                            RelayProcessManager.shared.addLog("NWC: WebSocket disconnected prematurely (request sent: \(requestSent))", level: "ERROR")
+                            continuation.resume(throwing: noAnswer())
                         }
                     }
                 }
@@ -193,14 +210,15 @@ extension NWCService {
             RelayProcessManager.shared.addLog("NWC: Connecting to \(connData.relayURL.absoluteString)...", level: "INFO")
             wsClient.connect(url: connData.relayURL)
             
-            // Timeout after 15 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
-                if !isCompleted {
+            // Not even sent within ZapWait.connect: nothing reached the wallet. Once sent, the
+            // ZapWait.reply timer above takes over.
+            DispatchQueue.main.asyncAfter(deadline: .now() + ZapWait.connect) {
+                if !isCompleted && !requestSent {
                     isCompleted = true
                     wsClient.disconnect()
                     _ = cancellable
                     _ = stateCancellable
-                    RelayProcessManager.shared.addLog("NWC: Connection or response timeout after 15s", level: "ERROR")
+                    RelayProcessManager.shared.addLog("NWC: Couldn't reach the wallet's relay in \(Int(ZapWait.connect))s; nothing was sent", level: "ERROR")
                     continuation.resume(throwing: NWCError.notConnected)
                 }
             }

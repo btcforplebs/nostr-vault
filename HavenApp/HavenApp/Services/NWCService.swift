@@ -10,6 +10,12 @@ struct NWCService {
         case encryptionError
         case responseDecodeError
         case noPreimage
+        /// `pay_invoice` reached the wallet's relay but no reply came in `ZapWait.reply`.
+        case sentNoReply
+
+        /// The request is out and the wallet may still pay: wait for the receipt, don't call it
+        /// failed. A reply without a preimage counts too (some wallets and Cashu mints send none).
+        var mayStillSettle: Bool { self == .sentNoReply || self == .noPreimage }
 
         var errorDescription: String? {
             switch self {
@@ -19,6 +25,7 @@ struct NWCService {
             case .encryptionError: return "Failed to encrypt/decrypt NWC payload"
             case .responseDecodeError: return "Wallet returned an unexpected response format"
             case .noPreimage: return "The wallet didn't confirm the payment"
+            case .sentNoReply: return "Sent to your wallet. It hasn't answered yet, so it may still pay."
             }
         }
     }
