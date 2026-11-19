@@ -32,6 +32,10 @@ object DMSendFailure {
     /** The alert's message for [error]: its own text, or a plain fallback when it has none. */
     fun message(error: Throwable): String =
         error.message?.trim()?.takeIf { it.isNotEmpty() } ?: FALLBACK
+
+    /** A send that failed after its chat was closed: an error pill, since no box is left to hand it back to (B5). */
+    fun leftChatFailure(name: String, hadMedia: Boolean, error: Throwable): String =
+        (if (hadMedia) "Your photo or video to $name didn't send. " else "Your message to $name didn't send. ") + message(error)
 }
 
 /** Thrown when a DM's photo could not be uploaded. */

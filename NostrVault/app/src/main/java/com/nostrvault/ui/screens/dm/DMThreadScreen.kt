@@ -42,6 +42,7 @@ import com.nostrvault.service.BlossomService
 import com.nostrvault.service.DMMessage
 import com.nostrvault.service.DMService
 import com.nostrvault.service.canRetry
+import com.nostrvault.service.launchDetached
 import com.nostrvault.service.removeUnsent
 import com.nostrvault.service.retrySend
 import com.nostrvault.service.MediaPrivacy
@@ -78,6 +79,7 @@ class DMThreadViewModel @Inject constructor(
     private val nostrService: NostrService,
     private val configStore: ConfigStore,
     private val blossomService: BlossomService,
+    private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
 ) : ViewModel() {
 
     val counterpartyPubkey: String = savedStateHandle["pubkey"] ?: ""
@@ -192,7 +194,11 @@ class DMThreadViewModel @Inject constructor(
         }
     }
 
+    /** Set once the chat is gone, so a send still finishing knows no one is here to hand the words back to. */
+    @Volatile private var left = false
+
     override fun onCleared() {
+        left = true
         DMPastedImage.discard(_attachedImage.value)
     }
 
@@ -210,7 +216,8 @@ class DMThreadViewModel @Inject constructor(
         val account = openedFor
         if (!stillSameAccount(account)) return
 
-        viewModelScope.launch {
+        // Not this chat's scope: leaving while a photo or video prepares must not lose it (B5).
+        dmService.launchDetached {
             _isSending.value = true
             messageField.clearText()
             _attachedImage.value = null
@@ -219,10 +226,10 @@ class DMThreadViewModel @Inject constructor(
                 // A NIP-17 photo or video is locked (kind 15, DMLockedPhoto): its words go first as
                 // their own message, the file one second after so it sorts below them.
                 if (image != null && !_useNIP04.value) {
-                    if (!stillSameAccount(account)) return@launch
+                    if (!stillSameAccount(account)) return@launchDetached
                     DMLockedPhoto.send(context, image, text, counterpartyPubkey, blossomService, dmService) { wordsSent = true }
                     DMPastedImage.discard(image)
-                    return@launch
+                    return@launchDetached
                 }
                 // The photo goes up first: a message naming a URL no server
                 // holds would reach them as a dead link (as iOS).
@@ -235,7 +242,7 @@ class DMThreadViewModel @Inject constructor(
                     }
                 }
                 // An account switch during the upload: it was written as the old account.
-                if (!stillSameAccount(account)) return@launch
+                if (!stillSameAccount(account)) return@launchDetached
                 if (content.isNotEmpty()) {
                     dmService.sendMessage(counterpartyPubkey, content, _useNIP04.value)
                 }
@@ -243,6 +250,13 @@ class DMThreadViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (left) {
+                    // The chat was left: nowhere to hand it back, so say it didn't go.
+                    DMPastedImage.discard(image)
+                    val name = nostrService.profiles.value[counterpartyPubkey]?.bestName ?: counterpartyPubkey.take(8)
+                    notificationManager.showError(DMSendFailure.leftChatFailure(name, image != null, e))
+                    return@launchDetached
+                }
                 // Hand the message back unless something new was typed meanwhile (not words already sent).
                 if (messageField.text.isEmpty() && !wordsSent) messageField.setTextAndPlaceCursorAtEnd(text)
                 if (_attachedImage.value == null) _attachedImage.value = image else DMPastedImage.discard(image)
@@ -333,6 +347,8 @@ fun DMThreadScreen(
     // "At the bottom" is whether the previous newest message is still on
     // screen: true at the bottom, false once scrolled up, whatever the layout
     // has done with the new one meanwhile.
+    // The keyboard opening keeps the newest message above the box (B8).
+    KeepNewestAboveKeyboard(listState)
     var previousNewestId by remember { mutableStateOf<String?>(null) }
     val newest = messages.lastOrNull()
     LaunchedEffect(newest?.id) {
