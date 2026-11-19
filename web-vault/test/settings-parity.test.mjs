@@ -86,5 +86,5 @@ test("Settings › Blocked: Public and Private sections, and Block Someone can b
   const someone = src("screens/settings/BlockSomeone.jsx")
   assert.match(someone, /Block privately/)
   assert.match(someone, /<BlockDialog [^>]*isPrivate=\{canPrivate && priv\}/, "the confirmation starts on the private choice")
-  assert.match(src("components/Moderation.jsx"), /useState\(isPrivate\)/)
+  assert.match(src("components/Moderation.jsx"), /useState\(isPrivate \|\| privateOnly\)/)
 })

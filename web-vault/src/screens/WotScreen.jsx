@@ -8,6 +8,8 @@
 //                     button, as the iPhone's "Open in WoT" (TrustWebView+Actions openRequested, Logen 10/23)
 //   #/wot/<hex>/web   them in the middle, the people they follow round them: "See their web", one step further along
 //                     the trail back to you. The layer and filter stay about you (Logen 10/15).
+//   #/wot/<hex>/nuke  Nuclear unfollow (a profile's ··· menu): your follows who follow them lit, and the panel
+//                     (WotNuclear.jsx) to pick who goes.
 // Webs come from contact lists (net/wot.js); the globe's maths is net/wot-globe.js.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
@@ -25,6 +27,8 @@ import { WotMyWeb, WotGlobeIcon } from "./WotMyWeb.jsx"
 import { WotList } from "./WotList.jsx"
 import { fetchPersonLists } from "../net/person.js"
 import { holdDark } from "../net/appearance.js"
+import { followersOfAmong } from "../net/nuclear-unfollow.js"
+import { NuclearPanel } from "./WotNuclear.jsx"
 
 if (import.meta.env) import("../styles/wot.css")
 
@@ -59,6 +63,7 @@ export function WotScreen({ ctx, pubkey }) {
   const root = crumbs.at(-1)
   // Read on each render: the app re-renders this screen on every address change.
   const theirWeb = !!pubkey && pubkey !== me && location.hash.startsWith(theirWebHash(pubkey))
+  const nuking = !!pubkey && pubkey !== me && location.hash.startsWith(`#/wot/${pubkey}/nuke`)
 
   useEffect(() => {
     if (!follows.length) { setStatus(""); return }
@@ -89,9 +94,9 @@ export function WotScreen({ ctx, pubkey }) {
       return
     }
     setCrumbs([me])
-    setSearchOpen(false); setMyWebOpen(false)
-    if (pubkey && pubkey !== me) { setPicked(pubkey); setCentre(pubkey) } else { setPicked(null); setCentre(me) }
-  }, [pubkey, theirWeb, me])
+    setSearchOpen(false); setMyWebOpen(false); setListOpen(false)
+    if (pubkey && pubkey !== me && !nuking) { setPicked(pubkey); setCentre(pubkey) } else { setPicked(null); setCentre(me) }
+  }, [pubkey, theirWeb, nuking, me])
   const goTo = pk => { location.hash = pk === me ? "#/wot" : theirWebHash(pk) }
   const seeTheirWeb = pk => { setPicked(null); stepping.current = pk; goTo(pk) }
 
@@ -123,13 +128,16 @@ export function WotScreen({ ctx, pubkey }) {
 
   // Who the globe leaves lit, about you on any globe (globeLit): Follow you back's people, and on someone else's
   // globe the layer's people too. null lights everyone.
+  // Nuclear unfollow: who it would cut, from your follows' own lists (the blocked filter doesn't hide anyone here).
+  const cut = useMemo(() => (nuking && lists ? followersOfAmong(pubkey, follows, lists, me) : null), [nuking, lists, pubkey, follows])
   const lit = useMemo(() => {
+    if (cut) return new Set([...cut, pubkey])
     if (!web) return null
     const back = followsBackOn ? web.followsMe : null
     const mine = root !== me && layer !== "everyone" ? new Set(layer === "following" ? web.follows : layer === "close" ? web.extended : web.further) : null
     if (back && mine) return new Set([...back].filter(pk => mine.has(pk)))
     return back ?? mine
-  }, [web, followsBackOn, layer, root])
+  }, [web, followsBackOn, layer, root, cut])
 
   const globeLayer = root === me ? layer : "everyone"
   const shown = useMemo(() => (globeWeb ? { extended: shownByKey(globeWeb.extended, EXTENDED_CAP), further: shownByKey(globeWeb.further, FURTHER_CAP) } : null), [globeWeb])
@@ -209,7 +217,8 @@ export function WotScreen({ ctx, pubkey }) {
         title={showing.root === me ? "Your web" : `${nameOf(showing.root)}'s web`} onClose={() => setListOpen(false)}
         onPick={pk => { setListOpen(false); setPicked(pk); setCentre(pk) }} />}
       {picked && web && <TrustCard ctx={ctx} web={web} built={built} root={root} pubkey={picked} onPick={pk => { setPicked(pk); setCentre(pk) }} onSeeWeb={seeTheirWeb} onClose={() => setPicked(null)} />}
-      {!picked && !searchOpen && !myWebOpen && !listOpen && (
+      {nuking && <NuclearPanel key={pubkey} ctx={ctx} target={pubkey} cut={cut} missing={missing} />}
+      {!picked && !searchOpen && !myWebOpen && !listOpen && !nuking && (
         <button type="button" class="wot-myweb-button" aria-label="My Web" title="Opens your web's dashboard" onClick={() => setMyWebOpen(true)}>
           <WotGlobeIcon />My Web
         </button>

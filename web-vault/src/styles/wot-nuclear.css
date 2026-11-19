@@ -1,0 +1,10 @@
+/* Nuclear unfollow over the globe (screens/WotNuclear.jsx): the panel where the trust card sits, the list as WotList's. */
+.wot-nuke-panel { position: fixed; z-index: 9; left: 50%; transform: translateX(-50%); bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + env(safe-area-inset-bottom) + 6px);
+  width: min(520px, calc(100vw - 24px)); padding: 14px; display: grid; gap: 8px; }
+.wot-nuke-panel p { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wot-nuke-list { display: flex; flex-direction: column; }
+.wot-nuke-list .wot-list-rows { flex: 1; overflow-y: auto; }
+.wot-nuke-row { cursor: pointer; grid-template-columns: 20px 36px minmax(0, 1fr); }
+.wot-nuke-row input { flex: none; width: 20px; height: 20px; accent-color: var(--danger, #ff453a); }
+.wot-nuke-why { margin: 0 8px 6px; }
+.wot-nuke-go { margin: 10px 8px 4px; }

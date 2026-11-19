@@ -142,7 +142,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
       <Sidebar ctx={ctx} side={side} rail />
       {leftOn && <LeftDock ctx={ctx} editing={editing} onEdit={edit} onAdd={setAdding} />}
       <section class="desk-main">
-        {view.route === "wot" ? <div class="desk-full"><WotPane ctx={ctx} open={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? null : /^[0-9a-f]{64}$/.test(view.arg) ? view.arg : null} root={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? view.arg : null} /></div>
+        {view.route === "wot" ? <div class="desk-full"><WotPane ctx={ctx} nuke={/^#\/wot\/[0-9a-f]{64}\/nuke/.test(location.hash) ? view.arg : null} open={/^#\/wot\/[0-9a-f]{64}\/(web|nuke)/.test(location.hash) ? null : /^[0-9a-f]{64}$/.test(view.arg) ? view.arg : null} root={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? view.arg : null} /></div>
           // The Settings napplet stays up from page to page (it draws the page in the address); other pages start fresh.
           : page ? <div class="desk-page" key={page.type === SettingsPane ? "settings-napplet" : view.path}>{page}</div>
           : full ? null /* the Dashboard: main.jsx keeps the relay screen mounted and lays it over this area */

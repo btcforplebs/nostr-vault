@@ -74,10 +74,12 @@ function webOf(scene) {
   const f = scene.follows ?? []
   const linkers = new Map(Object.entries(scene.linkers ?? {}).map(([pk, ix]) => [pk, ix.map(i => f[i]).filter(Boolean)]))
   const layer = new Map([[scene.me, "me"], ...f.map(p => [p, "follow"]), ...(scene.extended ?? []).map(p => [p, "extended"]), ...(scene.further ?? []).map(p => [p, "further"])])
-  return { me: scene.me, follows: f, extended: scene.extended ?? [], further: scene.further ?? [], linkers, followsMe: new Set(scene.followsMe ?? []), layerOf: pk => layer.get(pk) ?? null }
+  return { me: scene.me, follows: f, extended: scene.extended ?? [], further: scene.further ?? [], linkers, followsMe: new Set(scene.followsMe ?? []), layerOf: pk => layer.get(pk) ?? null,
+    lit: Array.isArray(scene.lit) ? new Set(scene.lit) : null }
 }
-/** Who stays lit: Follow you back's people, or everyone (null). */
-const litOf = (web, followsBackOn) => (followsBackOn ? web.followsMe : null)
+/** Who stays lit: the shell's set when it sends one (Nuclear unfollow: your follows who follow someone), else Follow
+ *  you back's people, or everyone (null). */
+const litOf = (web, followsBackOn) => web.lit ?? (followsBackOn ? web.followsMe : null)
 /** Everyone the globe draws, as WotScreen.jsx places them: layer faces, then the ring's faces, then layout(). */
 function nodesOf(web, layer, lit, hasPicture) {
   const candidates = layerFaceCandidates(web, layer).filter(pk => !lit || lit.has(pk))
