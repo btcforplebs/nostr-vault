@@ -55,6 +55,19 @@ final class DMMessagesBatchTests: XCTestCase {
             .contains("DMDrafts.shared.keepOnly(account: newPubkey)"))
     }
 
+    /// B2: one new-chat picker opens the chat; the text-only composers are gone.
+    func testNewChatOpensTheChat() throws {
+        let inbox = try source("HavenApp/Views/DMInboxView.swift")
+        XCTAssertFalse(inbox.contains("MacComposeView"))
+        XCTAssertTrue(inbox.contains("DispatchQueue.main.async { open(pubkey) }"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try appPath("HavenApp/Views/MessageComposerView.swift")))
+    }
+
+    func appPath(_ path: String) throws -> String {
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(path).path
+    }
+
     func source(_ path: String) throws -> String {
         let app = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
