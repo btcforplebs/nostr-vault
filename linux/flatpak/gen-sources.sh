@@ -48,7 +48,11 @@ for d, _dirs, files in os.walk(top):
     for f in sorted(files):
         if not f.endswith((".info", ".mod", ".zip")):
             continue  # .lock, .partial, .ziphash and list are the cache's own, not the proxy's
-        h = hashlib.sha256(open(os.path.join(d, f), "rb").read()).hexdigest()
+        data = open(os.path.join(d, f), "rb").read()
+        if f.endswith(".info"):  # go rewrites .info in its cache, so its bytes aren't the proxy's: ship them as they are
+            srcs.append({"type": "inline", "contents": data.decode(), "dest": f"gomod/{rel}", "dest-filename": f})
+            continue
+        h = hashlib.sha256(data).hexdigest()  # .mod and .zip: as served, and go.sum checks both again at build time
         srcs.append({"type": "file", "url": f"https://proxy.golang.org/{rel}/{f}", "sha256": h,
                      "dest": f"gomod/{rel}", "dest-filename": f})
 srcs.sort(key=lambda s: s["url"])
