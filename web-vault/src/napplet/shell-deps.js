@@ -206,6 +206,9 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
         const opts = photo ? { preview, prepare: async () => { const m = await encryptedPhoto(await (video ? prepareVideo(photo) : preparePhoto(photo)), { upload: async f => uploadPhoto(f, { ctx, servers: lockedFileServers(await mediaServers(ctx)), raw: true }) }); sentText = m.shown; return m } } : {}
         try { await sendMessage(ctx, peer, text, opts) } catch (e) {
           const failed = findMine(getMessages().messages, ctx.session.pubkey, peer, preview ?? text, true, before) ?? findMine(getMessages().messages, ctx.session.pubkey, peer, sentText, true, before)
+            // Photo + words: the words went out and the failed message is the file alone ((photo) / (video)), so the
+            // two lookups above miss it. Whatever its text, the newest failed one this send left is it (B4).
+            ?? newestMine(getMessages().messages, ctx.session.pubkey, peer, true, before)
           throw Object.assign(new Error(String(e?.fixed ? e.message : "The message wasn't sent.")), { failedId: failed?.id })
         }
         return findMine(getMessages().messages, ctx.session.pubkey, peer, sentText, false, before) ?? { id: `sent:${crypto.randomUUID()}`, from: ctx.session.pubkey, peer, content: sentText, at: Math.floor(Date.now() / 1000) }
