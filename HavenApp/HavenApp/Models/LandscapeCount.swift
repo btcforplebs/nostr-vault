@@ -30,10 +30,4 @@ struct LandscapeCount: Equatable {
     static func pageHolds(isClip: Bool, isOnScreen: Bool, isClosing: Bool) -> Bool {
         isClip && isOnScreen && !isClosing
     }
-
-    /// A clip turns the screen sideways by itself only when it is wider than
-    /// it is tall. Square and portrait clips stay upright.
-    static func turnsSideways(_ size: CGSize) -> Bool {
-        size.width > 0 && size.height > 0 && size.width > size.height
-    }
 }

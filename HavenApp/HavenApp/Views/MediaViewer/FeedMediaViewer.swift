@@ -300,7 +300,6 @@ struct FeedMediaViewer: View {
         }
         #if os(iOS)
         .landscapeSlot(held: holdsLandscape, closing: closingNow)
-        .turnsSidewaysForWideClip(holdsLandscape ? url : nil)
         #endif
     }
 
