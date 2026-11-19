@@ -272,6 +272,7 @@
 		1F22F7CAA8220D8A784AC962 /* NoteDetailView+Sections.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC5A48EC3F65D58FED0264EA /* NoteDetailView+Sections.swift */; };
 		1F28F57023B41F320C1D7A3B /* MenuBarView+Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C28F31699E930265306429 /* MenuBarView+Sidebar.swift */; };
 		1F2AB00483503E504869A066 /* TrustWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE4905A56A56DDD6B06457D9 /* TrustWebView.swift */; };
+		1F3F8F1188446F6C510FE994 /* ZapRepeatPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E831DEF8EF947BCDF35B52A /* ZapRepeatPrompt.swift */; };
 		1F4869EA36DDEA6F949CFB2A /* ShareInboxTrigger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64608CF1EFDCD7211E9AAE04 /* ShareInboxTrigger.swift */; };
 		1F63555FC06C83D35B299FFA /* PollCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB5A549483647677783FDC9 /* PollCardView.swift */; };
 		1F6BC00D1FE7740874A65154 /* TrustWebView+Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45654EB66B99DB44F457EAFE /* TrustWebView+Actions.swift */; };
@@ -312,6 +313,7 @@
 		22D217B1EDF268AA149F3B7C /* DMUnreadRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A39FE3AB127539B3DE26A7C /* DMUnreadRule.swift */; };
 		22E115AC3B2BA02029B92A36 /* RelaySaveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B3AD149CCC00D7662019EA1 /* RelaySaveSheet.swift */; };
 		23004E70DDB38018D103B675 /* ProfileShareReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3BAD623C758946DC5D1406 /* ProfileShareReviewView.swift */; };
+		234F65B7759DBB752BC42696 /* ZapReceiptWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CDBA172AE28824F02A10662 /* ZapReceiptWatcher.swift */; };
 		235D949819FB1494455DECFE /* WOTTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87E74FE78BCF7E5FCA1AA9CF /* WOTTabView.swift */; };
 		237B2CBD929D945820733FDA /* DMThreadFollow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB7662249C79F63D6459C08 /* DMThreadFollow.swift */; };
 		237F591A8848414C7E5B15E3 /* RelayProcessManager+FirstRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A8787F8C6DC62731C2BC67B /* RelayProcessManager+FirstRun.swift */; };
@@ -367,6 +369,7 @@
 		28DAF3915B6FA93CC1C82C4D /* PayShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6904793B4B9F38D1A474FBBD /* PayShareHandler.swift */; };
 		290070DB5FE8F74CE49EEB08 /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70A6C2A292B935922711F19B /* Motion.swift */; };
 		292899C69F326043A00AAF4C /* MyDevicesStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FEFD738FD3D4C13BCD7D2A6 /* MyDevicesStatus.swift */; };
+		2930C4A87D63BFD1C4815CE8 /* ZapRepeatPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E831DEF8EF947BCDF35B52A /* ZapRepeatPrompt.swift */; };
 		2990B2735FE4E622E580C90C /* SharePortalRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668985E052176EC97E23C013 /* SharePortalRouter.swift */; };
 		2994BC8B39F44CD67F24CC02 /* NoteMediaURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = A040CB55969B89915509B7E4 /* NoteMediaURL.swift */; };
 		2994C3A0BE9AFB6C41AD71FA /* LongFormContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42DB00CA3C4EA172D7C76C2A /* LongFormContent.swift */; };
@@ -667,6 +670,7 @@
 		4C3FE1C20BEBCAA94022D784 /* BlossomService+LocalUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB509F2A30B9B45176A3489 /* BlossomService+LocalUpload.swift */; };
 		4C401889D3A01F4D4775DB85 /* EmojiVaultStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC439EF13F67BEF6C20E51A9 /* EmojiVaultStore.swift */; };
 		4C51593200648C9350C77B24 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 915DF9A0796218139DE0703E /* Assets.xcassets */; };
+		4C562693D014CFC62D6156DA /* ZapReceiptWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CDBA172AE28824F02A10662 /* ZapReceiptWatcher.swift */; };
 		4CB97B6BED6A0C7F9B4117B0 /* DMService+Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC81DE3E07D6D955930EB56 /* DMService+Persistence.swift */; };
 		4CCBAF41414F27FB9E09F585 /* LabelPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBDF2964207ECC2BFAE27EBA /* LabelPublisher.swift */; };
 		4CF4478492AEA2D3085CD501 /* PendingActionFlush.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A501241428C9A79D3FB81AD /* PendingActionFlush.swift */; };
@@ -763,6 +767,7 @@
 		55BA9955039B9A644C5A53DA /* FeedService+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F45B3B97F11CA01BFD2C8C0 /* FeedService+Search.swift */; };
 		55EE3B134E33B00475F872D0 /* BlossomFolderIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C632FF7C475A7BEC2DDBCE1 /* BlossomFolderIndex.swift */; };
 		55F1C5E7B8BC4E41CE94171E /* DMService+MessageProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FBCB45EE5F7F14C5CCFF74 /* DMService+MessageProcessing.swift */; };
+		560929F6CE1215B1E78E9F6B /* ZapPending.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06657D09FD1DD91D9D5087A6 /* ZapPending.swift */; };
 		56306706B175F8D4376071C5 /* DockHoldMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E2F2C826126F954B17978AE /* DockHoldMenu.swift */; };
 		5676553788B5B087DCC51A20 /* RelayProcessManager+StartupMarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E86774B03C002CF9C52500 /* RelayProcessManager+StartupMarks.swift */; };
 		567D911077CA1B08DAEE62D5 /* VaultActivityThumbnails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C7E5BAC0F73460D1EED71C3 /* VaultActivityThumbnails.swift */; };
@@ -797,6 +802,7 @@
 		5890AB991E6BEBF46F9B5B34 /* NIP46Service+Bridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C477D8592D4BF3D830EDEEE /* NIP46Service+Bridge.swift */; };
 		5893CC6FC11E90B44611FC3D /* NostrService+ProfileRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4E3B844DF3DFEDC00802292 /* NostrService+ProfileRefresh.swift */; };
 		589D29DD2C678AC0B5A63616 /* ImportTourStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA03816123BAFD2424954F9 /* ImportTourStep.swift */; };
+		58D6FB018CF1CB34DF28DA90 /* ZapPending.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06657D09FD1DD91D9D5087A6 /* ZapPending.swift */; };
 		5959493ACAC5D0FC9D4EFE76 /* FeedView+EmptyStates.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C196064FDD02127CFA047C /* FeedView+EmptyStates.swift */; };
 		59965C511D2D8F2DCDA83D3C /* BitcoinSweepDisclaimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A56934F313BFA876DC49BA /* BitcoinSweepDisclaimerView.swift */; };
 		5A18F0E563ACEBF4039D462E /* NVShareIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69FCE89FDCC4D758B3B2AE81 /* NVShareIntent.swift */; };
@@ -2438,6 +2444,7 @@
 		05E22622B26A3F1A5C9D0A2A /* StatsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsService.swift; sourceTree = "<group>"; };
 		061506DF0D2E98B60D8A9DD9 /* DockSafeAreaInset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockSafeAreaInset.swift; sourceTree = "<group>"; };
 		062B559615452153EE2E788D /* GenmojiAddCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenmojiAddCard.swift; sourceTree = "<group>"; };
+		06657D09FD1DD91D9D5087A6 /* ZapPending.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapPending.swift; sourceTree = "<group>"; };
 		06A0BB929DA965323CDD105A /* LinkPreviewCacheKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkPreviewCacheKey.swift; sourceTree = "<group>"; };
 		075378186B28AF0EF05CE1AB /* NotificationReadiness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationReadiness.swift; sourceTree = "<group>"; };
 		07DE02205BBB91AC1EBC9ABA /* IconAccentApply.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconAccentApply.swift; sourceTree = "<group>"; };
@@ -2546,6 +2553,7 @@
 		1C421342CE309F6D5E901538 /* VaultSessionCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultSessionCore.swift; sourceTree = "<group>"; };
 		1C477D8592D4BF3D830EDEEE /* NIP46Service+Bridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NIP46Service+Bridge.swift"; sourceTree = "<group>"; };
 		1C7B0FCECC367D25BBB73718 /* FeedLayoutMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedLayoutMode.swift; sourceTree = "<group>"; };
+		1CDBA172AE28824F02A10662 /* ZapReceiptWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapReceiptWatcher.swift; sourceTree = "<group>"; };
 		1D167E2A8A59209914A2B120 /* DMInboxLoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMInboxLoadingView.swift; sourceTree = "<group>"; };
 		1D1A35E8F156B18C3269D943 /* HavenApp_iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenApp_iOS.swift; sourceTree = "<group>"; };
 		1D28727304060A6A7B4CBB6E /* MacVaultGlance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacVaultGlance.swift; sourceTree = "<group>"; };
@@ -3079,6 +3087,7 @@
 		8D9F1F07AA851FF576668FCB /* ProfileRefreshPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileRefreshPlan.swift; sourceTree = "<group>"; };
 		8DE98382E71250C66C461CB5 /* FeedService+ContactList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+ContactList.swift"; sourceTree = "<group>"; };
 		8E33934D682D87D02C55AFF1 /* GlobeStorm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobeStorm.swift; sourceTree = "<group>"; };
+		8E831DEF8EF947BCDF35B52A /* ZapRepeatPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapRepeatPrompt.swift; sourceTree = "<group>"; };
 		8EE02D17B251A319CA3CAA1A /* VaultModeLists.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultModeLists.swift; sourceTree = "<group>"; };
 		8F0CF308038EED2246C1A5B2 /* FeedService+NoteStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+NoteStats.swift"; sourceTree = "<group>"; };
 		8F3F697CC1A3F0653BB6D0B3 /* HavenConfig+DMInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HavenConfig+DMInbox.swift"; sourceTree = "<group>"; };
@@ -4927,6 +4936,7 @@
 				76AE561EEB95A58E4DD97077 /* ZapComment.swift */,
 				83B7AE001906426D0D833C0D /* ZapHistory.swift */,
 				D5D2CE6DFCDE4E46DC7C6BB3 /* ZapInvoiceCheck.swift */,
+				06657D09FD1DD91D9D5087A6 /* ZapPending.swift */,
 			);
 			name = Models;
 			path = HavenApp/Models;
@@ -5287,6 +5297,7 @@
 				3CB15AE080BDC0999543399A /* WebSocketClient.swift */,
 				FB5A5080BEBFB65F83A8E757 /* WebSocketClient+LookupConnection.swift */,
 				9BA557D10C9E58C90C37C72A /* ZapHistoryService.swift */,
+				1CDBA172AE28824F02A10662 /* ZapReceiptWatcher.swift */,
 				A6DAA5E7383F9175577A61C7 /* ZapService.swift */,
 				FB4AF522091B10161BB09ED4 /* ZapValidationService.swift */,
 			);
@@ -5387,6 +5398,7 @@
 				6F67B70956B68FD2DA8E0598 /* PostActionNotificationBanner.swift */,
 				49B848AAC08254AED757D954 /* UnlikePill.swift */,
 				BDAD290D5323C4E69E647941 /* ZapNotificationBanner.swift */,
+				8E831DEF8EF947BCDF35B52A /* ZapRepeatPrompt.swift */,
 			);
 			path = ZapBanner;
 			sourceTree = "<group>";
@@ -6866,6 +6878,9 @@
 				52C253E70122E23F588C589C /* ZapHistoryService.swift in Sources */,
 				56F2E155683A90D2F9BAF359 /* ZapInvoiceCheck.swift in Sources */,
 				A34E77F17D236644D0ECA522 /* ZapNotificationBanner.swift in Sources */,
+				58D6FB018CF1CB34DF28DA90 /* ZapPending.swift in Sources */,
+				4C562693D014CFC62D6156DA /* ZapReceiptWatcher.swift in Sources */,
+				1F3F8F1188446F6C510FE994 /* ZapRepeatPrompt.swift in Sources */,
 				30D8A68AB9D5370D2047AD1D /* ZapService.swift in Sources */,
 				27FA2D5AA1F2368CB224F74F /* ZapValidationService.swift in Sources */,
 				3678B78F62195F531E1C209A /* ZappersListView.swift in Sources */,
@@ -8028,6 +8043,9 @@
 				AB14121B77BC337AD50021FB /* ZapHistoryService.swift in Sources */,
 				A0D8D9ED7C42C9933AB4888F /* ZapInvoiceCheck.swift in Sources */,
 				962210381994714702238AD9 /* ZapNotificationBanner.swift in Sources */,
+				560929F6CE1215B1E78E9F6B /* ZapPending.swift in Sources */,
+				234F65B7759DBB752BC42696 /* ZapReceiptWatcher.swift in Sources */,
+				2930C4A87D63BFD1C4815CE8 /* ZapRepeatPrompt.swift in Sources */,
 				4E9D41F92A23243785F106A0 /* ZapService.swift in Sources */,
 				60DEA99DD39DD7237F900AB0 /* ZapValidationService.swift in Sources */,
 				4C01A0C02F7DB9B62F71CDBD /* ZappersListView.swift in Sources */,
