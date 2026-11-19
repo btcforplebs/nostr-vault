@@ -43,6 +43,39 @@ enum NuclearUnfollowPlan {
         return .ready(tags: kept)
     }
 
+    /// How many follows `tags` has fewer than `base`: what was actually cut.
+    static func removedCount(base: [[String]], tags: [[String]]) -> Int {
+        let isFollowTag: ([String]) -> Bool = { $0.count >= 2 && $0[0] == "p" }
+        return base.filter(isFollowTag).count - tags.filter(isFollowTag).count
+    }
+
+    /// Undo, built from the newest list: the follows the cut removed go back
+    /// (with their relay hints and pet names from `backup`), and anything
+    /// changed since, here or on another device, stays. Someone you
+    /// re-followed meanwhile isn't added twice. Nil when there's no list.
+    static func undoTags(newest: [[String]]?, backup: [[String]], removed: Set<String>) -> [[String]]? {
+        guard let newest else { return nil }
+        let isFollowTag: ([String]) -> Bool = { $0.count >= 2 && $0[0] == "p" }
+        let gone = Set(removed.map { $0.lowercased() })
+        var present = Set(newest.filter(isFollowTag).map { $0[1].lowercased() })
+        var out = newest
+        for tag in backup where isFollowTag(tag) {
+            let key = tag[1].lowercased()
+            guard gone.contains(key), !present.contains(key) else { continue }
+            out.append(tag)
+            present.insert(key)
+        }
+        return out
+    }
+
+    /// Who the checklist starts with checked (Tron, #2282): only people
+    /// whose newest follow list, fetched now, has X. Anyone only the relay's
+    /// saved web names shows unchecked: that file is the last rebuild, and
+    /// they may have stopped following X since.
+    static func checkedAtFirst(confirmed: Set<String>) -> Set<String> {
+        Set(confirmed.map { $0.lowercased() })
+    }
+
     /// "Unfollow 1 person" / "Unfollow 30 people".
     static func confirmTitle(_ count: Int) -> String {
         count == 1 ? "Unfollow 1 person" : "Unfollow \(count) people"

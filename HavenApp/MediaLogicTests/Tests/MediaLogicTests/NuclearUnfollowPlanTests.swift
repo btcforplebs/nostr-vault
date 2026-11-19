@@ -42,6 +42,33 @@ final class NuclearUnfollowPlanTests: XCTestCase {
         XCTAssertEqual(NuclearUnfollowPlan.confirmTitle(30), "Unfollow 30 people")
     }
 
+    /// Undo puts back only what the cut removed, on top of the newest list
+    /// (Tron, #2282): a follow added since stays, nobody is added twice.
+    func testUndoKeepsLaterChanges() {
+        let backup: [[String]] = [["p", keep], ["p", b1, "wss://hint"], ["p", b2], ["t", "x"]]
+        let newest: [[String]] = [["p", keep], ["t", "x"], ["p", "dd"], ["p", b2]]
+        let undone = NuclearUnfollowPlan.undoTags(newest: newest, backup: backup, removed: [b1, b2])
+        XCTAssertEqual(undone, [["p", keep], ["t", "x"], ["p", "dd"], ["p", b2], ["p", b1, "wss://hint"]])
+        XCTAssertNil(NuclearUnfollowPlan.undoTags(newest: nil, backup: backup, removed: [b1]))
+    }
+
+    func testRemovedCountIsWhatWasCut() {
+        XCTAssertEqual(NuclearUnfollowPlan.removedCount(base: [["p", b1], ["p", keep], ["t", "x"]], tags: [["p", keep], ["t", "x"]]), 1)
+    }
+
+    /// Only people confirmed from a freshly fetched list start checked.
+    func testOnlyConfirmedPeopleStartChecked() {
+        XCTAssertEqual(NuclearUnfollowPlan.checkedAtFirst(confirmed: [b1.uppercased()]), [b1])
+    }
+
+    func testSavedWebIsOnlyASeed() throws {
+        let app = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let service = try String(contentsOf: app.appendingPathComponent("HavenApp/Services/NuclearUnfollowService.swift"), encoding: .utf8)
+        XCTAssertFalse(service.contains("if path.complete { return"), "relays are always asked")
+        XCTAssertTrue(service.contains("fromSavedWeb: seed.subtracting(confirmed)"))
+    }
+
     /// The backup comes before anything is signed: the screen's "Backup
     /// saved ✓" fires from the vault step that ListVersionSave runs first.
     func testBackupIsKeptBeforePublishing() throws {

@@ -9,8 +9,8 @@ struct NuclearUnfollowView: View {
 
     @EnvironmentObject var nostrService: NostrService
     @Environment(\.dismiss) private var dismiss
-    @State private var people: [String]?
-    @State private var complete = true
+    @State private var found: NuclearUnfollowService.Found?
+    private var people: [String]? { found?.everyone }
     @State private var showingList = false
 
     private var follows: Set<String> { Set(FeedService.shared.followedPubkeys) }
@@ -42,7 +42,9 @@ struct NuclearUnfollowView: View {
                 }
             }
             .navigationDestination(isPresented: $showingList) {
-                NuclearUnfollowListView(target: target, name: name, people: people ?? [], complete: complete,
+                NuclearUnfollowListView(target: target, name: name, people: people ?? [],
+                                        checkedAtFirst: NuclearUnfollowPlan.checkedAtFirst(confirmed: Set(found?.confirmed ?? [])),
+                                        complete: found?.complete ?? false,
                                         followsTarget: follows.contains(target), onFinished: { dismiss() })
             }
         }
@@ -50,9 +52,7 @@ struct NuclearUnfollowView: View {
         .frame(minWidth: 820, minHeight: 600)
         #endif
         .task(id: target) {
-            let found = await NuclearUnfollowService.bridges(to: target)
-            complete = found.complete
-            people = found.people
+            found = await NuclearUnfollowService.bridges(to: target)
         }
     }
 

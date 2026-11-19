@@ -26,16 +26,20 @@ struct NuclearUnfollowListView: View {
         case failed(String)
     }
     @State private var backup: NostrEvent?
+    @State private var cut: Set<String> = []
+    /// Some people come only from the saved web, so they start unchecked.
+    private let hasSavedWebOnly: Bool
 
-    init(target: String, name: String, people: [String], complete: Bool, followsTarget: Bool,
-         onFinished: @escaping () -> Void) {
+    init(target: String, name: String, people: [String], checkedAtFirst: Set<String>, complete: Bool,
+         followsTarget: Bool, onFinished: @escaping () -> Void) {
         self.target = target
         self.name = name
         self.people = people
         self.complete = complete
         self.followsTarget = followsTarget
         self.onFinished = onFinished
-        _checked = State(initialValue: Set(people))
+        _checked = State(initialValue: Set(people.filter { checkedAtFirst.contains($0.lowercased()) }))
+        hasSavedWebOnly = people.contains { !checkedAtFirst.contains($0.lowercased()) }
     }
 
     private var removing: Set<String> {
@@ -49,6 +53,12 @@ struct NuclearUnfollowListView: View {
                 if followsTarget {
                     Label("\(name) is unfollowed too.", systemImage: "person.fill.xmark")
                         .font(.appSystem(size: 13))
+                }
+                if hasSavedWebOnly && stage == .choosing {
+                    Label("Anyone unchecked here may have stopped following \(name): only your saved web still lists them. Check them to cut them too.",
+                          systemImage: "info.circle")
+                        .font(.appSystem(size: 13))
+                        .foregroundColor(.secondary)
                 }
                 if !complete {
                     Label("Some relays didn't answer, so this list may be missing people.",
@@ -163,13 +173,14 @@ struct NuclearUnfollowListView: View {
     }
 
     private func run() {
-        let cut = removing
+        let removingNow = removing
         stage = .savingBackup
         Task {
-            let outcome = await NuclearUnfollowService.unfollow(cut) { stage = .publishing }
+            let outcome = await NuclearUnfollowService.unfollow(removingNow) { stage = .publishing }
             switch outcome {
-            case .done(let n, let kept):
+            case .done(let n, let kept, let removed):
                 backup = kept
+                self.cut = removed
                 stage = .done(n)
             case .unchanged: stage = .failed("No one in the list is in your follow list now. Nothing was changed.")
             case .refused(let why): stage = .failed(why)
@@ -181,7 +192,7 @@ struct NuclearUnfollowListView: View {
         guard let backup else { return }
         stage = .undoing
         Task {
-            switch await NuclearUnfollowService.undo(to: backup) {
+            switch await NuclearUnfollowService.undo(to: backup, cut: cut) {
             case .done, .unchanged: stage = .undone
             case .refused(let why): stage = .failed("Undo didn't go through: \(why)")
             }
