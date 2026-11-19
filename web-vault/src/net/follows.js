@@ -175,6 +175,17 @@ export async function setFollow({ vault, signer, pubkey, target, follow, readRel
   // Newer than the base, so no relay keeps the old list over this one on a same-second tie. findLatestList only
   // picks a base dated before now + MAX_SKEW, so this is never later than that.
   const template = { kind: 3, created_at: Math.max(now(), (base?.created_at ?? 0) + 1), tags, content: base?.content ?? "" }
+  const { event, taken, settled } = await publishFollowList({ vault, signer, pubkey, template, writeRelays, publish })
+  // Following Backup keeps the old list and the new one (loaded late: that module imports this one).
+  import("./follow-backup.js").then(b => b.keepFollowChange(pubkey, base, event)).catch(() => {})
+  return { event, follows: followsOf(event), taken, settled }
+}
+
+/**
+ * Sign `template` (a kind 3), send it to the write relays, then store it in Haven's outbox. Throws when it can't be
+ * signed, no network relay took it, or Haven refused it. -> { event, taken: the first network relay's URL, settled }
+ */
+export async function publishFollowList({ vault, signer, pubkey, template, writeRelays, publish = (urls, ev) => pool.publish(urls, ev) }) {
   const event = checkSigned(await signer.signEvent(template), template, pubkey)
   // Network first: the vault keeps it (and the app shows it) only once a relay took it, so a follow that went
   // nowhere is never shown as done (iOS rolls those back).
@@ -188,9 +199,7 @@ export async function setFollow({ vault, signer, pubkey, target, follow, readRel
   if (first < 0) throw new Error(`No relay took it (0 of ${network.length}), so nothing changed. Try again.`)
   const stored = await vault.outbox.event(event)
   if (!stored.ok && !/^duplicate:/.test(stored.message)) throw new Error(`Sent, but Haven refused the follow list: ${stored.message}`)
-  // Following Backup keeps the old list and the new one (loaded late: that module imports this one).
-  import("./follow-backup.js").then(b => b.keepFollowChange(pubkey, base, event)).catch(() => {})
-  return { event, follows: followsOf(event), taken: urls[first], settled }
+  return { event, taken: urls[first], settled }
 }
 
 /** The badge next to someone's name: "mutual", "following", "follows-you" or "". */

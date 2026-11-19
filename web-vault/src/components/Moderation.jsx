@@ -20,7 +20,7 @@ const waiting = ctx => (ctx.signer.method === "nip46" ? "Waiting for your signer
 /**
  * The ⋯ button and its menu. `note`: a note's menu, in the iPhone's order (FeedNoteRow+Menus): Share, Copy link,
  * Copy text, then Delete on the user's own post or Report and Block on someone else's. Without `note`, a profile's
- * (Copy npub, Block or Unblock, Report); nothing on the user's own profile. `className` styles the button.
+ * (Copy npub, Nuclear unfollow, Private block, Block or Unblock, Report); nothing on the user's own profile. `className` styles the button.
  */
 export function MoreMenu({ note, pubkey, className = "" }) {
   const ctx = actionContext()
@@ -28,7 +28,7 @@ export function MoreMenu({ note, pubkey, className = "" }) {
   const p = useProfile(who)
   const { blocked } = useBlocks(ctx ?? {})
   const [open, setOpen] = useState(false)
-  const [dialog, setDialog] = useState(null) // "block" | "unblock" | "report" | "delete"
+  const [dialog, setDialog] = useState(null) // "block" | "private-block" | "unblock" | "report" | "delete"
   const [copied, setCopied] = useState("") // which item just copied
   const ref = useRef(null)
   useEffect(() => {
@@ -69,6 +69,10 @@ export function MoreMenu({ note, pubkey, className = "" }) {
           {note && <hr class="more-sep" />}
           {own && <button role="menuitem" class="danger" onClick={pick("delete")}>Delete post…</button>}
           {!own && note && <button role="menuitem" class="danger" onClick={pick("report")}>Report note…</button>}
+          {/* Nuclear unfollow and Private block (RESEARCH/NV_NUCLEAR_UNFOLLOW_SPEC.md): a profile's menu only. Nuclear
+              unfollow opens the globe with your follows who follow them lit (screens/WotNuclear.jsx). */}
+          {!note && !ctx.signer?.readOnly && <button role="menuitem" class="danger" onClick={() => { setOpen(false); location.hash = `#/wot/${who}/nuke` }}>Nuclear unfollow…</button>}
+          {!note && !isBlocked && <button role="menuitem" class="danger" onClick={pick("private-block")}>Private block…</button>}
           {!own && (isBlocked
             ? <button role="menuitem" onClick={pick("unblock")}>Unblock {name}</button>
             : <button role="menuitem" class="danger" onClick={pick("block")}>Block {name}…</button>)}
@@ -76,6 +80,7 @@ export function MoreMenu({ note, pubkey, className = "" }) {
         </div>
       )}
       {dialog === "block" && <BlockDialog ctx={ctx} pubkey={who} name={name} onClose={() => setDialog(null)} />}
+      {dialog === "private-block" && <BlockDialog ctx={ctx} pubkey={who} name={name} privateOnly onClose={() => setDialog(null)} />}
       {dialog === "unblock" && <UnblockDialog ctx={ctx} pubkey={who} name={name} onClose={() => setDialog(null)} />}
       {dialog === "report" && <ReportDialog ctx={ctx} note={note} pubkey={who} name={name} onClose={() => setDialog(null)} />}
       {dialog === "delete" && <DeleteDialog ctx={ctx} note={note} onClose={() => setDialog(null)} />}
@@ -110,12 +115,26 @@ function useAction() {
   return { busy, err, run }
 }
 
-/** `isPrivate` is where the private choice starts (Settings › Block Someone's "Block privately"). */
-export function BlockDialog({ ctx, pubkey, name, isPrivate = false, onClose }) {
-  const [priv, setPriv] = useState(isPrivate)
+/** `isPrivate` is where the private choice starts (Settings › Block Someone's "Block privately"). `privateOnly`: the
+ *  ··· menu's Private block, encrypted or not at all: no box to untick, and nothing offered when the signer can't
+ *  encrypt (it is never published in the clear). */
+export function BlockDialog({ ctx, pubkey, name, isPrivate = false, privateOnly = false, onClose }) {
+  const [priv, setPriv] = useState(isPrivate || privateOnly)
   const { busy, err, run } = useAction()
   const canPrivate = !!ctx.signer.crypto
-  const go = run(async () => { await setBlock(ctx, pubkey, { block: true, isPrivate: priv }); onClose() })
+  const go = run(async () => { await setBlock(ctx, pubkey, { block: true, isPrivate: privateOnly || priv }); onClose() })
+  if (privateOnly) return (
+    <Dialog label={`Privately block ${name}`} onClose={onClose}>
+      <h3>Privately block {name}?</h3>
+      {canPrivate ? <p class="muted">They're kept out of your web: your feeds, notifications and globe. Nobody else can see this block: it goes on the encrypted part of your list, which your phone reads too. You keep following everyone you follow.</p>
+        : <p class="muted">Your signer can't encrypt, so a private block can't be made here. Use Block for a public one, or block privately from your phone.</p>}
+      {err && <p class="error small" role="alert">{err}</p>}
+      <div class="mod-row">
+        <button type="button" disabled={busy} onClick={onClose}>Cancel</button>
+        {canPrivate && <button type="button" class="danger-fill" disabled={busy} onClick={go} aria-busy={busy || undefined}>{busy ? waiting(ctx) ?? "Blocking…" : "Block privately"}</button>}
+      </div>
+    </Dialog>
+  )
   return (
     <Dialog label={`Block ${name}`} onClose={onClose}>
       <h3>Block {name}?</h3>

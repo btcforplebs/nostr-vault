@@ -3,6 +3,8 @@
 // the drawn caps, the face candidates' profiles) and hands the napplet a drawing-ready scene by intent
 // (napplet:wot/show); the napplet only draws it. It asks back for napplet:profile/open and napplet:wot/refresh.
 // `open`: a pubkey whose card opens first (#/wot/<hex>). "See their web" (#/wot/<hex>/web) stays the classic screen.
+// `nuke`: Nuclear unfollow (#/wot/<hex>/nuke): the scene lights your follows who follow them, and the shell's own
+// panel (screens/WotNuclear.jsx) sits over the napplet. The napplet only draws; it never signs a follow list.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles, getProfile, onProfiles } from "../net/profiles.js"
@@ -16,12 +18,14 @@ import { sceneOf, waitingScene } from "./wot-scene.js"
 import { WOT_DTAG } from "./first-party.js"
 import { usePaneNapplet } from "./usePaneNapplet.js"
 import { holdDark } from "../net/appearance.js"
+import { followersOfAmong } from "../net/nuclear-unfollow.js"
+import { NuclearPanel } from "../screens/WotNuclear.jsx"
 import "./napplet.css"
 
 const HEX = /^[0-9a-f]{64}$/
 const SEND_EVERY_MS = 600
 
-export function WotPane({ ctx, open = null, root = null }) {
+export function WotPane({ ctx, open = null, root = null, nuke = null }) {
   useEffect(() => holdDark(), []) // the Web of Trust is always Dark, and so is the page around it while it shows
   const { vault, account, session } = ctx
   const me = session.pubkey
@@ -86,6 +90,8 @@ export function WotPane({ ctx, open = null, root = null }) {
   }, [theirs])
   const ctxRef = useRef(ctx)
   ctxRef.current = ctx
+  const nukeTarget = HEX.test(nuke ?? "") && nuke !== me && !theirRoot ? nuke : null
+  const cut = useMemo(() => (nukeTarget && lists ? followersOfAmong(nukeTarget, follows, lists, me) : null), [nukeTarget, lists, follows])
 
   // The napplet: mounted once; the shell answers Open profile and Look again itself.
   const { live, note, ready } = usePaneNapplet(ctx, host, {
@@ -133,18 +139,19 @@ export function WotPane({ ctx, open = null, root = null }) {
       const scene = theirRoot
         ? (theirs ? sceneOf(theirs, { profile: getProfile, status: "", open: first, whose, myFollows: mine }) : waitingScene(theirRoot, `Loading ${whose}'s follows…`))
         : web ? sceneOf(web, { profile: getProfile, status, open: first, myFollows: mine }) : waitingScene(me, status || "Loading your follows…")
-      l.invoke({ archetype: "wot", action: "show", payload: { ...scene, whose, you: me } })
+      l.invoke({ archetype: "wot", action: "show", payload: { ...scene, whose, you: me, ...(cut && !scene.waiting ? { lit: [...cut, nukeTarget] } : {}) } })
     }
     clearTimeout(pending.current)
     const wait = SEND_EVERY_MS - (Date.now() - sentAt.current)
     if (wait <= 0 || open !== opened.current) send(); else pending.current = setTimeout(send, wait)
     return () => clearTimeout(pending.current)
-  }, [web, theirs, theirRoot, profilesIn, status, open, ready, follows.length])
+  }, [web, theirs, theirRoot, profilesIn, status, open, ready, follows.length, cut])
 
   return (
     <main class="screen wot-pane">
       {note && <p class="muted small napplet-note" role="status">{note}</p>}
       <div class="napplet-host wot-host" ref={host} />
+      {nukeTarget && <NuclearPanel key={nukeTarget} ctx={ctx} target={nukeTarget} cut={cut} missing={lists ? missingLists(follows) : 0} />}
     </main>
   )
 }
