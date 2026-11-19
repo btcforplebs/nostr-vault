@@ -25,9 +25,13 @@ finish() {
 for i in $(seq 1 60); do [ -e /run/openrc/softlevel ] && break; sleep 1; done
 [ -e /run/openrc/softlevel ] || abort "OpenRC didn't boot"
 D=/var/lib/nostr-vault
-uid_of() { awk '/^Uid:/ {print $2}' "/proc/$(pgrep -x "$1" | head -1)/status" 2>/dev/null; }
+pid_of() { # pid_of <name>: the first process with that exact name (from /proc: no procps or busybox applet needed)
+  for d in /proc/[0-9]*; do [ "$(cat "$d/comm" 2>/dev/null)" = "$1" ] && { echo "${d#/proc/}"; return 0; }; done; return 1
+}
+not() { ! "$@"; }
+uid_of() { awk '/^Uid:/ {print $2}' "/proc/$(pid_of "$1")/status" 2>/dev/null; }
 up() { rc-service -q "$1" status; }
-wait_up() { for i in $(seq 1 40); do curl -fsS -o /dev/null http://127.0.0.1:8080/ 2>/dev/null && [ -s $D/mesh/npub ] && pgrep -x nv-mesh >/dev/null && return 0; sleep 1; done; return 1; }
+wait_up() { for i in $(seq 1 40); do curl -fsS -o /dev/null http://127.0.0.1:8080/ 2>/dev/null && [ -s $D/mesh/npub ] && pid_of nv-mesh >/dev/null && return 0; sleep 1; done; return 1; }
 running_checks() { # what holds whenever the vault is up
   chk "nostr-vault started" up nostr-vault
   chk "nostr-vault-mesh started" up nostr-vault-mesh
@@ -36,9 +40,11 @@ running_checks() { # what holds whenever the vault is up
   chk "havend runs as nvvault" test "$(uid_of havend)" = "$(id -u nvvault)"
   chk "engine runs as nvvault" test "$(uid_of haven-engine)" = "$(id -u nvvault)"
   chk "nv-mesh runs as nvmesh" test "$(uid_of nv-mesh)" = "$(id -u nvmesh)"
-  chk "no caps on havend" sh -c "grep -q 'CapEff:[[:space:]]*0000000000000000' /proc/\$(pgrep -x havend)/status"
-  chk "no caps on nv-mesh" sh -c "grep -q 'CapEff:[[:space:]]*0000000000000000' /proc/\$(pgrep -x nv-mesh)/status"
-  chk "no new privileges on havend" sh -c "grep -q 'NoNewPrivs:[[:space:]]*1' /proc/\$(pgrep -x havend)/status"
+  pv=$(pid_of havend); pm=$(pid_of nv-mesh)
+  chk "no caps on havend" grep -q 'CapEff:[[:space:]]*0000000000000000' "/proc/$pv/status"
+  chk "no caps on nv-mesh" grep -q 'CapEff:[[:space:]]*0000000000000000' "/proc/$pm/status"
+  chk "no new privileges on havend" grep -q 'NoNewPrivs:[[:space:]]*1' "/proc/$pv/status"
+  chk "no new privileges on nv-mesh" grep -q 'NoNewPrivs:[[:space:]]*1' "/proc/$pm/status"
   for i in $(seq 1 30); do ss -Hltn "sport = :3355" | grep -q . && break; sleep 1; done
   chk "8080 on all addresses" sh -c "ss -Hltn 'sport = :8080' | awk '{print \$4}' | grep -Eq '^(\*|0.0.0.0|\[::\]):8080'"
   chk "engine 3355 loopback only" sh -c "ss -Hltn 'sport = :3355' | awk '{print \$4}' | grep -q . && ! ss -Hltn 'sport = :3355' | awk '{print \$4}' | grep -vq '^127.0.0.1:'"
@@ -101,14 +107,16 @@ boot)
   st=$(curl -s -H "Authorization: $("$KT" auth "$OSK" GET $U)" $U)
   chk "after reboot: box API answers the owner" sh -c "echo '$st' | grep -q '$MNPUB'"
   # A crash restarts (supervise-daemon), with the same key.
-  kill -9 "$(pgrep -x nv-mesh)"; sleep 6
-  chk "nv-mesh restarted after kill" pgrep -x nv-mesh
+  kill -9 "$(pid_of nv-mesh)"; sleep 6
+  chk "nv-mesh restarted after kill" pid_of nv-mesh
   chk "after mesh restart: same mesh npub" sh -c "[ \"\$(cat $D/mesh/npub)\" = '$MNPUB' ]"
-  kill -9 "$(pgrep -x havend)"; sleep 6
-  chk "havend restarted after kill" sh -c 'pgrep -x havend && curl -fsS -o /dev/null http://127.0.0.1:8080/'
+  kill -9 "$(pid_of havend)"; sleep 4; wait_up || true
+  chk "havend restarted after kill" pid_of havend
+  chk "web app back after the kill" curl -fsS -o /dev/null http://127.0.0.1:8080/
   # Remove stops it and leaves the data (the owner's notes) and the settings.
   apk del --no-progress -q nostr-vault >/dev/null 2>&1 && ok "apk del" || no "apk del"
-  chk "after remove: vault stopped" sh -c '! pgrep -x havend && ! pgrep -x nv-mesh'
+  chk "after remove: havend stopped" not pid_of havend
+  chk "after remove: nv-mesh stopped" not pid_of nv-mesh
   chk "after remove: not in the default runlevel" sh -c '! rc-update show default | grep -qw nostr-vault'
   chk "after remove: data kept" test -s $D/mesh/npub
   # Add it again: it finds its settings, starts by itself on the same key, and is back on boot.
