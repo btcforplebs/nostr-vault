@@ -20,7 +20,9 @@ finish-args:
   - --talk-name=org.kde.StatusNotifierWatcher # the tray
   - --env=NV_DESKTOP_SHARE=/app/share/nostr-vault/desktop
 modules:
-  - shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
+  # flathub/shared-modules' libayatana-appindicator-gtk3.json (pinned in gen-sources.sh), with CMAKE_INSTALL_LIBDIR=lib:
+  # GNOME 51's CMake would put it in /app/lib64, which nothing searches.
+  - ayatana-appindicator.json
 
   - name: nostr-vault
     buildsystem: simple
