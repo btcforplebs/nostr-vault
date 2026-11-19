@@ -1,0 +1,17 @@
+#!/bin/sh
+# The two users, with the container's uids when they are free (so a Docker box's data dir works as it is), as the
+# .deb's postinst does.
+user() { # user <name> <uid>
+	getent passwd "$1" >/dev/null && return 0
+	if getent passwd "$2" >/dev/null || getent group "$2" >/dev/null; then
+		addgroup -S "$1" 2>/dev/null
+		adduser -S -D -H -h /nonexistent -s /sbin/nologin -G "$1" -g "$1" "$1" 2>/dev/null
+	else
+		addgroup -S -g "$2" "$1" 2>/dev/null
+		adduser -S -D -H -h /nonexistent -s /sbin/nologin -u "$2" -G "$1" -g "$1" "$1" 2>/dev/null
+	fi
+	return 0
+}
+user nvmesh 10001
+user nvvault 10002
+exit 0

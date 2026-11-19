@@ -1,0 +1,7 @@
+#!/bin/sh
+# Started again on the new version, if it was running.
+if rc-service -q nostr-vault status 2>/dev/null; then
+	rc-service -q nostr-vault restart 2>/dev/null || true
+	rc-service -q nostr-vault-mesh start 2>/dev/null || true
+fi
+exit 0

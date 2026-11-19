@@ -1,0 +1,43 @@
+#!/sbin/openrc-run
+# Nostr Vault for Alpine: the vault (havend, which runs haven-engine on 127.0.0.1:3355): the relay, Blossom, the web
+# app and the owner-only box API, all on NV_PORT. The OpenRC twin of linux/native/systemd/nostr-vault.service.
+# Settings: /etc/nostr-vault/vault.env (nostr-vault-setup writes it). Never root, no capabilities.
+
+name="Nostr Vault"
+description="Nostr Vault: your own Nostr vault on this machine"
+supervisor=supervise-daemon
+command=/usr/lib/nostr-vault/havend
+command_user="nvvault:nvvault"
+umask=022
+no_new_privs=yes
+respawn_delay=2
+respawn_max=0
+# A small board has other jobs (the container's and the systemd unit's nice 10).
+supervise_daemon_args="--nicelevel 10"
+output_log=/var/log/nostr-vault/vault.log
+error_log=/var/log/nostr-vault/vault.log
+
+depend() {
+	use net dns logger
+	after firewall
+}
+
+start_pre() {
+	if [ ! -r /etc/nostr-vault/vault.env ]; then
+		eerror "Nostr Vault isn't set up yet: run  nostr-vault-setup --owner npub1…"
+		return 1
+	fi
+	# Defaults first (as the unit's Environment=), then the settings file wins.
+	export NV_DATA_DIR=/var/lib/nostr-vault NV_PORT=8080 NV_MESH_DOOR_PORT=8081 HAVEN_MESH_PLAIN_PORT=8081
+	export NV_WEB_DIR=/usr/share/nostr-vault/web NV_ENGINE_BIN=/usr/lib/nostr-vault/haven-engine NV_MOVE_ROOT=/mnt
+	# No NV_UPDATE_HOOK: the app's Update says to install the newer apk, which is how this package updates.
+	set -a
+	. /etc/nostr-vault/vault.env
+	[ -r /etc/nostr-vault/secrets.env ] && . /etc/nostr-vault/secrets.env
+	set +a
+	checkpath -d -m 0755 -o root:root /var/log/nostr-vault
+	checkpath -f -m 0640 -o nvvault:nvvault /var/log/nostr-vault/vault.log
+	# The data dir (0711, the vault's) and mesh/ (0755, the mesh's). The mesh needs this service, so OpenRC has
+	# stopped it before we get here: prepare's "both are stopped" holds.
+	/usr/lib/nostr-vault/prepare
+}

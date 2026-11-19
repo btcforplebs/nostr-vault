@@ -1,0 +1,11 @@
+#!/bin/sh
+if grep -q '^NV_OWNER=npub1' /etc/nostr-vault/vault.env 2>/dev/null; then
+	rc-update -q add nostr-vault default 2>/dev/null || true
+	rc-update -q add nostr-vault-mesh default 2>/dev/null || true
+	rc-service -q nostr-vault restart 2>/dev/null || true
+	rc-service -q nostr-vault-mesh start 2>/dev/null || true
+else
+	echo "Nostr Vault is installed. Set it up (it starts now and on every boot):"
+	echo "  nostr-vault-setup --owner npub1…"
+fi
+exit 0
