@@ -62,7 +62,8 @@ struct FullScreenVideoPlayer: View {
                 VStack {
                     Spacer()
                     VideoControlBar(player: player, onPiP: pipAction, onInteract: scheduleAutoHide,
-                                    onResumeLive: sharedPlayer != nil ? onSharedResume : isLive ? { rejoinLive() } : nil)
+                                    onResumeLive: sharedPlayer != nil ? onSharedResume : isLive ? { rejoinLive() } : nil,
+                                    isLive: isLive || sharedPlayer != nil)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 8)
                         .background(alignment: .bottom) {
@@ -133,6 +134,12 @@ struct FullScreenVideoPlayer: View {
             PiPManager.shared.detach(url: url)
             PiPManager.shared.onPiPWillStart = nil
             VideoPlayerCache.shared.activeFullScreenURL = nil
+            // The feed card shares this player: back to 1×, and the lock
+            // screen goes back to the music.
+            if let player {
+                player.defaultRate = 1
+                VideoNowPlaying.shared.end(player: player)
+            }
             // Restore standard inline muted play
             player?.isMuted = true
             player = nil
@@ -142,6 +149,11 @@ struct FullScreenVideoPlayer: View {
     }
 
     private var isLive: Bool { url.pathExtension.lowercased() == "m3u8" }
+
+    /// The lock screen's line for a clip; a live stream shared from the mini
+    /// player keeps the music player's own line.
+    private static let nowPlayingTitle = "Video"
+
 
     private func rejoinLive() {
         guard let player else { return }
@@ -181,6 +193,7 @@ struct FullScreenVideoPlayer: View {
         let meshPlayer = await VideoPlaybackService.shared.preparedPlayer(for: file, mimeHint: mimeType, intent: .fullScreen)
         player = meshPlayer
         meshPlayer.play()
+        VideoNowPlaying.shared.begin(player: meshPlayer, title: Self.nowPlayingTitle, isLive: isLive)
     }
 
     private func setupPlayer() {
@@ -192,6 +205,7 @@ struct FullScreenVideoPlayer: View {
             )
             self.player = cachedPlayer
             cachedPlayer.play()
+            VideoNowPlaying.shared.begin(player: cachedPlayer, title: Self.nowPlayingTitle, isLive: isLive)
         }
     }
 }

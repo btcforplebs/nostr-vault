@@ -411,33 +411,47 @@ final class MusicPlayerService: ObservableObject {
     private func configureRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
+            // A full-screen clip holds the lock screen (VideoNowPlaying).
+            guard !VideoNowPlaying.isActive else { return .commandFailed }
             Task { @MainActor in self?.resume() }
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
+            // A full-screen clip holds the lock screen (VideoNowPlaying).
+            guard !VideoNowPlaying.isActive else { return .commandFailed }
             Task { @MainActor in self?.pause() }
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            // A full-screen clip holds the lock screen (VideoNowPlaying).
+            guard !VideoNowPlaying.isActive else { return .commandFailed }
             Task { @MainActor in self?.togglePlayPause() }
             return .success
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
+            // A full-screen clip holds the lock screen (VideoNowPlaying).
+            guard !VideoNowPlaying.isActive else { return .commandFailed }
             Task { @MainActor in self?.next() }
             return .success
         }
         center.previousTrackCommand.addTarget { [weak self] _ in
+            // A full-screen clip holds the lock screen (VideoNowPlaying).
+            guard !VideoNowPlaying.isActive else { return .commandFailed }
             Task { @MainActor in self?.previous() }
             return .success
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard !VideoNowPlaying.isActive else { return .commandFailed }
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             Task { @MainActor in self?.seek(to: event.positionTime) }
             return .success
         }
     }
 
-    private func updateNowPlaying() {
+    /// Also called by VideoNowPlaying when a full-screen clip gives the
+    /// lock screen back.
+    func updateNowPlaying() {
+        guard !VideoNowPlaying.isActive else { return }
         guard let track = current else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
