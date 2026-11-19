@@ -108,7 +108,7 @@ export function ConversationScreen({ ctx, peer }) {
       <AuthTrouble refresh={refresh} />
       <OpenMore ctx={ctx} more={more} />
       {hasLegacy(rows) && <div class="status-line" role="note">Some messages use NIP-04 (legacy encryption). New messages default to NIP-17.</div>}
-      {isBlocked && <div class="status-line">You blocked this person on your phone, so their messages are hidden here.</div>}
+      {isBlocked && <div class="status-line">You blocked this person, so their messages are hidden here and you can't message them.</div>}
       <div class="dm-thread" ref={thread}>
         {!rows.length && !note && (loaded ? <p class="empty">Start a conversation</p> : <BubbleSkeletons />)}
         {rows.map(m => {
