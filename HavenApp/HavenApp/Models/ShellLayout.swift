@@ -44,6 +44,13 @@ enum ShellLayout: Equatable {
     /// Lists sit in a note split (notes open over the list, ‹ Back). iPads only.
     var usesNoteSplit: Bool { self == .padUpright || self == .padLandscape }
 
+    /// Whether the shell puts each tab's list in a note split. Every iPad,
+    /// at every window size: a Slide Over or narrow Split View window picks
+    /// `.phone` but keeps the split (one column, notes over the list), so
+    /// resizing never swaps the view tree and closes an open sheet (the
+    /// profile, the composer with its text, a note). iPhones never split.
+    static func listsInNoteSplit(isPad: Bool) -> Bool { isPad }
+
     /// The tab items run down a side rail instead of the bottom dock.
     var hasSideRail: Bool { self == .padLandscape || self == .fold || self == .duoClosed }
 

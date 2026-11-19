@@ -17,6 +17,8 @@ private enum NoteSplitMetrics {
     /// Narrower than this (a narrow Split View or Stage Manager window), the
     /// pane shows one column: the list, with a note opening over it.
     static let minSplit: Double = minList + minDetail + 14
+    /// Posted by nobody: what `closesOn` listens to when it is nil.
+    static let never = Notification.Name("NoteSplitPane.never")
 }
 
 /// iPad two-pane note layout, landscape only: the scrolling list on the left,
@@ -39,6 +41,9 @@ struct NoteSplitPane<Content: View>: View {
     /// column, a selected note covering the list, but stays the same view, so
     /// rotating never rebuilds the tab or drops a sheet opened inside it.
     var allowsTwoColumns: Bool = true
+    /// A notification that closes the open note, for a tab that opens
+    /// another page under it (Vault: a chat from the Messages panel).
+    var closesOn: Notification.Name? = nil
     @ViewBuilder var content: () -> Content
 
     @StateObject private var selection = NoteDetailSelection()
@@ -128,12 +133,18 @@ struct NoteSplitPane<Content: View>: View {
         // A note opened under the previous account would otherwise stay open
         // and redraw for the new one (iPad account switch, Tim 11-04: ~62 ms
         // per switch, and the longest hangs). Closed at once, no slide.
-        .onChange(of: accountSwitches.count) { _, _ in
-            guard !selection.isEmpty else { return }
-            var cut = Transaction()
-            cut.disablesAnimations = true
-            withTransaction(cut) { selection.clear() }
+        .onChange(of: accountSwitches.count) { _, _ in closeNote() }
+        .onReceive(NotificationCenter.default.publisher(for: closesOn ?? NoteSplitMetrics.never)) { _ in
+            closeNote()
         }
+    }
+
+    /// Closes the open note at once, no slide.
+    private func closeNote() {
+        guard !selection.isEmpty else { return }
+        var cut = Transaction()
+        cut.disablesAnimations = true
+        withTransaction(cut) { selection.clear() }
     }
 
     private func setDetailHidden(_ hidden: Bool) {

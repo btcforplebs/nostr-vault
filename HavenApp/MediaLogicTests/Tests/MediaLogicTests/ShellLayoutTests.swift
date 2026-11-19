@@ -93,4 +93,16 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(ShellLayout.foldLeftWidth(windowWidth: w, leadingInset: 24) + 24, w / 2)
         XCTAssertEqual(ShellLayout.foldLeftWidth(windowWidth: 0, leadingInset: 24), 0)
     }
+
+    /// Resizing an iPad window crosses `.phone` and back; the lists stay in
+    /// the split either way, so the tree (and any open sheet) survives
+    /// (iPad parity row 6). iPhones, the Duo included, never split.
+    func testIPadKeepsNoteSplitAcrossWindowSizes() {
+        let slideOver = ShellLayout.pick(isPhone: false, regularWidth: false, window: CGSize(width: 320, height: 1180))
+        let full = ShellLayout.pick(isPhone: false, regularWidth: true, window: CGSize(width: 1180, height: 820))
+        XCTAssertEqual(slideOver, .phone)
+        XCTAssertEqual(full, .padLandscape)
+        XCTAssertTrue(ShellLayout.listsInNoteSplit(isPad: true))
+        XCTAssertFalse(ShellLayout.listsInNoteSplit(isPad: false))
+    }
 }

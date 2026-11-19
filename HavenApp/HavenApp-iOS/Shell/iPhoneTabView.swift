@@ -66,9 +66,11 @@ struct iPhoneTabView: View {
     /// "Your space" on the left half and the app on the right
     /// (`ShellLayout.fold`); closed, it is the phone with the dock as a rail
     /// on the right; open upright, the phone as is. Always the same view
-    /// tree, so rotating, folding or unfolding keeps the tab, its
-    /// scroll position and any sheet open in it (the composer, with its text
-    /// and photos). `horizontalSizeClass` is read before `body` sets every
+    /// tree, so rotating, folding, unfolding or resizing an iPad window
+    /// (Slide Over, Split View) keeps the tab, its scroll position and any
+    /// sheet open in it (the composer, with its text and photos): an iPad
+    /// keeps its lists in the split at every width
+    /// (`ShellLayout.listsInNoteSplit`). `horizontalSizeClass` is read before `body` sets every
     /// screen to compact, so it is the real one.
     private var layout: ShellLayout {
         ShellLayout.pick(
@@ -78,12 +80,15 @@ struct iPhoneTabView: View {
         )
     }
 
-    private var usesNoteSplit: Bool { layout.usesNoteSplit }
+    private var usesNoteSplit: Bool {
+        ShellLayout.listsInNoteSplit(isPad: UIDevice.current.userInterfaceIdiom == .pad)
+    }
 
     /// The tab's list in a `NoteSplitPane` when `usesNoteSplit`, otherwise as is.
     @ViewBuilder
     private func noteSplit<Content: View>(
         _ emptyMessage: String,
+        closesOn: Notification.Name? = nil,
         @ViewBuilder _ content: @escaping () -> Content
     ) -> some View {
         if usesNoteSplit {
@@ -91,6 +96,7 @@ struct iPhoneTabView: View {
                 emptyTitle: "No Note Selected",
                 emptyMessage: emptyMessage,
                 allowsTwoColumns: false,
+                closesOn: closesOn,
                 content: content
             )
         } else {
@@ -334,7 +340,9 @@ struct iPhoneTabView: View {
             VaultTabView {
                 // VaultView brings its own stack on every device; on iPad the
                 // split owns the detail column.
-                noteSplit("Pick a note from the relay to read it here.") {
+                // Opening a chat (Messages panel, a DM alert, the widget)
+                // closes an open note, which would otherwise cover it.
+                noteSplit("Pick a note from the relay to read it here.", closesOn: .havenOpenDMInbox) {
                     VaultView()
                 }
                 // Rebuilt per account, as Profile is: an open chat, its draft
