@@ -29,6 +29,8 @@ extension DMService {
 
         // Switch to new account
         loadedAccountPubkey = newPubkey
+        // The old account's unsent words don't follow you (A5, B9).
+        DMDrafts.shared.keepOnly(account: newPubkey)
         conversations = []
         seenGiftWrapIds.removeAll()
         unreadableGiftWrapIds.removeAll()
