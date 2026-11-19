@@ -6,7 +6,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { pool } from "../src/net/pool.js"
-import { followersOfAmong, warningsFor, cutTags, nuclearUnfollow, undoNuclear, DOUBLE_WARN_AT } from "../src/net/nuclear-unfollow.js"
+import { followersOfAmong, warningsFor, pickedOf, cutTags, nuclearUnfollow, undoNuclear, DOUBLE_WARN_AT } from "../src/net/nuclear-unfollow.js"
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const P = n => n.toString(16).padStart(64, "0")
@@ -122,4 +122,15 @@ test("undo: the backup goes back as your follow list, only while the cut is stil
   assert.ok(back.event.created_at > r.event.created_at)
   const later = list([1], now() + 50)
   await assert.rejects(undoNuclear({ ctx, base: r.base, event: r.event, store: s, ask: async () => ({ events: [later], answered: true }) }), /changed since you looked/)
+})
+
+// Tron #2284 must-fix: the list can shrink after it was drawn (a refreshed follow list no longer follows X, Rebuild, a
+// reload). A tick kept for someone no longer shown must never unfollow them; someone new on the list starts unticked.
+test("who goes: only people on the list now and ticked", () => {
+  const ticked = new Set([P(1), P(2), P(3)]) // all ticked when the list was first drawn
+  assert.deepEqual(pickedOf([P(1), P(2), P(3)], ticked), [P(1), P(2), P(3)])
+  assert.deepEqual(pickedOf([P(1), P(3)], ticked), [P(1), P(3)], "P(2) dropped off the list: not unfollowed")
+  assert.deepEqual(pickedOf([P(1), P(3), P(4)], ticked), [P(1), P(3)], "P(4) new on the list: unticked until ticked")
+  assert.deepEqual(pickedOf(null, ticked), [])
+  assert.deepEqual(pickedOf([P(1)], null), [])
 })

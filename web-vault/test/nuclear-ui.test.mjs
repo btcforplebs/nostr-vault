@@ -40,7 +40,10 @@ test("panel: everyone checked to start (X first when followed), one warning alwa
   assert.match(src, /onClick=\{run\}>Yes, unfollow \{people\(n\)\}/)
   assert.equal((src.match(/onClick=\{run\}/g) ?? []).length, 1, "only the second warning runs it directly")
   // "Backup saved ✓" is shown from nuclearUnfollow's onBackup, which comes before anything is signed.
-  assert.match(src, /nuclearUnfollow\(\{ ctx, target, remove: checked, onBackup: \(\) => setBackedUp\(true\) \}\)/)
+  // Who goes is who's on the list NOW and ticked (pickedOf), never the ticks kept from when it was first drawn (Tron #2284).
+  assert.match(src, /const picked = pickedOf\(everyone, checked\)\n  const n = picked\.length/)
+  assert.match(src, /await unfollow\(\{ ctx, target, remove: new Set\(picked\), onBackup: \(\) => setBackedUp\(true\) \}\)/)
+  assert.doesNotMatch(src, /remove: checked/)
   assert.match(src, /\{backedUp \? "Backup saved ✓" :/)
   assert.match(src, /undoNuclear\(\{ ctx, base: result\.base, event: result\.event \}\)/)
   assert.doesNotMatch(src, /setBlock|setMute|muteList|kind: 10000/, "no mute step")

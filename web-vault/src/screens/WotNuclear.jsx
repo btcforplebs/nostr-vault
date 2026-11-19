@@ -9,15 +9,15 @@ import { AuthorName } from "../components/NoteCard.jsx"
 import { Dialog } from "../components/Moderation.jsx"
 import { getProfile } from "../net/profiles.js"
 import { npubEncode } from "nostr-tools/nip19"
-import { nuclearUnfollow, undoNuclear, warningsFor } from "../net/nuclear-unfollow.js"
+import { nuclearUnfollow, undoNuclear, warningsFor, pickedOf } from "../net/nuclear-unfollow.js"
 if (import.meta.env) { import("../styles/wot.css"); import("../styles/wot-nuclear.css") } // wot.css too: on the desktop the WoT napplet pane has no WotScreen to load it
 
 const nameOf = pk => getProfile(pk)?.name || npubEncode(pk).slice(0, 12) + "…"
 const people = n => `${n.toLocaleString()} ${n === 1 ? "person" : "people"}`
 
 /** `cut`: your follows who follow `target` (null while their lists load); `missing`: follows whose list didn't come
- *  back, so they couldn't be checked. */
-export function NuclearPanel({ ctx, target, cut, missing = 0 }) {
+ *  back, so they couldn't be checked. `unfollow` is net/nuclear-unfollow.js nuclearUnfollow (a test hands in its own). */
+export function NuclearPanel({ ctx, target, cut, missing = 0, unfollow = nuclearUnfollow }) {
   const followsTarget = ctx.account.follows.includes(target)
   // Everyone who would go, X first when you follow them: all checked to start.
   const everyone = cut ? [...(followsTarget ? [target] : []), ...cut] : null
@@ -28,7 +28,9 @@ export function NuclearPanel({ ctx, target, cut, missing = 0 }) {
   const [result, setResult] = useState(null) // { event, base, removed }
   const [undo, setUndo] = useState("") // "" | "working" | "done"
   useEffect(() => { if (everyone && !checked) setChecked(new Set(everyone)) }, [everyone?.join()])
-  const n = checked?.size ?? 0
+  // Only people on the list now and ticked: the count, the warnings and the unfollow all use this, never `checked`.
+  const picked = pickedOf(everyone, checked)
+  const n = picked.length
   const name = nameOf(target)
   const leave = () => { location.hash = `#/profile/${target}` }
 
@@ -41,7 +43,7 @@ export function NuclearPanel({ ctx, target, cut, missing = 0 }) {
   const run = async () => {
     setStep("working"); setErr(""); setBackedUp(false)
     try {
-      const r = await nuclearUnfollow({ ctx, target, remove: checked, onBackup: () => setBackedUp(true) })
+      const r = await unfollow({ ctx, target, remove: new Set(picked), onBackup: () => setBackedUp(true) })
       setResult(r); setStep("done")
       await ctx.reloadAccount?.()
     } catch (e) { setErr(String(e?.message ?? e)); setStep("list") }

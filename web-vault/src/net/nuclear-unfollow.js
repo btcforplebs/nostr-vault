@@ -20,6 +20,11 @@ export function followersOfAmong(target, follows, lists, me) {
   return follows.filter(pk => pk !== target && pk !== me && followsOf(lists.get(pk)).includes(target))
 }
 
+/** Who goes: the people on the list as it is now (`shown`) whose box is ticked. `checked` holds ticks from when the list
+ *  was first drawn; the list can shrink after (a refreshed follow list no longer follows X, Rebuild, a reload), and a
+ *  tick for someone no longer shown must never unfollow them (Tron, #2284). Someone new on the list starts unticked. */
+export const pickedOf = (shown, checked) => (shown ?? []).filter(pk => !!checked?.has(pk))
+
 /** The warnings before publishing: always one, and a second from DOUBLE_WARN_AT people. */
 export const warningsFor = n => (n >= DOUBLE_WARN_AT ? 2 : 1)
 
