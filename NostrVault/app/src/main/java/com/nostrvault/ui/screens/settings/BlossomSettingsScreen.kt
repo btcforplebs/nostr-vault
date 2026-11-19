@@ -237,8 +237,10 @@ fun BlossomSettingsScreen(
                         }
                     }
                 }
-                val desktop = healthState.servers.firstOrNull { it.url == macRelayHttps }
-                ServerHealthLine(desktop, "Not checked yet") { health.test(macRelayHttps!!) }
+                // Read once: the desktop can unlink before the next redraw (Tron).
+                val desktopUrl = macRelayHttps.orEmpty()
+                val desktop = healthState.servers.firstOrNull { it.url == desktopUrl }
+                ServerHealthLine(desktop, "Not checked yet") { health.test(desktopUrl) }
             }
 
             // Every server plain http: uploads and their auth headers go out unencrypted (Tron #1451).
