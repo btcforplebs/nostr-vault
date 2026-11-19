@@ -602,13 +602,7 @@ struct VaultDashboardView: View {
             SettingLink(icon: "server.rack", title: "Relay details", value: nil) {
                 RelayDetailsPage().settingsPage("Relay details")
             }
-            #if os(macOS)
-            // iPhone/iPad: Mesh is on the Profile tab, beside Settings.
-            DashboardDivider()
-            SettingLink(icon: "point.3.filled.connected.trianglepath.dotted", title: "Mesh settings", value: nil) {
-                MacFipsMeshSettingsView().settingsPage("Mesh")
-            }
-            #endif
+            // Mesh settings is in Your Devices on every platform (YourDevicesSection), its one home here.
         }
     }
 

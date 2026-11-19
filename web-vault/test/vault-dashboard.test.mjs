@@ -28,6 +28,8 @@ const { headerDetail, storageParts } = await import("../src/components/dashboard
 const { SettingsSection } = await import("../src/components/dashboard/SettingsSection.jsx")
 const { KeepFullSection } = await import("../src/components/dashboard/KeepFullSection.jsx")
 const { uptimeLine } = await import("../src/components/dashboard/StatusCard.jsx")
+const { AdvancedSection } = await import("../src/components/dashboard/AdvancedSection.jsx")
+const { YourDevicesView } = await import("../src/components/dashboard/YourDevicesSection.jsx")
 
 const ME = "a".repeat(64)
 const memory = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) } }
@@ -114,6 +116,16 @@ test("Who can reach you and Vault settings: the phone's words, no Mac or relay-l
   assert.deepEqual([0, 1, 5].map(blockedDetail), ["Nobody blocked.", "1 person blocked.", "5 people blocked."])
   const set = rows(SettingsSection({ relays: 6, mediaServers: 2 }))
   assert.deepEqual(set.map(x => [x.title, x.value]), [["Relays", "6"], ["Who Can Reach You", "2 hops"], ["Media Servers", "2"]])
+})
+
+test("one home each: Mesh settings in Your devices, Media Servers in Vault settings, Advanced is Relay details only", () => {
+  assert.deepEqual(rows(AdvancedSection({ startedInMs: 12 })).map(x => x.title), ["Relay details"])
+  for (const data of [null, { devices: [], adverts: new Map(), checked: true }]) {
+    const mesh = rows(YourDevicesView({ data, rows: [], now: 0, onPair: () => {} })).filter(x => x.title === "Mesh settings")
+    assert.deepEqual(mesh.map(x => x.href), ["#/relay"], "one Mesh row, loading or not")
+  }
+  const media = rows(SettingsSection({})).filter(x => /media servers/i.test(x.title))
+  assert.deepEqual(media.map(x => x.href), ["#/settings/media-servers"])
 })
 
 test("Keep it full: import notes since its start, media backup and notes export, no Import media (and the page says why)", () => {
