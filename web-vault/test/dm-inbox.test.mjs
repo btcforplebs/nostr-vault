@@ -33,3 +33,10 @@ test("their bubbles carry their face (DMThreadView), and a stranger's picture st
   assert.match(conv, /return m\.from === me \? bubble :/, "your own bubbles have no face")
   assert.match(conv, /const follows = ctx\.account\.follows\.includes\(peer\)/)
 })
+
+// B12 (Messages UX check 2026-11-18): an unread row is read as its name, message and time with the count added,
+// not as just "3 unread" (an aria-label on the link replaced everything inside it).
+test("inbox: an unread row's count is added for screen readers, never instead of the row", () => {
+  assert.doesNotMatch(src, /aria-label=\{unread \? `\$\{unread\} unread`/)
+  assert.match(src, /<AuthorName pubkey=\{c\.peer\} \/>\{unread > 0 && <span class="sr-only">, \{unread\} unread<\/span>\}/)
+})
