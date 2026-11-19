@@ -1,8 +1,8 @@
 #!/bin/sh
 # Build Nostr Vault for Linux, native: the nostr-vault .deb, for each arch asked for (default: this machine's).
 #   linux/native/build.sh [arm64] [amd64]          from the repo root or anywhere
-# Out: linux/native/out/nostr-vault_<version>_<arch>.deb and nostr-vault-linux.json (the version and each .deb's
-# sha256: install.sh checks a download against it).
+# Out: linux/native/out/nostr-vault_<version>_<arch>.deb (and the .rpm and Arch package with NV_PKG_FORMATS) and
+# nostr-vault-linux.json (the version and each package's sha256: install.sh checks a download against it).
 #
 # Build on Debian 12 (bookworm), arm64 or amd64: its glibc (2.36) is the oldest the packages then need, so they run
 # on Raspberry Pi OS 12, Debian 12+ and Ubuntu 22.04+ (measured: glibc 2.34; package.sh reads the floor from the
@@ -72,7 +72,9 @@ done
 (cd "$out" && python3 -I - "$version" <<'PY'
 import hashlib, json, os, sys
 v = sys.argv[1]
-files = {f: hashlib.sha256(open(f, "rb").read()).hexdigest() for f in sorted(os.listdir(".")) if f.endswith(".deb") and f"_{v}_" in f}
+# Every package of this version: the .deb, and the .rpm and Arch package when NV_PKG_FORMATS made them.
+mine = lambda f: (f.endswith(".deb") and f"_{v}_" in f) or ((f.endswith(".rpm") or f.endswith(".pkg.tar.zst")) and f"-{v}-1" in f)
+files = {f: hashlib.sha256(open(f, "rb").read()).hexdigest() for f in sorted(os.listdir(".")) if mine(f)}
 json.dump({"version": v, "files": files}, open("nostr-vault-linux.json", "w"), indent=1)
 print("\n".join(f"{h}  {f}" for f, h in files.items()))
 PY
