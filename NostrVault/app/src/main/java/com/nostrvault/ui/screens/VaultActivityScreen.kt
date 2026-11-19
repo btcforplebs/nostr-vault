@@ -218,6 +218,12 @@ internal fun VaultActivityScreen(
     LaunchedEffect(Unit) {
         TabReselect.of(Screen.Dashboard).collect { listState.animateScrollToItem(0) }
     }
+    // A Vault triple-tap: this list, at its top, even if it only just opened.
+    LaunchedEffect(com.nostrvault.ui.navigation.VaultTopRequest.pending) {
+        if (!com.nostrvault.ui.navigation.VaultTopRequest.pending) return@LaunchedEffect
+        com.nostrvault.ui.navigation.VaultTopRequest.pending = false
+        listState.animateScrollToItem(0)
+    }
     // New lines (a refresh on coming back to the tab, a tick) land above the
     // top line: show them rather than keep the old top line in place.
     RevealNewestEffect(listState) { rows.map { if (others) it.key else it.line.id } }

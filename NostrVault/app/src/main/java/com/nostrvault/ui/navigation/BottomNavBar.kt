@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
@@ -676,4 +677,41 @@ internal fun navBarAccounts(
         active?.pictureURL,
         active?.bestName,
     )
+}
+
+/**
+ * Quick taps on one tab (Logen 26353911). Tapping the tab you are on scrolls
+ * its list to the top, as before; a third tap in a row, each within
+ * [TAP_GAP_MS] of the last, is a triple-tap: Feed goes to the Following feed
+ * and Vault to its main page, both at the top. The count starts over after a
+ * triple-tap, after a pause, or on another tab.
+ */
+internal class TabTapCounter(private val gapMs: Long = TAP_GAP_MS) {
+    private var last: Screen? = null
+    private var at = 0L
+    private var count = 0
+
+    /** Counts a tap on [screen] at [nowMs]; true when it makes a triple-tap. */
+    fun tap(screen: Screen, nowMs: Long): Boolean {
+        count = if (screen == last && nowMs - at <= gapMs) count + 1 else 1
+        last = screen
+        at = nowMs
+        if (count < 3) return false
+        count = 0
+        return true
+    }
+
+    companion object {
+        /** Longest pause between two taps of one triple-tap. */
+        const val TAP_GAP_MS = 400L
+    }
+}
+
+/**
+ * A Vault triple-tap's "and at the top": the main Vault list may not be on
+ * screen yet when it is asked for (another page was showing), so the request
+ * waits here until that list takes it.
+ */
+internal object VaultTopRequest {
+    var pending by mutableStateOf(false)
 }
