@@ -271,17 +271,25 @@ jobs:
           ./vm 'curl -fsS http://127.0.0.1:8080/ | grep -qi "<html" && echo "web app: ok"'
           ip=$(./vm "hostname -I | awk '{print \$1}'"); echo "VM address $ip"; test -n "$ip"
           for a in 127.0.0.1 "$ip"; do
-            ./vm "curl -s -i -N --max-time 3 -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' http://$a:8080/ | head -1" | tee ws.txt || true
-            grep -q ' 101 ' ws.txt
+            # Up to a minute: havend answers 503 until the engine behind it takes connections.
+            for i in $(seq 1 30); do
+              ./vm "curl -s -i -N --max-time 3 -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' http://$a:8080/ | head -1" >ws.txt || true
+              grep -q ' 101 ' ws.txt && break; sleep 2
+            done
+            echo "relay websocket on $a: $(cat ws.txt)"; grep -q ' 101 ' ws.txt
           done
           # The mesh: its door (havend, loopback 8081) answers, and nv-mesh has its UDP port open and its npub made.
           ./vm 'code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://127.0.0.1:8081/); echo "mesh door: $code"; [ "$code" != 000 ]'
           ./vm 'sudo ss -Hlunp | grep -q "nv-mesh" && echo "mesh UDP: ok"'
           ./vm 'sudo cat /var/lib/nostr-vault/mesh/npub'
+      - name: Run as an ordinary service (unconfined_service_t), not in systemd's own domain (init_t)
+        run: |
+          ./vm 'sudo semodule -l | grep -x nostr-vault; ls -Z /usr/lib/nostr-vault; ps -eZ | grep -E "havend|haven-engine|nv-mesh"' | tee dom.txt
+          test "$(grep -cE ':unconfined_service_t:.* (havend|haven-engine|nv-mesh)$' dom.txt)" = 3
+          test "$(grep -c 'object_r:bin_t' dom.txt)" = 4
       - name: No SELinux denials
         if: always()
         run: |
-          ./vm 'ps -eZ | grep -E "havend|haven-engine|nv-mesh" || true; sudo ls -Z /usr/lib/nostr-vault /var/lib/nostr-vault' || true
           # ausearch exits 1 with "<no matches>" when there are none: empty is the pass.
           ./vm 'sudo ausearch -m AVC,USER_AVC,SELINUX_ERR -i 2>&1' | tee avc.txt || true
           if grep -q 'type=' avc.txt; then echo "SELinux denied something (above)"; exit 1; fi
