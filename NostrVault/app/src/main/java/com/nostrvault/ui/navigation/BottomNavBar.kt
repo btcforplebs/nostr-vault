@@ -650,3 +650,30 @@ private fun Modifier.accountHold(
             customActions = hold.actions { currentHold }
         }
 }
+
+/**
+ * What the nav host reads from the profile map: the account roster and the
+ * active account's picture and name. Equal after a write to anyone else's
+ * profile, so the host's `derivedStateOf` of it lets the host and this bar
+ * skip that write. Before, the host read the whole map and redrew on every
+ * profile batch, an in-app alert's author among them (11/19).
+ */
+internal data class NavBarAccounts(
+    val accounts: List<com.nostrvault.ui.components.AccountInfo>,
+    val avatarUrl: String?,
+    val displayName: String?,
+)
+
+internal fun navBarAccounts(
+    config: com.nostrvault.relay.HavenConfig,
+    profiles: Map<String, com.nostrvault.data.model.FeedProfile>,
+    unread: com.nostrvault.data.model.AccountUnread,
+    activeHex: String,
+): NavBarAccounts {
+    val active = profiles[activeHex]
+    return NavBarAccounts(
+        com.nostrvault.ui.components.buildAccountInfos(config, profiles, includeWhitelisted = true, unread = unread),
+        active?.pictureURL,
+        active?.bestName,
+    )
+}
