@@ -32,9 +32,14 @@ func copyReq(method, target string, body io.Reader) *http.Request {
 	return r
 }
 
-// startProofFor: the owner's start proof naming device ("" names none).
+// startProofFor: the start proof of the owner's device named device, signed
+// by that device's paired mesh key (copyv2_device_keys_test.go). Anyone else
+// signs it themselves, naming device.
 func startProofFor(t *testing.T, k testKey, device string) string {
 	t.Helper()
+	if k.pk == config.OwnerPubKey {
+		return copyDeviceProof(t, device, nostr.Now(), "/copy/v2/start")
+	}
 	tags := nostr.Tags{{"u", "http://127.0.0.1:9/copy/v2/start"}, {"method", "POST"}}
 	if device != "" {
 		tags = append(tags, nostr.Tag{"device", device})
@@ -123,16 +128,18 @@ func TestCopyTokenPerDeviceAndRevoke(t *testing.T) {
 	owner := newTestKey(t)
 	openCopyVault(t, owner.pk)
 	s := newTestCopyServer(failingBuild)
-	if code, _, _ := startAs(t, s, startProofFor(t, owner, "")); code != 401 {
-		t.Errorf("no device: %d, want 401", code)
+	// The account key starts nothing, whatever device it names.
+	if code, _, _ := startAs(t, s, accountStartProof(t, owner, "")); code != 403 {
+		t.Errorf("account key, no device: %d, want 403", code)
 	}
-	if code, _, _ := startAs(t, s, startProofFor(t, owner, "not-a-key")); code != 401 {
-		t.Errorf("bad device: %d, want 401", code)
+	if code, _, _ := startAs(t, s, accountStartProof(t, owner, testDevice)); code != 403 {
+		t.Errorf("account key, a device: %d, want 403", code)
 	}
 	other := strings.Repeat("c2", 32)
 	_, id1, tok1 := startAs(t, s, startProofFor(t, owner, testDevice))
-	npub, _ := nip19.EncodePublicKey(testDevice)
-	_, id2, tok2 := startAs(t, s, startProofFor(t, owner, npub)) // same device, by npub
+	// The same device again: its token replaces the first. Revoked by npub below.
+	npub, _ := nip19.EncodePublicKey(copyDeviceKey(t, testDevice).pk)
+	_, id2, tok2 := startAs(t, s, startProofFor(t, owner, testDevice))
 	_, id3, tok3 := startAs(t, s, startProofFor(t, owner, other))
 	if c := getWith(s, "/copy/v2/"+id1, tok1, "", nil); c != 401 {
 		t.Errorf("replaced token: %d, want 401", c)
@@ -143,7 +150,7 @@ func TestCopyTokenPerDeviceAndRevoke(t *testing.T) {
 	if !s.revoke(npub) {
 		t.Fatal("revoke: nothing held")
 	}
-	if s.revoke(testDevice) {
+	if s.revoke(copyDeviceKey(t, testDevice).pk) {
 		t.Error("second revoke still found a token")
 	}
 	if c := getWith(s, "/copy/v2/"+id2, tok2, "", nil); c != 401 {
