@@ -1,0 +1,6 @@
+.build/
+shared-modules/
+.flatpak-builder/
+builddir/
+repo/
+*.flatpak

@@ -1,0 +1,66 @@
+# Nostr Vault for Linux desktops (Steam Deck Desktop Mode, Fedora Silverblue, Bazzite, any distro with Flatpak).
+# The window runs the vault while you're logged in (linux/native/desktop/nv_flatpak.py); the .deb stays for Pis and
+# servers that run it at boot. Built with no network: gen-sources.sh first lays out the source tree and the Go and npm
+# sources (from go.sum and the package-lock.json files, each with its hash) in .build/. See README.md.
+# The mesh (nv-mesh) is not in it yet: its key must stay apart from the vault, which is reviewed on its own.
+app-id: app.nostrvault.Desktop
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+  - org.freedesktop.Sdk.Extension.node24
+command: nostr-vault-desktop
+finish-args:
+  - --share=network # it is a relay: the vault's port on the LAN, and the owner's relays
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri # WebKitGTK
+  - --talk-name=org.kde.StatusNotifierWatcher # the tray
+  - --env=NV_DESKTOP_SHARE=/app/share/nostr-vault/desktop
+modules:
+  # flathub/shared-modules' libayatana-appindicator-gtk3.json (pinned in gen-sources.sh), with CMAKE_INSTALL_LIBDIR=lib:
+  # GNOME 51's CMake would put it in /app/lib64, which nothing searches.
+  - ayatana-appindicator.json
+
+  - name: nostr-vault
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/golang/bin:/usr/lib/sdk/node24/bin
+      env:
+        CGO_ENABLED: '0'
+        GOTOOLCHAIN: local
+        GOFLAGS: -mod=mod -modcacherw # writable cache: flatpak-builder deletes the build dir after
+        GOPROXY: file:///run/build/nostr-vault/gomod
+        GOSUMDB: 'off' # go.sum still checks every module's hash
+        GOMODCACHE: /run/build/nostr-vault/.gomodcache
+        GOCACHE: /run/build/nostr-vault/.gocache
+        XDG_CACHE_HOME: /run/build/nostr-vault/flatpak-node/cache
+        npm_config_cache: /run/build/nostr-vault/flatpak-node/npm-cache
+        npm_config_offline: 'true'
+    build-commands:
+      # havend and the engine: pure Go, the engine with -tags nolmdb (Badger only), as linux/native/build.sh.
+      - . ./nv-version.env && cd haven-go && go build -trimpath -ldflags "-s -w -X 'main.version=$NV_VERSION ($NV_COMMIT)'" -o ../out/havend ./cmd/havend
+      - cd haven-go && go build -trimpath -ldflags "-s -w" -tags nolmdb -o ../out/haven-engine .
+      # The web app: the box build, as linux/native/build.sh.
+      - web-relay/tools/build-haven-wasm.sh
+      - cd web-relay && npm ci --offline --ignore-scripts --no-audit --no-fund
+      - . ./nv-version.env && cd web-vault && npm ci --offline --ignore-scripts --no-audit --no-fund && NV_BOX=1 NV_COMMIT=$NV_COMMIT npm run build
+      - test -s web-vault/dist/index.html
+      # Install.
+      - install -Dm755 out/havend /app/lib/nostr-vault/havend
+      - install -Dm755 out/haven-engine /app/lib/nostr-vault/haven-engine
+      - mkdir -p /app/share/nostr-vault && cp -R web-vault/dist /app/share/nostr-vault/web
+      - install -Dm755 linux/native/desktop/nostr-vault-desktop /app/bin/nostr-vault-desktop
+      - install -Dm644 -t /app/share/nostr-vault/desktop linux/native/desktop/nv_flatpak.py linux/native/desktop/setup.html
+      - install -Dm644 linux/native/desktop/nostr-vault-tray.svg /app/share/icons/hicolor/scalable/apps/app.nostrvault.Desktop-tray.svg
+      - for s in 128 256 512; do install -Dm644 icons/icon_${s}x${s}.png /app/share/icons/hicolor/${s}x${s}/apps/app.nostrvault.Desktop.png; done
+      - sed -e 's/^Icon=nostr-vault$/Icon=app.nostrvault.Desktop/' linux/native/desktop/app.nostrvault.Desktop.desktop > app.desktop && install -Dm644 app.desktop /app/share/applications/app.nostrvault.Desktop.desktop
+      - install -Dm644 linux/flatpak/app.nostrvault.Desktop.metainfo.xml /app/share/metainfo/app.nostrvault.Desktop.metainfo.xml
+    sources:
+      - type: dir
+        path: .build/src
+      - .build/go-sources.json
+      - .build/npm-relay-sources.json
+      - .build/npm-vault-sources.json

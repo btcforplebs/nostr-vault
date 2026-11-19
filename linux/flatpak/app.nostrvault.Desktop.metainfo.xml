@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>app.nostrvault.Desktop</id>
+  <name>Nostr Vault</name>
+  <summary>Your own Nostr relay and media vault, on your computer</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="app.nostrvault">
+    <name>Nostr Vault</name>
+  </developer>
+  <description>
+    <p>
+      Nostr Vault keeps your notes, messages and media on a machine you own. This app runs the vault while you are
+      logged in and shows it in a window: your feed, your vault, your devices and settings. Phones on your network
+      reach it on the vault's port.
+    </p>
+    <p>
+      The vault never holds your Nostr secret key. Signing in is done the same way as in any browser.
+    </p>
+  </description>
+  <launchable type="desktop-id">app.nostrvault.Desktop.desktop</launchable>
+  <url type="homepage">https://github.com/btcforplebs/nostr-vault</url>
+  <url type="bugtracker">https://github.com/btcforplebs/nostr-vault/issues</url>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+  <releases>
+    <release version="3.2.3" date="2026-11-19"/>
+  </releases>
+</component>

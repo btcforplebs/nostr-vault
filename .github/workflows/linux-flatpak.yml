@@ -1,0 +1,70 @@
+name: Linux Flatpak
+
+# Builds the Nostr Vault Flatpak (linux/flatpak) for x86_64 and aarch64, each on its own runner, with no network in
+# the build itself (gen-sources.sh lays out every source first). Then installs the bundle and runs the window's
+# Flatpak code inside it (test/smoke.py). Publishes nothing: the .flatpak files are run artifacts (14 days).
+on:
+  workflow_dispatch:
+  push:
+    branches: ["tao/flatpak*"]
+  pull_request:
+    paths:
+      - "linux/flatpak/**"
+      - "linux/native/desktop/**"
+      - ".github/workflows/linux-flatpak.yml"
+
+# Read-only token: the build runs npm and Go tooling.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the version is the commit count, as the .deb's
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: haven-go/go.mod
+          cache: false
+      - name: Tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends flatpak flatpak-builder elfutils librsvg2-common xvfb # eu-strip and the SVG loader icon checks use, both run on the host
+          # Ubuntu 24.04 blocks the unprivileged user namespaces bubblewrap needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          pipx install "git+https://github.com/flatpak/flatpak-builder-tools.git@9d86d336a39b9af38b86f114b6ce5820fe260f91#subdirectory=node"
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - name: Sources
+        run: linux/flatpak/gen-sources.sh
+      - name: Build (offline)
+        working-directory: linux/flatpak
+        run: |
+          flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse --force-clean --sandbox \
+            --repo=repo --default-branch=stable builddir app.nostrvault.Desktop.yml
+          . .build/src/nv-version.env
+          echo "NV_VERSION=$NV_VERSION" >> "$GITHUB_ENV"
+          flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            repo "nostr-vault-$NV_VERSION-${{ matrix.arch }}.flatpak" app.nostrvault.Desktop stable
+          ls -l *.flatpak
+      - name: Install and smoke test
+        working-directory: linux/flatpak
+        run: |
+          flatpak install --user -y --noninteractive nostr-vault-*.flatpak
+          flatpak info --user app.nostrvault.Desktop
+          (cd ../native/test/keytool && go build -o "$RUNNER_TEMP/keytool" .)
+          npub=$("$RUNNER_TEMP/keytool" gen | cut -d' ' -f2)
+          xvfb-run -a flatpak run --env=NV_TEST_NPUB="$npub" --command=python3 app.nostrvault.Desktop -I - < test/smoke.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nostr-vault-flatpak-${{ matrix.arch }}
+          path: linux/flatpak/*.flatpak
+          retention-days: 14
