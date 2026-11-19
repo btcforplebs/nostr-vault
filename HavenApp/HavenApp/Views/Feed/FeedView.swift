@@ -7,7 +7,10 @@ struct FeedView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
-    @ObservedObject var pendingManager = PendingPostManager.shared
+    /// Not observed: the manager publishes every countdown tick (10 a
+    /// second), and the whole feed would redraw for each. Only the pill
+    /// watches it; the Mac's edit request comes in by `onReceive`.
+    var pendingManager: PendingPostManager { .shared }
     @ObservedObject var tutorialCenter = TutorialCenter.shared
     @State var composeContext: ComposeContext?
     /// The diVine, article or recipe composer, when the post button opens one.

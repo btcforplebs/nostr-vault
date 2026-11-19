@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 extension FeedView {
     /// The feed, with the music mini player docked at the bottom where
@@ -130,7 +131,10 @@ extension FeedView {
         }
         #if !os(iOS)
         // iOS reopens the composer from SceneDelegate, over any open sheet.
-        .onChange(of: pendingManager.editRequest?.id) { _, _ in consumeEditRequest() }
+        // Delivered on the next main-queue turn: @Published sends before the
+        // value is stored, and consumeEditRequest reads the stored value.
+        .onReceive(PendingPostManager.shared.$editRequest.map { $0?.id }.removeDuplicates()
+            .receive(on: DispatchQueue.main)) { _ in consumeEditRequest() }
         // Edit tapped on another tab: MenuBarView switches to Feed, and the
         // request is waiting when this view appears (onChange won't fire).
         .onAppear { consumeEditRequest() }
