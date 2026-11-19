@@ -156,8 +156,8 @@ extension ComposeView {
 }
 
 extension ComposeView {
-    /// The account this composer writes as (hex), so a switch while typing
-    /// never moves the draft to another account.
+    /// The account this composer writes as (hex). A switch while typing
+    /// moves the draft with it to the new account.
     var draftAuthorHex: String? {
         guard let npub = postAsPicked, let hex = Bech32.decode(npub)?.hexString, !hex.isEmpty else { return nil }
         return hex
