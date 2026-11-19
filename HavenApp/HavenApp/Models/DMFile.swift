@@ -33,7 +33,8 @@ enum DMFile {
         case "video/quicktime": return "mov"
         case "video/webm": return "webm"
         case let m where m.hasPrefix("video/"): return "mp4"
-        default: return "bin"
+        // A PDF and other files keep their own extension, so Quick Look opens them (B11).
+        default: return DMFileKind.fileExtension(mime) ?? "bin"
         }
     }
 
