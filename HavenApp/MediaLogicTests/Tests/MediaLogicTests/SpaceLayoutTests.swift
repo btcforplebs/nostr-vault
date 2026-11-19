@@ -14,11 +14,20 @@ final class SpaceLayoutTests: XCTestCase {
 
     private func ids(_ layout: SpaceLayout) -> [String] { layout.pins.map(\.id) }
 
+    /// Every panel on: a layout saved before the 2026-11-19 default, already
+    /// through its one-time switch-off (marker set).
+    private func allOn(_ ids: [String]) -> SpaceLayout {
+        var layout = SpaceLayout.defaultLayout(panelIds: ids)
+        layout.panels = ids.map { SpaceLayout.Panel.make($0) }
+        return layout
+    }
+
     func testGarbageGivesTheDefault() {
         let layout = parse("not json")!
         XCTAssertEqual(layout.pins.map(\.id), SpaceLayout.allSections.map { "section:\($0)" })
         XCTAssertEqual(layout.panels.map(\.id), panelIds)
-        XCTAssertTrue(layout.panels.allSatisfy { $0.on && $0.open })
+        XCTAssertTrue(layout.panels.allSatisfy { $0.open })
+        XCTAssertEqual(layout.panels.filter(\.on).map(\.id), ["live-vault"])
         XCTAssertEqual(layout.at, 0)
     }
 
@@ -140,7 +149,7 @@ final class SpaceLayoutTests: XCTestCase {
     }
 
     func testPanelEditsMoveAmongDrawnOnly() {
-        var layout = SpaceLayout.defaultLayout(panelIds: panelIds)
+        var layout = allOn(panelIds)
         layout = layout.settingPanel("wot-mini", on: false, at: 1)
         XCTAssertEqual(layout.hiddenPanels(panelIds), ["wot-mini"])
         // messages moves up past the hidden wot-mini to the top of the drawn ones.
@@ -151,7 +160,8 @@ final class SpaceLayoutTests: XCTestCase {
         XCTAssertFalse(layout.panels.first { $0.id == "messages" }!.open)
         let reset = layout.resettingPanels(panelIds: panelIds, at: 5)
         XCTAssertEqual(reset.panels.map(\.id), panelIds)
-        XCTAssertTrue(reset.panels.allSatisfy { $0.on && $0.open })
+        XCTAssertTrue(reset.panels.allSatisfy { $0.open })
+        XCTAssertEqual(reset.panels, SpaceLayout.defaultPanels(panelIds), "reset gives the new default: wot-mini and messages off")
     }
 
     /// The iPad column draws only its three widgets out of the account's six; up
@@ -159,12 +169,49 @@ final class SpaceLayoutTests: XCTestCase {
     func testMovingAmongASubsetSkipsPanelsThatScreenHides() {
         let all = ["live-vault", "wot-mini", "messages", "my-devices", "live-now", "on-this-day"]
         let pad = ["my-devices", "live-now", "on-this-day"]
-        let layout = SpaceLayout.defaultLayout(panelIds: all)
+        let layout = allOn(all)
         XCTAssertEqual(layout.movingPanel("my-devices", by: -1, ids: pad, at: 1), layout, "already the iPad's top")
         XCTAssertNotEqual(layout.movingPanel("my-devices", by: -1, ids: all, at: 1), layout, "with all six it would swap with Messages")
         let moved = layout.movingPanel("on-this-day", by: -1, ids: pad, at: 2)
         XCTAssertEqual(moved.shownPanels(pad).map(\.id), ["my-devices", "on-this-day", "live-now"])
         XCTAssertEqual(moved.shownPanels(all).prefix(3).map(\.id), ["live-vault", "wot-mini", "messages"], "the web's panels untouched")
+    }
+
+    /// Logen 2026-11-19: Live Vault, Live now and On this day on; Web of Trust,
+    /// Messages and My devices off but offered by "+ add".
+    func testDefaultShowsThreeAndOffersTheOtherThree() {
+        let all = ["live-vault", "wot-mini", "messages", "my-devices", "live-now", "on-this-day"]
+        let layout = SpaceLayout.defaultLayout(panelIds: all)
+        XCTAssertEqual(layout.shownPanels(all).map(\.id), ["live-vault", "live-now", "on-this-day"])
+        XCTAssertEqual(layout.hiddenPanels(all), ["wot-mini", "messages", "my-devices"])
+        XCTAssertEqual(layout.extra["defaults"], .number(2))
+        let reset = layout.settingPanel("messages", on: true, at: 1).resettingPanels(panelIds: all, at: 2)
+        XCTAssertEqual(reset.shownPanels(all).map(\.id), ["live-vault", "live-now", "on-this-day"])
+    }
+
+    /// A layout saved under the old all-on default has the three switched off
+    /// once (marker `defaults: 2`, `v` and `at` unchanged); after that they stay
+    /// as the user sets them.
+    func testOldLayoutSwitchesTheThreeOffOnce() {
+        let all = ["live-vault", "wot-mini", "messages", "my-devices", "live-now", "on-this-day"]
+        let panels = (all + ["zaps-in"]).map { #"{"id":"\#($0)","on":true,"open":true}"# }.joined(separator: ",")
+        let old = SpaceLayout.decode(Data(#"{"v":1,"at":40,"theme":1,"pins":[],"panels":[\#(panels)]}"#.utf8),
+                                     sections: sections, panelIds: all, now: 1_000)!
+        XCTAssertEqual(old.shownPanels(all).map(\.id), ["live-vault", "live-now", "on-this-day"])
+        XCTAssertTrue(old.panels.first { $0.id == "zaps-in" }!.on, "only the three are touched")
+        XCTAssertEqual(old.at, 40, "the switch-off is not an edit")
+        XCTAssertEqual(old.extra["defaults"], .number(2))
+        XCTAssertEqual(old.extra["theme"], .number(1))
+        guard case .object(let top) = old.json else { return XCTFail("not an object") }
+        XCTAssertEqual(top["v"], .number(1), "v stays 1: an older app reads a higher v as a newer format")
+        // Messages added back stays on after a save and read.
+        let edited = old.settingPanel("messages", on: true, at: 41)
+        let back = SpaceLayout.decode(edited.encoded(), sections: sections, panelIds: all, now: 1_000)!
+        XCTAssertEqual(back.shownPanels(all).map(\.id), ["live-vault", "messages", "live-now", "on-this-day"])
+        // A panel missing from a marked layout still arrives on.
+        let missing = SpaceLayout.decode(Data(#"{"v":1,"defaults":2,"panels":[{"id":"live-vault"}]}"#.utf8),
+                                         sections: sections, panelIds: all)!
+        XCTAssertTrue(missing.panels.first { $0.id == "messages" }!.on)
     }
 
     func testNewerAtWinsAndATieKeepsTheDevice() {

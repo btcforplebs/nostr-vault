@@ -106,8 +106,22 @@ struct SpaceLayout: Equatable {
 
     // MARK: Defaults
 
+    /// The panels that start off (Logen 2026-11-19): in the list, so "+ add"
+    /// offers them, but not drawn until added.
+    static let defaultOff: Set<String> = ["wot-mini", "messages", "my-devices"]
+    /// The `defaults` marker of a layout that has had `defaultOff` applied
+    /// once. Not `v`: an older app reads a higher `v` as a newer format and
+    /// draws its own default instead (docs "Default panels").
+    static let defaultsVersion = 2
+
+    /// The default panels: every panel in order, open, shown unless it is in `defaultOff`.
+    static func defaultPanels(_ panelIds: [String]) -> [Panel] {
+        panelIds.map { Panel.make($0, on: !defaultOff.contains($0)) }
+    }
+
     static func defaultLayout(panelIds: [String], at: Int64 = 0) -> SpaceLayout {
-        SpaceLayout(at: at, pins: allSections.map(Pin.section), panels: panelIds.map { Panel.make($0) })
+        SpaceLayout(at: at, pins: allSections.map(Pin.section), panels: defaultPanels(panelIds),
+                    extra: ["defaults": .number(Double(defaultsVersion))])
     }
 
     // MARK: Normalise
@@ -163,6 +177,9 @@ struct SpaceLayout: Equatable {
     /// Any saved value -> a clean layout against the sections and panels this
     /// app has (docs/SPACE_LAYOUT.md, "Normalising"). Returns nil for a
     /// layout from a newer format (`v` above ours): leave that one alone.
+    /// A layout without `defaults: 2` (saved before the default changed) has
+    /// the `defaultOff` panels switched off once and gets the marker; `at`
+    /// stays as it was, so this is not an edit.
     /// Numbers are checked before they are converted: a huge one (1e300)
     /// traps a Double-to-Int conversion, and this runs on every launch.
     static func normalize(_ value: JSONValue?, sections: [String], panelIds: [String],
@@ -221,6 +238,10 @@ struct SpaceLayout: Equatable {
 
         var extra = top
         for key in ["v", "at", "pins", "panels"] { extra[key] = nil }
+        if !((extra["defaults"]?.number ?? 0) >= Double(defaultsVersion)) {
+            for i in panels.indices where defaultOff.contains(panels[i].id) { panels[i].on = false }
+            extra["defaults"] = .number(Double(defaultsVersion))
+        }
         let at = clampedAt(top["at"]?.number, now: now)
         return SpaceLayout(at: at, pins: pins, panels: panels, extra: extra)
     }
@@ -389,7 +410,7 @@ struct SpaceLayout: Equatable {
     func resettingPanels(panelIds: [String], at: Int64) -> SpaceLayout {
         var next = self
         let unknown = panels.filter { !panelIds.contains($0.id) }
-        next.panels = panelIds.map { Panel.make($0) } + unknown
+        next.panels = Self.defaultPanels(panelIds) + unknown
         next.at = at
         return next
     }
