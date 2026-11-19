@@ -29,6 +29,7 @@ data class ZapNotification(
             ZapStatus.SENDING -> 0L
             ZapStatus.SUCCESS -> 3_000L
             is ZapStatus.FAILED -> 5_000L
+            is ZapStatus.PENDING -> 6_000L
         }
 }
 
@@ -36,6 +37,8 @@ sealed class ZapStatus {
     data object SENDING : ZapStatus()
     data object SUCCESS : ZapStatus()
     data class FAILED(val message: String) : ZapStatus()
+    /** Not a failure: sent but unconfirmed, or a question before zapping again (ZapConfirm). */
+    data class PENDING(val message: String) : ZapStatus()
 }
 
 // ── Follow ───────────────────────────────────────────────────────

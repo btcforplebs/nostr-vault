@@ -4,6 +4,16 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.util.Bolt11
 import com.nostrvault.util.RelayGiven
+import com.nostrvault.ui.notification.NotificationManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -22,7 +32,12 @@ class ZapSendService @Inject constructor(
     private val nwcService: NWCService,
     private val configStore: ConfigStore,
     private val feedService: FeedService,
+    private val notificationManager: NotificationManager,
 ) {
+    /** Zaps waiting on their wallet or receipt ([PendingZaps]). */
+    internal val pendingZaps = PendingZaps()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     companion object {
         private const val TAG = "ZapSendService"
         private const val MAX_ZAP_SATS = 10_000_000
@@ -38,6 +53,17 @@ class ZapSendService @Inject constructor(
         class WrongInvoiceAmount : ZapError("The provider returned an invoice for a different amount, so nothing was sent.")
         /** [notPaid]: the wallet never paid (it was never asked, or refused), so trying again can't pay twice. */
         class PaymentFailed(val detail: String, val notPaid: Boolean = false) : ZapError("Payment failed: $detail")
+        /** Sent, but the wallet never confirmed: not a failure. Its receipt may still light the bolt (ZapConfirm). */
+        class MayStillArrive : ZapError("Sent. Your wallet hasn't confirmed yet, so it may still arrive.")
+        /** A zap on this note is still pending; a second tap sends another (PendingZaps). */
+        class StillPending : ZapError("Your last zap here may still be on its way. Tap zap again to send another.")
+    }
+
+    /** The outcome of asking the wallet, or of seeing the receipt first. */
+    private sealed interface Payment {
+        data object Paid : Payment
+        data object Unconfirmed : Payment
+        data class Failed(val error: Exception) : Payment
     }
 
     /**
@@ -76,6 +102,10 @@ class ZapSendService @Inject constructor(
         if (config.nwcURI.isNullOrBlank()) {
             return Result.failure(ZapError.NoWallet())
         }
+        val pendingKey = PendingZaps.key(noteId, notePubkey)
+        if (!pendingZaps.mayZap(pendingKey)) {
+            return Result.failure(ZapError.StillPending())
+        }
         val amountMsat = amountSats.toLong() * 1000
 
         // 1. Resolve the recipient's lightning address (LUD-16 or LUD-06).
@@ -103,6 +133,8 @@ class ZapSendService @Inject constructor(
 
         // 2. Sign the kind-9734 zap request (only when the provider supports
         // NIP-57; otherwise pay a plain invoice with no receipt).
+        var receiptRelays: List<String> = emptyList()
+        val requestedAt = System.currentTimeMillis() / 1000
         val zapRequestJson = if (lnurlResponse.allowsNostr == true) {
             val lnurlTag = (lud16 ?: lud06 ?: "").removePrefix("lnurl:").removePrefix("LNURL:")
             // The provider publishes the receipt to these relays, so they must
@@ -124,6 +156,7 @@ class ZapSendService @Inject constructor(
                 // or the receipt never shows up in its chat.
                 if (addressTag != null && extraReceiptRelays.isEmpty()) addAll(LiveChatService.STREAMING_RELAYS)
             }.distinct()
+            receiptRelays = relayList
             val tags = buildList {
                 add(listOf("p", notePubkey))
                 add(listOf("relays") + relayList)
@@ -162,20 +195,99 @@ class ZapSendService @Inject constructor(
             return Result.failure(ZapError.WrongInvoiceAmount())
         }
 
-        // 4. Pay via NWC.
-        try {
-            val preimage = nwcService.payInvoice(invoice)
-            Log.i(TAG, "Zap paid ($amountSats sats): $preimage")
-        } catch (e: Exception) {
-            Log.w(TAG, "NWC payment failed: ${e.message}")
-            val notPaid = e is NWCNotSentException || (e is NWCWalletException && e.refusedBeforePaying)
-            return Result.failure(ZapError.PaymentFailed(e.message ?: "unknown error", notPaid))
+        // 4. Pay via NWC, and watch for the zap's own receipt meanwhile: either
+        // one proves it went (ZapConfirm). Only a receipt-carrying zap can be
+        // watched; a plain invoice has only the wallet's word.
+        pendingZaps.begin(pendingKey)
+        val receipt = receiptRelays.takeIf { zapRequestJson != null && it.isNotEmpty() }
+            ?.let { relays -> ReceiptWatch(invoice, ZapConfirm.receiptFilter(notePubkey, noteId, requestedAt), relays) }
+        val payment = pay(invoice, receipt)
+        return when (payment) {
+            Payment.Paid -> {
+                Log.i(TAG, "Zap paid ($amountSats sats)")
+                pendingZaps.end(pendingKey)
+                // Optimistic local bump; the real kind-9735 receipt overwrites this
+                // when the engagement subscriptions next ingest it.
+                feedService.zapNote(noteId, amountSats.toLong())
+                Result.success(Unit)
+            }
+            Payment.Unconfirmed -> {
+                Log.i(TAG, "Zap sent, wallet unconfirmed; watching for its receipt")
+                if (receipt != null) watchLate(receipt, pendingKey, noteId, notePubkey, amountSats)
+                Result.failure(ZapError.MayStillArrive())
+            }
+            is Payment.Failed -> {
+                pendingZaps.end(pendingKey)
+                val e = payment.error
+                Log.w(TAG, "NWC payment failed: ${e.message}")
+                val notPaid = e is NWCNotSentException || (e is NWCWalletException && e.refusedBeforePaying)
+                Result.failure(ZapError.PaymentFailed(e.message ?: "unknown error", notPaid))
+            }
         }
+    }
 
-        // Optimistic local bump; the real kind-9735 receipt overwrites this
-        // when the engagement subscriptions next ingest it.
-        feedService.zapNote(noteId, amountSats.toLong())
-        return Result.success(Unit)
+    /** Where and how to find a zap's receipt. */
+    private class ReceiptWatch(val invoice: String, val filter: String, val relays: List<String>)
+
+    /**
+     * The wallet's answer, or the receipt if it comes first. No answer within
+     * the wallet wait, or one without a preimage, is [Payment.Unconfirmed].
+     */
+    private suspend fun pay(invoice: String, receipt: ReceiptWatch?): Payment = coroutineScope {
+        val wallet = async {
+            try {
+                nwcService.payInvoice(invoice)
+                Payment.Paid
+            } catch (e: NWCTimeoutException) {
+                Payment.Unconfirmed
+            } catch (e: NWCNoPreimageException) {
+                Payment.Unconfirmed
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Payment.Failed(e)
+            }
+        }
+        if (receipt == null) return@coroutineScope wallet.await()
+        // Never completes unless the receipt shows up; cancelled with the wallet's answer.
+        val seen = async {
+            while (!receiptSeen(receipt)) delay(ZapConfirm.RECEIPT_POLL_MS)
+            Payment.Paid
+        }
+        val first = select<Payment> {
+            wallet.onAwait { it }
+            seen.onAwait { it }
+        }
+        wallet.cancel()
+        seen.cancel()
+        first
+    }
+
+    private suspend fun receiptSeen(watch: ReceiptWatch): Boolean = try {
+        nostrService.queryRawEvents(listOf(watch.filter), watch.relays, ZapConfirm.RECEIPT_QUERY_MS)
+            .any { ZapConfirm.receiptPaysInvoice(it, watch.invoice) }
+    } catch (e: Exception) {
+        if (e is kotlinx.coroutines.CancellationException) throw e
+        false
+    }
+
+    /**
+     * The wallet never confirmed: keep looking for the receipt a while longer.
+     * Seen, the bolt lights and a "Zapped" pill says so; not seen, the zap stays
+     * "may still arrive" (it was never called failed).
+     */
+    private fun watchLate(watch: ReceiptWatch, pendingKey: String, noteId: String, notePubkey: String, amountSats: Int) {
+        scope.launch {
+            val seen = withTimeoutOrNull(ZapConfirm.RECEIPT_WATCH_MS) {
+                while (!receiptSeen(watch)) delay(ZapConfirm.RECEIPT_POLL_MS)
+                true
+            } == true
+            pendingZaps.end(pendingKey)
+            if (!seen) return@launch
+            Log.i(TAG, "Zap confirmed by its receipt")
+            feedService.zapNote(noteId, amountSats.toLong())
+            val name = nostrService.profiles.value[notePubkey]?.bestName ?: notePubkey.take(8)
+            notificationManager.zapConfirmedLater(name, amountSats)
+        }
     }
 
     /** Serialize a signed event to wire-format JSON (snake_case created_at). */

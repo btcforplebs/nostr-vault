@@ -54,6 +54,18 @@ class NotificationManager @Inject constructor() {
         scheduleDismiss(id, 3_000L)
     }
 
+    /** A zap that was "may still arrive" and whose receipt has now come in: a "Zapped" pill. Safe off the main thread. */
+    fun zapConfirmedLater(recipientName: String, amountSats: Int) {
+        scope.launch { markZapSuccess(addZap(recipientName, amountSats)) }
+    }
+
+    /** Sent but unconfirmed, or "zap again?": a plain pill that times out, never an error (ZapConfirm). */
+    fun markZapPending(id: String, message: String) {
+        dismissJobs.remove(id)?.cancel()
+        updateNotification<ZapNotification>(id) { it.copy(status = ZapStatus.PENDING(message)) }
+        scheduleDismiss(id, 6_000L)
+    }
+
     /** A failed zap is an error: it stays until tapped (`docs/pills.md`). */
     fun markZapFailed(id: String, message: String) {
         dismissJobs.remove(id)?.cancel()
@@ -70,7 +82,10 @@ class NotificationManager @Inject constructor() {
         return send().also { result ->
             result.fold(
                 onSuccess = { markZapSuccess(id) },
-                onFailure = { markZapFailed(id, it.message ?: "Zap failed") },
+                onFailure = {
+                    if (isZapPending(it)) markZapPending(id, it.message.orEmpty())
+                    else markZapFailed(id, it.message ?: "Zap failed")
+                },
             )
         }
     }
@@ -308,3 +323,8 @@ class NotificationManager @Inject constructor() {
         }
     }
 }
+
+/** A zap that isn't a failure: sent and unconfirmed, or held to ask before zapping a note again. */
+internal fun isZapPending(error: Throwable): Boolean =
+    error is com.nostrvault.service.ZapSendService.ZapError.MayStillArrive ||
+        error is com.nostrvault.service.ZapSendService.ZapError.StillPending
