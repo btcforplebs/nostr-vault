@@ -1,0 +1,37 @@
+#!/sbin/openrc-run
+# Nostr Vault for Alpine: the mesh (nv-mesh, the engine the Mac app runs, with the Mac's options). Own uid: the box's
+# mesh key ($NV_DATA_DIR/mesh/key/) is readable by this program alone, never by the vault. Never the owner's key.
+# The OpenRC twin of linux/native/systemd/nostr-vault-mesh.service. It needs nostr-vault (its PartOf): stopping the
+# vault stops the mesh, and the vault's start sets up the data dir first.
+
+name="Nostr Vault mesh"
+description="Nostr Vault: the FIPS mesh to your own devices"
+supervisor=supervise-daemon
+command=/usr/lib/nostr-vault/nv-mesh
+command_user="nvmesh:nvmesh"
+umask=022
+no_new_privs=yes
+respawn_delay=2
+respawn_max=0
+supervise_daemon_args="--nicelevel 10"
+output_log=/var/log/nostr-vault/mesh.log
+error_log=/var/log/nostr-vault/mesh.log
+
+depend() {
+	need nostr-vault
+	use net dns
+}
+
+start_pre() {
+	if [ ! -r /etc/nostr-vault/vault.env ]; then
+		eerror "Nostr Vault isn't set up yet: run  nostr-vault-setup --owner npub1…"
+		return 1
+	fi
+	export NV_DATA_DIR=/var/lib/nostr-vault NV_PORT=8080 NV_MESH_DOOR_PORT=8081
+	# vault.env only: the backup secrets are the vault's, never the mesh's.
+	set -a
+	. /etc/nostr-vault/vault.env
+	set +a
+	checkpath -d -m 0755 -o root:root /var/log/nostr-vault
+	checkpath -f -m 0640 -o nvmesh:nvmesh /var/log/nostr-vault/mesh.log
+}

@@ -1,0 +1,118 @@
+#!/bin/sh
+# nostr-vault-setup (Alpine, OpenRC): whose vault this is and where it lives, then start it now and on every boot.
+# The OpenRC twin of linux/native/bin/nostr-vault-setup (same options, same checks); run as root:
+#   nostr-vault-setup --owner npub1… [--data /path] [--port 8080] [--sd-ok] [--new-ok]
+#   nostr-vault-setup --show      the current settings, as KEY=value lines
+#   nostr-vault-setup --suggest   where the vault should live: the drive with the most free space
+# It writes /etc/nostr-vault/vault.env (no secrets in it: an npub and paths), adds the vault and its mesh to the
+# default runlevel (so they start on boot) and starts them.
+set -eu
+ETC=/etc/nostr-vault
+ENV=$ETC/vault.env
+DEFAULT_DATA=/var/lib/nostr-vault
+
+die() { printf 'nostr-vault-setup: %s\n' "$*" >&2; exit 1; }
+old() { if [ -r "$ENV" ]; then sed -n "s/^$1=//p" "$ENV" | tail -1; fi; }
+
+biggest() { # a real drive's mount point, most free space first
+  df -P -k 2>/dev/null | awk 'NR > 1 && $1 ~ /^\/dev\// && $6 !~ /^\/(boot|snap|run|dev|sys|proc|tmp|etc|var\/lib\/docker)(\/|$)/ { print $4, $6 }' \
+    | sort -rn | while read -r _ m; do [ -d "$m" ] && { printf '%s' "$m"; break; }; done
+}
+suggest() {
+  s=$(old NV_DATA_DIR)
+  if [ -z "$s" ]; then
+    m=$(biggest); [ -n "$m" ] || m=/
+    case "$m" in /|/var|/var/lib) s=$DEFAULT_DATA ;; *) s="${m%/}/nostr-vault" ;; esac
+  fi
+  printf '%s\n' "$s"
+}
+listening() { # listening <port>: something listens on TCP <port> here
+  if command -v ss >/dev/null 2>&1; then ss -Hltn "sport = :$1" 2>/dev/null | grep -q .
+  else netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]$1\$"; fi
+}
+
+owner="" data="" port="" sd_ok=0 new_ok=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --owner) owner=${2:-}; shift 2 ;;
+    --data) data=${2:-}; shift 2 ;;
+    --port) port=${2:-}; shift 2 ;;
+    --sd-ok) sd_ok=1; shift ;;
+    --new-ok) new_ok=1; shift ;;
+    --show) [ -r "$ENV" ] && grep -E '^NV_(OWNER|DATA_DIR|PORT)=' "$ENV"; exit 0 ;;
+    --suggest) suggest; exit 0 ;;
+    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) die "unknown option $1 (see --help)" ;;
+  esac
+done
+[ "$(id -u)" = 0 ] || die "run as root (doas nostr-vault-setup …)"
+
+# Whose: only this npub can manage the vault. Never claimed by whoever visits first, and no secret key here.
+owner=${owner:-$(old NV_OWNER)}
+printf '%s' "$owner" | grep -Eq '^npub1[02-9ac-hj-np-z]{58}$' || die "--owner must be your npub (npub1 and 58 more letters and digits)"
+
+# Where. A full path, a folder (or nothing yet), not a symlink, not inside the system's own folders.
+data=${data:-$(old NV_DATA_DIR)}; data=${data:-$DEFAULT_DATA}; data=${data%/}
+case "$data" in /*) ;; *) die "--data must be a full path, starting with /" ;; esac
+case "$data" in *[!A-Za-z0-9._/@+-]*) die "--data may only have letters, digits and . _ / @ + - in it" ;; esac
+case "$data" in /|/bin*|/boot*|/dev*|/etc*|/lib*|/proc*|/run*|/sbin*|/sys*|/usr*|/tmp*) die "$data is a system folder; pick another place" ;; esac
+case "$data" in */./*|*/../*|*/.|*/..) die "--data must not have . or .. in it" ;; esac
+[ -L "$data" ] && die "$data is a symlink; give the real path"
+[ -e "$data" ] && [ ! -d "$data" ] && die "$data is a file, not a folder"
+case "$data" in /*/*) ;; *) die "$data is a top-level folder; pick a folder inside it, e.g. $data/nostr-vault" ;; esac
+case "$data" in /root|/root/*) die "$data is root's home; pick another place" ;; esac
+case "$data" in /home/*/*) ;; /home/*) die "$data is someone's home folder; pick a folder inside it, e.g. $data/nostr-vault" ;; esac
+if [ -d "$data" ] && [ -n "$(ls -A "$data")" ] && [ ! -d "$data/box" ] && [ ! -d "$data/mesh" ] && [ ! -d "$data/vault" ]; then
+  die "$data already has other files in it; pick a new or empty folder (e.g. $data/nostr-vault)"
+fi
+at=$data; while [ ! -e "$at" ]; do at=$(dirname "$at"); done
+case "$(df -P "$at" | awk 'NR == 2 { print $1 }')" in
+  /dev/mmcblk*) [ "$sd_ok" = 1 ] || die "$data is on an SD card, which a vault wears out (a USB SSD is much better); add --sd-ok to use it anyway" ;;
+esac
+was=$(old NV_DATA_DIR)
+if [ -n "$was" ] && [ "$was" != "$data" ] && [ -n "$(ls -A "$was" 2>/dev/null)" ] && [ "$new_ok" != 1 ]; then
+  die "your vault's data is in $was; $data would start an empty vault ($was stays as it is). Add --new-ok for that, or use Storage > Move vault in the app to move it"
+fi
+
+# Port: the vault's, on every address of this machine. The engine (3355) and the mesh door (port+1) are on loopback.
+port=${port:-$(old NV_PORT)}; port=${port:-8080}
+if ! printf '%s' "$port" | grep -Eq '^[0-9]+$' || [ "$port" -lt 1024 ] || [ "$port" -gt 65534 ]; then die "--port must be 1024 to 65534"; fi
+if [ "$port" = 3355 ] || [ "$port" = 3354 ]; then die "port 3355 is the engine's"; fi
+door=$((port + 1))
+if ! rc-service -q nostr-vault status 2>/dev/null; then
+  for p in "$port" "$door" 3355; do
+    listening "$p" && die "port $p is in use on this machine (netstat -ltnp shows by what)"
+  done
+fi
+
+install -d -m 755 "$ETC"
+tmp=$(mktemp "$ETC/.vault.env.XXXXXX")
+{
+  echo "# Nostr Vault: written by nostr-vault-setup (run it again to change these)."
+  echo "NV_OWNER=$owner"
+  echo "NV_DATA_DIR=$data"
+  echo "NV_PORT=$port"
+  echo "NV_MESH_DOOR_PORT=$door"
+  echo "HAVEN_MESH_PLAIN_PORT=$door"
+  if [ -r "$ENV" ]; then grep -vE '^(#|NV_OWNER=|NV_DATA_DIR=|NV_PORT=|NV_MESH_DOOR_PORT=|HAVEN_MESH_PLAIN_PORT=)' "$ENV" | grep . || true; fi
+} >"$tmp"
+chmod 644 "$tmp" && mv -f "$tmp" "$ENV"
+
+# On boot (the default runlevel), and now. Restarting the vault stops the mesh first (it needs the vault), so the
+# data dir is set up with both stopped.
+rc-update -q add nostr-vault default
+rc-update -q add nostr-vault-mesh default
+rc-service -q nostr-vault-mesh stop 2>/dev/null || true
+rc-service -q nostr-vault restart
+rc-service -q nostr-vault-mesh start
+
+i=0
+until [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/" 2>/dev/null || true)" != 000 ]; do
+  i=$((i + 1))
+  if [ $i -gt 60 ]; then
+    tail -n 20 /var/log/nostr-vault/vault.log >&2 2>/dev/null || true
+    die "the vault didn't answer on port $port (/var/log/nostr-vault/vault.log shows why)"
+  fi
+  sleep 1
+done
+echo "ok: the vault is running on port $port, data in $data, owner $owner"

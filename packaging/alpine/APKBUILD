@@ -1,0 +1,30 @@
+# Maintainer: Nostr Vault <nostr-vault@users.noreply.github.com>
+# The nostr-vault apk for Alpine (musl, OpenRC). build.sh stages the built programs and the web app in ./stage and
+# writes the version in; nothing here downloads or builds. See README.md.
+pkgname=nostr-vault
+pkgver=0.0.0
+pkgrel=0
+pkgdesc="Your own Nostr vault on this machine: relay, Blossom media, the web app and the FIPS mesh"
+url="https://github.com/btcforplebs/nostr-vault"
+arch="x86_64 aarch64"
+license="MIT"
+# The shared libraries the programs link (musl, libgcc for nv-mesh) are added by abuild from the binaries.
+depends="curl ca-certificates openrc musl-utils"
+install="$pkgname.pre-install $pkgname.post-install $pkgname.post-upgrade $pkgname.pre-deinstall"
+options="!check !strip"
+source=""
+
+package() {
+	s="$startdir/stage"
+	for p in havend haven-engine nv-mesh prepare; do
+		install -Dm755 "$s/$p" "$pkgdir/usr/lib/nostr-vault/$p"
+	done
+	install -Dm755 "$startdir/nostr-vault-setup" "$pkgdir/usr/bin/nostr-vault-setup"
+	install -Dm755 "$startdir/nostr-vault.initd" "$pkgdir/etc/init.d/nostr-vault"
+	install -Dm755 "$startdir/nostr-vault-mesh.initd" "$pkgdir/etc/init.d/nostr-vault-mesh"
+	install -d -m755 "$pkgdir/usr/share/nostr-vault"
+	cp -R "$s/web" "$pkgdir/usr/share/nostr-vault/web"
+	find "$pkgdir/usr/share/nostr-vault/web" -type d -exec chmod 755 {} +
+	find "$pkgdir/usr/share/nostr-vault/web" -type f -exec chmod 644 {} +
+	install -Dm644 "$startdir/README.md" "$pkgdir/usr/share/doc/nostr-vault/README.md"
+}

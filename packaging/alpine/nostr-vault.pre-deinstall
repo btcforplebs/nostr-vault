@@ -1,0 +1,7 @@
+#!/bin/sh
+# Stop the vault when the package goes away (the data stays where it is). The settings in /etc/nostr-vault stay too.
+rc-service -q nostr-vault-mesh stop 2>/dev/null || true
+rc-service -q nostr-vault stop 2>/dev/null || true
+rc-update -q del nostr-vault-mesh default 2>/dev/null || true
+rc-update -q del nostr-vault default 2>/dev/null || true
+exit 0

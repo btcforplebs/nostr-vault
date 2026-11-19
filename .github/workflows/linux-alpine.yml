@@ -1,0 +1,137 @@
+name: Linux Alpine apk
+
+# Builds the nostr-vault apk for Alpine (musl, OpenRC) on amd64 and arm64: the web app once on Ubuntu, then
+# packaging/alpine/build.sh in an alpine:3.22 container on each arch's own runner (nothing cross-built). Then installs
+# each apk in an Alpine container that boots OpenRC (packaging/alpine/test/Dockerfile), on Alpine 3.22 and the latest,
+# sets it up, restarts the container (a reboot) and checks the vault came back by itself
+# (packaging/alpine/test/install-test.sh). Publishes nothing: the apks are run artifacts (14 days), signed with a
+# throwaway key made in the build job.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "packaging/alpine/**"
+      - "linux/native/lib/**"
+      - "linux/mesh/**"
+      - ".github/workflows/linux-alpine.yml"
+
+# Read-only token: the build runs npm, cargo build scripts and rustup, and the repo default is write.
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: haven-go/go.mod
+          cache-dependency-path: haven-go/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          check-latest: true
+      - name: The web app's box build (as linux/native/build.sh step 1)
+        run: |
+          commit=$(git rev-parse --short=12 HEAD)
+          web-relay/tools/build-haven-wasm.sh
+          (cd web-relay && npm ci --ignore-scripts --no-audit --no-fund)
+          (cd web-vault && npm ci --ignore-scripts --no-audit --no-fund && NV_BOX=1 NV_COMMIT=$commit npm run build)
+          test -s web-vault/dist/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nostr-vault-alpine-web
+          path: web-vault/dist/
+          retention-days: 1
+
+  build:
+    needs: web
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # build.sh's version is the commit count
+          persist-credentials: false
+      - name: No token left in the checkout (the build runs third-party code)
+        run: |
+          if git config --get-regexp 'http\..*extraheader'; then echo "checkout left a token in .git/config"; exit 1; fi
+      - uses: actions/download-artifact@v4
+        with:
+          name: nostr-vault-alpine-web
+          path: web-dist
+      - name: Build in Alpine (musl)
+        run: docker run --rm -v "$PWD:/src" -w /src alpine:3.22 packaging/alpine/build.sh /src/web-dist /src/out-apk
+      - name: What was built
+        run: |
+          cd out-apk
+          ls -l
+          cat nostr-vault-alpine.json
+          ls nostr-vault-*.${{ matrix.arch }}.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nostr-vault-apk-${{ matrix.arch }}
+          path: out-apk/
+          retention-days: 14
+
+  install-test:
+    needs: build
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+        alpine: ["3.22", "latest"]
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            packaging/alpine
+            linux/native/test
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nostr-vault-apk-${{ matrix.arch }}
+          path: apk
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - name: Throwaway-key tool (static, so it runs on musl)
+        run: cd linux/native/test/keytool && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/keytool" .
+      - name: Check the download against the manifest
+        run: cd apk && python3 -c 'import json,hashlib; m=json.load(open("nostr-vault-alpine.json")); assert m["files"]; [print(f, "ok") if hashlib.sha256(open(f,"rb").read()).hexdigest()==h else exit(f+" sha mismatch") for f,h in m["files"].items()]'
+      - name: Boot an Alpine ${{ matrix.alpine }} machine (OpenRC as PID 1)
+        run: |
+          docker build -q -t nv-alpine-test --build-arg ALPINE=${{ matrix.alpine }} packaging/alpine/test
+          docker run -d --name nv --tmpfs /run nv-alpine-test
+          docker exec nv mkdir -p /root/nv
+          docker cp apk/. nv:/root/nv/
+          docker cp "$RUNNER_TEMP/keytool" nv:/root/keytool
+          docker cp packaging/alpine/test/install-test.sh nv:/root/install-test.sh
+      - name: Install, set up, check
+        run: |
+          apk=$(cd apk && ls nostr-vault-*.${{ matrix.arch }}.apk); key=$(cd apk && ls *.rsa.pub)
+          docker exec nv sh /root/install-test.sh install "/root/nv/$apk" "/root/nv/$key"
+      - name: Reboot (restart the container), then check it came back by itself
+        run: |
+          docker restart -t 20 nv
+          docker inspect -f 'restarted {{.State.StartedAt}}' nv
+          docker exec nv sh /root/install-test.sh boot
+      - name: Logs on failure
+        if: failure()
+        run: docker logs nv 2>&1 | tail -80 || true
