@@ -280,10 +280,14 @@ jobs:
           done
           # The mesh: its door (havend, loopback 8081) answers, and nv-mesh has its UDP port open and its npub made.
           ./vm 'code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://127.0.0.1:8081/); echo "mesh door: $code"; [ "$code" != 000 ]'
-          # nv-mesh binds its UDP port (0.0.0.0, OS-picked) once the engine starts.
-          ./vm 'for i in $(seq 1 30); do sudo ss -Hanup | grep -q "\"nv-mesh\"" && break; sleep 2; done
-            sudo ss -Hanup; sudo journalctl -b --no-pager -u nostr-vault-mesh | tail -25
-            sudo ss -Hanup | grep -q "\"nv-mesh\"" && echo "mesh UDP: ok"'
+          # nv-mesh starts its engine only once the box has a device to serve (mesh-devices.json, which havend fills
+          # from the owner's 10063 and keeps when there is none): give it one throwaway device, as the vault would.
+          # Then the engine must say it is live and have its UDP port (0.0.0.0, OS-picked) open.
+          dev=$(./vm '$HOME/keytool gen' | cut -d' ' -f2)
+          ./vm "echo '[{\"npub\": \"$dev\"}]' | sudo runuser -u nvvault -- tee /var/lib/nostr-vault/mesh-devices.json"
+          ./vm 'for i in $(seq 1 45); do sudo ss -Hanup | grep -q "\"nv-mesh\"" && sudo journalctl -b -u nostr-vault-mesh | grep -q "mesh live" && break; sleep 2; done
+            sudo ss -Hanup | grep nv-mesh; sudo journalctl -b --no-pager -u nostr-vault-mesh | tail -15
+            sudo journalctl -b -u nostr-vault-mesh | grep -q "mesh live" && sudo ss -Hanup | grep -q "\"nv-mesh\"" && echo "mesh engine live, UDP open"'
           ./vm 'sudo cat /var/lib/nostr-vault/mesh/npub'
       - name: Run as an ordinary service (unconfined_service_t), not in systemd's own domain (init_t)
         run: |
