@@ -17,7 +17,7 @@ import { liveNow } from "./live-now.js"
 import { readOnThisDay } from "./on-this-day.js"
 import { claimFrame, whenFree } from "./frames.js"
 import { CARD_ICON } from "./card-icons.js"
-import { surfaceAnswer, fitHeight, countOf, liveNowData, thisDayData, noteRoute, openRoute, sameBadge } from "./widget-answers.js"
+import { surfaceAnswer, fitHeight, countOf, liveNowData, thisDayData, noteRoute, openRoute } from "./widget-answers.js"
 import { SOURCES } from "./widget-sources.jsx"
 import { CLOSE_AFTER_MS } from "./AppCard.jsx"
 import "../../napplet/napplet.css"
@@ -152,8 +152,7 @@ export function WidgetCard({ ctx, id, name, open, editing, tools, size = null, s
   const [slot, setSlot] = useState(false)
   const [busy, setBusy] = useState(false) // every frame slot is taken
   const [fit, setFit] = useState(null)
-  const [badge, setBadgeNow] = useState(null)
-  const setBadge = useMemo(() => next => setBadgeNow(was => (sameBadge(was, next) ? was : next)), [])
+  const [badge, setBadge] = useState(null)
   const pipe = useMemo(makePipe, [])
   const Source = SOURCES[id]
   const [playing, setPlaying] = useState(null)

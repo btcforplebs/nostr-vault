@@ -11,7 +11,7 @@ import { pickedEmoji, composeEmoji, emojiTags, EMOJI_TOPIC } from "../src/napple
 import { createBus } from "../src/napplet/bus.js"
 import { nappletOrigin, nappletParentHost, originSalt, accountScope } from "../src/napplet/origin.js"
 import { isolatedLoaderCsp, nappletOriginFile, loaderCsp, frameCsp, LOADER_FILE, SW_FILE } from "../src/napplet/csp.js"
-import { nappletsOn, setDeskLayout } from "../src/napplet/flag.js"
+import { nappletsOn, setNappletsOn } from "../src/napplet/flag.js"
 
 const H = "ab".repeat(32)
 const read = p => fs.readFileSync(new URL(p, import.meta.url), "utf8")
@@ -149,10 +149,11 @@ test("an outside napplet opens on its account's origin, and not at all without a
   } finally { globalThis.location = prev }
 })
 
-test("napplets in the app's screens: the desktop layout's, not the phone's (plan step 11)", () => {
-  setDeskLayout(false); assert.equal(nappletsOn(), false)
-  setDeskLayout(true); assert.equal(nappletsOn(), true)
-  setDeskLayout(false); assert.equal(nappletsOn(), false)
+test("napplets in the app's screens: off until switched on", () => {
+  const m = new Map(), store = { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: k => m.delete(k) }
+  assert.equal(nappletsOn(store), false)
+  setNappletsOn(true, store); assert.equal(nappletsOn(store), true)
+  setNappletsOn(false, store); assert.equal(nappletsOn(store), false)
 })
 
 test("the napplet service worker: every request errors but its own two files and nv-stream parts, which come from the page, never the network", async () => {

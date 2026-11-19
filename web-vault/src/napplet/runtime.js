@@ -15,7 +15,7 @@ export const localManifest = (name, hash, title = name, domains = SHELL_DOMAINS)
 /**
  * openNapplet({ html, manifestEvent?, name?, title?, firstParty?, container, grants, consent, makeDeps, loader?, onRevoke? })
  *   grants:   policy.js grantStore for the account.
- *   consent:  ({ ident, domains }) -> Promise<grant | null>: the user's answer the first time (GrantSheet's sheet).
+ *   consent:  ({ ident, domains }) -> Promise<grant | null>: the user's answer the first time (NappletShell's sheet).
  *   makeDeps: (grantSaver) -> deps for dispatch.js (shell-deps.js shellDeps).
  *   origin:   where it runs (origin.js; tests pass their own). An outside napplet runs only on its own origin, behind
  *             the loader's guards (P2): this site without a napplet host runs our own napplets only.

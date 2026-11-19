@@ -110,7 +110,7 @@ async function fetchBytes(url, { servers = [], range } = {}) {
 }
 
 /**
- * deps for dispatch.js. `ask`: the consent sheet's question (GrantSheet). `saveGrant(grant)`: keep a changed grant.
+ * deps for dispatch.js. `ask`: the consent sheet's question (NappletShell). `saveGrant(grant)`: keep a changed grant.
  * `bus`: the page's createBus().
  */
 export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorage(ctx.session.pubkey), dm = null }) {
