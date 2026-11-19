@@ -187,6 +187,112 @@ jobs:
         if: failure()
         run: docker logs nv 2>&1 | tail -80 || true
 
+  # The .rpm on a real Fedora machine, not a container: Fedora Cloud in a QEMU/KVM VM, SELinux enforcing as Fedora
+  # ships it (a container has no SELinux of its own). install-test.sh, then install again and reboot the VM: the vault
+  # and its mesh must come back, the relay and the mesh must answer, and the audit log must have no AVC denial at all.
+  fedora-vm-selinux:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: linux/native/test
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nostr-vault-deb-amd64
+          path: pkgs
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - name: Throwaway-key tool (static, for the VM)
+        run: cd linux/native/test/keytool && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/keytool" .
+      - name: QEMU and KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils
+          test -w /dev/kvm
+      - name: The newest Fedora Cloud image, checked against Fedora's CHECKSUM
+        run: |
+          base=https://dl.fedoraproject.org/pub/fedora/linux/releases
+          for v in $(curl -fsS "$base/" | grep -o 'href="[0-9]*/"' | grep -o '[0-9]*' | sort -rn); do
+            d="$base/$v/Cloud/x86_64/images"
+            img=$(curl -fsS "$d/" 2>/dev/null | grep -o 'Fedora-Cloud-Base-Generic-[^"]*\.x86_64\.qcow2' | head -1) || true
+            [ -n "$img" ] && break
+          done
+          test -n "$img"; echo "Fedora $v: $img"
+          curl -fsSL -o fedora.qcow2 "$d/$img"
+          sum=$(curl -fsS "$d/" | grep -o 'Fedora-Cloud-[^"]*CHECKSUM' | head -1)
+          want=$(curl -fsSL "$d/$sum" | sed -n "s/^SHA256 ($img) = //p")
+          test -n "$want"; echo "$want  fedora.qcow2" | sha256sum -c -
+          qemu-img resize fedora.qcow2 12G
+      - name: Boot it
+        run: |
+          ssh-keygen -q -t ed25519 -N '' -f vmkey
+          cat >user-data <<EOF
+          #cloud-config
+          users:
+            - name: t
+              sudo: ALL=(ALL) NOPASSWD:ALL
+              ssh_authorized_keys: ["$(cat vmkey.pub)"]
+          EOF
+          printf 'instance-id: nv\nlocal-hostname: nv\n' >meta-data
+          cloud-localds seed.iso user-data meta-data
+          qemu-system-x86_64 -enable-kvm -cpu host -smp 2 -m 4096 -display none -daemonize -serial file:serial.log \
+            -drive file=fedora.qcow2,if=virtio -drive file=seed.iso,if=virtio,format=raw \
+            -nic user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:2222-:22 -pidfile qemu.pid
+          echo 'ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -i vmkey -p 2222 t@127.0.0.1 "$@"' >vm && chmod +x vm
+          for i in $(seq 1 60); do ./vm true && break; sleep 5; done
+          ./vm 'cloud-init status --wait >/dev/null; . /etc/os-release; echo "$PRETTY_NAME $(uname -r)"; getenforce; sestatus | grep -E "policy name|mode"'
+          test "$(./vm getenforce)" = Enforcing
+      - name: Install test (headless), SELinux enforcing
+        run: |
+          p=$(cd pkgs && ls *.x86_64.rpm); echo "$p"
+          scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i vmkey -P 2222 \
+            "pkgs/$p" "$RUNNER_TEMP/keytool" linux/native/test/install-test.sh t@127.0.0.1:
+          ./vm "sudo env KT=\$HOME/keytool sh install-test.sh \$HOME/$p headless"
+      - name: Install again and reboot; the vault and mesh come back
+        run: |
+          p=$(cd pkgs && ls *.x86_64.rpm)
+          ./vm "sudo dnf install -y -q --setopt=install_weak_deps=False \$HOME/$p && systemctl -q is-enabled nostr-vault nostr-vault-mesh"
+          ./vm 'sudo systemctl reboot' || true
+          sleep 15
+          for i in $(seq 1 60); do ./vm true && break; sleep 5; done
+          ./vm 'test "$(getenforce)" = Enforcing && echo "rebooted, $(getenforce), up $(cut -d" " -f1 /proc/uptime)s"'
+          ./vm 'for i in $(seq 1 90); do systemctl -q is-active nostr-vault nostr-vault-mesh && ss -Hltn "sport = :3355" | grep -q . && break; sleep 2; done
+            systemctl is-active nostr-vault nostr-vault-mesh'
+      - name: The relay and the mesh answer
+        run: |
+          ./vm 'sudo ss -Hltnup | grep -E "havend|haven-engine|nv-mesh"'
+          # The relay: a websocket on 8080 (on the VM's own address too) and the web app.
+          ./vm 'curl -fsS http://127.0.0.1:8080/ | grep -qi "<html" && echo "web app: ok"'
+          ip=$(./vm "hostname -I | awk '{print \$1}'"); echo "VM address $ip"; test -n "$ip"
+          for a in 127.0.0.1 "$ip"; do
+            ./vm "curl -s -i -N --max-time 3 -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' http://$a:8080/ | head -1" | tee ws.txt || true
+            grep -q ' 101 ' ws.txt
+          done
+          # The mesh: its door (havend, loopback 8081) answers, and nv-mesh has its UDP port open and its npub made.
+          ./vm 'code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://127.0.0.1:8081/); echo "mesh door: $code"; [ "$code" != 000 ]'
+          ./vm 'sudo ss -Hlunp | grep -q "nv-mesh" && echo "mesh UDP: ok"'
+          ./vm 'sudo cat /var/lib/nostr-vault/mesh/npub'
+      - name: No SELinux denials
+        if: always()
+        run: |
+          ./vm 'ps -eZ | grep -E "havend|haven-engine|nv-mesh" || true; sudo ls -Z /usr/lib/nostr-vault /var/lib/nostr-vault' || true
+          # ausearch exits 1 with "<no matches>" when there are none: empty is the pass.
+          ./vm 'sudo ausearch -m AVC,USER_AVC,SELINUX_ERR -i 2>&1' | tee avc.txt || true
+          if grep -q 'type=' avc.txt; then echo "SELinux denied something (above)"; exit 1; fi
+          grep -q '<no matches>' avc.txt
+          echo "no AVC denials"
+      - name: VM serial log and journal
+        if: failure()
+        run: |
+          ./vm 'sudo journalctl -b --no-pager -u nostr-vault -u nostr-vault-mesh -u nostr-vault-prepare -n 80' || true
+          tail -60 serial.log || true
+
   # The release's file set: both .debs and ONE manifest listing both (each build job's manifest names only its own).
   release-files:
     needs: build
