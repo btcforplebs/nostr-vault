@@ -8,31 +8,21 @@
 import { finalizeEvent, getPublicKey, verifyEvent } from "nostr-tools/pure"
 import { makeAuthEvent } from "nostr-tools/nip42"
 import * as nip44 from "nostr-tools/nip44"
-import { bytesToHex, hexToBytes } from "nostr-tools/utils"
 import { HELLO_KIND } from "./mesh-pairing.js"
 import { FILES_AUTH_RELAY } from "./file-notes-live.js"
 import { FINDER_RELAYS } from "../desktop/space/my-devices.js"
 import { pool } from "./pool.js"
 import { VAULT_NS, pageStorage } from "../../../web-relay/src/page-storage.js"
+import { loadMeshSecret } from "../../../web-relay/src/fips/mesh-key.js"
 
-// web-relay/src/fips/node.js loadRelayIdentity, under VAULT_NS (haven/vault.js fipsStorage). Not imported from there:
-// that module brings the whole FIPS engine into the vault's first load.
-const KEY_ITEM = "fips-relay-key"
+// The same key web-relay/src/fips/node.js loadRelayIdentity uses, under VAULT_NS (haven/vault.js fipsStorage), sealed at
+// rest (mesh-key.js, which brings no FIPS engine into the vault's first load).
 const HEX64 = /^[0-9a-f]{64}$/
 const meshStorage = (storage = globalThis.localStorage) => pageStorage(storage, VAULT_NS)
 
 /** This browser's mesh secret key, read for one call. Made first, as loadRelayIdentity does, when there is none; a
  *  stored key that isn't one is an error, never replaced (that would change this browser's address). */
-async function meshKey(storage) {
-  const s = meshStorage(storage)
-  let hex = s.getItem(KEY_ITEM)
-  if (!hex) {
-    hex = bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
-    s.setItem(KEY_ITEM, hex)
-  }
-  if (!HEX64.test(hex)) throw new Error("this browser's mesh key can't be read")
-  return hexToBytes(hex)
-}
+const meshKey = storage => loadMeshSecret(meshStorage(storage))
 
 /** This browser's mesh address as x-only hex (what the QR's `m` encodes). */
 export async function ownMeshHex(storage) {
