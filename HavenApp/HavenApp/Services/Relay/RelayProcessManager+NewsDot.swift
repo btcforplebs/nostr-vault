@@ -39,22 +39,41 @@ extension RelayProcessManager {
             newActivityModes.formUnion(waiting)
             return
         }
+        // The scan walks every event in memory and its tags, so it runs off
+        // the main thread: on the main thread it cost scroll frames each time
+        // a notification arrived. The array is copied as a value here.
         let own = ConfigService.shared.allAccountHexes
-        let visits = Self.lastVisits(account: account)
-        var lit: Set<VaultMode> = []
-        for mode in waiting {
-            let dates = NostrService.shared.events.compactMap { event -> Int64? in
-                guard VaultMode.listing(inboxKind: event.kind) == mode,
-                      !own.contains(event.pubkey.lowercased()),
-                      event.tags.contains(where: { $0.count >= 2 && $0[0] == "p" && $0[1].lowercased() == account })
-                else { return nil }
-                return event.created_at
-            }
-            if VaultNewsAccounts<VaultMode>.isNews(createdAt: dates, lastVisit: visits[mode.rawValue]) {
-                lit.insert(mode)
-            }
+        let events = NostrService.shared.events
+        Task.detached(priority: .utility) { [weak self] in
+            let newest = Self.newestFromOthers(in: events, modes: waiting, account: account, own: own)
+            guard !newest.isEmpty else { return }
+            await self?.lightNews(newest: newest, account: account)
         }
-        if !lit.isEmpty { newActivityModes.formUnion(lit) }
+    }
+
+    /// Back on the main thread: lit only if still on this account, and against
+    /// the visit dates as they are now, so a list opened during the scan stays
+    /// dark.
+    private func lightNews(newest: [VaultMode: Int64], account: String) {
+        guard ConfigService.shared.activeAccountHexPubkey.lowercased() == account else { return }
+        let visits = Self.lastVisits(account: account)
+        let lit = Set(newest.compactMap { mode, date in
+            VaultNewsAccounts<VaultMode>.isNews(createdAt: [date], lastVisit: visits[mode.rawValue]) ? mode : nil
+        })
+        let waiting = lit.subtracting(newActivityModes)
+        if !waiting.isEmpty { newActivityModes.formUnion(waiting) }
+    }
+
+    /// The newest event from someone else tagging `account`, per list in
+    /// `modes`; a list with none is left out. For the background scan.
+    nonisolated static func newestFromOthers(in events: [NostrEvent], modes: Set<VaultMode>,
+                                             account: String, own: Set<String>) -> [VaultMode: Int64] {
+        VaultNewsAccounts<VaultMode>.newest(
+            in: events, modes: modes,
+            listing: { VaultMode.listing(inboxKind: $0.kind) },
+            counts: { VaultNewsAccounts<VaultMode>.isFromOthersTagging(pubkey: $0.pubkey, tags: $0.tags,
+                                                                       account: account, own: own) },
+            createdAt: { $0.created_at })
     }
 
     /// An account switch: the old account keeps its dot for when you come
