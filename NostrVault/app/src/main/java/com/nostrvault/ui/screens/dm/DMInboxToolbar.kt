@@ -38,6 +38,8 @@ import com.nostrvault.ui.theme.SecondaryText
 internal fun DMInboxToolbar(
     /** Requests are waiting: the button shows, with no count on it (Logen, 2026-11-04). */
     hasRequests: Boolean,
+    /** Spoken with the button only: the button itself shows no count (Logen, 2026-11-04). */
+    requestCount: Int,
     inRequests: Boolean,
     searching: Boolean,
     onToggleRequests: () -> Unit,
@@ -68,7 +70,7 @@ internal fun DMInboxToolbar(
                 IconButton(onClick = onToggleRequests, modifier = Modifier.size(40.dp)) {
                     Icon(
                         NostrVaultIcons.Activity,
-                        contentDescription = if (inRequests) "Back to Messages" else "Requests",
+                        contentDescription = if (inRequests) "Back to Messages" else "Requests, ${dmRequestsLine(requestCount)}",
                         tint = if (inRequests) colors.primary else SecondaryText,
                         modifier = Modifier.size(24.dp),
                     )

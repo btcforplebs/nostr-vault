@@ -215,12 +215,26 @@ private fun DMInboxList(
     val retrying by viewModel.retrying.collectAsState()
     val dmUnavailable by viewModel.dmUnavailable.collectAsState()
     val colors = LocalNostrVaultColors.current
+    // The last request answered or blocked: Requests closes, so a new one
+    // arriving later doesn't throw you back into it (B7).
+    LaunchedEffect(showingRequests, requests.isEmpty()) {
+        if (showingRequests && requests.isEmpty()) viewModel.showRequests(false)
+    }
+    // System Back closes Search, then Requests, before it leaves Messages (B10).
+    androidx.activity.compose.BackHandler(enabled = DMInboxBack.of(searching, inRequests) != DMInboxBack.LEAVE) {
+        when (DMInboxBack.of(searching, inRequests)) {
+            DMInboxBack.CLOSE_SEARCH -> { searching = false; query = "" }
+            DMInboxBack.CLOSE_REQUESTS -> viewModel.showRequests(false)
+            DMInboxBack.LEAVE -> Unit
+        }
+    }
 
     GlassScaffold(
         modifier = modifier,
         toolbar = {
             DMInboxToolbar(
                 hasRequests = requests.isNotEmpty(),
+                requestCount = requests.size,
                 inRequests = inRequests,
                 searching = searching,
                 onToggleRequests = { viewModel.showRequests(!inRequests) },
@@ -260,6 +274,8 @@ private fun DMInboxList(
                     )
                 } else if (conversations.isEmpty() && requests.isEmpty()) {
                     DMInboxEmptyState()
+                } else if (dmInboxOnlyRequests(conversations.isEmpty(), requests.size, inRequests, searchingNow)) {
+                    DMRequestsOnlyNotice(requests.size) { viewModel.showRequests(true) }
                 } else {
                     // iOS: one grouped surface, no separators between rows.
                     LazyColumn(
