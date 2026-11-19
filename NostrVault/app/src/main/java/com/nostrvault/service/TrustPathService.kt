@@ -149,12 +149,13 @@ class TrustPathService @Inject constructor(
      * is no file (depth below 3, no rebuild yet) or no entry for them.
      */
     private suspend fun linkedBridges(author: String, me: String, follows: Set<String>): List<String>? =
-        withContext(Dispatchers.IO) {
-            val dir = configStore.config.value.relayDataDir ?: return@withContext null
-            val text = runCatching { File(dir, TrustLinks.FILE_NAME).readText() }.getOrNull()
-                ?: return@withContext null
-            TrustLinks.bridges(text, author, me, follows)
-        }
+        linksText()?.let { TrustLinks.bridges(it, author, me, follows) }
+
+    /** The relay's `wot_links.json`, or null when there is none. */
+    private suspend fun linksText(): String? = withContext(Dispatchers.IO) {
+        val dir = configStore.config.value.relayDataDir ?: return@withContext null
+        runCatching { File(dir, TrustLinks.FILE_NAME).readText() }.getOrNull()
+    }
 
     // ── Map ──────────────────────────────────────────────────────────
 
@@ -235,6 +236,35 @@ class TrustPathService @Inject constructor(
             if (fresh.isNotEmpty()) return fresh
         }
         return if (answered.get()) emptyList() else null
+    }
+
+    /** Every follow of yours who follows someone; [complete] false when a relay stopped answering part way. */
+    data class AllBridges(val bridges: List<String>, val complete: Boolean)
+
+    /**
+     * Every one of your follows who follows [author], for Nuclear unfollow: the relay's
+     * `wot_links.json` when it has them (no cap, no round trip), else every batch of follow
+     * lists the relays give ([moreBridgeLists]). null when nothing could be checked.
+     */
+    suspend fun allBridges(author: String): AllBridges? {
+        val me = this.me
+        val follows = myFollows()
+        val followSet = follows.toSet()
+        linksText()?.let { text ->
+            // Complete only when the rebuild read everyone you follow now (Tron, #2283).
+            TrustLinks.bridges(text, author, me, followSet)
+                ?.let { return AllBridges(it, complete = TrustLinks.covers(text, followSet - me - author)) }
+        }
+        val lists = ArrayList<ContactList>()
+        val seen = HashSet<String>()
+        repeat(MAX_BRIDGE_BATCHES) {
+            val more = moreBridgeLists(author, follows, seen)
+                ?: return if (lists.isEmpty()) null else AllBridges(TrustPath.allBridges(author, me, followSet, lists), complete = false)
+            if (more.isEmpty()) return AllBridges(TrustPath.allBridges(author, me, followSet, lists), complete = true)
+            lists += more
+            seen += more.map { it.pubkey }
+        }
+        return AllBridges(TrustPath.allBridges(author, me, followSet, lists), complete = false)
     }
 
     /**
@@ -337,6 +367,8 @@ class TrustPathService @Inject constructor(
     private fun relayKey(url: String) = url.trim().lowercase().trimEnd('/')
 
     private companion object {
+        /** Batches of follow lists asked for at most, a few hundred people's lists in all. */
+        const val MAX_BRIDGE_BATCHES = 40
         /** Public relays tried before giving up on finding more bridges. */
         const val MAX_RELAYS = 3
         /** Under the phone relay's 1,000-event cap (Badger), so it is honoured. */

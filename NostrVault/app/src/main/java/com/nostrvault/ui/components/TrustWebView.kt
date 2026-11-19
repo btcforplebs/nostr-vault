@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -653,6 +654,11 @@ internal fun TrustWebContent(
             if (card == null && !searchFocused && !showingList) MyWebButton(
                 onClick = { closeCard(); myWebOpen = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = FloatingButtonRow.rowBottom),
+            )
+            // A profile's ··· › Nuclear unfollow: the card lights them and your follows who follow them.
+            NuclearUnfollowOverlay(
+                card = card, litCount = cardPath?.all?.size, accent = accent, name = ::name,
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
             )
             if (myWebOpen) {
                 val rebuilding = refreshState != null

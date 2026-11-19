@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.service.blockPrivately
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.NoteStats
@@ -731,6 +732,17 @@ class ProfileViewModel @Inject constructor(
         val pk = _pubkey.value
         if (pk.isEmpty()) return
         if (_isBlocked.value) feedService.unblockUser(pk) else feedService.blockUser(pk)
+    }
+
+    /** ··· › Private block: blocked in the mute list's encrypted part only (Nuclear unfollow spec). */
+    fun blockPrivately() {
+        val npub = nostrService.hexToNpub(_pubkey.value) ?: return
+        // Nothing is kept locally, so leaving the profile mid-publish must not cancel it.
+        viewModelScope.launch {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                nostrService.blockPrivately(configStore, npub)?.let { notificationManager.showError(it) }
+            }
+        }
     }
 
     /**

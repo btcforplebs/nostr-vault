@@ -286,6 +286,14 @@ object TrustMap {
     }
 
     /**
+     * [web] without anyone [blocked] (public or private blocks): a block keeps
+     * someone out of your web even when people you follow vouch for them
+     * (Private block, RESEARCH/NV_NUCLEAR_UNFOLLOW_SPEC.md).
+     */
+    fun withoutBlocked(web: Set<String>, blocked: Set<String>): Set<String> =
+        if (blocked.isEmpty() || web.isEmpty()) web else web - blocked
+
+    /**
      * The next "show everyone" filters: follows whose lists haven't come back
      * yet, tagging the author, chunked for relays that cap a request's size.
      * Empty once every follow has been asked about.

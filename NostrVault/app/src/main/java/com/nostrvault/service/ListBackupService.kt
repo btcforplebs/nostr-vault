@@ -203,6 +203,33 @@ class ListBackupService @Inject constructor(
         return (outcome as? ListVersionSave.Outcome.Refused)?.message
     }
 
+    /**
+     * Nuclear unfollow ([NuclearUnfollow]): one new follow list without [remove], built on the
+     * newest list, through the one safe save ([ListVersionSave]): the vault keeps the current
+     * list first, and nothing is signed if it can't. [onBackedUp] gets that kept list once it
+     * is safe (for "Backup saved" and Undo), before signing. Never called without a tap.
+     */
+    suspend fun unfollowMany(remove: Set<String>, onBackedUp: suspend (ListVersion) -> Unit): ListVersionSave.Outcome {
+        val me = configStore.activeAccountHexPubkey.value
+        if (me.isEmpty()) return ListVersionSave.Outcome.Refused("No account is signed in. Nothing was changed.")
+        load()
+        val ref = ListVersion(id = "", pubkey = me, kind = 3, createdAt = 0, tags = emptyList(), content = "")
+        // Starts from the newest list found now, never from the app's copy.
+        val shown = currentList(ref).getOrElse {
+            return ListVersionSave.Outcome.Refused(it.message ?: "Your newest follow list can't be checked. Nothing was changed.")
+        }
+        val saverFor = saver(me).getOrElse { return ListVersionSave.Outcome.Refused(it.message.orEmpty()) }
+        val outcome = NuclearUnfollow.save(saverFor(ref), me, shown?.id, remove, onBackedUp)
+        load()
+        return outcome
+    }
+
+    /** Undo for [unfollowMany]: puts [before] back as the newest follow list, by the same safe save as a restore. */
+    suspend fun undoUnfollow(before: ListVersion): String? {
+        val shown = preview(before).getOrElse { return it.message ?: "Your newest follow list can't be checked. Nothing was changed." }
+        return restore(before, shown)
+    }
+
     /** The Merge page's start: the newest list now, opened, and every version of it, older ones locked. */
     data class MergeStart(
         val current: ListVersionMerge.Opened?,

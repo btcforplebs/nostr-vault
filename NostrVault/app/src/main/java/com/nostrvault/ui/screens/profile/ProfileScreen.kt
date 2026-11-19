@@ -371,6 +371,8 @@ fun ProfileScreen(
                     onFollow = viewModel::toggleFollow,
                     onMessage = { onNavigateToDMThread(pubkey) },
                     onBlock = viewModel::toggleBlock,
+                    onNuclearUnfollow = { com.nostrvault.ui.navigation.NuclearUnfollowRequest.start(pubkey) }.takeIf { canSign },
+                    onPrivateBlock = { viewModel.blockPrivately() }.takeIf { canSign },
                     onZap = { viewModel.zap() },
                     onZapLongPress = { zapSheetOpen = true },
                     onTrustWeb = { trustWebAuthor = pubkey },
