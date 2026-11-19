@@ -50,6 +50,7 @@ jobs:
 
   build:
     needs: web
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -85,6 +86,7 @@ jobs:
 
   install-test:
     needs: build
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
