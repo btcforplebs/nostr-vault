@@ -194,3 +194,22 @@ test("the shared kind 15 vectors (DM_FILE_VECTORS.json): x, then decrypt, then o
     }
   }
 })
+
+// B4 (Messages UX check 2026-11-18): words + a video whose message fails. The words went out; the failed message is
+// the video alone and says "(video)", so the napplet's lookup (newestMine) finds it and the box isn't refilled with
+// words already delivered. A video that doesn't upload says "video", not "photo".
+test("words + a video that doesn't go: the words stay sent, the failed one is (video) and is found", async () => {
+  const { newestMine, findMine } = await import("../src/napplet/shell-deps-find.js")
+  const enc = await encryptFile(PLAIN)
+  resetMessages(pk(A))
+  let calls = 0
+  const publish = () => [++calls <= 2 ? Promise.resolve("ok") : Promise.reject(new Error("no"))]
+  const before = new Set()
+  await assert.rejects(sendMessage(ctxOf(A), pk(B), "look", { crypto: cryptoOf(A), query: async () => [], chat: fakeChat(), publish, preview: "look\n(video)", prepare: async () => fileMessage(URL_, enc, { mime: "video/mp4" }) }), /Not delivered/)
+  const all = [...getMessages().messages.values()].map(m => [m.content, !!m.failed]).sort()
+  assert.deepEqual(all, [["(video)", true], ["look", false]])
+  assert.equal(findMine(getMessages().messages, pk(A), pk(B), "look\n(video)", true, before), null, "the preview lookup misses it")
+  assert.equal(newestMine(getMessages().messages, pk(A), pk(B), true, before)?.content, "(video)")
+  resetMessages(pk(A))
+  await assert.rejects(sendMessage(ctxOf(A), pk(B), "", { crypto: cryptoOf(A), query: async () => [], chat: fakeChat(), publish, preview: "(video)", prepare: async () => { throw new Error("blossom 500") } }), /^Error: The video didn't upload, so nothing was sent\.$/)
+})

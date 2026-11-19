@@ -542,10 +542,12 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
     throw err?.fixed ? err : sendError(failed)
   }
   let content = text
+  // What the bubble says for the file once its words are out: (video) for a video (the preview names it), else (photo).
+  const word = /\(video\)$/.test(preview ?? "") ? "video" : "photo", fileOnly = `(${word})`
   // A photo goes up first (prepare -> the message with its link): a message naming a link no server holds would
   // reach them dead. Its failure is the screen's own sentence.
   if (prepare) {
-    try { const got = await prepare(); if (got && typeof got === "object") file = got; else content = got } catch (e) { return fail(sendError(e?.fixed ? e.message : "The photo didn't upload, so nothing was sent."), text, { prepare, preview }) }
+    try { const got = await prepare(); if (got && typeof got === "object") file = got; else content = got } catch (e) { return fail(sendError(e?.fixed ? e.message : `The ${word} didn't upload, so nothing was sent.`), text, { prepare, preview }) }
   }
   let rumor
   if (file) {
@@ -553,13 +555,13 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
     // photo one second after so it sorts below them. A failure past here keeps the upload: Try again resends `file`.
     const words = content.trim()
     if (words) {
-      try { await sendMessage(ctx, peer, words, { crypto: c, query, chat, publish, drop, wait }) } catch (e) { return fail(e, "", { file, preview: "(photo)" }) }
-      putMessage(me, pid, (shown = { ...shown, content: "(photo)" }))
+      try { await sendMessage(ctx, peer, words, { crypto: c, query, chat, publish, drop, wait }) } catch (e) { return fail(e, "", { file, preview: fileOnly }) }
+      putMessage(me, pid, (shown = { ...shown, content: fileOnly }))
     }
     rumor = rumorFor(me, peer, file.content, words ? Math.max(at, now()) + 1 : at, { kind: 15, tags: file.tags })
     content = file.shown
   } else rumor = rumorFor(me, peer, content, at)
-  const again = file ? { file, preview: "(photo)" } : {}
+  const again = file ? { file, preview: fileOnly } : {}
   const env = { signer: ctx.signer, crypto: c, me }
   const lookup = lookupFor(ctx)
   // Tests hand in `query`: those look up afresh; the app uses the kept lookups.

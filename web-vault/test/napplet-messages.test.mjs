@@ -309,3 +309,8 @@ test("messages napplet: Return sends only with a keyboard and never mid-composit
   assert.match(html, /page = await n\.dm\.messages\(\{ conversationId: pk, limit: 50 \}\) \} catch \(e\) \{ if \(open !== pk\) return;[^\n]*\n  if \(open !== pk\) return\n  msgs = mergeThread\(\[\], page\.messages\)/)
   assert.match(html, /if \(!page \|\| open !== at\) return/, "Older messages for a chat you left")
 })
+
+test("B4: a failed photo/video send with words is found by the newest failed message, not its text", () => {
+  const deps = fs.readFileSync(new URL("../src/napplet/shell-deps.js", import.meta.url), "utf8")
+  assert.match(deps, /findMine\(getMessages\(\)\.messages, ctx\.session\.pubkey, peer, sentText, true, before\)\n[^\n]*\n[^\n]*\n\s*\?\? newestMine\(getMessages\(\)\.messages, ctx\.session\.pubkey, peer, true, before\)/)
+})
