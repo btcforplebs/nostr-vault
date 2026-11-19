@@ -44,4 +44,35 @@ final class VaultNewsDotTests: XCTestCase {
         XCTAssertTrue(bar.contains("VaultNewsDot.isShown(newActivity: relayManager.hasNewRelayActivity"))
         XCTAssertTrue(bar.contains("VaultNewsDot.seen(relayManager.dmUnreadSeen, afterUnread: unread)"))
     }
+
+    /// The seen count survives a relaunch, per account (Logen 2026-11-19:
+    /// on the iPad, where DMs read on the phone stay unread, the dot came
+    /// back after every launch).
+    func testSeenCountIsKeptPerAccount() throws {
+        let suite = "VaultNewsDotTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertEqual(VaultNewsDot.savedSeen(account: "ab", in: defaults), 0, "never saved")
+        VaultNewsDot.saveSeen(3, account: "AB", in: defaults)
+        VaultNewsDot.saveSeen(1, account: "cd", in: defaults)
+        XCTAssertEqual(VaultNewsDot.savedSeen(account: "ab", in: defaults), 3, "case does not matter")
+        XCTAssertEqual(VaultNewsDot.savedSeen(account: "cd", in: defaults), 1)
+        VaultNewsDot.saveSeen(9, account: "", in: defaults)
+        XCTAssertEqual(VaultNewsDot.savedSeen(account: "", in: defaults), 0, "no account, nothing kept")
+    }
+
+    /// The Vault list and Messages see unread DMs, as the dashboard does, and
+    /// an account switch takes the saved count, not the in-memory ledger's 0.
+    func testListAndMessagesSeeDMsAndSwitchKeepsTheSavedCount() throws {
+        let view = try source("HavenApp/Views/Vault/VaultView.swift")
+        let hook = try XCTUnwrap(view.range(of: ".onChange(of: modeInSight, initial: true)"))
+        let body = view[hook.upperBound...].prefix(500)
+        XCTAssertTrue(body.contains("if mode == .activity || mode == .messages {"))
+        XCTAssertTrue(body.contains("relayManager.markDMsSeen(unread: DMService.shared.totalUnreadCount)"))
+        let state = try source("HavenApp/Services/Relay/VaultNewsState.swift")
+        XCTAssertTrue(state.contains("VaultNewsDot.saveSeen(dmUnreadSeen, account: account)"))
+        XCTAssertTrue(state.contains("ConfigService.shared.$activeAccountHexPubkey"))
+        let dot = try source("HavenApp/Services/Relay/RelayProcessManager+NewsDot.swift")
+        XCTAssertFalse(dot.contains("dmUnreadSeen = next.dmSeen"), "the switch would reset the saved count")
+    }
 }
