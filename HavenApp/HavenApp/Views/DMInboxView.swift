@@ -227,6 +227,10 @@ struct DMInboxView: View {
                                         profiles: nostrService.profiles),
                 query: searchText,
                 selection: usesTwoPane ? $selectedConversation : nil)
+        } else if dmService.isLoading && dmService.conversations.isEmpty {
+            // Still coming in: not "No Messages Yet" on launch, a switch or
+            // while the relays don't answer (B7).
+            DMInboxLoadingView()
         } else if dmService.visibleConversations.isEmpty && !(usesTwoPane && (showingRequestsInPane || isSearching)) {
             GeometryReader { geometry in
                 ScrollView(.vertical, showsIndicators: false) {

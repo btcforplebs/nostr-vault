@@ -39,6 +39,10 @@ struct DMThreadView: View {
     @State private var showingProfile: IdentifiableString?
     @Namespace private var mediaZoom
     @Environment(\.dismiss) private var dismiss
+    /// Still showing, for a send that fails after you left (B5).
+    @State private var presence = DMThreadPresence()
+
+    private var draftAccount: String { openedAsAccount ?? configService.activeAccountHexPubkey }
 
     /// A photo or video waiting to go out with the next message. GIFs keep
     /// their bytes so they still move; other photos are re-encoded as a JPEG,
@@ -163,6 +167,9 @@ struct DMThreadView: View {
                 .overlay {
                     if isBlocked {
                         DMBlockedNotice()
+                    } else if messages.isEmpty && dmService.isLoading {
+                        // History still loading: not "Start a conversation" yet (B7).
+                        ProgressView()
                     } else if messages.isEmpty {
                         Text("Start a conversation")
                             .font(.appSystem(size: 15))
@@ -398,13 +405,25 @@ struct DMThreadView: View {
             }
             .onAppear {
                 if openedAsAccount == nil { openedAsAccount = configService.activeAccountHexPubkey }
-                if messageInput.isEmpty, let initialMessage { messageInput = initialMessage }
+                presence.isOnScreen = true
+                // What you were typing here last time comes back (B9); a
+                // "Message seller" opening text only when there is none.
+                if messageInput.isEmpty {
+                    messageInput = DMDrafts.shared.text(account: draftAccount, counterparty: counterpartyPubkey)
+                        ?? initialMessage ?? ""
+                }
                 dmService.markRead(conversationWith: counterpartyPubkey)
                 dmService.visibleConversation = counterpartyPubkey
                 // The header's name for someone not loaded yet (B6).
                 nostrService.fetchMissingProfiles(for: [counterpartyPubkey])
             }
+            .onChange(of: messageInput) { _, text in
+                DMDrafts.shared.set(text, account: draftAccount, counterparty: counterpartyPubkey)
+            }
             .onDisappear {
+                presence.isOnScreen = false
+                // The words stay as a draft; a picked video's temp file goes (B9).
+                if !isSending { discardAttachment() }
                 if dmService.visibleConversation == counterpartyPubkey {
                     dmService.visibleConversation = nil
                 }
@@ -630,6 +649,16 @@ struct DMThreadView: View {
                 #endif
                 let sentWords = wordsSent
                 await MainActor.run {
+                    guard presence.isOnScreen else {
+                        // Closed meanwhile: the screen's state is gone, so the
+                        // words wait as the chat's draft and a pill says so (B5).
+                        DMSendFailedAway.report(words: sentWords ? "" : messageToSend,
+                                                hadMedia: photo != nil, account: draftAccount,
+                                                counterparty: counterpartyPubkey,
+                                                name: nostrService.profiles[counterpartyPubkey]?.bestName)
+                        photo?.video?.discard()
+                        return
+                    }
                     isSending = false
                     sendStage = nil
                     if !sentWords { messageInput = messageToSend }
