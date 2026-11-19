@@ -14,6 +14,7 @@ f() { install -D -m "$1" "$2" "$pkg/$3"; } # f <mode> <from> <to>
 # The vault and the mesh.
 for p in havend haven-engine nv-mesh; do f 755 "$bin/$p" "usr/lib/nostr-vault/$p"; done
 f 755 "$here/lib/prepare" usr/lib/nostr-vault/prepare
+f 644 "$here/selinux/nostr-vault.cil" usr/share/nostr-vault/selinux/nostr-vault.cil
 f 755 "$here/bin/nostr-vault-setup" usr/bin/nostr-vault-setup
 for u in nostr-vault-prepare.service nostr-vault.service nostr-vault-mesh.service; do
   f 644 "$here/systemd/$u" "lib/systemd/system/$u"

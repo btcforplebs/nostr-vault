@@ -1,0 +1,5 @@
+; Nostr Vault's SELinux file labels (Fedora, RHEL and any system with SELinux on). Only labels, no rules: the four
+; programs in /usr/lib/nostr-vault are labelled as programs (bin_t), as if they were in /usr/libexec, so systemd
+; starts them as an ordinary unconfined service (unconfined_service_t). Without this they are lib_t, and systemd runs
+; them in its own domain (init_t). The postinst installs it with semodule when SELinux is on; remove takes it out.
+(filecon "/usr/lib/nostr-vault/(havend|haven-engine|nv-mesh|prepare)" file (system_u object_r bin_t ((s0) (s0))))

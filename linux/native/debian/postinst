@@ -13,6 +13,11 @@ user() { # user <name> <uid>
 if [ "$1" = configure ]; then
   user nvmesh 10001
   user nvvault 10002
+  # SELinux on (Fedora): label the programs as programs, so systemd runs them as unconfined_service_t, not init_t.
+  if command -v selinuxenabled >/dev/null && selinuxenabled && command -v semodule >/dev/null; then
+    semodule -i /usr/share/nostr-vault/selinux/nostr-vault.cil && restorecon -F /usr/lib/nostr-vault/* \
+      || echo "nostr-vault: couldn't install its SELinux labels; it runs, in systemd's own domain" >&2
+  fi
   if command -v gtk-update-icon-cache >/dev/null; then gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true; fi
   if command -v update-desktop-database >/dev/null; then update-desktop-database -q /usr/share/applications || true; fi
   if [ -d /run/systemd/system ]; then

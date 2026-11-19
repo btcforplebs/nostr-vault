@@ -2,6 +2,7 @@
 # Purge removes the settings and the drop-ins, never the vault's data: that stays where it is, and says so.
 set -e
 if [ "$1" = remove ] || [ "$1" = purge ]; then
+  if command -v semodule >/dev/null && semodule -l 2>/dev/null | grep -qx nostr-vault; then semodule -r nostr-vault >/dev/null 2>&1 || true; fi
   if command -v gtk-update-icon-cache >/dev/null; then gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true; fi
   if command -v update-desktop-database >/dev/null; then update-desktop-database -q /usr/share/applications || true; fi
 fi
