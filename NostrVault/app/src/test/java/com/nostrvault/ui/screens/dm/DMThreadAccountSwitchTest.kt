@@ -48,6 +48,7 @@ class DMThreadAccountSwitchTest {
             nostrService = nostrService,
             configStore = configStore,
             blossomService = mockk<BlossomService>(relaxed = true),
+            notificationManager = mockk(relaxed = true),
         )
     }
 
@@ -92,6 +93,7 @@ class DMThreadAccountSwitchTest {
                 every { it.activeAccountHexPubkey } returns active
             },
             blossomService = mockk(relaxed = true),
+            notificationManager = mockk(relaxed = true),
         )
         fresh.setMessageText("draft")
         active.value = alice

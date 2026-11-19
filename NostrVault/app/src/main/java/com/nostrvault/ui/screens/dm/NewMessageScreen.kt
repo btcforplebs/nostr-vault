@@ -106,6 +106,9 @@ class NewMessageViewModel @Inject constructor(
             DMRecipientInput.results(query, profs, dmService.blockedPubkeys())
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** Why this account can't send DMs (watch-only), or null when it can (B12). */
+    val dmUnavailable: StateFlow<String?> = dmService.dmUnavailable
+
     /** The recipient is someone you blocked (opened from their profile): sending is off (B3). */
     val recipientBlocked: StateFlow<Boolean> =
         _selectedRecipient.map { it != null && dmService.isBlocked(it) }
@@ -220,6 +223,7 @@ fun NewMessageScreen(
     val attachedImage by viewModel.attachedImage.collectAsState()
     val sendError by viewModel.sendError.collectAsState()
     val recipientBlocked by viewModel.recipientBlocked.collectAsState()
+    val dmUnavailable by viewModel.dmUnavailable.collectAsState()
     val colors = LocalNostrVaultColors.current
 
     sendError?.let { DMSendFailedDialog(it, onDismiss = viewModel::clearSendError) }
@@ -343,7 +347,9 @@ fun NewMessageScreen(
 
             HorizontalDivider(color = SeparatorColor.copy(alpha = 0.5f), thickness = 0.5.dp)
 
-            Row(
+            // Watch-only: no key here to seal a message with, so say so instead
+            // of a Send that can only fail (B12, as the chat already does).
+            dmUnavailable?.let { DMUnavailableNotice(it) } ?: Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
