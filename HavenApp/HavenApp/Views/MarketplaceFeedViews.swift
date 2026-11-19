@@ -237,7 +237,7 @@ struct MarketplaceListingSheet: View {
                 }
             }
             .sheet(isPresented: $showingMessage) {
-                DMThreadView(counterpartyPubkey: listing.pubkey, initialMessage: messageToSeller)
+                DMThreadView(counterpartyPubkey: listing.pubkey, initialMessage: messageToSeller, showsClose: true)
                     .environmentObject(nostrService)
                     .environmentObject(ConfigService.shared)
             }

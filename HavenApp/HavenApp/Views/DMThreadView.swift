@@ -7,6 +7,9 @@ struct DMThreadView: View {
     /// Typed into the message box on open, for the owner to edit or send —
     /// "Message seller" starts with the listing it is about.
     var initialMessage: String? = nil
+    /// Presented as a sheet (profile, WoT, marketplace): a Close button on
+    /// iOS too. The Mac always has one; pushed from the inbox, Back is enough.
+    var showsClose: Bool = false
 
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
@@ -132,6 +135,8 @@ struct DMThreadView: View {
                             .padding(.vertical, 16)
                         }
                         .coordinateSpace(name: Self.scrollSpace)
+                        // Dragging the chat puts the keyboard away (B8).
+                        .scrollDismissesKeyboard(.interactively)
                         .onAppear {
                             followTracker.newestID = messages.last?.id
                             scrollToBottom(proxy)
@@ -341,6 +346,13 @@ struct DMThreadView: View {
             }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if showsClose {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(String(localized: "dm.inbox.close")) { dismiss() }
+                    }
+                }
+            }
             #else
             // Presented as a sheet from the profile, where there is no title bar and no
             // swipe-down: Escape or this button is the only way back out. Pushed from the
