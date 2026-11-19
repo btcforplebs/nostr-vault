@@ -200,6 +200,37 @@ class FipsMeshFallbackTest {
         assertEquals("past them the first vault is asked again", listOf("http://127.0.0.1:9/$v1/$sha"), later.sent.drop(1))
     }
 
+    /** Ted, nv-parity 2026-11-19: no vault to ask means the photo is missing, with no mesh spinner first. */
+    @Test fun `an author with no vault listed gets Photo not found, never the mesh spinner`() {
+        listVaults()
+        val seen = mutableListOf<MeshMediaPhase?>()
+        val chain = MeshTestChain(request()) { r -> seen += MeshMediaStatus.phases.value[sha]; MeshTestChain.reply(r, 404) }
+        assertEquals(404, read(chain).code)
+        assertEquals(emptyList<String>(), dialled)
+        assertFalse(MeshMediaPhase.MeshLookup in seen)
+        assertEquals(MeshMediaPhase.NotFound, MeshMediaStatus.phases.value[sha])
+        assertEquals("Photo not found", MeshMediaPhase.NotFound.text())
+        assertEquals("Video not found", MeshMediaPhase.NotFound.text(video = true))
+    }
+
+    @Test fun `while the author's list is fetched no spinner shows, and none found is Photo not found`() {
+        FipsMediaRouter.serverLists = { emptyMap() }
+        val during = mutableListOf<MeshMediaPhase?>()
+        FipsMeshInterceptor.sleep = { during += MeshMediaStatus.phases.value[sha]; now += it }
+        val chain = MeshTestChain(request()) { r -> MeshTestChain.reply(r, 404) }
+        assertEquals(404, read(chain).code)
+        assertTrue("it waited for the list", during.isNotEmpty())
+        assertTrue(during.all { it == null })
+        assertEquals(MeshMediaPhase.NotFound, MeshMediaStatus.phases.value[sha])
+    }
+
+    @Test fun `every vault saying it does not have it is Photo not found, not unreachable`() {
+        val chain = MeshTestChain(request()) { r -> MeshTestChain.reply(r, 404) }
+        assertEquals(404, read(chain).code)
+        assertEquals(listOf(v1, v2), dialled)
+        assertEquals(MeshMediaPhase.NotFound, MeshMediaStatus.phases.value[sha])
+    }
+
     @Test fun `a server error from a vault is not remembered as a miss`() {
         listVaults(v1)
         var code = 503

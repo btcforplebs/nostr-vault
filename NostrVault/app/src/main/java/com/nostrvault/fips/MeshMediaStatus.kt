@@ -14,11 +14,19 @@ enum class MeshMediaPhase {
     MeshLookup,
 
     /** The mesh was asked and gave up. */
-    Unreached;
+    Unreached,
+
+    /**
+     * The URL failed and there is no vault to ask (the author lists none), or
+     * every vault listed said it doesn't have it: the photo is missing, not
+     * out of reach (Ted, nv-parity 2026-11-19).
+     */
+    NotFound;
 
     fun text(video: Boolean = false): String = when (this) {
         MeshLookup -> if (video) "Loading video over the mesh…" else "Loading image over the mesh…"
         Unreached -> "Couldn't reach the owner's vault"
+        NotFound -> if (video) "Video not found" else "Photo not found"
     }
 }
 

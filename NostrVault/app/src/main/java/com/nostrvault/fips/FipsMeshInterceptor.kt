@@ -60,23 +60,36 @@ class FipsMeshInterceptor : Interceptor {
         return failed.newBuilder().body(ByteArray(0).toResponseBody(contentType)).build()
     }
 
-    /** The photo from the author's vaults, or null (not followed, none listed, none answered with it). */
+    /**
+     * The photo from the author's vaults, or null (not followed, none listed, none answered with it). The
+     * vaults are looked up first: the mesh spinner only shows when there is a vault to ask, and with none
+     * the photo is simply missing.
+     */
     private fun meshRead(chain: Interceptor.Chain, request: Request, author: String, sha: String): Response? {
         if (!FipsMediaRouter.mayDial(author)) return null
+        // A `.fips` URL may name any node; only the author's own signed list says which are theirs.
+        val vaults = awaitVaults(author, request.url.host).orEmpty()
+        if (chain.call().isCanceled()) return null
+        if (vaults.isEmpty()) {
+            MeshMediaStatus.set(sha, MeshMediaPhase.NotFound)
+            return null
+        }
         MeshMediaStatus.set(sha, MeshMediaPhase.MeshLookup)
         val reply = try {
-            read(chain, request, author, sha)
+            read(chain, request, sha, vaults)
         } catch (e: IOException) {
             null
         }
-        if (reply != null || chain.call().isCanceled()) MeshMediaStatus.clear(sha)
-        else MeshMediaStatus.set(sha, MeshMediaPhase.Unreached)
+        when {
+            reply != null || chain.call().isCanceled() -> MeshMediaStatus.clear(sha)
+            // Every vault answered that it doesn't have it: missing, not out of reach.
+            vaults.all { FipsMediaRouter.recentlyMissed(it, sha, clock()) } -> MeshMediaStatus.set(sha, MeshMediaPhase.NotFound)
+            else -> MeshMediaStatus.set(sha, MeshMediaPhase.Unreached)
+        }
         return reply
     }
 
-    private fun read(chain: Interceptor.Chain, request: Request, author: String, sha: String): Response? {
-        // A `.fips` URL may name any node; only the author's own signed list says which are theirs.
-        val vaults = awaitVaults(author, request.url.host) ?: return null
+    private fun read(chain: Interceptor.Chain, request: Request, sha: String, vaults: List<String>): Response? {
         val giveUp = clock() + PHOTO_PATIENCE_MS
         for (npub in vaults) {
             // This vault said lately it does not have this photo: skip it for now.
