@@ -19,8 +19,6 @@ final class VideoNowPlaying {
     private var isLive = false
     private var observers: [NSKeyValueObservation] = []
     private var targets: [(MPRemoteCommand, Any)] = []
-    /// The music's button states, put back on `end`.
-    private var savedEnabled: [(MPRemoteCommand, Bool)] = []
 
     func begin(player: AVPlayer, title: String, isLive: Bool) {
         end()
@@ -43,11 +41,15 @@ final class VideoNowPlaying {
         observers.removeAll()
         for (command, target) in targets { command.removeTarget(target) }
         targets.removeAll()
-        for (command, enabled) in savedEnabled { command.isEnabled = enabled }
-        savedEnabled.removeAll()
+        let center = MPRemoteCommandCenter.shared()
+        center.skipBackwardCommand.isEnabled = false
+        center.skipForwardCommand.isEnabled = false
         self.player = nil
         Self.isActive = false
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        // The music works its buttons out again rather than getting back a
+        // snapshot from `begin`: its queue may have moved meanwhile.
+        MusicPlayerService.shared.refreshRemoteCommandStates()
         MusicPlayerService.shared.updateNowPlaying()
     }
 
@@ -93,10 +95,7 @@ final class VideoNowPlaying {
             (center.skipBackwardCommand, seekable), (center.skipForwardCommand, seekable),
             (center.changePlaybackPositionCommand, seekable),
         ]
-        for (command, enabled) in states {
-            savedEnabled.append((command, command.isEnabled))
-            command.isEnabled = enabled
-        }
+        for (command, enabled) in states { command.isEnabled = enabled }
         center.skipBackwardCommand.preferredIntervals = [NSNumber(value: VideoPlayerControls.skipSeconds)]
         center.skipForwardCommand.preferredIntervals = [NSNumber(value: VideoPlayerControls.skipSeconds)]
 

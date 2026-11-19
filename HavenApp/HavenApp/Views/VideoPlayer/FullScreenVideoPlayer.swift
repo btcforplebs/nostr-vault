@@ -154,6 +154,11 @@ struct FullScreenVideoPlayer: View {
     /// player keeps the music player's own line.
     private static let nowPlayingTitle = "Video"
 
+    /// Closed while the player was being prepared: onDisappear has already
+    /// run and cleared this, so nothing plays and the lock screen is not
+    /// taken by a clip that is gone (Tron, #2255).
+    private var stillOnScreen: Bool { VideoPlayerCache.shared.activeFullScreenURL == url }
+
 
     private func rejoinLive() {
         guard let player else { return }
@@ -191,6 +196,7 @@ struct FullScreenVideoPlayer: View {
         }
         meshFile = file
         let meshPlayer = await VideoPlaybackService.shared.preparedPlayer(for: file, mimeHint: mimeType, intent: .fullScreen)
+        guard stillOnScreen else { return }
         player = meshPlayer
         meshPlayer.play()
         VideoNowPlaying.shared.begin(player: meshPlayer, title: Self.nowPlayingTitle, isLive: isLive)
@@ -203,6 +209,7 @@ struct FullScreenVideoPlayer: View {
             let cachedPlayer = await VideoPlaybackService.shared.preparedPlayer(
                 for: url, mimeHint: mimeType, intent: .fullScreen
             )
+            guard stillOnScreen else { return }
             self.player = cachedPlayer
             cachedPlayer.play()
             VideoNowPlaying.shared.begin(player: cachedPlayer, title: Self.nowPlayingTitle, isLive: isLive)

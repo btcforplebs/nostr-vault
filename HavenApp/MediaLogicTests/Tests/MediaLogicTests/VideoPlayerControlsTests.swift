@@ -41,6 +41,26 @@ final class VideoPlayerControlsTests: XCTestCase {
         }
     }
 
+    /// Tron's #2255 review: a clip closed while it loads never takes the
+    /// lock screen, and the music works its buttons out again on hand-back
+    /// instead of getting a stale snapshot.
+    func testClosedWhileLoadingAndFreshMusicButtons() throws {
+        let full = try source("HavenApp/Views/VideoPlayer/FullScreenVideoPlayer.swift")
+        XCTAssertEqual(full.components(separatedBy: "guard stillOnScreen else { return }").count - 1, 2,
+                       "both the URL and the mesh path check after their await")
+        for begin in ["guard stillOnScreen else { return }\n            self.player = cachedPlayer",
+                      "guard stillOnScreen else { return }\n        player = meshPlayer"] {
+            XCTAssertTrue(full.contains(begin), begin)
+        }
+        let now = try source("HavenApp/Services/VideoNowPlaying.swift")
+        XCTAssertFalse(now.contains("savedEnabled"))
+        XCTAssertTrue(now.contains("MusicPlayerService.shared.refreshRemoteCommandStates()"))
+        let music = try source("HavenApp/Services/MusicPlayerService.swift")
+        XCTAssertEqual(music.components(separatedBy: "nextTrackCommand.isEnabled").count - 1, 1,
+                       "Next is set in one place, which stands aside while a clip holds the lock screen")
+        XCTAssertTrue(music.contains("func refreshRemoteCommandStates() {\n        guard !VideoNowPlaying.isActive else { return }"))
+    }
+
     private func source(_ path: String) throws -> String {
         let app = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
