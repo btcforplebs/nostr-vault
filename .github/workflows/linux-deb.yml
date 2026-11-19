@@ -1,0 +1,90 @@
+name: Linux .deb
+
+# Builds the nostr-vault .deb for amd64 and arm64 (linux/native/build.sh, on Debian 12 as its header asks, each arch
+# on its own runner so nothing is cross-built), then installs each one on a fresh Ubuntu runner with systemd and runs
+# linux/native/test/install-test.sh against it. Publishes nothing: the .debs are run artifacts (14 days).
+on:
+  workflow_dispatch:
+  push:
+    branches: ["tom/linux-*"]
+  pull_request:
+    paths:
+      - "linux/native/**"
+      - "linux/mesh/**"
+      - ".github/workflows/linux-deb.yml"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    container: debian:bookworm
+    steps:
+      - name: Build tools (as linux/mesh/Dockerfile, plus dpkg-dev)
+        run: |
+          apt-get update -q
+          apt-get install -y -q --no-install-recommends git curl ca-certificates build-essential clang libclang-dev \
+            libnftnl-dev libmnl-dev libdbus-1-dev pkg-config dpkg-dev binutils python3 xz-utils
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # build.sh's version is the commit count
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: haven-go/go.mod
+          cache-dependency-path: haven-go/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          check-latest: true
+      - name: Rust (linux/mesh/rust-toolchain.toml pins the version)
+        run: |
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          "$HOME/.cargo/bin/rustup" toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' linux/mesh/rust-toolchain.toml)" --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Build
+        run: linux/native/build.sh ${{ matrix.arch }}
+      - name: What was built
+        run: |
+          cd linux/native/out
+          ls -l
+          cat nostr-vault-linux.json
+          for d in *.deb; do dpkg-deb -I "$d" control | grep -E '^(Version|Architecture|Depends):'; done
+          test "$(dpkg-deb -f nostr-vault_*_${{ matrix.arch }}.deb Architecture)" = ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nostr-vault-deb-${{ matrix.arch }}
+          path: linux/native/out/
+          retention-days: 14
+
+  install-test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: linux/native/test
+      - uses: actions/download-artifact@v4
+        with:
+          name: nostr-vault-deb-${{ matrix.arch }}
+          path: debs
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - name: Throwaway-key tool
+        run: cd linux/native/test/keytool && go build -o "$RUNNER_TEMP/keytool" .
+      - name: Check the download against the manifest
+        run: cd debs && python3 -c 'import json,hashlib; m=json.load(open("nostr-vault-linux.json")); assert m["files"]; [print(f, "ok") if hashlib.sha256(open(f,"rb").read()).hexdigest()==h else exit(f+" sha mismatch") for f,h in m["files"].items()]'
+      - name: Install test (headless)
+        run: sudo KT="$RUNNER_TEMP/keytool" sh linux/native/test/install-test.sh debs/nostr-vault_*_${{ matrix.arch }}.deb headless
