@@ -124,4 +124,13 @@ class NuclearUnfollowTest {
         val vm = File(root, "ui/screens/profile/ProfileViewModel.kt").readText()
         assertTrue(vm.contains("nostrService.blockPrivately(configStore, npub)"))
     }
+
+    /** Tron #2283: the links file only covers follows its rebuild read. */
+    @Test
+    fun `the vault's links cover your follows only if it read them all`() {
+        val text = """{"follows":["$f1","$f2"],"links":{"$x":[0,1]}}"""
+        assertTrue(com.nostrvault.data.model.TrustLinks.covers(text, setOf(f1, f2)))
+        assertFalse(com.nostrvault.data.model.TrustLinks.covers(text, setOf(f1, f2, keep)))
+        assertFalse(com.nostrvault.data.model.TrustLinks.covers("{}", setOf(f1)))
+    }
 }

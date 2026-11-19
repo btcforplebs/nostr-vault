@@ -149,12 +149,13 @@ class TrustPathService @Inject constructor(
      * is no file (depth below 3, no rebuild yet) or no entry for them.
      */
     private suspend fun linkedBridges(author: String, me: String, follows: Set<String>): List<String>? =
-        withContext(Dispatchers.IO) {
-            val dir = configStore.config.value.relayDataDir ?: return@withContext null
-            val text = runCatching { File(dir, TrustLinks.FILE_NAME).readText() }.getOrNull()
-                ?: return@withContext null
-            TrustLinks.bridges(text, author, me, follows)
-        }
+        linksText()?.let { TrustLinks.bridges(it, author, me, follows) }
+
+    /** The relay's `wot_links.json`, or null when there is none. */
+    private suspend fun linksText(): String? = withContext(Dispatchers.IO) {
+        val dir = configStore.config.value.relayDataDir ?: return@withContext null
+        runCatching { File(dir, TrustLinks.FILE_NAME).readText() }.getOrNull()
+    }
 
     // ── Map ──────────────────────────────────────────────────────────
 
@@ -249,7 +250,11 @@ class TrustPathService @Inject constructor(
         val me = this.me
         val follows = myFollows()
         val followSet = follows.toSet()
-        linkedBridges(author, me, followSet)?.let { return AllBridges(it, complete = true) }
+        linksText()?.let { text ->
+            // Complete only when the rebuild read everyone you follow now (Tron, #2283).
+            TrustLinks.bridges(text, author, me, followSet)
+                ?.let { return AllBridges(it, complete = TrustLinks.covers(text, followSet - me - author)) }
+        }
         val lists = ArrayList<ContactList>()
         val seen = HashSet<String>()
         repeat(MAX_BRIDGE_BATCHES) {

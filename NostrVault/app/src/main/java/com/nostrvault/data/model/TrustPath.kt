@@ -219,6 +219,19 @@ object TrustLinks {
         return found.toSortedSet().toList().ifEmpty { null }
     }
 
+    /**
+     * Whether the file's rebuild read every one of [current]'s lists: true only
+     * when each of them is in its follows. Someone followed since the rebuild
+     * wasn't read, so a bridge through them can be missing (Nuclear unfollow's
+     * "may miss a few").
+     */
+    fun covers(text: String, current: Set<String>): Boolean {
+        val followsJson = slice(text, "\"follows\":[", 0) ?: return false
+        val follows = (runCatching { Json.parseToJsonElement(followsJson) }.getOrNull() as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }?.toSet() ?: return false
+        return follows.containsAll(current)
+    }
+
     /** From the `[` that ends [key] through the next `]`. */
     private fun slice(text: String, key: String, from: Int): String? {
         val start = text.indexOf(key, from)
