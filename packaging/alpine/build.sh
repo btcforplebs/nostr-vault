@@ -44,7 +44,7 @@ export GOTOOLCHAIN=auto GOFLAGS=-buildvcs=false
 # Alpine's libraries (a static musl build can't load libdbus/libnftnl from the system).
 rustup-init -y -q --profile minimal --default-toolchain none >/dev/null
 . "$HOME/.cargo/env"
-rustup toolchain install -q "$(sed -n 's/^channel = "\(.*\)"/\1/p' "$root/linux/mesh/rust-toolchain.toml")" --profile minimal
+rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' "$root/linux/mesh/rust-toolchain.toml")" --profile minimal
 (cd "$root/linux/mesh" && CARGO_TARGET_DIR=$work/target RUSTFLAGS="-C target-feature=-crt-static" cargo build --release --locked)
 cp "$work/target/release/nv-mesh" "$bin/nv-mesh"
 cp "$root/linux/native/lib/prepare" "$bin/prepare"
