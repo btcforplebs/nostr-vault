@@ -158,10 +158,11 @@ final class GlobeStormTests: XCTestCase {
 
     func testOnlyTheNewestLinesGetFaces() {
         var board = GlobeArcs.Board()
+        // A steady eight a second, so every one flies.
         for n in 0..<100 {
             board.add(GlobeArcs.Arrival(id: key(5000 + n), author: key(n + 1), targets: [key(n + 200)]))
+            board.step(now: Double(n) / GlobeArcs.starsPerSecond, me: me)
         }
-        board.step(now: 0, me: me)
         let faces = board.faceKeys(limit: GlobeArcs.maxArcFaces, except: me)
         XCTAssertEqual(faces.count, GlobeArcs.maxArcFaces)
         XCTAssertEqual(faces.first, key(100))
@@ -185,7 +186,12 @@ final class GlobeStormTests: XCTestCase {
     func testTheSeenListForgetsOnlyPastItsCap() {
         var board = GlobeArcs.Board()
         for n in 0..<(GlobeArcs.Board.seenCap + 10) { board.add(GlobeArcs.Arrival(id: key(n), author: key(1), targets: [me])) }
-        board.step(now: 0, me: me)
+        // Let what waits on (8 a second), so the board is empty again.
+        var t = 0.0
+        while !board.waiting.isEmpty {
+            board.step(now: t, me: me)
+            t += 1
+        }
         // A recent one sent again by another relay is still a repeat.
         board.add(GlobeArcs.Arrival(id: key(GlobeArcs.Board.seenCap), author: key(1), targets: [me]))
         XCTAssertTrue(board.waiting.isEmpty)

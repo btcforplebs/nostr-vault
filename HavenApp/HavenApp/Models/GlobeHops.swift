@@ -25,12 +25,13 @@ extension GlobeArcs {
     /// doesn't fly. `follows` is you and your follows. The signer is the
     /// arrival's author: a repost's reposter, a zap's verified zapper. The
     /// mute list reads the note's own text and tags; a zap's comment sits
-    /// inside its request, so a zap is judged on its zapper alone.
+    /// inside its request, so a zap is judged on its zapper, and on whom it
+    /// zapped for blocks only.
     static func ring(of arrival: Arrival, event: [String: Any], in web: WebGate.Web,
                      follows: Set<String>, show: Show) -> Ring? {
         guard show.allows(arrival.sort) else { return nil }
         let subject: WebGate.Subject = arrival.zap
-            ? WebGate.Subject(signer: arrival.author, id: arrival.id)
+            ? WebGate.Subject(signer: arrival.author, related: arrival.targets, id: arrival.id)
             : .note(id: arrival.id, author: arrival.author, content: event["content"] as? String ?? "",
                     tags: event["tags"] as? [[String]] ?? [])
         let verdict = WebGate.judge(subject, in: web, reach: .web)

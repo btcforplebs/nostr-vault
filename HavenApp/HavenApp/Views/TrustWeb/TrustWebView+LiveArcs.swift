@@ -37,6 +37,11 @@ final class GlobeArrivalStream: ObservableObject {
     /// earlier one leaves a newer one running.
     private var generation = 0
     private var links: [GlobeRelayLink] = []
+    /// Who is asked for now, and you and your follows, for placing stars.
+    private var asked: [String]?
+    private var follows: Set<String> = []
+    /// Re-reads your web as follows and the graph load or change.
+    private var webWatch: AnyCancellable?
     #if DEBUG
     private var stub: Task<Void, Never>?
     /// Arrivals per minute, for the globe's debug readout.
@@ -47,6 +52,9 @@ final class GlobeArrivalStream: ObservableObject {
 
     /// Most authors one filter names.
     private static let authorsPerFilter = 500
+    /// How often your web is read again with nothing published: the graph's
+    /// links can land without a change to the lists watched.
+    private static let webRecheck: TimeInterval = 30
 
     /// Opens the REQs `show` asks for; returns the token that stops them.
     @discardableResult
@@ -70,25 +78,45 @@ final class GlobeArrivalStream: ObservableObject {
             return generation
         }
         #endif
+        open(me: me, show: show)
+        // A globe opened before your follows or graph loaded (a cold start on
+        // WoT, an account switch), or a new follow: ask again for who is in
+        // your web now, once the lists settle, and every `webRecheck`.
+        let feed = FeedService.shared
+        let changed = feed.$followedPubkeys.map { _ in () }
+            .merge(with: feed.$wotPubkeys.map { _ in () }, feed.$extendedNetworkPubkeys.map { _ in () })
+            .debounce(for: .seconds(2), scheduler: DispatchQueue.main)
+        let tick = Timer.publish(every: Self.webRecheck, on: .main, in: .common).autoconnect().map { _ in () }
+        webWatch = changed.merge(with: tick)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.open(me: me, show: show) }
+        return generation
+    }
+
+    /// Opens the REQs for who is in your web now; leaves them be when that
+    /// hasn't changed. A reopen asks from then, so nothing replays.
+    private func open(me: String, show: GlobeArcs.Show) {
         let feed = FeedService.shared
         let follows = Set(feed.followedPubkeys.map { $0.lowercased() }).union([me.lowercased()])
-        let web = feed.feedGate
-        let filters = GlobeArcs.storm(show: show,
-                                      authors: GlobeArcs.askedAuthors(follows: follows, web: web.web, friends: show.friends),
-                                      since: Int(Date().timeIntervalSince1970), authorsPerFilter: Self.authorsPerFilter)
+        let authors = GlobeArcs.askedAuthors(follows: follows, web: feed.feedGate.web, friends: show.friends)
+        self.follows = follows
+        guard links.isEmpty || authors != asked else { return }
+        asked = authors
+        links.forEach { $0.close() }
+        links = []
+        let filters = GlobeArcs.storm(show: show, authors: authors, since: Int(Date().timeIntervalSince1970),
+                                      authorsPerFilter: Self.authorsPerFilter)
         for url in feed.externalRelayURLs {
             links.append(GlobeRelayLink(url: url, filters: filters) { [weak self] event in
                 // A zap's request must be signed by its zapper.
-                guard var arrival = GlobeArcs.arrival(event, verifyZap: NostrEventVerifier.isValid(json:)) else { return }
-                // Judged on the gate as it is now, so a block, a mute or a new
-                // follow counts at once.
+                guard let self, var arrival = GlobeArcs.arrival(event, verifyZap: NostrEventVerifier.isValid(json:)) else { return }
+                // Judged on the gate as it is now, so a block or a mute counts at once.
                 guard let ring = GlobeArcs.ring(of: arrival, event: event, in: FeedService.shared.feedGate,
-                                                follows: follows, show: show) else { return }
+                                                follows: self.follows, show: show) else { return }
                 arrival.ring = ring
-                self?.emit(arrival)
+                self.emit(arrival)
             })
         }
-        return generation
     }
 
     /// Closes the connections, unless `token` is from an earlier start.
@@ -96,8 +124,10 @@ final class GlobeArrivalStream: ObservableObject {
     @discardableResult
     func stop(_ token: Int? = nil) -> Bool {
         if let token, token != generation { return false }
+        webWatch = nil
         links.forEach { $0.close() }
         links = []
+        asked = nil
         #if DEBUG
         stub?.cancel()
         stub = nil

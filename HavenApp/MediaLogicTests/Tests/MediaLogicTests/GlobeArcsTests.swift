@@ -224,9 +224,9 @@ final class GlobeArcsTests: XCTestCase {
     func testHopsOneAndTwoFlyAndFurtherOutOnlyZaps() {
         let follows: Set = [key(1), me]
         let web = WebGate.Web(own: [me], web: [key(1), key(2)], hop3: [key(3)], blocked: [key(4)])
-        func ring(_ author: String, zap: Bool = false, sort: GlobeArcs.Sort = .note,
+        func ring(_ author: String, zap: Bool = false, sort: GlobeArcs.Sort = .note, to targets: [String] = [],
                   show: GlobeArcs.Show = .init()) -> GlobeArcs.Ring? {
-            let arrival = GlobeArcs.Arrival(id: key(900), author: author, targets: [], zap: zap, sort: zap ? .zap : sort)
+            let arrival = GlobeArcs.Arrival(id: key(900), author: author, targets: targets, zap: zap, sort: zap ? .zap : sort)
             return GlobeArcs.ring(of: arrival, event: ["content": "gm", "tags": [[String]]()], in: web,
                                   follows: follows, show: show)
         }
@@ -243,6 +243,9 @@ final class GlobeArcsTests: XCTestCase {
         // Blocked or muted: nothing, not even a zap.
         XCTAssertNil(ring(key(4)))
         XCTAssertNil(ring(key(4), zap: true))
+        // A stranger's zap to someone you blocked doesn't fly either.
+        XCTAssertNil(ring(key(5), zap: true, to: [key(4)]))
+        XCTAssertEqual(ring(key(5), zap: true, to: [key(1)]), .outside)
         // Friends of friends off: only follows' notes, and zaps from further out.
         let followsOnly = GlobeArcs.Show(friends: false, extras: true)
         XCTAssertNil(ring(key(2), show: followsOnly))
@@ -337,7 +340,13 @@ final class GlobeArcsTests: XCTestCase {
             XCTAssertLessThanOrEqual(board.lines.filter { $0.retired == nil }.count, GlobeArcs.maxLines)
             t += 0.01
         }
-        // Retired lines fade out quickly, so what is drawn stays near the cap.
+        // Let the backlog on (8 a second), then the retired lines fade out
+        // quickly, so what is drawn stays near the cap.
+        while !board.waiting.isEmpty {
+            t += 1
+            board.step(now: t, me: me)
+            XCTAssertLessThanOrEqual(board.lines.filter { $0.retired == nil }.count, GlobeArcs.maxLines)
+        }
         board.step(now: t + GlobeArcs.retireFade, me: me)
         XCTAssertLessThanOrEqual(board.lines.count, GlobeArcs.maxLines)
     }
