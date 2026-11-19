@@ -146,6 +146,10 @@ object GlobeStorm {
 
     /** Most authors one filter names (iOS `GlobeArrivalStream.authorsPerFilter`). */
     const val AUTHORS_PER_FILTER = 500
-    /** Past this many authors (10 filters) the globe asks for everyone's and sorts on the phone. */
-    const val MAX_AUTHORS = 5_000
+    /**
+     * Past this many authors the globe asks for everyone's and sorts on the
+     * phone. 2,000 is 4 REQs (about 134 KB) on the feed's own socket per relay,
+     * re-sent on every reconnect; 5,000 was 10 (Tron, #2241).
+     */
+    const val MAX_AUTHORS = 2_000
 }

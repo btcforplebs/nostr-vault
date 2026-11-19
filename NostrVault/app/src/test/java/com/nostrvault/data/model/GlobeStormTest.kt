@@ -108,12 +108,18 @@ class GlobeStormTest {
         assertEquals(listOf(listOf(GlobeArcs.ZAP_KIND)), filters.filter { it["authors"] == null }.map(::kindsOf))
     }
 
-    @Test fun pastFiveThousandAuthorsItIsOneAuthorlessFilter() {
+    @Test fun pastMaxAuthorsItIsOneAuthorlessFilter() {
         val at = GlobeStorm.filters((0 until GlobeStorm.MAX_AUTHORS).map(::key), GlobeLive.Show(), since = 0)
         assertEquals(GlobeStorm.MAX_AUTHORS / GlobeStorm.AUTHORS_PER_FILTER, authorCounts(at).size)
         val over = GlobeStorm.filters((0..GlobeStorm.MAX_AUTHORS).map(::key), GlobeLive.Show(), since = 0)
         assertEquals(emptyList<Int>(), authorCounts(over))
         assertEquals(listOf(listOf(1, 1111, 6, 16, 7), listOf(GlobeArcs.ZAP_KIND)), over.map(::kindsOf))
+    }
+
+    /** Tron #2241: the REQs ride the feed's socket and go again on every reconnect, so keep them few. */
+    @Test fun atMostFourRequestsPerRelay() {
+        val most = GlobeStorm.filters((0 until GlobeStorm.MAX_AUTHORS).map(::key), GlobeLive.Show(), since = 0)
+        assertTrue(GlobeArcs.requests(most, "arcs-x").size <= 4)
     }
 
     @Test fun extrasOffAsksForNotesAndRepliesOnlyAndNoZaps() {
