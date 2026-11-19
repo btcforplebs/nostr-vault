@@ -19,12 +19,17 @@ import { lockedFileServers, mediaServers, uploadPhoto } from "../net/upload.js"
 import { useMessages, SignerTrouble, AuthTrouble, OpenMore } from "./MessagesScreen.jsx"
 import { useChatScroll } from "../components/chat-scroll.js"
 import { canGoBack } from "../components/nav-depth.js"
+import { useKeyboardFrame } from "../components/keyboard-frame.js"
 
 /** Return sends, as on the Mac app and every desktop chat; Shift or Option + Return is a new line. On a touch screen
  *  Return is a new line and Send is the button, as on the iPhone. Never mid-composition (an IME's Return picks a word). */
 export const sendsOnEnter = (e, touch) => e.key === "Enter" && !e.shiftKey && !e.altKey && !e.isComposing && e.keyCode !== 229 && !touch
 /** Back: to where you came from, or to Messages on a cold #/dm/ link (history.back() would leave the site, B10). */
 export const backToMessages = (win = globalThis) => { if (canGoBack(win)) win.history.back(); else win.location.hash = "#/messages" }
+/** The composer's distance from the layout viewport's bottom while a phone keyboard is up: the keyboard covers the
+ *  bottom of the layout viewport, and `position: sticky` counts from there, so the box sat under it (B8). null: no
+ *  keyboard (the stylesheet's offset above the tab bar applies). */
+export const keyboardLift = (frame, layoutHeight) => frame ? Math.max(0, Math.round(layoutHeight - frame.top - frame.height)) : null
 const coarse = () => globalThis.matchMedia?.("(pointer: coarse)").matches ?? false
 const fiveLines = el => { const cs = getComputedStyle(el); return parseFloat(cs.lineHeight || "20") * 5 + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 2 }
 
@@ -36,6 +41,7 @@ const isAttachable = f => isImageFile(f) || isVideoFile(f)
 export function ConversationScreen({ ctx, peer }) {
   const { messages, note, trouble, retry, refresh, more, loaded } = useMessages(ctx)
   const { blocked } = useBlocks(ctx)
+  const lift = keyboardLift(useKeyboardFrame(coarse()), globalThis.document?.documentElement.clientHeight ?? 0)
   // A link may start the box with a message (DMThreadView initialMessage): typed in, never sent until Send.
   const [text, setText] = useState(() => dmPrefill().text)
   const [status, setStatus] = useState("")
@@ -135,7 +141,7 @@ export function ConversationScreen({ ctx, peer }) {
         <div ref={end} class="dm-end" />
       </div>
       {!note && !isBlocked && (
-        <form class={dragging ? "dm-compose dragging" : "dm-compose"} onSubmit={send}
+        <form class={`dm-compose${dragging ? " dragging" : ""}${lift != null ? " kb" : ""}`} style={lift != null ? `--kb-lift: ${lift}px` : undefined} onSubmit={send}
           onDragOver={e => { if ([...(e.dataTransfer?.items ?? [])].some(i => i.kind === "file")) { e.preventDefault(); setDragging(true) } }}
           onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }}
           onDrop={e => { e.preventDefault(); setDragging(false); attach(e.dataTransfer?.files) }}>
