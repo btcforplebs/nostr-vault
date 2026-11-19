@@ -44,15 +44,16 @@ struct LockedDMPhotoTile: View {
                 .mediaZoomSource(url, namespace: mediaZoom)
                 .accessibilityLabel("Photo")
                 .task(id: url) { await loadThumb(url) }
-            case .ready:
-                status(icon: "doc.fill", text: "File (\(sealed.mime))")
+            case .ready(let url):
+                // A PDF or other file: named for what it is, and it opens (B11).
+                DMFileChip(url: url, mime: sealed.mime)
             case .loading:
                 ZStack {
                     Rectangle().fill(Color.gray.opacity(0.1))
                     ProgressView().controlSize(.small)
                 }
                 .frame(width: size, height: size)
-                .accessibilityLabel("Photo loading")
+                .accessibilityLabel(sealed.isImage ? "Photo loading" : "File loading")
             case .failed(let why):
                 Button { phase = .loading; Task { await load() } } label: {
                     status(icon: "lock.trianglebadge.exclamationmark", text: why)
@@ -107,7 +108,8 @@ struct LockedDMPhotoTile: View {
         do {
             phase = .ready(try await DMFileTransfer.open(sealed))
         } catch let refusal as DMFile.Refusal {
-            phase = .failed(refusal == .x || refusal == .ox ? "This photo was changed on the server." : "This photo couldn't be unlocked.")
+            let what = sealed.isImage ? "photo" : "file"
+            phase = .failed(refusal == .x || refusal == .ox ? "This \(what) was changed on the server." : "This \(what) couldn't be unlocked.")
         } catch {
             phase = .failed(error.localizedDescription)
         }
