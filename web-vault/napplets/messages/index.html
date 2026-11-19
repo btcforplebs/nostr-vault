@@ -446,7 +446,10 @@ $("go").onclick = () => { const pk = pubkeyOf($("to").value); if (pk) openThread
   n.intent?.onDelivery?.(d => {
     if (d?.archetype !== "dm") return
     if (d.action === "refresh") { loadList().then(() => { if (!open) return; $("tname").textContent = nameOf(open); if (!labels.has(open)) askName(open) }); return }
-    const pk = d?.payload?.pubkey; if (HEX.test(pk ?? "")) openThread(pk)
+    const pk = d?.payload?.pubkey; if (!HEX.test(pk ?? "")) return
+    openThread(pk) // clears the box at once: a link's words (Message seller) go in after, typed in, never sent (B9)
+    const t = d.payload.text
+    if (typeof t === "string" && t) { $("text").value = t.slice(0, 20000); syncSend(); $("text").dispatchEvent(new Event("input")) }
   })
   if (!n.dm) { $("status").textContent = "This shell doesn't offer direct messages."; return }
   const st = await n.dm.status().catch(() => null)

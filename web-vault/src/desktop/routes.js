@@ -45,13 +45,14 @@ export const isListHash = hash => SPLIT.has(parseHash(hash).route)
 /** On a wide window: the address to show instead of `hash`, or null to keep it. `lastList` is the list screen the
  *  user was on; a thread link opens beside it (cold, with none: beside the Feed). */
 export function deskRedirect(hash, lastList) {
-  const { route, arg } = parseHash(hash)
+  const { route, arg, params } = parseHash(hash)
   // Messages shows a conversation beside its list, never a note: a note opened from there opens beside the Feed (it
   // used to become #/messages?note=, which showed nothing; bug hunt 2026-11-05 #8).
   const beside = lastList && isListHash(lastList) && parseHash(lastList).route !== "messages" ? lastList : "#/feed"
   if (route === "thread" && HEX.test(arg)) return withParam(beside, "note", arg)
   // Opened from Requests: it stays the list beside the conversation.
-  if (route === "dm" && HEX.test(arg)) return withParam(parseHash(lastList ?? "").path === "messages/requests" ? lastList : "#/messages", "dm", arg)
+  // A link's ?text= (Message seller) goes along, for the napplet to type in (B9; it used to be dropped here).
+  if (route === "dm" && HEX.test(arg)) return withParam(withParam(parseHash(lastList ?? "").path === "messages/requests" ? lastList : "#/messages", "dm", arg), "text", params.get("text") || null)
   return null
 }
 
@@ -60,7 +61,7 @@ export function phoneRedirect(hash) {
   const { params } = parseHash(hash)
   const note = params.get("note"), dm = params.get("dm")
   if (note && HEX.test(note)) return `#/thread/${note}`
-  if (dm && HEX.test(dm)) return `#/dm/${dm}`
+  if (dm && HEX.test(dm)) return `#/dm/${dm}${params.get("text") ? `?text=${encodeURIComponent(params.get("text"))}` : ""}`
   return null
 }
 

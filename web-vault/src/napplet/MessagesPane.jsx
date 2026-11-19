@@ -14,6 +14,7 @@ import { MESSAGES_DTAG } from "./first-party.js"
 import { usePaneNapplet } from "./usePaneNapplet.js"
 import { VaultPagesMenu } from "../screens/VaultPagesMenu.jsx"
 import { searchName } from "../screens/MessagesTools.jsx"
+import { dmLinkOf, openPayload } from "./dm-open.js"
 import "./napplet.css"
 
 const HEX = /^[0-9a-f]{64}$/
@@ -42,7 +43,7 @@ export function MessagesPane({ ctx, open = null, vaultMenu = false }) {
       lookup: pks => { const fresh = pks.filter(pk => !looked.current.has(pk)); fresh.forEach(pk => looked.current.add(pk)); if (fresh.length) fetchProfiles(ctxRef.current.vault, fresh, uniq([...ctxRef.current.account.relays.read, ...PROFILE_RELAYS, ...DEFAULT_RELAYS])).catch(() => {}) },
     } },
     onReady: l => {
-      if (HEX.test(openRef.current ?? "")) l.invoke({ archetype: "dm", action: "open", payload: { pubkey: openRef.current } })
+      if (HEX.test(openRef.current ?? "")) l.invoke({ archetype: "dm", action: "open", payload: openPayload(openRef.current) })
       // Names that landed before the napplet was up: one redraw now; later arrivals redraw through onProfiles below.
       l.invoke({ archetype: "dm", action: "refresh", payload: {} })
     },
@@ -64,8 +65,20 @@ export function MessagesPane({ ctx, open = null, vaultMenu = false }) {
     if (open === sent.current) return
     sent.current = open
     const l = live.current
-    if (l && HEX.test(open ?? "")) l.invoke({ archetype: "dm", action: "open", payload: { pubkey: open } })
+    if (l && HEX.test(open ?? "")) l.invoke({ archetype: "dm", action: "open", payload: openPayload(open) })
   }, [open])
+  // Every click on a chat link (#/dm/<pk>) opens it, also the one already open: main.jsx turns it into the same
+  // #/messages?dm=<pk>, so `open` doesn't change and nothing happened (B10). The event's newURL is the link itself.
+  useEffect(() => {
+    const f = e => {
+      const pk = dmLinkOf(e?.newURL), l = live.current
+      if (!pk || !l) return
+      sent.current = pk
+      l.invoke({ archetype: "dm", action: "open", payload: openPayload(pk) })
+    }
+    addEventListener("hashchange", f)
+    return () => removeEventListener("hashchange", f)
+  }, [])
 
   return (
     <main class="screen messages-pane">
