@@ -171,17 +171,21 @@ actor MeshMediaRouter {
     /// The photo's bytes from the first of the author's vaults that has them,
     /// checked against its hash, or nil (not followed, no vault listed, none
     /// reachable or holding it, wrong bytes).
-    /// `onLookup` runs once the author is known to be one the mesh may be
-    /// asked about, before the wait for their list or the dial: the moment a
-    /// photo starts "Loading over FIPS…", as on the web.
+    /// `onLookup` runs only once there is a vault to ask: the author may be
+    /// dialled, lists a mesh vault for this photo, and that vault hasn't just
+    /// said it lacks it. That is the moment a photo starts "Loading over the
+    /// mesh…". With no vault to ask the read ends at once, so a missing photo
+    /// reads "Photo not found", not "Couldn't reach the owner's vault".
     func read(plan: Plan, author: String, onLookup: (@Sendable () async -> Void)? = nil) async -> Data? {
         guard await deps.mayDial(author) else { return nil }
-        await onLookup?()
         // A `.fips` URL may name any node; only the author's own signed list
         // says which are theirs.
         guard let list = await serverList(of: author) else { return nil }
+        let candidates = Self.vaults(for: plan, serverList: list).filter { !recentlyMissed($0, sha256: plan.sha256) }
+        guard !candidates.isEmpty else { return nil }
+        await onLookup?()
         let giveUp = deps.now() + Self.photoPatience
-        for npub in Self.vaults(for: plan, serverList: list) where !recentlyMissed(npub, sha256: plan.sha256) {
+        for npub in candidates {
             let left = giveUp.timeIntervalSince(deps.now())
             guard left > 0 else { return nil }
             guard let reply = await patientGet(npub, sha256: plan.sha256, patience: min(Self.readPatience, left)) else {

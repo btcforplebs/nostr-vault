@@ -118,6 +118,29 @@ final class MeshMediaRouterTests: XCTestCase {
         XCTAssertEqual(afterStranger, 1, "no spinner for a read that never starts")
     }
 
+    /// Ted 2026-11-19: a 404 from an author with no vault showed "Loading
+    /// image over the mesh…", then "Couldn't reach the owner's vault". The
+    /// vault is looked up first; no vault to ask means no spinner, so the
+    /// photo ends as "Photo not found".
+    func testNoVaultToAskMeansNoSpinnerAndPhotoNotFound() async {
+        let lookups = Counter()
+        let noVault = Fake(photo: photo, base: base, lists: [author: ["https://blossom.band/"]])
+        let router = MeshMediaRouter(noVault.deps(follows: [author]))
+        let data = await router.read(plan: .init(sha256: sha, hostNpub: nil), author: author, onLookup: { await lookups.bump() })
+        XCTAssertNil(data)
+        let afterNoVault = await lookups.value
+        XCTAssertEqual(afterNoVault, 0, "a 10063 with no mesh vault: nothing to ask")
+        XCTAssertEqual(MeshMediaPhase.failed(after: .loading, meshOnly: false).text(), "Photo not found")
+        // No 10063 at all, even after asking relays for it.
+        let noList = Fake(photo: photo, base: base, lists: [:])
+        _ = await MeshMediaRouter(noList.deps(follows: [author]))
+            .read(plan: .init(sha256: sha, hostNpub: nil), author: author, onLookup: { await lookups.bump() })
+        let afterNoList = await lookups.value
+        XCTAssertEqual(afterNoList, 0)
+        let state = await noList.snapshot()
+        XCTAssertEqual(state.dials, [])
+    }
+
     func testAFailedLoadSaysWhatTheWebSays() {
         XCTAssertEqual(MeshMediaPhase.failed(after: .meshLookup, meshOnly: false), .unreached)
         XCTAssertEqual(MeshMediaPhase.failed(after: .meshLookup, meshOnly: true), .unreached)
