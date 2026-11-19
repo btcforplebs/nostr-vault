@@ -43,6 +43,18 @@ APP_ID = "app.nostrvault.Desktop"
 ENV_FILE = "/etc/nostr-vault/vault.env"
 SHARE = os.environ.get("NV_DESKTOP_SHARE", "/usr/share/nostr-vault/desktop")
 SETUP = "/usr/bin/nostr-vault-setup"
+# Inside a Flatpak the window runs the vault itself (nv_flatpak.py): no systemd, no pkexec, settings and data in the
+# app's own folders. The .deb never ships nv_flatpak.py and never takes this path.
+FLATPAK = os.path.exists("/.flatpak-info")
+fp = None
+if FLATPAK:
+    sys.path.insert(0, SHARE)
+    import nv_flatpak as fp  # noqa: E402
+
+    ENV_FILE = fp.env_file()
+    SUPERVISOR = fp.Supervisor()
+ICON = fp.APP_ID if fp else "nostr-vault"
+TRAY_ICON = fp.APP_ID + "-tray" if fp else "nostr-vault-tray"  # a Flatpak exports only icons named after its ID
 ROUTES = {  # the Mac app's tabs, as the web app's routes
     "feed": "#/feed",
     "vault": "#/vault",
@@ -98,6 +110,8 @@ def box_npub(env):
 
 def service_state():
     """systemd's word for nostr-vault.service: active, activating, inactive, failed, … or 'missing'."""
+    if fp:
+        return SUPERVISOR.state()
     try:
         r = subprocess.run(["systemctl", "is-active", "nostr-vault.service"], capture_output=True, text=True, timeout=5)
         return r.stdout.strip() or "missing"
@@ -175,6 +189,8 @@ class App(Gtk.Application):
             act.connect("activate", fn)
             self.add_action(act)
             self.set_accels_for_action("app." + name, keys)
+        if fp:
+            self.start_flatpak_vault()
         self.hold()  # the tray keeps the app alive with the window closed, as the Mac's menu bar item does
         self.make_tray()
         GLib.timeout_add_seconds(5, self.tick)
@@ -182,7 +198,7 @@ class App(Gtk.Application):
     def do_command_line(self, cmd):
         args = cmd.get_arguments()[1:]
         if "--tray" in args:
-            if self.indicator is None:  # no tray here: a window is the only way to see the vault
+            if self.indicator is None and not fp:  # a Flatpak with no tray runs on as a background app  # no tray here: a window is the only way to see the vault
                 self.show(None)
             return 0
         route = None
@@ -220,7 +236,7 @@ class App(Gtk.Application):
                 item.connect("activate", fn)
             menu.append(item)
         menu.show_all()
-        ind = Indicator.Indicator.new(APP_ID, "nostr-vault-tray", Indicator.IndicatorCategory.APPLICATION_STATUS)
+        ind = Indicator.Indicator.new(APP_ID, TRAY_ICON, Indicator.IndicatorCategory.APPLICATION_STATUS)
         ind.set_title("Nostr Vault")
         ind.set_status(Indicator.IndicatorStatus.ACTIVE)
         ind.set_menu(menu)
@@ -240,6 +256,8 @@ class App(Gtk.Application):
         # nv-mesh writes its status every 5 s; an older one is from a mesh that stopped (as havend reads it).
         if not isinstance(updated, (int, float)) or abs(time.time() - updated) > 30:
             return "Vault running · mesh not running"
+        if fp and not mesh:
+            return "Vault running"  # the Flatpak has no mesh yet
         if mesh.get("error"):
             return "Vault running · mesh: " + str(mesh["error"])[:60]
         if isinstance(n, int):
@@ -294,10 +312,11 @@ class App(Gtk.Application):
         win = Gtk.ApplicationWindow(application=self, title="Nostr Vault")
         win.set_default_size(1240, 860)  # the Mac window's first size
         win.set_size_request(800, 640)
-        win.set_icon_name("nostr-vault")
+        win.set_icon_name(ICON)
         win.add(view)
-        # Closing hides the window; the vault and the tray keep running (as on the Mac). With no tray, close quits.
-        win.connect("delete-event", lambda w, _e: (w.hide(), True)[1] if self.indicator else False)
+        # Closing hides the window; the vault and the tray keep running (as on the Mac). With no tray, close quits,
+        # except in a Flatpak, which keeps the vault running as a background app (opening the app shows it again).
+        win.connect("delete-event", lambda w, _e: (w.hide(), True)[1] if self.indicator or fp else False)
         win.show_all()
         self.window, self.view = win, view
 
@@ -336,6 +355,9 @@ class App(Gtk.Application):
 
     def load_setup(self):
         self.page = "setup"
+        if fp:
+            self.load_local("setup.html", {"page": "setup", "drives": fp.drives(), "setup": True})
+            return
         self.load_local("setup.html", {"page": "setup", "drives": drive_choices(), "setup": os.access(SETUP, os.X_OK)})
 
     def load_waiting(self, route):
@@ -403,6 +425,9 @@ class App(Gtk.Application):
                 or not (self.view.get_uri() or "").startswith("nv-desktop://local/"):
             return
         what = msg.get("do")
+        if fp:
+            self.on_flatpak_message(what, msg)
+            return
         if what == "setup" and self.page == "setup" and not self.setup_running:
             self.run_setup(str(msg.get("owner", "")), str(msg.get("data", "")), bool(msg.get("sdOk")), bool(msg.get("newOk")))
         elif what == "start":
@@ -410,6 +435,33 @@ class App(Gtk.Application):
         elif what == "logs":
             subprocess.Popen(["x-terminal-emulator", "-e", "journalctl", "-fu", "nostr-vault", "-u", "nostr-vault-mesh"],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) if shutil.which("x-terminal-emulator") else None
+
+    # ---- Flatpak: the window runs the vault (nv_flatpak.py)
+
+    def start_flatpak_vault(self):
+        self.env = read_env()
+        if self.env.get("NV_OWNER"):
+            SUPERVISOR.start(self.env)
+            fp.request_background()
+
+    def on_flatpak_message(self, what, msg):
+        if what == "setup" and self.page == "setup":
+            ok, text = fp.setup(str(msg.get("owner", "")), read_env())
+            self.setup_done(ok, text)
+            if ok:
+                self.start_flatpak_vault()
+        elif what == "start":
+            self.start_flatpak_vault()
+        elif what == "logs":
+            try:
+                Gio.AppInfo.launch_default_for_uri(GLib.filename_to_uri(fp.log_file(), None), None)
+            except GLib.Error:
+                pass
+
+    def do_shutdown(self):
+        if fp:
+            SUPERVISOR.stop()
+        Gtk.Application.do_shutdown(self)
 
     def js(self, fn, arg):
         self.view.run_javascript(f"window.{fn} && window.{fn}({json.dumps(arg)})", None, None, None)
