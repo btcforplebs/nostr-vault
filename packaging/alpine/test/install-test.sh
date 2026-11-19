@@ -16,6 +16,7 @@ abort() { echo "ABORT: $*"; echo "RESULT pass=$pass fail=$fail (aborted)"; exit 
 finish() {
   if [ "$fail" != 0 ]; then
     echo "-- rc-status:"; rc-status -a 2>&1 | tail -20
+    echo "-- processes:"; for d in /proc/[0-9]*; do printf '%s %s %s\n' "${d#/proc/}" "$(awk '/^Uid:/ {print $2}' "$d/status" 2>/dev/null)" "$(cat "$d/comm" 2>/dev/null)"; done
     for l in /var/log/nostr-vault/*.log; do [ -f "$l" ] && { echo "-- $l"; tail -n 40 "$l"; }; done
   fi
   echo "RESULT $PHASE pass=$pass fail=$fail"; [ "$fail" = 0 ]; exit $?
@@ -84,7 +85,8 @@ install)
   chk "mesh key dir 0700" test "$(stat -c '%U %a' $D/mesh/key)" = "nvmesh 700"
   chk "vault user cannot read mesh key" sh -c "! su -s /bin/sh nvvault -c 'cat $D/mesh/key/nsec'"
   chk "data dir 0711 nvvault" test "$(stat -c '%U %a' $D)" = "nvvault 711"
-  chk "no nsec of the owner on disk" sh -c "! grep -rqs '$OSK' /etc/nostr-vault $D"
+  # Regular files only: busybox grep -r blocks on a FIFO in the data dir.
+  chk "no nsec of the owner on disk" sh -c "! find /etc/nostr-vault $D -type f -exec grep -qs '$OSK' {} \\; -print | grep -q ."
   U=http://127.0.0.1:8080/api/box/status
   code=$(curl -s -o /dev/null -w '%{http_code}' $U)
   chk "box API refuses no auth ($code)" test "$code" = 401
