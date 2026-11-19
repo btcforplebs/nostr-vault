@@ -8,6 +8,8 @@
 //   size: "S" | "M" | "L", or missing (ours: their own height, as today; an app: M)
 // Kept in this browser only, per account (layout-store.js), like the rest of the layout.
 
+import { defaultPanels } from "./space-layout.js"
+
 export const LEFT = "left", RIGHT = "right"
 export const SIZES = ["S", "M", "L"]
 /** Card heights in px (plan §3: S 160 / M 320 / L 560). */
@@ -118,10 +120,11 @@ export function dropApp(layout, line, at) {
   return layout.panels.some(p => p.id === id) ? edit(layout, layout.panels.filter(p => p.id !== id), at) : layout
 }
 
-/** Reset to the default: our panels, in order, on the right, shown and open; no app cards; the left column empty. */
-export const resetColumns = (layout, ids, at) => edit(layout, ids.map(id => ({ id, on: true, open: true })), at)
-/** Whether the layout's cards are the default ones (the pins aside). */
-export const isDefaultColumns = (layout, ids) => JSON.stringify(layout.panels) === JSON.stringify(ids.map(id => ({ id, on: true, open: true })))
+/** Reset to the default: our panels, in order, on the right, open and shown as defaultPanels says; no app cards; the
+ *  left column empty. */
+export const resetColumns = (layout, ids, at) => edit(layout, defaultPanels(ids), at)
+/** Whether the layout's cards are the default ones (the pins aside). Uses the same defaultPanels as resetColumns. */
+export const isDefaultColumns = (layout, ids) => JSON.stringify(layout.panels) === JSON.stringify(defaultPanels(ids))
 
 /**
  * What a manifest says about drawing as a card: ["surface", "widget", ...sizes]. A widget lists the sizes it draws

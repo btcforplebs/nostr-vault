@@ -95,7 +95,13 @@ The `panels` rules are the ones `space-layout.js` already keeps:
 - A panel this app has that the layout does not name goes in after the known
   panel that comes before it in the default order (at the top when none does),
   shown and open.
-- **Default panels:** every panel, in `panels.js` order, `on` and `open`.
+- **Default panels:** every panel, in `panels.js` order, `open`. Live Vault, Live now and On this day are `on`; Web of
+  Trust (`wot-mini`), Messages and My devices are `on: false`, so "+ add" offers them (Logen 2026-11-19). The default
+  layout carries `"defaults": 2`.
+- **`defaults` marker:** a layout without `"defaults": 2` (or higher) was saved under the old all-on default. `normalize`
+  switches `wot-mini`, `messages` and `my-devices` off once and sets `"defaults": 2`; `at` and `v` don't change. Once the
+  marker is there they stay as the user sets them. This is not a `v` bump, because a reader leaves a higher `v` alone and
+  draws its own default. A panel missing from a saved layout still goes in `on`.
 
 **Web only, the two side columns** (`desktop/space/columns.js`, plan NV_WEB_ONE_PLAN.md step 3). The same `panels`
 array holds the cards of both desktop side columns. Each entry may also carry:
@@ -106,7 +112,8 @@ array holds the cards of both desktop side columns. Each entry may also carry:
 - App cards: `id` = `napplet:<publisher hex>:<d>`, an app this account installed (`napplet/catalog.js`). Taking one
   off deletes its entry; removing the app deletes it too. The iPad keeps these entries as unknown ids.
 
-Reset puts back the default panels: every panel on the right, the left column empty, no app cards.
+Reset puts back the default panels (three on, three off, as above): every panel on the right, the left column empty, no
+app cards.
 
 Folding the whole Your space column is **not** in the layout. It stays per
 device (`nv-space-folded:<pubkey>`), because a narrow window and a wide one
