@@ -154,15 +154,20 @@ fun NostrVaultNavHost(
     val config by configState
     val activeHexState = configStore.activeAccountHexPubkey.collectAsState()
     val activeHex by activeHexState
-    val profiles by nostrService.profiles.collectAsState()
-    val unread by accountUnread.collectAsState()
-    val activeProfile = profiles[activeHex]
+    // Not read here directly: every profile batch (an alert's author, a feed
+    // row's) would redraw this host and the bar. Only the roster and the
+    // active account's picture and name are read, and they change far less.
+    val profilesState = nostrService.profiles.collectAsState()
+    val unreadState = accountUnread.collectAsState()
+    val navAccounts by remember {
+        derivedStateOf { navBarAccounts(configState.value, profilesState.value, unreadState.value, activeHexState.value) }
+    }
     val isOwner = config.activeAccountNpub.isNullOrBlank()
     val unreadDMsState = dmUnreadCount.collectAsState()
     val unreadDMs by unreadDMsState
     val relayActivity by hasNewRelayActivity.collectAsState()
     val vaultZapsOnly = config.zapsOnlyMode
-    val switchAccounts = buildAccountInfos(config, profiles, includeWhitelisted = true, unread = unread)
+    val switchAccounts = navAccounts.accounts
     // From the account sheet or the account picture's hold menu.
     fun selectAccount(npub: String) {
         // The Profile tab follows the switch on its own. A pushed profile is
@@ -343,8 +348,8 @@ fun NostrVaultNavHost(
                 BottomNavBar(
                     currentRoute = selectedTab,
                     activeAccountPubkey = activeHex,
-                    activeAvatarUrl = activeProfile?.pictureURL,
-                    activeDisplayName = activeProfile?.bestName,
+                    activeAvatarUrl = navAccounts.avatarUrl,
+                    activeDisplayName = navAccounts.displayName,
                     isOwner = isOwner,
                     foldProgress = { if (condenseTab) ScrollChrome.progress else 0f },
                     hasUnreadDMs = unreadDMs > 0,
@@ -392,7 +397,7 @@ fun NostrVaultNavHost(
                     },
                     // As iOS: holding the avatar does nothing with one account.
                     onAccountSwitcher = {
-                        if (buildAccountInfos(config, profiles, includeWhitelisted = true).size > 1) {
+                        if (switchAccounts.size > 1) {
                             showAccountSwitcher = true
                         }
                     },
