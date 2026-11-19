@@ -9,7 +9,10 @@ extension NostrService {
     /// `dTag`: for an addressable list (kinds 30000-39999), the one at that `d`. Used for the emoji list (10030)
     /// and emoji sets (30030) (RESEARCH/NV_EMOJI_LIST_HISTORY_AUDIT.md). Android twin: ListVersionSave.kt.
     @MainActor
+    /// `onUndoCopyKept`: the vault has the old copy; runs before anything is signed (nuclear unfollow's
+    /// "Backup saved ✓").
     func saveListVersion(kind: Int, author: String, dTag: String? = nil, verb: String,
+                         onUndoCopyKept: (@MainActor () -> Void)? = nil,
                          build: (NostrEvent?) async -> ListVersionSave.Build) async -> ListVersionSave.Outcome<NostrEvent> {
         guard FileNote.isHex64(author), activeHexPubkey == author else {
             return .refused("This list belongs to another account. Switch to it first.")
@@ -29,7 +32,11 @@ extension NostrService {
                     return .failure(.init(message: "Not enough of your relays answered, so your newest \(name) can't be checked. Nothing was changed. Try again in a moment."))
                 }
             },
-            keepUndoCopy: { await VaultSocket.publish($0) },
+            keepUndoCopy: { event in
+                let kept = await VaultSocket.publish(event)
+                if kept { await MainActor.run { onUndoCopyKept?() } }
+                return kept
+            },
             sign: { [weak self] kind, content, tags, notBefore in
                 await self?.signEventAsync(kind: kind, content: content, tags: tags, signAsNpub: nil, notBefore: notBefore)
             },
