@@ -63,9 +63,10 @@ struct SpaceColumn: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background {
-            // space.css: a warm wash at the top over near-black.
+            // space.css: a warm wash at the top, over the window's own
+            // background (paper in light mode, black in dark), like the feed.
             ZStack(alignment: .top) {
-                Color(red: 5 / 255, green: 4 / 255, blue: 3 / 255)
+                Color.platformWindowBackground
                 LinearGradient(colors: [Color.havenPurple.opacity(0.08), .clear],
                                startPoint: .top, endPoint: .bottom)
                     .frame(height: 260)
