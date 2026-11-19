@@ -179,6 +179,8 @@ class MediaCopyViewModel @Inject constructor(
                 )
             }
             if (mirrors.isEmpty()) return@launch
+            // Each server's dot from the start, as on iPhone (MediaServersModel.load's testAll).
+            mirrors.forEach { test(it) }
             val hashes = localFiles.keys.toList()
             var done = 0
             _state.update { it.copy(scan = 0 to hashes.size) }
@@ -206,6 +208,7 @@ class MediaCopyViewModel @Inject constructor(
      */
     fun test(url: String) {
         viewModelScope.launch {
+            val startedAt = System.currentTimeMillis()
             updateServer(url) { it.copy(health = MediaServer.Health.CHECKING) }
             val presence = blossomService.mirrorPresence.value
             val proof = localFiles.keys.firstOrNull { presence[it]?.get(url) == BlobPresence.PRESENT }
@@ -215,7 +218,12 @@ class MediaCopyViewModel @Inject constructor(
             } else {
                 MediaServer.Health.fromTest(null, answered = withContext(Dispatchers.IO) { answers(url) })
             }
-            updateServer(url) { it.copy(health = health, checkedAtMillis = System.currentTimeMillis()) }
+            // The file scan may have finished while this ran and found more (a
+            // file the server holds): a newer answer wins over this one (Tron).
+            updateServer(url) {
+                if ((it.checkedAtMillis ?: 0L) > startedAt) it
+                else it.copy(health = health, checkedAtMillis = System.currentTimeMillis())
+            }
         }
     }
 

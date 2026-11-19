@@ -21,8 +21,6 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Hub
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -77,13 +75,14 @@ import kotlinx.coroutines.withContext
 /**
  * The Vault Dashboard (v2): one page that answers four questions about the
  * vault, in order. Is it running? Is it safe? Who can reach me? Is it
- * complete? Relay internals, mirrors and raw logs sit under Advanced.
+ * complete? Relay internals and raw logs sit under Advanced.
  * Port of iOS `VaultDashboardView`.
  *
  * Rows that open a settings page close the sheet and open it on the Vault
  * tab, and back comes home to the dashboard (iOS pushes it inside the
- * sheet). "In your vault" opens in place; Relay details and Media server
- * details are pages inside the sheet, as on iOS.
+ * sheet). "In your vault" opens in place; Relay details is a page inside
+ * the sheet, as on iOS. Mesh lives under Your Devices only, and media server
+ * health and copy under Vault settings › Media Servers (iPhone parity).
  */
 @Composable
 internal fun VaultDashboardContent(
@@ -92,7 +91,6 @@ internal fun VaultDashboardContent(
     /** Close the sheet and open [Screen] on the Vault tab; back reopens the dashboard. */
     onOpenScreen: (Screen) -> Unit,
     onOpenRelayDetails: () -> Unit,
-    onOpenMediaDetails: () -> Unit,
     viewModel: VaultDashboardViewModel = hiltViewModel(),
 ) {
     val colors = LocalNostrVaultColors.current
@@ -446,11 +444,7 @@ internal fun VaultDashboardContent(
         DashSection(title = "Advanced") {
             SettingLink(Icons.Filled.Dns, "Relay details", null, onClick = onOpenRelayDetails)
             DashDivider()
-            SettingLink(Icons.Filled.Image, "Media servers", null, onClick = onOpenMediaDetails)
-            DashDivider()
             SettingLink(NostrVaultIcons.Logs, "Raw logs", null) { onOpenScreen(Screen.LogViewer) }
-            DashDivider()
-            SettingLink(Icons.Filled.Hub, "Mesh settings", null) { onOpenScreen(Screen.MeshSettings) }
         }
     }
 }
