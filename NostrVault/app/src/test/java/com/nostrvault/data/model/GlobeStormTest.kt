@@ -93,38 +93,42 @@ class GlobeStormTest {
 
     private fun kindsOf(f: JsonObject) = (f["kinds"] as JsonArray).map { it.jsonPrimitive.int }
 
-    @Test fun discoverAndGlobalAreOneAuthorlessFilterSoTheWholeWebFits() {
-        val follows = (0 until 1_200).map(::key)
-        val ringSets = listOf(
-            setOf(GlobeArcs.Ring.DISCOVER),
-            setOf(GlobeArcs.Ring.GLOBAL),
-            setOf(GlobeArcs.Ring.FOLLOWING, GlobeArcs.Ring.DISCOVER, GlobeArcs.Ring.GLOBAL),
-        )
-        for (rings in ringSets) {
-            val filters = GlobeStorm.storm(rings, GlobeLive.Show(), follows, since = 100)
-            assertEquals(1, filters.size)
-            assertNull(filters[0]["authors"])
-            assertEquals(setOf(1, 1111, 7, 6, 16, GlobeArcs.ZAP_KIND), kindsOf(filters[0]).toSet())
-            assertEquals(100L, filters[0]["since"]!!.jsonPrimitive.long)
-        }
-    }
+    private fun authorCounts(filters: List<JsonObject>) =
+        filters.filter { it["authors"] != null }.map { (it["authors"] as JsonArray).size }
 
-    @Test fun followingAloneKeepsToItsAuthors() {
-        val follows = (0 until 1_200).map(::key)
-        val filters = GlobeStorm.storm(setOf(GlobeArcs.Ring.FOLLOWING), GlobeLive.Show(), follows, since = 100)
+    /** Rule 4: the relay is asked for just your web's activity, by author, 500 a filter. */
+    @Test fun yourWebIsAskedForByAuthor() {
+        val web = (0 until 1_200).map(::key)
+        val filters = GlobeStorm.filters(web, GlobeLive.Show(), since = 100)
+        assertEquals(listOf(500, 500, 200), authorCounts(filters))
         val byAuthor = filters.filter { it["authors"] != null }
-        assertEquals(listOf(500, 500, 200), byAuthor.map { (it["authors"] as JsonArray).size })
-        // Zap receipts carry the LNURL server's key: one filter of their own.
+        assertTrue(byAuthor.all { kindsOf(it) == listOf(1, 1111, 6, 16, 7) })
+        assertTrue(filters.all { it["since"]!!.jsonPrimitive.long == 100L })
+        // Zap receipts carry the LNURL server's key, and a zap from anyone flies: one authorless filter.
         assertEquals(listOf(listOf(GlobeArcs.ZAP_KIND)), filters.filter { it["authors"] == null }.map(::kindsOf))
     }
 
-    @Test fun aSwitchedOffSortIsNeverAskedFor() {
-        val show = GlobeLive.Show(reactions = false, reposts = false, zaps = false)
-        val kinds = GlobeStorm.storm(setOf(GlobeArcs.Ring.GLOBAL), show, emptyList(), 0).firstOrNull()?.let(::kindsOf)
-        assertEquals(listOf(1, 1111), kinds)
-        val none = GlobeLive.Show(notes = false, replies = false, reposts = false, reactions = false, zaps = false)
-        assertTrue(GlobeStorm.storm(setOf(GlobeArcs.Ring.GLOBAL), none, emptyList(), 0).isEmpty())
-        assertTrue(GlobeStorm.storm(emptySet(), GlobeLive.Show(), emptyList(), 0).isEmpty())
+    @Test fun pastMaxAuthorsItIsOneAuthorlessFilter() {
+        val at = GlobeStorm.filters((0 until GlobeStorm.MAX_AUTHORS).map(::key), GlobeLive.Show(), since = 0)
+        assertEquals(GlobeStorm.MAX_AUTHORS / GlobeStorm.AUTHORS_PER_FILTER, authorCounts(at).size)
+        val over = GlobeStorm.filters((0..GlobeStorm.MAX_AUTHORS).map(::key), GlobeLive.Show(), since = 0)
+        assertEquals(emptyList<Int>(), authorCounts(over))
+        assertEquals(listOf(listOf(1, 1111, 6, 16, 7), listOf(GlobeArcs.ZAP_KIND)), over.map(::kindsOf))
+    }
+
+    /** Tron #2241: the REQs ride the feed's socket and go again on every reconnect, so keep them few. */
+    @Test fun atMostFourRequestsPerRelay() {
+        val most = GlobeStorm.filters((0 until GlobeStorm.MAX_AUTHORS).map(::key), GlobeLive.Show(), since = 0)
+        assertTrue(GlobeArcs.requests(most, "arcs-x").size <= 4)
+    }
+
+    @Test fun extrasOffAsksForNotesAndRepliesOnlyAndNoZaps() {
+        val filters = GlobeStorm.filters(listOf(key(1)), GlobeLive.Show(extras = false), since = 0)
+        assertEquals(listOf(listOf(1, 1111)), filters.map(::kindsOf))
+        assertTrue(filters.all { it["authors"] != null })
+        // Nobody to ask for: nothing, never an authorless note filter.
+        assertTrue(GlobeStorm.filters(emptyList(), GlobeLive.Show(extras = false), since = 0).isEmpty())
+        assertEquals(listOf(listOf(GlobeArcs.ZAP_KIND)), GlobeStorm.filters(emptyList(), GlobeLive.Show(), since = 0).map(::kindsOf))
     }
 
     // ── Drawing a storm cheaply ──
@@ -145,7 +149,8 @@ class GlobeStormTest {
     }
 
     @Test fun onlyTheNewestLinesGetFaces() {
-        val board = GlobeArcs.Board()
+        // No rate cap here: this is about the lines, not how fast they come.
+        val board = GlobeArcs.Board(burst = 1e9)
         for (n in 0 until 100) board.add(GlobeArcs.Arrival(key(5000 + n), key(n + 1), listOf(key(n + 200))))
         board.step(0.0, me)
         val faces = board.faceKeys(GlobeStorm.MAX_ARC_FACES, me)
@@ -160,7 +165,8 @@ class GlobeStormTest {
     }
 
     @Test fun aQuietGlobeDrawsSlowAndABusyOneAtFullRate() {
-        val board = GlobeArcs.Board()
+        // No rate cap here: this is about the lines, not how fast they come.
+        val board = GlobeArcs.Board(burst = 1e9)
         for (n in 0 until GlobeStorm.BUSY_LINES - 1) board.add(GlobeArcs.Arrival(key(n), key(n + 1), listOf(me)))
         board.step(0.0, me)
         assertFalse(board.isBusy)
@@ -169,7 +175,8 @@ class GlobeStormTest {
     }
 
     @Test fun theSeenListForgetsOnlyPastItsCap() {
-        val board = GlobeArcs.Board()
+        // No rate cap here: this is about the lines, not how fast they come.
+        val board = GlobeArcs.Board(burst = 1e9)
         val cap = GlobeArcs.Board.SEEN_CAP
         for (n in 0 until cap + 10) board.add(GlobeArcs.Arrival(key(n), key(1), listOf(me)))
         board.step(0.0, me)

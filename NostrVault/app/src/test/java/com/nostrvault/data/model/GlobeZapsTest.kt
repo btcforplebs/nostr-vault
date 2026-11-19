@@ -187,12 +187,13 @@ class GlobeZapsTest {
         assertTrue(GlobeZaps.BOLT_LIFE < GlobeArcs.TRAVEL + GlobeArcs.HOLD + GlobeArcs.FADE)
         // Reduce Motion: there at once.
         assertEquals(1.0, GlobeArcs.stage(line, 0.01, reduceMotion = true).head, 0.0)
-        // It shares the stars' cap.
+        // It shares the stars' cap (no rate cap here, to reach it).
+        val fast = GlobeArcs.Board(burst = 10_000.0)
         for (n in 0 until GlobeArcs.MAX_LINES + 30) {
-            board.add(GlobeArcs.Arrival(String.format("%064x", n + 1), zapper, listOf(zapped), sort = GlobeArcs.Sort.ZAP))
-            board.step((n + 1) * 0.01, me)
+            fast.add(GlobeArcs.Arrival(String.format("%064x", n + 1), zapper, listOf(zapped), sort = GlobeArcs.Sort.ZAP))
+            fast.step((n + 1) * 0.01, me)
         }
-        assertTrue(board.lines.count { it.retired == null } <= GlobeArcs.MAX_LINES)
+        assertEquals(GlobeArcs.MAX_LINES, fast.lines.count { it.retired == null })
     }
 
     @Test fun theBoltIsJaggedPinnedAtBothEndsAndPlainUnderReduceMotion() {
@@ -230,9 +231,9 @@ class GlobeZapsTest {
     }
 
     @Test fun zapsSwitchedOffAreNeitherAskedForNorFlown() {
-        val show = GlobeLive.Show(zaps = false)
-        assertTrue(!show.allows(GlobeArcs.Sort.ZAP))
-        val kinds = GlobeStorm.storm(setOf(GlobeArcs.Ring.GLOBAL), show, emptyList(), 0).single()["kinds"] as JsonArray
+        val show = GlobeLive.Show(extras = false)
+        assertTrue(GlobeArcs.Ring.entries.none { show.allows(GlobeArcs.Sort.ZAP, it) })
+        val kinds = GlobeStorm.filters(listOf(zapper), show, 0).single()["kinds"] as JsonArray
         assertTrue(kinds.none { (it as JsonPrimitive).content == GlobeArcs.ZAP_KIND.toString() })
     }
 }

@@ -35,17 +35,27 @@ class GlobeLiveTest {
         // A new install, or someone who never touched the antenna.
         assertTrue(LiveArcsSetting.DEFAULT_ON)
         // Skipped: the stored on/off round trip — UserDefaults storage (SharedPreferences here) is not tested.
-        // Its own key, apart from the feeds' and sorts' switches (the spinning key is skipped: not ported).
-        val keys = listOf(LiveArcsSetting.KEY) + GlobeArcs.Ring.entries.map(LiveArcsSetting::key) +
-            GlobeArcs.Sort.entries.map(LiveArcsSetting::key)
-        assertEquals(keys.size, keys.toSet().size)
+        // The three live switches use iOS's keys, apart from each other.
+        val keys = listOf(LiveArcsSetting.KEY, LiveArcsSetting.FRIENDS_KEY, LiveArcsSetting.EXTRAS_KEY)
+        assertEquals(listOf("wotLiveArcs", "wotLiveArcs.friendsOfFriends", "wotLiveArcs.extras"), keys)
+        // Both sub-switches start on.
+        assertEquals(GlobeLive.Show(friendsOfFriends = true, extras = true), GlobeLive.Show())
     }
 
-    @Test fun theCutSwitchesAreForgottenButTheAntennaIsKept() {
+    @Test fun theCutSwitchesAreForgottenButTheLiveSwitchesAreKept() {
         // Skipped: removing them from SharedPreferences (not tested here); the list is.
-        assertFalse(LiveArcsSetting.KEY in LiveArcsSetting.RETIRED_KEYS)
-        assertEquals(GlobeArcs.Ring.entries.size + GlobeArcs.Sort.entries.size, LiveArcsSetting.RETIRED_KEYS.size)
-        assertEquals(LiveArcsSetting.RETIRED_KEYS.size, LiveArcsSetting.RETIRED_KEYS.toSet().size)
+        for (live in listOf(LiveArcsSetting.KEY, LiveArcsSetting.FRIENDS_KEY, LiveArcsSetting.EXTRAS_KEY)) {
+            assertFalse(live in LiveArcsSetting.RETIRED_KEYS)
+        }
+        // The keys iOS deletes at launch (GlobeLive.swift), whatever the Kotlin enums are called now.
+        assertEquals(
+            listOf(
+                "wotLiveArcs.following", "wotLiveArcs.discover", "wotLiveArcs.global",
+                "wotLiveArcs.sort.note", "wotLiveArcs.sort.reply", "wotLiveArcs.sort.repost",
+                "wotLiveArcs.sort.reaction", "wotLiveArcs.sort.zap",
+            ),
+            LiveArcsSetting.RETIRED_KEYS,
+        )
     }
 
     @Test fun eachArrivalKnowsWhatItIs() {
@@ -81,34 +91,37 @@ class GlobeLiveTest {
         assertEquals(GlobeArcs.Sort.REACTION, board.lines.first().sort)
     }
 
-    @Test fun theSwitchesPickWhatFlies() {
-        var show = GlobeLive.Show()
-        assertTrue(GlobeArcs.Sort.entries.all(show::allows))
-        show = show.copy(replies = false, zaps = false)
-        assertEquals(
-            listOf(GlobeArcs.Sort.NOTE, GlobeArcs.Sort.REPOST, GlobeArcs.Sort.REACTION),
-            GlobeArcs.Sort.entries.filter(show::allows),
-        )
-        show = show.copy(reactions = false)
-        assertFalse(show.allows(GlobeArcs.Sort.REACTION))
+    private fun flies(show: GlobeLive.Show, ring: GlobeArcs.Ring) = GlobeArcs.Sort.entries.filter { show.allows(it, ring) }
+
+    /** RESEARCH/NV_GLOBE_STARS_FINAL.md rules 1 and 2: hop 1 and 2 fly everything, further out only zaps. */
+    @Test fun hopOneAndTwoFlyEverythingFurtherOutOnlyZaps() {
+        val show = GlobeLive.Show()
+        assertEquals(GlobeArcs.Sort.entries, flies(show, GlobeArcs.Ring.FOLLOWS))
+        assertEquals(GlobeArcs.Sort.entries, flies(show, GlobeArcs.Ring.WEB))
+        assertEquals(listOf(GlobeArcs.Sort.ZAP), flies(show, GlobeArcs.Ring.OUTSIDE))
     }
 
-    @Test fun aSortSwitchedOffIsNotAskedFor() {
-        var show = GlobeLive.Show()
-        assertEquals(listOf(1, 1111, 7), show.noteKinds)
-        assertEquals(listOf(1, 1111, 7, 6, 16), show.wideKinds)
-        show = show.copy(reactions = false, reposts = false)
-        assertEquals(listOf(1, 1111), show.noteKinds)
-        assertEquals(listOf(1, 1111), show.wideKinds)
-        // Notes and replies share kind 1: either keeps it.
-        show = show.copy(notes = false)
-        assertEquals(listOf(1, 1111), show.noteKinds)
-        show = show.copy(replies = false)
-        assertEquals(emptyList<Int>(), show.noteKinds)
-        show = show.copy(reposts = true)
-        assertEquals(listOf(6, 16), show.wideKinds)
+    @Test fun friendsOfFriendsOffKeepsHopOneButZapsStillFly() {
+        val show = GlobeLive.Show(friendsOfFriends = false)
+        assertEquals(GlobeArcs.Sort.entries, flies(show, GlobeArcs.Ring.FOLLOWS))
+        assertEquals(listOf(GlobeArcs.Sort.ZAP), flies(show, GlobeArcs.Ring.WEB))
+        assertEquals(listOf(GlobeArcs.Sort.ZAP), flies(show, GlobeArcs.Ring.OUTSIDE))
+    }
+
+    @Test fun extrasOffIsNotesAndRepliesOnlySoNothingFromOutside() {
+        val show = GlobeLive.Show(extras = false)
+        val notes = listOf(GlobeArcs.Sort.NOTE, GlobeArcs.Sort.REPLY)
+        assertEquals(notes, flies(show, GlobeArcs.Ring.FOLLOWS))
+        assertEquals(notes, flies(show, GlobeArcs.Ring.WEB))
+        assertEquals(emptyList<GlobeArcs.Sort>(), flies(show, GlobeArcs.Ring.OUTSIDE))
+        assertEquals(emptyList<GlobeArcs.Sort>(), flies(show.copy(friendsOfFriends = false), GlobeArcs.Ring.WEB))
+    }
+
+    @Test fun extrasOffIsNotAskedFor() {
+        assertEquals(listOf(1, 1111, 6, 16, 7), GlobeLive.Show().authorKinds)
+        assertEquals(listOf(1, 1111), GlobeLive.Show(extras = false).authorKinds)
         // A different set of switches is a different REQ.
-        assertNotEquals(GlobeLive.Show(), show)
+        assertNotEquals(GlobeLive.Show(), GlobeLive.Show(extras = false))
     }
 
     @Test fun aBiggerZapStrikesHarder() {

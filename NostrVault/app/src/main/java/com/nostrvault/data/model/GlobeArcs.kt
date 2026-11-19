@@ -9,22 +9,28 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 
 /**
- * Live arrival arcs on the Web of Trust globe (iOS `GlobeArcs.swift`). Every
- * note reaching the relay flies a star. A reply, quote or repost flies between
- * its two parties: from its author to each person it is aimed at. A note aimed
- * at no one flies into you at the center. Where a star sets out says which feed
- * it came from: your follows from the ring, Discover from the next shell out,
- * Global from the outer haze.
+ * Live arrival arcs on the Web of Trust globe (iOS `GlobeArcs.swift`). Your
+ * web's activity flies as stars (Logen 11/19, RESEARCH/NV_GLOBE_STARS_FINAL.md):
+ * hop 1 (you and your follows) and hop 2 (friends of friends) fly their notes,
+ * replies, reposts, likes and zaps; anyone further out flies only zaps. A reply,
+ * quote or repost flies from its author to the one person it is aimed at; a
+ * note aimed at no one flies into you at the center. Where a star sets out says
+ * how far out its author is: follows from the ring, friends of friends from the
+ * next shell out, everyone else from the outer haze.
  */
 object GlobeArcs {
     /**
-     * Most lines on the globe at once: high enough that a busy network reads as
-     * a storm, low enough that the phone keeps drawing smoothly. Past it the
-     * widest feed's oldest lines are sent on their way out early, Global first.
+     * Most lines on the globe at once (iOS `maxLines`). At [RATE] new stars a
+     * second a note line lives about 6.8 s, so about 55 fly at once at most: this
+     * is a safety net. Past it the furthest ring's oldest lines leave early.
      */
-    const val MAX_LINES = 300
-    /** People one note draws lines to: a reply to a crowd stays a few lines. */
-    const val MAX_TARGETS = 4
+    const val MAX_LINES = 80
+    /** One line per note: the first person it is aimed at, or you. */
+    const val MAX_TARGETS = 1
+    /** New stars a second, at most: anything over is dropped, not queued, hop 1 first. */
+    const val RATE = 8.0
+    /** New stars let on at once after a quiet spell. */
+    const val BURST = 8.0
     /** A star travels from its author to its target over this long, */
     const val TRAVEL = 2.0
     /** its faint trail fades this long after it lands, */
@@ -49,25 +55,30 @@ object GlobeArcs {
     /** NIP-57 zap receipts: drawn as bolts ([GlobeZaps]). */
     const val ZAP_KIND = 9735
 
-    /** The feed a note came in on, which sets where its star starts. */
-    enum class Ring(val title: String) {
-        FOLLOWING("Following"), DISCOVER("Discover"), GLOBAL("Global");
+    /** How far out a note's author is, which sets where its star starts. */
+    enum class Ring {
+        /** Hop 1: you and your follows. */
+        FOLLOWS,
+        /** Hop 2: the rest of your own web, friends of friends. */
+        WEB,
+        /** Hop 3 and strangers: only their zaps fly. */
+        OUTSIDE;
 
         /** Off the globe, an author's star starts on this shell. Your follows start on the ring. */
         val radius: Double
             get() = when (this) {
-                FOLLOWING -> TrustMap.RING_RADIUS
-                DISCOVER -> TrustMap.CLOSE_RADIUS
-                GLOBAL -> TrustMap.OUTER_RADIUS
+                FOLLOWS -> TrustMap.RING_RADIUS
+                WEB -> TrustMap.CLOSE_RADIUS
+                OUTSIDE -> TrustMap.OUTER_RADIUS
             }
     }
 
-    /** One note: who wrote it, who it is aimed at, and the feed it came in on. */
+    /** One note: who wrote it, who it is aimed at, and how far out its author is. */
     data class Arrival(
         val id: String,
         val author: String,
         val targets: List<String>,
-        val ring: Ring = Ring.FOLLOWING,
+        val ring: Ring = Ring.FOLLOWS,
         /** What it is, for the live switches ([GlobeLive]). A zap is drawn as a bolt ([GlobeZaps]). */
         val sort: Sort = Sort.NOTE,
         /** How hard a zap's bolt strikes, 0 to 1, by its amount. */
@@ -92,7 +103,7 @@ object GlobeArcs {
     ): Arrival? {
         if (kind == null || rawId == null || rawAuthor == null) return null
         // Keys are compared lowercase everywhere (follows, web, you): a relay's
-        // uppercase hex must not land your own note on Global.
+        // uppercase hex must not land your own note outside your web.
         val id = rawId.lowercase()
         val author = rawAuthor.lowercase()
         if (kind !in KINDS && kind !in REPOST_KINDS && kind != GlobeLive.REACTION_KIND) return null
@@ -179,11 +190,11 @@ object GlobeArcs {
     fun isReply(kind: Int, tags: List<List<String>>): Boolean =
         kind == NIP10Thread.COMMENT_KIND || (kind == 1 && NIP10Thread.parentEventId(kind, tags) != null)
 
-    /** Which feed a note's author belongs to: yours and your follows' Following, your wider web's Discover, anyone else's Global. */
-    fun ring(author: String, follows: Set<String>, discover: Set<String>): Ring = when (author) {
-        in follows -> Ring.FOLLOWING
-        in discover -> Ring.DISCOVER
-        else -> Ring.GLOBAL
+    /** How far out a note's author is: you and your follows, your web's friends of friends, or anyone else. */
+    fun ring(author: String, follows: Set<String>, web: Set<String>): Ring = when (author) {
+        in follows -> Ring.FOLLOWS
+        in web -> Ring.WEB
+        else -> Ring.OUTSIDE
     }
 
     fun isKey(s: String): Boolean = s.length == 64 && s.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
@@ -195,7 +206,7 @@ object GlobeArcs {
         val to: String,
         /** Aimed at you, or at no one and so flying into you. */
         val toMe: Boolean,
-        /** The feed its note came in on: where its star sets out. */
+        /** How far out its author is: where its star sets out. */
         val ring: Ring,
         val born: Double,
         /** What it carries: a reaction's star is smaller; a zap is a bolt. */
@@ -216,15 +227,22 @@ object GlobeArcs {
     data class Stage(val head: Double, val trail: Double, val alpha: Double, val landing: Double)
 
     /**
-     * Everything live on the globe. Every arrival flies on the next frame: there
-     * is no queue, only the line cap. Used on one thread (the frame clock's).
+     * Everything live on the globe. Arrivals wait one frame at most: each frame
+     * lets on what the rate cap allows ([RATE], [BURST]), hop 1 first, and drops
+     * the rest, so nothing queues and a touch after a quiet spell brings no
+     * burst. Every hop 1/2 note flies; there is no limit per person (Logen 11/19).
+     * Used on one thread (the frame clock's). [rate] and [burst] are only
+     * changed by tests.
      */
-    class Board {
+    class Board(private val rate: Double = RATE, private val burst: Double = BURST) {
         val lines = ArrayList<Line>()
-        /** Arrived since the last frame: let on, all of them, at the next. */
+        /** Arrived since the last frame: let on at the next, as far as the rate cap allows. */
         private val waiting = ArrayList<Arrival>()
         private val seen = HashSet<String>()
         private val seenOrder = ArrayDeque<String>()
+        /** New stars that may still fly: refills at [rate] a second, up to [burst]. */
+        private var tokens = burst
+        private var refilled: Double? = null
 
         val isIdle: Boolean get() = lines.isEmpty() && waiting.isEmpty()
 
@@ -233,8 +251,8 @@ object GlobeArcs {
 
         /**
          * Takes a note in; one already seen (another relay sent it too) is
-         * skipped. Between two frames at most a cap's worth wait, the widest
-         * feed's oldest going first, so a busy Global never pushes out a note
+         * skipped. Between two frames at most a cap's worth wait, the furthest
+         * ring's oldest going first, so a busy outside never pushes out a note
          * from someone you follow.
          */
         fun add(arrival: Arrival) {
@@ -248,12 +266,22 @@ object GlobeArcs {
             }
         }
 
-        /** Lets every waiting note on and drops what has faded. Returns the notes let on. */
+        /**
+         * Drops what has faded and lets waiting notes on, as many as the rate
+         * cap allows: hop 1 first, then in the order they came. The rest are
+         * dropped. Returns the notes let on.
+         */
         fun step(now: Double, me: String): List<Arrival> {
             lines.removeAll { isGone(it, now) }
+            val last = refilled
+            tokens = if (last == null) burst else minOf(burst, tokens + maxOf(0.0, now - last) * rate)
+            refilled = now
             if (waiting.isEmpty()) return emptyList()
-            val released = ArrayList(waiting)
+            val room = tokens.toInt().coerceAtMost(waiting.size)
+            // sortedBy is stable: the same ring keeps its arrival order.
+            val released = if (room == waiting.size) ArrayList(waiting) else waiting.sortedBy { it.ring }.take(room)
             waiting.clear()
+            tokens -= released.size
             for (next in released) {
                 // Aimed at no one: it flies into you, where your relay is.
                 for (target in next.targets.ifEmpty { listOf(me) }) {
@@ -265,7 +293,7 @@ object GlobeArcs {
             return released
         }
 
-        /** Over the cap, the widest feed's oldest standing lines start their fade now: Global first. */
+        /** Over the cap, the furthest ring's oldest standing lines start their fade now: outside first. */
         private fun retireOverCap(now: Double) {
             var over = lines.count { it.retired == null } - MAX_LINES
             if (over <= 0) return
@@ -302,6 +330,8 @@ object GlobeArcs {
         fun clear() {
             lines.clear()
             waiting.clear()
+            tokens = burst
+            refilled = null
         }
 
         companion object {

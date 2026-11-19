@@ -587,7 +587,7 @@ internal fun TrustWebContent(
             followsPending = followsPending, mappingWeb = mappingWeb, accent = accent,
             onProfileClick = onProfileClick, openProfile = ::openProfile, feedService = feedService,
             closeCard = ::closeCard, onMessage = onMessage, center = ::center,
-            live = if (isWOTTab && liveArcs.on) LiveArcsRequest(me, liveArcs.rings, liveArcs.show, globeArrivals) else null,
+            live = if (isWOTTab && liveArcs.on) LiveArcsRequest(me, liveArcs.show, globeArrivals) else null,
             mappingWider = centerKey in widerLoading,
             // A profile's or a post's globe makes way for the WOT tab's.
             onOpenInWot = if (isWOTTab) null else { pubkey -> WotOpenRequest.open(pubkey); onDismiss?.invoke() },
@@ -660,6 +660,7 @@ internal fun TrustWebContent(
                 MyWebSheet(
                     numbers = MyWebNumbers(counts, vouches != null, layer, (myFollows - me).size, rebuilding, rebuiltAgo),
                     filters = wotFilters,
+                    liveArcs = liveArcs,
                     newcomers = {
                         NewInWebSection(me, feedService, nostrService, profiles) { picked ->
                             myWebOpen = false; jump(0); if (picked != me) openCard(picked)

@@ -100,20 +100,25 @@ internal class GlobeSceneArcs {
     }
 }
 
-/** A note reached the relay: it takes its turn on the globe. */
+/**
+ * A note reached the relay: it takes its turn on the globe. While the spin is
+ * paused nothing new flies: it is dropped, not held, so a touch that starts the
+ * spin again brings no burst (iOS #2233).
+ */
 internal fun GlobeScene.arrive(arrival: GlobeArcs.Arrival) {
-    if (!arcs.on || !hasLoaded) return
+    if (!arcs.on || !hasLoaded || camera.spinPaused(nowSeconds())) return
     arcs.board.add(arrival)
     wake()
 }
 
 /**
  * Where someone sits for an arc. A star from your follows sets out from their
- * own star on the ring; one from Discover or Global from that feed's shell, in
- * their direction. Anyone else sits on their star, or on the outer shell.
+ * own star on the ring; one from friends of friends or further out from that
+ * ring's shell, in their direction. Anyone else sits on their star, or on the
+ * outer shell.
  */
 internal fun GlobeScene.arcPoint(key: String, setsOutFrom: GlobeArcs.Ring?): Vec3 {
-    if (setsOutFrom != null && setsOutFrom != GlobeArcs.Ring.FOLLOWING) return TrustMap.direction(key) * setsOutFrom.radius
+    if (setsOutFrom != null && setsOutFrom != GlobeArcs.Ring.FOLLOWS) return TrustMap.direction(key) * setsOutFrom.radius
     index[key]?.takeIf { it.alpha > 0.05 }?.let { return it.dir * it.radius }
     return TrustMap.direction(key) * TrustMap.OUTER_RADIUS
 }

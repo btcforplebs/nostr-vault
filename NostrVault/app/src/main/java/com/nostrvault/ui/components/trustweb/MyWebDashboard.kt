@@ -15,16 +15,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.SettingsInputAntenna
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -34,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -57,6 +63,7 @@ import com.nostrvault.ui.screens.dashboard.RowIcon
 import com.nostrvault.ui.screens.dashboard.RowState
 import com.nostrvault.ui.theme.CardBorder
 import com.nostrvault.ui.theme.LocalNostrVaultColors
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryGroupedBg
@@ -157,14 +164,15 @@ internal class MyWebNumbers(
 /**
  * My Web: what the WOT tab's globe holds, in numbers, and who is new in it. A
  * count row puts that part of your web on the globe and closes the sheet; a
- * face opens that person's card (iOS `MyWebDashboardView`). No switches: the
- * bar's antenna is the one for live arrivals (the rest were cut, Logen 11/12).
+ * face opens that person's card (iOS `MyWebDashboardView`). Its Live stars
+ * section holds the globe's three live switches (Logen 11/19).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MyWebSheet(
     numbers: MyWebNumbers,
     filters: WotFilters,
+    liveArcs: LiveArcsState,
     newcomers: @Composable () -> Unit,
     onLayer: (TrustMap.Layer) -> Unit,
     onRebuild: () -> Unit,
@@ -216,6 +224,19 @@ internal fun MyWebSheet(
                         filters.turnOn(TrustMap.Filter.FOLLOWS_BACK)
                         onDismiss()
                     }
+                }
+                DashSection(title = "Live stars") {
+                    SwitchRow(Icons.Filled.SettingsInputAntenna, "Live stars",
+                        "Your web's posts fly across the globe as they happen", liveArcs.on, enabled = true,
+                        onChange = liveArcs::switchOn)
+                    DashDivider()
+                    SwitchRow(NostrVaultIcons.WebOfTrust, "Friends of friends",
+                        "People your follows follow, not only your follows", liveArcs.show.friendsOfFriends,
+                        enabled = liveArcs.on, onChange = liveArcs::switchFriendsOfFriends)
+                    DashDivider()
+                    SwitchRow(Icons.Filled.Bolt, "Likes, reposts and zaps",
+                        "Off: posts and replies only. Zaps from anyone fly", liveArcs.show.extras,
+                        enabled = liveArcs.on, onChange = liveArcs::switchExtras)
                 }
                 DashSection(title = "Upkeep") {
                     DashRow(NostrVaultIcons.Refresh, "Rebuild your web",
@@ -290,6 +311,33 @@ private fun CountRow(icon: ImageVector, title: String, detail: String, count: In
             contentDescription = null,
             tint = if (selected) primary else SecondaryText,
             modifier = Modifier.size(14.dp),
+        )
+    }
+}
+
+/** A live switch: the whole row flips it. */
+@Composable
+private fun SwitchRow(icon: ImageVector, title: String, detail: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    val primary = LocalNostrVaultColors.current.primary
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
+            .alpha(if (enabled) 1f else 0.45f)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+    ) {
+        RowIcon(icon, RowState.INFO)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(detail, color = SecondaryText, fontSize = 12.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            enabled = enabled,
+            colors = SwitchDefaults.colors(checkedThumbColor = OnAccent, checkedTrackColor = primary),
         )
     }
 }

@@ -3,36 +3,38 @@ package com.nostrvault.data.model
 import android.content.SharedPreferences
 
 /**
- * What flies on the globe, by sort (iOS `GlobeLive.swift`): the live switches
- * beyond the three feeds.
+ * What flies on the globe (iOS `GlobeLive.swift`), past the bar's antenna:
+ * My Web's two switches below "Live stars" (Logen 11/19).
  */
 object GlobeLive {
     /** NIP-25 reactions (likes, emoji). */
     const val REACTION_KIND = 7
 
-    /** Which sorts fly. All on unless switched off. */
+    /** What flies. Both on unless switched off. */
     data class Show(
-        val notes: Boolean = true,
-        val replies: Boolean = true,
-        val reposts: Boolean = true,
-        val reactions: Boolean = true,
-        val zaps: Boolean = true,
+        /** Hop 2's stars. Off: only you and your follows fly notes (zaps still fly with [extras]). */
+        val friendsOfFriends: Boolean = true,
+        /** Likes, reposts and zaps. Off: notes and replies only, so nothing from outside your web. */
+        val extras: Boolean = true,
     ) {
-        fun allows(sort: GlobeArcs.Sort): Boolean = when (sort) {
-            GlobeArcs.Sort.NOTE -> notes
-            GlobeArcs.Sort.REPLY -> replies
-            GlobeArcs.Sort.REPOST -> reposts
-            GlobeArcs.Sort.REACTION -> reactions
-            GlobeArcs.Sort.ZAP -> zaps
+        /**
+         * Whether an arrival from [ring] flies: hop 1 and 2 fly everything,
+         * anyone further out only zaps.
+         */
+        fun allows(sort: GlobeArcs.Sort, ring: GlobeArcs.Ring): Boolean {
+            val extra = sort == GlobeArcs.Sort.REPOST || sort == GlobeArcs.Sort.REACTION || sort == GlobeArcs.Sort.ZAP
+            if (extra && !extras) return false
+            if (sort == GlobeArcs.Sort.ZAP) return true
+            return when (ring) {
+                GlobeArcs.Ring.FOLLOWS -> true
+                GlobeArcs.Ring.WEB -> friendsOfFriends
+                GlobeArcs.Ring.OUTSIDE -> false
+            }
         }
 
-        /** The kinds to ask relays for by author or for you: notes and replies are both kind 1 (and 1111). */
-        val noteKinds: List<Int>
-            get() = (if (notes || replies) GlobeArcs.KINDS else emptyList()) + (if (reactions) listOf(REACTION_KIND) else emptyList())
-
-        /** The wide REQ's kinds: the notes' and, with Reposts on, reposts. */
-        val wideKinds: List<Int>
-            get() = noteKinds + (if (reposts) GlobeArcs.REPOST_KINDS else emptyList())
+        /** The kinds asked for by author: notes and replies, and with [extras] reposts and reactions. Zaps are asked for apart. */
+        val authorKinds: List<Int>
+            get() = GlobeArcs.KINDS + if (extras) GlobeArcs.REPOST_KINDS + REACTION_KIND else emptyList()
     }
 
     /**
@@ -49,32 +51,35 @@ object GlobeLive {
 }
 
 /**
- * Whether notes fly across the WOT globe as they reach the relay (iOS
- * `LiveArcsSetting`, same keys). The bar's antenna is the only switch: every
- * feed and every sort flies. Kept across launches; a switch is only stored once
- * someone flips it, so everyone who never touched it gets the default.
+ * The globe's live-star switches, kept across launches with iOS's keys
+ * (`LiveArcsSetting`): the bar's antenna and My Web's "Live stars" ([KEY]),
+ * Friends of friends ([FRIENDS_KEY]) and Likes, reposts and zaps
+ * ([EXTRAS_KEY]). A switch is only stored once someone flips it, so everyone
+ * who never touched it gets the default: all on.
  */
 object LiveArcsSetting {
     const val PREFS = "wot_live_arcs"
     const val KEY = "wotLiveArcs"
+    const val FRIENDS_KEY = "wotLiveArcs.friendsOfFriends"
+    const val EXTRAS_KEY = "wotLiveArcs.extras"
     /** Live arrivals start on (Logen, 10/15). */
     const val DEFAULT_ON = true
 
-    /** A cut feed switch's key, kept so [retireCutSwitches] can remove it. */
-    fun key(ring: GlobeArcs.Ring) = "wotLiveArcs." + ring.name.lowercase()
-
-    /** A cut sort switch's key, kept so [retireCutSwitches] can remove it. */
-    fun key(sort: GlobeArcs.Sort) = "wotLiveArcs.sort." + sort.name.lowercase()
-
     fun isOn(prefs: SharedPreferences) = prefs.getBoolean(KEY, DEFAULT_ON)
+
+    fun show(prefs: SharedPreferences) = GlobeLive.Show(
+        friendsOfFriends = prefs.getBoolean(FRIENDS_KEY, true),
+        extras = prefs.getBoolean(EXTRAS_KEY, true),
+    )
 
     /**
      * The feed and sort switches My Web had until 11/12, when Logen had them
-     * cut: everything flies now. A value someone stored would have no switch
-     * left to undo it, so it goes. The antenna ([KEY]) keeps what it was set to.
+     * cut. A value someone stored would have no switch left to undo it, so it
+     * goes. The three live switches keep what they were set to.
      */
     val RETIRED_KEYS: List<String> =
-        GlobeArcs.Ring.entries.map { key(it) } + GlobeArcs.Sort.entries.map { key(it) }
+        listOf("following", "discover", "global").map { "wotLiveArcs.$it" } +
+            listOf("note", "reply", "repost", "reaction", "zap").map { "wotLiveArcs.sort.$it" }
 
     fun retireCutSwitches(prefs: SharedPreferences) {
         if (RETIRED_KEYS.none(prefs::contains)) return
