@@ -22,6 +22,8 @@
   .tabs { display: flex; gap: 6px; padding: 10px 14px 4px; }
   .tabs button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
   #list { list-style: none; margin: 0; padding: 0 0 120px; }
+  #people { list-style: none; margin: 8px -14px 0; padding: 0; }
+  #people .row { grid-template-columns: 40px 1fr; min-height: 56px; }
   .row { display: grid; grid-template-columns: 48px 1fr auto; gap: 12px; align-items: center; width: 100%; padding: 10px 14px; background: none; border: 0; border-bottom: 1px solid var(--hair); border-radius: 0; text-align: left; min-height: 68px; }
   .av { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; font-weight: 700; color: #fff; }
   .who { min-width: 0; }
@@ -67,8 +69,10 @@
 </section>
 <section id="new" hidden aria-label="New message">
   <header style="margin:-14px -14px 0"><button class="ghost" id="newBack">‹ Back</button><h1>New message</h1></header>
-  <label for="to">To: an npub or a hex public key</label>
-  <input id="to" autocomplete="off" spellcheck="false" placeholder="npub1…">
+  <label for="to">To: a name, an npub or a hex public key</label>
+  <input id="to" autocomplete="off" spellcheck="false" placeholder="Name or npub1…" aria-controls="people">
+  <ul id="people" aria-label="People"></ul>
+  <div class="note" id="peopleNote" role="status"></div>
   <div><button class="primary" id="go" disabled>Open the conversation</button></div>
 </section>
 <section id="thread" hidden aria-label="Conversation">
@@ -152,6 +156,13 @@ const followsEnd = (atEnd, mine) => !!atEnd || !!mine
 /** A message landing in the chat on screen is read at once (A4; the classic thread and the apps do this): the open chat,
  *  the page in front. */
 const readsOnArrival = (open, m, hidden) => !!open && m?.conversationId === open && !hidden
+/** What New message says under the box: nothing while it's empty, a key, or there are people to pick; while a name is
+ *  being looked up, that; when none matched, how else to reach them (the classic box's no-match hint). */
+const peopleHint = (q, isKey, people, looking) => {
+  const t = String(q ?? "").trim()
+  if (!t || isKey || people.length) return ""
+  return looking ? "Looking…" : `No one found for “${t}”. Paste their npub, nprofile or hex public key instead.`
+}
 const bubbleKey = (m, load) => `${m.id}|${m.status ?? ""}|${m.retrying ? 1 : 0}|${load ? 1 : 0}`
 /** Return sends, as on the classic thread (ConversationScreen.jsx sendsOnEnter); Shift or Option + Return is a new line.
  *  On a touch screen (an iPad) Return is a new line and Send is the button; never mid-composition (an IME's Return
@@ -403,9 +414,31 @@ async function sendNow() {
   if (ph) { if (!ok && !kept && open === to && !photo) { setPhoto(ph); if (!$("text").value) $("text").value = text } else if (photoUrl && !photo) clearPhoto() }
   sending = false; syncSend()
 }
-$("newBtn").onclick = () => { $("to").value = ""; $("go").disabled = true; show("new"); $("to").focus() }
-$("newBack").onclick = () => show("inbox")
-$("to").oninput = () => { $("go").disabled = !pubkeyOf($("to").value) }
+$("newBtn").onclick = () => { $("to").value = ""; $("go").disabled = true; drawPeople([], false); show("new"); $("to").focus() }
+$("newBack").onclick = () => { peopleSeq++; show("inbox") }
+// A name typed in New message: the shell finds people (follows first, then a NIP-50 search; never someone blocked) as
+// the classic box does (B2). A stranger's row comes without a picture, so nothing loads from their server.
+let peopleSeq = 0, peopleTimer = 0
+function drawPeople(list, looking) {
+  $("people").replaceChildren(...list.map(c => {
+    const pk = c.participants[0].pubkey, li = el("li"), b = el("button", "row"), av = el("div", "av"), who = el("div", "who")
+    learn(c); avatar(av, pk, c.participants[0].avatar)
+    who.append(el("b", "", nameOf(pk)), el("span", "", c.follows ? "You follow them" : "Not in your follows"))
+    b.append(av, who); b.onclick = () => openThread(pk, c.participants[0].avatar)
+    li.append(b); return li
+  }))
+  $("peopleNote").textContent = peopleHint($("to").value, !!pubkeyOf($("to").value), list, looking)
+}
+$("to").oninput = () => {
+  const v = $("to").value, key = pubkeyOf(v), seq = ++peopleSeq
+  $("go").disabled = !key; clearTimeout(peopleTimer)
+  if (key || !v.trim()) return drawPeople([], false)
+  drawPeople([], true)
+  peopleTimer = setTimeout(async () => {
+    const page = await n.dm.conversations({ people: v.trim().slice(0, 200) }).catch(() => null)
+    if (seq === peopleSeq) drawPeople(page?.conversations ?? [], false)
+  }, 350)
+}
 $("go").onclick = () => { const pk = pubkeyOf($("to").value); if (pk) openThread(pk) }
 
 ;(async () => {

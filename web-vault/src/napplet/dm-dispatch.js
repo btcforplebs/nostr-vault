@@ -8,7 +8,9 @@
 //                         `follows` (you follow them: their photos load without a tap, as on the classic thread).
 //                         Our query extensions: `query` (the classic on-device search, net/dm-search.js: names and
 //                         message text, nothing asked of a relay; a row's `hit` is the newest matching message) and
-//                         `ids` (these people's rows even with no message yet: a brand-new conversation's name).
+//                         `ids` (these people's rows even with no message yet: a brand-new conversation's name), and
+//                         `people` (a name typed in New message: matching people as rows, follows first, then a
+//                         NIP-50 search; never someone blocked; a stranger's row has no avatar, so nothing loads).
 //   dm.messages        -> one conversation, oldest first, a page from the newest end; reading it marks it read
 //   dm.send            -> one recipient (NIP-17 direct; no groups, as on the classic page), through sendMessage. Our
 //                         extension `photo` (a Blob): the shell redraws it without its metadata, uploads it to your
@@ -44,6 +46,7 @@ const offset = c => { const n = Number(c); return Number.isInteger(n) && n >= 0 
 /**
  * deps: { me, messages() -> Map, blocked() -> Set, trusted() -> Set, unread(messages) -> Map peer -> n,
  * profile(pk) -> { name, picture } | null, searchName(pk) -> text, follows(pk) -> bool, lookup(pks) (fetch names),
+ * findPeople(query) -> Promise<[pk]> (dm-people.js),
  * onChange(cb) -> off, send(peer, text, photo?) -> Promise<message>, retry(id) -> Promise<message>, discard(id), markRead(list), ask({ napplet, what, detail }) -> bool,
  * randomId() }
  */
@@ -59,7 +62,18 @@ export function dmHandler({ grant, who, deps, push }) {
   }
   const line = x => ({ content: String(x.content ?? "").slice(0, 160), senderPubkey: x.from, createdAt: x.at })
 
+  async function peoplePage(m) {
+    if (typeof m.people !== "string" || m.people.length > MAX_QUERY) return refuse(m, `people: text, at most ${MAX_QUERY} characters`)
+    const blocked = deps.blocked()
+    const pks = (await (deps.findPeople?.(m.people) ?? [])).filter(pk => HEX.test(pk) && !blocked.has(pk))
+    return out(m, { conversations: pks.map(pk => {
+      const follows = !!deps.follows(pk), p = participant(pk)
+      return { id: pk, kind: "direct", participants: [follows || pk === deps.me ? p : { pubkey: p.pubkey, ...(p.label ? { label: p.label } : {}) }], unread: 0, updatedAt: 0, follows, person: true }
+    }) })
+  }
+
   function conversationsPage(m) {
+    if (m.people !== undefined) return peoplePage(m)
     if (m.query !== undefined && (typeof m.query !== "string" || m.query.length > MAX_QUERY)) return refuse(m, `query: text, at most ${MAX_QUERY} characters`)
     if (m.ids !== undefined && (!Array.isArray(m.ids) || m.ids.length > MAX_IDS || !m.ids.every(x => HEX.test(x ?? "")))) return refuse(m, `ids: at most ${MAX_IDS} hex pubkeys`)
     const all = deps.messages(), blocked = deps.blocked()
