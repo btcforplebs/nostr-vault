@@ -158,7 +158,9 @@ test("the WoT napplet always draws Dark: the classic screen's daytime sky is kep
   const sky = read("src/styles/wot.css").match(/:root\[data-theme="light"\] \.wot-globe\.day-sky \{ background: ([^;]+);/)[1]
   const nap = read("napplets/wot/index.html")
   assert.ok(nap.includes(`:root[data-sky="light"].day-sky body { background: ${sky}; }`), "same gradient as styles/wot.css, behind day-sky")
-  assert.match(nap, /const GLOBE_DAY_SKY = false/)
+  // Off: the injected maths (net/wot-globe.js) brings GLOBE_DAY_SKY = false; the napplet doesn't declare it again.
+  assert.match(html, /const GLOBE_DAY_SKY = false/)
+  assert.doesNotMatch(nap, /const GLOBE_DAY_SKY/)
   assert.match(nap, /const isDay = \(\) => GLOBE_DAY_SKY && /)
   assert.match(read("napplets/wot-mini/index.html"), /nvTheme\(n, \{ island: "dark" \}\)/, "the mini globe is a dark island too")
   assert.match(read("src/napplet/WotPane.jsx"), /useEffect\(\(\) => holdDark\(\), \[\]\)/, "the page around it draws dark")
@@ -167,4 +169,13 @@ test("the WoT napplet always draws Dark: the classic screen's daytime sky is kep
   assert.match(nap, /getPropertyValue\("--nv-mode"\)/)
   const client = read("src/napplet/theme-client.js")
   assert.match(client, /root\.dataset\.sky = nv && nv\.mode === "light" \? "light" : "dark"/)
+})
+
+// The whole script as it ships (maths injected) must compile: the napplet declared its own GLOBE_DAY_SKY after
+// net/wot-globe.js started exporting one (2026-11-16), and the duplicate const threw before anything drew, leaving the
+// desktop WoT on "Loading your web…". The tests above only load up to the pure block's end, so they didn't see it.
+test("the WoT napplet's whole script compiles with the maths injected (no name declared twice)", () => {
+  const all = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1])
+  assert.ok(all.length >= 1)
+  for (const s of all) assert.doesNotThrow(() => new vm.Script(s), "a script block that doesn't compile")
 })

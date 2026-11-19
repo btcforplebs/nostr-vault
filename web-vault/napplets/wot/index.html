@@ -122,7 +122,7 @@ document.documentElement.dataset.sky = getComputedStyle(document.documentElement
 /** In Light the globe draws by day (net/wot-globe.js STAR_DAY / RIM_DAY, WotGlobe.jsx's day frame). */
 // The Web of Trust always draws Dark (Logen 2026-11-16): the daytime sky is kept but off. Set true (and add the
 // day-sky class to :root) to bring it back in Light.
-const GLOBE_DAY_SKY = false
+// GLOBE_DAY_SKY comes with the injected maths (net/wot-globe.js): declaring it here too threw before anything drew.
 const isDay = () => GLOBE_DAY_SKY && document.documentElement.dataset.sky === "light"
 const canvas = $("globe")
 let rims = RIM // face rim colours for this frame: RIM, or RIM_DAY in Light
