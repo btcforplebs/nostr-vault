@@ -7,12 +7,12 @@
   "eyebrow": "Using the app",
   "h1": "Your <span>web of trust</span>",
   "lede": "The people you follow, and the people they follow, decide who can reach you. Nostr Vault draws that web as a globe and uses it to keep spam out of your vault, your notifications and your feeds.",
-  "description": "Nostr Vault's web of trust: one web per account, the WoT tab globe, layers (Following, Vouched, Further out), Find someone, trust paths, My Web, what is folded from outside your web, and Follow Distance and Minimum Followers explained.",
+  "description": "Nostr Vault's web of trust: one web per account, one gate for every feed with per-feed Reach, nuclear unfollow and private block, the WoT tab globe, layers (Following, Vouched, Further out), Find someone, trust paths, My Web, what is folded from outside your web, and Follow Distance and Minimum Followers explained.",
   "checked": "Nostr Vault 3.2.2 and the web app",
   "labels": {
-    "ios": ["WoT", "Web of Trust", "Everyone", "Following", "Vouched", "Further out", "Rebuild your web", "Talk with you", "Follow you back", "Find someone", "My Web", "See their web", "Open in WoT", "Profile", "Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Your Web of Trust", "New in your web", "Who you can see", "With you", "Upkeep", "Plebs vs Zombies", "Outside your web"],
-    "android": ["WoT", "Everyone", "Following", "Vouched", "Further out", "Rebuild your web", "Find someone", "My Web", "See their web", "Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Your Web of Trust", "New in your web", "Who you can see", "With you", "Upkeep", "Outside your web"],
-    "web": ["WoT", "Web of Trust", "Globe", "Everyone", "Following", "Vouched", "Further out", "Find someone", "Follow you back", "My Web", "See their web", "Rebuild your web"]
+    "ios": ["WoT", "Web of Trust", "Everyone", "Following", "Vouched", "Further out", "Rebuild your web", "Talk with you", "Follow you back", "Find someone", "My Web", "See their web", "Open in WoT", "Profile", "Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Your Web of Trust", "New in your web", "Who you can see", "With you", "Upkeep", "Plebs vs Zombies", "Outside your web", "Live stars", "Friends of friends", "Likes, reposts and zaps", "Reach", "Your web", "Your web + a few one hop out", "Nuclear unfollow", "Private block", "Show list", "Undo", "Blocked", "Block privately", "Public", "Private"],
+    "android": ["WoT", "Everyone", "Following", "Vouched", "Further out", "Rebuild your web", "Find someone", "My Web", "See their web", "Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Your Web of Trust", "New in your web", "Who you can see", "With you", "Upkeep", "Outside your web", "Live stars", "Friends of friends", "Likes, reposts and zaps", "Nuclear unfollow", "Private block", "Blocked", "Block privately", "Public", "Private"],
+    "web": ["WoT", "Web of Trust", "Globe", "Everyone", "Following", "Vouched", "Further out", "Find someone", "Follow you back", "My Web", "See their web", "Rebuild your web", "Reach", "Your web", "+ a few one hop out", "Nuclear unfollow", "Private block", "Blocked", "Block privately"]
   }
 }
 -->
@@ -62,7 +62,13 @@
         or zapped, or who did that to you. <strong>Follow you back</strong> keeps follows who follow you too.</li>
     <li><strong>Find someone.</strong> Tap the magnifier and type a name. Your follows come first, then your
         web, then everyone else.</li>
+    <li><strong>Live stars.</strong> New posts from your web fly in as stars while you watch. Your follows and
+        the rest of your web fly as plain stars; from further out, only zaps fly. Nobody you blocked or muted ever
+        flies. My Web has three switches for it: <strong>Live stars</strong>, <strong>Friends of friends</strong>
+        and <strong>Likes, reposts and zaps</strong> (on the Mac, the antenna menu in the WoT bar). (iPhone, iPad,
+        Mac and Android.)</li>
 </ul>
+<p>The globe always draws on a dark sky, also in Light mode.</p>
 </section>
 
 <section id="path">
@@ -105,20 +111,47 @@
     <li><strong>Who can reach your vault.</strong> Only people in your web can post to your vault's inbox.
         Strangers can still reply to or quote your own posts.</li>
     <li><strong>Notifications.</strong> Replies, likes, reposts and mentions notify you only from people in
-        your web. Zaps and follows always come through. In the Vault list, likes and reposts from outside your
-        web fold into one "N from outside your web" line; tap it to see them under
-        <strong>Outside your web</strong>. They don't add to the account's unread count. A message alerts if it's from your web or someone you've
-        written to; others wait under Requests. A new follower outside your web is folded into
-        "N new followers".</li>
-    <li><strong>Feeds.</strong> Global, Media and the other discovery feeds show only your web unless you
-        switch them to Everyone. Everyone unlocks once you follow 5 people. While it's on, a banner at the top
-        says so and takes you back to your web in one tap. See
-        <a class="inline" href="/docs/feeds/#everyone-lock">Feeds</a>.</li>
+        your web. In the Vault list, likes and reposts from outside your web fold into one "N from outside your
+        web" line; tap it to see them under <strong>Outside your web</strong>. They don't add to the account's
+        unread count. A message alerts if it's from your web or someone you've written to; others wait under
+        Requests.</li>
+    <li><strong>Zaps.</strong> On iPhone, iPad and Mac a zap is judged by who paid. From your web you see the
+        whole zap. From outside it, you see the amount without its comment, and it doesn't alert you (it's still
+        in the Vault's Zaps). From someone you blocked, nothing.</li>
+    <li><strong>Followers.</strong> Your Followers list shows the followers in your web. The rest are under
+        &bull;&bull;&bull; &rarr; <strong>Outside your web</strong>, and only followers in your web count toward
+        new-follower alerts and the red dot.</li>
+    <li><strong>Feeds, replies and live chat.</strong> Since 3.2.3 every feed goes through one gate on iPhone,
+        iPad, Mac and the web: no stranger reaches a feed, not even by tagging you, and blocked and muted people
+        are left out by the same rule. A post's replies and quotes and a live stream's chat use it too. Global
+        and the other discovery feeds still show everyone when you switch them to Everyone (that unlocks once
+        you follow 5 people). See <a class="inline" href="/docs/feeds/#reach">Feeds</a>.</li>
     <li><strong>Search.</strong> Your follows and your web rank above everyone else. People and notes from
         outside your web fold under one line at the end.</li>
     <li><strong>Mesh photos.</strong> Photos load over the mesh only from people you follow, not from your
         wider web.</li>
 </ul>
+</section>
+
+<section id="block">
+<p class="eyebrow">New in 3.2.3</p>
+<h2>Block, private block and nuclear unfollow</h2>
+<p>A profile's &bull;&bull;&bull; menu has three ways to keep someone out of your web. They're on iPhone, iPad,
+    Mac, Android and the web.</p>
+<ul>
+    <li><strong>Block</strong> hides them everywhere. Your block list is public, so others can see who you
+        blocked.</li>
+    <li><strong>Private block</strong> hides them the same way, but writes them only into the encrypted part
+        of your block list. Nobody else can see it. It needs a key or signer that can encrypt.</li>
+    <li><strong>Nuclear unfollow</strong> is for someone who got into your web through your follows. The app
+        finds everyone you follow who follows them and lights them on the globe. Tap <strong>Show list</strong>
+        to see them, all ticked; untick anyone you want to keep. It always asks first, and asks a second time at
+        25 people or more. Then it saves a backup of your follow list and publishes one new list without the
+        people you ticked. <strong>Undo</strong> puts the backup back. It doesn't block or mute anyone.</li>
+</ul>
+<p>Blocked people, public or private, are taken out of your web, so they don't reach feeds, replies, zaps or
+    the globe. <span class="path">Settings &rarr; Blocked</span> lists them in two parts, <strong>Public</strong>
+    and <strong>Private</strong>, and <strong>Block privately</strong> there blocks someone new privately.</p>
 </section>
 
 <section id="settings">

@@ -1,0 +1,56 @@
+<!--page
+{
+  "title": "Nostr Vault on a Raspberry Pi",
+  "nav": "Raspberry Pi (beta)",
+  "section": "start",
+  "order": 6,
+  "description": "Run your Nostr Vault on a Raspberry Pi 4 or 5 with no screen: 64-bit Raspberry Pi OS, a USB SSD instead of the SD card, the install command, the address to open and the ports it uses.",
+  "checked": "Nostr Vault 3.2.3 for Linux (beta 1)"
+}
+-->
+<p>A Raspberry Pi on a shelf makes a good always-on vault: it uses little power, stays on, and your phones reach it
+    at home and over the mesh. This page adds the Pi details to <a href="/docs/start/linux/">Get started on
+    Linux</a>.</p>
+
+<h2 id="hardware">What to use</h2>
+<ul>
+    <li><strong>A Raspberry Pi 4 or 5.</strong> The vault is capped at 1.5 GB of memory and the mesh at
+        512 MB, so a model with more memory leaves room for other things.</li>
+    <li><strong>Raspberry Pi OS 12 (Bookworm), 64-bit.</strong> The 32-bit system won't install: the vault needs
+        arm64. Raspberry Pi OS Lite, with no desktop, is fine.</li>
+    <li><strong>A USB SSD for the vault.</strong> A vault writes all the time. An SD card wears out and is slow; a
+        USB SSD lasts much longer. Plug it in before you install, and the installer suggests it because it has the
+        most free space. If you choose the SD card anyway, it warns you and asks first.</li>
+    <li><strong>A wired network</strong> if you can. Wi-Fi works too.</li>
+</ul>
+
+<h2 id="install">Install</h2>
+<ol class="steps">
+    <li>Set up the Pi with Raspberry Pi Imager, turn on SSH, and log in from your computer:
+        <code>ssh you@raspberrypi.local</code>.</li>
+    <li>Paste the install command from <a href="/docs/start/linux/#install">Get started on Linux</a>. On a Pi with
+        no desktop it installs only the vault, not the window.</li>
+    <li>For <strong>Where should your vault live?</strong>, take the suggested folder on your SSD (for example
+        <code>/media/you/ssd/nostr-vault</code>). For <strong>Your npub</strong>, paste your account's npub.</li>
+    <li>When it's done it prints the address. Open <code>http://raspberrypi.local:8080/</code> (or the IP address it
+        printed) on your phone or computer, sign in, and link the box: see
+        <a href="/docs/mesh/linux-box/#link">A Linux box in My Devices</a>.</li>
+</ol>
+
+<h2 id="ports">Ports and your router</h2>
+<ul>
+    <li>The vault answers on port <strong>8080</strong> on your network. Pick another with
+        <code>sudo nostr-vault-setup --port …</code>.</li>
+    <li>The engine (3355) and the mesh door (8081) listen only on the Pi itself.</li>
+    <li>Nothing opens a port on your router. Away from home, your own devices reach the Pi over the mesh, and the Pi
+        answers only them.</li>
+</ul>
+
+<h2 id="tips">Keeping it healthy</h2>
+<ul>
+    <li>The vault starts by itself when the Pi boots. If the Pi loses power, it comes back on its own.</li>
+    <li>Watch it with <code>journalctl -fu nostr-vault -u nostr-vault-mesh</code>, or open the box's page in
+        Settings for memory, disk and mesh status.</li>
+    <li>Running out of room? Plug in a bigger drive and use <strong>Move vault to…</strong> on the box's page.</li>
+    <li>To update, run the install command again. Your data, owner and port stay.</li>
+</ul>

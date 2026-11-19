@@ -9,9 +9,9 @@
   "lede": "Nostr Vault doesn't hold your Lightning money. It connects to a wallet you already use, with a Nostr Wallet Connect link, and asks that wallet to pay when you zap.",
   "description": "How the Nostr Vault wallet works: connect a Lightning wallet with a Nostr Wallet Connect (NWC) link, turn on zap buttons, disconnect, and the on-chain Bitcoin address under Advanced.",
   "labels": {
-    "ios": ["Account", "Wallet", "Wallet Connect", "Default Zap", "Balance", "Lightning", "No Wallet Connected", "Connect a wallet", "Save wallet to my Nostr account", "Use saved wallet", "Remove from my account", "Appearance", "Post buttons", "Add ⚡️", "Advanced", "Bitcoin On-Chain", "Bitcoin Address", "Copy Address", "Sweep Wallet", "Help", "Tutorials"],
-    "mac": ["Account", "Wallet", "Wallet Connect", "Default Zap", "Balance", "Lightning", "No Wallet Connected", "Connect a wallet", "Save wallet to my Nostr account", "Use saved wallet", "Remove from my account", "Appearance", "Post buttons", "Add ⚡️", "Advanced", "Bitcoin On-Chain", "Bitcoin Address", "Copy Address", "Sweep Wallet"],
-    "android": ["Account", "Wallet", "Settings", "Nostr Wallet Connect (NWC)", "Default Zap Amount (sats)", "Balance", "Lightning", "No Wallet Connected", "Connect a wallet", "Save wallet to my Nostr account", "Use saved wallet", "Remove from my account", "Appearance", "Post buttons", "Add ⚡️", "Advanced", "Bitcoin On-Chain", "Bitcoin Address", "Copy Address", "Sweep Wallet", "Help", "Tutorials", "Wallet Connect"],
+    "ios": ["Account", "Wallet", "Wallet Connect", "Default Zap", "Balance", "Lightning", "No Wallet Connected", "Connect a wallet", "Save wallet to my Nostr account", "Use saved wallet", "Remove from my account", "Appearance", "Post buttons", "Add ⚡️", "Advanced", "Bitcoin On-Chain", "Bitcoin Address", "Copy Address", "Sweep Wallet", "Help", "Tutorials", "Sent, waiting for your wallet", "Zap again?", "Zapped"],
+    "mac": ["Account", "Wallet", "Wallet Connect", "Default Zap", "Balance", "Lightning", "No Wallet Connected", "Connect a wallet", "Save wallet to my Nostr account", "Use saved wallet", "Remove from my account", "Appearance", "Post buttons", "Add ⚡️", "Advanced", "Bitcoin On-Chain", "Bitcoin Address", "Copy Address", "Sweep Wallet", "Zap…", "Sent, waiting for your wallet", "Zap again?"],
+    "android": ["Account", "Wallet", "Settings", "Nostr Wallet Connect (NWC)", "Default Zap Amount (sats)", "Balance", "Lightning", "No Wallet Connected", "Connect a wallet", "Save wallet to my Nostr account", "Use saved wallet", "Remove from my account", "Appearance", "Post buttons", "Add ⚡️", "Advanced", "Bitcoin On-Chain", "Bitcoin Address", "Copy Address", "Sweep Wallet", "Help", "Tutorials", "Wallet Connect", "Sent. Your wallet hasn't confirmed yet, so it may still arrive.", "Zapped"],
     "web": ["Account", "Wallet", "Wallet Connect", "No Wallet Connected", "Connect a wallet", "Connect wallet", "Balance", "Default zap", "Disconnect wallet", "Disconnect"]
   }
 }
@@ -70,6 +70,23 @@
         pick another amount. Turn off <strong>Zap button &#9889;&#65039;</strong> under
         <span class="path">Settings &rarr; Post buttons</span> to hide it.</li>
 </ul>
+<p>Tap the bolt to send your default zap, or hold it to pick another amount, on every note row and in threads
+    (iPhone, iPad, Android and the web). On the Mac, right-click a post or a profile's zap button and pick
+    <strong>Zap…</strong>. A one-tap zap is never less than 1 sat.</p>
+
+<h3 id="pending">When the wallet is slow</h3>
+<p>A wallet can take a minute or more to pay. Since 3.2.3 the app waits about 90 seconds for it and watches for
+    the zap's receipt, so a zap that went through no longer shows as failed.</p>
+<ul>
+    <li>If the wallet hasn't answered yet, the pill says <strong>Sent, waiting for your wallet</strong> (Android:
+        "Sent. Your wallet hasn't confirmed yet, so it may still arrive."). That means it may still pay, not that
+        it failed.</li>
+    <li>When the receipt arrives, the bolt lights and it says <strong>Zapped</strong>.</li>
+    <li>Zap the same post again while the first is still on its way and the app asks first (<strong>Zap
+        again?</strong> on iPhone, iPad and Mac), so you don't pay twice by accident.</li>
+    <li>A real error from your wallet still shows as a failure.</li>
+</ul>
+
 <p>Each zap goes straight from your wallet to the author. Nostr Vault takes no cut. Before your wallet pays, the
     app checks that the invoice asks for exactly the amount you chose, and refuses one that asks for more or names
     no amount (Android).</p>

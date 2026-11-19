@@ -51,9 +51,10 @@
     <li><code>web-relay/</code>: the <a href="/docs/browser-relay/">browser vault</a>.</li>
     <li><code>fips-bridge/</code>, <code>fips-v2/</code> and <code>fips-v2-android/</code>: the mesh (FIPS)
         engine embedded in the apps, and its probes (Rust).</li>
-    <li><code>linux/</code>: a <code>Dockerfile</code> to build the vault for a Linux box yourself (no published image yet).</li>
-    <li><code>linux/</code> also has <code>install.sh</code>, which sets up a vault on a Linux box. Updates are
-        manual: run it again.</li>
+    <li><code>linux/</code>: Nostr Vault for Linux. <code>linux/native/build.sh arm64 amd64</code> builds the
+        .deb packages on Debian 12; <code>install.sh</code> installs one (or the Docker box from the
+        <code>Dockerfile</code>) and is also the update: run it again. See
+        <a href="/docs/start/linux/">Get started on Linux</a>.</li>
     <li><code>docs/</code>: the NIP drafts, including NIP-F1, and the contracts between the apps and the
         vault.</li>
 </ul>

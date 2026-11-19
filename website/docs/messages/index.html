@@ -61,6 +61,8 @@
                     <li><a href="/docs/start/android/">Android</a></li>
                     <li><a href="/docs/start/mac/">Mac</a></li>
                     <li><a href="/docs/start/web/">Web browser</a></li>
+                    <li><a href="/docs/start/linux/">Linux (beta)</a></li>
+                    <li><a href="/docs/start/raspberry-pi/">Raspberry Pi (beta)</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -87,6 +89,7 @@
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
                     <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
+                    <li><a href="/docs/mesh/linux-box/">Linux box (beta)</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
@@ -131,7 +134,7 @@
             <p class="eyebrow">Using the app</p>
             <h1>Messages and <span>notifications</span></h1>
             <p class="docs-lede">Private messages are end-to-end encrypted, and your notifications are made by your own vault on your phone. No outside push server sees them.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#where-your-messages-are">Where your messages are</a></li><li><a href="#start-a-message">Start a message</a></li><li><a href="#sending-a-photo-or-video">Sending a photo or video</a></li><li><a href="#nip-17-and-nip-04">NIP-17 and NIP-04</a></li><li><a href="#dm-relays-and-who-can-reach-you">DM relays and who can reach you</a></li><li><a href="#your-notifications">Your notifications</a></li><li><a href="#notification-settings">Notification settings</a></li><li><a href="#no-push-server">No push server</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#where-your-messages-are">Where your messages are</a></li><li><a href="#start-a-message">Start a message</a></li><li><a href="#sending-a-photo-or-video">Sending a photo or video</a></li><li><a href="#sending-not-sent-try-again">Sending, Not sent, Try again</a></li><li><a href="#nip-17-and-nip-04">NIP-17 and NIP-04</a></li><li><a href="#dm-relays-and-who-can-reach-you">DM relays and who can reach you</a></li><li><a href="#your-notifications">Your notifications</a></li><li><a href="#notification-settings">Notification settings</a></li><li><a href="#no-push-server">No push server</a></li></ul></div>
 
             <article class="docs-article">
                 <section id="where">
@@ -152,9 +155,13 @@
                 <h2 id="start-a-message">Start a message</h2>
                 <ol>
                     <li>In Messages, tap the compose button (<strong>New Message</strong>).</li>
-                    <li>In To:, type at least two letters of a name, or paste an npub.</li>
-                    <li>Write your message and tap Send.</li>
+                    <li>Type a name, or paste a key: an npub, an nprofile, a 64-character hex key or a <code>nostr:</code> link
+                        all work, even for someone whose profile hasn't loaded. It says so when nothing matches, the key is bad,
+                        or the key is your own.</li>
+                    <li>Pick the person. Their conversation opens, with its history, and you write there.</li>
                 </ol>
+                <p>People you've blocked never come up, and pasting a blocked person's key says so. A conversation with someone
+                    you blocked shows no messages, and its message box is off.</p>
                 <p>You can also tap <strong>Message</strong> on someone's profile or on their card in the WoT tab, or
                     <strong>Message seller</strong> on a Marketplace listing, which fills in the listing for you. On the web, type
                     a name or paste an npub and tap <strong>Open</strong>.</p>
@@ -167,13 +174,38 @@
                 <h2 id="sending-a-photo-or-video">Sending a photo or video</h2>
                 <p>In a conversation, tap the photo button (<strong>Attach photo or video</strong>; web: Photo), paste a photo with
                     <strong>Paste Photo</strong>, or drag it in on a Mac or iPad. On iPhone, iPad, Mac and Android the same button
-                    sends videos too; the web app sends photos only. The file goes to your media server first, and its link goes in
-                    the message. Photos other than GIFs are re-saved, which removes their location.</p>
-                <p>On iPhone, the New Message screen has no photo button: send the first message, then add photos in the
-                    conversation.</p>
+                    sends videos too, and so does the web app. Photos other than GIFs are re-saved, which removes their location, and
+                    a GIF's hidden extras (comments and other metadata) are stripped.</p>
+                <p>Since 3.2.3 a photo or video in a NIP-17 message is <strong>locked</strong>: the app encrypts it on your device
+                    before it uploads, so the media server only ever holds scrambled bytes, and the key travels inside the sealed
+                    message. It goes to your own media servers, or to nostr.download if they refuse it. Videos are capped at 100 MB
+                    (Android shrinks a big clip first). A received PDF or other file opens too: on iPhone, iPad and Mac it shows
+                    as a chip, such as <strong>PDF document</strong> with its size, and a tap opens it. The inbox and alerts say
+                    Photo or Video, never the link. NIP-04 messages have no locked files and still send a plain link.</p>
+
                 <p>You can select and copy text in a message on iPhone and Android. Links in a message can be tapped and open in
                     the app's own browser (<a class="inline" href="/docs/feeds/#links">more</a>). There is no way to delete a
                     message.</p>
+                </section>
+
+                <section id="sending">
+                <p class="eyebrow">Did it go?</p>
+                <h2 id="sending-not-sent-try-again">Sending, Not sent, Try again</h2>
+                <p>A message says <strong>Sending…</strong> until a relay takes it. If none does, it says
+                    <strong>Not sent</strong> with <strong>Try again</strong> (on iPhone, iPad and Mac also
+                    <strong>Remove</strong>). A message is never shown as sent when it wasn't, and never shows twice, even with a
+                    slow signer. (iPhone, iPad, Mac, Android and the web.)</p>
+                <ul>
+                    <li>While your relays haven't answered, the inbox says <strong>Loading messages…</strong> instead of looking
+                        empty, and after about 10 seconds <strong>Your message relays aren't answering yet.</strong></li>
+                    <li>Names load in the inbox and the conversation header, instead of a short key.</li>
+                    <li>On iPhone, iPad and Mac, what you typed stays as the conversation's draft when you leave it. Drafts are
+                        kept in memory only, so they don't survive a restart. A send that fails after you left puts the words back
+                        as the draft.</li>
+                    <li>Switching account closes the open conversation and drops its draft, so you never write as the wrong
+                        account. (iPhone, iPad, Mac and Android.)</li>
+                    <li>Reading older messages, a new one no longer pulls you down to the bottom.</li>
+                </ul>
                 </section>
 
                 <section id="encryption">
