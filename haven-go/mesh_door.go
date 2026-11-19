@@ -176,9 +176,9 @@ func setTransferDeadline(w http.ResponseWriter) {
 	_ = rc.SetWriteDeadline(deadline)
 }
 
-// meshUploadAuthorized: the upload's kind 24242 must be signed by a
-// whitelisted key, unexpired, for "upload". Returns the event, or an HTTP
-// status and reason. khatru re-checks the whitelist afterwards.
+// meshUploadAuthorized: the upload's kind 24242 must be a paired device's
+// mesh-key token, already checked by withMeshDeviceAuth (unexpired, for
+// "upload", this blob). Returns the event, or an HTTP status and reason.
 func meshUploadAuthorized(r *http.Request) (*nostr.Event, int, string) {
 	token := r.Header.Get("Authorization")
 	if !strings.HasPrefix(token, "Nostr ") {
@@ -199,24 +199,10 @@ func meshUploadAuthorized(r *http.Request) (*nostr.Event, int, string) {
 		// A paired device's token: fully checked by withMeshDeviceAuth.
 		return meshDeviceAuthIn(r.Context()), 0, ""
 	}
-	// The owner-key path. TODO(mesh-key): remove once every app signs
-	// mesh uploads with its device key (docs/MESH_COPY_V2_CONTRACT.md §2.1).
-	if _, ok := whitelist()[ev.PubKey]; !ok {
-		return nil, http.StatusForbidden, "only media signed by whitelisted pubkeys are allowed"
-	}
-	if authExpiration(&ev) <= time.Now().Unix() {
-		return nil, http.StatusForbidden, "authorization expired"
-	}
-	if ev.Tags.FindWithValue("t", "upload") == nil {
-		return nil, http.StatusForbidden, "authorization is not for upload"
-	}
-	if !ev.CheckID() {
-		return nil, http.StatusForbidden, "invalid event"
-	}
-	if ok, _ := ev.CheckSignature(); !ok {
-		return nil, http.StatusForbidden, "invalid signature"
-	}
-	return &ev, 0, ""
+	// Only a paired device's mesh key uploads over the mesh (Logen,
+	// 2026-11-19: fail closed); the account key is refused before this in
+	// withMeshDeviceAuth, and a stranger's key here.
+	return nil, http.StatusForbidden, "only a paired device's mesh key may upload over the mesh"
 }
 
 func authExpiration(ev *nostr.Event) int64 {

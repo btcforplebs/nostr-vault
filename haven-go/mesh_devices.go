@@ -234,6 +234,12 @@ func markMeshOwnPort(h http.Handler) http.Handler {
 // copyv2_server.go sets it). Never true where it is not set (wasm).
 var meshDeviceOverLoopback = func(*http.Request) bool { return false }
 
+// meshOnlyPort: r came in on a port only the mesh reaches (the door, or the
+// iPhone's own-devices port), never from an app on this machine.
+func meshOnlyPort(r *http.Request) bool {
+	return isMeshRequest(r) || r.Context().Value(meshOwnPortKey{}) != nil
+}
+
 // meshDeviceOverMesh: r came in over the mesh: the door, the iPhone's own
 // port, or the relay port from loopback with no tunnel or LAN hop named.
 func meshDeviceOverMesh(r *http.Request) bool {
@@ -306,13 +312,21 @@ func withMeshDeviceAuth(r *http.Request) (*http.Request, int, string) {
 		return r, 0, ""
 	}
 	_, owner := whitelist()[ev.PubKey]
+	if owner && meshOnlyPort(r) {
+		// Fail closed (Logen, 2026-11-19): over the mesh a Blossom request is
+		// signed by a device's own mesh key, never the account key. Not
+		// enforced on the relay port from loopback: there the vault's own app
+		// on this machine arrives the same way, so the apps hold that line
+		// (they never sign a mesh send with the account key).
+		return r, http.StatusForbidden, "the account key is not accepted over the mesh: sign with this device's mesh key"
+	}
 	if !owner && !meshDevices.paired(ev.PubKey) && ev.Tags.FindWithValue("t", meshPublishVerb) != nil {
 		// Turned down at once, so the phone sends its note itself instead
 		// of handing it to a vault that would not send it (mesh_publish.go).
 		return r, http.StatusForbidden, "not a paired device of this vault"
 	}
 	if owner || !meshDevices.paired(ev.PubKey) {
-		return r, 0, "" // owner path (kept until the apps switch) or a stranger
+		return r, 0, "" // the owner off the mesh-only ports, or a stranger
 	}
 	if !meshDeviceOverMesh(r) {
 		// Tron, #1802: on the box the relay handler is also the public URL.

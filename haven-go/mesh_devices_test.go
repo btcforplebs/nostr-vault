@@ -114,9 +114,9 @@ func TestCopyStartDeviceKey(t *testing.T) {
 	if n != 1 || dev != phone.pk {
 		t.Fatalf("tokens: %d, device %q; want 1 bound to the phone", n, dev)
 	}
-	// The owner-key form still works until the apps switch.
-	if code, _, _ := startAs(t, s, startProofFor(t, owner, testDevice)); code != 200 {
-		t.Errorf("owner-signed start: %d, want 200", code)
+	// The account key never starts a copy (Logen, 2026-11-19: fail closed).
+	if code, _, _ := startAs(t, s, accountStartProof(t, owner, testDevice)); code != 403 {
+		t.Errorf("owner-signed start: %d, want 403", code)
 	}
 }
 
@@ -340,7 +340,7 @@ func TestUnpairWhileDownRevokesAfterRestart(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("start: %d", code)
 	}
-	_, legacyID, legacyToken := startAs(t, before, startProofFor(t, owner, tablet.pk))
+	_, legacyID, legacyToken := startAs(t, before, deviceStartProof(t, tablet, vault.pk, nostr.Now()))
 	if got := getWith(before, "/copy/v2/"+id, token, "", nil); got != 200 {
 		t.Fatalf("before restart: %d", got)
 	}
@@ -359,7 +359,7 @@ func TestUnpairWhileDownRevokesAfterRestart(t *testing.T) {
 	if got := getWith(after, "/copy/v2/sync/settings", token, "", nil); got != 401 {
 		t.Errorf("removed phone's catch-up after restart: %d, want 401", got)
 	}
-	// A device still paired keeps working, owner-form token included.
+	// A device still paired keeps working.
 	if got := getWith(after, "/copy/v2/"+legacyID, legacyToken, "", nil); got != 200 {
 		t.Errorf("tablet (still paired) after restart: %d, want 200", got)
 	}
