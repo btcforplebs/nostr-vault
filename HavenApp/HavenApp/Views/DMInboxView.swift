@@ -288,6 +288,7 @@ struct DMInboxView: View {
         } else if usesTwoPane {
             twoPaneView
         } else {
+            ScrollViewReader { proxy in
             List {
                 ForEach(dmService.visibleConversations) { conversation in
                     NavigationLink(destination: DMThreadView(counterpartyPubkey: conversation.id)
@@ -295,6 +296,7 @@ struct DMInboxView: View {
                         .environmentObject(configService)) {
                         ConversationRow(conversation: conversation, nostrService: nostrService)
                     }
+                    .id(conversation.id)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     .listRowBackground(Color.platformSecondaryGroupedBackground)
                     .listRowSeparator(.hidden)
@@ -305,6 +307,13 @@ struct DMInboxView: View {
             .background(Color.platformWindowBackground.ignoresSafeArea())
             .refreshable {
                 dmService.refresh()
+            }
+            // Messages is a Vault page: tapping the Vault tab again scrolls
+            // the inbox to its top, as it does the Vault's other lists.
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RelayScrollToTop"))) { _ in
+                guard let first = dmService.visibleConversations.first?.id else { return }
+                withAnimation(Motion.scrollJump) { proxy.scrollTo(first, anchor: .top) }
+            }
             }
         }
     }

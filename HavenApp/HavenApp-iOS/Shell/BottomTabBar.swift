@@ -102,9 +102,10 @@ struct BottomTabBar: View {
         case "feed" where railOnRight:
             FeedTabHoldItem(selected: selectedTab == 0, feedService: feedService, onTap: feedTabTapped, beside: true)
         case "feed":
-            tabItem(index: 0, title: "Feed", icon: RailSection.symbol("feed")) {
-                NotificationCenter.default.post(name: NSNotification.Name("FeedTabReselected"), object: nil)
+            Button(action: feedTabTapped) {
+                tabItemLabel(index: 0, title: "Feed", icon: RailSection.symbol("feed"))
             }
+            .buttonStyle(.plain)
         case "search":
             tabItem(index: 1, title: "Search", icon: "magnifyingglass") { searchReselected() }
         case "profile":
@@ -136,7 +137,15 @@ struct BottomTabBar: View {
         }
     }
 
+    /// Quick taps on Feed or Vault, for the triple-tap (TabTripleTap).
+    @State private var tapRun = TabTapCounter()
+
     private func feedTabTapped() {
+        if tapRun.register(tab: 0) == 3 {
+            TabTripleTap.feed(feedService)
+            selectedTab = 0
+            return
+        }
         if selectedTab == 0 {
             NotificationCenter.default.post(name: NSNotification.Name("FeedTabReselected"), object: nil)
         } else {
@@ -185,13 +194,7 @@ struct BottomTabBar: View {
 
     @ViewBuilder
     private var expandedContent: some View {
-        FeedTabHoldItem(selected: selectedTab == 0, feedService: feedService) {
-            if selectedTab == 0 {
-                NotificationCenter.default.post(name: NSNotification.Name("FeedTabReselected"), object: nil)
-            } else {
-                selectedTab = 0
-            }
-        }
+        FeedTabHoldItem(selected: selectedTab == 0, feedService: feedService, onTap: feedTabTapped)
 
         tabItem(index: 1, title: "Search", icon: "magnifyingglass") {
             if !searchPath.isEmpty {
@@ -220,6 +223,11 @@ struct BottomTabBar: View {
     }
 
     private func vaultTabTapped() {
+        if tapRun.register(tab: 4) == 3 {
+            TabTripleTap.vault()
+            selectedTab = 4
+            return
+        }
         if selectedTab == 4 {
             if VaultSection.shared.showsMedia {
                 if !mediaPath.isEmpty {
