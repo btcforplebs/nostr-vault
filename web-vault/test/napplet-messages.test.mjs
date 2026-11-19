@@ -30,6 +30,7 @@ function rig({ grant = defaultGrant({ firstParty: true }), yes = true, sendFails
     retry: async id => { calls.retried = id; if (sendFails) throw Object.assign(new Error("Still not delivered"), { failedId: "f2" }); messages.delete(id); const m = msg("w10", ME, ANN, 70, "again"); messages.set("w10", m); return m },
     discard: id => { calls.discarded = id; messages.delete(id) },
     searchName: pk => (pk === ANN ? "Ann Lee" : pk === BOB ? "Bob" : ""), follows: pk => pk === ANN, lookup: pks => calls.lookup.push(pks),
+    findPeople: async q => { calls.people = q; return [ANN, BOB, EVE, "junk"] },
     async send(peer, text, photo) { calls.sent.push(photo ? [peer, text, photo] : [peer, text]); if (sendFails) throw Object.assign(new Error("Not delivered"), { failedId: "pending:9" }); const m = msg("w9", ME, peer, 60, text); messages.set("w9", m); return m },
     markRead: list => calls.read.push(list.map(m => m.id)), ask: async q => { calls.asks.push(q); return yes }, randomId: (() => { let i = 0; return () => `r${++i}` })(),
   }
@@ -313,4 +314,46 @@ test("messages napplet: Return sends only with a keyboard and never mid-composit
 test("B4: a failed photo/video send with words is found by the newest failed message, not its text", () => {
   const deps = fs.readFileSync(new URL("../src/napplet/shell-deps.js", import.meta.url), "utf8")
   assert.match(deps, /findMine\(getMessages\(\)\.messages, ctx\.session\.pubkey, peer, sentText, true, before\)\n[^\n]*\n[^\n]*\n\s*\?\? newestMine\(getMessages\(\)\.messages, ctx\.session\.pubkey, peer, true, before\)/)
+})
+
+// B2 (Messages UX check 2026-11-18): the napplet's New message finds people by name (the classic box did, the napplet
+// took only a key). `people` asks the shell's findPeople; blocked people and junk are dropped, and a stranger's row
+// carries no avatar, so the napplet never loads a picture from their server.
+test("dm: people by name for New message: no blocked, no junk, a stranger's picture never handed over", async () => {
+  const { ask, calls } = rig()
+  const r = await ask("dm.conversations", { people: "an" })
+  assert.equal(calls.people, "an")
+  assert.deepEqual(r.conversations.map(c => [c.id, c.follows, c.person]), [[ANN, true, true], [BOB, false, true]])
+  assert.equal(r.conversations[0].participants[0].avatar, "https://x.example/a.png")
+  assert.deepEqual(r.conversations[1].participants[0], { pubkey: BOB, label: "Bob" })
+  assert.match((await ask("dm.conversations", { people: 5 })).error, /people: text/)
+  assert.match((await ask("dm.conversations", { people: "x".repeat(201) })).error, /people: text/)
+  const outside = await dmHandler({ grant: defaultGrant({ firstParty: false }), who: {}, deps: {}, push: () => {} }).handle({ type: "dm.conversations", id: "1", people: "an" })
+  assert.match(outside.error, /private/)
+})
+
+test("findPeople: follows first through rank, NIP-50 for 2+ characters only, a failed search still ranks follows", async () => {
+  const { findPeople, MAX_PEOPLE } = await import("../src/napplet/dm-people.js")
+  const put = [], asked = []
+  const rank = (q, pks, follows, blocked) => pks.filter(pk => !blocked.has(pk))
+  const deps = { follows: [ANN], blocked: new Set([EVE]), rank, put: e => put.push(e.pubkey), search: async q => { asked.push(q); return [{ pubkey: BOB }, { pubkey: EVE }] } }
+  assert.deepEqual(await findPeople("  ", deps), [])
+  assert.deepEqual(await findPeople("a", deps), [ANN])
+  assert.deepEqual(asked, [], "one character: follows only, nothing asked of a relay")
+  assert.deepEqual(await findPeople("bo", deps), [ANN, BOB])
+  assert.deepEqual(put, [BOB, EVE])
+  assert.deepEqual(await findPeople("bo", { ...deps, search: async () => { throw new Error("offline") } }), [ANN])
+  assert.deepEqual(await findPeople("bo", { ...deps, follows: Array.from({ length: 20 }, (_, i) => H(String(i % 10))) }).then(x => x.length), MAX_PEOPLE)
+})
+
+test("messages napplet: New message's hint", () => {
+  const html = fs.readFileSync(new URL("../napplets/messages/index.html", import.meta.url), "utf8")
+  const box = {}
+  vm.runInNewContext(`${html.slice(html.indexOf("// ---- pure"), html.indexOf("// ---- end pure ----"))}\n;Object.assign(box, { peopleHint })`, { box, Date })
+  assert.equal(box.peopleHint("", false, [], false), "")
+  assert.equal(box.peopleHint("npub1x", true, [], false), "", "a key: Open is the way")
+  assert.equal(box.peopleHint("ann", false, [{}], false), "", "people to pick")
+  assert.equal(box.peopleHint("ann", false, [], true), "Looking…")
+  assert.match(box.peopleHint("zork", false, [], false), /No one found for “zork”\. Paste their npub/)
+  assert.match(html, /n\.dm\.conversations\(\{ people: v\.trim\(\)\.slice\(0, 200\) \}\)/)
 })
