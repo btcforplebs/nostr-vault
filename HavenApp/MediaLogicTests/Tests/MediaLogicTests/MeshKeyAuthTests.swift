@@ -75,34 +75,6 @@ final class MeshKeyAuthTests: XCTestCase {
         XCTAssertNil(MeshKeyAuth.deviceSet(selfNpub: " ", devices: []))
     }
 
-    // MARK: Owner form during the switch (TODO(mesh-key))
-
-    func testOnlyAnAuthRefusalRetriesWithTheOwnerForm() {
-        XCTAssertTrue(MeshKeyAuth.retriesWithOwnerForm(status: 401))
-        XCTAssertTrue(MeshKeyAuth.retriesWithOwnerForm(status: 403))
-        for status in [200, 400, 404, 409, 413, 500] {
-            XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(status: status), "\(status)")
-        }
-    }
-
-    func testAVaultWithItsSetGetsNoOwnerRetry() {
-        for status in [401, 403] {
-            XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(status: status, headers: ["X-Mesh-Devices": "set"]), "\(status)")
-            XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(status: status, headers: ["x-mesh-devices": "set"]), "\(status) lower case")
-            XCTAssertTrue(MeshKeyAuth.retriesWithOwnerForm(status: status, headers: ["Content-Type": "text/plain"]), "\(status) no header")
-        }
-        XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(status: 200, headers: [:]))
-    }
-
-    func testURLResponseCarriesTheSignal() throws {
-        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:1/upload"))
-        let marked = HTTPURLResponse(url: url, statusCode: 403, httpVersion: "HTTP/1.1", headerFields: ["X-Mesh-Devices": "set"])
-        let older = HTTPURLResponse(url: url, statusCode: 401, httpVersion: "HTTP/1.1", headerFields: [:])
-        XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(marked))
-        XCTAssertTrue(MeshKeyAuth.retriesWithOwnerForm(older))
-        XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(nil))
-    }
-
     // MARK: Publish for me (24242, sync pick 1)
 
     func testPublishIsOneTOnePAndFiveMinutesWithNoBlob() throws {

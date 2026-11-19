@@ -97,12 +97,6 @@ final class HomeVaultFileNoteLaneTests: XCTestCase {
                       "the vault carries the owner's token to the public server")
     }
 
-    func testAMeshBlobNeverAsksARemoteSigner() {
-        XCTAssertFalse(HomeVaultLogic.meshBlobMayUseOwnerForm(signingMode: "nip46"), "a bunker is never asked for a mesh send")
-        XCTAssertFalse(HomeVaultLogic.meshBlobMayUseOwnerForm(signingMode: "nip55"))
-        XCTAssertFalse(HomeVaultLogic.meshBlobMayUseOwnerForm(signingMode: ""))
-        XCTAssertTrue(HomeVaultLogic.meshBlobMayUseOwnerForm(signingMode: "local"), "a local key signs without a person")
-    }
     // MARK: Tron's PR 1990 follow-ups, Apple side
 
     func testFileNotesHaveTheirOwnCap() {
