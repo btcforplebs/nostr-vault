@@ -280,7 +280,10 @@ jobs:
           done
           # The mesh: its door (havend, loopback 8081) answers, and nv-mesh has its UDP port open and its npub made.
           ./vm 'code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://127.0.0.1:8081/); echo "mesh door: $code"; [ "$code" != 000 ]'
-          ./vm 'sudo ss -Hlunp | grep -q "nv-mesh" && echo "mesh UDP: ok"'
+          # nv-mesh binds its UDP port (0.0.0.0, OS-picked) once the engine starts.
+          ./vm 'for i in $(seq 1 30); do sudo ss -Hanup | grep -q "\"nv-mesh\"" && break; sleep 2; done
+            sudo ss -Hanup; sudo journalctl -b --no-pager -u nostr-vault-mesh | tail -25
+            sudo ss -Hanup | grep -q "\"nv-mesh\"" && echo "mesh UDP: ok"'
           ./vm 'sudo cat /var/lib/nostr-vault/mesh/npub'
       - name: Run as an ordinary service (unconfined_service_t), not in systemd's own domain (init_t)
         run: |
