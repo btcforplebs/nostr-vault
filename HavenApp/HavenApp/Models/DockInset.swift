@@ -23,6 +23,14 @@ enum DockInset {
         !keyboardUp && !sideRail
     }
 
+    /// Whether scrolling may fold the bars and the screen's Post button
+    /// away. Only where a dock exists: the folded dock carries its own
+    /// compose button, and a side rail has none, so folding there left no
+    /// way to post until the list was scrolled back to the top.
+    static func chromeFolds(sideRail: Bool) -> Bool {
+        !sideRail
+    }
+
     static func placement(dockShown: Bool, keyboardUp: Bool) -> Placement {
         guard dockShown else { return .none }
         return keyboardUp ? .swiftUIInset : .rootBand

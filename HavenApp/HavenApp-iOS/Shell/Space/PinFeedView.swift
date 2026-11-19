@@ -12,6 +12,7 @@ struct PinFeedView: View {
     @State private var path = NavigationPath()
     @State private var showingProfile: IdentifiableString?
     @State private var showingMediaUrl: IdentifiableURL?
+    @State private var composeContext: ComposeContext?
     @Namespace private var mediaZoom
 
     init?(pin: SpaceLayout.Pin) {
@@ -52,6 +53,20 @@ struct PinFeedView: View {
                 .environmentObject(configService)
         }
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
+        .sheet(item: $composeContext) { ctx in
+            ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo)
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+        }
+    }
+
+    /// A repost is answered on the note it reposts, as in the feed.
+    private func reply(to note: FeedNote) {
+        if note.kind == 6, let refId = note.repostedEventId, let original = feedService.findNote(id: refId) {
+            composeContext = ComposeContext(replyTo: original, quoteTo: nil)
+        } else {
+            composeContext = ComposeContext(replyTo: note, quoteTo: nil)
+        }
     }
 
     private var header: some View {
@@ -94,6 +109,8 @@ struct PinFeedView: View {
             note: note,
             profile: nostrService.profiles[note.pubkey],
             rowData: FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService),
+            onReply: { reply(to: note) },
+            onQuote: { composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: note)) },
             onProfile: { showingProfile = IdentifiableString(id: $0) },
             onMedia: { url, urls in showingMediaUrl = IdentifiableURL(url: url, allURLs: urls) },
             showParent: false

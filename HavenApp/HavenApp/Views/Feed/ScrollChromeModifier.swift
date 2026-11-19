@@ -40,7 +40,7 @@ private struct ScrollChromeModifier: ViewModifier {
     private var chrome: ChromeCollapse { .shared }
 
     private var isPinnedOpen: Bool {
-        ConfigService.shared.config.disableTabBarAnimation
+        ConfigService.shared.config.disableTabBarAnimation || chrome.keepsOpen
     }
 
     /// The bars can be at most this folded at a given offset, so the top of

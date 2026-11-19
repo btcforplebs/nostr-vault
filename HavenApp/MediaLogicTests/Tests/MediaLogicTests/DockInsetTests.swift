@@ -29,4 +29,20 @@ final class DockInsetTests: XCTestCase {
         XCTAssertEqual(DockInset.rootBottom(placement: .none, dockHeight: 83), 0)
         XCTAssertEqual(DockInset.rootBottom(placement: .rootBand, dockHeight: -3), 0)
     }
+
+    /// iPad landscape (and the Duo's rails) has no dock, so nothing brings
+    /// Post back once the bars fold: they stay open there (iPad parity row 1).
+    func testBarsFoldOnlyWhereADockIs() {
+        let window = CGSize(width: 1180, height: 820)
+        let landscape = ShellLayout.pick(isPhone: false, regularWidth: true, window: window)
+        XCTAssertEqual(landscape, .padLandscape)
+        XCTAssertFalse(DockInset.chromeFolds(sideRail: landscape.hasSideRail), "iPad landscape: Post stays reachable")
+        let upright = ShellLayout.pick(isPhone: false, regularWidth: true, window: CGSize(width: 820, height: 1180))
+        XCTAssertTrue(DockInset.chromeFolds(sideRail: upright.hasSideRail), "iPad upright keeps its dock and fold")
+        XCTAssertTrue(DockInset.chromeFolds(sideRail: ShellLayout.phone.hasSideRail))
+        for layout in [ShellLayout.phone, .padUpright, .padLandscape, .duoClosed, .fold] {
+            let docked = DockInset.shown(keyboardUp: false, sideRail: layout.hasSideRail)
+            XCTAssertEqual(DockInset.chromeFolds(sideRail: layout.hasSideRail), docked, "\(layout): folds only with a dock")
+        }
+    }
 }

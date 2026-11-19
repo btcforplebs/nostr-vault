@@ -58,6 +58,10 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
     /// environment, so without this a profile opened over the split would
     /// select into the detail column hidden behind it.
     @Environment(\.isPresented) private var isPresented
+    /// What this profile hands the views inside it (quoted notes, response
+    /// cards) when it is presented over an iPad split: their taps open the
+    /// profile's own note sheet instead of the column hidden behind it.
+    @StateObject private var sheetNotes = NoteDetailSelection()
     @State var showingProfileKey: IdentifiableString?
     @State var showingMediaUrl: IdentifiableURL?
     @Namespace private var mediaZoom
@@ -217,6 +221,9 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
                         NoteDetailView(note: detailNote)
                     }
             }
+            // Its quoted notes push in this stack, never into an iPad note
+            // column behind the sheets.
+            .environment(\.noteDetailSelection, nil)
             #if os(macOS)
             .frame(minWidth: 520, minHeight: 560)
             #endif
@@ -261,6 +268,11 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
         }
         .onChange(of: showingMediaUrl == nil) { _, closed in
             if closed, selectedMedia != nil { selectedMedia = nil }
+        }
+        .environment(\.noteDetailSelection, isPresented && noteDetailSelection != nil ? sheetNotes : noteDetailSelection)
+        .onReceive(sheetNotes.$note.compactMap { $0 }) { note in
+            sheetNotes.clear()
+            showingNoteDetail = note
         }
         #endif
     }

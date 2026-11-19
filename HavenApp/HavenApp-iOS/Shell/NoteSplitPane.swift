@@ -203,40 +203,24 @@ struct NoteSplitPane<Content: View>: View {
             // No selection injected here on purpose: links inside the detail
             // column push onto its own stack rather than replacing the note the
             // reader is looking at.
-            NavigationStack {
-                Group {
-                    // A long-form event opens in the reader, not as a note. This is
-                    // what makes tapping an Articles card do something on iPad.
-                    if note.kind == 30023 {
-                        ArticleReaderView(note: note)
-                            .environmentObject(NostrService.shared)
-                            .navigationBarTitleDisplayMode(.inline)
-                            .toolbarBackground(.hidden, for: .navigationBar)
-                    } else {
-                        NoteDetailView(note: note)
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.hidden, for: .navigationBar)
-                        .navigationDestination(for: FeedNote.self) { pushed in
-                            NoteDetailView(note: pushed)
-                        }
-                    }
-                }
-                .toolbar {
-                    if showsBack {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button { selection.clear() } label: {
-                                Label("Back", systemImage: "chevron.left")
-                            }
-                        }
-                    }
+            PaneDetailStack(stack: "pane-\(note.id)", showsBack: showsBack, onBack: { selection.clear() }) {
+                // A long-form event opens in the reader, not as a note. This is
+                // what makes tapping an Articles card do something on iPad.
+                if note.kind == 30023 {
+                    ArticleReaderView(note: note)
+                } else {
+                    NoteDetailView(note: note)
                 }
             }
             .id(note.id)
         } else if let noteId = selection.noteId {
-            NoteDetailViewWrapper(noteId: noteId, onDismiss: { selection.clear() })
-                .environmentObject(NostrService.shared)
-                .environmentObject(ConfigService.shared)
-                .id(noteId)
+            // Opened by id (Vault lines, Live Vault, notification taps): the
+            // same stack, so it gets ‹ Back and its quoted notes and response
+            // cards push, as on iPhone.
+            PaneDetailStack(stack: "pane-\(noteId)", showsBack: showsBack, onBack: { selection.clear() }) {
+                NoteDetailViewWrapper(noteId: noteId, pushed: true)
+            }
+            .id(noteId)
         } else {
             ContentUnavailableView(
                 emptyTitle,
@@ -244,6 +228,42 @@ struct NoteSplitPane<Content: View>: View {
                 description: Text(emptyMessage)
             )
         }
+    }
+}
+
+/// The note column's own navigation stack: notes tapped inside it (quotes,
+/// response cards, `nostr:` links) push here, and its root carries ‹ Back
+/// when it covers the list.
+private struct PaneDetailStack<Root: View>: View {
+    let stack: String
+    let showsBack: Bool
+    let onBack: () -> Void
+    @ViewBuilder var root: () -> Root
+    @State private var path = NavigationPath()
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            root()
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .navigationDestination(for: FeedNote.self) { NoteDetailView(note: $0) }
+                .navigationDestination(for: NotificationNoteRoute.self) {
+                    NoteDetailViewWrapper(noteId: $0.id, pushed: true)
+                }
+                .toolbar {
+                    if showsBack {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button(action: onBack) {
+                                Label("Back", systemImage: "chevron.left")
+                            }
+                        }
+                    }
+                }
+        }
+        // Pages pushed here need them too, not just the root.
+        .environmentObject(NostrService.shared)
+        .environmentObject(ConfigService.shared)
+        .environment(\.pushNoteID, PushNoteAction(stack: stack) { path.pushNote(id: $0) })
     }
 }
 
