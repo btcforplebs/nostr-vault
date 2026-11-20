@@ -11,7 +11,8 @@ if(NOT EXISTS "${NV_TRANSLATE_SRC}/bergamot/inference/CMakeLists.txt")
   message(FATAL_ERROR "NV_TRANSLATE_SRC has no bergamot/inference; run build_translate_android.sh")
 endif()
 
-# Bergamot on arm64: ruy for the int8 and float GEMMs, no x86 backends.
+# Bergamot on ARM (arm64-v8a and armeabi-v7a): ruy for the int8 and float
+# GEMMs, no x86 backends.
 set(COMPILE_CUDA OFF CACHE BOOL "" FORCE)
 set(USE_FBGEMM OFF CACHE BOOL "" FORCE)
 set(USE_MKL OFF CACHE BOOL "" FORCE)
@@ -20,7 +21,15 @@ set(COMPILE_TESTS OFF CACHE BOOL "" FORCE)
 set(COMPILE_LIBRARY_ONLY ON CACHE BOOL "" FORCE)
 set(SSPLIT_USE_INTERNAL_PCRE2 ON CACHE BOOL "" FORCE)
 set(SSPLIT_COMPILE_LIBRARY_ONLY ON CACHE BOOL "" FORCE)
-set(BUILD_ARCH armv8-a CACHE STRING "" FORCE)
+if(ANDROID_ABI STREQUAL "armeabi-v7a")
+  set(BUILD_ARCH armv7-a CACHE STRING "" FORCE)
+  # neon_mathfun uses vfmaq_f32 (fused multiply-add), which 32-bit NEON only
+  # has with VFPv4. Every armv7 core that runs Android 8+ in practice
+  # (Cortex-A7/A15/A53/A55 in 32-bit mode) has it; the NDK default is VFPv3.
+  add_compile_options(-mfpu=neon-vfpv4)
+else()
+  set(BUILD_ARCH armv8-a CACHE STRING "" FORCE)
+endif()
 # marian-fork sets these for its own directory only; Bergamot's sources
 # include the same headers and need them too (upstream builds arm64 natively
 # only for macOS tests, not for Android).

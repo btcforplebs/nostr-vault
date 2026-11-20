@@ -31,27 +31,36 @@ android-build:
             -o "$JNILIBS/$1/libhaven.so" .
         rm -f "$JNILIBS/$1/libhaven.h"
     done
-    echo "Building libnvfips.so (FIPS mesh)..."
+    echo "Building libnvfips.so (FIPS mesh, arm64-v8a + armeabi-v7a)..."
     {{justfile_directory()}}/NostrVault/build_fips_v2_android.sh
     # Translate post (Bergamot + fastText) and its language-ID model are
     # gitignored like libhaven, so an APK built without them works but never
     # shows Translate (3.2.3 (103) on the Moto, 2026-11-18). Same steps and
     # checks as scripts/release_all.sh.
-    echo "Building libnvtranslate.so + lid.176.ftz (Translate post)..."
+    echo "Building libnvtranslate.so + lid.176.ftz (Translate post, arm64-v8a + armeabi-v7a)..."
     {{justfile_directory()}}/NostrVault/build_translate_android.sh
-    echo "Building APK..."
+    echo "Building APKs (arm64-v8a + armeabi-v7a splits)..."
+    OUT="{{justfile_directory()}}/NostrVault/app/build/outputs/apk/release"
+    rm -f "$OUT"/*.apk
     cd {{justfile_directory()}}/NostrVault && ./gradlew assembleRelease
-    APK="{{justfile_directory()}}/NostrVault/app/build/outputs/apk/release/app-release.apk"
     # The listing is read once into a variable: with pipefail, `unzip -l | grep -q`
     # fails whenever grep stops reading early (unzip gets SIGPIPE), even on a match.
-    LISTING="$(unzip -l "$APK")"
-    for f in lib/arm64-v8a/libhaven.so lib/arm64-v8a/libnvtranslate.so assets/translate/lid.176.ftz; do
-        grep -qF "$f" <<< "$LISTING" || { echo "✖ APK has no $f" >&2; exit 1; }
+    for abi in arm64-v8a armeabi-v7a; do
+        APK="$OUT/app-$abi-release.apk"
+        LISTING="$(unzip -l "$APK")"
+        for f in lib/$abi/libhaven.so lib/$abi/libnvfips.so lib/$abi/libnvtranslate.so assets/translate/lid.176.ftz; do
+            grep -qF "$f" <<< "$LISTING" || { echo "✖ $APK has no $f" >&2; exit 1; }
+        done
+        echo "✔ $APK"
     done
 
-# Install Android release APK on connected device
+# Install the Android release APK that matches the connected device's ABI
 android-install:
-    {{adb}} install -r {{justfile_directory()}}/NostrVault/app/build/outputs/apk/release/app-release.apk
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ABIS="$({{adb}} shell getprop ro.product.cpu.abilist | tr -d '\r')"
+    case ",$ABIS," in *,arm64-v8a,*) ABI=arm64-v8a ;; *) ABI=armeabi-v7a ;; esac
+    {{adb}} install -r "{{justfile_directory()}}/NostrVault/app/build/outputs/apk/release/app-$ABI-release.apk"
 
 # Check the committed .xcodeproj against what project.yml would generate:
 # which files each has, and which target actually builds them.
