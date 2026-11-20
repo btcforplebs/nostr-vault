@@ -446,13 +446,47 @@ export async function fetchOwnExtras(vault, me, relays, { limit = 200, since, qu
   return stored
 }
 
-/** Kind 3 lists naming the user, from the network, each relay's handed to `on` as it lands (compactLists). */
-export async function fetchFollowerLists(me, relays, { limit = 500, since, on = () => {}, query, onSettled } = {}) {
+/** A whole ask's page per relay: no relay holds every list (8 relays at 500 gave 905 followers, Tidy's audit 11-20). */
+export const FULL_LISTS_LIMIT = 500
+// Whole asks out now, per account and relay: the desktop's Your space panel and the Vault tab both ask on a first visit.
+const asking = new Map()
+
+/**
+ * Kind 3 lists naming the user, from the network, each relay's handed to `on` as it lands (compactLists).
+ * A list is ~75 KB and every relay sends its own copy, so each relay is asked for the whole set once per browser: after
+ * that, with no `since` given, only for lists dated after its last answered ask (listsChecked, a minute's slack). They
+ * merge into the kept ones (keepLists). Marks are per relay, so a relay added later still gets its whole ask. A whole
+ * ask already out to a relay is joined, not repeated. -> every event handed on (once per id), once all have answered
+ */
+export async function fetchFollowerLists(me, relays, { limit = FULL_LISTS_LIMIT, since, on = () => {}, query, onSettled, storage = globalThis.localStorage } = {}) {
   // Safe only because this event came through pool.js (nostr-tools SimplePool passes verifyEvent).
   // If you ever call this with an event from another source, check `signed` first — a forged kind 3 invents followers.
   // `followedAt` is this browser's own note (mergeLists): a relay can add any key to an event's JSON, and the
   // signature does not cover it.
-  return eachRelay(relays, { kinds: [3], "#p": [me], limit, ...sinceOf(since) }, evs => on(compactLists(evs.map(({ followedAt, ...ev }) => ev), me)), { query, onSettled })
+  const hand = evs => on(compactLists(evs.map(({ followedAt, ...ev }) => ev), me))
+  const urls = uniq(relays), marks = listsChecked(me, storage), seen = new Set(), all = []
+  const watch = onSettled ? settleWatch(urls.length, onSettled) : null
+  let failed = 0, last
+  await Promise.all(urls.map(async url => {
+    const checked = marks[url] ?? 0, from = since || (checked ? checked - 60 : 0), key = `${me} ${url}`
+    let evs
+    try {
+      if (!from && asking.has(key)) { evs = await asking.get(key); if (evs.length) hand(evs) }
+      else {
+        const started = nowSec()
+        // A whole ask takes the full page whatever the caller's usual one: a smaller one would mark part of it checked.
+        const run = eachRelay([url], { kinds: [3], "#p": [me], limit: from ? limit : Math.max(limit, FULL_LISTS_LIMIT), ...sinceOf(from) }, hand, { query })
+        if (!from) asking.set(key, run)
+        try { evs = await run } finally { if (asking.get(key) === run) asking.delete(key) }
+        // The mark moves only when this ask covered everything since it: a whole ask, or one from no later than the mark.
+        if (!from || (checked && from <= checked)) markListsChecked(me, url, started, storage)
+      }
+    } catch (e) { failed++; last = e; watch?.failed(); return }
+    for (const e of evs) if (!seen.has(e.id)) { seen.add(e.id); all.push(e) }
+    watch?.answered()
+  }))
+  if (urls.length && failed === urls.length) throw last
+  return all
 }
 
 /** Zap receipts whose request the user signed (NIP-57 `P` tag), from the network, each relay's handed to `on` once
@@ -533,9 +567,29 @@ export function readLists(me, storage = globalThis.localStorage) {
     return Array.isArray(v) ? compactLists(v, me) : []
   } catch { return [] }
 }
-/** Keeps the follower lists for the next visit. A full storage is not an error: the next visit asks the relays. */
+/** Keeps the follower lists for the next visit. A full storage is not an error: the next visit asks the relays, the
+ *  whole set again, since the check mark goes with lists that couldn't be kept. */
 export function keepLists(me, lists, storage = globalThis.localStorage) {
-  try { storage?.setItem(`${LISTS}:${me}`, JSON.stringify(compactLists(lists, me))) } catch {}
+  try { storage?.setItem(`${LISTS}:${me}`, JSON.stringify(compactLists(lists, me))) } catch { markListsChecked(me, null, 0, storage) }
+}
+const CHECKED = "nv-vault-follower-lists-checked"
+/** When each relay last answered a whole or up-to-date ask for the follower lists (fetchFollowerLists): { url: at }.
+ *  None when no lists are kept (cleared, or never kept): there is nothing to bring up to date. */
+export function listsChecked(me, storage = globalThis.localStorage) {
+  try {
+    if (storage?.getItem(`${LISTS}:${me}`) == null) return {}
+    const v = JSON.parse(storage.getItem(`${CHECKED}:${me}`) ?? "{}")
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {}
+  } catch { return {} }
+}
+/** `at` 0 with no relay: forget every mark, so each relay is asked whole again. */
+function markListsChecked(me, url, at, storage = globalThis.localStorage) {
+  try {
+    if (!url) return storage?.removeItem(`${CHECKED}:${me}`)
+    let v = {}
+    try { v = JSON.parse(storage?.getItem(`${CHECKED}:${me}`) ?? "{}") ?? {} } catch {}
+    storage?.setItem(`${CHECKED}:${me}`, JSON.stringify({ ...v, [url]: at }))
+  } catch {}
 }
 
 // ---- What the screen draws ----
