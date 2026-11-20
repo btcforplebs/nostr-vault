@@ -160,6 +160,13 @@ struct MacGlassVaultPanel: View {
                     .disabled(relayManager.isBooting)
                 }
                 .controlSize(.regular)
+
+                RunInBackgroundToggle(showsDetail: false)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .font(.appCaption)
+                    .padding(.horizontal, 4)
+                    .help("Only the vault runs; the window and feed leave memory until you open it again")
             }
         }
     }
