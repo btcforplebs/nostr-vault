@@ -2,7 +2,8 @@
 // with the same id and empty lines as the iPad (HavenApp/Models/LiveNow.swift, LiveNowTests).
 import test from "node:test"
 import assert from "node:assert/strict"
-import { liveNow, rowsOf, emptyLine, LIVE_NOW_ID, MAX_ROWS } from "../src/desktop/space/live-now.js"
+import { liveNow, rowsOf, emptyLine, forgetLiveNow, LIVE_NOW_ID, MAX_ROWS, OVERLAP } from "../src/desktop/space/live-now.js"
+import { STALE_AFTER } from "../src/readers/live.js"
 import { PANEL_IDS } from "../src/desktop/space/panel-ids.js"
 
 const friend = "a".repeat(64), service = "b".repeat(64), stranger = "c".repeat(64), other = "d".repeat(64)
@@ -11,6 +12,7 @@ const hls = ["streaming", "https://cdn.example/live/index.m3u8"]
 const ev = (id, pubkey, d, at, extra) => ({ id, kind: 30311, pubkey, created_at: at, tags: [["d", d], ...extra] })
 /** A relay that answers every filter with the same events (the panel dedupes across the two asks). */
 const relay = evs => async (_relays, filter) => evs.filter(e => !filter.authors || filter.authors.includes(e.pubkey) || e.tags.some(t => t[0] === "p" && filter["#p"]?.includes(t[1])))
+test.beforeEach(() => forgetLiveNow())
 const look = (evs, opts = {}) => liveNow({ me: "e".repeat(64), follows: [friend, other], readRelays: [], blocked: new Set(), query: relay(evs), now, ...opts })
 
 test("the panel id is shared with the iPad and registered", () => {
@@ -69,4 +71,29 @@ test("rows: the first MAX_ROWS and how many more", () => {
 test("the calm empty lines match the iPad", () => {
   assert.equal(emptyLine(true), "Nobody you follow is live right now.")
   assert.equal(emptyLine(false), "Follow people to see when they go live.")
+})
+
+test("the first look asks only for the last hour, each repeat only since the last look", async () => {
+  const asked = []
+  const query = async (_r, f) => { asked.push(f.since); return [] }
+  const at = t => liveNow({ me: "e".repeat(64), follows: [friend], readRelays: [], blocked: new Set(), query, now: t })
+  await at(now)
+  await at(now + 120)
+  assert.deepEqual(asked, [now - STALE_AFTER - OVERLAP, now - STALE_AFTER - OVERLAP, now - OVERLAP, now - OVERLAP])
+})
+
+test("a stream heard on an earlier look stays until it ends or goes stale; a new follow list starts over", async () => {
+  let answer = [ev("a1", friend, "a", now - 60, [["status", "live"], hls])]
+  const query = (r, f) => relay(answer)(r, f)
+  const at = (t, follows = [friend]) => liveNow({ me: "e".repeat(64), follows, readRelays: [], blocked: new Set(), query, now: t })
+  assert.deepEqual((await at(now)).map(s => s.id), ["a1"])
+  answer = [ev("b1", friend, "b", now + 60, [["status", "live"], hls])]
+  assert.deepEqual((await at(now + 120)).map(s => s.id), ["b1", "a1"], "held and new merge")
+  answer = [ev("a2", friend, "a", now + 200, [["status", "ended"], hls])]
+  assert.deepEqual((await at(now + 240)).map(s => s.id), ["b1"], "an end replaces its live announcement")
+  answer = []
+  assert.deepEqual(await at(now + 60 + STALE_AFTER + 1), [], "not republished for an hour: gone")
+  let since = null
+  await liveNow({ me: "e".repeat(64), follows: [friend, other], readRelays: [], blocked: new Set(), query: async (_r, f) => { since = f.since; return [] }, now: now + 5000 })
+  assert.equal(since, now + 5000 - STALE_AFTER - OVERLAP)
 })
