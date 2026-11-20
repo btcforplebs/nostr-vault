@@ -1,5 +1,5 @@
 // The Feed's picker: Following (Haven /feed, see sync.js), Discover (your extended network's notes, net/discover.js), Global (recent notes from the user's read relays),
-// Hashtag (`#t` notes), Popular (net/popular.js), Catch Up (each follow's latest post, net/catchup.js) and Media (Following's image and video notes, net/media.js). Discover, Global and Hashtag notes are strangers': they are held in memory only and never written
+// Hashtag (`#t` notes), Popular (net/popular.js), Catch Up (each follow's latest post, net/catchup.js), Underrated (net/underrated.js) and Media (Following's image and video notes, net/media.js). Discover, Global and Hashtag notes are strangers': they are held in memory only and never written
 // to Haven /feed, which is the Following feed's store. Their names and pictures, and the quotes and @names inside
 // their notes, stay in memory too: FeedScreen passes `memoryOnly` to their cards and `save: false` to fetchProfiles.
 import { pool, uniq, PROFILE_RELAYS } from "./pool.js"
@@ -9,7 +9,7 @@ import { filterGlobal, trustShows, everyoneOn, everyoneShows } from "./global-tr
 import { trustedFilters } from "../readers/trust.js"
 
 // The iPhone's FeedMode order (Services/FeedServiceTypes.swift FeedMode). Readers (src/readers) take their place in it.
-export const FEED_ORDER = ["following", "discovery", "global", "hashtag", "popular", "catchup", "media", "reels", "articles", "recipes",
+export const FEED_ORDER = ["following", "discovery", "global", "hashtag", "popular", "catchup", "underrated", "media", "reels", "articles", "recipes",
   "marketplace", "live", "polls", "music"]
 export const FEEDS = [
   { id: "following", label: "Following" },
@@ -18,6 +18,7 @@ export const FEEDS = [
   { id: "hashtag", label: "Hashtag" },
   { id: "popular", label: "Popular" },
   { id: "catchup", label: "Catch Up" },
+  { id: "underrated", label: "Underrated" },
   { id: "media", label: "Media" },
 ]
 /** The picker's feeds: these, plus each reader's { id, label }, in the iPhone's order. */

@@ -126,12 +126,15 @@ export async function trustedTally({ me, follows, relays, blocked = new Set(), n
   return { t: tally(all.filter(e => e.kind !== 9735 || okZaps.has(e.id)), trusted, verifyEvent, blocked), trusted }
 }
 
-/** Note bodies by id: Haven /feed first (read only), the relays for the rest. -> Map id -> kind 1 event. */
+/** Note bodies by id: Haven /feed first (read only), the relays for the rest, in REQs of 250 ids (Underrated looks
+ *  up to 1,000). -> Map id -> kind 1 event. */
 export async function noteBodies(ids, { vault, relays, query }) {
   const found = new Map()
   if (vault) for (const ev of await vault.feed.query({ ids, kinds: [1] }).catch(() => [])) found.set(ev.id, ev)
   const missing = ids.filter(id => !found.has(id))
-  if (missing.length) for (const ev of await query(uniq(relays), { ids: missing, kinds: [1] }, { maxWait: 8000 })) if (ev?.kind === 1 && missing.includes(ev.id)) found.set(ev.id, ev)
+  const want = new Set(missing), asks = []
+  for (let i = 0; i < missing.length; i += 250) asks.push(query(uniq(relays), { ids: missing.slice(i, i + 250), kinds: [1] }, { maxWait: 8000 }))
+  for (const evs of await Promise.all(asks)) for (const ev of evs) if (ev?.kind === 1 && want.has(ev.id)) found.set(ev.id, ev)
   return found
 }
 

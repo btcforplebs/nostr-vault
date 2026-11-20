@@ -13,9 +13,9 @@ const note = (pubkey, tags = []) => ({ id: pk(seq++), kind: 1, pubkey, created_a
 const store = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) } }
 const web = gateWeb({ own: [ME], web: [F], hop3: [NEAR], blocked: muteSet([BAD]) })
 
-test("defaults: every web feed reaches your web; a choice is kept per feed", () => {
+test("defaults: every web feed reaches your web but Underrated, one step out by design; a choice is kept per feed", () => {
   const s = store()
-  for (const [id] of REACH_FEEDS) assert.equal(loadReach(id, s), "web", id)
+  for (const [id] of REACH_FEEDS) assert.equal(loadReach(id, s), id === "underrated" ? "webAndHop3" : "web", id)
   saveReach("popular", "webAndHop3", s)
   assert.equal(loadReach("popular", s), "webAndHop3")
   assert.equal(loadReach("global", s), "web")
