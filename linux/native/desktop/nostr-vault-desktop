@@ -124,6 +124,17 @@ def webkit_version():
 PASTE_GUARD = (2, 54, 0) <= webkit_version() < (2, 54, 2)
 
 
+def keycodes_of(*keyvals):
+    """The hardware keycodes that give any of these keyvals in any of the keyboard's layouts (groups)."""
+    keymap = Gdk.Keymap.get_for_display(Gdk.Display.get_default()) if Gdk.Display.get_default() else None
+    codes = set()
+    for kv in keyvals if keymap else ():
+        ok, keys = keymap.get_entries_for_keyval(kv)
+        if ok:
+            codes.update(k.keycode for k in keys)
+    return codes
+
+
 def read_env(path=ENV_FILE):
     """vault.env as a dict (KEY=value lines; it holds an npub and paths, no secrets)."""
     out = {}
@@ -232,14 +243,14 @@ class App(Gtk.Application):
         self.ticking = False  # a tick's checks are running on their thread
         self.checking = False  # show()/reopen()'s "does the vault answer?" is running on its thread
         self.has_paste = {}  # selection name -> True/False: something to paste there (PASTE_GUARD only)
-        self.over_editable = False  # the pointer is over a text field (a middle click there pastes)
         self.beat = time.monotonic()  # the main loop's heartbeat (the stall watchdog)
+        self.watching = False  # the stall watchdog runs (from the first window)
 
     # ---- start-up
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
-        self.start_watchdog()
+        self.start_fault_log()
         settings = Gtk.Settings.get_default()
         if settings:
             settings.set_property("gtk-application-prefer-dark-theme", True)
@@ -373,7 +384,7 @@ class App(Gtk.Application):
 
     # ---- the stall watchdog (why a window was "not responding")
 
-    def start_watchdog(self):
+    def start_fault_log(self):
         try:
             path = log_path()
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -381,6 +392,14 @@ class App(Gtk.Application):
             faulthandler.enable(self.fault_file)  # a crash in WebKit or GTK leaves the Python stack in window.log
         except OSError:
             pass
+
+    def start_watchdog(self):
+        """The stall watch, from the first window on (make_window): the tray alone, started at login, has no window
+        to stall, and shouldn't wake 6 times a second for nothing."""
+        if self.watching:
+            return
+        self.watching = True
+        self.beat = time.monotonic()
 
         def heartbeat():
             self.beat = time.monotonic()
@@ -450,7 +469,6 @@ class App(Gtk.Application):
             view.connect("key-press-event", self.on_key_press)
             view.connect("button-press-event", self.on_middle_click)
             view.connect("button-release-event", self.on_middle_click)
-            view.connect("mouse-target-changed", self.on_mouse_target)
             view.connect("context-menu", self.on_context_menu)
             for name in ("CLIPBOARD", "PRIMARY"):
                 cb = Gtk.Clipboard.get(Gdk.Atom.intern(name, False))
@@ -467,6 +485,7 @@ class App(Gtk.Application):
         win.connect("delete-event", lambda w, _e: (w.hide(), True)[1] if self.indicator or fp else False)
         win.show_all()
         self.window, self.view = win, view
+        self.start_watchdog()
 
     def show(self, route):
         if self.window is None:
@@ -669,19 +688,22 @@ class App(Gtk.Application):
                               | Gdk.ModifierType.MOD1_MASK | Gdk.ModifierType.SUPER_MASK)
         key = Gdk.keyval_to_lower(event.keyval)
         ctrl, shift = Gdk.ModifierType.CONTROL_MASK, Gdk.ModifierType.SHIFT_MASK
-        paste = (key == Gdk.KEY_v and mods in (ctrl, ctrl | shift)) or \
-                (key in (Gdk.KEY_Insert, Gdk.KEY_KP_Insert) and mods == shift)
+        # By keyval, and by the physical key: on a two-layout keyboard (ru,us or el,us) the V key gives another
+        # letter, and GTK's bindings can still take Ctrl+that key as Ctrl+V.
+        code = event.hardware_keycode
+        paste = ((key == Gdk.KEY_v or code in keycodes_of(Gdk.KEY_v)) and mods in (ctrl, ctrl | shift)) or \
+                ((key in (Gdk.KEY_Insert, Gdk.KEY_KP_Insert) or code in keycodes_of(Gdk.KEY_Insert, Gdk.KEY_KP_Insert))
+                 and mods == shift)
         if paste and self.nothing_to_paste("CLIPBOARD"):
             log("a paste with an empty clipboard was kept from WebKit (it would crash the window)")
             return True
         return False
 
-    def on_mouse_target(self, _view, hit, _modifiers):
-        self.over_editable = hit.context_is_editable()
-
     def on_middle_click(self, _view, event):
-        # WebKit pastes the primary selection on a middle click's release in a text field.
-        if event.button == 2 and self.over_editable and self.nothing_to_paste("PRIMARY"):
+        # WebKit pastes the primary selection on a middle click's release in a text field. Every middle click is
+        # kept while the selection is empty, not only one over a text field: the hover hint that said so came late or
+        # not at all (a field opening under a pointer that hasn't moved), and a lost middle click costs nothing.
+        if event.button == 2 and self.nothing_to_paste("PRIMARY"):
             if event.type == Gdk.EventType.BUTTON_RELEASE:
                 log("a middle-click paste with an empty selection was kept from WebKit (it would crash the window)")
             return True

@@ -72,6 +72,20 @@ jobs:
             NV_WT_PY="flatpak run --command=python3 app.nostrvault.Desktop -I" NV_WT_BIN=/app/bin/nostr-vault-desktop \
             sh ../native/test/window-test.sh $m setup "$RUNNER_TEMP/window" || r=1; done
           xvfb-run -a flatpak run --env=NV_TEST_NPUB="$npub" --command=python3 app.nostrvault.Desktop -I - < test/smoke.py
+          # The runtime's WebKitGTK (Tron, beta 6: not checked). 2.54.0 and 2.54.1 crash on a paste with an empty
+          # clipboard: there the window's paste guard must be on. Read with the window's own code (webkit_version,
+          # PASTE_GUARD) inside the Flatpak.
+          wk=$(xvfb-run -a flatpak run --command=python3 app.nostrvault.Desktop -I -c '
+          import importlib.machinery as M, importlib.util as U
+          l = M.SourceFileLoader("nv", "/app/bin/nostr-vault-desktop"); m = U.module_from_spec(U.spec_from_loader("nv", l)); l.exec_module(m)
+          print("%d.%d.%d %s" % (*m.webkit_version(), m.PASTE_GUARD))' | tail -1)
+          echo "Flatpak runtime WebKitGTK and paste guard: $wk"
+          case "$wk" in
+            2.54.0\ True|2.54.1\ True) echo "PASS: WebKitGTK ${wk% *} has the paste crash and the guard is on" ;;
+            2.54.0\ *|2.54.1\ *) echo "FAIL: WebKitGTK ${wk% *} has the paste crash but the guard is off"; r=1 ;;
+            [0-9]*\ False) echo "PASS: WebKitGTK ${wk% *} doesn't have the paste crash; the guard is off" ;;
+            *) echo "FAIL: couldn't read the Flatpak's WebKitGTK version: '$wk'"; r=1 ;;
+          esac
           # Set up now: the window starts its own vault and must draw the web app, then the page after a killed one.
           # (No control run: a Flatpak can't run a copy of its own script. The .deb's window test runs it.)
           for m in x11 wayland; do NV_WT_CMD="flatpak run app.nostrvault.Desktop" NV_WT_CONTROL=0 sh ../native/test/window-test.sh $m vault "$RUNNER_TEMP/window" || r=1; done

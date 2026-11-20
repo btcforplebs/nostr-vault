@@ -178,6 +178,18 @@ if [ "$STAGE" = paste ]; then
   pkill -u "$(id -u)" -x xclip; sleep 1
   if [ "$prc" = 0 ]; then ok "$MODE: Ctrl+V with text on the clipboard pastes it"
   else no "$MODE: Ctrl+V with text on the clipboard: exit $prc, field '$(sed -n 's/^VALUE //p' "$OUT/$MODE-paste-text.log")'"; tail -15 "$OUT/$MODE-paste-text.log"; fi
+  # The owner leaves (Logen's sequence: copy in an app, quit it, paste): the window saw text on the clipboard, then
+  # its owner is killed before Ctrl+V. The guard must have known there was text (HAD True, or this is the empty run
+  # again), then know there isn't (AFTER False), and the window must survive the paste.
+  printf nv-paste-gone | xclip -quiet -selection clipboard & sleep 1
+  export NV_PP_OWNER_LEAVES=1; paste ownerleft "$bin" ""; unset NV_PP_OWNER_LEAVES
+  pkill -u "$(id -u)" -x xclip; sleep 1
+  had=$(sed -n 's/^HAD //p' "$OUT/$MODE-paste-ownerleft.log"); aft=$(sed -n 's/^AFTER //p' "$OUT/$MODE-paste-ownerleft.log")
+  if [ "$pguard" = 1 ]; then
+    if [ "$had" = True ] && [ "$aft" = False ] && [ "$prc" = 0 ]; then ok "$MODE: owner left: the guard saw text, then none, and the window survived the paste"
+    else no "$MODE: owner left: before '$had', after '$aft' (want True, False), exit $prc"; tail -15 "$OUT/$MODE-paste-ownerleft.log"; fi
+  elif [ "$prc" = 0 ]; then ok "$MODE: owner left: the window survived the paste (no guard on this WebKit)"
+  else no "$MODE: owner left: exit $prc"; fi
   if [ "$pguard" = 1 ]; then
     # Control: this WebKit has the bug, so the window without its guard must crash on the same empty paste, or the
     # "survives" above proves nothing.

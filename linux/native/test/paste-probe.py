@@ -3,7 +3,10 @@
 Loads the window's script as a module, builds its window (make_window: the same web view and the same paste guard),
 loads a page with a focused text field at the vault's origin, presses Ctrl+V with xdotool and prints
 "VALUE <the field's text>" and "GUARD <0|1>". <expect> is the text the field should hold after the paste; the probe
-exits 0 when it does. A crash in WebKit kills this process (the caller sees the signal). Needs xdotool and X11."""
+exits 0 when it does. A crash in WebKit kills this process (the caller sees the signal). Needs xdotool and X11.
+NV_PP_OWNER_LEAVES=1: the clipboard's owner (an xclip the caller started) is killed after the window has seen it and
+before the keys, as when the app you copied from quits. It prints "HAD <True|False|None>" (what the guard knew of the
+clipboard just before) and "AFTER <...>" (once the owner is gone), so a run where the window never saw the owner says so."""
 import importlib.machinery
 import importlib.util
 import os
@@ -48,7 +51,28 @@ def got_value(v, res, _data):
     loop.quit()
 
 
+def owner_leaves():
+    print("HAD %s" % app.has_paste.get("CLIPBOARD"), flush=True)
+    subprocess.run(["pkill", "-u", str(os.getuid()), "-x", "xclip"], check=False)
+    GLib.timeout_add(2000, after_owner)  # owner-change and the TARGETS answer, on the main loop
+    return False
+
+
+def after_owner():
+    print("AFTER %s" % app.has_paste.get("CLIPBOARD"), flush=True)
+    GLib.idle_add(keys)
+    return False
+
+
 def press():
+    if os.environ.get("NV_PP_OWNER_LEAVES") == "1":
+        owner_leaves()
+    else:
+        keys()
+    return False
+
+
+def keys():
     # Real key events, as a person pressing Ctrl+V: xdotool (XTEST) on X11, into the focused window.
     subprocess.run(["xdotool", "key", "ctrl+v"], check=False)
     GLib.timeout_add(3000, read_value)
