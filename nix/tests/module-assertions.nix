@@ -18,7 +18,10 @@ let
           nixosModule
           {
             boot.loader.grub.enable = false;
-            fileSystems."/".device = "/dev/null";
+            fileSystems."/" = {
+              device = "/dev/null";
+              fsType = "ext4";
+            };
             system.stateVersion = "26.05";
             services.nostr-vault = {
               enable = true;
