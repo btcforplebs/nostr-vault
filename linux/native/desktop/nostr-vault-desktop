@@ -116,10 +116,11 @@ def webkit_version():
 # WebKitGTK 2.54.0 and 2.54.1 crash the whole window (SIGSEGV) when they paste from an empty clipboard: GTK answers
 # "no targets" with a NULL list and a count of -1, and Clipboard::formats() reads that as a list of 2^64 entries.
 # Fixed in 2.54.2 (WebKit 75cdc5a66f, https://bugs.webkit.org/show_bug.cgi?id=324466), but distros that pin a snapshot
-# still ship 2.54.1 (Omarchy's stable mirror, 2026-11-20). On those versions the window doesn't let a paste reach
-# WebKit while the clipboard (or, for a middle click, the primary selection) is empty: Ctrl+V, Ctrl+Shift+V,
-# Shift+Insert, a middle click in a text field and the right-click menu's Paste. What's on each is kept up to date
-# without waiting (a GTK "owner-change" starts an asynchronous TARGETS request), so the check never blocks the window.
+# still ship 2.54.1 (on 2026-11-20 Omarchy's stable mirror was a snapshot of 2026-10-22). On those versions the window
+# doesn't let a paste reach WebKit while the clipboard (or, for a middle click, the primary selection) is empty:
+# Ctrl+V, Ctrl+Shift+V, Shift+Insert, a middle click in a text field and the right-click menu's Paste. What's on each
+# is kept up to date without waiting (a GTK "owner-change" starts an asynchronous TARGETS request), so the check never
+# blocks the window.
 PASTE_GUARD = (2, 54, 0) <= webkit_version() < (2, 54, 2)
 
 
