@@ -115,6 +115,7 @@ internal fun BlossomMediaPickerSheet(
                             MediaTypeFilter.PHOTO,
                             MediaTypeFilter.VIDEO,
                             MediaTypeFilter.GIF,
+                            MediaTypeFilter.AUDIO,
                         ),
                     )
                 }
