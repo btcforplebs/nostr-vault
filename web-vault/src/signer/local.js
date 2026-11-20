@@ -25,7 +25,7 @@ export const LOCKED = "This browser can't open your key on its own any more (its
 /** The stored ncryptsec is missing or isn't one NIP-49 can open: no password will work, so the screens don't ask again. */
 // The web app has no nsec sign-in (signer/readonly.js turns one away; a locked ncryptsec signs in, lockedKeySession), so
 // every line about the saved key says where it works.
-export const SAVED_KEY_USE = 'To use this account again, add the secret key you saved to a Nostr browser extension and choose "I already use Nostr", or import it in the Nostr Vault app.'
+export const SAVED_KEY_USE = 'To use this account again, add the secret key you saved to a Nostr browser extension and choose "Bring an account", or import it in the Nostr Vault app.'
 export const DAMAGED = `The key kept in this browser is missing or damaged, so no password can open it. Sign out first. ${SAVED_KEY_USE}`
 export const WRONG_PASSWORD = "Wrong password. Try again."
 

@@ -1,6 +1,6 @@
 // The front door, what nostrvault.app opens on for someone not signed in, laid out as the iPhone's first screen
 // (WelcomeStepView): the vault mark, "kept on your own device", three chips, and the ways in pinned at the bottom.
-// Create an account (screens/CreateAccount.jsx, the iPhone's New to Nostr), I already use Nostr (sign-in), and, as the
+// Create an account (screens/CreateAccount.jsx, the iPhone's New to Nostr), Bring an account (sign-in), and, as the
 // Mac's "Just look around", a small link that opens a search to look at anyone without an account (their profile
 // opens in the guest view, src/guest/GuestApp.jsx). "What is Nostr Vault?" (the iPhone's "What's inside?") shrinks the
 // app into a phone on the marketing page (src/shell.js). On a phone, Get the app leads to the native app for it
@@ -12,7 +12,7 @@ import { putProfile } from "../net/profiles.js"
 import { PersonRow } from "./SearchScreen.jsx"
 import { learn } from "../shell.js"
 import { appDownload } from "../components/get-app.js"
-import { NEW_TO_NOSTR, NEW_TO_NOSTR_NO, NEW_TO_NOSTR_YES } from "../net/first-run.js"
+import { BRING_ACCOUNT, CREATE_ACCOUNT } from "../net/first-run.js"
 import "../styles/welcome.css"
 
 const SEARCH = "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"
@@ -46,10 +46,9 @@ export function WelcomeScreen({ onSignIn, onCreate }) {
             <p class="welcome-app-line">{app.line}</p>
           </div>
         )}
-        {/* The first of setup's two questions (net/first-run.js): Yes makes an account, No signs in with yours. */}
-        <p class="welcome-question">{NEW_TO_NOSTR}</p>
-        <button class="welcome-door primary" onClick={onCreate}>{NEW_TO_NOSTR_YES}</button>
-        <button class="welcome-door" onClick={onSignIn}>{NEW_TO_NOSTR_NO}</button>
+        {/* Two plain choices, as the apps (net/first-run.js): Create makes an account, Bring signs in with yours. */}
+        <button class="welcome-door primary" onClick={onCreate}>{CREATE_ACCOUNT}</button>
+        <button class="welcome-door" onClick={onSignIn}>{BRING_ACCOUNT}</button>
         {looking ? <Browse /> : <button type="button" class="welcome-look" onClick={() => setLooking(true)}>Just look around</button>}
       </div>
     </main>
