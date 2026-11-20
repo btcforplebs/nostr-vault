@@ -97,7 +97,8 @@ pkgs.testers.runNixOSTest {
         box.fail("ss -Hltn 'sport = :8081' | awk '{print $4}' | grep -vq '^127.0.0.1:'")
 
     with subtest("web app and box API"):
-        box.succeed("curl -fsS http://127.0.0.1:8080/ | grep -qi '<html'")
+        # To a file first: `curl | grep -q` races (grep exits at the first match, curl then fails with 23).
+        box.succeed("curl -fsS -o /tmp/index.html http://127.0.0.1:8080/ && grep -qi '<html' /tmp/index.html")
         U = "http://127.0.0.1:8080/api/box/status"
         code = box.succeed(f"curl -s -o /dev/null -w '%{{http_code}}' {U}").strip()
         assert code == "401", f"no auth: {code}"
