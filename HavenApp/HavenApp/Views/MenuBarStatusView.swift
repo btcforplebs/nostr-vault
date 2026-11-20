@@ -251,6 +251,12 @@ enum MacWindow {
         }
     }
 
+    /// Closes the main window, which unmounts its view tree (Run in background).
+    @MainActor
+    static func closeMain() {
+        mainWindow()?.close()
+    }
+
     /// The main window, located by the scene id we declared rather than by
     /// display text. Falls back to an exact title match.
     @MainActor

@@ -204,6 +204,8 @@ struct MenuBarView: View {
             #if os(macOS)
             MacWindow.isMainWindowMounted = true
             MacWindow.openWindowAction = openWindow
+            // Run in background: the window's services come back with it.
+            BackgroundMode.shared.mainWindowOpened()
             // The status panel asks for a composer by setting this before the
             // window exists; this is the first moment a receiver could hear it.
             if MacWindow.consumePendingCompose(), configService.activeAccountCanSign {
@@ -226,6 +228,8 @@ struct MenuBarView: View {
             MacWindow.isMainWindowMounted = false
             // The pills went with the window: file the ones still up.
             RelayActivityNotificationManager.shared.hostLost()
+            // Run in background: let the window's services go with it.
+            BackgroundMode.shared.mainWindowClosed()
             #endif
         }
         // Service pausing/resuming on focus change is owned by

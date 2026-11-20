@@ -66,6 +66,9 @@ class AppDelegate: NSObject, ObservableObject {
             // window (NotificationAsk), never before it.
             PushNotificationService.shared.refreshAnswer()
 
+            // Run in background: the window's services are never started.
+            BackgroundMode.shared.applyAtLaunch()
+
             // Auto-start relay right away (it used to wait a fixed 1 s; the Go
             // runtime is ready once the app is, and its stores open while
             // the window draws).
@@ -75,7 +78,11 @@ class AppDelegate: NSObject, ObservableObject {
                 MediaPostQueue.shared.start()
                 // Starts, or quietly finishes, the Fill your vault guide once the
                 // follow list is known.
-                FillYourVaultCoordinator.shared.start()
+                // Draws in the window only; it starts with the window in
+                // background mode (BackgroundMode.mainWindowOpened).
+                if BackgroundMode.shared.runsWindowServices {
+                    FillYourVaultCoordinator.shared.start()
+                }
                 // The mesh copy v2: resume a cut copy, catch up with linked
                 // devices, keep copy-settings.json in step.
                 MeshCopyV2Service.shared.startWatching()
@@ -108,7 +115,11 @@ class AppDelegate: NSObject, ObservableObject {
 
                 // Start profile picture prefetch service (runs once per day on Wi-Fi)
                 try? await Task.sleep(for: .seconds(5))
-                ProfilePicturePrefetchService.shared.start()
+                // Pictures for the window. Not fetched for a vault that runs
+                // in the background.
+                if !BackgroundMode.shared.isOn {
+                    ProfilePicturePrefetchService.shared.start()
+                }
             }
         }
         #endif
@@ -167,10 +178,14 @@ class AppDelegate: NSObject, ObservableObject {
                 // What the relay catches up on now is gathered into one pill
                 // beside the sidebar's Vault row (ReturnPillManager).
                 ReturnPillManager.shared.beginReturn()
-                FeedService.shared.resumeFeed()
                 // A list another app clobbered while we were away (docs/LIST_WIPE_ALARM.md).
                 ListWipeWatcher.shared.appCameForward()
                 NetworkSyncService.shared.start()
+                // Run in background with the window closed: opening the menu
+                // bar panel makes the app active, and must not bring the
+                // feed, log rows or profile fetching back with it.
+                guard BackgroundMode.shared.runsWindowServices else { return }
+                FeedService.shared.resumeFeed()
                 RelayProcessManager.shared.enterForeground()
                 NostrService.shared.enterForeground()
             }

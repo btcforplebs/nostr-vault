@@ -478,6 +478,7 @@ class FeedService: ObservableObject {
             .sink { [weak self] _ in
                 guard let self = self else { return }
                 self.handleAccountSwitch()
+                self.afterAccountSwitchInBackground()
             }
             .store(in: &configCancellables)
 

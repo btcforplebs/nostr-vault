@@ -14,6 +14,9 @@ struct StartupSettingsView: View {
                 Toggle(isOn: $configService.config.autoStartRelay) {
                     Text("Start Vault Automatically").settingInfo(.relayAutoStart)
                 }
+                #if os(macOS)
+                RunInBackgroundToggle()
+                #endif
             }
         }
         .warmFormBackground()
