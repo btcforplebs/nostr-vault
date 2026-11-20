@@ -11,7 +11,7 @@ import { useProfile } from "../components/useProfile.js"
 import { fetchProfiles, getProfile, onProfiles } from "../net/profiles.js"
 import { followLists } from "../net/wot.js"
 import { latestList } from "../net/list-edit.js"
-import { followedTags, interests, pickedNotes, reactedIds, recommendedPeople, vouchesFrom } from "../net/for-you.js"
+import { followedTags, interests, pickedNotes, reactedIds, recommendedPeople, vouchesSoon } from "../net/for-you.js"
 import { SearchLiveNow, useLiveNow } from "./SearchLiveNow.jsx"
 import "../styles/search-for-you.css"
 
@@ -86,7 +86,7 @@ function useForYou(ctx, notes, blocked) {
   useEffect(() => onProfiles(() => namesIn(n => n + 1)), [])
   useEffect(() => {
     let live = true
-    followLists(me, follows).then(l => live && setVouches(vouchesFrom(follows, l))).catch(() => {})
+    followLists(me, follows).then(l => vouchesSoon(follows, l)).then(v => live && setVouches(v)).catch(() => {}) // off the tap (for-you.js)
     latestList(ctx, 10015).then(r => live && setFollowed(followedTags(r.event))).catch(() => {})
     Promise.all([
       ctx.vault.outbox.query({ kinds: [1], authors: [me], limit: 100 }).catch(() => []),

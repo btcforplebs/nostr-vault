@@ -15,7 +15,7 @@ import { OutsideFold } from "../components/OutsideFold.jsx"
 import { parseQuery, hashtagOf, startSearch, shapeResults, filterCaption, loadRecent, saveRecent, clearRecent, MIN_QUERY, NO_FILTER, WHO, WHEN } from "../net/search.js"
 import { fetchProfiles, putProfile } from "../net/profiles.js"
 import { followLists } from "../net/wot.js"
-import { vouchesFrom } from "../net/for-you.js"
+import { vouchesSoon } from "../net/for-you.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { visibleNotes, visiblePeople } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
@@ -188,7 +188,7 @@ function useWot(ctx) {
   const follows = ctx.account.follows
   useEffect(() => {
     let live = true
-    followLists(ctx.session.pubkey, follows).then(l => live && setWot(new Set(vouchesFrom(follows, l).keys()))).catch(() => {})
+    followLists(ctx.session.pubkey, follows).then(l => vouchesSoon(follows, l)).then(v => live && setWot(new Set(v.keys()))).catch(() => {}) // off the tap, shared with For you (for-you.js)
     return () => { live = false }
   }, [ctx.session.pubkey, follows.length])
   return wot
