@@ -433,7 +433,11 @@ export function FeedScreen({ ctx }) {
       if (!until) setStrangePending([]) // a fresh first page has them
       setStatus("")
       return page.length
-    } catch (e) { if (n === seq.current) setStatus(`Couldn't load (${e?.message ?? e})`) }
+    } catch (e) {
+      if (n !== seq.current) return
+      if (c.mode === "underrated") underratedWhy.current = "" // not the last load's reason
+      setStatus(`Couldn't load (${e?.message ?? e})`)
+    }
   }
 
   // Back on the Feed soon after a sync (from another screen, or a reload): show Haven's notes and ask nothing; the
