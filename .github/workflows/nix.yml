@@ -57,6 +57,8 @@ jobs:
             sandbox = true
       - name: flake.lock is committed (the build must not pick its own nixpkgs)
         run: test -s flake.lock && git ls-files --error-unmatch flake.lock
+      - name: Module assertions (evaluation only, fast)
+        run: nix build -L --no-link .#checks.${{ matrix.system }}.module-assertions
       - name: Packages
         run: nix build -L --keep-going --no-link .#nostr-vault .#keytool
       - name: nix flake check (includes the VM test)

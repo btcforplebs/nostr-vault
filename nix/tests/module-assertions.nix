@@ -10,10 +10,9 @@
 }:
 
 let
-  evalsOk =
+  toplevel =
     extra:
-    (builtins.tryEval
-      (nixosSystem {
+    (nixosSystem {
         inherit (pkgs.stdenv.hostPlatform) system;
         modules = [
           nixosModule
@@ -30,8 +29,10 @@ let
           }
           extra
         ];
-      }).config.system.build.toplevel.drvPath
-    ).success;
+      }).config.system.build.toplevel.drvPath;
+  evalsOk = extra: (builtins.tryEval (toplevel extra)).success;
+  # The positive control is evaluated outside tryEval: if it breaks, the error itself shows instead of a bare false.
+  control = builtins.seq (toplevel { }) true;
 
   cases = {
     "good config (positive control)" = {
@@ -78,7 +79,7 @@ let
   results = lib.mapAttrsToList (
     name: c:
     let
-      got = evalsOk c.cfg;
+      got = if c.want then control else evalsOk c.cfg;
     in
     {
       inherit name;
