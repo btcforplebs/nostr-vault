@@ -136,8 +136,8 @@ function Devices({ devices }) {
   )
 }
 
-// linux/README.md: re-running the installer is the update (audit K2: nothing on the box runs one yet).
-const INSTALL = "curl -fsSL https://raw.githubusercontent.com/btcforplebs/nostr-vault/master/linux/install.sh | sh"
+// linux/README.md: installing the newer package is the update (audit K2: nothing on the box runs one yet).
+const RELEASES = "https://github.com/btcforplebs/nostr-vault/releases"
 
 function Update({ api, version }) {
   const [busy, setBusy] = useState(false)
@@ -146,7 +146,7 @@ function Update({ api, version }) {
     setBusy(true); setMsg(null)
     try {
       const r = await api.update()
-      setMsg({ ok: true, text: !r.started || r.via === "file" ? `Updates are manual for now. On the box, run the installer again: ${INSTALL}` : r.to ? `Updating ${r.from || version} to ${r.to}.` : "Update started." })
+      setMsg({ ok: true, text: !r.started || r.via === "file" ? `Updates are manual for now. On the box, install the newer package from ${RELEASES}` : r.to ? `Updating ${r.from || version} to ${r.to}.` : "Update started." })
     } catch (e) { setMsg({ ok: false, text: String(e?.message ?? e) }) }
     setBusy(false)
   }
@@ -154,7 +154,7 @@ function Update({ api, version }) {
     <div class="settings-rows">
       <Row label="Running" value={version ? `Version ${version}` : "—"} />
       <button type="button" class="settings-row box-action" disabled={busy} aria-busy={busy || undefined} onClick={run}>{busy ? "Asking the box…" : "Check for update and install"}</button>
-      <p class="muted small box-pad">Updates are manual for now: run the installer again on the box. There is no automatic way back to the old version yet.</p>
+      <p class="muted small box-pad">Updates are manual for now: install the newer package on the box. There is no automatic way back to the old version yet.</p>
       {msg && <p class={`small box-pad ${msg.ok ? "muted" : "error"}`} role={msg.ok ? "status" : "alert"}>{msg.text}</p>}
     </div>
   )

@@ -92,7 +92,7 @@ test("Move vault to…: asks for a folder, sends it, says what the box answered"
 test("Update: says updates are manual, never 'started', no rollback promise (audit K2)", async () => {
   const el = await mount()
   fire(button(el, "Check for update and install"), "click"); await tick(30)
-  assert.match(el.textContent, /Updates are manual for now\. On the box, run the installer again: curl .*linux\/install\.sh \| sh/)
+  assert.match(el.textContent, /Updates are manual for now\. On the box, install the newer package from https:\/\/github\.com\/btcforplebs\/nostr-vault\/releases/)
   assert.ok(!/Update started|go back to it|goes back/.test(el.textContent), el.textContent)
   render(null, el)
 })
