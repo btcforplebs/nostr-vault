@@ -24,7 +24,7 @@ const { mediaUrls, mediaTiles } = await import("../src/net/media.js")
 const { mediaFor, activityRows } = await import("../src/net/vault-lists.js")
 const { MediaImage } = await import("../src/components/MediaImage.jsx")
 const { MediaGrid } = await import("../src/components/MediaGrid.jsx")
-const { Thumb } = await import("../src/components/CondensedNote.jsx")
+const { Thumb, ThumbPicture } = await import("../src/components/CondensedNote.jsx")
 const { ActivityRow, ActivityThumb } = await import("../src/screens/VaultScreen.jsx")
 
 const HASH = "e40a76df2e154784d6d159ddca808c295eb514274b965d53e1f27575a6c8ee0e"
@@ -71,11 +71,13 @@ test("Media grid: each photo tile is a MediaImage with the note's imeta hash and
 
 test("Compact thumb: MediaImage with the note's author; a video is still the play mark", () => {
   const n = note([imeta(PHOTO, HASH)])
-  const [img] = find(Thumb({ url: PHOTO, note: n, more: 0 }), MediaImage)
+  // The thumb draws ThumbPicture (a small still of the photo, small-image.js), which hands MediaImage the same item.
+  const [img] = find(Thumb({ url: PHOTO, note: n, more: 0 }), ThumbPicture)
   assert.equal(img.props.author, AUTHOR)
   assert.equal(img.props.item.x, HASH)
-  assert.equal(typeof img.props.onError, "function", "the thumb still hides a photo nothing can reach")
-  assert.equal(find(Thumb({ url: "https://media.example/v.mp4", note: n, more: 0 }), MediaImage).length, 0)
+  const src = readFileSync(fileURLToPath(new URL("../src/components/CondensedNote.jsx", import.meta.url)), "utf8")
+  assert.match(src, /<MediaImage item=\{small\.src === item\.url \? item : \{ \.\.\.item, url: small\.src \}\} author=\{author\}[^>]*onError=\{e => e\.currentTarget\.classList\.add\("failed"\)\}/, "the thumb still hides a photo nothing can reach")
+  assert.equal(find(Thumb({ url: "https://media.example/v.mp4", note: n, more: 0 }), ThumbPicture).length, 0)
 })
 
 test("Reply preview draws its photo with MediaImage, a .fips link included", () => {
