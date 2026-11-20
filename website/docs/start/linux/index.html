@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Get started on Linux — Nostr Vault Docs</title>
-    <meta name="description" content="Install the Nostr Vault beta on a Linux machine: the .deb for Debian, Ubuntu and Raspberry Pi OS, the .rpm for Fedora, the Arch package, the Alpine apk and the Flatpak for desktops (arm64 or amd64), the desktop window and tray, and what works in the beta.">
+    <meta name="description" content="Install the Nostr Vault beta on a Linux machine: the .deb for Debian, Ubuntu and Raspberry Pi OS, the .rpm for Fedora, the Arch package, the Alpine apk, the Flatpak for desktops (arm64 or amd64), Nix and NixOS, the desktop window and tray, and what works in the beta.">
     <link rel="canonical" href="https://nostrvault.app/docs/start/linux/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/start/linux/">
     <meta property="og:title" content="Get started on Linux — Nostr Vault Docs">
-    <meta property="og:description" content="Install the Nostr Vault beta on a Linux machine: the .deb for Debian, Ubuntu and Raspberry Pi OS, the .rpm for Fedora, the Arch package, the Alpine apk and the Flatpak for desktops (arm64 or amd64), the desktop window and tray, and what works in the beta.">
+    <meta property="og:description" content="Install the Nostr Vault beta on a Linux machine: the .deb for Debian, Ubuntu and Raspberry Pi OS, the .rpm for Fedora, the Arch package, the Alpine apk, the Flatpak for desktops (arm64 or amd64), Nix and NixOS, the desktop window and tray, and what works in the beta.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -133,7 +133,7 @@
         <main class="docs-main">
             <p class="eyebrow">Get started</p>
             <h1>Get started on Linux</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#needs">What you need</a></li><li><a href="#install">Install the .deb (Debian, Ubuntu, Raspberry Pi OS)</a></li><li><a href="#other">Fedora, Arch and Alpine</a></li><li><a href="#flatpak">Flatpak, for desktops (no mesh)</a></li><li><a href="#desktop">On a desktop: the window</a></li><li><a href="#open">Open your vault and link it</a></li><li><a href="#day-to-day">Day to day</a></li><li><a href="#beta">What works, and what's still beta</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#needs">What you need</a></li><li><a href="#install">Install the .deb (Debian, Ubuntu, Raspberry Pi OS)</a></li><li><a href="#other">Fedora, Arch and Alpine</a></li><li><a href="#flatpak">Flatpak, for desktops (no mesh)</a></li><li><a href="#nix">NixOS (flake and module)</a></li><li><a href="#desktop">On a desktop: the window</a></li><li><a href="#open">Open your vault and link it</a></li><li><a href="#day-to-day">Day to day</a></li><li><a href="#beta">What works, and what's still beta</a></li></ul></div>
 
             <article class="docs-article">
                 <p>Nostr Vault for Linux turns a Linux machine into your always-on vault: a Raspberry Pi, a mini PC, a home server
@@ -142,7 +142,7 @@
                     over the <a href="/docs/mesh/">mesh</a>.</p>
                 <div class="note">
                     <p><strong>This is a beta.</strong> Linux is new in 3.2.3 and comes as a GitHub pre-release,
-                        <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.2">v3.2.3-linux-beta.2</a>.
+                        <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.3">v3.2.3-linux-beta.3</a>.
                         What works and what doesn't yet is at the <a href="#beta">end of this page</a>.</p>
                 </div>
 
@@ -159,6 +159,7 @@
                             <li><strong>Alpine</strong> 3.22 or newer: the <code>.apk</code> (OpenRC, no window or tray).</li>
                             <li>Any desktop with <strong>Flatpak</strong> (Steam Deck, Fedora Silverblue, Bazzite and others): the
                                 <code>.flatpak</code>. It has <a href="#flatpak">no mesh</a> in this beta.</li>
+                            <li><strong>NixOS</strong>: the flake's NixOS module, <a href="#nix">below</a>.</li>
                         </ul></li>
                     <li>Your <strong>npub</strong>, the public key of the account that owns the vault. The machine never gets your
                         secret key.</li>
@@ -168,9 +169,9 @@
 
                 <h2 id="install">Install the .deb (Debian, Ubuntu, Raspberry Pi OS)</h2>
                 <p>Open a terminal on the machine (or ssh into it) and download the file for your machine from the
-                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.2">beta release</a>:
+                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.3">beta release</a>:
                     <code>…_arm64.deb</code> for a Raspberry Pi or other ARM board, <code>…_amd64.deb</code> for a normal PC. Then:</p>
-                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>sudo apt install ./nostr-vault_3.2.3+6556_arm64.deb
+                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>sudo apt install ./nostr-vault_3.2.3+6582_arm64.deb
                 sudo nostr-vault-setup --owner npub1…</code></pre>
                 <p>On a machine with no screen, add <code>--no-install-recommends</code> to the first line so apt skips the window's
                     libraries. <code>nostr-vault-setup</code> also takes <code>--data /path</code> for where the vault lives (a USB
@@ -181,14 +182,14 @@
 
                 <h2 id="other">Fedora, Arch and Alpine</h2>
                 <p>Download the package for your system and machine from the
-                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.2">beta release</a>
+                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.3">beta release</a>
                     (<code>x86_64</code> for a normal PC, <code>aarch64</code> for ARM), then install it and set the owner:</p>
                 <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code># Fedora
-                sudo dnf install ./nostr-vault-3.2.3+6556-1.x86_64.rpm
+                sudo dnf install ./nostr-vault-3.2.3+6582-1.x86_64.rpm
                 # Arch Linux
-                sudo pacman -U ./nostr-vault-3.2.3+6556-1-x86_64.pkg.tar.zst
+                sudo pacman -U ./nostr-vault-3.2.3+6582-1-x86_64.pkg.tar.zst
                 # Alpine (as root)
-                apk add --allow-untrusted ./nostr-vault-3.2.3_p6556-r0.x86_64.apk
+                apk add --allow-untrusted ./nostr-vault-3.2.3_p6582-r0.x86_64.apk
 
                 sudo nostr-vault-setup --owner npub1…   # on Alpine, as root: nostr-vault-setup --owner npub1…</code></pre>
                 <p>Each one is the same vault as the <code>.deb</code>, with the mesh, and runs the vault and the mesh as their own
@@ -201,8 +202,8 @@
 
                 <h2 id="flatpak">Flatpak, for desktops (no mesh)</h2>
                 <p>Download <code>nostr-vault-…-x86_64.flatpak</code> (or <code>aarch64</code>) from the
-                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.2">beta release</a>, then:</p>
-                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>flatpak install --user ./nostr-vault-3.2.3+6556-x86_64.flatpak</code></pre>
+                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.3">beta release</a>, then:</p>
+                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>flatpak install --user ./nostr-vault-3.2.3+6582-x86_64.flatpak</code></pre>
                 <p>Open <strong>Nostr Vault</strong> from your apps. The Flatpak is different from the packages above:</p>
                 <ul>
                     <li><strong>No mesh.</strong> Device sync is off in the Flatpak for now. Your phones reach this vault on your
@@ -213,6 +214,28 @@
                     <li>It is not on Flathub. Updates come from installing a newer bundle.</li>
                 </ul>
                 <p>For a vault that runs on boot and syncs over the mesh, use the native package for your system instead.</p>
+
+                <h2 id="nix">NixOS (flake and module)</h2>
+                <p>On NixOS, add the flake and turn on its module instead of installing a package. In your system flake:</p>
+                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>inputs.nostr-vault.url = "github:btcforplebs/nostr-vault/v3.2.3-linux-beta.3";
+
+                # in your nixosSystem modules:
+                nostr-vault.nixosModules.default
+                {
+                  services.nostr-vault = {
+                    enable = true;
+                    owner = "npub1…";      # your npub, never an nsec
+                    openFirewall = true;   # 8080 on your network
+                  };
+                }</code></pre>
+                <p>Then <code>sudo nixos-rebuild switch</code>. It is the same vault and mesh as the packages above, for
+                    <code>x86_64-linux</code> and <code>aarch64-linux</code>, with the vault and the mesh as their own users,
+                    <code>nvvault</code> and <code>nvmesh</code>, and its data in <code>/var/lib/nostr-vault</code>. Other options:
+                    <code>port</code>, <code>dataDir</code>, <code>mesh.enable</code> and <code>environmentFile</code> for secrets
+                    (a path outside the Nix store); the full list is in
+                    <a href="https://github.com/btcforplebs/nostr-vault/tree/master/nix">nix/README.md</a>. It has no window or tray,
+                    so open the vault from another device. Logs: <code>journalctl -fu nostr-vault -u nostr-vault-mesh</code>. To
+                    update, point the input at a newer release and rebuild. Nostr Vault is not in nixpkgs yet.</p>
 
                 <h2 id="desktop">On a desktop: the window</h2>
                 <p>You can skip the terminal on a desktop. Install the package, then open <strong>Nostr Vault</strong> from your
@@ -256,10 +279,11 @@
                 <ul>
                     <li>Your vault as a relay and media server on your network, started on boot, with the web app on
                         <code>http://&lt;machine&gt;:8080/</code>.</li>
-                    <li>The mesh, in the native packages (<code>.deb</code>, <code>.rpm</code>, Arch, Alpine): your phones and Macs
+                    <li>The mesh, in the native packages (<code>.deb</code>, <code>.rpm</code>, Arch, Alpine) and on NixOS: your phones and Macs
                         reach the box away from home once it's in My Devices. The mesh runs as its own user, makes its own mesh key
                         and only lets in your own devices.</li>
-                    <li>Native packages for Debian, Ubuntu, Raspberry Pi OS, Fedora, Arch and Alpine, and a Flatpak for desktops.</li>
+                    <li>Native packages for Debian, Ubuntu, Raspberry Pi OS, Fedora, Arch and Alpine, a Flatpak for desktops, and a
+                        Nix flake with a NixOS module.</li>
                     <li>The desktop window and tray, on a machine with a desktop.</li>
                     <li>The box's page: status, storage and <strong>Move vault to…</strong>, the mesh, your devices, and
                         <a href="/docs/mesh/sync/#public-web">Public on the web</a> for a box with its own web address.</li>
@@ -275,7 +299,7 @@
                 <p>Something wrong? Open an issue on <a href="https://github.com/btcforplebs/nostr-vault/issues">GitHub</a> with the
                     output of <code>journalctl -u nostr-vault -u nostr-vault-mesh --since today</code>.</p>
             </article>
-            <p class="docs-checked">Checked against Nostr Vault 3.2.3 for Linux (beta 2).</p>
+            <p class="docs-checked">Checked against Nostr Vault 3.2.3 for Linux (beta 3).</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/start/web/"><span>Previous</span>Web browser</a>
                 <a class="next" href="/docs/start/raspberry-pi/"><span>Next</span>Raspberry Pi (beta)</a>
