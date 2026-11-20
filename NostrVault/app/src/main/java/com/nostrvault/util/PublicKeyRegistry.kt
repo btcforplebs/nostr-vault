@@ -46,10 +46,16 @@ object PublicKeyRegistry {
         }
     }
 
-    /** [web] without the accounts whose key is public. */
-    fun withoutPublic(web: Set<String>): Set<String> {
+    /**
+     * [web] without the accounts whose key is public, except [own] (this
+     * device's accounts, asked only when there is something to remove): your
+     * own notes stay in your feeds even if your own key is public.
+     */
+    fun withoutPublic(web: Set<String>, own: () -> Set<String> = { emptySet() }): Set<String> {
         val public = _keys.value
-        return if (public.isEmpty() || web.isEmpty()) web else web - public
+        if (public.isEmpty() || web.isEmpty() || web.none { it in public }) return web
+        val keep = own().mapTo(HashSet()) { it.lowercase() }
+        return web.filterTo(LinkedHashSet()) { it !in public || it.lowercase() in keep }
     }
 
     private fun add(found: List<String>) {

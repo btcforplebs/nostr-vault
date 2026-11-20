@@ -37,8 +37,13 @@ import java.io.File
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
         return com.nostrvault.util.PublicKeyRegistry.withoutPublic(
             TrustMap.withoutBlocked(TrustMap.web(_wotPubkeys.value, feedAuthorSet()), blockedHexForActiveAccount()),
-        )
+        ) { ownAccountHexes() }
     }
+
+    /** Every account on this device (and the open one): never counted outside for a public key. */
+    internal fun FeedService.ownAccountHexes(): Set<String> =
+        configStore.config.value.allAccountNpubs().mapNotNullTo(HashSet()) { com.nostrvault.relay.HavenBridge.decodeNpub(it) }
+            .apply { nostrService.activeHexPubkey.takeIf { it.isNotEmpty() }?.let { add(it) } }
 
     internal fun FeedService.globalTrustSetImpl(): Set<String>? {
         if (configStore.config.value.globalShowsEveryone) return null
@@ -48,7 +53,7 @@ import java.io.File
         // So is an account whose secret key is public: anyone can post as it.
         return com.nostrvault.util.PublicKeyRegistry.withoutPublic(
             TrustMap.withoutBlocked(TrustMap.web(_wotPubkeys.value, feedAuthorSet()), blockedHexForActiveAccount()),
-        )
+        ) { ownAccountHexes() }
     }
 
     internal fun FeedService.loadWotPubkeysImpl() {

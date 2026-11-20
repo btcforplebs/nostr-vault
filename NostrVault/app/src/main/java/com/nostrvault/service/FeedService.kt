@@ -192,7 +192,7 @@ class FeedService @Inject constructor(
             relayTabTrustedPubkeysImpl()
         } else {
             if (_pooledWotPubkeys.value.isEmpty()) loadWotPubkeys()
-            com.nostrvault.util.PublicKeyRegistry.withoutPublic(_pooledWotPubkeys.value)
+            com.nostrvault.util.PublicKeyRegistry.withoutPublic(_pooledWotPubkeys.value) { ownAccountHexes() }
         }
 
     /**

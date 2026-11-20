@@ -46,7 +46,8 @@ object SecretKeyLeak {
         if (text.isNullOrEmpty()) return emptyList()
         val out = LinkedHashSet<String>()
         forEachSecretHex(text) { secretHex ->
-            derive(secretHex)?.lowercase()?.takeIf { it.length == 64 }?.let { out.add(it) }
+            // libhaven answers 00…00 with no error for the zero key and for n: not an account.
+            derive(secretHex)?.lowercase()?.takeIf { it.length == 64 && it.any { c -> c != '0' } }?.let { out.add(it) }
             true
         }
         return out.toList()

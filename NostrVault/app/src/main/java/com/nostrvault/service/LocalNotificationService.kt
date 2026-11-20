@@ -807,7 +807,7 @@ class LocalNotificationService @Inject constructor(
             feed.loadWotPubkeys()
             return emptySet()
         }
-        return com.nostrvault.util.PublicKeyRegistry.withoutPublic(wot + feed.followedPubkeys.value)
+        return com.nostrvault.util.PublicKeyRegistry.withoutPublic(wot + feed.followedPubkeys.value, ::ownAccountHexes)
     }
 
     /** Returns true if this id is newly seen (and records it); false if a duplicate. */

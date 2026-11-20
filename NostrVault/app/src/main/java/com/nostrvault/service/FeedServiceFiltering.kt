@@ -61,7 +61,7 @@ import kotlinx.serialization.json.*
 
     /** The saved web plus your follows, so Global shows a new follow at once. */
     internal fun FeedService.myWeb(): Set<String> =
-        com.nostrvault.util.PublicKeyRegistry.withoutPublic(TrustMap.web(_wotPubkeys.value, feedAuthorSet()))
+        com.nostrvault.util.PublicKeyRegistry.withoutPublic(TrustMap.web(_wotPubkeys.value, feedAuthorSet())) { ownAccountHexes() }
 
     /** Author of a note the feed has loaded, for the blocked-person check. */
     internal fun FeedService.authorOf(id: String): String? = findNote(id)?.pubkey

@@ -110,6 +110,30 @@ class SecretKeyLeakTest {
         assertEquals(0, calls)
     }
 
+    /** libhaven answers 00…00 for the zero key and n: that marks nobody. */
+    @Test fun anAllZeroDerivedPubkeyIsSkipped() {
+        val (_, nsec) = freshNsec()
+        assertEquals(emptyList<String>(), SecretKeyLeak.derivedPubkeys(nsec) { "0".repeat(64) })
+        PublicKeyRegistry.noteText(nsec) { "0".repeat(64) }
+        assertTrue(PublicKeyRegistry.keys.value.isEmpty())
+    }
+
+    /** Your own accounts stay in your web even when their key is public, so your notes stay in Global. */
+    @Test fun ownAccountsStayInsideWhenTheirKeyIsPublic() {
+        val (mineHex, mine) = freshNsec()
+        val (otherHex, other) = freshNsec()
+        val me = TestSecp256k1.xOnly(mineHex)
+        val them = TestSecp256k1.xOnly(otherHex)
+        PublicKeyRegistry.noteText("$mine $other", TestSecp256k1::xOnly)
+        val web = setOf(me, them, "friend")
+        assertEquals(setOf(me, "friend"), PublicKeyRegistry.withoutPublic(web) { setOf(me.uppercase()) })
+        assertEquals(setOf("friend"), PublicKeyRegistry.withoutPublic(web))
+        // Nothing to remove: own accounts are not even read.
+        var asked = false
+        PublicKeyRegistry.withoutPublic(setOf("friend")) { asked = true; emptySet() }
+        assertFalse(asked)
+    }
+
     @Test fun theSignerGuardBlocksEveryPublishKindThatCarriesText() {
         val (_, nsec) = freshNsec()
         val profile = """{"name":"$nsec","about":"hi"}"""

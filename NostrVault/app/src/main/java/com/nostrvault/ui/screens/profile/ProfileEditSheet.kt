@@ -26,6 +26,7 @@ import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.service.BroadcastTally
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.notification.NotificationManager
+import com.nostrvault.ui.notification.ErrorStyle
 import kotlin.coroutines.cancellation.CancellationException
 import androidx.compose.animation.Crossfade
 import com.nostrvault.ui.theme.*
@@ -296,13 +297,18 @@ class ProfileEditViewModel @Inject constructor(
             nostrService.relayLists.value[pubkey].orEmpty()
         val lookup = nostrService.lookupNewestReplaceable(0, pubkey, alsoAsk)
         if (lookup.event == null && !lookup.confirmedNone) return null
-        val merged = ProfileMetadataMerge.merge(ProfileMetadataMerge.parseContent(lookup.event?.content), initial, edited)
+        // A secret key in a field or tag the form doesn't show is left out, and the user told where.
+        val stripped = ProfileSecretKeyStrip.strip(
+            ProfileMetadataMerge.merge(ProfileMetadataMerge.parseContent(lookup.event?.content), initial, edited),
+            lookup.event?.tags.orEmpty(),
+        )
+        val merged = stripped.content
         // A bunker timeout, an Amber rejection or a switch away from [lock]
         // throws; uncaught here it crashed the app.
         val event = try {
             // The tags go too: NIP-39 `i` identities and NIP-30 emoji set
             // in other clients would be dropped by an empty list.
-            nostrService.signEventAsync(kind = 0, content = merged.toString(), tags = lookup.event?.tags.orEmpty(), lockedTo = lock)
+            nostrService.signEventAsync(kind = 0, content = merged.toString(), tags = stripped.tags, lockedTo = lock)
         } catch (e: CancellationException) {
             throw e
         } catch (e: SecretKeyLeakException) {
@@ -316,6 +322,9 @@ class ProfileEditViewModel @Inject constructor(
         if (!ProfileEditGuard.maySign(signer = event.pubkey, editedProfile = pubkey, formAccount = lock.hex)) return null
         nostrService.postEvent(event) { outcome ->
             if (outcome == BroadcastTally.Outcome.REFUSED) onRefused()
+        }
+        if (stripped.removed.isNotEmpty()) {
+            notificationManager.showError(ProfileSecretKeyStrip.message(stripped.removed), ErrorStyle.WARNING)
         }
         return ProfileMetadataMerge.profile(existing, merged).copy(
             lud06 = (merged["lud06"] as? JsonPrimitive)?.takeIf { it.isString }?.content,

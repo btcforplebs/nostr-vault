@@ -7,6 +7,8 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.NostrEvent
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.notification.NotificationManager
+import com.nostrvault.ui.notification.ErrorStyle
+import io.mockk.slot
 import com.nostrvault.util.SecretKeyLeak
 import com.nostrvault.util.SecretKeyLeakException
 import io.mockk.coEvery
@@ -102,5 +104,33 @@ class ProfileEditSecretKeyTest {
 
         verify(exactly = 1) { notifications.showError(SecretKeyLeak.MESSAGE) }
         verify(exactly = 0) { nostr.postEvent(any(), any()) }
+    }
+
+    /** A key in a field and a tag the form doesn't show: left out, the user told where, the edit published. */
+    @Test fun aKeyInAHiddenFieldIsLeftOutAndNamed() {
+        val newest = NostrEvent(
+            "old", "hex-a", 1, 0,
+            listOf(listOf("i", "github:$nsec", "proof"), listOf("i", "twitter:me", "p")),
+            """{"name":"a","displayName":"$nsec","lud06":"lnurl1x"}""", "sig",
+        )
+        coEvery { nostr.lookupNewestReplaceable(0, "hex-a", any(), any(), any()) } returns
+            NostrService.ReplaceableLookup(event = newest, asked = 1, answered = 1)
+        val content = slot<String>()
+        val tags = slot<List<List<String>>>()
+        coEvery { nostr.signEventAsync(0, capture(content), capture(tags), any(), any(), any(), any(), any()) } returns
+            NostrEvent("id", "hex-a", 2, 0, emptyList(), "{}", "sig")
+        val vm = viewModel()
+        vm.open()
+        vm.setName("a2")
+        assertTrue(vm.save())
+        scope.advanceUntilIdle()
+
+        assertFalse(content.captured.contains("nsec1"))
+        assertFalse(tags.captured.flatten().any { it.contains("nsec1") })
+        assertTrue(content.captured.contains("\"lud06\":\"lnurl1x\""))
+        assertTrue(content.captured.contains("\"name\":\"a2\""))
+        assertEquals(listOf(listOf("i", "twitter:me", "p")), tags.captured)
+        verify(exactly = 1) { notifications.showError("Removed a secret key from displayName, tag i.", ErrorStyle.WARNING) }
+        verify(exactly = 1) { nostr.postEvent(any(), any()) }
     }
 }
