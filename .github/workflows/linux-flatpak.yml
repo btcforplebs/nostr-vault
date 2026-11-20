@@ -12,6 +12,7 @@ on:
       - "linux/flatpak/**"
       - "linux/native/desktop/**"
       - "linux/native/test/window-test.sh"
+      - "linux/native/test/ua-probe.py"
       - ".github/workflows/linux-flatpak.yml"
 
 # Read-only token: the build runs npm and Go tooling.
@@ -66,7 +67,10 @@ jobs:
           # The window before setup (its setup page), X11 and Wayland: linux/native/test/window-test.sh.
           sudo apt-get install -y -q --no-install-recommends sway grim imagemagick
           r=0
-          for m in x11 wayland; do NV_WT_CMD="flatpak run app.nostrvault.Desktop" NV_WT_CONTROL=0 sh ../native/test/window-test.sh $m setup "$RUNNER_TEMP/window" || r=1; done
+          # (The setup stage also reads the user agent the window gives its pages, with the Flatpak's own Python.)
+          for m in x11 wayland; do NV_WT_CMD="flatpak run app.nostrvault.Desktop" NV_WT_CONTROL=0 \
+            NV_WT_PY="flatpak run --command=python3 app.nostrvault.Desktop -I" NV_WT_BIN=/app/bin/nostr-vault-desktop \
+            sh ../native/test/window-test.sh $m setup "$RUNNER_TEMP/window" || r=1; done
           xvfb-run -a flatpak run --env=NV_TEST_NPUB="$npub" --command=python3 app.nostrvault.Desktop -I - < test/smoke.py
           # Set up now: the window starts its own vault and must draw the web app, then the page after a killed one.
           # (No control run: a Flatpak can't run a copy of its own script. The .deb's window test runs it.)

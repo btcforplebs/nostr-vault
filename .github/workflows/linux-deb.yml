@@ -13,6 +13,8 @@ on:
     paths:
       - "linux/native/**"
       - "linux/mesh/**"
+      - "web-vault/src/net/client-tag.js"
+      - "web-vault/tools/client-tag-e2e.mjs"
       - ".github/workflows/linux-deb.yml"
 
 # Read-only token: the build runs npm, cargo build scripts and rustup, and the repo default is write.
@@ -210,7 +212,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: linux/native/test
+          sparse-checkout: |
+            linux/native/test
+            web-vault
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
@@ -222,6 +226,11 @@ jobs:
           cache: false
       - name: Throwaway-key tool (static, for the container)
         run: cd linux/native/test/keytool && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/keytool" .
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: The web app's own code, for the client tag check (no install scripts)
+        run: cd web-vault && npm ci --ignore-scripts --no-audit --no-fund
       - name: Boot a ${{ matrix.distro }} container with systemd and the display tools
         run: |
           # systemd, then what the test drives the window with: Xvfb, sway + grim, ImageMagick, dbus-run-session, a font.
@@ -258,7 +267,8 @@ jobs:
           exit $r
       - name: Set the vault up (throwaway owner)
         run: |
-          docker exec nv sh -c 'nostr-vault-setup --owner "$(keytool gen | cut -d" " -f2)" --sd-ok
+          # The owner's throwaway key stays in the container: the client tag check signs with it.
+          docker exec nv sh -c 'umask 077; keytool gen >/root/owner.key; nostr-vault-setup --owner "$(cut -d" " -f2 /root/owner.key)" --sd-ok
             for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8080/ | grep -qi "<html" && { echo "vault answers"; exit 0; }; sleep 2; done
             journalctl --no-pager -u nostr-vault -n 40; exit 1'
       - name: After setup, X11 and Wayland - the web app, a killed page, and the control
@@ -267,6 +277,14 @@ jobs:
           docker exec nv sh /w/linux/native/test/window-test.sh x11 vault /tmp/nvwt-out || r=1
           docker exec nv sh /w/linux/native/test/window-test.sh wayland vault /tmp/nvwt-out || r=1
           exit $r
+      - name: Client tag, end to end - a note signed with the window's user agent says "on Linux" on the relay
+        run: |
+          # The user agent the window's web view gave its pages (window-test.sh's setup stage), the throwaway owner's
+          # key, and this container's own vault as the relay. A plain browser's note must still say "on Web".
+          ua=$(docker exec nv cat /tmp/nvwt-out/x11-ua.txt); echo "window user agent: $ua"
+          [ "$ua" = "$(docker exec nv cat /tmp/nvwt-out/wayland-ua.txt)" ] || { echo "X11 and Wayland user agents differ"; exit 1; }
+          ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' nv)
+          node web-vault/tools/client-tag-e2e.mjs "ws://$ip:8080" "$(docker exec nv cut -d' ' -f1 /root/owner.key)" "$ua"
       - name: Screenshots
         if: always()
         run: docker cp nv:/tmp/nvwt-out "window-${{ matrix.distro }}-${{ matrix.arch }}" || true

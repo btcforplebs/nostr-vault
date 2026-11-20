@@ -69,6 +69,13 @@ ROUTES = {  # the Mac app's tabs, as the web app's routes
     "compose": "#/compose",
 }
 BG = "#000000"
+# Added to WebKit's user agent, so the web app in this window posts as "Nostr Vault on Linux" (web-vault's
+# client-tag.js looks for this word; a plain browser has none and stays "on Web").
+UA_MARK = "NostrVaultLinux"
+# A page whose web process ends again within this many seconds of the last crash page is crashing on every page (a GPU
+# driver that kills each renderer, say): stop loading pages and show the crash page drawn by GTK, which needs no web
+# process, instead of starting one renderer after another.
+CRASH_LOOP_S = 5
 
 
 def read_env(path=ENV_FILE):
@@ -174,6 +181,8 @@ class App(Gtk.Application):
         self.pending_route = None
         self.setup_running = False
         self.crashed = False  # the waiting page shows a crashed page: wait for Reload, don't reload by itself
+        self.crash_page_at = None  # when the last crash page was loaded (time.monotonic())
+        self.stopped = None  # the GTK crash page, in place of the web view, after a crash loop
 
     # ---- start-up
 
@@ -310,6 +319,7 @@ class App(Gtk.Application):
         s.set_enable_developer_extras(os.environ.get("NV_DESKTOP_DEBUG") == "1")
         s.set_javascript_can_access_clipboard(True)
         s.set_enable_write_console_messages_to_stdout(os.environ.get("NV_DESKTOP_DEBUG") == "1")
+        s.set_user_agent_with_application_details(UA_MARK, "1")
         view.set_background_color(Gdk.RGBA(0, 0, 0, 1))
         view.connect("decide-policy", self.on_policy)
         view.connect("permission-request", self.on_permission)
@@ -351,12 +361,14 @@ class App(Gtk.Application):
         return f"http://127.0.0.1:{vault_port(self.env)}"
 
     def load_vault(self, route):
+        self.use_view()
         self.page = "vault"
         self.crashed = False
         self.view.load_uri(self.origin() + "/" + ROUTES.get(route or "", ""))
 
     def load_local(self, name, state):
         """One of this app's own pages (setup, waiting), with its state handed in before its script runs."""
+        self.use_view()
         with open(os.path.join(SHARE, name), encoding="utf-8") as f:
             # Inside an inline <script>: no "<" may survive, or a drive named "</script>…" writes the page.
             html = f.read().replace("/*NV_STATE*/null", json.dumps(state).replace("<", "\\u003c"))
@@ -374,6 +386,8 @@ class App(Gtk.Application):
         self.page = "waiting"
         self.pending_route = route
         self.crashed = crashed
+        if crashed:
+            self.crash_page_at = time.monotonic()
         state = "crashed" if crashed else service_state()
         self.load_local("setup.html", {"page": "waiting", "state": state, "port": vault_port(self.env)})
 
@@ -427,7 +441,51 @@ class App(Gtk.Application):
         # The page's renderer crashed or was killed: WebKit leaves a dead, empty view. Say so, with a Reload button.
         why = getattr(reason, "value_nick", reason)
         print(f"nostr-vault-desktop: the page's web process ended ({why})", file=sys.stderr)
+        if self.crash_page_at is not None and time.monotonic() - self.crash_page_at < CRASH_LOOP_S:
+            # It died again right after the last crash page: every page crashes. Loading another would start another
+            # web process to die, so stop here until someone presses Reload.
+            print("nostr-vault-desktop: it ended again within "
+                  f"{CRASH_LOOP_S} s of the last crash page; not loading another page", file=sys.stderr)
+            self.show_stopped()
+            return
         self.load_waiting(self.pending_route, crashed=True)
+
+    def show_stopped(self):
+        """The crash page, drawn by GTK (no web process), in place of the web view."""
+        self.page = "stopped"
+        self.crashed = True
+        if self.stopped is not None:
+            return
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        box.set_valign(Gtk.Align.CENTER)
+        box.set_halign(Gtk.Align.CENTER)
+        title = Gtk.Label()
+        title.set_markup("<span size='x-large' weight='bold'>The window stopped drawing</span>")
+        body = Gtk.Label(label="Its page crashed again as soon as it came back, so the window has stopped loading it.\n"
+                               "Your vault keeps running. You can open it in a browser at " + self.origin() + "/\n"
+                               "If this keeps happening, quit Nostr Vault from its tray icon and open it again.")
+        body.set_justify(Gtk.Justification.CENTER)
+        body.set_line_wrap(True)
+        button = Gtk.Button(label="Reload")
+        button.set_halign(Gtk.Align.CENTER)
+        button.connect("clicked", lambda *_: self.reopen())
+        for w in (title, body, button):
+            box.pack_start(w, False, False, 0)
+        self.window.remove(self.view)
+        self.window.add(box)
+        box.show_all()
+        self.stopped = box
+
+    def use_view(self):
+        """Put the web view back in the window if the GTK crash page took its place."""
+        if self.stopped is None:
+            return
+        self.window.remove(self.stopped)
+        self.stopped.destroy()
+        self.stopped = None
+        self.crash_page_at = None  # someone asked for a page again: a new crash gets the web crash page first
+        self.window.add(self.view)
+        self.view.show()
 
     def reopen(self):
         """Reload from the waiting page: the vault if it answers, else the waiting page again."""
