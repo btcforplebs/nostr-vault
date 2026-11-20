@@ -112,7 +112,7 @@ enum class DeleteScope { MIRRORS, EVERYWHERE }
 
 /** Media type filter matching iOS MediaTypeFilter. */
 enum class MediaTypeFilter {
-    ALL, PHOTO, VIDEO, GIF, OTHER;
+    ALL, PHOTO, VIDEO, GIF, AUDIO, OTHER;
 
     /**
      * Whether [item] belongs under this filter. Shared by the Media tab and
@@ -123,7 +123,8 @@ enum class MediaTypeFilter {
         PHOTO -> item.isImage && !item.isGif
         VIDEO -> item.isVideo
         GIF -> item.isGif
-        OTHER -> !item.isImage && !item.isVideo
+        AUDIO -> item.isAudio && !item.isGif
+        OTHER -> !item.isImage && !item.isVideo && !item.isAudio
     }
 }
 

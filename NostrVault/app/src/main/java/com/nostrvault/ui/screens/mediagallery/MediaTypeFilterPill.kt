@@ -35,6 +35,7 @@ internal fun MediaTypeFilterPill(
                 MediaTypeFilter.PHOTO -> NostrVaultIcons.Media to "Photos"
                 MediaTypeFilter.VIDEO -> NostrVaultIcons.Video to "Videos"
                 MediaTypeFilter.GIF -> NostrVaultIcons.Gif to "GIFs"
+                MediaTypeFilter.AUDIO -> NostrVaultIcons.Music to "Audio"
                 MediaTypeFilter.OTHER -> NostrVaultIcons.Document to "Other"
             }
             MediaFilterIcon(
@@ -50,7 +51,7 @@ internal fun MediaTypeFilterPill(
 
 /**
  * The type filters as one menu, for the Vault tab, where the mode pill takes
- * the leading cluster: All Media, then Photos, Videos and GIFs, ticked when
+ * the leading cluster: All Media, then Photos, Videos, GIFs and Audio, ticked when
  * on. Same taps as [MediaTypeFilterPill] (iOS mediaTypeMenu).
  */
 @Composable
@@ -76,6 +77,7 @@ internal fun MediaTypeMenu(
                 Triple(MediaTypeFilter.PHOTO, "Photos", NostrVaultIcons.Media),
                 Triple(MediaTypeFilter.VIDEO, "Videos", NostrVaultIcons.Video),
                 Triple(MediaTypeFilter.GIF, "GIFs", NostrVaultIcons.Gif),
+                Triple(MediaTypeFilter.AUDIO, "Audio", NostrVaultIcons.Music),
             )) {
                 // All ticks only when everything is on; a type, only when narrowed.
                 val on = if (filter == MediaTypeFilter.ALL) all else !all && filter in selection

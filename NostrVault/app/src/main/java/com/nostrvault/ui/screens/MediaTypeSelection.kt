@@ -12,7 +12,7 @@ import androidx.compose.ui.platform.LocalContext
 
 /**
  * The Media tab's type filter as a set, as on iOS (`MediaTypeFilter`
- * selection): any mix of Photo, Video, GIF and Other, where the full set is
+ * selection): any mix of Photo, Video, GIF, Audio and Other, where the full set is
  * "All". [MediaTypeFilter.ALL] is never stored; it stands for the full set.
  * The composer's relay picker reads and writes the same setting.
  */
@@ -21,15 +21,16 @@ object MediaTypeSelection {
     const val STORAGE_KEY = "mediaGallery.typeFilter"
 
     val TYPES: List<MediaTypeFilter> =
-        listOf(MediaTypeFilter.PHOTO, MediaTypeFilter.VIDEO, MediaTypeFilter.GIF, MediaTypeFilter.OTHER)
+        listOf(MediaTypeFilter.PHOTO, MediaTypeFilter.VIDEO, MediaTypeFilter.GIF, MediaTypeFilter.AUDIO, MediaTypeFilter.OTHER)
 
     val ALL: Set<MediaTypeFilter> = TYPES.toSet()
 
-    /** The one type [item] counts as: a GIF first, then photo or video; audio and the rest are Other. */
+    /** The one type [item] counts as: a GIF first, then photo, video or audio (by type or file ending); the rest are Other. */
     fun category(item: BlossomMediaItem): MediaTypeFilter = when {
         item.isGif -> MediaTypeFilter.GIF
         item.isImage -> MediaTypeFilter.PHOTO
         item.isVideo -> MediaTypeFilter.VIDEO
+        item.isAudio -> MediaTypeFilter.AUDIO
         else -> MediaTypeFilter.OTHER
     }
 
@@ -56,12 +57,16 @@ object MediaTypeSelection {
     fun toKey(selection: Set<MediaTypeFilter>): String =
         TYPES.filter { it in selection }.joinToString(",") { it.name.lowercase() }
 
+    /** Everything as saved before Audio existed; it still means everything. */
+    private val ALL_BEFORE_AUDIO: Set<MediaTypeFilter> =
+        setOf(MediaTypeFilter.PHOTO, MediaTypeFilter.VIDEO, MediaTypeFilter.GIF, MediaTypeFilter.OTHER)
+
     /** Empty or unreadable means everything, as iOS `selection(from:)`. */
     fun fromKey(raw: String?): Set<MediaTypeFilter> {
         val parsed = raw.orEmpty().split(',').mapNotNull { name ->
             TYPES.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) }
         }.toSet()
-        return parsed.ifEmpty { ALL }
+        return if (parsed.isEmpty() || parsed == ALL_BEFORE_AUDIO) ALL else parsed
     }
 }
 
