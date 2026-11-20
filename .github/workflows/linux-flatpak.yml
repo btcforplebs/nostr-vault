@@ -11,6 +11,7 @@ on:
     paths:
       - "linux/flatpak/**"
       - "linux/native/desktop/**"
+      - "linux/native/test/window-test.sh"
       - ".github/workflows/linux-flatpak.yml"
 
 # Read-only token: the build runs npm and Go tooling.
@@ -62,7 +63,21 @@ jobs:
           flatpak info --user app.nostrvault.Desktop
           (cd ../native/test/keytool && go build -o "$RUNNER_TEMP/keytool" .)
           npub=$("$RUNNER_TEMP/keytool" gen | cut -d' ' -f2)
+          # The window before setup (its setup page), X11 and Wayland: linux/native/test/window-test.sh.
+          sudo apt-get install -y -q --no-install-recommends sway grim imagemagick
+          r=0
+          for m in x11 wayland; do NV_WT_CMD="flatpak run app.nostrvault.Desktop" NV_WT_CONTROL=0 sh ../native/test/window-test.sh $m setup "$RUNNER_TEMP/window" || r=1; done
           xvfb-run -a flatpak run --env=NV_TEST_NPUB="$npub" --command=python3 app.nostrvault.Desktop -I - < test/smoke.py
+          # Set up now: the window starts its own vault and must draw the web app, then the page after a killed one.
+          # (No control run: a Flatpak can't run a copy of its own script. The .deb's window test runs it.)
+          for m in x11 wayland; do NV_WT_CMD="flatpak run app.nostrvault.Desktop" NV_WT_CONTROL=0 sh ../native/test/window-test.sh $m vault "$RUNNER_TEMP/window" || r=1; done
+          exit $r
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: window-flatpak-${{ matrix.arch }}
+          path: ${{ runner.temp }}/window/
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: nostr-vault-flatpak-${{ matrix.arch }}

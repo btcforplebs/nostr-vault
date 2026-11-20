@@ -187,6 +187,92 @@ jobs:
         if: failure()
         run: docker logs nv 2>&1 | tail -80 || true
 
+  # The desktop window, as a gate: each package on its system, both arches, in a container that boots systemd. Opens
+  # the window on X11 (Xvfb) and on Wayland (headless sway), before setup (the setup page) and after (the web app
+  # from the real vault), and fails if it draws a flat colour: a blank window (linux/native/test/window-test.sh).
+  # Software rendering only: no runner has a GPU, so this can't show a GPU driver's own failure.
+  window-test:
+    needs: build
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { distro: ubuntu, arch: amd64, runner: ubuntu-24.04, image: "ubuntu:24.04", pkg: "*_amd64.deb" }
+          - { distro: ubuntu, arch: arm64, runner: ubuntu-24.04-arm, image: "ubuntu:24.04", pkg: "*_arm64.deb" }
+          - { distro: debian, arch: amd64, runner: ubuntu-24.04, image: "debian:stable", pkg: "*_amd64.deb" }
+          - { distro: debian, arch: arm64, runner: ubuntu-24.04-arm, image: "debian:stable", pkg: "*_arm64.deb" }
+          - { distro: fedora, arch: amd64, runner: ubuntu-24.04, image: "fedora:latest", pkg: "*.x86_64.rpm" }
+          - { distro: fedora, arch: arm64, runner: ubuntu-24.04-arm, image: "fedora:latest", pkg: "*.aarch64.rpm" }
+          - { distro: arch, arch: amd64, runner: ubuntu-24.04, image: "archlinux:latest", pkg: "*-x86_64.pkg.tar.zst" }
+          - { distro: arch, arch: arm64, runner: ubuntu-24.04-arm, image: "menci/archlinuxarm:latest", pkg: "*-aarch64.pkg.tar.zst" }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: linux/native/test
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nostr-vault-deb-${{ matrix.arch }}
+          path: pkgs
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - name: Throwaway-key tool (static, for the container)
+        run: cd linux/native/test/keytool && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/keytool" .
+      - name: Boot a ${{ matrix.distro }} container with systemd and the display tools
+        run: |
+          # systemd, then what the test drives the window with: Xvfb, sway + grim, ImageMagick, dbus-run-session, a font.
+          case ${{ matrix.distro }} in
+            ubuntu|debian) prep='apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends systemd systemd-sysv dbus dbus-user-session procps iproute2 curl ca-certificates xvfb sway grim imagemagick fonts-dejavu-core && apt-get clean' ;;
+            fedora) prep='dnf install -y -q systemd procps-ng iproute util-linux curl findutils xorg-x11-server-Xvfb sway grim ImageMagick dbus-daemon dejavu-sans-fonts && dnf clean all' ;;
+            arch) prep="sed -i -e 's/^CheckSpace/#CheckSpace/' -e '/^\\[options\\]/a DisableSandbox' /etc/pacman.conf && pacman -Syu --noconfirm --needed systemd procps-ng iproute2 util-linux curl findutils xorg-server-xvfb sway grim imagemagick dbus ttf-dejavu && pacman -Scc --noconfirm" ;;
+          esac
+          printf 'FROM %s\nRUN %s\n' "${{ matrix.image }}" "$prep" | docker build -t nv-test -
+          docker run -d --name nv --privileged --cgroupns=private --stop-signal SIGRTMIN+3 -e container=docker \
+            --tmpfs /run --tmpfs /run/lock -v "$PWD:/w:ro" -v "$RUNNER_TEMP/keytool:/usr/local/bin/keytool:ro" \
+            nv-test /usr/lib/systemd/systemd
+          for i in $(seq 1 30); do case $(docker exec nv systemctl is-system-running --wait 2>/dev/null) in running|degraded) break ;; esac; sleep 1; done
+          docker exec nv sh -c '. /etc/os-release; echo "$PRETTY_NAME $(uname -m)"'
+      - name: Install the package with its desktop libraries
+        run: |
+          p=$(cd pkgs && ls ${{ matrix.pkg }}); echo "$p"
+          case ${{ matrix.distro }} in
+            ubuntu|debian) docker exec nv sh -c "cp /w/pkgs/$p /tmp/ && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --install-recommends /tmp/$p" ;;
+            fedora) docker exec nv dnf install -y -q --setopt=install_weak_deps=True "/w/pkgs/$p" ;;
+            # pacman never installs optdepends: the window's, by hand (as the Linux docs page says).
+            arch) docker exec nv pacman -U --noconfirm --needed "/w/pkgs/$p" python python-gobject gtk3 webkit2gtk-4.1 libayatana-appindicator ;;
+          esac
+          docker exec nv sh -c 'python3 -c "import gi; gi.require_version(\"WebKit2\",\"4.1\"); from gi.repository import WebKit2; print(\"WebKitGTK\", WebKit2.get_major_version(), WebKit2.get_minor_version(), WebKit2.get_micro_version())"'
+      - name: Before setup, X11 and Wayland - the setup page
+        run: |
+          r=0
+          docker exec nv sh /w/linux/native/test/window-test.sh x11 setup /tmp/nvwt-out || r=1
+          docker exec nv sh /w/linux/native/test/window-test.sh wayland setup /tmp/nvwt-out || r=1
+          exit $r
+      - name: Set the vault up (throwaway owner)
+        run: |
+          docker exec nv sh -c 'nostr-vault-setup --owner "$(keytool gen | cut -d" " -f2)" --sd-ok
+            for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8080/ | grep -qi "<html" && { echo "vault answers"; exit 0; }; sleep 2; done
+            journalctl --no-pager -u nostr-vault -n 40; exit 1'
+      - name: After setup, X11 and Wayland - the web app, a killed page, and the control
+        run: |
+          r=0
+          docker exec nv sh /w/linux/native/test/window-test.sh x11 vault /tmp/nvwt-out || r=1
+          docker exec nv sh /w/linux/native/test/window-test.sh wayland vault /tmp/nvwt-out || r=1
+          exit $r
+      - name: Screenshots
+        if: always()
+        run: docker cp nv:/tmp/nvwt-out "window-${{ matrix.distro }}-${{ matrix.arch }}" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: window-${{ matrix.distro }}-${{ matrix.arch }}
+          path: window-${{ matrix.distro }}-${{ matrix.arch }}/
+          retention-days: 14
+
   # The .rpm on a real Fedora machine, not a container: Fedora Cloud in a QEMU/KVM VM, SELinux enforcing as Fedora
   # ships it (a container has no SELinux of its own). install-test.sh, then install again and reboot the VM: the vault
   # and its mesh must come back, the relay and the mesh must answer, and the audit log must have no AVC denial at all.

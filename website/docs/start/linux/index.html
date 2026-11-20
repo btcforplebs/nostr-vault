@@ -247,6 +247,12 @@
                     stop the vault. The tray icon shows the vault's status (for example <strong>Vault running · 2 devices on the
                     mesh</strong>) and has <strong>Open Nostr Vault</strong>, <strong>New Note</strong>, Feed, Vault, My Devices,
                     Settings and <strong>Copy box npub</strong>.</p>
+                <p><strong>A black or blank window?</strong> First check the vault itself: open <code>http://127.0.0.1:8080/</code>
+                    in your web browser. If the vault shows there, only the window is stuck. Beta 4 and newer turn off the graphics
+                    path that draws nothing on some graphics cards (the NVIDIA driver, some laptops, virtual machines). On an older
+                    beta, quit the window from the tray (or run <code>pkill -f nostr-vault-desktop</code>), then start it with
+                    <code>WEBKIT_DISABLE_DMABUF_RENDERER=1 nostr-vault-desktop</code>. If the window ever says <strong>The window
+                    stopped drawing</strong>, click <strong>Reload</strong>. Your vault keeps running either way.</p>
 
                 <h2 id="open">Open your vault and link it</h2>
                 <ol class="steps">

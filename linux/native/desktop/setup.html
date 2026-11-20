@@ -71,6 +71,7 @@
   <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"/></svg></div>
   <h1 id="wtitle">Your vault is starting</h1>
   <p class="lead"><span class="dot" id="wdot"></span><span id="wtext">This takes a few seconds. The window opens it when it's ready.</span></p>
+  <button id="reload" hidden>Reload</button>
   <button id="start" hidden>Start the vault</button>
   <button id="logs" class="ghost" hidden>Show its log</button>
 </main>
@@ -85,12 +86,18 @@
   if (state.page === "waiting") {
     $("waiting").hidden = false
     const failed = state.state === "failed" || state.state === "inactive"
-    if (failed) {
+    if (state.state === "crashed") {
+      $("wtitle").textContent = "The window stopped drawing"
+      $("wtext").textContent = "The page crashed. Your vault is still running."
+      $("wdot").className = "dot failed"
+      $("reload").hidden = false
+    } else if (failed) {
       $("wtitle").textContent = "Your vault isn't running"
       $("wtext").textContent = state.state === "failed" ? "It stopped with an error." : "It's stopped."
       $("wdot").className = "dot " + state.state
       $("start").hidden = false; $("logs").hidden = false
     }
+    $("reload").onclick = () => post({ do: "reload" })
     $("start").onclick = () => post({ do: "start" })
     $("logs").onclick = () => post({ do: "logs" })
   } else {

@@ -20,7 +20,13 @@ import time
 import urllib.error
 import urllib.request
 
-import gi
+# WebKitGTK's DMA-BUF renderer draws nothing (a black window) on some graphics stacks: the NVIDIA driver, some
+# hybrid-GPU laptops, VMs without 3D (a Zorin OS 18 desktop showed only black, 2026-11-20). These pages don't need GPU
+# compositing, so it is off unless someone asks for it (WEBKIT_DISABLE_DMABUF_RENDERER=0). Set before WebKit loads:
+# its web processes read it when they start.
+os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+
+import gi  # noqa: E402
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
@@ -167,6 +173,7 @@ class App(Gtk.Application):
         self.page = None  # "vault", "setup" or "waiting": what the window shows
         self.pending_route = None
         self.setup_running = False
+        self.crashed = False  # the waiting page shows a crashed page: wait for Reload, don't reload by itself
 
     # ---- start-up
 
@@ -268,7 +275,7 @@ class App(Gtk.Application):
         self.env = read_env()
         if self.status_item is not None:
             self.status_item.set_label(self.status_line())
-        if self.page == "waiting" and answers(vault_port(self.env)):
+        if self.page == "waiting" and not self.crashed and answers(vault_port(self.env)):
             self.load_vault(self.pending_route)
         return True
 
@@ -308,6 +315,7 @@ class App(Gtk.Application):
         view.connect("permission-request", self.on_permission)
         view.connect("create", self.on_create)
         view.connect("load-failed", self.on_load_failed)
+        view.connect("web-process-terminated", self.on_web_process_terminated)
 
         win = Gtk.ApplicationWindow(application=self, title="Nostr Vault")
         win.set_default_size(1240, 860)  # the Mac window's first size
@@ -344,6 +352,7 @@ class App(Gtk.Application):
 
     def load_vault(self, route):
         self.page = "vault"
+        self.crashed = False
         self.view.load_uri(self.origin() + "/" + ROUTES.get(route or "", ""))
 
     def load_local(self, name, state):
@@ -355,15 +364,17 @@ class App(Gtk.Application):
 
     def load_setup(self):
         self.page = "setup"
+        self.crashed = False
         if fp:
             self.load_local("setup.html", {"page": "setup", "drives": fp.drives(), "setup": True})
             return
         self.load_local("setup.html", {"page": "setup", "drives": drive_choices(), "setup": os.access(SETUP, os.X_OK)})
 
-    def load_waiting(self, route):
+    def load_waiting(self, route, crashed=False):
         self.page = "waiting"
         self.pending_route = route
-        state = service_state()
+        self.crashed = crashed
+        state = "crashed" if crashed else service_state()
         self.load_local("setup.html", {"page": "waiting", "state": state, "port": vault_port(self.env)})
 
     # ---- web view policies
@@ -412,6 +423,22 @@ class App(Gtk.Application):
             return True
         return False
 
+    def on_web_process_terminated(self, view, reason):
+        # The page's renderer crashed or was killed: WebKit leaves a dead, empty view. Say so, with a Reload button.
+        why = getattr(reason, "value_nick", reason)
+        print(f"nostr-vault-desktop: the page's web process ended ({why})", file=sys.stderr)
+        self.load_waiting(self.pending_route, crashed=True)
+
+    def reopen(self):
+        """Reload from the waiting page: the vault if it answers, else the waiting page again."""
+        self.env = read_env()
+        if not self.env.get("NV_OWNER"):
+            self.load_setup()
+        elif answers(vault_port(self.env)):
+            self.load_vault(self.pending_route)
+        else:
+            self.load_waiting(self.pending_route)
+
     # ---- the local pages' messages
 
     def on_message(self, _ucm, result):
@@ -425,6 +452,9 @@ class App(Gtk.Application):
                 or not (self.view.get_uri() or "").startswith("nv-desktop://local/"):
             return
         what = msg.get("do")
+        if what == "reload" and self.page == "waiting":
+            self.reopen()
+            return
         if fp:
             self.on_flatpak_message(what, msg)
             return
