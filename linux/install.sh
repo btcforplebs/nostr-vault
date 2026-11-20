@@ -57,8 +57,8 @@ yes_no() { # yes_no <question>: true for y/yes; no (and unattended runs) is fals
 # 1. This machine.
 [ "$(uname -s)" = Linux ] || die "this installer is for Linux"
 case "$(uname -m)" in
-  aarch64|arm64) arch=arm64 m=aarch64 ;;
-  x86_64|amd64) arch=amd64 m=x86_64 ;;
+  aarch64|arm64) arch=arm64 rpmarch=aarch64 ;;
+  x86_64|amd64) arch=amd64 rpmarch=x86_64 ;;
   *) die "Nostr Vault runs on 64-bit ARM or x86 machines; this one is $(uname -m)" ;;
 esac
 say "Nostr Vault for Linux ($arch)"
@@ -81,8 +81,8 @@ elif command -v pacman >/dev/null 2>&1; then pm=pacman
 fi
 pkg_name() { case $pm in
   apt) printf 'nostr-vault_%s_%s.deb' "$1" "$arch" ;;
-  dnf) printf 'nostr-vault-%s-1.%s.rpm' "$1" "$m" ;;
-  pacman) printf 'nostr-vault-%s-1-%s.pkg.tar.zst' "$1" "$m" ;; esac; }
+  dnf) printf 'nostr-vault-%s-1.%s.rpm' "$1" "$rpmarch" ;;
+  pacman) printf 'nostr-vault-%s-1-%s.pkg.tar.zst' "$1" "$rpmarch" ;; esac; }
 if [ "$mode" = native ] && [ -z "$pm" ]; then
   [ "${NV_NATIVE:-0}" = 1 ] && die "the native app is a package for apt, dnf or pacman (Debian, Ubuntu, Raspberry Pi OS, Fedora, Arch); on this system use Docker: NV_DOCKER=1"
   say "This system has no apt, dnf or pacman, so the vault runs in Docker."
