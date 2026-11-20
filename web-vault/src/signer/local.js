@@ -13,6 +13,7 @@ import { bech32 } from "@scure/base"
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
 import { seal, unseal, assertCanSeal, LOST_KEY } from "./keyring.js"
 import { checkedPubkey } from "../session.js"
+import { assertNoSecretKey } from "../net/secret-key-leak.js"
 
 /** What the user is doing when a plain-http page can't keep the key (keyring.js insecure). */
 export const CREATING = "Creating an account"
@@ -126,7 +127,7 @@ export function localSigner(session, { keyStore } = {}) {
   return {
     method: "local",
     ready: async () => { await key() },
-    signEvent: async template => finalizeEvent({ ...template }, await key()),
+    signEvent: async template => { assertNoSecretKey(template); return finalizeEvent({ ...template }, await key()) },
     crypto: {
       encrypt: async (peer, text) => nip44.v2.encrypt(text, nip44.v2.utils.getConversationKey(await key(), peer)),
       decrypt: async (peer, ciphertext) => nip44.v2.decrypt(ciphertext, nip44.v2.utils.getConversationKey(await key(), peer)),

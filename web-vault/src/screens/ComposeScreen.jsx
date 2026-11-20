@@ -40,6 +40,7 @@ import { ComposeAttachments } from "./compose/ComposeAttachments.jsx"
 import { ComposePreview } from "./compose/ComposePreview.jsx"
 import { isMedia, isVideo } from "./compose/media-kind.js"
 import { useKeyboardFrame } from "../components/keyboard-frame.js"
+import { SECRET_KEY_BLOCKED, eventHasSecretKey } from "../net/secret-key-leak.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/compose.css")
@@ -344,6 +345,8 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
     try { built = buildPost({ text, mentions, photos: ready, target, parent, drop: notReady, emojis }) } catch (e) { return setErr(String(e?.message ?? e)) }
     // Never an empty kind 1, whatever led here (Tron, #1510).
     if (!built.content.trim()) return setErr("There's nothing to post yet.")
+    // A secret key is never posted; the text stays so it can be taken out (net/secret-key-leak.js). The signer checks too.
+    if (eventHasSecretKey(built)) return setErr(SECRET_KEY_BLOCKED)
     const action = sendAction(target), seconds = sendDelaySeconds()
     if (seconds > 0) setPending({ action, total: seconds, remaining: seconds })
     countdown.current = startCountdown({

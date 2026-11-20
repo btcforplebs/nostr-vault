@@ -8,6 +8,7 @@ import { checkSigned } from "./sync.js"
 import { askRelay, MAX_SKEW, MAX_LOCAL_AGE } from "./follows.js"
 import { putProfile } from "./profiles.js"
 import { firstTaken } from "./actions.js"
+import { containsSecretKey, secretKeyError } from "./secret-key-leak.js"
 
 /** The kind-0 keys the form shows, in its order. */
 export const FIELDS = ["display_name", "name", "nip05", "about", "picture", "banner", "website", "lud16"]
@@ -118,6 +119,8 @@ export function profileGuard({ event, asked, answered, netFound, future }, at = 
  * throws when the newest copy can't be found, signing fails, or no relay took it. `lookup` and `publish` are for tests.
  */
 export async function saveProfile(ctx, initial, edited, { lookup = latestProfile, publish = (urls, ev) => pool.publish(urls, ev) } = {}) {
+  // A secret key typed into any field is never published (net/secret-key-leak.js); the form keeps it to be taken out.
+  if (Object.values(edited ?? {}).some(v => containsSecretKey(typeof v === "string" ? v : JSON.stringify(v ?? "")))) throw secretKeyError()
   const found = await lookup(ctx)
   const refused = profileGuard(found)
   if (refused) throw new Error(refused)

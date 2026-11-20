@@ -4,10 +4,13 @@
 // already use. While it loads it fails closed: only you, your follows and whoever the view names (`also`: the note's
 // author, the stream's host) count as inside, so a stranger never shows and then goes.
 
+import { isPublicKeyAccount } from "./secret-key-leak.js"
+
 /** Whether `pk` is inside the web. `trust`: the trust set, or null while it loads. */
 export function insideWeb(pk, trust, { me = null, follows = [], also = [] } = {}) {
   if (!pk) return false
   if (pk === me || also.includes(pk)) return true
+  if (isPublicKeyAccount(pk)) return false // anyone can sign as it (net/secret-key-leak.js)
   return trust ? trust.has(pk) : follows.includes(pk)
 }
 

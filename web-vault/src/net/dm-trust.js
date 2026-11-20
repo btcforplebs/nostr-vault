@@ -9,11 +9,15 @@
 //
 // Fails closed: with no trust graph yet (an empty set), only conversations the user wrote in reach the inbox.
 
+import { isPublicKeyAccount } from "./secret-key-leak.js"
+
 /** Whether a conversation with `counterparty` belongs in the inbox. `trusted` and `own` are Sets of hex keys. */
 export function isInbox(counterparty, youWrote, trusted, own) {
   if (youWrote) return true
   const key = String(counterparty ?? "").toLowerCase()
   for (const o of own) if (String(o).toLowerCase() === key) return true
+  // A key whose secret is published waits under Requests: anyone can write as it (net/secret-key-leak.js).
+  if (isPublicKeyAccount(key)) return false
   return trusted.has(key) || trusted.has(counterparty)
 }
 

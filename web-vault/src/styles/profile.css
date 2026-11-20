@@ -18,6 +18,8 @@
 .profile-name-row .badge-seal { font-size: 13px; }
 .profile-badge { margin-left: auto; flex: none; display: inline-flex; }
 .profile-nip05 { font: 12px/1.3 var(--font); }
+/* net/secret-key-leak.js: this account's secret key is published. */
+.public-key-label { margin: 8px var(--gutter, 16px) 0; padding: 8px 10px; border-radius: 8px; font: 600 13px/1.3 var(--font); color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 
 /* Icon tabs with their counts, equal widths, the selected one in the accent over a 2px line. */
 .profile-tabs { padding: 0 16px; margin: 16px 0 12px; border-top: .5px solid var(--hair); border-bottom: 0;

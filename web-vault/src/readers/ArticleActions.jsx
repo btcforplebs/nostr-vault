@@ -11,6 +11,7 @@ import { actionState, loadSent, myReaction, onActionState, publishAction } from 
 import { sendDelaySeconds, startCountdown } from "../net/send-delay.js"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { commentTemplate, likeCount } from "./engagement.js"
+import { SECRET_KEY_BLOCKED, containsSecretKey } from "../net/secret-key-leak.js"
 
 const COMMENT_ICON = "M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-5A8 8 0 1 1 21 12z"
 const compact = n => (n >= 1000 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0).replace(/\.0$/, "")}K` : String(n))
@@ -68,6 +69,7 @@ export function CommentBox({ ctx, article, onSent, onCancel }) {
   }
   const post = () => {
     if (!text.trim() || state === "sending" || left) return
+    if (containsSecretKey(text)) return setState(SECRET_KEY_BLOCKED) // never posted; the words stay (net/secret-key-leak.js)
     setState("")
     timer.current = startCountdown({ seconds: sendDelaySeconds(), onTick: setLeft, onDone: send })
   }

@@ -5,6 +5,7 @@ import { generateSecretKey } from "nostr-tools/pure"
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
 import { checkedPubkey, loadSession, saveSession, rememberAccount } from "../session.js"
 import { seal, unseal, assertCanSeal } from "./keyring.js"
+import { assertNoSecretKey } from "../net/secret-key-leak.js"
 
 // The bunker sends this URL, and a hostile bunker link is how a phishing attempt would start, so only web pages
 // are shown. The scheme check is what keeps a javascript: URL out; noopener only cuts the new page off from this one.
@@ -127,7 +128,8 @@ export function wrap(ready, { ms = ANSWER_TIMEOUT_MS } = {}) {
   return {
     method: "nip46",
     crypto: bunkerCrypto(ready, ms),
-    signEvent: t => ready.then(b => answered(b.signEvent(t), ms)),
+    // A secret key never goes to the bunker, not even encrypted (net/secret-key-leak.js).
+    signEvent: async t => { assertNoSecretKey(t); return ready.then(b => answered(b.signEvent(t), ms)) },
     close: () => { ready.then(b => b.close(), () => {}) },
     /** -> true if the bunker confirmed it dropped the grant. Always closes the signer. */
     revoke: () => ready.then(b => answered(b.logout(), LOGOUT_TIMEOUT_MS).then(() => true, () => false).finally(() => b.close()), () => false),
