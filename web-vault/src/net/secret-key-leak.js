@@ -46,11 +46,19 @@ export function containsSecretKey(text) {
   return keys.length > 0
 }
 
+// "nsec1" and the 52 characters that carry the 32 key bytes, the checksum cut off. The setup name box keeps 60
+// characters, so a pasted nsec loses 3 checksum characters there and the key is still whole.
+const KEY_BODY = /nsec1[02-9ac-hj-np-z]{52}/i
+
+/** Whether `text` holds a whole key, checksum or not: for a box that cuts text short (CreateAccount's 60-character name). */
+export const holdsSecretKey = text => containsSecretKey(text) || (typeof text === "string" && KEY_BODY.test(text))
+
 /** The pubkeys (hex) of the valid nsecs in `text`. A key that isn't a valid secp256k1 scalar is skipped. */
 export function derivedPubkeys(text) {
   const out = new Set()
   for (const k of keysIn(text)) {
-    try { out.add(getPublicKey(k)) } catch {}
+    // 0 and the curve order (n) are no key: noble throws for them; an all-zero answer is skipped too, as the apps do.
+    try { const pk = getPublicKey(k); if (!/^0{64}$/.test(pk)) out.add(pk) } catch {}
     k.fill(0)
   }
   return [...out]
@@ -65,8 +73,13 @@ export const eventHasSecretKey = ev => eventTexts(ev).some(containsSecretKey)
 /** The guard's error: our sentence (`fixed`, so the Messages screen shows it as it is). */
 export const secretKeyError = () => Object.assign(new Error(SECRET_KEY_BLOCKED), { fixed: true, secretKey: true })
 
+/** A repost (kind 6, 16 generic) carries someone else's signed event as its content: their words, not yours, and
+ *  already public. Android and Apple let it through the same way. */
+const REPOST_KINDS = new Set([6, 16])
+
 /** Throws secretKeyError when the event carries a valid nsec. Every signer calls this before it signs. */
 export function assertNoSecretKey(ev) {
+  if (REPOST_KINDS.has(ev?.kind)) return
   if (eventHasSecretKey(ev)) throw secretKeyError()
 }
 

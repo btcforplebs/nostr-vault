@@ -16,6 +16,7 @@ import { askToKeep, sevenDayErase, KEEP_IT } from "../components/StorageNote.jsx
 import { KeyCard, painted } from "../components/KeyCard.jsx"
 import { ReferrerStep } from "./ReferrerStep.jsx"
 import "../styles/onboarding.css"
+import { SECRET_KEY_BLOCKED, holdsSecretKey } from "../net/secret-key-leak.js"
 
 // "referrer": who showed you this app (only here: new to Nostr, Logen 2026-11-05); whoever is picked joins the follows.
 const STEPS = ["intro", "keys", "password", "profile", "referrer", "follows", "relays", "done"]
@@ -143,6 +144,9 @@ function Password({ initial, onContinue }) {
 /** Step 11: name and photo, both optional. Nothing is uploaded until the last step. */
 function Profile({ name, setName, photo, setPhoto, onContinue, onSkip }) {
   const [err, setErr] = useState("")
+  // A secret key pasted as the name (the research note's 144 people): said here, Continue held, the text left to take
+  // out. Checked before the key is locked or a photo goes up (net/secret-key-leak.js; Done's signer checks again).
+  const keyInName = holdsSecretKey(name)
   const pick = async e => {
     const file = e.currentTarget.files?.[0]
     e.currentTarget.value = ""
@@ -167,7 +171,8 @@ function Profile({ name, setName, photo, setPhoto, onContinue, onSkip }) {
         <span>Name</span>
         <input value={name} onInput={e => setName(e.currentTarget.value)} placeholder="Your name" autocomplete="nickname" maxLength={60} />
       </label>
-      <button type="button" class="primary onboard-main" onClick={onContinue}>Continue</button>
+      {keyInName && <p class="error small" role="alert">{SECRET_KEY_BLOCKED}</p>}
+      <button type="button" class="primary onboard-main" disabled={keyInName} onClick={() => { if (!keyInName) onContinue() }}>Continue</button>
       <button type="button" class="onboard-skip" onClick={onSkip}>Skip for Now</button>
     </>
   )

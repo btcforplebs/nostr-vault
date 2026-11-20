@@ -8,14 +8,14 @@ import { nsecEncode } from "nostr-tools/nip19"
 import { bech32 } from "@scure/base"
 import {
   SECRET_KEY_BLOCKED, PUBLIC_KEY_LABEL, containsSecretKey, derivedPubkeys, eventHasSecretKey, assertNoSecretKey,
-  isPublicKeyAccount, notePublicKeys, onPublicKeys, forgetPublicKeys,
+  isPublicKeyAccount, notePublicKeys, onPublicKeys, forgetPublicKeys, holdsSecretKey,
 } from "../src/net/secret-key-leak.js"
 import { localSession, localSigner } from "../src/signer/local.js"
 import { extensionSigner, forgetAccountCheck } from "../src/signer/nip07.js"
 import { sendMessage, wrapFor, rumorFor } from "../src/net/dms.js"
 import { isInbox } from "../src/net/dm-trust.js"
 import { putProfile } from "../src/net/profiles.js"
-import { saveProfile, formFields } from "../src/net/profile-edit.js"
+import { saveProfile, formFields, removedNotice, withoutSecretKeys } from "../src/net/profile-edit.js"
 import { gateWeb, judge, VERDICTS } from "../src/net/web-gate.js"
 import { insideWeb } from "../src/net/web-trust.js"
 
@@ -146,4 +146,57 @@ test("a loaded profile with a key marks that key's account public; the gate keep
   assert.equal(isInbox(victim.pk, true, new Set(), new Set([me.pk])), true) // you wrote in it
   assert.ok(PUBLIC_KEY_LABEL.startsWith("Key is public"))
   forgetPublicKeys()
+})
+
+test("the zero key and the curve order derive no pubkey", () => {
+  const n = Uint8Array.from(Buffer.from("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", "hex"))
+  for (const bytes of [new Uint8Array(32), n]) {
+    const nsec = bech32.encode("nsec", bech32.toWords(bytes))
+    assert.equal(containsSecretKey(nsec), true) // still never published
+    assert.deepEqual(derivedPubkeys(nsec), [])
+    assert.deepEqual(notePublicKeys({ kind: 0, content: JSON.stringify({ name: nsec }), tags: [] }), [])
+  }
+})
+
+test("a repost carries someone else's note as it is: the signer lets kinds 6 and 16 through", async () => {
+  const me = fresh(), leaked = fresh()
+  const inner = finalizeEvent({ kind: 1, created_at: 1, tags: [], content: `oops ${leaked.nsec}` }, leaked.sk)
+  assert.doesNotThrow(() => assertNoSecretKey({ kind: 6, content: JSON.stringify(inner), tags: [["e", inner.id], ["p", inner.pubkey]] }))
+  assert.doesNotThrow(() => assertNoSecretKey({ kind: 16, content: JSON.stringify(inner), tags: [["k", "1"]] }))
+  const ks = memKeys()
+  const signer = localSigner(await localSession(me.sk, "correct horse", { keyStore: ks, logn: 4 }), { keyStore: ks })
+  assert.equal((await signer.signEvent({ kind: 6, created_at: 1, tags: [], content: JSON.stringify(inner) })).kind, 6)
+  // A quote is your own note: still refused.
+  await assert.rejects(signer.signEvent({ kind: 1, created_at: 1, tags: [["q", inner.id]], content: `look nostr:${leaked.nsec}` }), e => e.message === SECRET_KEY_BLOCKED)
+})
+
+test("the setup name box: a key with its checksum cut off (60 characters) still counts there", () => {
+  const k = fresh()
+  assert.equal(holdsSecretKey(k.nsec.slice(0, 60)), true)
+  assert.equal(containsSecretKey(k.nsec.slice(0, 60)), false) // everywhere else only a whole, valid key counts
+  assert.equal(holdsSecretKey(k.nsec.slice(0, 50)), false)
+  assert.equal(holdsSecretKey("Satoshi"), false)
+  assert.equal(holdsSecretKey(k.nsec), true)
+})
+
+test("Edit Profile leaves out a key hidden in a field or tag the form doesn't show, and says where", async () => {
+  const me = fresh(), leaked = fresh()
+  const prev = finalizeEvent({ kind: 0, created_at: 100, tags: [["i", "github:x", "proof"], ["note", leaked.nsec]],
+    content: JSON.stringify({ name: "sat", displayName: leaked.nsec, lud06: "lnurl1x" }) }, me.sk)
+  const signed = []
+  const ctx = { session: { pubkey: me.pk }, account: { relays: { read: [], write: ["wss://w.example"] } }, vault: { outbox: { event: async () => ({ ok: true }) } },
+    signer: { signEvent: async t => { assertNoSecretKey(t); const ev = finalizeEvent(t, me.sk); signed.push(ev); return ev } } }
+  const initial = formFields(prev)
+  const out = await saveProfile(ctx, initial, { ...initial, about: "hello" }, { lookup: async () => ({ event: prev, netFound: true, asked: 1, answered: 1 }), publish: urls => urls.map(() => Promise.resolve("")) })
+  assert.equal(signed.length, 1)
+  const c = JSON.parse(signed[0].content)
+  assert.deepEqual(c, { name: "sat", lud06: "lnurl1x", about: "hello" })
+  assert.deepEqual(signed[0].tags, [["i", "github:x", "proof"]])
+  assert.deepEqual(out.removed, ["displayName", "the note tag"])
+  const notice = removedNotice(out.removed)
+  assert.equal(notice, "Removed a secret key from displayName, the note tag.")
+  assert.equal(notice.includes(leaked.nsec), false)
+  assert.equal(removedNotice([]), "")
+  const clean = withoutSecretKeys({ name: "a", about: "b" }, [["t", "x"]])
+  assert.deepEqual(clean, { profile: { name: "a", about: "b" }, tags: [["t", "x"]], removed: [] })
 })
