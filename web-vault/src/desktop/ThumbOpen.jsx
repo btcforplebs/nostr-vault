@@ -2,7 +2,7 @@
 // size (MediaLightbox), as a photo in a full note does, instead of the thread. On a phone (thumbOpens false) the row's tap
 // opens the thread, as on the iPhone (components/CondensedNote.jsx Thumb).
 import { useState } from "preact/hooks"
-import { MediaImage } from "../components/MediaImage.jsx"
+import { ThumbPicture } from "../components/CondensedNote.jsx"
 import { MediaLightbox } from "../components/MediaLightbox.jsx"
 import { mediaType } from "../net/media.js"
 import { imageItem } from "../net/note-media.js"
@@ -22,7 +22,7 @@ export function ThumbOpen({ media, note, more, big }) {
     <span class={`condensed-thumb${big ? " big" : ""}`}>
       <button type="button" class="condensed-pic condensed-open" aria-label={more > 0 ? `View ${more + 1} photos and videos` : "View image"}
         onClick={e => { e.stopPropagation(); setOpen(true) }}>
-        <MediaImage item={imageItem(url, note.tags)} author={note.pubkey} loading="lazy" onError={e => e.currentTarget.classList.add("failed")} />
+        <ThumbPicture item={imageItem(url, note.tags)} author={note.pubkey} size={big ? 80 : 56} />
         {more > 0 && <span class="condensed-more">+{more}</span>}
       </button>
       {open && <MediaLightbox items={lightboxItems(media, note.tags)} author={note.pubkey} onClose={() => setOpen(false)} />}
