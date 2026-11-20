@@ -230,6 +230,10 @@ jobs:
             fedora) prep='dnf install -y -q systemd procps-ng iproute util-linux curl findutils xorg-x11-server-Xvfb sway grim ImageMagick dbus-daemon dejavu-sans-fonts && dnf clean all' ;;
             arch) prep="sed -i -e 's/^CheckSpace/#CheckSpace/' -e '/^\\[options\\]/a DisableSandbox' /etc/pacman.conf && pacman -Syu --noconfirm --needed systemd procps-ng iproute2 util-linux curl findutils xorg-server-xvfb sway grim imagemagick dbus ttf-dejavu && pacman -Scc --noconfirm" ;;
           esac
+          # The runner's AppArmor blocks the unprivileged user namespaces bubblewrap needs, in containers too. Fedora's
+          # image loader (glycin) runs every icon load in bubblewrap, and GTK aborts when it can't. A real Fedora
+          # desktop has no such block. (The Flatpak job lifts it for the same reason.)
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           printf 'FROM %s\nRUN %s\n' "${{ matrix.image }}" "$prep" | docker build -t nv-test -
           docker run -d --name nv --privileged --cgroupns=private --stop-signal SIGRTMIN+3 -e container=docker \
             --tmpfs /run --tmpfs /run/lock -v "$PWD:/w:ro" -v "$RUNNER_TEMP/keytool:/usr/local/bin/keytool:ro" \
@@ -243,7 +247,7 @@ jobs:
             ubuntu|debian) docker exec nv sh -c "cp /w/pkgs/$p /tmp/ && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --install-recommends /tmp/$p" ;;
             fedora) docker exec nv dnf install -y -q --setopt=install_weak_deps=True "/w/pkgs/$p" ;;
             # pacman never installs optdepends: the window's, by hand (as the Linux docs page says).
-            arch) docker exec nv pacman -U --noconfirm --needed "/w/pkgs/$p" python python-gobject gtk3 webkit2gtk-4.1 libayatana-appindicator ;;
+            arch) docker exec nv sh -c "pacman -S --noconfirm --needed python python-gobject gtk3 webkit2gtk-4.1 libayatana-appindicator && pacman -U --noconfirm /w/pkgs/$p" ;;
           esac
           docker exec nv sh -c 'python3 -c "import gi; gi.require_version(\"WebKit2\",\"4.1\"); from gi.repository import WebKit2; print(\"WebKitGTK\", WebKit2.get_major_version(), WebKit2.get_minor_version(), WebKit2.get_micro_version())"'
       - name: Before setup, X11 and Wayland - the setup page
