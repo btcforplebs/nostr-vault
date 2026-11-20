@@ -2,8 +2,7 @@
 
 Your vault on a Linux machine: a Raspberry Pi 4/5, a mini PC, a home server or a desktop, arm64 or x86-64.
 It runs natively, like the Mac app: system services that start on boot and, on a desktop, a window and a tray icon
-(`native/README.md`). On other systems, or when you ask for it (`NV_DOCKER=1`), it runs as one Docker container,
-`nostr-vault-linux`, as before. Either way you reach it on your local network (and over the mesh). Nothing opens a
+(`native/README.md`). You reach it on your local network (and over the mesh). Nothing opens a
 port on your router, and the box never holds your secret key.
 
 ## Install
@@ -35,9 +34,6 @@ in **My Devices** (as with the Mac app). The box makes its own device key on fir
 To update, install the newer package the same way: your vault's data, owner and port stay. A different `--data`
 folder starts an empty vault there; to move a vault, use **Storage › Move vault** in the app.
 
-`install.sh` in this folder is the older scripted installer (Docker box and CI); it is not the documented way to
-install.
-
 ## Day to day (native)
 
 | | |
@@ -47,19 +43,13 @@ install.
 | Settings | `sudo nostr-vault-setup --show`; change them with `sudo nostr-vault-setup --owner … --data … --port …` |
 | Update | install the newer package (data, owner and port stay) |
 
-## Day to day (Docker)
+## The Docker box (not for users)
 
-| | |
-|---|---|
-| Logs | `sudo docker logs -f nostr-vault-linux` |
-| Stop / start | `sudo docker compose --project-directory /opt/nostr-vault down` / `up -d` |
-| Settings | `/opt/nostr-vault/.env` (owner, data path, port, image) |
-| Update | `sudo docker compose --project-directory /opt/nostr-vault pull` then `up -d` (updates are manual for now) |
-
-The container gets at most 1.5 GB of memory and low CPU priority, restarts by itself (`unless-stopped`), and keeps
-3 × 10 MB of logs. It shares the machine's network, so the mesh can offer your devices its real LAN address: the
-vault listens on `NV_PORT` (8080), and on loopback only the engine (3355) and the mesh door (8081). The vault
-needs those free.
+`Dockerfile`, `compose.yml` and `supervise.sh` build and run the same programs as one container,
+`nostr-vault-linux`. It is Logen's box for the web app only; nobody else runs it, and users install a package. The
+container gets at most 1.5 GB of memory and low CPU priority, restarts by itself (`unless-stopped`), and shares the
+machine's network: the vault listens on `NV_PORT` (8080), and on loopback only the engine (3355) and the mesh door
+(8081).
 
 ## Inside the container (for the four lanes)
 

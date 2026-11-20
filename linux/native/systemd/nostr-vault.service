@@ -15,7 +15,7 @@ User=nvvault
 Group=nvvault
 Environment=NV_DATA_DIR=/var/lib/nostr-vault NV_PORT=8080 NV_MESH_DOOR_PORT=8081 HAVEN_MESH_PLAIN_PORT=8081
 Environment=NV_WEB_DIR=/usr/share/nostr-vault/web NV_ENGINE_BIN=/usr/lib/nostr-vault/haven-engine
-# No NV_UPDATE_HOOK: the app's Update says to run the installer again, which is how this package updates.
+# No NV_UPDATE_HOOK: the app's Update says to install the newer package, which is how this package updates.
 Environment=NV_MOVE_ROOT=/mnt
 EnvironmentFile=/etc/nostr-vault/vault.env
 EnvironmentFile=-/etc/nostr-vault/secrets.env

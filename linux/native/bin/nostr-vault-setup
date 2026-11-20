@@ -1,6 +1,6 @@
 #!/bin/sh
 # nostr-vault-setup: whose vault this is and where it lives, then start it (the Mac app's Setup, for Linux).
-# Run by install.sh, by the desktop app (through pkexec) or by hand, as root:
+# Run by the desktop app (through pkexec) or by hand, as root:
 #   nostr-vault-setup --owner npub1… [--data /path] [--port 8080] [--sd-ok] [--new-ok]
 #   nostr-vault-setup --show      the current settings, as KEY=value lines
 #   nostr-vault-setup --suggest   where the vault should live: the drive with the most free space
@@ -15,7 +15,7 @@ die() { printf 'nostr-vault-setup: %s\n' "$*" >&2; exit 1; }
 # A first install has no vault.env: old prints nothing and still succeeds (set -e would end setup with no word).
 old() { if [ -r "$ENV" ]; then sed -n "s/^$1=//p" "$ENV" | tail -1; fi; }
 
-biggest() { # a real drive's mount point, most free space first (as install.sh)
+biggest() { # a real drive's mount point, most free space first
   df -P -k 2>/dev/null | awk 'NR > 1 && $1 ~ /^\/dev\// && $6 !~ /^\/(boot|snap|run|dev|sys|proc|tmp|etc|var\/lib\/docker)(\/|$)/ { print $4, $6 }' \
     | sort -rn | while read -r _ m; do [ -d "$m" ] && { printf '%s' "$m"; break; }; done
 }

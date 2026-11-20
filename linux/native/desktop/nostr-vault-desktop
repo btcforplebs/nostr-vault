@@ -130,7 +130,7 @@ def answers(port):
 
 
 def drive_choices():
-    """Places the vault could live: real drives, most free space first (as the installer suggests)."""
+    """Places the vault could live: real drives, most free space first."""
     seen, out = set(), []
     try:
         with open("/proc/mounts", encoding="utf-8") as f:
