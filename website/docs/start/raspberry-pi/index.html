@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nostr Vault on a Raspberry Pi — Nostr Vault Docs</title>
-    <meta name="description" content="Run your Nostr Vault on a Raspberry Pi 4 or 5 with no screen: 64-bit Raspberry Pi OS, a USB SSD instead of the SD card, the install command, the address to open and the ports it uses.">
+    <meta name="description" content="Run your Nostr Vault on a Raspberry Pi 4 or 5 with no screen: 64-bit Raspberry Pi OS, a USB SSD instead of the SD card, the install steps, the address to open and the ports it uses.">
     <link rel="canonical" href="https://nostrvault.app/docs/start/raspberry-pi/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/start/raspberry-pi/">
     <meta property="og:title" content="Nostr Vault on a Raspberry Pi — Nostr Vault Docs">
-    <meta property="og:description" content="Run your Nostr Vault on a Raspberry Pi 4 or 5 with no screen: 64-bit Raspberry Pi OS, a USB SSD instead of the SD card, the install command, the address to open and the ports it uses.">
+    <meta property="og:description" content="Run your Nostr Vault on a Raspberry Pi 4 or 5 with no screen: 64-bit Raspberry Pi OS, a USB SSD instead of the SD card, the install steps, the address to open and the ports it uses.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -147,8 +147,8 @@
                     <li><strong>Raspberry Pi OS 12 (Bookworm), 64-bit.</strong> The 32-bit system won't install: the vault needs
                         arm64. Raspberry Pi OS Lite, with no desktop, is fine.</li>
                     <li><strong>A USB SSD for the vault.</strong> A vault writes all the time. An SD card wears out and is slow; a
-                        USB SSD lasts much longer. Plug it in before you install, and the installer suggests it because it has the
-                        most free space. If you choose the SD card anyway, it warns you and asks first.</li>
+                        USB SSD lasts much longer. Plug it in before you install and give its folder to
+                        <code>nostr-vault-setup --data</code>.</li>
                     <li><strong>A wired network</strong> if you can. Wi-Fi works too.</li>
                 </ul>
 
@@ -156,10 +156,11 @@
                 <ol class="steps">
                     <li>Set up the Pi with Raspberry Pi Imager, turn on SSH, and log in from your computer:
                         <code>ssh you@raspberrypi.local</code>.</li>
-                    <li>Paste the install command from <a href="/docs/start/linux/#install">Get started on Linux</a>. On a Pi with
-                        no desktop it installs only the vault, not the window.</li>
-                    <li>For <strong>Where should your vault live?</strong>, take the suggested folder on your SSD (for example
-                        <code>/media/you/ssd/nostr-vault</code>). For <strong>Your npub</strong>, paste your account's npub.</li>
+                    <li>Download <code>…_arm64.deb</code> from the release and install it as in
+                        <a href="/docs/start/linux/#install">Get started on Linux</a>, with <code>--no-install-recommends</code> on a
+                        Pi with no desktop so it installs only the vault, not the window.</li>
+                    <li>Run <code>sudo nostr-vault-setup --owner npub1… --data /media/you/ssd/nostr-vault</code> with your account's
+                        npub and a folder on your SSD.</li>
                     <li>When it's done it prints the address. Open <code>http://raspberrypi.local:8080/</code> (or the IP address it
                         printed) on your phone or computer, sign in, and link the box: see
                         <a href="/docs/mesh/linux-box/#link">A Linux box in My Devices</a>.</li>
@@ -180,7 +181,7 @@
                     <li>Watch it with <code>journalctl -fu nostr-vault -u nostr-vault-mesh</code>, or open the box's page in
                         Settings for memory, disk and mesh status.</li>
                     <li>Running out of room? Plug in a bigger drive and use <strong>Move vault to…</strong> on the box's page.</li>
-                    <li>To update, run the install command again. Your data, owner and port stay.</li>
+                    <li>To update, install the newer .deb the same way. Your data, owner and port stay.</li>
                 </ul>
             </article>
             <p class="docs-checked">Checked against Nostr Vault 3.2.3 for Linux (beta 1).</p>
