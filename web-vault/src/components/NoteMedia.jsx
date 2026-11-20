@@ -6,6 +6,7 @@ import { MediaLightbox } from "./MediaLightbox.jsx"
 import { Chevron, InlineVideo } from "./MediaParts.jsx"
 import { MediaImage } from "./MediaImage.jsx"
 import { pageOf, scrollToPage } from "./pager.js"
+import { useSmallSrc } from "./small-image.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/media.css")
@@ -26,11 +27,24 @@ export function NoteMedia({ items, author }) {
   )
 }
 
-function MediaItem({ item, author, onOpen }) {
+/** The slot an image fills: the card's width, at most MAX_H tall (media.css .media-one, .media-slide). */
+const MAX_H = 400
+const slot = el => ({ w: el?.parentElement?.clientWidth || el?.clientWidth || 0, h: MAX_H })
+
+function MediaItem({ item, author, onOpen, fit = "contain" }) {
   if (item.type === "video") return <InlineVideo src={item.url} />
+  return <MediaPicture item={item} author={author} onOpen={onOpen} fit={fit} />
+}
+
+/** Drawn at the size it is shown, a GIF as a still that plays on hover (small-image.js); the lightbox has the original. */
+function MediaPicture({ item, author, onOpen, fit }) {
+  const small = useSmallSrc(item.url, { box: slot, fit })
+  const ratio = item.width > 0 && item.height > 0 ? { aspectRatio: `${item.width} / ${item.height}`, maxHeight: MAX_H } : null
   return (
-    <button type="button" class="media-tap" aria-label="View image" onClick={onOpen}>
-      <MediaImage item={item} author={author} loading="lazy" decoding="async" width={item.width} height={item.height} />
+    <button type="button" class="media-tap" aria-label="View image" onClick={onOpen} {...small.hover}>
+      {small.ready
+        ? <MediaImage item={small.src === item.url ? item : { ...item, url: small.src }} author={author} loading="lazy" decoding="async" width={item.width} height={item.height} />
+        : <span ref={small.ref} style={{ display: "block", width: "100%", ...ratio }} />}
     </button>
   )
 }
@@ -43,7 +57,7 @@ function MediaCarousel({ items, author, onOpen }) {
       <div class="media-track" ref={track} onScroll={() => setAt(pageOf(track.current))}>
         {items.map((it, i) => (
           <div key={it.url} class="media-slide" role="group" aria-roledescription="slide" aria-label={`${i + 1} of ${n}`}>
-            <MediaItem item={it} author={author} onOpen={() => onOpen(i)} />
+            <MediaItem item={it} author={author} onOpen={() => onOpen(i)} fit="cover" />
           </div>
         ))}
       </div>

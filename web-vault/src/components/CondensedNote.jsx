@@ -13,6 +13,7 @@ import { ago } from "./time.js"
 import { mediaType, mediaUrls, tileNote } from "../net/media.js"
 import { imageItem } from "../net/note-media.js"
 import { MediaImage } from "./MediaImage.jsx"
+import { useSmallSrc } from "./small-image.js"
 import { ThumbOpen, thumbOpens } from "../desktop/ThumbOpen.jsx"
 import { gateIds } from "../net/actions.js"
 import { rememberNote } from "../desktop/noteIndex.js"
@@ -166,13 +167,20 @@ export function Thumb({ url, note, more, big, media = [url] }) {
     <span class={`condensed-thumb${big ? " big" : ""}`} aria-hidden="true">
       {video ? <span class="condensed-play">▶</span> : (
         <span class="condensed-pic">
-          <MediaImage item={imageItem(url, note.tags)} author={note.pubkey} loading="lazy" onError={e => e.currentTarget.classList.add("failed")} />
+          <ThumbPicture item={imageItem(url, note.tags)} author={note.pubkey} size={big ? 80 : 56} />
           {more > 0 && <span class="condensed-more">+{more}</span>}
         </span>
       )}
       {video && more > 0 && <span class="condensed-more">+{more}</span>}
     </span>
   )
+}
+
+/** The photo drawn at the thumb's size, a GIF as a still that plays on hover (small-image.js). */
+export function ThumbPicture({ item, author, size }) {
+  const small = useSmallSrc(item.url, { box: { w: size, h: size }, fit: "contain" })
+  if (!small.ready) return <span ref={small.ref} style={{ display: "block", width: size, height: size }} />
+  return <MediaImage item={small.src === item.url ? item : { ...item, url: small.src }} author={author} loading="lazy" onError={e => e.currentTarget.classList.add("failed")} {...small.hover} />
 }
 
 // A click on the line runs `fn`; a link or button stays with itself; ⌘/Ctrl-click still opens the thread in a new tab.
