@@ -7,7 +7,7 @@ buildGoModule {
   version = "0";
   inherit src;
   modRoot = "linux/native/test/keytool";
-  vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  vendorHash = "sha256-sGk1jI+4/fZw7eSrR7fNJgwsHffhVbwwx53Hb8XAOj4=";
   env.CGO_ENABLED = 0;
   postInstall = ''
     mv $out/bin/keytool $out/bin/nv-keytool

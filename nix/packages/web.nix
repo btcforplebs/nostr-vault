@@ -20,12 +20,12 @@ let
   relayDeps = fetchNpmDeps {
     name = "nostr-vault-web-relay-npm-deps";
     src = "${src}/web-relay";
-    hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    hash = "sha256-YvDLT+IuN4hItqE3ma3C6LO+37BlY4iPc33y1DfaE8E=";
   };
   vaultDeps = fetchNpmDeps {
     name = "nostr-vault-web-vault-npm-deps";
     src = "${src}/web-vault";
-    hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    hash = "sha256-4sTgoTxDIXo10iEoq0Cmrcsu8psA9O098eP6kyfe0wE=";
   };
 in
 stdenvNoCC.mkDerivation {

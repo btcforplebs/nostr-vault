@@ -22,7 +22,7 @@ rustPlatform.buildRustPackage {
     lockFile = ../../linux/mesh/Cargo.lock;
     outputHashes = {
       # btcforplebs/fips branch nv/v0.5.3 at eb642842: the same rev fips-v2-android and web-relay-vault pin.
-      "fips-mesh-0.5.3" = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+      "fips-mesh-0.5.3" = "sha256-l4MZZuC0fcJNFlA3CjIFwSdRSeoCeOcFCYonXnSo8oA=";
     };
   };
 
