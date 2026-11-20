@@ -142,7 +142,7 @@
                     over the <a href="/docs/mesh/">mesh</a>.</p>
                 <div class="note">
                     <p><strong>This is a beta.</strong> Linux is new in 3.2.3 and comes as a GitHub pre-release,
-                        <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.7">v3.2.3-linux-beta.7</a>.
+                        <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.8">v3.2.3-linux-beta.8</a>.
                         What works and what doesn't yet is at the <a href="#beta">end of this page</a>.</p>
                 </div>
 
@@ -169,9 +169,9 @@
 
                 <h2 id="install">Install the .deb (Debian, Ubuntu, Raspberry Pi OS)</h2>
                 <p>Open a terminal on the machine (or ssh into it) and download the file for your machine from the
-                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.7">beta release</a>:
+                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.8">beta release</a>:
                     <code>…_arm64.deb</code> for a Raspberry Pi or other ARM board, <code>…_amd64.deb</code> for a normal PC. Then:</p>
-                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>sudo apt install ./nostr-vault_3.2.3+6619_arm64.deb
+                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>sudo apt install ./nostr-vault_3.2.3+6645_arm64.deb
                 sudo nostr-vault-setup --owner npub1…</code></pre>
                 <p>On a machine with no screen, add <code>--no-install-recommends</code> to the first line so apt skips the window's
                     libraries. <code>nostr-vault-setup</code> also takes <code>--data /path</code> for where the vault lives (a USB
@@ -182,14 +182,14 @@
 
                 <h2 id="other">Fedora, Arch and Alpine</h2>
                 <p>Download the package for your system and machine from the
-                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.7">beta release</a>
+                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.8">beta release</a>
                     (<code>x86_64</code> for a normal PC, <code>aarch64</code> for ARM), then install it and set the owner:</p>
                 <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code># Fedora
-                sudo dnf install ./nostr-vault-3.2.3+6619-1.x86_64.rpm
+                sudo dnf install ./nostr-vault-3.2.3+6645-1.x86_64.rpm
                 # Arch Linux
-                sudo pacman -U ./nostr-vault-3.2.3+6619-1-x86_64.pkg.tar.zst
+                sudo pacman -U ./nostr-vault-3.2.3+6645-1-x86_64.pkg.tar.zst
                 # Alpine (as root)
-                apk add --allow-untrusted ./nostr-vault-3.2.3_p6619-r0.x86_64.apk
+                apk add --allow-untrusted ./nostr-vault-3.2.3_p6645-r0.x86_64.apk
 
                 sudo nostr-vault-setup --owner npub1…   # on Alpine, as root: nostr-vault-setup --owner npub1…</code></pre>
                 <p>Each one is the same vault as the <code>.deb</code>, with the mesh, and runs the vault and the mesh as their own
@@ -203,8 +203,8 @@
 
                 <h2 id="flatpak">Flatpak, for desktops (no mesh)</h2>
                 <p>Download <code>nostr-vault-…-x86_64.flatpak</code> (or <code>aarch64</code>) from the
-                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.7">beta release</a>, then:</p>
-                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>flatpak install --user ./nostr-vault-3.2.3+6619-x86_64.flatpak</code></pre>
+                    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.8">beta release</a>, then:</p>
+                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>flatpak install --user ./nostr-vault-3.2.3+6645-x86_64.flatpak</code></pre>
                 <p>Open <strong>Nostr Vault</strong> from your apps. The Flatpak is different from the packages above:</p>
                 <ul>
                     <li><strong>No mesh.</strong> Device sync is off in the Flatpak for now. Your phones reach this vault on your
@@ -218,7 +218,7 @@
 
                 <h2 id="nix">NixOS (flake and module)</h2>
                 <p>On NixOS, add the flake and turn on its module instead of installing a package. In your system flake:</p>
-                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>inputs.nostr-vault.url = "github:btcforplebs/nostr-vault/v3.2.3-linux-beta.7";
+                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>inputs.nostr-vault.url = "github:btcforplebs/nostr-vault/v3.2.3-linux-beta.8";
 
                 # in your nixosSystem modules:
                 nostr-vault.nixosModules.default
@@ -318,7 +318,7 @@
                 <p>Something wrong? Open an issue on <a href="https://github.com/btcforplebs/nostr-vault/issues">GitHub</a> with the
                     output of <code>journalctl -u nostr-vault -u nostr-vault-mesh --since today</code>.</p>
             </article>
-            <p class="docs-checked">Checked against Nostr Vault 3.2.3 for Linux (beta 7).</p>
+            <p class="docs-checked">Checked against Nostr Vault 3.2.3 for Linux (beta 8).</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/start/web/"><span>Previous</span>Web browser</a>
                 <a class="next" href="/docs/start/raspberry-pi/"><span>Next</span>Raspberry Pi (beta)</a>
