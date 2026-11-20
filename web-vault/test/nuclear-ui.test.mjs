@@ -57,7 +57,7 @@ test("panel: everyone checked to start (X first when followed), one warning alwa
 
 test("desktop: #/wot/<X>/nuke stays the WoT napplet; the shell lights who'd go and puts its own panel over it", async () => {
   const desk = read("desktop/DesktopShell.jsx"), pane = read("napplet/WotPane.jsx")
-  assert.doesNotMatch(desk, /WotScreen/, "plan step 11: the desktop's WoT is the napplet")
+  assert.match(desk, /\{napplets \? <WotPane /, "plan step 11: the desktop's WoT is the napplet (the phone's WotScreen only in a build with them off)")
   assert.match(desk, /<WotPane ctx=\{ctx\} nuke=\{\/\^#\\\/wot\\\/\[0-9a-f\]\{64\}\\\/nuke\/\.test\(location\.hash\) \? view\.arg : null\} open=\{\/\^#\\\/wot\\\/\[0-9a-f\]\{64\}\\\/\(web\|nuke\)\/\.test\(location\.hash\) \? null :/)
   assert.match(pane, /const cut = useMemo\(\(\) => \(nukeTarget && lists \? followersOfAmong\(nukeTarget, follows, lists, me\) : null\)/)
   assert.match(pane, /\.\.\.\(cut && !scene\.waiting \? \{ lit: \[\.\.\.cut, nukeTarget\] \} : \{\}\)/)

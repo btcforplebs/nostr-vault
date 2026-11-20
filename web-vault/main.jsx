@@ -31,7 +31,7 @@ import { startAppearance } from "./src/net/appearance.js"
 import { startAccent } from "./src/net/accent.js"
 import { startAccentIcon } from "./src/net/accent-icon.js"
 import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard } from "./src/screens/lazy-screens.js"
-import { setDeskLayout, forgetOldSwitch, nappletsOn } from "./src/napplet/flag.js"
+import { setDeskLayout, forgetOldSwitch, DESK_NAPPLETS } from "./src/napplet/flag.js"
 import { warmScreens } from "./src/screens/warm-screens.js"
 import { GuestApp } from "./src/guest/GuestApp.jsx"
 import { SettingsScreen, resetBrowser } from "./src/screens/SettingsScreen.jsx"
@@ -302,7 +302,7 @@ function App() {
       {!desk && (route === "feed" || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
       {!desk && <TabBar ctx={ctx} route={tabOf(route, other)} pubkey={session.pubkey} />}
       <FloatingPlayer />
-      {isDashboardOpen() && <VaultDashboard ctx={ctx} napplet={desk && nappletsOn()} />}
+      {isDashboardOpen() && <VaultDashboard ctx={ctx} napplet={desk && DESK_NAPPLETS} />}
       <AuthPrompt />
       {tour && <WelcomeTour onDone={() => { markTourDone(session.pubkey); setTour(false) }} />}
       {!BOX && <NotifyAsk busy={tour} />}

@@ -251,5 +251,9 @@ test("plan step 11: the desktop's Feed and threads are the Reader, someone's pro
   assert.match(main, /\{route === "feed" && <FeedScreen/)
   assert.match(main, /\{route === "thread" && <ThreadScreen/)
   assert.match(desk, /\{other \? <PersonScreen key=\{view\.arg\} ctx=\{ctx\} pubkey=\{view\.arg\} \/>/, "someone's profile: the full classic one")
-  assert.doesNotMatch(desk, /FeedScreen|ThreadScreen|nappletsOn/)
+  // The Reader is the Feed and the thread whenever the napplets are on; a build with them off (NV for Linux, the
+  // NV_DESK_NAPPLETS switch) keeps the phone's FeedScreen and ThreadScreen, as before step 11.
+  assert.match(desk, /\{napplets \? <ReaderPane ctx=\{ctx\} open=\{readerOpen\}[^\n]*\/> : <FeedScreen ctx=\{ctx\} \/>\}/)
+  assert.match(desk, /\{reader \? <ReaderPane [^\n]*\n\s*: <ThreadScreen ctx=\{ctx\} id=\{id\} \/>\}/)
+  assert.match(desk, /const napplets = nappletsOn\(\)/)
 })

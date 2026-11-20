@@ -28,3 +28,18 @@ test("the old stored tick is cleared; an address without ?napplets is left alone
   assert.equal(store.getItem("nv-napplets"), null)
   assert.deepEqual(h.urls, [])
 })
+
+test("a build with the desktop napplets off (NV for Linux) keeps them off on the desktop layout too", () => {
+  setDeskLayout(true, false); assert.equal(nappletsOn(), false)
+  setDeskLayout(false, false); assert.equal(nappletsOn(), false)
+  setDeskLayout(true, true); assert.equal(nappletsOn(), true)
+  setDeskLayout(false)
+})
+
+test("vite: NV_BOX=1 builds with the desktop napplets off, the site with them on; NV_DESK_NAPPLETS overrides", async () => {
+  const { readFileSync } = await import("node:fs")
+  const cfg = readFileSync(new URL("../vite.config.js", import.meta.url), "utf8")
+  assert.match(cfg, /const deskNapplets = process\.env\.NV_DESK_NAPPLETS \? process\.env\.NV_DESK_NAPPLETS === "1" : !box/)
+  assert.match(cfg, /__NV_DESK_NAPPLETS__: JSON\.stringify\(deskNapplets\)/)
+  assert.match(readFileSync(new URL("../src/napplet/flag.js", import.meta.url), "utf8"), /export const DESK_NAPPLETS = typeof __NV_DESK_NAPPLETS__ === "undefined" \|\| __NV_DESK_NAPPLETS__ !== false/)
+})
