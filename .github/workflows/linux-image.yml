@@ -89,7 +89,8 @@ jobs:
           echo "havend answered HTTP $code"
           [ "$code" != 000 ] || { docker logs nv; exit 1; }
           docker exec nv sh -c 'test "$NV_VERSION" = ${{ steps.commit.outputs.short }}'
-          docker exec nv sh -c 'for p in /proc/[0-9]*; do [ "$(readlink "$p/exe")" = /app/bin/nv-mesh ] && exit 0; done; echo "nv-mesh not running"; exit 1' \
+          # cmdline, not exe: reading another uid's exe link needs CAP_SYS_PTRACE.
+          docker exec nv sh -c 'for p in /proc/[0-9]*; do [ "$(tr "\\0" "\\n" <"$p/cmdline" 2>/dev/null | head -n1)" = /app/bin/nv-mesh ] && exit 0; done; echo "nv-mesh not running"; exit 1' \
             || { docker logs nv; exit 1; }
           for _ in $(seq 1 45); do
             h=$(docker inspect -f '{{.State.Health.Status}}' nv)
