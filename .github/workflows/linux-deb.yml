@@ -207,6 +207,9 @@ jobs:
           - { distro: fedora, arch: amd64, runner: ubuntu-24.04, image: "fedora:latest", pkg: "*.x86_64.rpm" }
           - { distro: fedora, arch: arm64, runner: ubuntu-24.04-arm, image: "fedora:latest", pkg: "*.aarch64.rpm" }
           - { distro: arch, arch: amd64, runner: ubuntu-24.04, image: "archlinux:latest", pkg: "*-x86_64.pkg.tar.zst" }
+          # Arch as Omarchy's pinned mirror has it (stable-mirror.omarchy.org, 2026-10-22): WebKitGTK 2.54.1, which
+          # crashes the window on a paste from an empty clipboard. The paste stage's control needs that WebKit.
+          - { distro: arch, arch: amd64, runner: ubuntu-24.04, image: "archlinux:latest", pkg: "*-x86_64.pkg.tar.zst", snapshot: "2026/10/22", name: arch-2026-10-22 }
           - { distro: arch, arch: arm64, runner: ubuntu-24.04-arm, image: "menci/archlinuxarm:latest", pkg: "*-aarch64.pkg.tar.zst" }
     runs-on: ${{ matrix.runner }}
     steps:
@@ -235,9 +238,13 @@ jobs:
         run: |
           # systemd, then what the test drives the window with: Xvfb, sway + grim, ImageMagick, dbus-run-session, a font.
           case ${{ matrix.distro }} in
-            ubuntu|debian) prep='apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends systemd systemd-sysv dbus dbus-user-session procps iproute2 curl ca-certificates xvfb sway grim imagemagick fonts-dejavu-core && apt-get clean' ;;
-            fedora) prep='dnf install -y -q systemd procps-ng iproute util-linux curl findutils xorg-x11-server-Xvfb sway grim ImageMagick dbus-daemon dejavu-sans-fonts && dnf clean all' ;;
-            arch) prep="sed -i -e 's/^CheckSpace/#CheckSpace/' -e '/^\\[options\\]/a DisableSandbox' /etc/pacman.conf && pacman -Syu --noconfirm --needed systemd procps-ng iproute2 util-linux curl findutils xorg-server-xvfb sway grim imagemagick dbus ttf-dejavu && pacman -Scc --noconfirm" ;;
+            ubuntu|debian) prep='apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends systemd systemd-sysv dbus dbus-user-session procps iproute2 curl ca-certificates xvfb sway grim imagemagick fonts-dejavu-core wtype wl-clipboard && apt-get clean' ;;
+            fedora) prep='dnf install -y -q systemd procps-ng iproute util-linux curl findutils xorg-x11-server-Xvfb sway grim ImageMagick dbus-daemon dejavu-sans-fonts wtype wl-clipboard && dnf clean all' ;;
+            arch) prep="sed -i -e 's/^CheckSpace/#CheckSpace/' -e '/^\\[options\\]/a DisableSandbox' /etc/pacman.conf && pacman -Syu --noconfirm --needed systemd procps-ng iproute2 util-linux curl findutils xorg-server-xvfb sway grim imagemagick dbus ttf-dejavu wtype wl-clipboard && pacman -Scc --noconfirm"
+              # A dated Arch: every package as the Arch Linux Archive had it that day (-uu also downgrades).
+              if [ -n "${{ matrix.snapshot }}" ]; then
+                prep="echo 'Server = https://archive.archlinux.org/repos/${{ matrix.snapshot }}/\$repo/os/\$arch' >/etc/pacman.d/mirrorlist && pacman -Syyuu --noconfirm && $prep"
+              fi ;;
           esac
           # The runner's AppArmor blocks the unprivileged user namespaces bubblewrap needs, in containers too. Fedora's
           # image loader (glycin) runs every icon load in bubblewrap, and GTK aborts when it can't. A real Fedora
@@ -255,8 +262,9 @@ jobs:
           case ${{ matrix.distro }} in
             ubuntu|debian) docker exec nv sh -c "cp /w/pkgs/$p /tmp/ && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --install-recommends /tmp/$p" ;;
             fedora) docker exec nv dnf install -y -q --setopt=install_weak_deps=True "/w/pkgs/$p" ;;
-            # pacman never installs optdepends: the window's, by hand (as the Linux docs page says).
-            arch) docker exec nv sh -c "pacman -S --noconfirm --needed python python-gobject gtk3 webkit2gtk-4.1 libayatana-appindicator && pacman -U --noconfirm /w/pkgs/$p" ;;
+            # The window's packages are the Arch package's depends: pacman -U alone must bring them (the WebKit line
+            # below imports them).
+            arch) docker exec nv sh -c "pacman -U --noconfirm /w/pkgs/$p" ;;
           esac
           docker exec nv sh -c 'python3 -c "import gi; gi.require_version(\"WebKit2\",\"4.1\"); from gi.repository import WebKit2; print(\"WebKitGTK\", WebKit2.get_major_version(), WebKit2.get_minor_version(), WebKit2.get_micro_version())"'
       - name: Before setup, X11 and Wayland - the setup page
@@ -265,6 +273,8 @@ jobs:
           docker exec nv sh /w/linux/native/test/window-test.sh x11 setup /tmp/nvwt-out || r=1
           docker exec nv sh /w/linux/native/test/window-test.sh wayland setup /tmp/nvwt-out || r=1
           exit $r
+      - name: Wayland - Ctrl+V with an empty clipboard and with text (WebKitGTK 2.54.0/2.54.1 crash on the empty one)
+        run: docker exec nv sh /w/linux/native/test/window-test.sh wayland paste /tmp/nvwt-out
       - name: Set the vault up (throwaway owner)
         run: |
           # The owner's throwaway key stays in the container: the client tag check signs with it.
@@ -287,12 +297,12 @@ jobs:
           node web-vault/tools/client-tag-e2e.mjs "ws://$ip:8080" "$(docker exec nv cut -d' ' -f1 /root/owner.key)" "$ua"
       - name: Screenshots
         if: always()
-        run: docker cp nv:/tmp/nvwt-out "window-${{ matrix.distro }}-${{ matrix.arch }}" || true
+        run: docker cp nv:/tmp/nvwt-out "window-${{ matrix.name || matrix.distro }}-${{ matrix.arch }}" || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: window-${{ matrix.distro }}-${{ matrix.arch }}
-          path: window-${{ matrix.distro }}-${{ matrix.arch }}/
+          name: window-${{ matrix.name || matrix.distro }}-${{ matrix.arch }}
+          path: window-${{ matrix.name || matrix.distro }}-${{ matrix.arch }}/
           retention-days: 14
 
   # The .rpm on a real Fedora machine, not a container: Fedora Cloud in a QEMU/KVM VM, SELinux enforcing as Fedora
