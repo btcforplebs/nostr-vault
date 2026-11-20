@@ -68,10 +68,6 @@ android {
         // A release build without it fails (checkGifKey, above the android block).
         buildConfigField("String", "NOSTR_BUILD_GIF_KEY", "\"$gifKey\"")
 
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
-
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -92,6 +88,21 @@ android {
         debug {
             isMinifyEnabled = false
             // applicationIdSuffix = ".debug"  // Commented out to allow debug builds to replace release builds
+        }
+    }
+
+    // One APK per ABI instead of a universal one (both libs in one file would
+    // add ~45 MB for everyone). arm64-v8a is the main download; armeabi-v7a is
+    // for phones that run a 32-bit-only Android build, such as budget Galaxy
+    // A0x/A1x models (b108 refused to install on one, 2026-11-20). x86_64
+    // libhaven from `just android-build` stays out of release APKs.
+    // Outputs: app-arm64-v8a-release.apk, app-armeabi-v7a-release.apk.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = false
         }
     }
 
