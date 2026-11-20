@@ -224,7 +224,8 @@ jobs:
             [ -n "$img" ] && break
           done
           test -n "$img"; echo "Fedora $v: $img"
-          curl -fsSL -o fedora.qcow2 "$d/$img"
+          # A Fedora mirror can drop a 500 MB transfer midway: resume it.
+          curl -fsSL --retry 5 --retry-all-errors -C - -o fedora.qcow2 "$d/$img"
           sum=$(curl -fsS "$d/" | grep -o 'Fedora-Cloud-[^"]*CHECKSUM' | head -1)
           want=$(curl -fsSL "$d/$sum" | sed -n "s/^SHA256 ($img) = //p")
           test -n "$want"; echo "$want  fedora.qcow2" | sha256sum -c -
