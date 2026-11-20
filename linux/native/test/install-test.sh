@@ -49,15 +49,18 @@ case $PM in
   apt) apt-get update -q >/dev/null 2>&1
     if [ "$MODE" = desktop ]; then rec=--install-recommends; else rec=--no-install-recommends; fi ;;
   dnf) if [ "$MODE" = desktop ]; then rec=--setopt=install_weak_deps=True; else rec=--setopt=install_weak_deps=False; fi ;;
-  pacman) pacman -Sy --noconfirm >/dev/null 2>&1; rec="(optdepends are never installed)"
-    [ "$MODE" = desktop ] && abort "pacman never installs optdepends: run the desktop test with them installed by hand" ;;
+  pacman) pacman -Sy --noconfirm >/dev/null 2>&1; rec="(the window's packages are depends on Arch)" ;;
 esac
 if pm_install >/tmp/pm.log 2>&1; then ok "$PM install ($rec)"; else no "$PM install"; tail -15 /tmp/pm.log; echo "RESULT pass=$pass fail=$fail"; exit 1; fi
 chk "installed version is the package's ($want)" test "$(pm_installed_version)" = "$want"
 chk "user nvvault uid 10002" test "$(id -u nvvault)" = 10002
 chk "user nvmesh uid 10001" test "$(id -u nvmesh)" = 10001
 chk "vault not running before setup" sh -c '! systemctl -q is-active nostr-vault'
-if [ "$MODE" = headless ]; then if pm_has gir1.2-gtk-3.0 gtk3 gtk3; then no "headless: GTK pulled in"; else ok "headless: no GTK pulled in"; fi; fi
+# pacman installs no optional deps, so the Arch package depends on the window's packages: GTK comes with it, by design.
+if [ "$PM" = pacman ]; then
+  if pm_has - - python-gobject && pm_has - - webkit2gtk-4.1; then ok "pacman: the window's packages came with it"
+  else no "pacman: python-gobject or webkit2gtk-4.1 not installed with the package"; fi
+elif [ "$MODE" = headless ]; then if pm_has gir1.2-gtk-3.0 gtk3 gtk3; then no "headless: GTK pulled in"; else ok "headless: no GTK pulled in"; fi; fi
 
 set -- $("$KT" gen); OSK=$1 ONPUB=$2
 echo "throwaway owner $ONPUB"

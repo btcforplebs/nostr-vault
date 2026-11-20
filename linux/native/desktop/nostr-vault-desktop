@@ -11,12 +11,15 @@ pkexec. The app never holds the vault's or the mesh's keys; signing in is the we
   nostr-vault-desktop --tray     tray icon only (what login starts)
   nostr-vault-desktop --open R   open the window on route R (feed, vault, devices, settings, compose)
 """
+import faulthandler
 import json
 import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
+import traceback
 import urllib.error
 import urllib.request
 
@@ -76,6 +79,49 @@ UA_MARK = "NostrVaultLinux"
 # driver that kills each renderer, say): stop loading pages and show the crash page drawn by GTK, which needs no web
 # process, instead of starting one renderer after another.
 CRASH_LOOP_S = 5
+# The main loop is "stalled" when its heartbeat is this late: the window then writes where its main thread is to its
+# log (the compositor calls a window that doesn't answer for a few seconds "not responding").
+STALL_S = 2.0
+LOG_MAX = 256 * 1024  # window.log is cut back to its newest half past this size
+
+
+def log_path():
+    return os.path.join(GLib.get_user_cache_dir(), "nostr-vault-desktop", "window.log")
+
+
+def log(text):
+    """A line to stderr and to the window's log (~/.cache/nostr-vault-desktop/window.log): a window started from a
+    launcher has no terminal, so its stderr goes nowhere anyone can read."""
+    line = time.strftime("%Y-%m-%dT%H:%M:%S ") + text
+    print("nostr-vault-desktop: " + text, file=sys.stderr, flush=True)
+    try:
+        path = log_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if os.path.exists(path) and os.path.getsize(path) > LOG_MAX:
+            with open(path, "rb") as f:
+                f.seek(-LOG_MAX // 2, os.SEEK_END)
+                keep = f.read()
+            with open(path, "wb") as f:
+                f.write(keep)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+
+
+def webkit_version():
+    return (WebKit2.get_major_version(), WebKit2.get_minor_version(), WebKit2.get_micro_version())
+
+
+# WebKitGTK 2.54.0 and 2.54.1 crash the whole window (SIGSEGV) when they paste from an empty clipboard: GTK answers
+# "no targets" with a NULL list and a count of -1, and Clipboard::formats() reads that as a list of 2^64 entries.
+# Fixed in 2.54.2 (WebKit 75cdc5a66f, https://bugs.webkit.org/show_bug.cgi?id=324466), but distros that pin a snapshot
+# still ship 2.54.1 (on 2026-11-20 Omarchy's stable mirror was a snapshot of 2026-10-22). On those versions the window
+# doesn't let a paste reach WebKit while the clipboard (or, for a middle click, the primary selection) is empty:
+# Ctrl+V, Ctrl+Shift+V, Shift+Insert, a middle click in a text field and the right-click menu's Paste. What's on each
+# is kept up to date without waiting (a GTK "owner-change" starts an asynchronous TARGETS request), so the check never
+# blocks the window.
+PASTE_GUARD = (2, 54, 0) <= webkit_version() < (2, 54, 2)
 
 
 def read_env(path=ENV_FILE):
@@ -183,11 +229,17 @@ class App(Gtk.Application):
         self.crashed = False  # the waiting page shows a crashed page: wait for Reload, don't reload by itself
         self.crash_page_at = None  # when the last crash page was loaded (time.monotonic())
         self.stopped = None  # the GTK crash page, in place of the web view, after a crash loop
+        self.ticking = False  # a tick's checks are running on their thread
+        self.checking = False  # show()/reopen()'s "does the vault answer?" is running on its thread
+        self.has_paste = {}  # selection name -> True/False: something to paste there (PASTE_GUARD only)
+        self.over_editable = False  # the pointer is over a text field (a middle click there pastes)
+        self.beat = time.monotonic()  # the main loop's heartbeat (the stall watchdog)
 
     # ---- start-up
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
+        self.start_watchdog()
         settings = Gtk.Settings.get_default()
         if settings:
             settings.set_property("gtk-application-prefer-dark-theme", True)
@@ -259,14 +311,15 @@ class App(Gtk.Application):
         self.indicator = ind
         self.tick()
 
-    def status_line(self):
-        if not read_env().get("NV_OWNER"):
+    def status_line(self, env):
+        """The tray's status line. Runs on tick's thread: reads files and runs systemctl, touches no widget."""
+        if not env.get("NV_OWNER"):
             return "Not set up yet"
         state = service_state()
         if state != "active":
             return {"activating": "Vault starting…", "failed": "Vault stopped (failed)",
                     "missing": "Vault not installed"}.get(state, "Vault stopped")
-        mesh = mesh_status(self.env)
+        mesh = mesh_status(env)
         n = mesh.get("devices")
         updated = mesh.get("updated")
         # nv-mesh writes its status every 5 s; an older one is from a mesh that stopped (as havend reads it).
@@ -281,12 +334,78 @@ class App(Gtk.Application):
         return "Vault running"
 
     def tick(self):
-        self.env = read_env()
-        if self.status_item is not None:
-            self.status_item.set_label(self.status_line())
-        if self.page == "waiting" and not self.crashed and answers(vault_port(self.env)):
-            self.load_vault(self.pending_route)
+        """Every 5 s: the tray's status line, and leave the waiting page once the vault answers. The checks (a file
+        read, systemctl, an HTTP request to the vault) run on a thread: on a busy machine each can take seconds, and
+        the main loop must keep answering the compositor meanwhile."""
+        if self.ticking:
+            return True
+        self.ticking = True
+        want_answer = self.page == "waiting" and not self.crashed
+        tray = self.status_item is not None
+
+        def work():
+            env = read_env()
+            return env, (self.status_line(env) if tray else None), (want_answer and answers(vault_port(env)))
+
+        def done(result):
+            self.ticking = False
+            env, line, up = result
+            self.env = env
+            if line is not None and self.status_item is not None:
+                self.status_item.set_label(line)
+            if up and self.page == "waiting" and not self.crashed:
+                self.load_vault(self.pending_route)
+
+        self.in_thread(work, done, (self.env, None, False))
         return True
+
+    def in_thread(self, work, done, failed):
+        """work() on a thread, then done(its result) on the main loop; done(failed) if work() raised (logged)."""
+        def run():
+            try:
+                result = work()
+            except Exception as e:  # noqa: BLE001 - logged; the window must keep running
+                log("background check failed: " + repr(e))
+                result = failed
+            GLib.idle_add(lambda: (done(result), False)[1])
+
+        threading.Thread(target=run, daemon=True).start()
+
+    # ---- the stall watchdog (why a window was "not responding")
+
+    def start_watchdog(self):
+        try:
+            path = log_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            self.fault_file = open(path, "a", encoding="utf-8")  # noqa: SIM115 - open for the life of the process
+            faulthandler.enable(self.fault_file)  # a crash in WebKit or GTK leaves the Python stack in window.log
+        except OSError:
+            pass
+
+        def heartbeat():
+            self.beat = time.monotonic()
+            return True
+
+        GLib.timeout_add(250, heartbeat)
+        main = threading.main_thread().ident
+
+        def watch():
+            reported = None
+            while True:
+                time.sleep(0.5)
+                beat = self.beat
+                late = time.monotonic() - beat
+                if late >= STALL_S and reported != beat:
+                    reported = beat
+                    frame = sys._current_frames().get(main)
+                    where = "".join(traceback.format_stack(frame, limit=8)).rstrip() if frame else "?"
+                    # Python's stack ends in App.run when the main thread is inside GTK or WebKit, not in this file.
+                    log(f"the main loop has been stalled for {late:.1f} s; main thread:\n{where}")
+                elif reported is not None and reported != beat and late < STALL_S:
+                    log(f"the main loop is running again (stalled for {beat - reported:.1f} s)")
+                    reported = None
+
+        threading.Thread(target=watch, daemon=True).start()
 
     def copy_npub(self):
         npub = box_npub(self.env)
@@ -326,6 +445,17 @@ class App(Gtk.Application):
         view.connect("create", self.on_create)
         view.connect("load-failed", self.on_load_failed)
         view.connect("web-process-terminated", self.on_web_process_terminated)
+        if PASTE_GUARD:
+            log("WebKitGTK %d.%d.%d crashes on a paste from an empty clipboard: pastes are checked first" % webkit_version())
+            view.connect("key-press-event", self.on_key_press)
+            view.connect("button-press-event", self.on_middle_click)
+            view.connect("button-release-event", self.on_middle_click)
+            view.connect("mouse-target-changed", self.on_mouse_target)
+            view.connect("context-menu", self.on_context_menu)
+            for name in ("CLIPBOARD", "PRIMARY"):
+                cb = Gtk.Clipboard.get(Gdk.Atom.intern(name, False))
+                cb.connect("owner-change", lambda c, _e, n=name: self.check_paste(n, c))
+                self.check_paste(name, cb)
 
         win = Gtk.ApplicationWindow(application=self, title="Nostr Vault")
         win.set_default_size(1240, 860)  # the Mac window's first size
@@ -347,14 +477,35 @@ class App(Gtk.Application):
         elif self.page == "vault" and route:
             self.view.run_javascript(f"location.hash = {json.dumps(ROUTES.get(route, '#/feed'))}", None, None, None)
         elif self.page != "vault":
-            if answers(vault_port(self.env)):
-                self.load_vault(route)
-            else:
-                self.load_waiting(route)
+            self.open_vault_or_wait(route)
         self.window.present()
 
+    def open_vault_or_wait(self, route):
+        """The web app if the vault answers, else the waiting page. The HTTP check runs on a thread (it can take its
+        full 2 s timeout on a busy machine), so the window stays responsive meanwhile."""
+        self.pending_route = route
+        if self.checking:
+            return
+        self.checking = True
+        port = vault_port(self.env)
+
+        def done(up):
+            self.checking = False
+            if self.page == "vault":
+                return  # something loaded it meanwhile
+            if up:
+                self.load_vault(self.pending_route)
+            else:
+                self.load_waiting(self.pending_route)
+
+        self.in_thread(lambda: answers(port), done, False)
+
     def reload(self):
-        if self.view is not None:
+        """Ctrl+R and F5. On the crash pages (the web one and the GTK one) that is their Reload button: reloading the
+        dead view would only reload the crash page, or nothing, with the GTK page in its place."""
+        if self.page == "stopped" or (self.page == "waiting" and self.crashed):
+            self.reopen()
+        elif self.view is not None:
             self.view.reload()
 
     def origin(self):
@@ -440,12 +591,11 @@ class App(Gtk.Application):
     def on_web_process_terminated(self, view, reason):
         # The page's renderer crashed or was killed: WebKit leaves a dead, empty view. Say so, with a Reload button.
         why = getattr(reason, "value_nick", reason)
-        print(f"nostr-vault-desktop: the page's web process ended ({why})", file=sys.stderr)
+        log(f"the page's web process ended ({why})")
         if self.crash_page_at is not None and time.monotonic() - self.crash_page_at < CRASH_LOOP_S:
             # It died again right after the last crash page: every page crashes. Loading another would start another
             # web process to die, so stop here until someone presses Reload.
-            print("nostr-vault-desktop: it ended again within "
-                  f"{CRASH_LOOP_S} s of the last crash page; not loading another page", file=sys.stderr)
+            log(f"it ended again within {CRASH_LOOP_S} s of the last crash page; not loading another page")
             self.show_stopped()
             return
         self.load_waiting(self.pending_route, crashed=True)
@@ -492,10 +642,59 @@ class App(Gtk.Application):
         self.env = read_env()
         if not self.env.get("NV_OWNER"):
             self.load_setup()
-        elif answers(vault_port(self.env)):
-            self.load_vault(self.pending_route)
         else:
-            self.load_waiting(self.pending_route)
+            if self.page == "stopped":
+                self.use_view()  # the web view back in the window now, so Reload visibly does something
+                self.page = "waiting"
+                self.crashed = False
+            self.open_vault_or_wait(self.pending_route)
+
+    # ---- the paste guard (PASTE_GUARD: WebKitGTK 2.54.0 and 2.54.1)
+
+    def check_paste(self, name, clipboard):
+        """Ask, without waiting, whether the selection has anything on it: a TARGETS request answered later on the
+        main loop. GTK answers -1 bytes when there is no owner or it doesn't answer, which is the crash's case."""
+        def got(_cb, data, _user):
+            self.has_paste[name] = data is not None and data.get_length() > 0
+
+        clipboard.request_contents(Gdk.Atom.intern("TARGETS", False), got, None)
+
+    def nothing_to_paste(self, name):
+        # Not known yet (the first answer hasn't come): treat it as empty. Losing one paste right after the window
+        # opens is better than the crash.
+        return not self.has_paste.get(name, False)
+
+    def on_key_press(self, _view, event):
+        mods = event.state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK
+                              | Gdk.ModifierType.MOD1_MASK | Gdk.ModifierType.SUPER_MASK)
+        key = Gdk.keyval_to_lower(event.keyval)
+        ctrl, shift = Gdk.ModifierType.CONTROL_MASK, Gdk.ModifierType.SHIFT_MASK
+        paste = (key == Gdk.KEY_v and mods in (ctrl, ctrl | shift)) or \
+                (key in (Gdk.KEY_Insert, Gdk.KEY_KP_Insert) and mods == shift)
+        if paste and self.nothing_to_paste("CLIPBOARD"):
+            log("a paste with an empty clipboard was kept from WebKit (it would crash the window)")
+            return True
+        return False
+
+    def on_mouse_target(self, _view, hit, _modifiers):
+        self.over_editable = hit.context_is_editable()
+
+    def on_middle_click(self, _view, event):
+        # WebKit pastes the primary selection on a middle click's release in a text field.
+        if event.button == 2 and self.over_editable and self.nothing_to_paste("PRIMARY"):
+            if event.type == Gdk.EventType.BUTTON_RELEASE:
+                log("a middle-click paste with an empty selection was kept from WebKit (it would crash the window)")
+            return True
+        return False
+
+    def on_context_menu(self, _view, menu, _event, _hit):
+        if self.nothing_to_paste("CLIPBOARD"):
+            paste = {getattr(WebKit2.ContextMenuAction, a) for a in ("PASTE", "PASTE_AS_PLAIN_TEXT")
+                     if hasattr(WebKit2.ContextMenuAction, a)}
+            for item in list(menu.get_items()):
+                if item.get_stock_action() in paste:
+                    menu.remove(item)
+        return False
 
     # ---- the local pages' messages
 

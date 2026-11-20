@@ -8,6 +8,12 @@
 #            draw nothing, which shows this check can tell a blank window from a drawn one); then a page that crashes
 #            on every load: the window must stop after two web processes and draw its own GTK crash page (a copy with
 #            CRASH_LOOP_S = 0 must keep starting new ones, the control)
+#     paste  (x11 only) Ctrl+V, pressed with xdotool, into a text field in the window's own web view
+#            (paste-probe.py): with an empty clipboard the window must survive, and with text on the clipboard the
+#            text must arrive. Where WebKitGTK has the empty-clipboard crash (2.54.0, 2.54.1), a copy of the window
+#            without its paste guard must crash on the same empty paste (the control); elsewhere the guard is off.
+#            Needs xdotool and xclip. (X11, not Wayland: on headless sway, wtype's letters typed but its Ctrl+V
+#            never pasted, with or without the guard, so it couldn't test a paste.)
 # The setup stage also prints the user agent the window's web view gives its pages to <out dir>/<mode>-ua.txt
 # (ua-probe.py), and fails unless it carries the NostrVaultLinux word the web app's client tag reads.
 # x11 runs Xvfb; wayland runs sway on its headless backend (software rendering). Each check is one screenshot in the
@@ -20,7 +26,7 @@ set -u
 MODE=${1:-}; STAGE=${2:-}; OUT=${3:-}
 CMD=${NV_WT_CMD:-nostr-vault-desktop}
 MIN_COLOURS=${NV_WT_MIN_COLOURS:-64} # a drawn page has hundreds (anti-aliased text); a blank window has 1 or 2
-case "$MODE.$STAGE" in x11.setup|x11.vault|wayland.setup|wayland.vault) ;; *) echo "usage: $0 <x11|wayland> <setup|vault> <out dir>" >&2; exit 2 ;; esac
+case "$MODE.$STAGE" in x11.setup|x11.vault|x11.paste|wayland.setup|wayland.vault) ;; *) echo "usage: $0 <x11|wayland> <setup|vault> <out dir>  (or: x11 paste <out dir>)" >&2; exit 2 ;; esac
 [ -n "$OUT" ] || { echo "no out dir" >&2; exit 2; }
 
 if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
@@ -28,8 +34,9 @@ if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
   mkdir -p "$OUT" && chmod 777 "$OUT"
   cp "$0" /tmp/nvwt-window-test.sh && chmod 755 /tmp/nvwt-window-test.sh
   cp "$(dirname "$0")/ua-probe.py" /tmp/nvwt-ua-probe.py && chmod 644 /tmp/nvwt-ua-probe.py
+  cp "$(dirname "$0")/paste-probe.py" /tmp/nvwt-paste-probe.py && chmod 644 /tmp/nvwt-paste-probe.py
   exec runuser -u nvwt -- env NV_WT_INNER=1 NV_WT_CMD="$CMD" NV_WT_CONTROL="${NV_WT_CONTROL:-1}" NV_WT_VAULT_URL="${NV_WT_VAULT_URL:-}" \
-    NV_WT_PROBE=/tmp/nvwt-ua-probe.py NV_WT_PY="${NV_WT_PY:-}" NV_WT_BIN="${NV_WT_BIN:-}" \
+    NV_WT_PROBE=/tmp/nvwt-ua-probe.py NV_WT_PASTE_PROBE=/tmp/nvwt-paste-probe.py NV_WT_PY="${NV_WT_PY:-}" NV_WT_BIN="${NV_WT_BIN:-}" \
     NV_WT_MIN_COLOURS="$MIN_COLOURS" PATH="$PATH" HOME=/home/nvwt sh /tmp/nvwt-window-test.sh "$MODE" "$STAGE" "$OUT"
 fi
 mkdir -p "$OUT"
@@ -117,6 +124,53 @@ if [ "$STAGE" = setup ]; then
     *" NostrVaultLinux/"*) ok "$MODE: the window's pages see the Linux word in their user agent ($ua)" ;;
     *) no "$MODE: the window's user agent has no NostrVaultLinux/ word: '${ua}'"; tail -20 "$OUT/$MODE-ua-probe.log" ;;
   esac
+fi
+
+if [ "$STAGE" = paste ]; then
+  command -v xdotool >/dev/null && command -v xclip >/dev/null || abort "no xdotool or xclip"
+  pprobe=${NV_WT_PASTE_PROBE:-$(dirname "$0")/paste-probe.py}
+  # paste <name> <script> <expect>: one paste-probe run in its own D-Bus session; sets prc (its exit status: 139 is
+  # SIGSEGV through sh) and pguard (1 if the window's paste guard is on).
+  paste() {
+    # The status comes from a shell inside the session: 139 when the probe dies of SIGSEGV.
+    dbus-run-session -- sh -c '"$@"; echo "EXIT $?"' sh ${NV_WT_PY:-python3 -I} "$pprobe" "$2" "$3" >"$OUT/$MODE-paste-$1.log" 2>&1
+    prc=$(sed -n 's/^EXIT //p' "$OUT/$MODE-paste-$1.log"); prc=${prc:-255}
+    pguard=$(sed -n 's/^GUARD //p' "$OUT/$MODE-paste-$1.log")
+    pkill -u "$(id -u)" -f WebKitWebProcess 2>/dev/null; sleep 1
+  }
+  # A new X server: nothing owns the clipboard.
+  paste empty "$bin" ""
+  wk=$(sed -n 's/^WEBKIT //p' "$OUT/$MODE-paste-empty.log"); echo "WebKitGTK $wk, paste guard ${pguard:-?}"
+  if [ "$prc" = 0 ]; then ok "$MODE: Ctrl+V with an empty clipboard: the window survives, the field stays empty"
+  else no "$MODE: Ctrl+V with an empty clipboard: the window ended with $prc"; tail -15 "$OUT/$MODE-paste-empty.log"; fi
+  if [ "$pguard" = 1 ]; then
+    grep -q "kept from WebKit" "$OUT/$MODE-paste-empty.log" && ok "$MODE: the guard kept that paste from WebKit" \
+      || no "$MODE: the guard is on but didn't see the paste (no 'kept from WebKit' line)"
+  fi
+  # With text on the clipboard, the same keys paste it: the guard doesn't stop real pastes (and xdotool's Ctrl+V does
+  # reach WebKit's paste, so the empty run above was a real paste).
+  printf nv-paste-ok | xclip -quiet -selection clipboard & sleep 1 # owns the clipboard until killed (-quiet: no fork)
+  paste text "$bin" "nv-paste-ok"
+  pkill -u "$(id -u)" -x xclip; sleep 1
+  if [ "$prc" = 0 ]; then ok "$MODE: Ctrl+V with text on the clipboard pastes it"
+  else no "$MODE: Ctrl+V with text on the clipboard: exit $prc, field '$(sed -n 's/^VALUE //p' "$OUT/$MODE-paste-text.log")'"; tail -15 "$OUT/$MODE-paste-text.log"; fi
+  if [ "$pguard" = 1 ]; then
+    # Control: this WebKit has the bug, so the window without its guard must crash on the same empty paste, or the
+    # "survives" above proves nothing.
+    sed 's/^PASTE_GUARD = .*/PASTE_GUARD = False/' "$bin" >"$RUN/no-guard"
+    if cmp -s "$bin" "$RUN/no-guard"; then no "control: couldn't turn the paste guard off in $bin"; else
+      pgrep -u "$(id -u)" -x xclip >/dev/null && abort "xclip still owns the clipboard: the control wouldn't be empty"
+      paste control "$RUN/no-guard" ""
+      if [ "$prc" -ge 128 ]; then ok "control: without the guard, WebKitGTK $wk crashes on that paste (exit $prc)"
+      else no "control: without the guard the empty paste didn't crash (exit $prc), so the check above can't tell"; fi
+    fi
+  else
+    case "$wk" in 2.54.0|2.54.1) no "$MODE: WebKitGTK $wk has the empty-clipboard crash but the guard is off" ;;
+      *) echo "NOTE: WebKitGTK $wk doesn't have the empty-clipboard crash: the guard is off and there is no control" ;; esac
+  fi
+  grep -q '^KEY ' "$OUT/$MODE-paste-text.log" || echo "NOTE: the window got no key at all in the text run"
+  echo "RESULT $MODE $STAGE pass=$pass fail=$fail"
+  [ "$fail" = 0 ]; exit
 fi
 
 start window $CMD
