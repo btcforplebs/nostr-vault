@@ -26,6 +26,12 @@ extension ComposeView {
             error = message
             return
         }
+        // A working nsec in the text or a photo's description: nothing is
+        // saved, uploaded or signed, and the text stays to be fixed.
+        if SecretKeyLeak.containsSecretKey(([content] + attachments.map(\.altText)).joined(separator: "\n")) {
+            error = SecretKeyLeak.blockMessage
+            return
+        }
         isPosting = true
         autoSaveTask?.cancel()
         autoSaveTask = nil

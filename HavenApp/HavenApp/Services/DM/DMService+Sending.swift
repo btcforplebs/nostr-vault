@@ -42,6 +42,8 @@ extension DMService {
     }
 
     func sendDM(content: String, to recipientHexPubkey: String, useNIP04: Bool = false) async throws {
+        // Checked on the plaintext, before either encryption (SecretKeyLeak).
+        guard !SecretKeyLeak.containsSecretKey(content) else { throw SecretKeyLeak.Blocked() }
         if useNIP04 {
             try await sendNIP04DM(content: content, to: recipientHexPubkey)
         } else {

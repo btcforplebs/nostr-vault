@@ -558,6 +558,11 @@ struct DMThreadView: View {
             sendError = "You switched account. Open the chat again to send from this one."
             return
         }
+        // Before anything is cleared or uploaded: the words stay to be fixed.
+        if SecretKeyLeak.containsSecretKey(trimmed) {
+            sendError = SecretKeyLeak.blockMessage
+            return
+        }
 
         isSending = true
         let messageToSend = trimmed

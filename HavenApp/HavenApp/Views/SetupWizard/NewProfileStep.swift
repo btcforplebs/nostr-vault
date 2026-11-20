@@ -15,6 +15,9 @@ struct NewProfileStep: View {
     @State private var appeared = false
     @State private var photoItem: PhotosPickerItem?
     @State private var photoError: String?
+    /// A working nsec in the name (SecretKeyLeak): Continue waits, the text
+    /// stays so it can be removed.
+    @State private var nameError: String?
 
     var body: some View {
         VStack(spacing: 24) {
@@ -65,11 +68,26 @@ struct NewProfileStep: View {
 
             WizardInputField(label: "Name", text: $name, placeholder: "Your name")
 
+            if let nameError {
+                Text(nameError)
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
+            }
+
             Spacer()
 
             VStack(spacing: 12) {
-                WizardPrimaryButton(title: String(localized: "setup.action.continue"), action: onContinue)
+                WizardPrimaryButton(title: String(localized: "setup.action.continue")) {
+                    if SecretKeyLeak.containsSecretKey(name) {
+                        nameError = SecretKeyLeak.blockMessage
+                    } else {
+                        nameError = nil
+                        onContinue()
+                    }
+                }
                 WizardSkipLink(title: "Skip for Now") {
+                    nameError = nil
                     name = ""
                     photoJPEG = nil
                     onContinue()

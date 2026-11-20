@@ -122,6 +122,7 @@ final class LocalRelaySearchCollector {
                 with: content.data(using: .utf8) ?? Data()) as? [String: Any] else {
                 return .event(subId: subId)
             }
+            SecretKeyLeak.noteProfileContent(content)
             var profile = FeedProfile(pubkey: pubkey)
             profile.name = metadata["name"] as? String
             // Some clients write camelCase; haven-go's search matches both.

@@ -455,6 +455,7 @@ final class GlobalSearchSession {
     static func parseProfile(pubkey: String, content: String) -> FeedProfile? {
         guard let metadata = try? JSONSerialization.jsonObject(
             with: content.data(using: .utf8) ?? Data()) as? [String: Any] else { return nil }
+        SecretKeyLeak.noteProfileContent(content)
         var profile = FeedProfile(pubkey: pubkey)
         profile.name = metadata["name"] as? String
         profile.displayName = (metadata["display_name"] as? String) ?? (metadata["displayName"] as? String)

@@ -303,6 +303,9 @@ class DraftService: ObservableObject {
         // NIP-37: the text and the reply/quote/mention tags go NIP-44
         // encrypted to the author's own key; only d and k stay outside. A
         // failed encryption sends nothing.
+        // A draft holding a working nsec stays on this device only, sealed
+        // or not (SecretKeyLeak).
+        guard !SecretKeyLeak.containsSecretKey(content: draft.content, tags: draft.tags) else { return }
         let me = NostrService.shared.activeHexPubkey
         guard let sealed = try? await DraftEnvelope.seal(
             content: draft.content, tags: draft.tags, updatedAt: draft.updatedAt,

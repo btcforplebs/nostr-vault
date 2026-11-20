@@ -10,8 +10,11 @@ import Foundation
 ///    mute list hides the note (word, hashtag, thread). Your own accounts are
 ///    never blocked as people; mutes on words, hashtags and threads still
 ///    apply to them.
-/// 2. **inside**: the signer is one of your accounts, a key the surface
-///    always shows, the whitelist, or your own web.
+/// 2. **inside**: the signer is one of your accounts or a key the surface
+///    always shows.
+/// 2a. **outside** (or inside on reach `everyone`): the signer's secret key
+///    is public (`PublicKeyRegistry`), whatever the web or whitelist says.
+/// 2b. **inside**: the whitelist or your own web.
 /// 3. **inside** again when the surface's reach is `everyone` (a Global feed
 ///    with the shield on Everyone).
 /// 4. **hop3**: reach is `webAndHop3` and the signer is one hop past your web.
@@ -137,10 +140,12 @@ enum WebGate {
         let signer = subject.signer.lowercased()
         if isBlocked(subject, signer: signer, in: web) { return .blocked }
         guard !signer.isEmpty else { return .outside }
-        if web.own.contains(signer) || web.whitelist.contains(signer) || web.web.contains(signer)
-            || lowered(always).contains(signer) {
-            return .inside
-        }
+        if web.own.contains(signer) || lowered(always).contains(signer) { return .inside }
+        // A key anyone can post with (its nsec sits in a profile we loaded,
+        // PublicKeyRegistry) is no longer the person you trusted: outside your
+        // web and past hop 3, as a stranger is.
+        if PublicKeyRegistry.shared.isPublic(signer) { return reach == .everyone ? .inside : .outside }
+        if web.whitelist.contains(signer) || web.web.contains(signer) { return .inside }
         switch reach {
         case .everyone: return .inside
         case .webAndHop3 where web.hop3.contains(signer): return .hop3
