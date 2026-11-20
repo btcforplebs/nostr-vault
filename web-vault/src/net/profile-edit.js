@@ -156,7 +156,10 @@ export function withoutSecretKeys(profile, tags = []) {
   const removed = []
   const out = {}
   for (const [k, v] of Object.entries(profile ?? {})) {
-    if (containsSecretKey(typeof v === "string" ? v : JSON.stringify(v ?? null))) removed.push(k)
+    // The field's name too: a key pasted as a key name ({"nsec1…": "x"}) is published just the same. It is named
+    // as "a field" then, so the notice never shows it.
+    if (containsSecretKey(k)) removed.push("a field")
+    else if (containsSecretKey(typeof v === "string" ? v : JSON.stringify(v ?? null))) removed.push(k)
     else out[k] = v
   }
   const kept = []

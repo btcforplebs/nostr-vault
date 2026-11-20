@@ -127,7 +127,7 @@ export function localSigner(session, { keyStore } = {}) {
   return {
     method: "local",
     ready: async () => { await key() },
-    signEvent: async template => { assertNoSecretKey(template); return finalizeEvent({ ...template }, await key()) },
+    signEvent: async template => { assertNoSecretKey(template, session.pubkey); return finalizeEvent({ ...template }, await key()) },
     crypto: {
       encrypt: async (peer, text) => nip44.v2.encrypt(text, nip44.v2.utils.getConversationKey(await key(), peer)),
       decrypt: async (peer, ciphertext) => nip44.v2.decrypt(ciphertext, nip44.v2.utils.getConversationKey(await key(), peer)),

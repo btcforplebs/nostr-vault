@@ -12,7 +12,7 @@
 // itself is never logged, stored or sent: only the pubkey it derives is kept, in memory. The Apple and Android apps
 // have the same rule, in their own key-leak guard PRs.
 import { bech32 } from "@scure/base"
-import { getPublicKey } from "nostr-tools/pure"
+import { getPublicKey, verifyEvent } from "nostr-tools/pure"
 
 /** What the composer says, word for word on every platform. */
 export const SECRET_KEY_BLOCKED = "This is a secret key. Publishing it lets anyone post as you."
@@ -46,11 +46,12 @@ export function containsSecretKey(text) {
   return keys.length > 0
 }
 
-// "nsec1" and the 52 characters that carry the 32 key bytes, the checksum cut off. The setup name box keeps 60
-// characters, so a pasted nsec loses 3 checksum characters there and the key is still whole.
-const KEY_BODY = /nsec1[02-9ac-hj-np-z]{52}/i
+// "nsec1" and 20 or more bech32 characters: the start of a key, whole or cut. In the setup name box a pasted key is
+// never a name, and part of one (Tron round 2: 49 or 51 key characters kept) is brute-forceable, so that box takes
+// this as a key too.
+const KEY_BODY = /nsec1[02-9ac-hj-np-z]{20}/i
 
-/** Whether `text` holds a whole key, checksum or not: for a box that cuts text short (CreateAccount's 60-character name). */
+/** Whether `text` holds a key or a long piece of one: for the setup name box (CreateAccount), checked on the whole paste. */
 export const holdsSecretKey = text => containsSecretKey(text) || (typeof text === "string" && KEY_BODY.test(text))
 
 /** The pubkeys (hex) of the valid nsecs in `text`. A key that isn't a valid secp256k1 scalar is skipped. */
@@ -74,13 +75,25 @@ export const eventHasSecretKey = ev => eventTexts(ev).some(containsSecretKey)
 export const secretKeyError = () => Object.assign(new Error(SECRET_KEY_BLOCKED), { fixed: true, secretKey: true })
 
 /** A repost (kind 6, 16 generic) carries someone else's signed event as its content: their words, not yours, and
- *  already public. Android and Apple let it through the same way. */
+ *  already public. Only that content is let through: empty, or an event whose signature checks out and whose author
+ *  isn't `signer`. Any other repost text (a napplet can sign a kind 6 with any content) and every tag is checked as usual. */
 const REPOST_KINDS = new Set([6, 16])
+function repostOfOthers(ev, signer) {
+  if (!REPOST_KINDS.has(ev?.kind)) return false
+  if (ev.content === "") return true
+  let inner
+  try { inner = JSON.parse(ev.content) } catch { return false }
+  if (!inner || typeof inner !== "object" || typeof inner.pubkey !== "string") return false
+  if (signer && inner.pubkey.toLowerCase() === String(signer).toLowerCase()) return false
+  const { id, pubkey, created_at, kind, tags, content, sig } = inner
+  try { return verifyEvent({ id, pubkey, created_at, kind, tags, content, sig }) } catch { return false }
+}
 
-/** Throws secretKeyError when the event carries a valid nsec. Every signer calls this before it signs. */
-export function assertNoSecretKey(ev) {
-  if (REPOST_KINDS.has(ev?.kind)) return
-  if (eventHasSecretKey(ev)) throw secretKeyError()
+/** Throws secretKeyError when the event carries a valid nsec. Every signer calls this before it signs, with the
+ *  account it signs as (`signer`, hex). */
+export function assertNoSecretKey(ev, signer) {
+  const texts = repostOfOthers(ev, signer) ? (ev.tags ?? []).flatMap(t => (Array.isArray(t) ? t : [])) : eventTexts(ev)
+  if (texts.some(containsSecretKey)) throw secretKeyError()
 }
 
 // ---- Public-key accounts, from kind 0s already loaded ----

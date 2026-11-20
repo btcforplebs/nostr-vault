@@ -27,7 +27,7 @@ export function extensionSigner(pubkey) {
     method: "nip07",
     crypto: extensionCrypto(pubkey),
     signEvent: async t => {
-      assertNoSecretKey(t) // before the extension sees it
+      assertNoSecretKey(t, pubkey) // before the extension sees it
       const ext = await findExtension()
       if (!ext) throw ours("Your browser's Nostr extension isn't answering, so nothing was signed. Reload the page, or check that the extension is allowed on this site.")
       if (typeof ext.signEvent !== "function") throw ours("Your extension can't sign for this site, so nothing was signed. Allow this site in the extension, or use one that signs.")

@@ -15,6 +15,7 @@ import { extensionSigner, forgetAccountCheck } from "../src/signer/nip07.js"
 import { sendMessage, wrapFor, rumorFor } from "../src/net/dms.js"
 import { isInbox } from "../src/net/dm-trust.js"
 import { putProfile } from "../src/net/profiles.js"
+import { nameInput, NAME_MAX } from "../src/net/new-account.js"
 import { saveProfile, formFields, removedNotice, withoutSecretKeys } from "../src/net/profile-edit.js"
 import { gateWeb, judge, VERDICTS } from "../src/net/web-gate.js"
 import { insideWeb } from "../src/net/web-trust.js"
@@ -170,13 +171,36 @@ test("a repost carries someone else's note as it is: the signer lets kinds 6 and
   await assert.rejects(signer.signEvent({ kind: 1, created_at: 1, tags: [["q", inner.id]], content: `look nostr:${leaked.nsec}` }), e => e.message === SECRET_KEY_BLOCKED)
 })
 
-test("the setup name box: a key with its checksum cut off (60 characters) still counts there", () => {
+test("the setup name box: the whole paste is checked before it is cut to 60, and a piece of a key counts there", () => {
   const k = fresh()
-  assert.equal(holdsSecretKey(k.nsec.slice(0, 60)), true)
-  assert.equal(containsSecretKey(k.nsec.slice(0, 60)), false) // everywhere else only a whole, valid key counts
-  assert.equal(holdsSecretKey(k.nsec.slice(0, 50)), false)
+  for (const paste of [k.nsec, `nostr:${k.nsec}`, `Bob ${k.nsec}`, `Bob nostr:${k.nsec} hi`]) {
+    assert.equal(holdsSecretKey(paste), true, paste.slice(0, 12))
+    // The box keeps it whole (it is shown, to be taken out), never a 60-character piece that would pass.
+    assert.equal(nameInput(paste), paste)
+  }
+  // What a 60-character cut used to keep (Tron round 2): 49 and 51 key characters; still a key in this box.
+  assert.equal(holdsSecretKey(`nostr:${k.nsec}`.slice(0, 60)), true)
+  assert.equal(holdsSecretKey(`Bob ${k.nsec}`.slice(0, 60)), true)
+  assert.equal(containsSecretKey(`Bob ${k.nsec}`.slice(0, 60)), false) // elsewhere only a whole, valid key counts
+  assert.equal(holdsSecretKey(k.nsec.slice(0, 25)), true) // nsec1 + 20
+  assert.equal(holdsSecretKey(k.nsec.slice(0, 24)), false)
   assert.equal(holdsSecretKey("Satoshi"), false)
-  assert.equal(holdsSecretKey(k.nsec), true)
+  assert.equal(nameInput("x".repeat(80)), "x".repeat(NAME_MAX))
+  assert.equal(nameInput("Satoshi"), "Satoshi")
+})
+
+test("a repost is let through only with someone else's signed note: other text is checked as usual", () => {
+  const me = fresh(), other = fresh(), leaked = fresh()
+  const theirs = finalizeEvent({ kind: 1, created_at: 1, tags: [], content: `oops ${leaked.nsec}` }, other.sk)
+  const mine = finalizeEvent({ kind: 1, created_at: 1, tags: [], content: `oops ${leaked.nsec}` }, me.sk)
+  assert.doesNotThrow(() => assertNoSecretKey({ kind: 6, content: "", tags: [] }, me.pk))
+  assert.doesNotThrow(() => assertNoSecretKey({ kind: 6, content: JSON.stringify(theirs), tags: [] }, me.pk))
+  const blocked = e => e.message === SECRET_KEY_BLOCKED
+  // A napplet's kind 6 with plain text, a forged inner event, your own note, a key in a tag: all refused.
+  assert.throws(() => assertNoSecretKey({ kind: 6, content: `hi ${leaked.nsec}`, tags: [] }, me.pk), blocked)
+  assert.throws(() => assertNoSecretKey({ kind: 16, content: JSON.stringify({ ...theirs, sig: "00".repeat(64) }), tags: [] }, me.pk), blocked)
+  assert.throws(() => assertNoSecretKey({ kind: 6, content: JSON.stringify(mine), tags: [] }, me.pk), blocked)
+  assert.throws(() => assertNoSecretKey({ kind: 6, content: JSON.stringify(theirs), tags: [["comment", leaked.nsec]] }, me.pk), blocked)
 })
 
 test("Edit Profile leaves out a key hidden in a field or tag the form doesn't show, and says where", async () => {
@@ -197,6 +221,11 @@ test("Edit Profile leaves out a key hidden in a field or tag the form doesn't sh
   assert.equal(notice, "Removed a secret key from displayName, the note tag.")
   assert.equal(notice.includes(leaked.nsec), false)
   assert.equal(removedNotice([]), "")
+  // A key used as a field's name is left out too, named only as "a field".
+  const named = withoutSecretKeys({ name: "a", [leaked.nsec]: "x" })
+  assert.deepEqual(named.profile, { name: "a" })
+  assert.deepEqual(named.removed, ["a field"])
+  assert.equal(removedNotice(named.removed).includes(leaked.nsec), false)
   const clean = withoutSecretKeys({ name: "a", about: "b" }, [["t", "x"]])
   assert.deepEqual(clean, { profile: { name: "a", about: "b" }, tags: [["t", "x"]], removed: [] })
 })

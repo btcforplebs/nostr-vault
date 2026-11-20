@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { newKey, checkPassword, localSession, localSigner, MIN_PASSWORD, CREATING } from "../signer/local.js"
 import { assertCanSeal } from "../signer/keyring.js"
-import { starterPacks, newAccountTemplates, signAll, publishNewAccount, NEW_ACCOUNT_RELAYS } from "../net/new-account.js"
+import { starterPacks, newAccountTemplates, signAll, publishNewAccount, nameInput, NEW_ACCOUNT_RELAYS } from "../net/new-account.js"
 import { StarterRelays } from "../components/StarterRelays.jsx"
 import { uploadPhoto, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { withTimeout } from "../signer/readonly.js"
@@ -169,7 +169,7 @@ function Profile({ name, setName, photo, setPhoto, onContinue, onSkip }) {
       {err && <p class="error small" role="alert">{err}</p>}
       <label class="field">
         <span>Name</span>
-        <input value={name} onInput={e => setName(e.currentTarget.value)} placeholder="Your name" autocomplete="nickname" maxLength={60} />
+        <input value={name} onInput={e => setName(nameInput(e.currentTarget.value))} placeholder="Your name" autocomplete="nickname" />
       </label>
       {keyInName && <p class="error small" role="alert">{SECRET_KEY_BLOCKED}</p>}
       <button type="button" class="primary onboard-main" disabled={keyInName} onClick={() => { if (!keyInName) onContinue() }}>Continue</button>
