@@ -23,6 +23,7 @@ import { OutsideFold } from "../components/OutsideFold.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, linkChoice, feedRelays, LINK_PARAMS, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, readsHaven, globalLike, withScope, saveMediaScope, liveFilters, liveKeeps, trustScoped } from "../net/feeds.js"
 import { fetchPopular, audienceKeeps, popularRanks } from "../net/popular.js"
+import { fetchCatchUp } from "../net/catchup.js"
 import { setEveryone, everyoneLocked } from "../net/global-trust.js"
 import { SCREENED_LINE } from "../net/topic-filter.js"
 import { EveryoneShieldDialog } from "../components/EveryoneShieldDialog.jsx"
@@ -106,10 +107,13 @@ export function FeedScreen({ ctx }) {
   const Reader = readerFor(choice.mode)?.Screen
   // `following`: read from Haven /feed (Following, and Media on Following). Media on Global is a stranger feed.
   const following = readsHaven(choice), media = choice.mode === "media", popular = choice.mode === "popular"
+  // Catch Up (net/catchup.js): one picked page of each follow's latest post, so like Popular it has no Older or stream.
+  const catchup = choice.mode === "catchup"
   // A hashtag under the Everyone lock (fewer than 5 follows) opens screened, not empty (net/feeds.js screenedHashtag).
   const hashtagScreened = c => c.mode === "hashtag" && everyoneLocked(follows, me)
-  // Global, Media on Global, Popular and Discover are all read through your web of trust, so they wait for your follows.
-  const global = globalLike(choice), discover = choice.mode === "discovery", needsWeb = popular || global || discover
+  // Global, Media on Global, Popular and Discover are all read through your web of trust, so they wait for your follows;
+  // Catch Up is your follows' posts, so it waits for them too.
+  const global = globalLike(choice), discover = choice.mode === "discovery", needsWeb = popular || catchup || global || discover
   // Discover's network (net/discover.js), worked out once per follow list and kept for Older: { key, people }.
   const network = useRef(null)
   const discoverPeople = async () => {
@@ -340,7 +344,7 @@ export function FeedScreen({ ctx }) {
     if (fresh.length) setStrangePending(prev => newerNotes([], [...fresh, ...prev.filter(p => !fresh.some(f => f.id === p.id))]))
   }
   useEffect(() => {
-    if (Reader || following || popular || strange === null || !navigator.onLine) return
+    if (Reader || following || popular || catchup || strange === null || !navigator.onLine) return
     const c = choice, key = feedKey(c)
     let close = () => {}, live = true
     ;(async () => {
@@ -393,13 +397,15 @@ export function FeedScreen({ ctx }) {
     const n = ++seq.current
     if (c.mode === "hashtag" && !c.tag) return setStatus("")
     if (c.mode === "list" && !c.authors) return setStatus("Reading the list…")
-    if ((c.mode === "popular" || globalLike(c) || c.mode === "discovery") && !follows.length) return setStatus("")
+    if ((c.mode === "popular" || c.mode === "catchup" || globalLike(c) || c.mode === "discovery") && !follows.length) return setStatus("")
     if (!navigator.onLine) return setStatus(`Offline: ${FEEDS.find(f => f.id === c.mode)?.label ?? c.label ?? "this feed"} needs the network`)
     setStatus(until ? "Fetching older notes…" : c.mode === "popular" ? "Ranking the last day's likes, reposts and zaps…"
-      : c.mode === "discovery" && !network.current ? "Finding the people your follows follow…" : "Loading…")
+      : c.mode === "discovery" && !network.current ? "Finding the people your follows follow…"
+      : c.mode === "catchup" ? "Finding each follow's latest post…" : "Loading…")
     try {
       const page = c.mode === "popular"
         ? await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault, blocked, ctx }).then(got => { popularScores.current = got.scores; return got.notes })
+        : c.mode === "catchup" ? await fetchCatchUp({ follows, relays, vault })
         : c.mode === "discovery" ? await fetchDiscover(await discoverPeople(), account.relays.read, { until })
         : await fetchStrangerFeed(c, account.relays.read, { until, limit: c.mode === "media" ? MEDIA_PAGE : PAGE, trust: trustScoped(c) ? await globalTrust(ctx.session?.pubkey, follows) : null,
           // Under the Everyone lock a hashtag opens screened (feeds.js screenedHashtag), so a new account can find people.
@@ -556,6 +562,7 @@ export function FeedScreen({ ctx }) {
           : <Notes shown={drawn} outside={outside} foldKey={feedKey(choice)} onOlder={older} olderState={olderState} layout={layout} fetchRoots={rootFetcher(vault, relays)} />
         : choice.mode === "hashtag" && !choice.tag ? <p class="empty">Type a hashtag to see notes tagged with it.</p>
           : popular && !follows.length ? <p class="empty">{account.loaded ? "Popular counts what the people you follow, and the people they follow, liked. Follow someone first." : "Loading your follows…"}</p>
+          : catchup && !follows.length ? <p class="empty">{account.loaded ? "Catch Up shows the latest post of each person you follow. Follow someone first." : "Loading your follows…"}</p>
           : global && !follows.length ? <p class="empty">{account.loaded ? "Follow people to build your web of trust" : "Loading your follows…"}</p>
           : discover && !follows.length ? account.loaded ? <DiscoverEmpty text="Follow more people on Nostr to build your extended network" />
             : <p class="empty">Loading your follows…</p>
@@ -565,9 +572,10 @@ export function FeedScreen({ ctx }) {
           : media ? <Media tiles={tiles} blockedAll={!!strange.length && !shown.length}
               onOlder={() => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} olderState={olderState} />
           : !strange.length && choice.mode === "list" && choice.authors && !choice.authors.length ? <p class="empty">This list has no one in it, or it didn't come back from your relays.</p>
-          : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : global && !choice.everyone ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
+          : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow."
+            : catchup ? "All caught up: nobody you follow has posted in the last two weeks." : global && !choice.everyone ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
           : <Notes shown={drawn} outside={outside} foldKey={feedKey(choice)} memoryOnly layout={layout} keepFeedOrder rankOf={rankOf} fetchRoots={rootFetcher(vault, account.relays.read, { save: false })}
-              olderState={olderState} onOlder={popular ? null : () => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} />}
+              olderState={olderState} onOlder={popular || catchup ? null : () => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} />}
       </>}
     </main>
   )

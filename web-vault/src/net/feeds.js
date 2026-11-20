@@ -1,5 +1,5 @@
 // The Feed's picker: Following (Haven /feed, see sync.js), Discover (your extended network's notes, net/discover.js), Global (recent notes from the user's read relays),
-// Hashtag (`#t` notes), Popular (net/popular.js) and Media (Following's image and video notes, net/media.js). Discover, Global and Hashtag notes are strangers': they are held in memory only and never written
+// Hashtag (`#t` notes), Popular (net/popular.js), Catch Up (each follow's latest post, net/catchup.js) and Media (Following's image and video notes, net/media.js). Discover, Global and Hashtag notes are strangers': they are held in memory only and never written
 // to Haven /feed, which is the Following feed's store. Their names and pictures, and the quotes and @names inside
 // their notes, stay in memory too: FeedScreen passes `memoryOnly` to their cards and `save: false` to fetchProfiles.
 import { pool, uniq, PROFILE_RELAYS } from "./pool.js"
@@ -9,7 +9,7 @@ import { filterGlobal, trustShows, everyoneOn, everyoneShows } from "./global-tr
 import { trustedFilters } from "../readers/trust.js"
 
 // The iPhone's FeedMode order (Services/FeedServiceTypes.swift FeedMode). Readers (src/readers) take their place in it.
-export const FEED_ORDER = ["following", "discovery", "global", "hashtag", "popular", "media", "reels", "articles", "recipes",
+export const FEED_ORDER = ["following", "discovery", "global", "hashtag", "popular", "catchup", "media", "reels", "articles", "recipes",
   "marketplace", "live", "polls", "music"]
 export const FEEDS = [
   { id: "following", label: "Following" },
@@ -17,6 +17,7 @@ export const FEEDS = [
   { id: "global", label: "Global" },
   { id: "hashtag", label: "Hashtag" },
   { id: "popular", label: "Popular" },
+  { id: "catchup", label: "Catch Up" },
   { id: "media", label: "Media" },
 ]
 /** The picker's feeds: these, plus each reader's { id, label }, in the iPhone's order. */
@@ -78,7 +79,8 @@ export const moveItem = (list, from, to) => {
 /** The feeds the picker lists: shown ones, in the menu's order. */
 export const visibleFeeds = (feeds, menu) => menuFeeds(feeds, menu).filter(f => f.shown).map(({ shown, ...f }) => f)
 
-/** Following and Media are read from Haven /feed; the others are strangers' notes, held in memory. */
+/** Following and Media are read from Haven /feed; the others are held in memory (Catch Up's are follows' notes, but
+ *  it is one picked page, read like Popular's). */
 export const fromHaven = mode => mode === "following" || mode === "media"
 
 // Media's Following / Global choice, as on the iPhone (FeedService.mediaFeedMode, FeedView+Toolbar.swift): Following is
