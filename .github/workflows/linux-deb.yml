@@ -287,6 +287,14 @@ jobs:
           docker exec nv sh /w/linux/native/test/window-test.sh x11 vault /tmp/nvwt-out || r=1
           docker exec nv sh /w/linux/native/test/window-test.sh wayland vault /tmp/nvwt-out || r=1
           exit $r
+      - name: X11 and Wayland - signed in, the desktop layout is the phone's screens, not the napplets (box build)
+        run: |
+          # Logen 2026-11-20: NV for Linux ships without the napplet desktop layout (vite NV_DESK_NAPPLETS, off for NV_BOX=1).
+          o=$(docker exec nv cut -d' ' -f3 /root/owner.key)
+          r=0
+          docker exec -e NV_WT_OWNER="$o" nv sh /w/linux/native/test/window-test.sh x11 desk /tmp/nvwt-out || r=1
+          docker exec -e NV_WT_OWNER="$o" nv sh /w/linux/native/test/window-test.sh wayland desk /tmp/nvwt-out || r=1
+          exit $r
       - name: Client tag, end to end - a note signed with the window's user agent says "on Linux" on the relay
         run: |
           # The user agent the window's web view gave its pages (window-test.sh's setup stage), the throwaway owner's

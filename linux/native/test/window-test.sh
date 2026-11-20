@@ -8,6 +8,9 @@
 #            draw nothing, which shows this check can tell a blank window from a drawn one); then a page that crashes
 #            on every load: the window must stop after two web processes and draw its own GTK crash page (a copy with
 #            CRASH_LOOP_S = 0 must keep starting new ones, the control)
+#     desk   the vault is set up: signed in as the owner (desk-probe.py, a stub signer), the window's desktop layout must
+#            draw the phone's own screens, not the napplets: the box build turns them off (NV_DESK_NAPPLETS, Logen
+#            2026-11-20). NV_WT_OWNER: the owner's pubkey hex. NV_WT_DESK_EXPECT=napplets checks the other way.
 #     paste  (x11 only) Ctrl+V, pressed with xdotool, into a text field in the window's own web view
 #            (paste-probe.py): with an empty clipboard the window must survive, and with text on the clipboard the
 #            text must arrive. Where WebKitGTK has the empty-clipboard crash (2.54.0, 2.54.1), a copy of the window
@@ -26,7 +29,7 @@ set -u
 MODE=${1:-}; STAGE=${2:-}; OUT=${3:-}
 CMD=${NV_WT_CMD:-nostr-vault-desktop}
 MIN_COLOURS=${NV_WT_MIN_COLOURS:-64} # a drawn page has hundreds (anti-aliased text); a blank window has 1 or 2
-case "$MODE.$STAGE" in x11.setup|x11.vault|x11.paste|wayland.setup|wayland.vault) ;; *) echo "usage: $0 <x11|wayland> <setup|vault> <out dir>  (or: x11 paste <out dir>)" >&2; exit 2 ;; esac
+case "$MODE.$STAGE" in x11.setup|x11.vault|x11.paste|x11.desk|wayland.setup|wayland.vault|wayland.desk) ;; *) echo "usage: $0 <x11|wayland> <setup|vault> <out dir>  (or: x11 paste <out dir>)" >&2; exit 2 ;; esac
 [ -n "$OUT" ] || { echo "no out dir" >&2; exit 2; }
 
 if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
@@ -35,8 +38,10 @@ if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
   cp "$0" /tmp/nvwt-window-test.sh && chmod 755 /tmp/nvwt-window-test.sh
   cp "$(dirname "$0")/ua-probe.py" /tmp/nvwt-ua-probe.py && chmod 644 /tmp/nvwt-ua-probe.py
   cp "$(dirname "$0")/paste-probe.py" /tmp/nvwt-paste-probe.py && chmod 644 /tmp/nvwt-paste-probe.py
+  cp "$(dirname "$0")/desk-probe.py" /tmp/nvwt-desk-probe.py && chmod 644 /tmp/nvwt-desk-probe.py
   exec runuser -u nvwt -- env NV_WT_INNER=1 NV_WT_CMD="$CMD" NV_WT_CONTROL="${NV_WT_CONTROL:-1}" NV_WT_VAULT_URL="${NV_WT_VAULT_URL:-}" \
-    NV_WT_PROBE=/tmp/nvwt-ua-probe.py NV_WT_PASTE_PROBE=/tmp/nvwt-paste-probe.py NV_WT_PY="${NV_WT_PY:-}" NV_WT_BIN="${NV_WT_BIN:-}" \
+    NV_WT_PROBE=/tmp/nvwt-ua-probe.py NV_WT_PASTE_PROBE=/tmp/nvwt-paste-probe.py NV_WT_DESK_PROBE=/tmp/nvwt-desk-probe.py \
+    NV_WT_OWNER="${NV_WT_OWNER:-}" NV_WT_DESK_EXPECT="${NV_WT_DESK_EXPECT:-classic}" NV_WT_PY="${NV_WT_PY:-}" NV_WT_BIN="${NV_WT_BIN:-}" \
     NV_WT_MIN_COLOURS="$MIN_COLOURS" PATH="$PATH" HOME=/home/nvwt sh /tmp/nvwt-window-test.sh "$MODE" "$STAGE" "$OUT"
 fi
 mkdir -p "$OUT"
@@ -124,6 +129,25 @@ if [ "$STAGE" = setup ]; then
     *" NostrVaultLinux/"*) ok "$MODE: the window's pages see the Linux word in their user agent ($ua)" ;;
     *) no "$MODE: the window's user agent has no NostrVaultLinux/ word: '${ua}'"; tail -20 "$OUT/$MODE-ua-probe.log" ;;
   esac
+fi
+
+if [ "$STAGE" = desk ]; then
+  # The desktop layout's screens, signed in: FeedScreen and no napplet frame (or, NV_WT_DESK_EXPECT=napplets, the
+  # other way round). desk-probe.py fails on its own if the desktop layout never draws, so a sign-in page can't pass.
+  echo "${NV_WT_OWNER:-}" | grep -qE '^[0-9a-f]{64}$' || abort "NV_WT_OWNER isn't a pubkey hex"
+  url=${NV_WT_VAULT_URL:-http://127.0.0.1:8080/}
+  for i in $(seq 1 60); do curl -fsS -o /dev/null "$url" 2>/dev/null && break; sleep 2; done
+  dprobe=${NV_WT_DESK_PROBE:-$(dirname "$0")/desk-probe.py}
+  d=$(dbus-run-session -- ${NV_WT_PY:-python3 -I} - "$bin" "$NV_WT_OWNER" <"$dprobe" 2>"$OUT/$MODE-desk-probe.log" | sed -n 's/^DESK //p')
+  printf '%s\n' "$d" >"$OUT/$MODE-desk.json"
+  shot "$OUT/$MODE-desk.png"
+  case "${NV_WT_DESK_EXPECT:-classic}.$d" in
+    classic.*'"desk": true'*'"napplets": 0,'*'"feed": true'*) ok "$MODE: the desktop layout draws the phone's own screens, no napplets ($d)" ;;
+    napplets.*'"desk": true'*'"feed": false'*) case "$d" in *'"napplets": 0,'*) no "$MODE: no napplet frames ($d)" ;; *) ok "$MODE: the desktop layout draws the napplets ($d)" ;; esac ;;
+    *) no "$MODE: want the ${NV_WT_DESK_EXPECT:-classic} desktop screens, the window drew: '${d}'"; tail -20 "$OUT/$MODE-desk-probe.log" ;;
+  esac
+  echo "RESULT $MODE $STAGE pass=$pass fail=$fail"
+  [ "$fail" = 0 ]; exit
 fi
 
 if [ "$STAGE" = paste ]; then

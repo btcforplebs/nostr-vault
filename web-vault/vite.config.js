@@ -15,6 +15,9 @@ const commit = process.env.NV_COMMIT || (() => {
 
 // NV_BOX=1: the build NV for Linux serves at its own root, its vault the box on the same origin (src/box/mode.js).
 const box = process.env.NV_BOX === "1"
+// The desktop layout's napplets (plan step 11, src/napplet/flag.js): off in the box build until Logen turns them on
+// (2026-11-20, the Linux beta 6 hang on .108). NV_DESK_NAPPLETS=1 or =0 overrides; flip the default here to change it.
+const deskNapplets = process.env.NV_DESK_NAPPLETS ? process.env.NV_DESK_NAPPLETS === "1" : !box
 
 // The napplet loader gets its own CSP in dev, as nginx sends it on the site (src/napplet/csp.js): the shell's
 // script-src 'self' would stop every napplet's inline script.
@@ -46,7 +49,7 @@ export default {
   build: { outDir: "dist", emptyOutDir: true, target: "es2022" },
   esbuild: { jsx: "automatic", jsxImportSource: "preact" },
   resolve: { dedupe: ["nostr-tools", "preact"] },
-  define: { __NV_COMMIT__: JSON.stringify(commit), __NV_BOX__: JSON.stringify(box), __NV_NAPPLET_HOST__: JSON.stringify(process.env.NV_NAPPLET_HOST || "") },
+  define: { __NV_COMMIT__: JSON.stringify(commit), __NV_BOX__: JSON.stringify(box), __NV_DESK_NAPPLETS__: JSON.stringify(deskNapplets), __NV_NAPPLET_HOST__: JSON.stringify(process.env.NV_NAPPLET_HOST || "") },
   server: { fs: { allow: [".."] } },
   plugins: [precompress(), nappletLoaderCsp(), ...(box ? [] : [preloadHaven()])], // haven.wasm's preload: index.html, for someone signed in
 }
