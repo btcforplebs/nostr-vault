@@ -1,9 +1,10 @@
-// index.html's haven.wasm preload, built by vite.config.js (preloadHaven). The wasm is ~6.6 MB gzipped and the app's
+// index.html's haven.wasm early download, built by vite.config.js (preloadHaven). The wasm is ~6.6 MB gzipped and the app's
 // own script only asks for it once it has loaded and run: 285 ms into a cold start, against 45 ms when index.html
 // preloaded it with a plain link (NV_HEALTH_F_WEB). Only someone signed in needs it: a guest (src/guest, a shared
 // post) must not download 6.6 MB for nothing, and the app's CSP (website/nginx.conf, script-src 'self') runs no inline
 // script. So the check is this short script of its own, run before the app's script: the wasm starts once it has
-// arrived, one round trip later than a link written into index.html itself would have started it.
+// arrived, one round trip later than a link written into index.html itself would have started it. It is a fetch()
+// whose response loadHaven takes, not a preload link: Safari's engine downloaded a preloaded wasm twice (bootScript).
 import { createHash } from "node:crypto"
 import { SESSION_KEY } from "./src/session.js"
 
@@ -12,17 +13,19 @@ const PUBKEY = /^[0-9a-f]{64}$/
 /**
  * The check as a script: starts `wasm` (this build's hashed URL) downloading if a session this browser can use is
  * saved, decided exactly as session.js loadSession does. Test: test/nv-preload.test.mjs runs it against loadSession.
+ * It fetches the wasm itself and leaves the response for loadHaven (web-relay haven.js wasmResponse) at
+ * `__nvHavenWasm`, rather than adding a <link rel=preload>: Safari's engine never hands a preload to the later
+ * fetch(), so it downloaded the wasm twice (+4.7 MB on a first load, Tidy's audit 11-20 W5). A fetch is reused the
+ * same way by every engine, and starts as early as the link did.
  */
 export function bootScript(wasm) {
   return `;(function () {
   try {
     var s = JSON.parse(localStorage.getItem(${JSON.stringify(SESSION_KEY)}) || "null")
     if (!s || !(/${PUBKEY.source}/).test(s.pubkey)) return
-    // The same URL and mode (cors, same-origin credentials) as loadHaven's fetch, so that fetch gets this response.
-    var l = document.createElement("link")
-    l.rel = "preload"; l.as = "fetch"; l.type = "application/wasm"
-    l.crossOrigin = "anonymous"; l.href = ${JSON.stringify(wasm)}
-    document.head.appendChild(l)
+    // The absolute URL loadHaven compares against; a failed fetch leaves null, and loadHaven fetches again.
+    var u = new URL(${JSON.stringify(wasm)}, document.baseURI).href
+    window.__nvHavenWasm = { href: u, res: fetch(u, { credentials: "same-origin" }).catch(function () { return null }) }
   } catch (e) {}
 })()
 `
