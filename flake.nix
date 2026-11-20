@@ -17,9 +17,9 @@
 
       # The app's MARKETING_VERSION (as linux/native/build.sh), plus the commit date.
       marketing = lib.head (
-        lib.concatMap (l: lib.toList (builtins.match " *MARKETING_VERSION: *\"?([0-9.]+)\"?" l)) (
-          lib.splitString "\n" (builtins.readFile ./HavenApp/project.yml)
-        )
+        lib.concatMap (l: lib.optionals (builtins.match " *MARKETING_VERSION:.*" l != null) (
+          builtins.match " *MARKETING_VERSION: *\"?([0-9.]+)\"?" l
+        )) (lib.splitString "\n" (builtins.readFile ./HavenApp/project.yml))
       );
       version = "${marketing}-unstable-${lib.substring 0 8 (self.lastModifiedDate or "19700101")}";
       commit = self.shortRev or self.dirtyShortRev or "unknown";

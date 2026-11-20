@@ -55,10 +55,8 @@ jobs:
           extra_nix_config: |
             system-features = nixos-test benchmark big-parallel kvm
             sandbox = true
-      - name: flake.lock (BOOTSTRAP, replaced by a committed-lock check before review)
-        run: |
-          if [ ! -s flake.lock ]; then nix flake lock; echo "::warning::no flake.lock committed"; fi
-          cat flake.lock
+      - name: flake.lock is committed (the build must not pick its own nixpkgs)
+        run: test -s flake.lock && git ls-files --error-unmatch flake.lock
       - name: Packages
         run: nix build -L --keep-going --no-link .#nostr-vault .#keytool
       - name: nix flake check (includes the VM test)
