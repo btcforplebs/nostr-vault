@@ -215,6 +215,11 @@ class DMThreadViewModel @Inject constructor(
         if ((text.isBlank() && image == null) || _isSending.value) return
         val account = openedFor
         if (!stillSameAccount(account)) return
+        // Before the box is cleared: the text stays so the key can be taken out.
+        if (com.nostrvault.util.SecretKeyLeak.containsSecretKey(text)) {
+            _sendError.value = com.nostrvault.util.SecretKeyLeak.MESSAGE
+            return
+        }
 
         // Not this chat's scope: leaving while a photo or video prepares must not lose it (B5).
         dmService.launchDetached {

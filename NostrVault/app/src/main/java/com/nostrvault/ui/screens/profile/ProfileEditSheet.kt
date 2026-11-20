@@ -38,6 +38,8 @@ import kotlinx.coroutines.launch
 import com.nostrvault.di.ApplicationScope
 import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
+import com.nostrvault.util.SecretKeyLeak
+import com.nostrvault.util.SecretKeyLeakException
 
 /**
  * Edit Profile, opened over your own profile as a sheet by the Edit Profile
@@ -91,6 +93,10 @@ class ProfileEditViewModel @Inject constructor(
     private val _uploadError = MutableStateFlow<String?>(null)
     val uploadError = _uploadError.asStateFlow()
 
+    /** Why Save was refused and the sheet stayed open (a secret key in a field). */
+    private val _saveError = MutableStateFlow<String?>(null)
+    val saveError = _saveError.asStateFlow()
+
     /** The active account, whose profile [open] fills the form from. */
     val pubkey: String get() = configStore.activeAccountHexPubkey.value
 
@@ -128,6 +134,7 @@ class ProfileEditViewModel @Inject constructor(
         initialFields = formFields()
         unsavedDraft?.let { (account, fields) -> if (account == pubkey) applyFields(fields) }
         _uploadError.value = null
+        _saveError.value = null
         isOpen = true
     }
 
@@ -204,14 +211,21 @@ class ProfileEditViewModel @Inject constructor(
      * The Save button. Changed fields show on the page at once and publish
      * behind; if that fails the page goes back to what it showed and the
      * next open as the same account restores the changes.
+     * False when it was refused and the sheet stays open: a field holds a
+     * secret key, which is never published, and the fields keep what was typed.
      */
-    fun save() {
-        if (!isOpen) return
+    fun save(): Boolean {
+        if (!isOpen) return true
+        val edited = formFields()
+        if (edited.values.any { SecretKeyLeak.containsSecretKey(it) }) {
+            _saveError.value = SecretKeyLeak.MESSAGE
+            return false
+        }
+        _saveError.value = null
         isOpen = false
         val initial = initialFields
-        val edited = formFields()
-        val existing = existing ?: return
-        if (!ProfileMetadataMerge.hasChanges(initial, edited)) return
+        val existing = existing ?: return true
+        if (!ProfileMetadataMerge.hasChanges(initial, edited)) return true
         val pubkey = existing.pubkey
         val formAccount = formAccount
         unsavedDraft = null
@@ -224,7 +238,7 @@ class ProfileEditViewModel @Inject constructor(
         // would publish that profile as theirs, so nothing is saved.
         if (!ProfileEditGuard.maySign(signer = lock.hex, editedProfile = pubkey, formAccount = formAccount)) {
             notificationManager.showError(PostingAccount.MESSAGE)
-            return
+            return true
         }
         val shownBefore = nostrService.profiles.value[pubkey]
         val generation = ++saveGeneration
@@ -241,15 +255,18 @@ class ProfileEditViewModel @Inject constructor(
             notificationManager.showError(message)
         }
         appScope.launch(Dispatchers.Main) {
+            var keyInProfile = false
             val published = publish(existing, initial, edited, lock, onRefused = {
                 appScope.launch(Dispatchers.Main) { rollBack(SAVE_REFUSED) }
-            })
+            }, onSecretKey = { keyInProfile = true })
             if (published != null) {
                 nostrService.showLocalProfile(pubkey, published)
             } else {
-                rollBack(SAVE_FAILED)
+                // A field this form doesn't show (set by another app) holds a key.
+                rollBack(if (keyInProfile) SecretKeyLeak.MESSAGE else SAVE_FAILED)
             }
         }
+        return true
     }
 
     companion object {
@@ -267,6 +284,8 @@ class ProfileEditViewModel @Inject constructor(
         lock: PostingAccount.Lock,
         /** Runs later if every relay turns the profile down or never answers. */
         onRefused: () -> Unit,
+        /** Runs when the merged profile holds a secret key, so nothing was signed. */
+        onSecretKey: () -> Unit,
     ): FeedProfile? {
         // A kind 0 replaces the whole profile. Start from the newest one on
         // the relays so lud06 and every key this form doesn't show
@@ -286,6 +305,9 @@ class ProfileEditViewModel @Inject constructor(
             nostrService.signEventAsync(kind = 0, content = merged.toString(), tags = lookup.event?.tags.orEmpty(), lockedTo = lock)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: SecretKeyLeakException) {
+            onSecretKey()
+            null
         } catch (e: Exception) {
             null
         } ?: return null
@@ -323,6 +345,7 @@ fun ProfileEditSheet(
     val website by viewModel.website.collectAsState()
     val uploading by viewModel.uploading.collectAsState()
     val uploadError by viewModel.uploadError.collectAsState()
+    val saveError by viewModel.saveError.collectAsState()
     val hasChanges = remember(displayName, name, about, pictureUrl, bannerUrl, nip05, lud16, website) {
         viewModel.hasChanges()
     }
@@ -342,7 +365,12 @@ fun ProfileEditSheet(
     // already moved it by the time onDismissRequest runs.
     fun dismiss(save: Boolean) {
         if (viewModel.uploading.value != null) return
-        if (save) viewModel.save() else viewModel.close()
+        if (save) {
+            // Refused (a secret key in a field): the sheet stays with its message.
+            if (!viewModel.save()) return
+        } else {
+            viewModel.close()
+        }
         scope.launch { sheetState.hide() }.invokeOnCompletion { onClose() }
     }
 
@@ -368,6 +396,14 @@ fun ProfileEditSheet(
             onDiscard = { dismiss(save = false) },
             onSave = { dismiss(save = true) },
         )
+        saveError?.let {
+            Text(
+                it,
+                color = ErrorRed,
+                fontSize = 13.sp,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()

@@ -191,6 +191,9 @@ class SetupWizardViewModel @Inject constructor(
     // New account: published once setup completes (see publishNewAccount)
     internal val _profileName = MutableStateFlow("")
     val profileName = _profileName.asStateFlow()
+    /** Why Continue was refused on the profile step (a secret key in the name). */
+    internal val _profileNameError = MutableStateFlow<String?>(null)
+    val profileNameError = _profileNameError.asStateFlow()
 
     internal val _profilePhotoJpeg = MutableStateFlow<ByteArray?>(null)
     val profilePhotoJpeg = _profilePhotoJpeg.asStateFlow()

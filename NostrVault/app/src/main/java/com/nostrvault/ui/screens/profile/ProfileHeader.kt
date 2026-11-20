@@ -103,6 +103,7 @@ internal fun ProfileHeader(
                 }
             }
         }
+        PublicKeyWarning(pubkey)
         // The bio is the next item on the page; until the kind 0 says whether
         // there is one, keep its space here.
         if (awaiting) BioPlaceholder()

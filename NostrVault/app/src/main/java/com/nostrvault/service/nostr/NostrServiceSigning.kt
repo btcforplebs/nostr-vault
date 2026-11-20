@@ -185,6 +185,7 @@ import com.nostrvault.data.model.PostingAccount
         password: String? = null,
         forceOwner: Boolean = false,
     ): NostrEvent? {
+        com.nostrvault.util.SecretKeyLeak.requireEventSafe(kind, content, tags)
         val finalTags = EventPublisher.appendClientTag(tags, kind)
         val secretKey = resolveSecretKey(forceOwner) ?: return null
 
@@ -299,6 +300,9 @@ internal fun isReadOnlySigning(signingMode: String, hasLocalKey: Boolean): Boole
         // With [lockedTo], refuse to sign unless that account is still the
         // active one, and refuse the result unless it carries its key.
         if (lockedTo != null) requireStillPostingAs(lockedTo, eventPubkey = null)
+        // A secret key in a profile, post, reply or article is never signed,
+        // so no signer (local, bunker or Amber) ever sees it.
+        com.nostrvault.util.SecretKeyLeak.requireEventSafe(kind, content, tags)
         val event = signEventRouted(kind, content, tags, forceOwner, silentOnly, notBefore)
         if (lockedTo != null && event != null) requireStillPostingAs(lockedTo, eventPubkey = event.pubkey)
         // A list this app signed is the owner's own edit: no wipe alarm for it.

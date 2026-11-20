@@ -416,6 +416,8 @@ class DMService @Inject constructor(
     ) {
         // Nothing goes to someone blocked: the inbox would only hide the chat after (B3).
         if (isBlocked(recipientHexPubkey)) throw DMBlockedRecipientException()
+        // Checked before it is encrypted: a sealed DM still hands the key to them.
+        com.nostrvault.util.SecretKeyLeak.requireNone(content)
         scope.async {
             if (useNIP04 && file == null) {
                 sendNIP04DM(content, recipientHexPubkey)

@@ -192,7 +192,7 @@ class FeedService @Inject constructor(
             relayTabTrustedPubkeysImpl()
         } else {
             if (_pooledWotPubkeys.value.isEmpty()) loadWotPubkeys()
-            _pooledWotPubkeys.value
+            com.nostrvault.util.PublicKeyRegistry.withoutPublic(_pooledWotPubkeys.value)
         }
 
     /**
@@ -219,7 +219,8 @@ class FeedService @Inject constructor(
             _wotPubkeys,
             _followedPubkeys,
             configStore.config.map { it.globalShowsEveryone }.distinctUntilChanged(),
-        ) { _, _, _ -> globalTrustSet() }.distinctUntilChanged()
+            com.nostrvault.util.PublicKeyRegistry.keys,
+        ) { _, _, _, _ -> globalTrustSet() }.distinctUntilChanged()
 
     internal val _notes = MutableStateFlow<List<FeedNote>>(emptyList())
     val notes: StateFlow<List<FeedNote>> = _notes.asStateFlow()

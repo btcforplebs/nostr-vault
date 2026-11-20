@@ -10,7 +10,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-    fun SetupWizardViewModel.setProfileName(value: String) { _profileName.value = value }
+    fun SetupWizardViewModel.setProfileName(value: String) {
+        _profileName.value = value
+        if (_profileNameError.value != null && !com.nostrvault.util.SecretKeyLeak.containsSecretKey(value)) _profileNameError.value = null
+    }
 
     /** Reads the picked image into a JPEG of at most 512 px; same as iOS. */
     fun SetupWizardViewModel.setProfilePhoto(uri: android.net.Uri) {
@@ -65,10 +68,22 @@ import kotlinx.coroutines.withContext
         return out.toByteArray()
     }
 
-    fun SetupWizardViewModel.advanceFromProfile() { _step.value = stepAfter(WizardStep.PROFILE) }
+    /**
+     * Refused while the name holds a secret key: people paste their nsec into
+     * this box to sign in, and it would go out as the new account's name.
+     */
+    fun SetupWizardViewModel.advanceFromProfile() {
+        if (com.nostrvault.util.SecretKeyLeak.containsSecretKey(_profileName.value)) {
+            _profileNameError.value = com.nostrvault.util.SecretKeyLeak.MESSAGE
+            return
+        }
+        _profileNameError.value = null
+        _step.value = stepAfter(WizardStep.PROFILE)
+    }
 
     fun SetupWizardViewModel.skipProfile() {
         _profileName.value = ""
+        _profileNameError.value = null
         _profilePhotoJpeg.value = null
         _step.value = stepAfter(WizardStep.PROFILE)
     }

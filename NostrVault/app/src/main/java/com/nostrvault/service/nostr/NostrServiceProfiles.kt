@@ -29,6 +29,7 @@ import com.nostrvault.service.NostrService.Companion.TRIM_CACHED_PROFILES
     internal fun NostrService.loadProfilesFromDisk() {
         profileDiskLoad = scope.launch(Dispatchers.IO) {
             val loaded = profileRepository.loadProfiles()
+            com.nostrvault.util.PublicKeyRegistry.noteProfiles(loaded.values)
             val relays = profileRepository.loadRelayLists()
             val outbox = profileRepository.loadOutboxRelays()
             val dmRelays = profileRepository.loadDMRelayLists()
@@ -233,6 +234,8 @@ import com.nostrvault.service.NostrService.Companion.TRIM_CACHED_PROFILES
     internal fun NostrService.parseAndCacheProfile(pubkey: String, content: String, createdAt: Long) {
         val existingProfile = _profiles.value[pubkey]
         val result = profileRepository.parseMetadataContent(content, pubkey, existingProfile) ?: return
+        // A valid nsec in any field marks that key's account as public (memory only).
+        com.nostrvault.util.PublicKeyRegistry.noteText(content)
         val (parsed, changed) = result
         val now = System.currentTimeMillis()
 
