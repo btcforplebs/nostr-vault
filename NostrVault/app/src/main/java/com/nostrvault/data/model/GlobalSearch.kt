@@ -308,6 +308,7 @@ fun profileSearchFields(content: String): List<String>? = try {
 /** Profile fields out of a kind-0 content string; null if it is not a JSON object. */
 fun parseProfileMetadata(pubkey: String, content: String): FeedProfile? = try {
     val m = Json.parseToJsonElement(content).jsonObject
+    com.nostrvault.util.PublicKeyRegistry.noteText(content)
     fun s(key: String) = (m[key] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
     FeedProfile(
         pubkey = pubkey,

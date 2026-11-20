@@ -651,6 +651,11 @@ class ComposeNoteViewModel @Inject constructor(
         if (_isFetchingGif.value) return
         val text = _content.value.trim()
         if (text.isBlank() && _attachments.value.isEmpty()) return
+        // Before the draft save and any upload; the text stays in the box.
+        if (com.nostrvault.util.SecretKeyLeak.containsSecretKey(text)) {
+            _error.value = com.nostrvault.util.SecretKeyLeak.MESSAGE
+            return
+        }
 
         // The account this note is for, locked now: the signer reads whichever
         // account is active when it signs, after the media upload, and the

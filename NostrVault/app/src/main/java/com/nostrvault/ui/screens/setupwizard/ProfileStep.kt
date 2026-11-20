@@ -32,6 +32,7 @@ import com.nostrvault.ui.components.ProseKeyboardOptions
 @Composable
 internal fun ProfileStep(viewModel: SetupWizardViewModel) {
     val name by viewModel.profileName.collectAsState()
+    val nameError by viewModel.profileNameError.collectAsState()
     val photo by viewModel.profilePhotoJpeg.collectAsState()
     val photoError by viewModel.profilePhotoError.collectAsState()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -116,6 +117,8 @@ internal fun ProfileStep(viewModel: SetupWizardViewModel) {
             singleLine = true,
             colors = wizardTextFieldColors(),
             keyboardOptions = ProseKeyboardOptions.copy(imeAction = ImeAction.Done),
+            isError = nameError != null,
+            supportingText = nameError?.let { { Text(it) } },
             modifier = Modifier.fillMaxWidth(),
         )
 

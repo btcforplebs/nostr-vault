@@ -35,15 +35,25 @@ import java.io.File
      */
     internal fun FeedService.relayTabTrustedPubkeysImpl(): Set<String> {
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
-        return TrustMap.withoutBlocked(TrustMap.web(_wotPubkeys.value, feedAuthorSet()), blockedHexForActiveAccount())
+        return com.nostrvault.util.PublicKeyRegistry.withoutPublic(
+            TrustMap.withoutBlocked(TrustMap.web(_wotPubkeys.value, feedAuthorSet()), blockedHexForActiveAccount()),
+        ) { ownAccountHexes() }
     }
+
+    /** Every account on this device (and the open one): never counted outside for a public key. */
+    internal fun FeedService.ownAccountHexes(): Set<String> =
+        configStore.config.value.allAccountNpubs().mapNotNullTo(HashSet()) { com.nostrvault.relay.HavenBridge.decodeNpub(it) }
+            .apply { nostrService.activeHexPubkey.takeIf { it.isNotEmpty() }?.let { add(it) } }
 
     internal fun FeedService.globalTrustSetImpl(): Set<String>? {
         if (configStore.config.value.globalShowsEveryone) return null
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
         // Your follows too, so someone you just followed passes right away.
         // Someone you blocked (in public or privately) is out of your web, whoever vouches for them.
-        return TrustMap.withoutBlocked(TrustMap.web(_wotPubkeys.value, feedAuthorSet()), blockedHexForActiveAccount())
+        // So is an account whose secret key is public: anyone can post as it.
+        return com.nostrvault.util.PublicKeyRegistry.withoutPublic(
+            TrustMap.withoutBlocked(TrustMap.web(_wotPubkeys.value, feedAuthorSet()), blockedHexForActiveAccount()),
+        ) { ownAccountHexes() }
     }
 
     internal fun FeedService.loadWotPubkeysImpl() {
