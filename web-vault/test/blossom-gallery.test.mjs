@@ -106,6 +106,11 @@ test("kinds from the type or the extension; filters; day groups keep order", () 
   assert.equal(mediaType({ type: "image/png" }), "photo")
   assert.equal(mediaType({ url: "https://x/y.mov?x=1" }), "video")
   assert.equal(mediaType({ type: "application/pdf", url: "https://x/y" }), "other")
+  assert.equal(mediaType({ type: "audio/mpeg" }), "audio")
+  assert.equal(mediaType({ type: "AUDIO/ogg" }), "audio")
+  for (const ext of ["mp3", "m4a", "aac", "wav", "ogg", "opus", "FLAC"]) assert.equal(mediaType({ url: `https://x/song.${ext}?v=1` }), "audio", ext)
+  assert.equal(mediaType({ type: "image/gif", url: "https://x/y.mp3" }), "gif")
+  assert.ok(TYPE_FILTERS.audio({ kind: "audio" }) && !TYPE_FILTERS.audio({ kind: "other" }) && !TYPE_FILTERS.photos({ kind: "audio" }))
   assert.ok(TYPE_FILTERS.photos({ kind: "photo" }) && !TYPE_FILTERS.photos({ kind: "gif" }) && TYPE_FILTERS.all({ kind: "other" }))
   // The phone's headings (MediaDateGrouping): Today, This Week (the calendar week), This Month, month, month and year.
   const now = new Date(2026, 9, 22, 15) // Thursday 22 October 2026
