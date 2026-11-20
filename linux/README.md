@@ -75,3 +75,9 @@ docker buildx build --platform linux/arm64,linux/amd64 -f linux/Dockerfile -t no
 ```
 
 `linux/test/check.sh` checks the scripts and the compose file.
+
+CI (`.github/workflows/linux-image.yml`) builds the image for amd64 and arm64, each on its own runner, and starts it
+to check havend answers. On each published Linux release it pushes both as one index,
+`ghcr.io/btcforplebs/nostr-vault-linux:<version>` (the tag without the `v`, never `latest`), and writes the index
+digest into the release notes. The Start9 and Umbrel packages pin that digest. Pull requests that touch the image
+only build and start it.

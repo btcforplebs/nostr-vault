@@ -1,0 +1,164 @@
+name: Linux box image (ghcr)
+
+# Builds linux/Dockerfile ("nostr-vault-linux", the box image the Start9 and Umbrel packages run) for amd64 and arm64,
+# each arch on its own runner (nothing under emulation), and starts each one to check havend answers on NV_PORT.
+# On a published Linux release (a tag with "-linux" in it), or by hand with that tag, it then pushes both to
+#   ghcr.io/btcforplebs/nostr-vault-linux:<tag without the v>
+# as one multi-arch index, and writes the index digest into the release notes. Stores pin that digest. Pull requests
+# that touch the image only build and start it; they push nothing. The image is never tagged "latest".
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "An existing Linux release tag, for example v3.2.3-linux-beta.7"
+        required: true
+  pull_request:
+    paths:
+      - "linux/Dockerfile"
+      - "linux/Dockerfile.dockerignore"
+      - "linux/supervise.sh"
+      - ".github/workflows/linux-image.yml"
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/btcforplebs/nostr-vault-linux
+  TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+  # A throwaway owner for the start check (linux/test/check.sh uses the same one); the box never holds its key.
+  CHECK_OWNER: npub1xtscya34g58tk0z605fvr788k263gsu6cy9x0mhnm87echrgufzsevkk5s
+
+jobs:
+  build:
+    if: github.event_name == 'pull_request' || contains(github.event.release.tag_name || inputs.tag, '-linux')
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.sha || env.TAG }}
+          persist-credentials: false
+      - name: Commit (the image's NV_VERSION, as linux-alpine.yml)
+        id: commit
+        run: echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to ghcr
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Release: pushed by digest only, with no tag. The tag goes on in the "publish" job, after both arches pass.
+      - name: Build
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: linux/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          build-args: NV_COMMIT=${{ steps.commit.outputs.short }}
+          provenance: false
+          cache-from: type=gha,scope=nv-box-${{ matrix.arch }}
+          cache-to: type=gha,scope=nv-box-${{ matrix.arch }},mode=max
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ github.event_name == 'pull_request' && 'nostr-vault-linux:check' || '' }}
+          outputs: ${{ github.event_name != 'pull_request' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE) || '' }}
+      - name: Start it and wait for havend (and for docker to call it healthy)
+        env:
+          REF: ${{ github.event_name == 'pull_request' && 'nostr-vault-linux:check' || format('{0}@{1}', env.IMAGE, steps.build.outputs.digest) }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/nv"
+          docker run -d --name nv -p 8080:8080 -e NV_OWNER="$CHECK_OWNER" -v "$RUNNER_TEMP/nv:/data" "$REF"
+          test "$(docker inspect -f '{{.Architecture}}' "$REF")" = ${{ matrix.arch }}
+          for _ in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/ || true)
+            [ "$code" != 000 ] && break
+            sleep 2
+          done
+          echo "havend answered HTTP $code"
+          [ "$code" != 000 ] || { docker logs nv; exit 1; }
+          docker exec nv sh -c 'test "$NV_VERSION" = ${{ steps.commit.outputs.short }}'
+          docker exec nv sh -c 'for p in /proc/[0-9]*; do [ "$(readlink "$p/exe")" = /app/bin/nv-mesh ] && exit 0; done; echo "nv-mesh not running"; exit 1' \
+            || { docker logs nv; exit 1; }
+          for _ in $(seq 1 45); do
+            h=$(docker inspect -f '{{.State.Health.Status}}' nv)
+            [ "$h" = healthy ] && break
+            sleep 2
+          done
+          echo "health: $h"
+          docker logs nv 2>&1 | tail -20
+          [ "$h" = healthy ]
+          docker rm -f nv
+      - name: Keep the digest for the publish job
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          d='${{ steps.build.outputs.digest }}'
+          case "$d" in sha256:*) ;; *) echo "no digest: $d"; exit 1 ;; esac
+          touch "$RUNNER_TEMP/digests/${d#sha256:}"
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          retention-days: 1
+
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # the release notes
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/digests
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag the two arches as one index
+        id: index
+        run: |
+          version="${TAG#v}"
+          ls "$RUNNER_TEMP/digests"
+          test "$(ls "$RUNNER_TEMP/digests" | wc -l)" = 2
+          refs=$(for d in "$RUNNER_TEMP"/digests/*; do printf '%s@sha256:%s ' "$IMAGE" "$(basename "$d")"; done)
+          # shellcheck disable=SC2086
+          docker buildx imagetools create -t "$IMAGE:$version" $refs
+          docker buildx imagetools inspect "$IMAGE:$version"
+          digest=$(docker buildx imagetools inspect "$IMAGE:$version" --format '{{json .Manifest}}' | jq -r .digest)
+          case "$digest" in sha256:*) ;; *) echo "no index digest"; exit 1 ;; esac
+          arches=$(docker buildx imagetools inspect "$IMAGE:$version" --format '{{json .Manifest}}' \
+            | jq -r '[.manifests[].platform.architecture] | sort | join(" ")')
+          test "$arches" = "amd64 arm64"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Write the digest into the release notes (replaces the block on a re-run)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF: ${{ env.IMAGE }}:${{ steps.index.outputs.version }}@${{ steps.index.outputs.digest }}
+        run: |
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json body -q .body > body.md
+          awk '/^<!-- nv-image -->$/{skip=1} !skip{print} /^<!-- \/nv-image -->$/{skip=0}' body.md > new.md
+          {
+            printf '\n<!-- nv-image -->\n### Docker image (amd64 + arm64)\n\n```\n%s\n```\n<!-- /nv-image -->\n' "$REF"
+          } >> new.md
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file new.md
+          echo "$REF" >> "$GITHUB_STEP_SUMMARY"
