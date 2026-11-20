@@ -69,7 +69,19 @@ let
     CPUWeight = 25;
   };
 
-  groupsOf = name: [ config.users.users.${name}.group ] ++ config.users.users.${name}.extraGroups;
+  # Every group a user is in: its own, extraGroups, and any users.groups.<g>.members that names it.
+  groupsOf =
+    name:
+    [ config.users.users.${name}.group ]
+    ++ config.users.users.${name}.extraGroups
+    ++ lib.attrNames (lib.filterAttrs (_: g: lib.elem name g.members) config.users.groups);
+  # The groups a unit runs with: Group plus SupplementaryGroups.
+  unitGroups =
+    unit:
+    let
+      sc = config.systemd.services.${unit}.serviceConfig;
+    in
+    lib.toList (sc.Group or [ ]) ++ lib.concatMap lib.toList (lib.toList (sc.SupplementaryGroups or [ ]));
   meshUid = config.users.users.${meshUser}.uid;
   vaultUid = config.users.users.${vaultUser}.uid;
   privileged = [
@@ -118,11 +130,12 @@ in
     };
 
     environmentFile = mkOption {
-      type = types.nullOr types.path;
+      # A string, not a path: a path literal (./secrets.env) would be copied into the world-readable Nix store.
+      type = types.nullOr (types.strMatching "/.*");
       default = null;
       description = ''
         Extra settings for the vault (systemd EnvironmentFile), e.g. backup `NV_S3_*` secrets or `NV_OWNER`. Read by
-        the vault only, never by the mesh. Keep it out of the Nix store.
+        the vault only, never by the mesh. A full path outside the Nix store (the module refuses a store path).
       '';
     };
 
@@ -141,6 +154,17 @@ in
         default = true;
         description = "Run nv-mesh, so the owner's devices reach the box over FIPS.";
       };
+      settings = mkOption {
+        type = types.attrsOf types.str;
+        default = { };
+        example = {
+          NV_MESH_RELAYS = "wss://relay.example";
+        };
+        description = ''
+          Extra environment for nv-mesh, e.g. `NV_MESH_RELAYS` or `NV_MESH_DEVICES` (linux/mesh/README.md). No
+          secrets: it lands in the Nix store.
+        '';
+      };
       udpPort = mkOption {
         type = types.port;
         default = 0;
@@ -154,6 +178,10 @@ in
       {
         assertion = cfg.owner != null || cfg.environmentFile != null;
         message = "services.nostr-vault: set owner (an npub), or NV_OWNER in environmentFile.";
+      }
+      {
+        assertion = cfg.environmentFile == null || !lib.hasPrefix "${builtins.storeDir}/" cfg.environmentFile;
+        message = "services.nostr-vault.environmentFile: ${toString cfg.environmentFile} is in the Nix store, which anyone on the box can read; put it outside.";
       }
       {
         assertion = cfg.port < 65535;
@@ -179,6 +207,13 @@ in
           && !(lib.elem config.users.users.${vaultUser}.group (groupsOf meshUser))
           && lib.intersectLists privileged (groupsOf meshUser ++ groupsOf vaultUser) == [ ];
         message = "services.nostr-vault: ${meshUser} and ${vaultUser} must share no group, and neither may be in root or wheel.";
+      }
+      {
+        # The same for the units' own Group and SupplementaryGroups, which can add groups the users don't have.
+        assertion =
+          unitGroups "nostr-vault" == [ vaultUser ]
+          && (!cfg.mesh.enable || unitGroups "nostr-vault-mesh" == [ meshUser ]);
+        message = "services.nostr-vault: nostr-vault must run with group ${vaultUser} only, and nostr-vault-mesh with ${meshUser} only (no SupplementaryGroups).";
       }
     ];
 
@@ -250,9 +285,12 @@ in
       ];
       requires = [ "nostr-vault-prepare.service" ];
       partOf = [ "nostr-vault.service" ];
-      environment = common // {
-        NV_MESH_UDP_PORT = toString cfg.mesh.udpPort;
-      };
+      environment =
+        common
+        // {
+          NV_MESH_UDP_PORT = toString cfg.mesh.udpPort;
+        }
+        // cfg.mesh.settings;
       serviceConfig = hardening // {
         Type = "simple";
         User = meshUser;

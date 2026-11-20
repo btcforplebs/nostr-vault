@@ -37,8 +37,10 @@ by Nix, and a NixOS module that runs them under the same contract. x86_64-linux 
 ```
 
 Options: `owner`, `port` (8080; the mesh door is `port`+1 on loopback), `dataDir` (`/var/lib/nostr-vault`),
-`moveRoot` (`/mnt`), `openFirewall`, `environmentFile` (secrets such as backup `NV_S3_*`, or `NV_OWNER`; the vault
-reads it, the mesh never does), `settings` (more `NV_*` for havend, no secrets), `mesh.enable`, `mesh.udpPort`.
+`moveRoot` (`/mnt`), `openFirewall`, `environmentFile` (a path string outside the Nix store, for secrets such as
+backup `NV_S3_*`, or `NV_OWNER`; the vault reads it, the mesh never does; a store path is refused), `settings` (more
+`NV_*` for havend, no secrets), `mesh.enable`, `mesh.udpPort`, `mesh.settings` (`NV_MESH_RELAYS`, `NV_MESH_DEVICES`
+for nv-mesh, no secrets).
 
 ## Two users, one key
 
@@ -54,7 +56,8 @@ The mesh key is never readable as the vault's user: `mesh/` and `mesh/key/` belo
 `mesh/` that is a symlink or belongs to anyone else (the vault owns the data dir and could plant one), and nv-mesh
 refuses a key that is a symlink, another uid's, or can't be made 0600. The module refuses to evaluate if
 `nostr-vault-mesh` is set to run as anyone but `nvmesh`, if either user has uid 0 or both share a uid, or if the two
-share a group or sit in `root`/`wheel`. nv-mesh itself exits at start as root. Both services: no capabilities, no new
+share a group (`group`, `extraGroups`, `users.groups.*.members`, or a unit's `Group`/`SupplementaryGroups`) or sit
+in `root`/`wheel`. nv-mesh itself exits at start as root. Both services: no capabilities, no new
 privileges, `ProtectSystem=strict` with only their own folders writable, the container's memory caps.
 
 User names are fixed (`nvvault`, `nvmesh`) because prepare looks them up by name. Their uids are NixOS's system

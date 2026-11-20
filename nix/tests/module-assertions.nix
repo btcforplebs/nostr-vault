@@ -35,7 +35,7 @@ let
       }).config.system.build.toplevel.drvPath;
   evalsOk = extra: (builtins.tryEval (toplevel extra)).success;
   # The positive control is evaluated outside tryEval: if it breaks, the error itself shows instead of a bare false.
-  control = builtins.seq (toplevel { }) true;
+  control = cfg: builtins.seq (toplevel cfg) true;
 
   cases = {
     "good config (positive control)" = {
@@ -73,6 +73,29 @@ let
       want = false;
       cfg.users.users.nvmesh.extraGroups = [ "wheel" ];
     };
+    "mesh unit in the vault's group" = {
+      want = false;
+      cfg.systemd.services.nostr-vault-mesh.serviceConfig.Group = lib.mkForce "nvvault";
+    };
+    "vault unit with the mesh's group as a supplementary group" = {
+      want = false;
+      cfg.systemd.services.nostr-vault.serviceConfig.SupplementaryGroups = [ "nvmesh" ];
+    };
+    "vault added to the mesh's group by members" = {
+      want = false;
+      cfg.users.groups.nvmesh.members = [ "nvvault" ];
+    };
+    "environmentFile in the Nix store" = {
+      want = false;
+      cfg.services.nostr-vault.environmentFile = "${pkgs.writeText "nv-secrets.env" "NV_S3_SECRET=x"}";
+    };
+    "mesh.settings and an environmentFile outside the store (positive control)" = {
+      want = true;
+      cfg.services.nostr-vault = {
+        environmentFile = "/etc/nostr-vault/secrets.env";
+        mesh.settings.NV_MESH_RELAYS = "wss://relay.example";
+      };
+    };
     "no owner at all" = {
       want = false;
       cfg.services.nostr-vault.owner = lib.mkForce null;
@@ -82,7 +105,7 @@ let
   results = lib.mapAttrsToList (
     name: c:
     let
-      got = if c.want then control else evalsOk c.cfg;
+      got = if c.want then control c.cfg else evalsOk c.cfg;
     in
     {
       inherit name;
