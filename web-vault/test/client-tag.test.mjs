@@ -8,7 +8,7 @@ import { generateSecretKey, finalizeEvent, getPublicKey } from "nostr-tools/pure
 import { pool } from "../src/net/pool.js"
 import { publishNote } from "../src/net/sync.js"
 import { publishAction, reactionTemplate, repostTemplate } from "../src/net/actions.js"
-import { CLIENT_NAME, appendClientTag } from "../src/net/client-tag.js"
+import { CLIENT_NAME, LINUX_CLIENT_NAME, LINUX_UA_MARK, appendClientTag, clientName } from "../src/net/client-tag.js"
 
 const src = path => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8")
 const IOS = src("HavenApp/HavenApp/Services/EventPublisher.swift")
@@ -60,4 +60,31 @@ test("a posted note is signed with the tag; a like or repost is not", async t =>
   }
   const { event: comment } = await publishAction(c, { kind: 1111, created_at: 1, tags: [["e", other.id]], content: "c" })
   assert.deepEqual(comment.tags, [["e", other.id], ["client", CLIENT_NAME]])
+})
+
+// The Linux desktop window: the same web app in WebKitGTK, with the window's word in the user agent.
+const DESKTOP = src("linux/native/desktop/nostr-vault-desktop")
+const WEBKITGTK = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+const FIREFOX = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"
+
+test("inside the Linux window a post says \"on Linux\"; a plain browser on Linux still says \"on Web\"", () => {
+  assert.equal(LINUX_CLIENT_NAME, "Nostr Vault on Linux")
+  // The window sets the word the web app looks for (one name, two files: this keeps them the same).
+  assert.match(DESKTOP, new RegExp(`UA_MARK = "${LINUX_UA_MARK}"`))
+  assert.match(DESKTOP, /set_user_agent_with_application_details\(UA_MARK, /)
+  assert.equal(clientName(`${WEBKITGTK} ${LINUX_UA_MARK}/3.2.3`), LINUX_CLIENT_NAME)
+  for (const ua of [WEBKITGTK, FIREFOX, `${WEBKITGTK} X${LINUX_UA_MARK}/1`, `${WEBKITGTK} ${LINUX_UA_MARK}`, "", undefined])
+    assert.equal(clientName(ua ?? ""), CLIENT_NAME, String(ua))
+  assert.deepEqual(appendClientTag([], 1, clientName(`${FIREFOX} ${LINUX_UA_MARK}/1`)), [["client", LINUX_CLIENT_NAME]])
+})
+
+test("the name is read from the page at each post, so a note signed in the window carries \"on Linux\"", async t => {
+  const c = ctx(t)
+  const real = Object.getOwnPropertyDescriptor(globalThis, "navigator")
+  t.after(() => real ? Object.defineProperty(globalThis, "navigator", real) : delete globalThis.navigator)
+  for (const [ua, want] of [[`${WEBKITGTK} ${LINUX_UA_MARK}/3.2.3`, LINUX_CLIENT_NAME], [FIREFOX, CLIENT_NAME]]) {
+    Object.defineProperty(globalThis, "navigator", { value: { userAgent: ua }, configurable: true, writable: true })
+    const { event } = await publishNote(c.vault, c.signer, c.session.pubkey, "hi", c.account.relays.write)
+    assert.deepEqual(event.tags, [["client", want]], ua)
+  }
 })

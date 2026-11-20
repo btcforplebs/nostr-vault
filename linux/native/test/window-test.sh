@@ -5,11 +5,17 @@
 #     setup  the vault has no owner yet: the window must draw its setup page
 #     vault  the vault is set up and answers on its port: the window must draw the web app, then, after its page's
 #            web process is killed, the "stopped drawing" page (and a copy of the window without that handler must
-#            draw nothing, which shows this check can tell a blank window from a drawn one)
+#            draw nothing, which shows this check can tell a blank window from a drawn one); then a page that crashes
+#            on every load: the window must stop after two web processes and draw its own GTK crash page (a copy with
+#            CRASH_LOOP_S = 0 must keep starting new ones, the control)
+# The setup stage also prints the user agent the window's web view gives its pages to <out dir>/<mode>-ua.txt
+# (ua-probe.py), and fails unless it carries the NostrVaultLinux word the web app's client tag reads.
 # x11 runs Xvfb; wayland runs sway on its headless backend (software rendering). Each check is one screenshot in the
 # out dir. As root it runs the window as a throwaway user (nvwt); as anyone else, as that user (a Flatpak test).
 # NV_WT_CMD is how to start the window (default: nostr-vault-desktop). With NV_WT_CONTROL=0 it skips the copy without
-# the handler (a Flatpak can't run a copy of its own script). Needs Xvfb or sway + grim, ImageMagick, dbus-run-session.
+# the handler (a Flatpak can't run a copy of its own script). NV_WT_PY and NV_WT_BIN are the Python and the window's
+# script the user-agent probe runs with (defaults: python3 -I and the script NV_WT_CMD runs; a Flatpak's are inside it).
+# Needs Xvfb or sway + grim, ImageMagick, dbus-run-session.
 set -u
 MODE=${1:-}; STAGE=${2:-}; OUT=${3:-}
 CMD=${NV_WT_CMD:-nostr-vault-desktop}
@@ -21,7 +27,9 @@ if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
   id nvwt >/dev/null 2>&1 || useradd -m nvwt 2>/dev/null || adduser -D nvwt
   mkdir -p "$OUT" && chmod 777 "$OUT"
   cp "$0" /tmp/nvwt-window-test.sh && chmod 755 /tmp/nvwt-window-test.sh
+  cp "$(dirname "$0")/ua-probe.py" /tmp/nvwt-ua-probe.py && chmod 644 /tmp/nvwt-ua-probe.py
   exec runuser -u nvwt -- env NV_WT_INNER=1 NV_WT_CMD="$CMD" NV_WT_CONTROL="${NV_WT_CONTROL:-1}" NV_WT_VAULT_URL="${NV_WT_VAULT_URL:-}" \
+    NV_WT_PROBE=/tmp/nvwt-ua-probe.py NV_WT_PY="${NV_WT_PY:-}" NV_WT_BIN="${NV_WT_BIN:-}" \
     NV_WT_MIN_COLOURS="$MIN_COLOURS" PATH="$PATH" HOME=/home/nvwt sh /tmp/nvwt-window-test.sh "$MODE" "$STAGE" "$OUT"
 fi
 mkdir -p "$OUT"
@@ -85,6 +93,31 @@ drawn() {
   no "$2: still flat or unchanged after 90 s ($c colours)"; return 1
 }
 webproc() { pgrep -u "$(id -u)" -f WebKitWebProcess | head -1; }
+# crashloop: for 15 s, kill every web process the window starts, as a GPU driver that kills each renderer would.
+# Prints how many different web processes it saw.
+crashloop() {
+  seen=""; end=$(( $(date +%s) + 15 ))
+  while [ "$(date +%s)" -lt "$end" ]; do
+    for p in $(pgrep -u "$(id -u)" -f WebKitWebProcess); do
+      case " $seen " in *" $p "*) ;; *) seen="$seen $p" ;; esac
+      kill -KILL "$p" 2>/dev/null
+    done
+    sleep 0.2
+  done
+  echo $seen | wc -w | tr -d ' '
+}
+bin=${NV_WT_BIN:-$(command -v "$CMD" 2>/dev/null || true)}
+
+if [ "$STAGE" = setup ]; then
+  # The user agent the window's own web view gives its pages: the web app tags posts "on Linux" from it.
+  probe=${NV_WT_PROBE:-$(dirname "$0")/ua-probe.py}
+  ua=$(dbus-run-session -- ${NV_WT_PY:-python3 -I} - "$bin" <"$probe" 2>"$OUT/$MODE-ua-probe.log" | sed -n 's/^UA //p')
+  printf '%s\n' "$ua" >"$OUT/$MODE-ua.txt"
+  case " $ua" in
+    *" NostrVaultLinux/"*) ok "$MODE: the window's pages see the Linux word in their user agent ($ua)" ;;
+    *) no "$MODE: the window's user agent has no NostrVaultLinux/ word: '${ua}'"; tail -20 "$OUT/$MODE-ua-probe.log" ;;
+  esac
+fi
 
 start window $CMD
 if [ "$STAGE" = setup ]; then
@@ -120,6 +153,35 @@ else
       elif [ "$(pixels "$k")" = "$(pixels "$OUT/$MODE-$STAGE-3-control-vault.png")" ]; then
         ok "control: without the handler a killed page leaves its last frame, unchanged"
       else no "control: without the handler the window changed after the kill ($c colours), so the check above can't tell"; fi
+    fi
+    stop
+  fi
+  # A page that crashes on every load: the window must give up after the crash page's own web process dies, not
+  # start one after another, and must still draw something (its GTK crash page, which needs no web process).
+  start loop $CMD
+  sleep 8
+  drawn "$OUT/$MODE-$STAGE-4-loop-vault.png" "$MODE: the window draws the web app again" >/dev/null || true
+  n=$(crashloop)
+  if [ "$n" -ge 1 ] && [ "$n" -le 3 ]; then ok "$MODE: a page that crashes every time stops after $n web processes"
+  else no "$MODE: a page that crashes every time started $n web processes in 15 s (want 1 to 3)"; fi
+  sleep 6
+  w=$(webproc)
+  if [ -z "$w" ]; then ok "$MODE: after it stops, no web process is started again"; else no "$MODE: a web process ($w) started after the stop"; fi
+  drawn "$OUT/$MODE-$STAGE-5-loop-stopped.png" "$MODE: the window draws its own crash page" "$OUT/$MODE-$STAGE-4-loop-vault.png"
+  grep -q "not loading another page" "$OUT/$MODE-$STAGE-loop.log" && ok "$MODE: the window says why it stopped" \
+    || no "$MODE: no 'not loading another page' line in the window's log"
+  stop
+  if [ "${NV_WT_CONTROL:-1}" = 1 ]; then
+    # Control: the same window with no backoff (CRASH_LOOP_S = 0) keeps starting web processes under the same
+    # killing, or "stops after n" above proves nothing.
+    sed 's/^CRASH_LOOP_S = 5$/CRASH_LOOP_S = 0/' "$bin" >"$RUN/no-backoff"
+    if cmp -s "$bin" "$RUN/no-backoff"; then no "control: couldn't turn the backoff off in $bin"; else
+      start control-loop python3 -I "$RUN/no-backoff"
+      sleep 8
+      drawn "$OUT/$MODE-$STAGE-6-control-loop-vault.png" "control: the no-backoff copy draws the web app" >/dev/null || true
+      n=$(crashloop)
+      if [ "$n" -ge 5 ]; then ok "control: with no backoff the same killing saw $n web processes in 15 s"
+      else no "control: with no backoff only $n web processes in 15 s, so the backoff check can't tell"; fi
     fi
   fi
 fi
