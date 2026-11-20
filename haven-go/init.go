@@ -159,6 +159,9 @@ func GranularInitDBs(names []string) error {
 		}
 	}
 
+	// Stores read rarely open on first use (lazy_db.go).
+	names = registerLazyDBs(names)
+
 	// The Vault's own stores open first, the rest after them, each wave
 	// side by side: one by one, nine opens cost ~1 s on a phone (LogePhone
 	// 2026-11-14), and the Vault tab waited behind all of them.
@@ -237,14 +240,8 @@ func openDBsTogether(names []string) ([]DBBackend, []error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer func() {
-				if r := recover(); r != nil {
-					errs[i] = fmt.Errorf("panic while opening: %v", r)
-				}
-			}()
-			slog.Info(fmt.Sprintf("Initializing %s database", name))
-			inner := newDBBackend("db/" + name)
-			if err := inner.Init(); err != nil {
+			inner, err := openDB(name) // recovers a panic in the open
+			if err != nil {
 				errs[i] = err
 				return
 			}

@@ -88,3 +88,5 @@ replace github.com/nbd-wtf/go-nostr => ./third_party/go-nostr
 replace github.com/fiatjaf/khatru => ./third_party/khatru
 
 replace github.com/dgraph-io/ristretto/v2 => ./third_party/ristretto
+
+replace github.com/dgraph-io/badger/v4 => ./third_party/badger
