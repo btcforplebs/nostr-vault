@@ -12,10 +12,10 @@ enum BackgroundModePolicy {
     /// switching it changes nothing the vault has stored.
     static let defaultsKey = "nv.mac.runInBackground"
 
-    /// How often the engine's free heap is handed back to macOS while the
-    /// window is closed. Sync and import rounds spike the Go heap, and macOS
-    /// leaves those pages counted against the app until the runtime returns
-    /// them (see TrimMemoryC).
+    /// How often freed memory is handed back to macOS while the window is
+    /// closed: the Go heap (sync and import rounds spike it, see TrimMemoryC)
+    /// and the empty pages of the app's malloc zones. macOS counts both
+    /// against the app until they are returned.
     static let trimInterval: TimeInterval = 300
 
     static func isOn(in defaults: UserDefaults) -> Bool {

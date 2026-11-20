@@ -99,6 +99,13 @@ final class BackgroundMode: ObservableObject {
         RelayProcessManager.shared.logStore.logs.removeAll()
         NostrService.shared.enterBackground()
         startTrimming()
+        // What the window freed is still counted against the app until malloc
+        // hands the empty pages back: SwiftUI's views, the notes and decoded
+        // images are torn down over the next run loop turns, so give them a
+        // moment first.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            DispatchQueue.global(qos: .utility).async { Self.returnFreedMemory() }
+        }
     }
 
     private func restoreWindowServices() {
@@ -119,14 +126,21 @@ final class BackgroundMode: ObservableObject {
     /// URLCache.shared's own default, read before the first release.
     private static let defaultMemoryCapacity = URLCache.shared.memoryCapacity
 
-    // MARK: - Engine heap
+    // MARK: - Returning memory
 
     private func startTrimming() {
         trimTimer?.invalidate()
         trimTimer = Timer.scheduledTimer(withTimeInterval: BackgroundModePolicy.trimInterval, repeats: true) { _ in
             // A full GC: off the main thread, as in RelayProcessManager.
-            DispatchQueue.global(qos: .utility).async { TrimMemoryC() }
+            DispatchQueue.global(qos: .utility).async { Self.returnFreedMemory() }
         }
+    }
+
+    /// Hands freed memory back to macOS: the Go heap (a full GC) and the
+    /// empty pages of the Swift side's malloc zones. Off the main thread.
+    nonisolated private static func returnFreedMemory() {
+        TrimMemoryC()
+        malloc_zone_pressure_relief(nil, 0)
     }
 
     private func stopTrimming() {
