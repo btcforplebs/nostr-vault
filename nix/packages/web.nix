@@ -56,7 +56,7 @@ stdenvNoCC.mkDerivation {
     # 1. haven.wasm and its Go runtime shim (build-haven-wasm.sh).
     cp -r ${havend.goModules} haven-go/vendor
     chmod -R u+w haven-go/vendor
-    (cd haven-go && GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o ../web-relay/public/haven.wasm .)
+    (cd haven-go && CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o ../web-relay/public/haven.wasm .)
     shim=$(go env GOROOT)/lib/wasm/wasm_exec.js
     [ -f "$shim" ] || shim=$(go env GOROOT)/misc/wasm/wasm_exec.js
     cp "$shim" web-relay/src/haven/wasm_exec.js
