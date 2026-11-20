@@ -238,9 +238,9 @@ jobs:
         run: |
           # systemd, then what the test drives the window with: Xvfb, sway + grim, ImageMagick, dbus-run-session, a font.
           case ${{ matrix.distro }} in
-            ubuntu|debian) prep='apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends systemd systemd-sysv dbus dbus-user-session procps iproute2 curl ca-certificates xvfb sway grim imagemagick fonts-dejavu-core wtype wl-clipboard && apt-get clean' ;;
-            fedora) prep='dnf install -y -q systemd procps-ng iproute util-linux curl findutils xorg-x11-server-Xvfb sway grim ImageMagick dbus-daemon dejavu-sans-fonts wtype wl-clipboard && dnf clean all' ;;
-            arch) prep="sed -i -e 's/^CheckSpace/#CheckSpace/' -e '/^\\[options\\]/a DisableSandbox' /etc/pacman.conf && pacman -Syu --noconfirm --needed systemd procps-ng iproute2 util-linux curl findutils xorg-server-xvfb sway grim imagemagick dbus ttf-dejavu wtype wl-clipboard && pacman -Scc --noconfirm"
+            ubuntu|debian) prep='apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends systemd systemd-sysv dbus dbus-user-session procps iproute2 curl ca-certificates xvfb sway grim imagemagick fonts-dejavu-core xdotool xclip && apt-get clean' ;;
+            fedora) prep='dnf install -y -q systemd procps-ng iproute util-linux curl findutils xorg-x11-server-Xvfb sway grim ImageMagick dbus-daemon dejavu-sans-fonts xdotool xclip && dnf clean all' ;;
+            arch) prep="sed -i -e 's/^CheckSpace/#CheckSpace/' -e '/^\\[options\\]/a DisableSandbox' /etc/pacman.conf && pacman -Syu --noconfirm --needed systemd procps-ng iproute2 util-linux curl findutils xorg-server-xvfb sway grim imagemagick dbus ttf-dejavu xdotool xclip && pacman -Scc --noconfirm"
               # A dated Arch: every package as the Arch Linux Archive had it that day (-uu also downgrades).
               if [ -n "${{ matrix.snapshot }}" ]; then
                 prep="echo 'Server = https://archive.archlinux.org/repos/${{ matrix.snapshot }}/\$repo/os/\$arch' >/etc/pacman.d/mirrorlist && pacman -Syyuu --noconfirm && $prep"
@@ -273,8 +273,8 @@ jobs:
           docker exec nv sh /w/linux/native/test/window-test.sh x11 setup /tmp/nvwt-out || r=1
           docker exec nv sh /w/linux/native/test/window-test.sh wayland setup /tmp/nvwt-out || r=1
           exit $r
-      - name: Wayland - Ctrl+V with an empty clipboard and with text (WebKitGTK 2.54.0/2.54.1 crash on the empty one)
-        run: docker exec nv sh /w/linux/native/test/window-test.sh wayland paste /tmp/nvwt-out
+      - name: X11 - Ctrl+V with an empty clipboard and with text (WebKitGTK 2.54.0/2.54.1 crash on the empty one)
+        run: docker exec nv sh /w/linux/native/test/window-test.sh x11 paste /tmp/nvwt-out
       - name: Set the vault up (throwaway owner)
         run: |
           # The owner's throwaway key stays in the container: the client tag check signs with it.
