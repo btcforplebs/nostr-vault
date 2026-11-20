@@ -14,8 +14,10 @@ curl -fsSL https://raw.githubusercontent.com/btcforplebs/nostr-vault/master/linu
 
 The installer:
 
-1. on Debian, Ubuntu and Raspberry Pi OS installs the `nostr-vault` package (with the window's libraries when the
-   machine has a desktop), checked against the release's sha256. With `NV_DOCKER=1`, or on a machine that already
+1. installs the `nostr-vault` package for this system's package manager: the .deb on Debian, Ubuntu and Raspberry
+   Pi OS (apt), the .rpm on Fedora (dnf), the Arch package on Arch Linux (pacman); with the window's libraries when
+   the machine has a desktop, checked against the release's sha256. If the release has no package for this system
+   yet, or there is no apt, dnf or pacman, it uses Docker. With `NV_DOCKER=1`, or on a machine that already
    runs the Docker box, it installs Docker if it isn't there (from get.docker.com) and uses the container.
    `NV_NATIVE=1` moves a Docker box to native, keeping its data, owner and port;
 2. asks **Where should your vault live?** and suggests the drive with the most free space. On an SD card it warns

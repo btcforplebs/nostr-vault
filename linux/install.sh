@@ -6,15 +6,17 @@
 # Nothing here opens a port on your router.
 #
 # Two ways to run the vault:
-#   native (the default on Debian, Ubuntu and Raspberry Pi OS): the nostr-vault .deb, system services that start on
-#     boot, and on a desktop also a window and a tray icon, like the Mac app. No Docker.
+#   native (the default where there is apt, dnf or pacman: Debian, Ubuntu, Raspberry Pi OS, Fedora, Arch): the
+#     nostr-vault package (.deb, .rpm or Arch package), system services that start on boot, and on a desktop also a
+#     window and a tray icon, like the Mac app. No Docker.
 #   Docker (NV_DOCKER=1, or when this machine already runs the Docker box): one container, as before. NV_NATIVE=1
 #     moves a Docker box to native on the same data, owner and port.
 #
 # Every question can be answered ahead (for scripts): NV_DATA_HOST=/path NV_OWNER=npub1… NV_YES=1. Also:
 #   NV_PORT (8080), NV_DESKTOP (1/0: the window's libraries; default: when this machine has a desktop),
-#   NV_DEB_DIR (install the .deb from this folder), NV_RELEASE (where the .deb and its manifest are: default the
-#   latest GitHub release). Docker only: NV_IMAGE (the image), NV_HOME (/opt/nostr-vault: compose.yml and .env),
+#   NV_DEB_DIR (install the package from this folder), NV_RELEASE (where the packages and their manifest are:
+#   default the latest GitHub release; GitHub's "latest" never points at a pre-release, so a beta needs its tag:
+#   https://github.com/btcforplebs/nostr-vault/releases/download/<tag>). Docker only: NV_IMAGE (the image), NV_HOME (/opt/nostr-vault: compose.yml and .env),
 #   NV_SOURCE (where compose.yml comes from: a URL, or a directory), NV_IMAGE_TAR (load the image from a file).
 set -eu
 
@@ -55,8 +57,8 @@ yes_no() { # yes_no <question>: true for y/yes; no (and unattended runs) is fals
 # 1. This machine.
 [ "$(uname -s)" = Linux ] || die "this installer is for Linux"
 case "$(uname -m)" in
-  aarch64|arm64) arch=arm64 ;;
-  x86_64|amd64) arch=amd64 ;;
+  aarch64|arm64) arch=arm64 rpmarch=aarch64 ;;
+  x86_64|amd64) arch=amd64 rpmarch=x86_64 ;;
   *) die "Nostr Vault runs on 64-bit ARM or x86 machines; this one is $(uname -m)" ;;
 esac
 say "Nostr Vault for Linux ($arch)"
@@ -70,18 +72,34 @@ elif [ "$docker_box" = 1 ] && [ ! -f "$NATIVE_ENV" ]; then
   say "This machine runs the Docker box, so this updates it. To move it to the native app (same data): NV_NATIVE=1"
 else mode=native
 fi
-if [ "$mode" = native ] && ! command -v apt-get >/dev/null 2>&1; then
-  [ "${NV_NATIVE:-0}" = 1 ] && die "the native app is a .deb, for Debian, Ubuntu and Raspberry Pi OS; on this system use Docker: NV_DOCKER=1"
-  say "This system has no apt, so the vault runs in Docker."
+# The package manager picks the package: apt the .deb, dnf the .rpm, pacman the Arch package. pkg_name is the file's
+# name in the release (and its manifest) for a version.
+pm=""
+if command -v apt-get >/dev/null 2>&1; then pm=apt
+elif command -v dnf >/dev/null 2>&1; then pm=dnf
+elif command -v pacman >/dev/null 2>&1; then pm=pacman
+fi
+pkg_name() { case $pm in
+  apt) printf 'nostr-vault_%s_%s.deb' "$1" "$arch" ;;
+  dnf) printf 'nostr-vault-%s-1.%s.rpm' "$1" "$rpmarch" ;;
+  pacman) printf 'nostr-vault-%s-1-%s.pkg.tar.zst' "$1" "$rpmarch" ;; esac; }
+if [ "$mode" = native ] && [ -z "$pm" ]; then
+  [ "${NV_NATIVE:-0}" = 1 ] && die "the native app is a package for apt, dnf or pacman (Debian, Ubuntu, Raspberry Pi OS, Fedora, Arch); on this system use Docker: NV_DOCKER=1"
+  say "This system has no apt, dnf or pacman, so the vault runs in Docker."
   mode=docker
 fi
-# Native is the default only once a release carries the package: until then (or if GitHub can't be reached) the
-# installer keeps the Docker box, as before, rather than failing.
+# Native is the default only once a release carries this system's package: until then (or if GitHub can't be
+# reached) the installer keeps the Docker box, as before, rather than failing. (A release can carry the .deb only.)
 # A machine already on native never falls back: it gets the plain error further down.
-if [ "$mode" = native ] && [ -z "${NV_DEB_DIR:-}" ] && [ "${NV_NATIVE:-0}" != 1 ] && [ ! -f "$NATIVE_ENV" ] \
-  && ! curl -fsSL --proto '=https' -o /dev/null "$NV_RELEASE/nostr-vault-linux.json" 2>/dev/null; then
-  say "No native package in the release yet, so the vault runs in Docker. (NV_NATIVE=1 insists on native.)"
-  mode=docker
+if [ "$mode" = native ] && [ -z "${NV_DEB_DIR:-}" ] && [ "${NV_NATIVE:-0}" != 1 ] && [ ! -f "$NATIVE_ENV" ]; then
+  # The package's sha256 is in the manifest, or (a release whose manifest lists the .debs only) in SHA256SUMS.
+  mf=$(curl -fsSL --proto '=https' "$NV_RELEASE/nostr-vault-linux.json" 2>/dev/null || true)
+  sums=$(curl -fsSL --proto '=https' "$NV_RELEASE/SHA256SUMS" 2>/dev/null || true)
+  if [ -z "$mf" ] || { ! printf '%s' "$mf" | grep -q "\"$(pkg_name '[^"]*')\"" \
+    && ! printf '%s\n' "$sums" | grep -Eq "^[0-9a-f]{64}  $(pkg_name '[^ ]*')\$"; }; then
+    say "No native package for this system in the release yet, so the vault runs in Docker. (NV_NATIVE=1 insists on native.)"
+    mode=docker
+  fi
 fi
 
 # Values from an earlier install are the defaults this time: the native one's, else the Docker box's.
@@ -177,14 +195,22 @@ if [ "$mode" = native ]; then
     fi
   }
   get nostr-vault-linux.json "$debs/m.json" || die "couldn't get the release manifest (nostr-vault-linux.json) from ${NV_DEB_DIR:-$NV_RELEASE}"
-  command -v python3 >/dev/null 2>&1 || { $SUDO apt-get update -q >/dev/null && $SUDO apt-get install -y -q python3 >/dev/null; } || die "python3 is needed"
+  command -v python3 >/dev/null 2>&1 || case $pm in
+    apt) { $SUDO apt-get update -q >/dev/null && $SUDO apt-get install -y -q python3 >/dev/null; } ;;
+    dnf) $SUDO dnf install -y -q python3 >/dev/null ;;
+    pacman) $SUDO pacman -S --noconfirm --needed python >/dev/null ;;
+  esac || die "python3 is needed"
   version=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$debs/m.json") || die "the manifest isn't valid"
   printf '%s' "$version" | grep -Eq '^[0-9][0-9A-Za-z.+~-]*$' || die "the manifest's version isn't a package version"
-  files="nostr-vault_${version}_${arch}.deb"
+  files=$(pkg_name "$version")
   list=""
   for f in $files; do
     sum=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"].get(sys.argv[2],""))' "$debs/m.json" "$f")
-    printf '%s' "$sum" | grep -Eq '^[0-9a-f]{64}$' || die "the manifest has no sha256 for $f"
+    if ! printf '%s' "$sum" | grep -Eq '^[0-9a-f]{64}$'; then # not in the manifest: the release's SHA256SUMS
+      [ -s "$debs/SHA256SUMS" ] || get SHA256SUMS "$debs/SHA256SUMS" 2>/dev/null || true
+      sum=$(awk -v f="$f" '$2 == f && $1 ~ /^[0-9a-f]+$/ && length($1) == 64 { print $1; exit }' "$debs/SHA256SUMS" 2>/dev/null)
+      printf '%s' "$sum" | grep -Eq '^[0-9a-f]{64}$' || die "neither the manifest nor SHA256SUMS has a sha256 for $f"
+    fi
     say "Getting $f…"
     get "$f" "$debs/$f" || die "couldn't get $f"
     [ "$(sha256sum "$debs/$f" | cut -d' ' -f1)" = "$sum" ] || die "$f doesn't match its sha256 in the manifest"
@@ -199,11 +225,27 @@ if [ "$mode" = native ]; then
     $SUDO docker compose --project-directory "$NV_HOME" -f "$NV_HOME/compose.yml" down >/dev/null 2>&1 || true
   fi
   say "Installing Nostr Vault $version…"
-  # One package. Its Recommends are the window's libraries: wanted on a desktop, left out on a machine with no screen.
-  recommends=--no-install-recommends; [ "$desktop" = 1 ] && recommends=--install-recommends
-  $SUDO apt-get update -q >/dev/null 2>&1 || true
-  # shellcheck disable=SC2086
-  $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$recommends" $list >/dev/null || die "apt couldn't install the package"
+  # One package. Its Recommends (weak deps on dnf, optdepends on pacman) are the window's libraries: wanted on a
+  # desktop, left out on a machine with no screen.
+  case $pm in
+    apt)
+      recommends=--no-install-recommends; [ "$desktop" = 1 ] && recommends=--install-recommends
+      $SUDO apt-get update -q >/dev/null 2>&1 || true
+      # shellcheck disable=SC2086
+      $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$recommends" $list >/dev/null || die "apt couldn't install the package" ;;
+    dnf)
+      weak=False; [ "$desktop" = 1 ] && weak=True
+      # shellcheck disable=SC2086
+      $SUDO dnf install -y -q --setopt=install_weak_deps=$weak $list >/dev/null || die "dnf couldn't install the package" ;;
+    pacman)
+      # pacman never installs optdepends: on a desktop, ask for the window's libraries by name (the .deb's Recommends).
+      if [ "$desktop" = 1 ]; then
+        $SUDO pacman -S --noconfirm --needed python python-gobject gtk3 webkit2gtk-4.1 polkit libayatana-appindicator >/dev/null \
+          || warn "couldn't install the window's libraries; the vault runs, the window may not"
+      fi
+      # shellcheck disable=SC2086
+      $SUDO pacman -U --noconfirm $list >/dev/null || die "pacman couldn't install the package" ;;
+  esac
   port=${NV_PORT:-$(old NV_PORT)}; port=${port:-8080}
   set -- --owner "$owner" --data "$data" --port "$port"
   [ "$sd" = 1 ] && set -- "$@" --sd-ok
