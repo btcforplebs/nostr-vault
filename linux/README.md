@@ -8,22 +8,23 @@ port on your router, and the box never holds your secret key.
 
 ## Install
 
+Download the package for your system and machine from the
+[releases](https://github.com/btcforplebs/nostr-vault/releases) (the Linux beta is a pre-release), check it against
+the release's `SHA256SUMS` (`sha256sum -c --ignore-missing SHA256SUMS`), then install it and set the owner:
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/btcforplebs/nostr-vault/master/linux/install.sh | sh
+sudo apt install ./nostr-vault_<version>_arm64.deb            # Debian, Ubuntu, Raspberry Pi OS (or _amd64)
+sudo dnf install ./nostr-vault-<version>-1.x86_64.rpm         # Fedora (or .aarch64)
+sudo pacman -U ./nostr-vault-<version>-1-x86_64.pkg.tar.zst   # Arch (or -aarch64)
+apk add --allow-untrusted ./nostr-vault-<version>-r0.x86_64.apk   # Alpine, as root (packaging/alpine)
+sudo nostr-vault-setup --owner npub1… --data /mnt/ssd/nostr-vault
 ```
 
-The installer:
-
-1. installs the `nostr-vault` package for this system's package manager: the .deb on Debian, Ubuntu and Raspberry
-   Pi OS (apt), the .rpm on Fedora (dnf), the Arch package on Arch Linux (pacman); with the window's libraries when
-   the machine has a desktop, checked against the release's sha256. If the release has no package for this system
-   yet, or there is no apt, dnf or pacman, it uses Docker. With `NV_DOCKER=1`, or on a machine that already
-   runs the Docker box, it installs Docker if it isn't there (from get.docker.com) and uses the container.
-   `NV_NATIVE=1` moves a Docker box to native, keeping its data, owner and port;
-2. asks **Where should your vault live?** and suggests the drive with the most free space. On an SD card it warns
-   you first: a vault writes all the time, and a USB SSD lasts much longer;
-3. asks for **your npub**. Only that account can manage the vault. Nobody can claim it by visiting first;
-4. starts the vault and prints its address, e.g. `http://192.168.1.20:8080/`.
+`nostr-vault-setup` takes your **npub** (only that account can manage the vault; nobody can claim it by visiting
+first), `--data` for where the vault lives (a USB SSD lasts much longer than an SD card) and `--port` (8080). It
+starts the vault and prints its address, e.g. `http://192.168.1.20:8080/`. On a machine with no screen, add
+`--no-install-recommends` to apt so it skips the window's libraries. The Flatpak (`flatpak/README.md`) is for
+desktops and has no mesh.
 
 On a desktop you can also skip the terminal: install the package and open **Nostr Vault** from your apps; it
 asks the same two questions.
@@ -31,11 +32,11 @@ asks the same two questions.
 Open that address on a phone or computer on the same network, sign in with your Nostr account, and approve the box
 in **My Devices** (as with the Mac app). The box makes its own device key on first start; it never sees your nsec.
 
-Run the installer again to update or to change an answer: your vault's data stays where it is. Choosing a different
-place starts an empty vault there (the installer asks first); to move a vault, use **Storage › Move vault** in the app.
+To update, install the newer package the same way: your vault's data, owner and port stay. A different `--data`
+folder starts an empty vault there; to move a vault, use **Storage › Move vault** in the app.
 
-Answers can be given ahead, for scripts: `NV_DATA_HOST=/mnt/ssd/nostr-vault NV_OWNER=npub1… NV_YES=1 sh install.sh`.
-Also `NV_PORT` (8080), `NV_IMAGE`, `NV_HOME` (`/opt/nostr-vault`).
+`install.sh` in this folder is the older scripted installer (Docker box and CI); it is not the documented way to
+install.
 
 ## Day to day (native)
 
@@ -44,7 +45,7 @@ Also `NV_PORT` (8080), `NV_IMAGE`, `NV_HOME` (`/opt/nostr-vault`).
 | Logs | `journalctl -fu nostr-vault -u nostr-vault-mesh` |
 | Stop / start | `sudo systemctl stop nostr-vault` / `start` (the mesh goes with it) |
 | Settings | `sudo nostr-vault-setup --show`; change them with `sudo nostr-vault-setup --owner … --data … --port …` |
-| Update | run the installer again (data, owner and port stay) |
+| Update | install the newer package (data, owner and port stay) |
 
 ## Day to day (Docker)
 
@@ -53,12 +54,12 @@ Also `NV_PORT` (8080), `NV_IMAGE`, `NV_HOME` (`/opt/nostr-vault`).
 | Logs | `sudo docker logs -f nostr-vault-linux` |
 | Stop / start | `sudo docker compose --project-directory /opt/nostr-vault down` / `up -d` |
 | Settings | `/opt/nostr-vault/.env` (owner, data path, port, image) |
-| Update | run the installer again (updates are manual for now; the app's **Update** says so) |
+| Update | `sudo docker compose --project-directory /opt/nostr-vault pull` then `up -d` (updates are manual for now) |
 
 The container gets at most 1.5 GB of memory and low CPU priority, restarts by itself (`unless-stopped`), and keeps
 3 × 10 MB of logs. It shares the machine's network, so the mesh can offer your devices its real LAN address: the
-vault listens on `NV_PORT` (8080), and on loopback only the engine (3355) and the mesh door (8081). The installer
-checks those are free.
+vault listens on `NV_PORT` (8080), and on loopback only the engine (3355) and the mesh door (8081). The vault
+needs those free.
 
 ## Inside the container (for the four lanes)
 

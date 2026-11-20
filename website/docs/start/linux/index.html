@@ -133,7 +133,7 @@
         <main class="docs-main">
             <p class="eyebrow">Get started</p>
             <h1>Get started on Linux</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#needs">What you need</a></li><li><a href="#install">Install with one command</a></li><li><a href="#deb">Or install the .deb yourself</a></li><li><a href="#other">Fedora, Arch and Alpine</a></li><li><a href="#flatpak">Flatpak, for desktops (no mesh)</a></li><li><a href="#desktop">On a desktop: the window</a></li><li><a href="#open">Open your vault and link it</a></li><li><a href="#day-to-day">Day to day</a></li><li><a href="#docker">Already running the Docker box?</a></li><li><a href="#beta">What works, and what's still beta</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#needs">What you need</a></li><li><a href="#install">Install the .deb (Debian, Ubuntu, Raspberry Pi OS)</a></li><li><a href="#other">Fedora, Arch and Alpine</a></li><li><a href="#flatpak">Flatpak, for desktops (no mesh)</a></li><li><a href="#desktop">On a desktop: the window</a></li><li><a href="#open">Open your vault and link it</a></li><li><a href="#day-to-day">Day to day</a></li><li><a href="#docker">Already running the Docker box?</a></li><li><a href="#beta">What works, and what's still beta</a></li></ul></div>
 
             <article class="docs-article">
                 <p>Nostr Vault for Linux turns a Linux machine into your always-on vault: a Raspberry Pi, a mini PC, a home server
@@ -153,48 +153,31 @@
                     <li>One of these systems, each with its own package in the release:
                         <ul>
                             <li><strong>Debian 12</strong> or newer, <strong>Ubuntu 22.04</strong> or newer, or <strong>Raspberry Pi
-                                OS 12</strong> (64-bit): the <code>.deb</code>, or the one-command installer below.</li>
+                                OS 12</strong> (64-bit): the <code>.deb</code>.</li>
                             <li><strong>Fedora</strong>: the <code>.rpm</code> (checked with SELinux enforcing).</li>
                             <li><strong>Arch Linux</strong> and Arch Linux ARM: the <code>.pkg.tar.zst</code>.</li>
                             <li><strong>Alpine</strong> 3.22 or newer: the <code>.apk</code> (OpenRC, no window or tray).</li>
                             <li>Any desktop with <strong>Flatpak</strong> (Steam Deck, Fedora Silverblue, Bazzite and others): the
                                 <code>.flatpak</code>. It has <a href="#flatpak">no mesh</a> in this beta.</li>
                         </ul></li>
-                    <li>On other systems the installer runs the vault in Docker instead.</li>
                     <li>Your <strong>npub</strong>, the public key of the account that owns the vault. The machine never gets your
                         secret key.</li>
                     <li>Room to store your notes and media. A USB SSD is much better than an SD card; see
                         <a href="/docs/start/raspberry-pi/">Raspberry Pi</a>.</li>
                 </ul>
 
-                <h2 id="install">Install with one command</h2>
-                <p>Open a terminal on the machine (or ssh into it) and paste this. It installs the beta from its release:</p>
-                <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>curl -fsSL https://raw.githubusercontent.com/btcforplebs/nostr-vault/master/linux/install.sh | NV_NATIVE=1 NV_RELEASE=https://github.com/btcforplebs/nostr-vault/releases/download/v3.2.3-linux-beta.2 sh</code></pre>
-                <p>The installer sets up the <code>.deb</code> on Debian, Ubuntu and Raspberry Pi OS. On Fedora, Arch and Alpine it
-                    still uses Docker, so install your package yourself as shown <a href="#other">below</a>.
-                    Keep the <code>NV_RELEASE=</code> part while Linux is in beta. Without it the installer looks at the newest full
-                    release, which doesn't carry the Linux package yet, and sets the vault up in Docker instead.</p>
-                <p>The installer asks two questions:</p>
-                <ol class="steps">
-                    <li><strong>Where should your vault live?</strong> It suggests the drive with the most free space. If that is
-                        an SD card it warns you first and asks before it carries on.</li>
-                    <li><strong>Your npub.</strong> Only that account can manage the vault. Nobody can claim it by visiting first.</li>
-                </ol>
-                <p>Then it downloads the package for your machine, checks it against the sha256 in the release, installs it, starts
-                    the vault and prints the address to open, for example <code>http://192.168.1.20:8080/</code> and
-                    <code>http://&lt;machine name&gt;.local:8080/</code>.</p>
-                <p>On a machine with a desktop, the installer adds the window and tray. On a machine with no screen it leaves
-                    them out.</p>
-
-                <h2 id="deb">Or install the .deb yourself</h2>
-                <p>Download the file for your machine from the
+                <h2 id="install">Install the .deb (Debian, Ubuntu, Raspberry Pi OS)</h2>
+                <p>Open a terminal on the machine (or ssh into it) and download the file for your machine from the
                     <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.2">beta release</a>:
                     <code>…_arm64.deb</code> for a Raspberry Pi or other ARM board, <code>…_amd64.deb</code> for a normal PC. Then:</p>
                 <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>sudo apt install ./nostr-vault_3.2.3+6556_arm64.deb
                 sudo nostr-vault-setup --owner npub1…</code></pre>
                 <p>On a machine with no screen, add <code>--no-install-recommends</code> to the first line so apt skips the window's
-                    libraries. <code>nostr-vault-setup</code> also takes <code>--data /path</code> for where the vault lives and
-                    <code>--port</code> (8080 to start).</p>
+                    libraries. <code>nostr-vault-setup</code> also takes <code>--data /path</code> for where the vault lives (a USB
+                    SSD is much better than an SD card) and <code>--port</code> (8080 to start). It starts the vault and prints the
+                    address to open, for example <code>http://192.168.1.20:8080/</code>.</p>
+                <p>Check the file first against <code>SHA256SUMS</code> in the release:
+                    <code>sha256sum -c --ignore-missing SHA256SUMS</code>.</p>
 
                 <h2 id="other">Fedora, Arch and Alpine</h2>
                 <p>Download the package for your system and machine from the
@@ -244,7 +227,7 @@
 
                 <h2 id="open">Open your vault and link it</h2>
                 <ol class="steps">
-                    <li>On a phone or computer on the same network, open the address the installer printed. Sign in with your Nostr
+                    <li>On a phone or computer on the same network, open the address <code>nostr-vault-setup</code> printed. Sign in with your Nostr
                         account, the one whose npub you gave.</li>
                     <li>In Settings, <span class="ui">This Box</span> &rarr; <span class="ui">Status, storage, mesh, devices and
                         updates</span> shows the box's own page. Copy <strong>This box</strong> under
@@ -262,16 +245,18 @@
                         <code>sudo systemctl start nostr-vault</code></li>
                     <li><strong>Settings:</strong> <code>sudo nostr-vault-setup --show</code>; change them with
                         <code>sudo nostr-vault-setup --owner … --data … --port …</code></li>
-                    <li><strong>Update:</strong> run the installer again, or <code>apt install</code> a newer .deb. Your data, owner and
-                        port stay. <span class="ui">Check for update and install</span> on the box's page says the same for now.</li>
+                    <li><strong>Update:</strong> install the newer package from its release the same way (<code>apt install</code>,
+                        <code>dnf install</code>, <code>pacman -U</code>, <code>apk add</code>). Your data, owner and port stay. <span class="ui">Check for update and install</span> on the box's page says the same for now.</li>
                     <li><strong>Move the vault</strong> to another drive with <strong>Move vault to…</strong> on the box's page.
-                        Choosing a different folder in the installer starts an empty vault there instead (it asks first).</li>
+                        Giving <code>nostr-vault-setup --data</code> a different folder starts an empty vault there instead.</li>
                 </ul>
 
                 <h2 id="docker">Already running the Docker box?</h2>
-                <p>A machine that runs the older Docker box keeps it when you run the installer, and the installer updates it. To
-                    move to the native app, run the install command above: its <code>NV_NATIVE=1</code> stops the container and
-                    installs the package on the same data, owner and port.</p>
+                <p>To move it to the native app on the same data, stop the container
+                    (<code>sudo docker compose --project-directory /opt/nostr-vault down</code>), install the package for your system,
+                    then run <code>sudo nostr-vault-setup</code> with the same <code>--owner</code>, <code>--data</code> and
+                    <code>--port</code> the box had (they are in <code>/opt/nostr-vault/.env</code>). The package uses the
+                    container's users, so the data folder works as it is.</p>
 
                 <h2 id="beta">What works, and what's still beta</h2>
                 <p><strong>Works now:</strong></p>
@@ -289,15 +274,11 @@
                 </ul>
                 <p><strong>Not yet:</strong></p>
                 <ul>
-                    <li>No in-app updates. Run the installer again to update.</li>
+                    <li>No in-app updates. Install the newer package to update.</li>
                     <li>The download is checked against a sha256 from the same release. That catches a broken download, not a forged
                         one, because releases aren't signed yet.</li>
                     <li>The Flatpak has no mesh: device sync is off in it for now, and it runs only while you're logged in.</li>
                     <li>The Alpine apk is signed with a throwaway key, so it needs <code>apk add --allow-untrusted</code>.</li>
-                    <li>The one-command installer only installs native on Debian, Ubuntu and Raspberry Pi OS; Fedora, Arch and
-                        Alpine install their package by hand.</li>
-                    <li>The plain installer, without <code>NV_RELEASE=</code>, only installs native once a full release carries the
-                        Linux package.</li>
                 </ul>
                 <p>Something wrong? Open an issue on <a href="https://github.com/btcforplebs/nostr-vault/issues">GitHub</a> with the
                     output of <code>journalctl -u nostr-vault -u nostr-vault-mesh --since today</code>.</p>
