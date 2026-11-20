@@ -28,15 +28,19 @@ enum ProfileSecretKeyStrip {
         // or can see): a key still here came from the relays' copy, in a
         // field the form doesn't show or a newer value it never showed.
         for key in merged.keys.sorted() {
-            if SecretKeyLeak.containsSecretKey(text(merged[key])) {
+            // The field's name counts too: a key used as a JSON name would
+            // otherwise reach the signer and lock the save again.
+            if SecretKeyLeak.containsSecretKey(key) || SecretKeyLeak.containsSecretKey(text(merged[key])) {
                 fields.removeValue(forKey: key)
-                removed.append(key)
+                // A name that is itself the key is never shown.
+                removed.append(SecretKeyLeak.containsSecretKey(key) ? "a field name" : key)
             }
         }
         var kept: [[String]] = []
         for tag in tags {
             if tag.contains(where: SecretKeyLeak.containsSecretKey) {
-                removed.append("\(tag.first ?? "a") tag")
+                let name = tag.first ?? ""
+                removed.append(name.isEmpty || SecretKeyLeak.containsSecretKey(name) ? "a tag" : "\(name) tag")
             } else {
                 kept.append(tag)
             }

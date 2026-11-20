@@ -30,8 +30,8 @@ extension SecretKeyLeak {
     /// The signer's last line: a publish carrying a working key is refused
     /// and the person told why. Composers check first so their text stays
     /// and their own error line shows; this catches every other path.
-    static func refuses(kind: Int, content: String, tags: [[String]]) -> Bool {
-        guard !exemptKinds.contains(kind), containsSecretKey(content: content, tags: tags) else { return false }
+    static func refuses(kind: Int, content: String, tags: [[String]], signer: String) -> Bool {
+        guard blocksPublish(kind: kind, content: content, tags: tags, signer: signer) else { return false }
         Task { @MainActor in
             ErrorNotificationManager.shared.show(blockMessage)
         }

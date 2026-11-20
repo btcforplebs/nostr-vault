@@ -40,9 +40,35 @@ enum SecretKeyLeak {
         containsSecretKey(content) || tags.contains { $0.contains(where: containsSecretKey) }
     }
 
-    /// Kinds the signer does not check: a repost (6, 16) carries someone
-    /// else's note as it already is on the relays, and adds nothing of yours.
+    /// Reposts (6, 16): their content is someone else's note as it already
+    /// is on the relays, so it is not checked. Only when it really is one:
+    /// empty, or a signed event by another key. Anything else in a repost's
+    /// content is yours, and checked like a post (Tron, #2314 round 2).
     static let exemptKinds: Set<Int> = [6, 16]
+
+    /// The signer's rule: whether an event of `kind` signed by `signer` (hex)
+    /// must be refused. Tags are always checked.
+    static func blocksPublish(kind: Int, content: String, tags: [[String]], signer: String) -> Bool {
+        if exemptKinds.contains(kind), isRepostOfAnother(content, signer: signer) {
+            return tags.contains { $0.contains(where: containsSecretKey) }
+        }
+        return containsSecretKey(content: content, tags: tags)
+    }
+
+    /// Empty, or a signed event JSON (id, pubkey, sig, kind, content) whose
+    /// pubkey is not `signer`. An unknown signer is never exempt.
+    static func isRepostOfAnother(_ content: String, signer: String) -> Bool {
+        let me = signer.lowercased()
+        guard me.count == 64 else { return false }
+        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        guard let data = content.data(using: .utf8),
+              let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = event["id"] as? String, id.count == 64,
+              let pubkey = event["pubkey"] as? String, pubkey.count == 64,
+              let sig = event["sig"] as? String, sig.count == 128,
+              event["kind"] is NSNumber, event["content"] is String else { return false }
+        return pubkey.lowercased() != me
+    }
 
     /// The x-only pubkeys (hex) of every working key in `text`, one each.
     /// `derive` turns 32 secret bytes into the pubkey hex (the app passes the

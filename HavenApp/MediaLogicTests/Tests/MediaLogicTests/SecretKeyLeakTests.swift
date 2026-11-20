@@ -116,8 +116,27 @@ final class SecretKeyLeakTests: XCTestCase {
         XCTAssertEqual(pubs, [])
     }
 
-    func testRepostsAreExemptKinds() {
+    func testRepostExemptOnlyForAnotherKeysSignedEvent() {
+        let key = nsec(throwawaySecret())
+        let me = String(repeating: "a", count: 64), them = String(repeating: "b", count: 64)
+        func event(by pubkey: String) -> String {
+            let obj: [String: Any] = ["id": String(repeating: "c", count: 64), "pubkey": pubkey,
+                                      "created_at": 1, "kind": 1, "tags": [[String]](),
+                                      "content": "look \(key)", "sig": String(repeating: "d", count: 128)]
+            return String(data: try! JSONSerialization.data(withJSONObject: obj), encoding: .utf8)!
+        }
         XCTAssertEqual(SecretKeyLeak.exemptKinds, [6, 16])
+        XCTAssertFalse(SecretKeyLeak.blocksPublish(kind: 6, content: event(by: them), tags: [], signer: me))
+        XCTAssertFalse(SecretKeyLeak.blocksPublish(kind: 16, content: event(by: them), tags: [], signer: me))
+        XCTAssertFalse(SecretKeyLeak.blocksPublish(kind: 6, content: "", tags: [["e", "x"]], signer: me))
+        XCTAssertTrue(SecretKeyLeak.blocksPublish(kind: 6, content: event(by: me), tags: [], signer: me),
+                      "a repost of your own note is yours")
+        XCTAssertTrue(SecretKeyLeak.blocksPublish(kind: 6, content: "free text \(key)", tags: [], signer: me))
+        XCTAssertTrue(SecretKeyLeak.blocksPublish(kind: 6, content: event(by: them), tags: [], signer: ""),
+                      "unknown signer is never exempt")
+        XCTAssertTrue(SecretKeyLeak.blocksPublish(kind: 6, content: event(by: them), tags: [["alt", key]], signer: me),
+                      "tags are always checked")
+        XCTAssertTrue(SecretKeyLeak.blocksPublish(kind: 1, content: event(by: them), tags: [], signer: me))
     }
 
     // MARK: - Edit Profile strip
@@ -139,6 +158,15 @@ final class SecretKeyLeakTests: XCTestCase {
         XCTAssertFalse(message.contains("nsec"), "never the key")
         let json = ProfileMetadataMerge.encode(out.fields) ?? ""
         XCTAssertFalse(SecretKeyLeak.containsSecretKey(content: json, tags: out.tags))
+    }
+
+    func testFieldWhoseNameIsAKeyIsLeftOutWithoutShowingIt() {
+        let key = nsec(throwawaySecret())
+        let out = ProfileSecretKeyStrip.strip(["name": "Sam", key: "x"], tags: [[key, "y"]])
+        XCTAssertEqual(out.fields.count, 1)
+        XCTAssertEqual(out.tags, [])
+        XCTAssertEqual(out.message, "Removed a secret key from a field name, a tag.")
+        XCTAssertFalse(SecretKeyLeak.containsSecretKey(ProfileMetadataMerge.encode(out.fields) ?? key))
     }
 
     func testCleanProfileIsUntouched() {

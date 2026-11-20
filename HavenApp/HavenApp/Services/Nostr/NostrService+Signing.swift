@@ -30,7 +30,7 @@ extension NostrService {
     ///   handlers), making a background publish look like a real user-driven switch.
     func signEvent(kind: Int, content: String, tags: [[String]] = [], password: String? = nil, forceOwner: Bool = false, signAsNpub: String? = nil, notBefore: Int64? = nil) -> NostrEvent? {
         // Never a working nsec in a signed event (SecretKeyLeak).
-        guard !SecretKeyLeak.refuses(kind: kind, content: content, tags: tags) else { return nil }
+        guard !SecretKeyLeak.refuses(kind: kind, content: content, tags: tags, signer: keyGuardSigner(forceOwner: forceOwner, signAsNpub: signAsNpub)) else { return nil }
         // A list signed here is the owner's own edit: no wipe alarm for it
         // (docs/LIST_WIPE_ALARM.md).
         return OwnListEdits.noting(signEventLocal(kind: kind, content: content, tags: tags, password: password,
@@ -142,7 +142,7 @@ extension NostrService {
     ///   active account, and a background publish can't switch it.
     func signEventAsync(kind: Int, content: String, tags: [[String]] = [], password: String? = nil, forceOwner: Bool = false, signAsNpub: String? = nil, notBefore: Int64? = nil) async -> NostrEvent? {
         // Never a working nsec in a signed event (SecretKeyLeak).
-        guard !SecretKeyLeak.refuses(kind: kind, content: content, tags: tags) else { return nil }
+        guard !SecretKeyLeak.refuses(kind: kind, content: content, tags: tags, signer: keyGuardSigner(forceOwner: forceOwner, signAsNpub: signAsNpub)) else { return nil }
         return OwnListEdits.noting(await signEventRouted(kind: kind, content: content, tags: tags, password: password,
                                                   forceOwner: forceOwner, signAsNpub: signAsNpub, notBefore: notBefore))
     }
@@ -270,6 +270,17 @@ extension NostrService {
         }
     }
 
+    /// Who will sign, for the key guard's repost rule (a repost of your own
+    /// note is checked). Read the way `localSigningPlan` and the NIP-46 path
+    /// pick the pubkey.
+    private func keyGuardSigner(forceOwner: Bool, signAsNpub: String?) -> String {
+        if forceOwner { return ownerHexPubkey }
+        if let npub = signAsNpub?.trimmingCharacters(in: .whitespacesAndNewlines), !npub.isEmpty {
+            return Bech32.decode(npub)?.hexString ?? ""
+        }
+        return activeHexPubkey
+    }
+
     // MARK: - Proof of Work Mining + Signing
 
     /// Signs an event with NIP-13 Proof of Work mining via the Go backend.
@@ -280,7 +291,7 @@ extension NostrService {
     /// prefer `mineAndSignEventAsync`, which runs both on a background executor.
     func mineAndSignEvent(kind: Int, content: String, tags: [[String]] = [], difficulty: Int = 0, maxAttempts: Int = 10_000_000, password: String? = nil, forceOwner: Bool = false) -> NostrEvent? {
         // Never a working nsec in a signed event (SecretKeyLeak).
-        guard !SecretKeyLeak.refuses(kind: kind, content: content, tags: tags) else { return nil }
+        guard !SecretKeyLeak.refuses(kind: kind, content: content, tags: tags, signer: keyGuardSigner(forceOwner: forceOwner, signAsNpub: nil)) else { return nil }
         guard let plan = localSigningPlan(kind: kind, content: content, tags: tags, password: password,
                                           forceOwner: forceOwner, signAsNpub: nil, notBefore: nil),
               let sk = Self.secretKey(plan) else {
@@ -296,7 +307,7 @@ extension NostrService {
     /// otherwise trip the iOS watchdog).
     func mineAndSignEventAsync(kind: Int, content: String, tags: [[String]] = [], difficulty: Int = 0, maxAttempts: Int = 10_000_000, password: String? = nil) async -> NostrEvent? {
         // Never a working nsec in a signed event (SecretKeyLeak).
-        guard !SecretKeyLeak.refuses(kind: kind, content: content, tags: tags) else { return nil }
+        guard !SecretKeyLeak.refuses(kind: kind, content: content, tags: tags, signer: keyGuardSigner(forceOwner: false, signAsNpub: nil)) else { return nil }
         let config = ConfigService.shared.config
         let mode = config.activeSigningMode()
 
