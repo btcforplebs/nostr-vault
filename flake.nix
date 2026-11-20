@@ -97,6 +97,12 @@
             nv-mesh
             nostr-vault-web
             ;
+          module-assertions = import ./nix/tests/module-assertions.nix {
+            inherit pkgs lib;
+            inherit (nixpkgs.lib) nixosSystem;
+            nixosModule = self.nixosModules.default;
+            package = ps.nostr-vault;
+          };
           vm = import ./nix/tests/vm.nix {
             inherit pkgs;
             nixosModule = self.nixosModules.default;
