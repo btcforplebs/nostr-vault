@@ -56,7 +56,6 @@ html[data-shell="learn"] .welcome-learn { visibility: hidden; } /* the page is a
 .welcome .welcome-get:hover, .welcome .welcome-get:focus-visible { color: var(--accent-light); }
 .welcome-app-line { margin: 0; text-align: center; font: 400 13px/1.35 var(--font); color: var(--text-2); }
 /* "New to Nostr?" above the two doors (net/first-run.js). */
-.welcome-question { margin: 0 0 2px; text-align: center; font: var(--t-body); font-weight: 600; color: var(--text); }
 
 /* A wide window (the site's front door on a computer): the phone's column pinned its doors to the bottom of a 900px
    window, with an empty band in the middle. Here the hero and the doors are one group, centred, standing in the

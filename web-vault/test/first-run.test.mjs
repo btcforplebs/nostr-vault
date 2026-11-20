@@ -1,20 +1,27 @@
-// Web first run (net/first-run.js, Logen's plan 2026-11-05): the two questions' words, the tour shown once per new
+// Web first run (net/first-run.js, Logen's plan 2026-11-05): the front door's two choices and New to Nostr Vault?'s words, the tour shown once per new
 // account, and the notification question asked once, after you're in, never over the tour.
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { NEW_TO_NOSTR, NEW_TO_NOSTR_YES, NEW_TO_NOSTR_NO, TOUR, tourDone, markTourDone, notifyAction, notifyAsked, markNotifyAsked, QUIET_MS, NOTIFY_ASKED } from "../src/net/first-run.js"
+import { CREATE_ACCOUNT, BRING_ACCOUNT, TOUR, tourDone, markTourDone, notifyAction, notifyAsked, markNotifyAsked, QUIET_MS, NOTIFY_ASKED } from "../src/net/first-run.js"
 import { QUESTION, RELAYS, COPY, LOST_DEVICE } from "../src/net/setup-bring-over.js"
 
 const mem = () => { const m = new Map(); return { m, get length() { return m.size }, key: i => [...m.keys()][i] ?? null, getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) } }
 const src = f => readFileSync(new URL(`../${f}`, import.meta.url), "utf8")
 
-test("setup is two questions, in the apps' words; the backup zip left setup", () => {
-  assert.deepEqual([NEW_TO_NOSTR, NEW_TO_NOSTR_YES, NEW_TO_NOSTR_NO], ["New to Nostr?", "Yes, create an account", "No, I already use Nostr"])
+test("the front door is two choices, in the apps' words, no question; the backup zip left setup", () => {
+  assert.deepEqual([CREATE_ACCOUNT, BRING_ACCOUNT], ["Create an account", "Bring an account"])
   assert.deepEqual([QUESTION, RELAYS, COPY], ["New to Nostr Vault?", "Yes, bring my notes from relays", "No, copy from my other vault"])
   assert.equal(LOST_DEVICE, "Lost your other device? We'll bring your notes from relays")
   const welcome = src("src/screens/WelcomeScreen.jsx")
-  assert.ok(welcome.includes("{NEW_TO_NOSTR}") && welcome.indexOf("{NEW_TO_NOSTR}") < welcome.indexOf("{NEW_TO_NOSTR_YES}"))
+  // Create leads into Create an account, Bring into sign-in, Create first; no "New to Nostr?" above them.
+  assert.match(welcome, /onClick=\{onCreate\}>\{CREATE_ACCOUNT\}</)
+  assert.match(welcome, /onClick=\{onSignIn\}>\{BRING_ACCOUNT\}</)
+  assert.ok(welcome.indexOf("{CREATE_ACCOUNT}") < welcome.indexOf("{BRING_ACCOUNT}"))
+  assert.ok(!/New to Nostr\?|welcome-question|already use Nostr/.test(welcome), "no question above the two choices")
+  for (const f of ["src/signer/local.js", "src/screens/YourKeyPage.jsx", "src/screens/CreateAccount.jsx"]) {
+    assert.ok(!src(f).includes("I already use Nostr"), `${f} names the button by its new words`)
+  }
   const setup = src("src/screens/SetupBringOver.jsx")
   assert.ok(!/type="file"|restoreSetupBackup|BACKUP/.test(setup), "no backup restore in setup")
   assert.match(src("src/components/dashboard/KeepFullSection.jsx"), /title="Restore from a backup" href="#\/settings\/backup"/)

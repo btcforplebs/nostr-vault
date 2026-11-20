@@ -1,10 +1,11 @@
 // First run on the web, as the apps after Logen's plan (PLANS/NV_FIRST_RUN_ENTRY_PLAN_2026_11_05.md, Apple #1761,
-// Android #1759): two questions (New to Nostr? on the front door; New to Nostr Vault? after sign-in), a short tour for
+// Android #1759): two choices on the front door (Create an account, Bring an account; New to Nostr Vault? after sign-in), a short tour for
 // a new account, and the notification question asked once, after you're in, never over the tour. Pure, for tests.
 
-export const NEW_TO_NOSTR = "New to Nostr?"
-export const NEW_TO_NOSTR_YES = "Yes, create an account"
-export const NEW_TO_NOSTR_NO = "No, I already use Nostr"
+// The front door's two choices, no question above them, as the apps word them (Apple WelcomeStepView, Android
+// FrontDoor, Logen 2026-11-06): Create an account makes one; Bring an account signs in with yours.
+export const CREATE_ACCOUNT = "Create an account"
+export const BRING_ACCOUNT = "Bring an account"
 
 /** The tour a new account sees once, after it's in. Short: it teaches while the first notes come in. */
 export const TOUR = [
