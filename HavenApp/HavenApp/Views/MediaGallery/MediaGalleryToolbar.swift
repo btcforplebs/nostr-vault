@@ -8,7 +8,7 @@ extension MediaGalleryView {
 
     // MARK: - Leading Toolbar
 
-    /// Media type filter icons: All, Photo, Video, GIF.
+    /// Media type filter icons: All, Photo, Video, GIF, Audio.
     ///
     /// No Documents chip here — the row shares the bar with the sort menu, the
     /// layout toggle and upload, and this was the one worth dropping: documents
@@ -21,6 +21,7 @@ extension MediaGalleryView {
             let photoSelected = mediaTypeFilter.contains(.photo)
             let videoSelected = mediaTypeFilter.contains(.video)
             let gifSelected = mediaTypeFilter.contains(.gif)
+            let audioSelected = mediaTypeFilter.contains(.audio)
 
             IconFilterButton(
                 icon: allSelected ? "circle.grid.2x2.fill" : "circle.grid.2x2",
@@ -47,6 +48,12 @@ extension MediaGalleryView {
                 isSelected: gifSelected,
                 color: .primary
             ) { toggleMediaTypeFilter(.gif) }
+            IconFilterButton(
+                icon: "waveform",
+                tooltip: "Audio",
+                isSelected: audioSelected,
+                color: .primary
+            ) { toggleMediaTypeFilter(.audio) }
         }
     }
 
@@ -104,6 +111,7 @@ extension MediaGalleryView {
             Button { toggleMediaTypeFilter(.photo) } label: { Label("Photos", systemImage: mediaTypeFilter.contains(.photo) && !all ? "checkmark" : "photo") }
             Button { toggleMediaTypeFilter(.video) } label: { Label("Videos", systemImage: mediaTypeFilter.contains(.video) && !all ? "checkmark" : "video") }
             Button { toggleMediaTypeFilter(.gif) } label: { Label("GIFs", systemImage: mediaTypeFilter.contains(.gif) && !all ? "checkmark" : "photo.stack") }
+            Button { toggleMediaTypeFilter(.audio) } label: { Label("Audio", systemImage: mediaTypeFilter.contains(.audio) && !all ? "checkmark" : "waveform") }
         } label: {
             Image(systemName: all ? "circle.grid.2x2" : "circle.grid.2x2.fill")
                 .font(.appSystem(size: 15, weight: .semibold))
@@ -335,7 +343,7 @@ extension MediaGalleryView {
     /// "Media type · all", or the types left on: "Media type · photos, GIFs".
     func noteMediaTypes() {
         let all = mediaTypeFilter.count == MediaTypeFilter.allCases.count
-        let names: [MediaTypeFilter: String] = [.photo: "photos", .video: "videos", .gif: "GIFs", .other: "other"]
+        let names: [MediaTypeFilter: String] = [.photo: "photos", .video: "videos", .gif: "GIFs", .audio: "audio", .other: "other"]
         let picked = MediaTypeFilter.allCases.filter(mediaTypeFilter.contains).compactMap { names[$0] }
         filterNote.show(FilterNote(icon: all ? "circle.grid.2x2" : "circle.grid.2x2.fill",
                                    title: "Media type", setting: all ? "all" : picked.joined(separator: ", ")))

@@ -25,13 +25,14 @@ extension MediaTypeFilter {
     /// The chip an item is counted under. Shared by the Media tab and the
     /// composer's relay picker so the same file lands under the same chip in both.
     static func category(of item: MediaItem) -> MediaTypeFilter {
-        let ext = item.url.pathExtension.lowercased()
-        if ext == "gif" || item.mimeType?.lowercased().contains("gif") == true { return .gif }
+        let fallback: MediaTypeFilter
         switch item.type {
-        case .image: return .photo
-        case .video: return .video
-        case .audio, .unknown: return .other
+        case .image: fallback = .photo
+        case .video: fallback = .video
+        case .audio: fallback = .audio
+        case .unknown: fallback = .other
         }
+        return category(mimeType: item.mimeType, pathExtension: item.url.pathExtension, fallback: fallback)
     }
 }
 
