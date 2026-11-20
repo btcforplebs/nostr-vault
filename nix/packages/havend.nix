@@ -14,7 +14,7 @@ buildGoModule {
   modRoot = "haven-go";
 
   # haven-go/go.mod has `replace` lines into ./third_party, which go mod vendor copies in.
-  vendorHash = "sha256-sR9Wvj2grhY/EEqoXGUvhU1Axwk+vzga1W/4d945D2g=";
+  vendorHash = "sha256-Jz7CFclJPvrhstiJJ6JFuc5I0resnrVWrA7Z0L9GicI=";
 
   env.CGO_ENABLED = 0;
   # havend has no nolmdb build tag of its own; the tag only drops LMDB from the engine (init_lmdb.go).
