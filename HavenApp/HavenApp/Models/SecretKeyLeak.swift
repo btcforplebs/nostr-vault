@@ -40,6 +40,10 @@ enum SecretKeyLeak {
         containsSecretKey(content) || tags.contains { $0.contains(where: containsSecretKey) }
     }
 
+    /// Kinds the signer does not check: a repost (6, 16) carries someone
+    /// else's note as it already is on the relays, and adds nothing of yours.
+    static let exemptKinds: Set<Int> = [6, 16]
+
     /// The x-only pubkeys (hex) of every working key in `text`, one each.
     /// `derive` turns 32 secret bytes into the pubkey hex (the app passes the
     /// Go core's GetPublicKeyC; tests pass their own).
@@ -47,7 +51,10 @@ enum SecretKeyLeak {
         var seen = Set<String>()
         var out: [String] = []
         for key in secretKeys(in: text, stopAtFirst: false) {
-            guard let pub = derive(key)?.lowercased(), pub.count == 64, seen.insert(pub).inserted else { continue }
+            // The Go core answers 00..00, with no error, for the zero key and
+            // for the curve order n: no account has that pubkey.
+            guard let pub = derive(key)?.lowercased(), pub.count == 64, pub != zeroPubkey,
+                  seen.insert(pub).inserted else { continue }
             out.append(pub)
         }
         return out
@@ -63,6 +70,8 @@ enum SecretKeyLeak {
     }
 
     // MARK: - Private
+
+    private static let zeroPubkey = String(repeating: "0", count: 64)
 
     private static func secretKeys(in text: String, stopAtFirst: Bool) -> [Data] {
         // Most text has no "nsec1" at all: skip the regex for it.

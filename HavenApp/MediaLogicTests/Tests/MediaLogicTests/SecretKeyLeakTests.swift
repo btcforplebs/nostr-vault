@@ -109,6 +109,46 @@ final class SecretKeyLeakTests: XCTestCase {
         XCTAssertTrue(SecretKeyLeak.containsSecretKey(SecretKeyLeak.profileText(p)))
     }
 
+    func testSkipsTheAllZeroPubkey() {
+        // The Go core answers 00..00 for the zero key and for n.
+        let zero = String(repeating: "0", count: 64)
+        let pubs = SecretKeyLeak.derivedPubkeys(in: nsec(throwawaySecret())) { _ in zero }
+        XCTAssertEqual(pubs, [])
+    }
+
+    func testRepostsAreExemptKinds() {
+        XCTAssertEqual(SecretKeyLeak.exemptKinds, [6, 16])
+    }
+
+    // MARK: - Edit Profile strip
+
+    func testHiddenFieldHoldingAKeyIsLeftOutAndNamed() {
+        let key = nsec(throwawaySecret())
+        let merged: [String: Any] = ["name": "Sam", "displayName": key, "bot": false,
+                                     "extra": ["nested": "nostr:\(key)"]]
+        let tags = [["i", "github:sam", "proof"], ["alt", key]]
+        let out = ProfileSecretKeyStrip.strip(merged, tags: tags)
+        XCTAssertEqual(out.fields["name"] as? String, "Sam")
+        XCTAssertEqual(out.fields["bot"] as? Bool, false)
+        XCTAssertNil(out.fields["displayName"])
+        XCTAssertNil(out.fields["extra"], "a nested value counts too")
+        XCTAssertEqual(out.tags, [["i", "github:sam", "proof"]])
+        XCTAssertEqual(out.removed, ["displayName", "extra", "alt tag"])
+        let message = out.message ?? ""
+        XCTAssertEqual(message, "Removed a secret key from displayName, extra, alt tag.")
+        XCTAssertFalse(message.contains("nsec"), "never the key")
+        let json = ProfileMetadataMerge.encode(out.fields) ?? ""
+        XCTAssertFalse(SecretKeyLeak.containsSecretKey(content: json, tags: out.tags))
+    }
+
+    func testCleanProfileIsUntouched() {
+        let merged: [String: Any] = ["name": "Sam", "lud06": "lnurl1xyz", "about": "nsec1 is a prefix"]
+        let out = ProfileSecretKeyStrip.strip(merged, tags: [["t", "x"]])
+        XCTAssertEqual(out.fields.count, 3)
+        XCTAssertEqual(out.tags, [["t", "x"]])
+        XCTAssertNil(out.message)
+    }
+
     // MARK: - Registry + gate
 
     func testMarkedKeyIsOutsideEvenInYourWeb() {

@@ -393,12 +393,12 @@ struct ProfileEditView: View {
     static func publish(nostrService: NostrService, existing: FeedProfile, formLoadedFor: String,
                         initial: [String: String], edited: [String: String],
                         onRefused: (@MainActor () -> Void)? = nil) async -> Result<FeedProfile, SaveFailure> {
-        // The profile being edited, never whichever account is active now:
-        // the active one can change while this waits on the relays.
         // Any field, before the relay wait; the form keeps what was typed.
         if SecretKeyLeak.containsSecretKey(edited.values.joined(separator: "\n")) {
             return .failure(SaveFailure(message: SecretKeyLeak.blockMessage))
         }
+        // The profile being edited, never whichever account is active now:
+        // the active one can change while this waits on the relays.
         let pubkey = existing.pubkey
         let wrongAccount = SaveFailure(message: "The active account changed since Edit Profile opened. Nothing was published; open Edit Profile again from this account.")
         guard ProfileSaveGuard.maySign(profilePubkey: pubkey, formLoadedFor: formLoadedFor,
@@ -414,14 +414,15 @@ struct ProfileEditView: View {
         guard lookup.event != nil || lookup.confirmedNone else {
             return .failure(SaveFailure(message: "Couldn't load your current profile from the relays. Nothing was changed; try again."))
         }
-        let merged = ProfileMetadataMerge.merge(base: ProfileMetadataMerge.parseContent(lookup.event?.content),
+        let rawMerged = ProfileMetadataMerge.merge(base: ProfileMetadataMerge.parseContent(lookup.event?.content),
                                                 initial: initial, edited: edited)
+        // A key in a field the form doesn't show is left out, and the person
+        // told which field; never the key itself (ProfileSecretKeyStrip).
+        let stripped = ProfileSecretKeyStrip.strip(rawMerged, tags: lookup.event?.tags ?? [])
+        let merged = stripped.fields
+        let baseTags = stripped.tags
         guard let jsonStr = ProfileMetadataMerge.encode(merged) else {
             return .failure(SaveFailure(message: "Could not encode profile."))
-        }
-        // A field this form doesn't show can hold one too (an older kind 0).
-        if SecretKeyLeak.containsSecretKey(content: jsonStr, tags: lookup.event?.tags ?? []) {
-            return .failure(SaveFailure(message: SecretKeyLeak.blockMessage))
         }
 
         // Checked again after the relay wait, right before signing.
@@ -431,7 +432,7 @@ struct ProfileEditView: View {
         }
         // The tags go too: NIP-39 `i` identities and NIP-30 emoji set in
         // other clients would be dropped by an empty list.
-        guard let signed = await nostrService.signEventAsync(kind: 0, content: jsonStr, tags: lookup.event?.tags ?? []) else {
+        guard let signed = await nostrService.signEventAsync(kind: 0, content: jsonStr, tags: baseTags) else {
             return .failure(SaveFailure(message: "Could not sign event. Check that your key is available."))
         }
         // Whatever signed it, a kind 0 from any key but this profile's own
@@ -447,6 +448,9 @@ struct ProfileEditView: View {
             Task { @MainActor in onRefused?() }
         })
 
+        if let removed = stripped.message {
+            Task { @MainActor in ErrorNotificationManager.shared.show(removed, style: .warning) }
+        }
         var updated = profile(existing, from: merged)
         updated.lud06 = merged["lud06"] as? String
         updated.metadataCreatedAt = signed.created_at
