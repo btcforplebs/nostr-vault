@@ -8,7 +8,7 @@
 // that note is fetched from your relays so its text fills in.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { lookInFront } from "../../components/auto-look.js"
-import { readInbound, readOwn, readLists, fetchInbound, fetchFollowerLists, keepLists, mergeLists, OWN_NOTE_KINDS } from "../../net/vault-lists.js"
+import { readInbound, readOwn, readLists, fetchInbound, fetchFollowerLists, keepLists, mergeLists, clampSince, OWN_NOTE_KINDS } from "../../net/vault-lists.js"
 import { onSaved, throttle } from "../../net/vault-saved.js"
 import { receiptTrust } from "../../net/zaps.js"
 import { vaultLines, unreadLines, unreadFrom, readSince, onVaultUnread, POLL_MS } from "../../net/notify-watch.js"
@@ -36,12 +36,13 @@ export function useVaultLines(ctx) {
   const [state, setState] = useState({ lines: null, unread: new Set(), fetched: false })
   const fetched = useRef(false)
   useEffect(() => {
-    let stopped = false, named = new Set(), asked = new Set()
+    let stopped = false, named = new Set(), asked = new Set(), newest = 0
     const since = readSince(me)
     const read = async () => {
       const { ctx, blocked, network } = live.current
       const [inbound, own] = await Promise.all([readInbound(ctx.vault, me).catch(() => []), readOwn(ctx.vault, me, { kinds: OWN_NOTE_KINDS }).catch(() => [])])
       if (stopped) return
+      for (const e of inbound) if (e.created_at > newest) newest = e.created_at
       const lines = vaultLines({ inbound, own, lists: readLists(me), me, blocked, trusted: network })
       const unread = new Set(unreadLines(lines, unreadFrom(readSeen(me)?.activity ?? 0, since)).map(r => r.id))
       setState({ lines, unread, fetched: fetched.current })
@@ -66,7 +67,9 @@ export function useVaultLines(ctx) {
     read().catch(() => {}).then(async () => {
       if (fetched.current || navigator.onLine === false) { fetched.current = true; return read() }
       await Promise.allSettled([
-        fetchInbound(ctx.vault, me, relays, { limit: 100, trust: receiptTrust(ctx) }),
+        // Only what came after the newest line Haven holds, and the follower lists brought up to date (vault-lists.js
+        // listsChecked): asking for all of them on every load was ~190 MB (Tidy's audit 11-20, W2).
+        fetchInbound(ctx.vault, me, relays, { limit: 100, since: newest ? clampSince(newest - 60) : undefined, trust: receiptTrust(ctx) }),
         fetchFollowerLists(me, relays, { limit: 100, on: fresh => keepLists(me, mergeLists(readLists(me), fresh, me)) }),
       ])
       fetched.current = true
