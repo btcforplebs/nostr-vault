@@ -10,9 +10,9 @@ import { globalLike } from "./feeds.js"
 /** The feeds with a Reach setting, in the picker's order: the FeedScreen modes the gate judges. */
 export const REACH_FEEDS = [
   ["following", "Following"], ["discovery", "Discover"], ["global", "Global"], ["hashtag", "Hashtags"],
-  ["popular", "Popular"], ["media", "Media"], ["relay", "Relay feeds"],
+  ["popular", "Popular"], ["underrated", "Underrated"], ["media", "Media"], ["relay", "Relay feeds"],
 ]
-/** Default reach per feed (spec 2b): your web everywhere. Underrated (web + hop 3) has no web feed yet. */
+/** Default reach per feed (spec 2b): your web everywhere but Underrated, whose people are one step out (web + hop 3). */
 export const DEFAULT_REACH = Object.freeze({ underrated: "webAndHop3" })
 export const REACH_LABELS = { web: "Your web", webAndHop3: "Your web + a few one hop out" }
 const KEY = "nv-feed-reach"

@@ -24,6 +24,7 @@ import { useBlocks } from "../components/useBlocks.js"
 import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, linkChoice, feedRelays, LINK_PARAMS, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, readsHaven, globalLike, withScope, saveMediaScope, liveFilters, liveKeeps, trustScoped } from "../net/feeds.js"
 import { fetchPopular, audienceKeeps, popularRanks } from "../net/popular.js"
 import { fetchCatchUp } from "../net/catchup.js"
+import { fetchUnderrated, EMPTY_TEXT as UNDERRATED_EMPTY } from "../net/underrated.js"
 import { setEveryone, everyoneLocked } from "../net/global-trust.js"
 import { SCREENED_LINE } from "../net/topic-filter.js"
 import { EveryoneShieldDialog } from "../components/EveryoneShieldDialog.jsx"
@@ -109,11 +110,14 @@ export function FeedScreen({ ctx }) {
   const following = readsHaven(choice), media = choice.mode === "media", popular = choice.mode === "popular"
   // Catch Up (net/catchup.js): one picked page of each follow's latest post, so like Popular it has no Older or stream.
   const catchup = choice.mode === "catchup"
+  // Underrated (net/underrated.js): one ranked page like Popular's, ranked again while on screen; empty says why.
+  const underrated = choice.mode === "underrated", ranked = popular || underrated
+  const underratedWhy = useRef("")
   // A hashtag under the Everyone lock (fewer than 5 follows) opens screened, not empty (net/feeds.js screenedHashtag).
   const hashtagScreened = c => c.mode === "hashtag" && everyoneLocked(follows, me)
   // Global, Media on Global, Popular and Discover are all read through your web of trust, so they wait for your follows;
   // Catch Up is your follows' posts, so it waits for them too.
-  const global = globalLike(choice), discover = choice.mode === "discovery", needsWeb = popular || catchup || global || discover
+  const global = globalLike(choice), discover = choice.mode === "discovery", needsWeb = ranked || catchup || global || discover
   // Discover's network (net/discover.js), worked out once per follow list and kept for Older: { key, people }.
   const network = useRef(null)
   const discoverPeople = async () => {
@@ -344,7 +348,7 @@ export function FeedScreen({ ctx }) {
     if (fresh.length) setStrangePending(prev => newerNotes([], [...fresh, ...prev.filter(p => !fresh.some(f => f.id === p.id))]))
   }
   useEffect(() => {
-    if (Reader || following || popular || catchup || strange === null || !navigator.onLine) return
+    if (Reader || following || ranked || catchup || strange === null || !navigator.onLine) return
     const c = choice, key = feedKey(c)
     let close = () => {}, live = true
     ;(async () => {
@@ -357,17 +361,19 @@ export function FeedScreen({ ctx }) {
     })().catch(() => {})
     return () => { live = false; close() }
   }, [feedKey(choice), strange !== null, follows.length])
-  // Popular is one ranked page, not a stream: it is ranked again every POPULAR_RECHECK_MS while it is on screen, and
-  // when notes have joined the ranking the new ranking goes in on its own (putIn above).
+  // Popular and Underrated are one ranked page, not a stream: each is ranked again every POPULAR_RECHECK_MS while it is
+  // on screen, and when notes have joined the ranking the new ranking goes in on its own (putIn above).
   useEffect(() => {
-    if (!popular || strange === null || !follows.length) return
+    if (!ranked || strange === null || !follows.length) return
+    const mode = choice.mode
     const t = setInterval(async () => {
       if (document.hidden || !navigator.onLine) return
       try {
-        const got = await fetchPopular({ me, follows, relays, vault, blocked, ctx })
+        const got = await (mode === "popular" ? fetchPopular : fetchUnderrated)({ me, follows, relays, vault, blocked, ctx })
         const next = got.notes
-        if (keyNow.current !== "popular") return
-        popularScores.current = got.scores
+        if (keyNow.current !== mode) return
+        if (mode === "popular") popularScores.current = got.scores
+        else underratedWhy.current = got.reason
         const shownIds = new Set((strangeNow.current ?? []).map(n => n.id))
         const joined = next.filter(n => !shownIds.has(n.id))
         popularNext.current = next
@@ -376,10 +382,10 @@ export function FeedScreen({ ctx }) {
     }, POPULAR_RECHECK_MS)
     t.unref?.() // node (the tests) only: a timer must not keep the process up
     return () => clearInterval(t)
-  }, [popular, strange !== null, follows.length])
+  }, [ranked, choice.mode, strange !== null, follows.length])
   const showStrangePending = () => {
     // New posts go in on top, so past the ceiling the oldest give way (capNotes), or the bottom would sit undrawn.
-    const all = popular && popularNext.current ? popularNext.current : capNotes(mergePage(strangePending, strange ?? []))
+    const all = ranked && popularNext.current ? popularNext.current : capNotes(mergePage(strangePending, strange ?? []))
     popularNext.current = null
     holdNotes(choice, all)
     setStrange(all)
@@ -397,20 +403,24 @@ export function FeedScreen({ ctx }) {
     const n = ++seq.current
     if (c.mode === "hashtag" && !c.tag) return setStatus("")
     if (c.mode === "list" && !c.authors) return setStatus("Reading the list…")
-    if ((c.mode === "popular" || c.mode === "catchup" || globalLike(c) || c.mode === "discovery") && !follows.length) return setStatus("")
+    if ((c.mode === "popular" || c.mode === "underrated" || c.mode === "catchup" || globalLike(c) || c.mode === "discovery") && !follows.length) return setStatus("")
     if (!navigator.onLine) return setStatus(`Offline: ${FEEDS.find(f => f.id === c.mode)?.label ?? c.label ?? "this feed"} needs the network`)
     setStatus(until ? "Fetching older notes…" : c.mode === "popular" ? "Ranking the last day's likes, reposts and zaps…"
       : c.mode === "discovery" && !network.current ? "Finding the people your follows follow…"
-      : c.mode === "catchup" ? "Finding each follow's latest post…" : "Loading…")
+      : c.mode === "catchup" ? "Finding each follow's latest post…"
+      : c.mode === "underrated" ? "Looking one step out for notes that did well for their author…" : "Loading…")
+    let why = "" // Underrated's empty reason, kept only if this load is still the feed's
     try {
       const page = c.mode === "popular"
         ? await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault, blocked, ctx }).then(got => { popularScores.current = got.scores; return got.notes })
         : c.mode === "catchup" ? await fetchCatchUp({ follows, relays, vault })
+        : c.mode === "underrated" ? await fetchUnderrated({ me: ctx.session?.pubkey, follows, relays, vault, blocked, ctx }).then(got => { why = got.reason; return got.notes })
         : c.mode === "discovery" ? await fetchDiscover(await discoverPeople(), account.relays.read, { until })
         : await fetchStrangerFeed(c, account.relays.read, { until, limit: c.mode === "media" ? MEDIA_PAGE : PAGE, trust: trustScoped(c) ? await globalTrust(ctx.session?.pubkey, follows) : null,
           // Under the Everyone lock a hashtag opens screened (feeds.js screenedHashtag), so a new account can find people.
           screened: hashtagScreened(c), follows })
       if (n !== seq.current) return
+      if (c.mode === "underrated") underratedWhy.current = why
       // Older joins at the bottom, so past the ceiling the newest give way (feed-window.js capOlder), as Following's
       // Older does. Uncapped, this list grew past MAX_NOTES while the draw window stops there: Older kept fetching pages
       // nobody could see, until "No older notes" sat under note 500. The rows dropped above the reader would pull the
@@ -562,6 +572,7 @@ export function FeedScreen({ ctx }) {
           : <Notes shown={drawn} outside={outside} foldKey={feedKey(choice)} onOlder={older} olderState={olderState} layout={layout} fetchRoots={rootFetcher(vault, relays)} />
         : choice.mode === "hashtag" && !choice.tag ? <p class="empty">Type a hashtag to see notes tagged with it.</p>
           : popular && !follows.length ? <p class="empty">{account.loaded ? "Popular counts what the people you follow, and the people they follow, liked. Follow someone first." : "Loading your follows…"}</p>
+          : underrated && !follows.length ? <p class="empty">{account.loaded ? "Underrated shows people your follows follow and you don't. Follow someone first." : "Loading your follows…"}</p>
           : catchup && !follows.length ? <p class="empty">{account.loaded ? "Catch Up shows the latest post of each person you follow. Follow someone first." : "Loading your follows…"}</p>
           : global && !follows.length ? <p class="empty">{account.loaded ? "Follow people to build your web of trust" : "Loading your follows…"}</p>
           : discover && !follows.length ? account.loaded ? <DiscoverEmpty text="Follow more people on Nostr to build your extended network" />
@@ -573,9 +584,10 @@ export function FeedScreen({ ctx }) {
               onOlder={() => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} olderState={olderState} />
           : !strange.length && choice.mode === "list" && choice.authors && !choice.authors.length ? <p class="empty">This list has no one in it, or it didn't come back from your relays.</p>
           : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow."
-            : catchup ? "All caught up: nobody you follow has posted in the last two weeks." : global && !choice.everyone ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
+            : catchup ? "All caught up: nobody you follow has posted in the last two weeks."
+            : underrated ? UNDERRATED_EMPTY[underratedWhy.current] ?? UNDERRATED_EMPTY.nothing_qualified : global && !choice.everyone ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
           : <Notes shown={drawn} outside={outside} foldKey={feedKey(choice)} memoryOnly layout={layout} keepFeedOrder rankOf={rankOf} fetchRoots={rootFetcher(vault, account.relays.read, { save: false })}
-              olderState={olderState} onOlder={popular || catchup ? null : () => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} />}
+              olderState={olderState} onOlder={ranked || catchup ? null : () => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} />}
       </>}
     </main>
   )

@@ -101,17 +101,15 @@ export async function trustSet(me, follows, { relays = PROFILE_RELAYS, query = (
 }
 
 /**
- * The Popular page: notes ranked from the last day's engagement on these relays. Asks once for everyone's
- * engagement (as the iPhone does) and once for the follows' own, since a busy relay's 5,000 can miss them.
+ * The engagement Popular (and Underrated, net/underrated.js) rank: the `window` up to `now` on these relays, asked
+ * once for everyone (as the iPhone does) and once for the follows' own, since a busy relay's 5,000 can miss them.
  * Blocked people's likes, reposts and zaps don't count. A zap receipt counts only if the payee's own zap service
- * published it and its signed request holds up (`trust`, zaps.js trustedReceipts; `ctx` is this account's, and
- * `trust` is for the tests). -> { notes, trusted, scores } (trusted: how many people count,
- * so the screen can say why it's empty; scores: note id -> its score, for the rank line). `query` is for tests.
+ * published it and its signed request holds up (`trust`, zaps.js trustedReceipts). -> { t: tally, trusted: Set }.
  */
-export async function fetchPopular({ me, follows, relays, vault, blocked = new Set(), now = Math.floor(Date.now() / 1000), ctx, trust = receiptTrust(ctx), query = (r, f, o) => pool.querySync(r, f, o) }) {
+export async function trustedTally({ me, follows, relays, blocked = new Set(), now, window = WINDOW, trust, query }) {
   const urls = uniq(relays)
-  const since = now - WINDOW, kinds = [7, 6, 9735]
-  // The trust set and the day's engagement don't depend on each other, so they are asked at the same time.
+  const since = now - window, kinds = [7, 6, 9735]
+  // The trust set and the engagement don't depend on each other, so they are asked at the same time.
   const asks = [query(urls, { kinds, since, limit: 5000 }, { maxWait: 10000 })]
   for (let i = 0; i < follows.length; i += 250) asks.push(query(urls, { kinds: [7, 6], authors: follows.slice(i, i + 250), since, limit: 2000 }, { maxWait: 10000 }))
   const [trusted, answers] = await Promise.all([trustSet(me, follows, { query }), Promise.all(asks)])
@@ -125,14 +123,31 @@ export async function fetchPopular({ me, follows, relays, vault, blocked = new S
   const counts = pk => trusted.has(pk) && !blocked.has(pk)
   const canVote = all.filter(e => e.kind === 9735 && reactorOf(e, verifyEvent, counts))
   const okZaps = new Set(canVote.length ? (await trust(canVote).catch(() => [])).map(e => e.id) : [])
-  const t = tally(all.filter(e => e.kind !== 9735 || okZaps.has(e.id)), trusted, verifyEvent, blocked)
-  const ids = rankTargets(t)
-  if (!ids.length) return { notes: [], trusted: trusted.size, scores: new Map() }
-  // Bodies: Haven /feed first (read only), the relays for the rest.
+  return { t: tally(all.filter(e => e.kind !== 9735 || okZaps.has(e.id)), trusted, verifyEvent, blocked), trusted }
+}
+
+/** Note bodies by id: Haven /feed first (read only), the relays for the rest, in REQs of 250 ids (Underrated looks
+ *  up to 1,000). -> Map id -> kind 1 event. */
+export async function noteBodies(ids, { vault, relays, query }) {
   const found = new Map()
   if (vault) for (const ev of await vault.feed.query({ ids, kinds: [1] }).catch(() => [])) found.set(ev.id, ev)
   const missing = ids.filter(id => !found.has(id))
-  if (missing.length) for (const ev of await query(urls, { ids: missing, kinds: [1] }, { maxWait: 8000 })) if (ev?.kind === 1 && missing.includes(ev.id)) found.set(ev.id, ev)
+  const want = new Set(missing), asks = []
+  for (let i = 0; i < missing.length; i += 250) asks.push(query(uniq(relays), { ids: missing.slice(i, i + 250), kinds: [1] }, { maxWait: 8000 }))
+  for (const evs of await Promise.all(asks)) for (const ev of evs) if (ev?.kind === 1 && want.has(ev.id)) found.set(ev.id, ev)
+  return found
+}
+
+/**
+ * The Popular page: notes ranked from the last day's engagement on these relays (trustedTally; `ctx` is this
+ * account's, and `trust` is for the tests). -> { notes, trusted, scores } (trusted: how many people count,
+ * so the screen can say why it's empty; scores: note id -> its score, for the rank line). `query` is for tests.
+ */
+export async function fetchPopular({ me, follows, relays, vault, blocked = new Set(), now = Math.floor(Date.now() / 1000), ctx, trust = receiptTrust(ctx), query = (r, f, o) => pool.querySync(r, f, o) }) {
+  const { t, trusted } = await trustedTally({ me, follows, relays, blocked, now, trust, query })
+  const ids = rankTargets(t)
+  if (!ids.length) return { notes: [], trusted: trusted.size, scores: new Map() }
+  const found = await noteBodies(ids, { vault, relays, query })
   // Only notes by people in the web show: trusted likes can lift a stranger's note, but it stays out (Logen 2026-11-04).
   const scores = new Map()
   return { notes: scoreNotes([...found.values()].filter(n => trusted.has(n.pubkey)), t, { now, scores }), trusted: trusted.size, scores }
