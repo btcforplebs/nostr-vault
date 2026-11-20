@@ -2,7 +2,7 @@
 # Build Nostr Vault for Linux, native: the nostr-vault .deb, for each arch asked for (default: this machine's).
 #   linux/native/build.sh [arm64] [amd64]          from the repo root or anywhere
 # Out: linux/native/out/nostr-vault_<version>_<arch>.deb (and the .rpm and Arch package with NV_PKG_FORMATS) and
-# nostr-vault-linux.json (the version and each package's sha256: install.sh checks a download against it).
+# nostr-vault-linux.json (the version and each package's sha256, to check a download against).
 #
 # Build on Debian 12 (bookworm), arm64 or amd64: its glibc (2.36) is the oldest the packages then need, so they run
 # on Raspberry Pi OS 12, Debian 12+ and Ubuntu 22.04+ (measured: glibc 2.34; package.sh reads the floor from the
@@ -68,7 +68,7 @@ for arch in $archs; do
   "$here/package.sh" "$arch" "$version" "$bin" "$here/.web" "$out"
 done
 
-# 4. The manifest install.sh reads: the version and each .deb's sha256.
+# 4. The manifest: the version and each .deb's sha256.
 (cd "$out" && python3 -I - "$version" <<'PY'
 import hashlib, json, os, sys
 v = sys.argv[1]

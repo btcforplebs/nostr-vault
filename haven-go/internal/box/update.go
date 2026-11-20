@@ -14,8 +14,8 @@ import (
 //
 //   - NV_UPDATE_HOOK set: that program runs (detached from the request,
 //     10 minute limit) with NV_UPDATE_REQUESTED_AT in its environment.
-//   - otherwise nothing on the host can do it (install.sh sets up no hook or
-//     watcher), so the answer is Manual: re-run the installer. Nothing is
+//   - otherwise nothing on the host can do it (the packages set up no hook or
+//     watcher), so the answer is Manual: install the newer package. Nothing is
 //     written, and the box never says an update started.
 
 // UpdateResult is the API's answer.
@@ -25,7 +25,7 @@ type UpdateResult struct {
 	Started bool   `json:"started"`
 	From    string `json:"from,omitempty"`
 
-	// Manual: nothing here can run an update; the owner re-runs install.sh.
+	// Manual: nothing here can run an update; the owner installs the newer package.
 	Manual bool `json:"manual,omitempty"`
 
 	Queued bool   `json:"queued"`

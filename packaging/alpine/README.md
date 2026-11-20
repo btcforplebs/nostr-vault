@@ -38,4 +38,4 @@ docker run --rm -v "$PWD:/src" -w /src alpine:3.22 packaging/alpine/build.sh /sr
 ```
 
 The apk is signed with a throwaway key made in the build: nothing here is published. A release needs its own
-signing key (its `.rsa.pub` for `/etc/apk/keys`), and `linux/install.sh` doesn't know about Alpine yet.
+signing key (its `.rsa.pub` for `/etc/apk/keys`).
