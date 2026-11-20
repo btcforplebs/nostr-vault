@@ -92,6 +92,9 @@ enum ModePostPublisher {
                         nostrService: NostrService,
                         lockedTo lock: PostingAccount.Lock? = nil,
                         onRelayResult: ((String, Bool, String) -> Void)? = nil) async throws -> NostrEvent {
+        // Thrown, not just refused by the signer, so the composer shows why
+        // and keeps its fields (SecretKeyLeak).
+        if SecretKeyLeak.containsSecretKey(content: content, tags: tags) { throw SecretKeyLeak.Blocked() }
         let config = { ConfigService.shared.config }
         if let lock, PostingAccount.resolve(active: config().activeAccountNpub, owner: config().ownerNpub) != lock.npub {
             throw PublishError.accountChanged

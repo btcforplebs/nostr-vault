@@ -29,9 +29,11 @@ extension NostrService {
     ///   observed by every subscriber (FeedService/NostrService's own account-switch
     ///   handlers), making a background publish look like a real user-driven switch.
     func signEvent(kind: Int, content: String, tags: [[String]] = [], password: String? = nil, forceOwner: Bool = false, signAsNpub: String? = nil, notBefore: Int64? = nil) -> NostrEvent? {
+        // Never a working nsec in a signed event (SecretKeyLeak).
+        guard !SecretKeyLeak.refuses(content: content, tags: tags) else { return nil }
         // A list signed here is the owner's own edit: no wipe alarm for it
         // (docs/LIST_WIPE_ALARM.md).
-        OwnListEdits.noting(signEventLocal(kind: kind, content: content, tags: tags, password: password,
+        return OwnListEdits.noting(signEventLocal(kind: kind, content: content, tags: tags, password: password,
                                            forceOwner: forceOwner, signAsNpub: signAsNpub, notBefore: notBefore))
     }
 
@@ -139,7 +141,9 @@ extension NostrService {
     ///   with a bunker is refused (returns nil): the bunker connection belongs to the
     ///   active account, and a background publish can't switch it.
     func signEventAsync(kind: Int, content: String, tags: [[String]] = [], password: String? = nil, forceOwner: Bool = false, signAsNpub: String? = nil, notBefore: Int64? = nil) async -> NostrEvent? {
-        OwnListEdits.noting(await signEventRouted(kind: kind, content: content, tags: tags, password: password,
+        // Never a working nsec in a signed event (SecretKeyLeak).
+        guard !SecretKeyLeak.refuses(content: content, tags: tags) else { return nil }
+        return OwnListEdits.noting(await signEventRouted(kind: kind, content: content, tags: tags, password: password,
                                                   forceOwner: forceOwner, signAsNpub: signAsNpub, notBefore: notBefore))
     }
 
@@ -275,6 +279,8 @@ extension NostrService {
     /// entry point runs it, and any key derivation, on the calling thread — for the main actor,
     /// prefer `mineAndSignEventAsync`, which runs both on a background executor.
     func mineAndSignEvent(kind: Int, content: String, tags: [[String]] = [], difficulty: Int = 0, maxAttempts: Int = 10_000_000, password: String? = nil, forceOwner: Bool = false) -> NostrEvent? {
+        // Never a working nsec in a signed event (SecretKeyLeak).
+        guard !SecretKeyLeak.refuses(content: content, tags: tags) else { return nil }
         guard let plan = localSigningPlan(kind: kind, content: content, tags: tags, password: password,
                                           forceOwner: forceOwner, signAsNpub: nil, notBefore: nil),
               let sk = Self.secretKey(plan) else {
@@ -289,6 +295,8 @@ extension NostrService {
     /// background executor, so the main thread is never blocked by either (the mining loop would
     /// otherwise trip the iOS watchdog).
     func mineAndSignEventAsync(kind: Int, content: String, tags: [[String]] = [], difficulty: Int = 0, maxAttempts: Int = 10_000_000, password: String? = nil) async -> NostrEvent? {
+        // Never a working nsec in a signed event (SecretKeyLeak).
+        guard !SecretKeyLeak.refuses(content: content, tags: tags) else { return nil }
         let config = ConfigService.shared.config
         let mode = config.activeSigningMode()
 

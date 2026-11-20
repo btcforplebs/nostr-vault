@@ -47,6 +47,7 @@ enum ProfileRepository {
             shards = ProfileCacheShards(loaded: loaded)
         }
         saveQueue.sync { profileShards = shards }
+        SecretKeyLeak.noteProfiles(shards.previous.values)
         return shards.previous
     }
 
@@ -145,6 +146,8 @@ enum ProfileRepository {
         guard let metadata = try? JSONSerialization.jsonObject(
             with: content.data(using: .utf8) ?? Data()
         ) as? [String: Any] else { return nil }
+        // A working nsec anywhere in it marks that key's account (SecretKeyLeak).
+        SecretKeyLeak.noteProfileContent(content)
 
         let name = metadata["name"] as? String
         let displayName = metadata["display_name"] as? String

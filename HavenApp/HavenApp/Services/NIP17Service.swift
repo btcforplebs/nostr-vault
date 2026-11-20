@@ -60,6 +60,8 @@ enum NIP17Service {
         fileTags: [[String]] = [],
         rumorTimestamp: Int64? = nil
     ) throws -> NostrEvent {
+        // Never a working nsec inside a DM, even sealed (SecretKeyLeak).
+        guard !SecretKeyLeak.containsSecretKey(content: content, tags: fileTags) else { throw SecretKeyLeak.Blocked() }
         // Step 1: Create rumor (kind 14 text, or kind 15 file with its DMFile tags after the p tags; unsigned)
         let rumorTimestamp = rumorTimestamp ?? Int64(Date().timeIntervalSince1970)
         let rumorTags = rumorPTags + fileTags
@@ -187,6 +189,8 @@ enum NIP17Service {
         fileTags: [[String]] = [],
         rumorTimestamp: Int64? = nil
     ) async throws -> NostrEvent {
+        // Never a working nsec inside a DM, even sealed (SecretKeyLeak).
+        guard !SecretKeyLeak.containsSecretKey(content: content, tags: fileTags) else { throw SecretKeyLeak.Blocked() }
         let isNIP46 = await ConfigService.shared.config.activeSigningMode() == "nip46"
 
         if !isNIP46 {

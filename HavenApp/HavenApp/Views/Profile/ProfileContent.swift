@@ -124,6 +124,7 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
                         // can do. One rule above the tabs instead of one between
                         // every block.
                         headerBlock
+                        PublicKeyWarning(pubkey: pubkey)
                         if let about = profile?.about, !about.isEmpty {
                             bioBlock(about)
                         } else if awaitingMetadata {

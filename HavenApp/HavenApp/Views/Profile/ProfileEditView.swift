@@ -395,6 +395,10 @@ struct ProfileEditView: View {
                         onRefused: (@MainActor () -> Void)? = nil) async -> Result<FeedProfile, SaveFailure> {
         // The profile being edited, never whichever account is active now:
         // the active one can change while this waits on the relays.
+        // Any field, before the relay wait; the form keeps what was typed.
+        if SecretKeyLeak.containsSecretKey(edited.values.joined(separator: "\n")) {
+            return .failure(SaveFailure(message: SecretKeyLeak.blockMessage))
+        }
         let pubkey = existing.pubkey
         let wrongAccount = SaveFailure(message: "The active account changed since Edit Profile opened. Nothing was published; open Edit Profile again from this account.")
         guard ProfileSaveGuard.maySign(profilePubkey: pubkey, formLoadedFor: formLoadedFor,
@@ -414,6 +418,10 @@ struct ProfileEditView: View {
                                                 initial: initial, edited: edited)
         guard let jsonStr = ProfileMetadataMerge.encode(merged) else {
             return .failure(SaveFailure(message: "Could not encode profile."))
+        }
+        // A field this form doesn't show can hold one too (an older kind 0).
+        if SecretKeyLeak.containsSecretKey(content: jsonStr, tags: lookup.event?.tags ?? []) {
+            return .failure(SaveFailure(message: SecretKeyLeak.blockMessage))
         }
 
         // Checked again after the relay wait, right before signing.
