@@ -133,7 +133,7 @@
         <main class="docs-main">
             <p class="eyebrow">Get started</p>
             <h1>Get started on Linux</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#needs">What you need</a></li><li><a href="#install">Install the .deb (Debian, Ubuntu, Raspberry Pi OS)</a></li><li><a href="#other">Fedora, Arch and Alpine</a></li><li><a href="#flatpak">Flatpak, for desktops (no mesh)</a></li><li><a href="#desktop">On a desktop: the window</a></li><li><a href="#open">Open your vault and link it</a></li><li><a href="#day-to-day">Day to day</a></li><li><a href="#docker">Already running the Docker box?</a></li><li><a href="#beta">What works, and what's still beta</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#needs">What you need</a></li><li><a href="#install">Install the .deb (Debian, Ubuntu, Raspberry Pi OS)</a></li><li><a href="#other">Fedora, Arch and Alpine</a></li><li><a href="#flatpak">Flatpak, for desktops (no mesh)</a></li><li><a href="#desktop">On a desktop: the window</a></li><li><a href="#open">Open your vault and link it</a></li><li><a href="#day-to-day">Day to day</a></li><li><a href="#beta">What works, and what's still beta</a></li></ul></div>
 
             <article class="docs-article">
                 <p>Nostr Vault for Linux turns a Linux machine into your always-on vault: a Raspberry Pi, a mini PC, a home server
@@ -251,13 +251,6 @@
                         Giving <code>nostr-vault-setup --data</code> a different folder starts an empty vault there instead.</li>
                 </ul>
 
-                <h2 id="docker">Already running the Docker box?</h2>
-                <p>To move it to the native app on the same data, stop the container
-                    (<code>sudo docker compose --project-directory /opt/nostr-vault down</code>), install the package for your system,
-                    then run <code>sudo nostr-vault-setup</code> with the same <code>--owner</code>, <code>--data</code> and
-                    <code>--port</code> the box had (they are in <code>/opt/nostr-vault/.env</code>). The package uses the
-                    container's users, so the data folder works as it is.</p>
-
                 <h2 id="beta">What works, and what's still beta</h2>
                 <p><strong>Works now:</strong></p>
                 <ul>
@@ -270,7 +263,6 @@
                     <li>The desktop window and tray, on a machine with a desktop.</li>
                     <li>The box's page: status, storage and <strong>Move vault to…</strong>, the mesh, your devices, and
                         <a href="/docs/mesh/sync/#public-web">Public on the web</a> for a box with its own web address.</li>
-                    <li>Moving a Docker box to native on the same data.</li>
                 </ul>
                 <p><strong>Not yet:</strong></p>
                 <ul>
