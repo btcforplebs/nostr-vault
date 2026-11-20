@@ -275,7 +275,7 @@ test("fetch: each relay is asked on its own and the list shows once half have an
   const done = fetchNotificationEvents(ME, ["wss://a", "wss://b", "wss://slow", "wss://a"], { limit: 2, query, onEvents: evs => shows.push(evs.map(e => e.id)) })
   await new Promise(r => setTimeout(r, 20))
   assert.deepEqual(asked.map(([r]) => r), [["wss://a"], ["wss://b"], ["wss://slow"]], "one relay per ask, each once")
-  assert.deepEqual(asked[0][1], { kinds: [1, 3, 6, 7, 16, 1068, 1111, 9802, 9735, 30023], "#p": [ME], limit: 2 }, "one filter object")
+  assert.deepEqual(asked[0][1], { kinds: [1, 6, 7, 16, 1068, 1111, 9802, 9735, 30023], "#p": [ME], limit: 2 }, "one filter object")
   assert.deepEqual(shows, [[a.id, b.id]], "shown with two of three in, the slow relay still out")
   release()
   const page = await done
@@ -378,4 +378,22 @@ test("grouping: a folded like row keeps every reaction's raw content, newest fir
   ], ME)
   assert.deepEqual(rows[0].emojis, ["🔥", "", "+"])
   assert.deepEqual(groupNotifications([ev(1, ALICE, [["p", ME]], "hi")], ME)[0].emojis, [], "only reactions carry emoji")
+})
+
+test("follows come from the kept follower lists, not the pages: one row per day, only where the pages reach", async () => {
+  const { followEvents, NOTIFICATION_KINDS } = await import("../src/net/notifications.js")
+  assert.ok(!NOTIFICATION_KINDS.includes(3), "the pages never carry whole contact lists")
+  const day = 1_795_000_000 - (1_795_000_000 % 86400)
+  const lists = [
+    { id: "a".repeat(64), kind: 3, pubkey: ALICE, created_at: day + 50, tags: [["p", ME]], followedAt: day + 10 },
+    { id: "b".repeat(64), kind: 3, pubkey: BOB, created_at: day + 20, tags: [["p", ME]] },
+    { id: "c".repeat(64), kind: 3, pubkey: CAROL, created_at: day - 10, tags: [["p", ME]] },
+    { id: "e".repeat(64), kind: 3, pubkey: person(), created_at: day + 30, tags: [] }, // no longer follows
+  ]
+  const all = followEvents(lists, ME)
+  assert.equal(all.length, 3)
+  assert.equal(all.find(e => e.pubkey === ALICE).created_at, day + 10, "dated when first seen following, not the list's last edit")
+  assert.deepEqual(groupNotifications(all, ME).map(r => [r.type, r.who]), [["follow", [BOB, ALICE]], ["follow", [CAROL]]])
+  assert.deepEqual(followEvents(lists, ME, day).map(e => e.pubkey).sort(), [ALICE, BOB].sort(), "older follows wait for their page")
+  assert.deepEqual(followEvents(lists, ME, Infinity), [], "no page yet: no follows")
 })

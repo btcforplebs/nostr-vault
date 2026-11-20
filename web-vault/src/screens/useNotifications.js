@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { useAutoLook } from "../components/auto-look.js"
 import {
-  aboutPreview, fetchNotificationEvents, fetchNotes, filterRows, groupNotifications, insideRows,
+  aboutPreview, fetchNotificationEvents, fetchNotes, filterRows, followEvents, groupNotifications, insideRows,
   trustedWeb, visitNotifications,
 } from "../net/notifications.js"
+import { fetchFollowerLists, keepLists, mergeLists, readLists } from "../net/vault-lists.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { receiptTrust } from "../net/zaps.js"
@@ -49,6 +50,13 @@ export function useNotifications(ctx, filter = "all") {
   // there is no graph (nobody is outside).
   const [trusted, setTrusted] = useState(last?.trusted ?? null)
   const { blocked } = useBlocks(ctx)
+  // Who follows the user: the follower lists this browser keeps, brought up to date on each look (vault-lists.js
+  // fetchFollowerLists asks only what changed since the last check). The pages themselves carry no contact lists.
+  const [lists, setLists] = useState(() => readLists(session.pubkey))
+  const lookFollows = () => fetchFollowerLists(session.pubkey, relays, {
+    on: fresh => { const all = mergeLists(readLists(session.pubkey), fresh, session.pubkey); keepLists(session.pubkey, all); setLists(all) },
+  }).catch(() => {})
+  useEffect(() => { setLists(readLists(session.pubkey)) }, [session.pubkey])
   // Rows newer than the last visit show a dot. Infinity until this visit is read, so nothing flashes as unread.
   const [unreadSince, setUnreadSince] = useState(Infinity)
   const gen = useRef(0) // a Refresh drops the pages an older load is still fetching
@@ -87,6 +95,7 @@ export function useNotifications(ctx, filter = "all") {
     setStatus(events && !quiet ? "Loading…" : "")
     const first = !events
     if (!quiet) filled.current = new Set(notes.keys()) // a Refresh asks again for notes that didn't come
+    lookFollows()
     try {
       const seen = new Set()
       const show = page => {
@@ -122,9 +131,12 @@ export function useNotifications(ctx, filter = "all") {
       fillIn(fresh).catch(() => {})
     } catch { if (g === gen.current) setMore(m => ({ ...m, busy: false, done: true })) }
   }
+  // Follows join the pages' events down to where the pages reach (all of them once the relays have no older pages).
+  const withFollows = useMemo(() => events && [...events, ...followEvents(lists, session.pubkey, more.done ? 0 : more.until ?? Infinity)],
+    [events, lists, more.done, more.until, session.pubkey])
   // Likes and reposts from outside the web fold into one line (net/outside-fold.js); the rest are grouped as before.
-  const split = useMemo(() => events && splitOutsideLikes(events, session.pubkey, { trusted, follows: account.follows }),
-    [events, trusted, session.pubkey, account.follows])
+  const split = useMemo(() => withFollows && splitOutsideLikes(withFollows, session.pubkey, { trusted, follows: account.follows }),
+    [withFollows, trusted, session.pubkey, account.follows])
   const rows = useMemo(() => split && insideRows(groupNotifications(split.inside, session.pubkey), session.pubkey, { trusted, follows: account.follows }),
     [split, trusted, session.pubkey, account.follows])
   // A like, repost or zap on someone else's note that only tags the user isn't about the user's note: the iPhone keeps

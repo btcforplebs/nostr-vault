@@ -10,9 +10,10 @@ import { mediaType } from "./media.js"
 import { meshHost } from "./fips-ref.js"
 import { reactionCode, rememberEmoji, seenEmoji } from "./custom-emoji.js"
 
-/** Notes, contact lists (a follow), reposts, reactions, generic reposts, highlights, zaps, long-form articles, and the
- *  comments (1111) and polls (1068) the phones list too. */
-export const NOTIFICATION_KINDS = [1, 3, 6, 7, 16, 1068, 1111, 9802, 9735, 30023]
+/** Notes, reposts, reactions, generic reposts, highlights, zaps, long-form articles, and the comments (1111) and polls
+ *  (1068) the phones list too. Not contact lists: a follow's row comes from the follower lists this browser keeps
+ *  (vault-lists.js readLists, followRows), since paging whole ~75 KB lists cost 95-190 MB a visit (Tidy's audit 11-20, W3). */
+export const NOTIFICATION_KINDS = [1, 6, 7, 16, 1068, 1111, 9802, 9735, 30023]
 const HEX64 = /^[0-9a-f]{64}$/
 
 /** Fetch events of the notification kinds that tag `pubkey`, newest first, the user's own left out. */
@@ -159,6 +160,22 @@ export function visitNotifications(pubkey, { arriving, storage = globalThis.loca
   try { last = Number(storage?.getItem(seenKey(pubkey))) || 0 } catch {}
   try { storage?.setItem(seenKey(pubkey), String(now)) } catch {}
   return arriving ? (last > 0 ? last : now) : null
+}
+
+/**
+ * Follows as events for groupNotifications, from the kept follower lists (vault-lists.js compactLists): one per person
+ * still following, dated when this browser first saw them follow (`followedAt`), else when their list last changed, as
+ * the paged kind 3 rows were. Only those at or after `from` (where the loaded pages reach), so a follow never shows
+ * among older rows the list hasn't loaded. -> events
+ */
+export function followEvents(lists, pubkey, from = 0) {
+  const out = []
+  for (const l of lists) {
+    if (!l?.tags?.length || l.pubkey === pubkey) continue
+    const at = Number.isInteger(l.followedAt) && l.followedAt > 0 && l.followedAt <= l.created_at ? l.followedAt : l.created_at
+    if (at >= from) out.push({ id: l.id, kind: 3, pubkey: l.pubkey, created_at: at, tags: [["p", pubkey]], content: "" })
+  }
+  return out
 }
 
 /** One event -> { type, who, noteId, sats, emoji, comment, created_at, event }, or null when it isn't a notification for the user. */
