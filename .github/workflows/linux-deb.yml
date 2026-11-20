@@ -446,9 +446,21 @@ jobs:
           grep -q "Docker isn't running" out.log
           if docker exec nv sh -c 'rpm -q nostr-vault || pacman -Q nostr-vault' >/dev/null 2>&1; then echo "it installed the package"; exit 1; fi
           docker exec nv rm /usr/local/bin/docker
-      - name: install.sh, unattended, from the folder
+      - name: install.sh from v3.2.3-linux-beta.2 (its manifest lists the .debs, SHA256SUMS has this package)
         run: |
-          npub=$(docker exec nv keytool gen | cut -d' ' -f2)
+          npub=$(docker exec nv keytool gen | cut -d' ' -f2); echo "$npub" >owner.txt
+          docker exec nv env NV_RELEASE=https://github.com/btcforplebs/nostr-vault/releases/download/v3.2.3-linux-beta.2 \
+            NV_OWNER=$npub NV_DATA_HOST=/var/lib/nostr-vault NV_DESKTOP=0 NV_YES=1 sh /w/linux/install.sh | tee b2.log
+          if grep -qi docker b2.log; then echo "it went to Docker"; exit 1; fi
+          case ${{ matrix.distro }} in
+            fedora) got=$(docker exec nv rpm -q --qf '%{VERSION}' nostr-vault) ;;
+            arch) got=$(docker exec nv pacman -Q nostr-vault | cut -d' ' -f2 | sed 's/-1$//') ;;
+          esac
+          echo "installed $got from beta 2"; test "$got" = 3.2.3+6556
+          docker exec nv sh -c 'for i in $(seq 1 30); do systemctl -q is-active nostr-vault nostr-vault-mesh && curl -fsS http://127.0.0.1:8080/ | grep -qi "<html" && exit 0; sleep 2; done; exit 1'
+      - name: install.sh, unattended, from the folder (an update over beta 2, same owner)
+        run: |
+          npub=$(cat owner.txt)
           docker exec nv env NV_DEB_DIR=/w/rel NV_OWNER=$npub NV_DATA_HOST=/var/lib/nostr-vault NV_DESKTOP=0 NV_YES=1 sh /w/linux/install.sh
           want=$(python3 -c 'import json; print(json.load(open("rel/nostr-vault-linux.json"))["version"])')
           case ${{ matrix.distro }} in

@@ -92,8 +92,11 @@ fi
 # reached) the installer keeps the Docker box, as before, rather than failing. (A release can carry the .deb only.)
 # A machine already on native never falls back: it gets the plain error further down.
 if [ "$mode" = native ] && [ -z "${NV_DEB_DIR:-}" ] && [ "${NV_NATIVE:-0}" != 1 ] && [ ! -f "$NATIVE_ENV" ]; then
+  # The package's sha256 is in the manifest, or (a release whose manifest lists the .debs only) in SHA256SUMS.
   mf=$(curl -fsSL --proto '=https' "$NV_RELEASE/nostr-vault-linux.json" 2>/dev/null || true)
-  if ! printf '%s' "$mf" | grep -q "\"$(pkg_name '[^"]*')\""; then
+  sums=$(curl -fsSL --proto '=https' "$NV_RELEASE/SHA256SUMS" 2>/dev/null || true)
+  if [ -z "$mf" ] || { ! printf '%s' "$mf" | grep -q "\"$(pkg_name '[^"]*')\"" \
+    && ! printf '%s\n' "$sums" | grep -Eq "^[0-9a-f]{64}  $(pkg_name '[^ ]*')\$"; }; then
     say "No native package for this system in the release yet, so the vault runs in Docker. (NV_NATIVE=1 insists on native.)"
     mode=docker
   fi
@@ -203,7 +206,11 @@ if [ "$mode" = native ]; then
   list=""
   for f in $files; do
     sum=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"].get(sys.argv[2],""))' "$debs/m.json" "$f")
-    printf '%s' "$sum" | grep -Eq '^[0-9a-f]{64}$' || die "the manifest has no sha256 for $f"
+    if ! printf '%s' "$sum" | grep -Eq '^[0-9a-f]{64}$'; then # not in the manifest: the release's SHA256SUMS
+      [ -s "$debs/SHA256SUMS" ] || get SHA256SUMS "$debs/SHA256SUMS" 2>/dev/null || true
+      sum=$(awk -v f="$f" '$2 == f && $1 ~ /^[0-9a-f]+$/ && length($1) == 64 { print $1; exit }' "$debs/SHA256SUMS" 2>/dev/null)
+      printf '%s' "$sum" | grep -Eq '^[0-9a-f]{64}$' || die "neither the manifest nor SHA256SUMS has a sha256 for $f"
+    fi
     say "Getting $f…"
     get "$f" "$debs/$f" || die "couldn't get $f"
     [ "$(sha256sum "$debs/$f" | cut -d' ' -f1)" = "$sum" ] || die "$f doesn't match its sha256 in the manifest"
