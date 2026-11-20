@@ -1,0 +1,65 @@
+name: Nix flake
+
+# Builds the flake's packages (havend + haven-engine, nv-mesh, the web app) and runs `nix flake check`, which includes
+# the NixOS VM test (nix/tests/vm.nix: the vault and the mesh up as two users, the mesh key private to the mesh's).
+# Each arch on its own runner, nothing cross-built. Publishes nothing: no cache, no release, no upload but logs.
+#
+# It also runs when a lockfile the Nix build pins changes (go.sum, package-lock.json, Cargo.lock): those changes move
+# the fixed-output hashes in nix/packages/, and this is where that shows up.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - "nix/**"
+      - ".github/workflows/nix.yml"
+      - "haven-go/go.mod"
+      - "haven-go/go.sum"
+      - "web-relay/package-lock.json"
+      - "web-vault/package-lock.json"
+      - "linux/mesh/Cargo.lock"
+      - "linux/mesh/Cargo.toml"
+      - "linux/native/lib/prepare"
+      - "linux/native/test/keytool/**"
+
+# Read-only token: the build runs npm, Go and cargo build scripts.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { system: x86_64-linux, runner: ubuntu-24.04 }
+          - { system: aarch64-linux, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: KVM for the VM test (without it QEMU falls back to TCG, slower but the same test)
+        run: |
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+            sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+            echo "KVM: yes"
+          else
+            echo "KVM: no (TCG)"
+          fi
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            system-features = nixos-test benchmark big-parallel kvm
+            sandbox = true
+      - name: flake.lock (BOOTSTRAP, replaced by a committed-lock check before review)
+        run: |
+          if [ ! -s flake.lock ]; then nix flake lock; echo "::warning::no flake.lock committed"; fi
+          cat flake.lock
+      - name: Packages
+        run: nix build -L --keep-going --no-link .#nostr-vault .#keytool
+      - name: nix flake check (includes the VM test)
+        run: nix flake check -L --keep-going
