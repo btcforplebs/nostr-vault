@@ -21,40 +21,19 @@ enum MediaLocationFilter {
     case notFound
 }
 
-enum MediaTypeFilter: String, CaseIterable {
-    case photo = "Photo"
-    case video = "Video"
-    case gif = "GIF"
-    case other = "Other"
-
+extension MediaTypeFilter {
     /// The chip an item is counted under. Shared by the Media tab and the
     /// composer's relay picker so the same file lands under the same chip in both.
     static func category(of item: MediaItem) -> MediaTypeFilter {
-        let ext = item.url.pathExtension.lowercased()
-        if ext == "gif" || item.mimeType?.lowercased().contains("gif") == true { return .gif }
+        let fallback: MediaTypeFilter
         switch item.type {
-        case .image: return .photo
-        case .video: return .video
-        case .audio, .unknown: return .other
+        case .image: fallback = .photo
+        case .video: fallback = .video
+        case .audio: fallback = .audio
+        case .unknown: fallback = .other
         }
+        return category(mimeType: item.mimeType, pathExtension: item.url.pathExtension, fallback: fallback)
     }
-
-    /// Decodes the persisted selection. An empty selection shows nothing at
-    /// all and there is no UI path back from it, so "none stored" means
-    /// "everything".
-    static func selection(from raw: String) -> Set<MediaTypeFilter> {
-        let stored = Set(raw.split(separator: ",").compactMap { MediaTypeFilter(rawValue: String($0)) })
-        return stored.isEmpty ? Set(allCases) : stored
-    }
-
-    /// Encodes a selection in `allCases` order so the stored string is stable.
-    static func rawSelection(_ selection: Set<MediaTypeFilter>) -> String {
-        allCases.filter { selection.contains($0) }.map(\.rawValue).joined(separator: ",")
-    }
-
-    /// Storage key the Media tab and the composer's relay picker share, so
-    /// organising one organises the other.
-    static let storageKey = "mediaGallery.typeFilter"
 }
 
 // MARK: - Sorting

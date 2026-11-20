@@ -138,6 +138,7 @@ struct BlossomMediaPickerSheet: View {
             let photoSelected = typeFilter.contains(.photo)
             let videoSelected = typeFilter.contains(.video)
             let gifSelected = typeFilter.contains(.gif)
+            let audioSelected = typeFilter.contains(.audio)
 
             IconFilterButton(
                 icon: allSelected ? "circle.grid.2x2.fill" : "circle.grid.2x2",
@@ -167,6 +168,12 @@ struct BlossomMediaPickerSheet: View {
                 isSelected: gifSelected,
                 color: .primary
             ) { toggle(.gif) }
+            IconFilterButton(
+                icon: "waveform",
+                tooltip: "Audio",
+                isSelected: audioSelected,
+                color: .primary
+            ) { toggle(.audio) }
         }
     }
 
