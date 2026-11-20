@@ -54,6 +54,11 @@ cd "$CRATE_DIR"
 # Host and target are both macOS, so the build scripts (ring, secp256k1) get
 # the macOS SDK. Xcode's own SDK and search paths are for the app.
 MAC_SDK="$(env -u SDKROOT xcrun --sdk macosx --show-sdk-path)"
+# With MACOSX_DEPLOYMENT_TARGET set, the crate's `strip = true` also strips the
+# host proc-macro dylibs, and they then fail to load (rustc reports E0463
+# "can't find crate for rustversion" in castaway). Only the build-time host
+# artifacts keep their symbols; libnvfips.a is unaffected.
+export CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP=false
 SLICES=()
 for target in "${TARGETS[@]}"; do
     rustup target add "$target" >/dev/null

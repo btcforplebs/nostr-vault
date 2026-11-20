@@ -39,7 +39,12 @@ settings:
     GCC_WARN_UNUSED_FUNCTION: YES
     GCC_WARN_UNUSED_VARIABLE: YES
     MTL_FAST_MATH: YES
-    EXCLUDED_ARCHS: x86_64
+    # The Mac app is universal (arm64 + x86_64) so it runs on Intel Macs; the
+    # build scripts build and lipo both slices of libhaven and libnvfips.
+    # iOS stays arm64-only: devices are arm64 and nothing ships an x86_64
+    # simulator slice.
+    "EXCLUDED_ARCHS[sdk=iphoneos*]": x86_64
+    "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
 
 targets:
 

@@ -45,20 +45,6 @@ fi
 
 cd "$GO_SRC_ROOT"
 
-# ── Source-change detection ──────────────────────────────────────────
-# Hash all Go source files + go.mod/go.sum to detect changes.
-# If nothing changed since the last successful build, skip recompilation.
-CHECKSUM_FILE="${PROJECT_DIR}/build/.libhaven_checksum"
-CURRENT_CHECKSUM=$(find . -name '*.go' -o -name 'go.mod' -o -name 'go.sum' | sort | xargs cat | shasum -a 256 | awk '{print $1}')
-
-if [ -f "$HAVEN_LIB_PATH" ] && [ -f "$CHECKSUM_FILE" ]; then
-    PREVIOUS_CHECKSUM=$(cat "$CHECKSUM_FILE")
-    if [ "$CURRENT_CHECKSUM" = "$PREVIOUS_CHECKSUM" ]; then
-        echo "✅ Go source unchanged — skipping rebuild."
-        exit 0
-    fi
-fi
-
 # Determine which architectures to build
 # ARCHS may contain "arm64", "x86_64", or "arm64 x86_64"
 NEED_ARM64=false
@@ -78,6 +64,24 @@ if ! $NEED_ARM64 && ! $NEED_X86_64; then
         NEED_ARM64=true
     else
         NEED_X86_64=true
+    fi
+fi
+
+# ── Source-change detection ──────────────────────────────────────────
+# Hash all Go source files + go.mod/go.sum to detect changes.
+# If nothing changed since the last successful build, skip recompilation.
+CHECKSUM_FILE="${PROJECT_DIR}/build/.libhaven_checksum"
+SOURCE_CHECKSUM=$(find . -name '*.go' -o -name 'go.mod' -o -name 'go.sum' | sort | xargs cat | shasum -a 256 | awk '{print $1}')
+# The slices are part of the key: a Debug build is native-only and a Release
+# build is universal, so an arm64-only libhaven.a must not satisfy a universal
+# link (or the reverse) just because the Go sources are the same.
+CURRENT_CHECKSUM="${SOURCE_CHECKSUM}-arm64=${NEED_ARM64}-x86_64=${NEED_X86_64}-${MACOSX_DEPLOYMENT_TARGET}"
+
+if [ -f "$HAVEN_LIB_PATH" ] && [ -f "$CHECKSUM_FILE" ]; then
+    PREVIOUS_CHECKSUM=$(cat "$CHECKSUM_FILE")
+    if [ "$CURRENT_CHECKSUM" = "$PREVIOUS_CHECKSUM" ]; then
+        echo "✅ Go source unchanged — skipping rebuild."
+        exit 0
     fi
 fi
 
