@@ -38,6 +38,10 @@ type levelsController struct {
 	kv     *DB
 
 	cstatus compactStatus
+
+	// compactWake nudges sleeping compactors when a table lands in L0, so
+	// a slow idle tick never leaves a write stalled. HAVEN_FORK.md.
+	compactWake chan struct{}
 }
 
 // revertToManifest checks that all necessary table files exist and removes all table files not
@@ -68,8 +72,9 @@ func revertToManifest(kv *DB, mf *Manifest, idMap map[uint64]struct{}) error {
 func newLevelsController(db *DB, mf *Manifest) (*levelsController, error) {
 	y.AssertTrue(db.opt.NumLevelZeroTablesStall > db.opt.NumLevelZeroTables)
 	s := &levelsController{
-		kv:     db,
-		levels: make([]*levelHandler, db.opt.MaxLevels),
+		kv:          db,
+		levels:      make([]*levelHandler, db.opt.MaxLevels),
+		compactWake: make(chan struct{}, max(db.opt.NumCompactors, 1)),
 	}
 	s.cstatus.tables = make(map[uint64]struct{})
 	s.cstatus.levels = make([]*levelCompactStatus, db.opt.MaxLevels)
@@ -500,22 +505,45 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 		run(p)
 
 	}
-	count := 0
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
+	// HAVEN_FORK.md: upstream polls every 50 ms forever, which with two
+	// compactors per store and nine stores kept an idle engine at ~1,000
+	// wakeups a second. Poll every 50 ms only while there is work; when a
+	// pass finds nothing, sleep a second. A new L0 table wakes us at once
+	// (wakeCompactors), so flushes and stalled writes never wait a second.
+	const busyTick, idleTick, lmaxEvery = 50 * time.Millisecond, time.Second, 10 * time.Second
+	lastLmax := time.Now()
+	timer := time.NewTimer(idleTick)
+	defer timer.Stop()
 	for {
 		select {
-		// Can add a done channel or other stuff.
-		case <-ticker.C:
-			count++
-			// Each ticker is 50ms so 50*200=10seconds.
-			if s.kv.opt.LmaxCompaction && id == 2 && count >= 200 {
-				tryLmaxToLmaxCompaction()
-				count = 0
-			} else {
-				runOnce()
-			}
+		case <-timer.C:
+		case <-s.compactWake:
+			timer.Stop()
 		case <-lc.HasBeenClosed():
+			return
+		}
+		worked := false
+		if s.kv.opt.LmaxCompaction && id == 2 && time.Since(lastLmax) >= lmaxEvery {
+			tryLmaxToLmaxCompaction()
+			lastLmax = time.Now()
+		} else {
+			worked = runOnce()
+		}
+		if worked {
+			timer.Reset(busyTick)
+		} else {
+			timer.Reset(idleTick)
+		}
+	}
+}
+
+// wakeCompactors tells every sleeping compactor to look for work now.
+// Never blocks: a full buffer means they are already due to wake.
+func (s *levelsController) wakeCompactors() {
+	for i := 0; i < cap(s.compactWake); i++ {
+		select {
+		case s.compactWake <- struct{}{}:
+		default:
 			return
 		}
 	}
@@ -1576,6 +1604,7 @@ func (s *levelsController) addLevel0Table(t *table.Table) error {
 		// Before we uninstall, we need to make sure that level 0 is healthy.
 		timeStart := time.Now()
 		for s.levels[0].numTables() >= s.kv.opt.NumLevelZeroTablesStall {
+			s.wakeCompactors() // HAVEN_FORK.md
 			time.Sleep(10 * time.Millisecond)
 		}
 		dur := time.Since(timeStart)
@@ -1584,6 +1613,7 @@ func (s *levelsController) addLevel0Table(t *table.Table) error {
 		}
 		s.l0stallsMs.Add(int64(dur.Round(time.Millisecond)))
 	}
+	s.wakeCompactors() // HAVEN_FORK.md: a new L0 table is work.
 
 	return nil
 }
