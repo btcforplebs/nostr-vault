@@ -8,7 +8,7 @@
 // follows' contact lists aren't in. Who then shows is the feed gate's call (feed-gate.js, Reach: your web + a few one
 // hop out by default). Strangers' data, held in memory: nothing is written to Haven /feed.
 import { pool } from "./pool.js"
-import { followLists } from "./wot.js"
+import { followLists, unsettledLists } from "./wot.js"
 import { receiptTrust } from "./zaps.js"
 import { MIN_REACTORS, rankTargets, trustedTally, noteBodies } from "./popular.js"
 
@@ -114,20 +114,26 @@ async function postCounts(vault, authors, since) {
   return counts
 }
 
-/** Why an empty answer is empty: no lists back yet, nobody one step out, or nothing cleared the bar. */
-export const emptyReason = (lists, reach) => (!lists?.size ? REASONS.webNotReady : !reach?.size ? REASONS.webIncomplete : REASONS.nothingQualified)
+/** Why an empty answer is empty: the follows' lists not all in yet (`pending` still on their way), nobody one step
+ *  out, or nothing cleared the bar. */
+export const emptyReason = (lists, reach, pending = 0) =>
+  (pending > 0 || !lists?.size ? REASONS.webNotReady : !reach?.size ? REASONS.webIncomplete : REASONS.nothingQualified)
 
 /**
  * The Underrated page, worked out fresh each time (feed_underrated.go: no cached answer). -> { notes, reason, scores }
- * (reason: "" with notes, else REASONS; scores: note id -> score). `lists`, `trust` and `query` are for tests.
+ * (reason: "" with notes, else REASONS; scores: note id -> score). `lists`, `pending`, `trust` and `query` are for tests.
+ * `pending(follows)`: how many follows' lists are still on their way (wot.js unsettledLists; a follow a relay has no
+ * list for is settled). With injected `lists`, every follow not in them.
  */
 export async function fetchUnderrated({ me, follows, relays, vault, blocked = new Set(), now = Math.floor(Date.now() / 1000), ctx, trust = receiptTrust(ctx),
-  query = (r, f, o) => pool.querySync(r, f, o), lists = null }) {
+  query = (r, f, o) => pool.querySync(r, f, o), lists = null, pending = lists ? f => f.filter(pk => !lists.has(pk)).length : unsettledLists }) {
   const scores = new Map()
-  // Fails closed, as Popular does: without the follows' lists nobody can be named one step out.
+  // Fails closed, as Go does (trustGraph not built: withheld): until every follow's list is in, a half-loaded web
+  // undercounts vouches and lifts people it has only partly seen, so nothing is scored.
   const got = lists ?? await followLists(me, follows, { query })
-  const reach = oneStepOut(me, follows, got, blocked)
-  if (!got.size || !reach.size) return { notes: [], reason: emptyReason(got, reach), scores }
+  const waiting = pending(follows)
+  const reach = waiting > 0 ? new Map() : oneStepOut(me, follows, got, blocked)
+  if (waiting > 0 || !got.size || !reach.size) return { notes: [], reason: emptyReason(got, reach, waiting), scores }
   const { t } = await trustedTally({ me, follows, relays, blocked, now, window: WINDOW, trust, query })
   const ids = rankTargets(t, MIN_REACTORS, MAX_CANDIDATES)
   if (!ids.length) return { notes: [], reason: REASONS.nothingQualified, scores }

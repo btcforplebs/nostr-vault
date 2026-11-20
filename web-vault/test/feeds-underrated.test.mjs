@@ -2,6 +2,7 @@
 // follow them, you don't), Popular's trusted tally over two days, scored against the author's own usual, and an empty
 // answer that says why. Nothing is written to Haven /feed.
 import test from "node:test"
+import { readFileSync } from "node:fs"
 import assert from "node:assert/strict"
 import { isBridged, oneStepOut, scoreUnderrated, emptyReason, fetchUnderrated, REASONS, EMPTY_TEXT, WINDOW, PER_AUTHOR, MAX_NOTES, BRIDGE_BOOST, MAX_CANDIDATES } from "../src/net/underrated.js"
 import { noteBodies, MIN_REACTORS } from "../src/net/popular.js"
@@ -103,6 +104,26 @@ test("no follow lists back: withheld before any engagement is asked (fails close
   assert.deepEqual(asked, [])
 })
 
+test("some follows' lists still on their way: withheld as not ready, nothing scored or asked (as Go's trust graph)", async () => {
+  const asked = []
+  // F1's list names someone one step out, but F2's hasn't come back: a half-loaded web would undercount vouches.
+  const got = await fetchUnderrated({ me: pk(904), follows: [F1, F2], relays: ["wss://r"], lists: lists(contacts(F1, OUT)), now: NOW, trust: async e => e, query: async (r, f) => { asked.push(f); return [] } })
+  assert.deepEqual(got.notes, [])
+  assert.equal(got.reason, REASONS.webNotReady)
+  assert.deepEqual(asked, [], "no engagement asked")
+  // The same lists with F2's settled (a relay has none for them): scoring goes ahead.
+  const settled = await fetchUnderrated({ me: pk(905), follows: [F1, F2], relays: ["wss://r"], lists: lists(contacts(F1, OUT)), pending: () => 0, now: NOW, trust: async e => e, query: async (r, f) => { asked.push(f); return [] } })
+  assert.equal(settled.reason, REASONS.nothingQualified)
+  assert.ok(asked.length > 0)
+  assert.equal(emptyReason(lists(contacts(F1, OUT)), new Map([[OUT, 1]]), 1), REASONS.webNotReady)
+})
+
+test("a failed Underrated load drops the last load's empty reason", () => {
+  const screen = readFileSync(new URL("../src/screens/FeedScreen.jsx", import.meta.url), "utf8")
+  const fail = screen.slice(screen.indexOf("} catch (e) {", screen.indexOf("const loadStrange")))
+  assert.match(fail.slice(0, 300), /underratedWhy\.current = ""/)
+})
+
 test("an Underrated page: two days of trusted engagement in, one-step-out notes out, Haven /feed only read", async () => {
   const me = pk(902), follows = [F1, F2]
   const good = note(OUT), byFollow = note(F1), byFar = note(FAR)
@@ -136,6 +157,14 @@ test("note bodies are asked of the relays in REQs of 250 ids", async () => {
   assert.deepEqual(sizes, [250, 250, 100])
   assert.equal(found.size, 3, "only ids that were asked for")
   assert.ok(MAX_CANDIDATES >= 1000)
+})
+
+test("note bodies include long-form articles (kind 30023), as Go's resolveNoteBodies", async () => {
+  const [inHaven, onRelay, other] = [pk(9701), pk(9702), pk(9703)], kinds = []
+  const vault = { feed: { query: async f => { kinds.push(f.kinds); return [{ id: inHaven, kind: 30023 }] } } }
+  const found = await noteBodies([inHaven, onRelay, other], { vault, relays: ["wss://r"], query: async (r, f) => { kinds.push(f.kinds); return [{ id: onRelay, kind: 30023 }, { id: other, kind: 6 }] } })
+  assert.deepEqual(kinds, [[1, 30023], [1, 30023]], "Haven and the relays both asked for notes and articles")
+  assert.deepEqual([...found.keys()].sort(), [inHaven, onRelay].sort(), "another kind with an asked-for id stays out")
 })
 
 test("Underrated has a Reach setting, one step out by default", () => {

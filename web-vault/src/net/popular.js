@@ -13,6 +13,7 @@ export const WINDOW = 24 * 3600 // seconds of engagement asked for
 export const MIN_REACTORS = 3 // distinct trusted people, not counting the author (dvm.go minTrustedReactors)
 export const PER_AUTHOR = 3 // dvm.go maxNotesPerAuthor
 export const TOP = 100 // notes whose bodies are fetched and scored
+export const BODY_KINDS = [1, 30023] // notes and long-form articles (dvm.go resolveNoteBodies)
 
 /** Like 1, repost 2, zap 3 (popular_tally.go engagementWeight); anything else doesn't count. */
 export const engagementWeight = kind => ({ 7: 1, 6: 2, 9735: 3 })[kind] ?? 0
@@ -127,14 +128,14 @@ export async function trustedTally({ me, follows, relays, blocked = new Set(), n
 }
 
 /** Note bodies by id: Haven /feed first (read only), the relays for the rest, in REQs of 250 ids (Underrated looks
- *  up to 1,000). -> Map id -> kind 1 event. */
+ *  up to 1,000). Notes and long-form articles, as Go's resolveNoteBodies (dvm.go). -> Map id -> kind 1 or 30023 event. */
 export async function noteBodies(ids, { vault, relays, query }) {
   const found = new Map()
-  if (vault) for (const ev of await vault.feed.query({ ids, kinds: [1] }).catch(() => [])) found.set(ev.id, ev)
+  if (vault) for (const ev of await vault.feed.query({ ids, kinds: BODY_KINDS }).catch(() => [])) found.set(ev.id, ev)
   const missing = ids.filter(id => !found.has(id))
   const want = new Set(missing), asks = []
-  for (let i = 0; i < missing.length; i += 250) asks.push(query(uniq(relays), { ids: missing.slice(i, i + 250), kinds: [1] }, { maxWait: 8000 }))
-  for (const evs of await Promise.all(asks)) for (const ev of evs) if (ev?.kind === 1 && want.has(ev.id)) found.set(ev.id, ev)
+  for (let i = 0; i < missing.length; i += 250) asks.push(query(uniq(relays), { ids: missing.slice(i, i + 250), kinds: BODY_KINDS }, { maxWait: 8000 }))
+  for (const evs of await Promise.all(asks)) for (const ev of evs) if (BODY_KINDS.includes(ev?.kind) && want.has(ev.id)) found.set(ev.id, ev)
   return found
 }
 
