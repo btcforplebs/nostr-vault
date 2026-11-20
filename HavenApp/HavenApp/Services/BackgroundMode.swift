@@ -105,13 +105,12 @@ final class BackgroundMode: ObservableObject {
         isReleased = false
         stopTrimming()
         URLCache.shared.memoryCapacity = Self.defaultMemoryCapacity
-        // Not tied to focus here: the window was opened on purpose. What the
-        // focus observers own (feed, network sync) follows the app's focus as
-        // before; when the app is already in front, resume them now.
         FillYourVaultCoordinator.shared.start()
+        // The window was opened on purpose, so the feed loads now. The rest
+        // follows the app's focus as before (AppDelegate's observers); when
+        // the app is already in front, bring it back too.
+        FeedService.shared.returnFromBackground()
         if NSApp.isActive {
-            FeedService.shared.resumeFeed()
-            NetworkSyncService.shared.start()
             RelayProcessManager.shared.enterForeground()
             NostrService.shared.enterForeground()
         }

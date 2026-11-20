@@ -5,8 +5,7 @@ extension FeedService {
     /// its window closes (BackgroundMode). The feed is saved to disk first and
     /// its relay clients are disconnected; the follow list, likes and pending
     /// follow actions stay in memory, since they are small and still owed to
-    /// the relay. Opening the window again restores the saved feed from disk
-    /// (`startInitialLoad` sees an empty feed) and tops it up.
+    /// the relay. `returnFromBackground` brings it back.
     func releaseForBackground() {
         persistCurrentSnapshot()
         pauseFeed()
@@ -25,5 +24,20 @@ extension FeedService {
         didRestoreCachedFeed = false
         didStartInitialLoad = false
         recomputeFilteredNotes()
+    }
+
+    /// The window is open again: load the feed the way a cold launch does,
+    /// from the snapshot saved on release, then a top-up from the relays.
+    ///
+    /// Not `resumeFeed`: that only re-subscribes, and FeedView's appear
+    /// handler takes the resume branch whenever the feed is paused, so the
+    /// saved notes would never come back. Unpaused here, before the window's
+    /// views ask; once the relay is ready this starts the load itself,
+    /// otherwise the readiness observer does when it is.
+    func returnFromBackground() {
+        isPaused = false
+        if RelayProcessManager.shared.isReadyForConnections, !didStartInitialLoad {
+            startInitialLoad()
+        }
     }
 }
