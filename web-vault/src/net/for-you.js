@@ -9,18 +9,50 @@ export const MIN_VOUCHES = 2
 /** A hashtag as InterestList.normalize keeps it: no leading #, lower case. */
 export const normalizeTag = t => (typeof t === "string" ? t.trim().replace(/^#+/, "").toLowerCase() : "")
 
-/** pubkey -> how many of `follows` follow them, from the follows' kind 3s (`lists`: Map(follow -> kind 3)). */
-export function vouchesFrom(follows, lists) {
-  const out = new Map()
-  for (const f of new Set(follows)) {
+// Each list's people, worked out once per list (the same kind 3 object comes back from wot.js followLists every time):
+// walking ~1,000 lists of ~500 tags with a regex per tag was ~0.9 s of main thread on every Search open (Tidy's audit
+// 11-20, W7).
+const listPeople = new WeakMap()
+function peopleIn(ev) {
+  let out = listPeople.get(ev)
+  if (!out) {
     const seen = new Set()
-    for (const t of lists.get(f)?.tags ?? []) if (t[0] === "p" && HEX64.test(t[1] ?? "") && !seen.has(t[1])) {
-      seen.add(t[1])
-      out.set(t[1], (out.get(t[1]) ?? 0) + 1)
-    }
+    for (const t of ev.tags ?? []) if (t[0] === "p" && typeof t[1] === "string" && t[1].length === 64 && HEX64.test(t[1])) seen.add(t[1])
+    listPeople.set(ev, (out = [...seen]))
   }
   return out
 }
+// The last answer, for the same follows and the same lists: Search's start page and its results (useWot) share it.
+let last = null
+const sameAsLast = (fs, evs) => last && last.fs.length === fs.length && last.fs.every((f, i) => f === fs[i] && last.evs[i] === evs[i])
+function sum(fs, evs) {
+  const out = new Map()
+  for (const ev of evs) if (ev) for (const pk of peopleIn(ev)) out.set(pk, (out.get(pk) ?? 0) + 1)
+  last = { fs, evs, out }
+  return out
+}
+
+/** pubkey -> how many of `follows` follow them, from the follows' kind 3s (`lists`: Map(follow -> kind 3)). The same
+ *  follows and lists give back the same Map: read it, don't change it. */
+export function vouchesFrom(follows, lists) {
+  const fs = [...new Set(follows)], evs = fs.map(f => lists.get(f))
+  return sameAsLast(fs, evs) ? last.out : sum(fs, evs)
+}
+
+/** vouchesFrom off the tap: lists not worked out yet are done SLICE at a time between frames, so a screen opening draws
+ *  first and its main thread never blocks for the whole set. Already known: at once. -> Promise of vouchesFrom's Map */
+export const SLICE = 60
+export async function vouchesSoon(follows, lists, { slice = SLICE, yieldTo = nextTask } = {}) {
+  const fs = [...new Set(follows)], evs = fs.map(f => lists.get(f))
+  if (sameAsLast(fs, evs)) return last.out
+  const todo = evs.filter(ev => ev && !listPeople.has(ev))
+  for (let i = 0; i < todo.length; i += slice) {
+    await yieldTo()
+    for (const ev of todo.slice(i, i + slice)) peopleIn(ev)
+  }
+  return sameAsLast(fs, evs) ? last.out : sum(fs, evs)
+}
+const nextTask = () => new Promise(r => setTimeout(r, 0))
 
 /** People your follows follow most: not you, not followed, not blocked, at least MIN_VOUCHES. Most vouched first, ties
  *  by pubkey so the rail doesn't reshuffle. -> [{ pubkey, vouches }] */
