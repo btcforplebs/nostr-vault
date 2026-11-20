@@ -26,13 +26,15 @@ async function signAuth(ctx, action, sha256, server = null) {
   return authHeader(checkSigned(await ctx.signer.signEvent(t), t, ctx.session.pubkey))
 }
 
-/** photo | video | gif | other, from the descriptor's type or else the URL's extension. */
+/** photo | video | gif | audio | other, from the descriptor's type or else the URL's extension. */
+const AUDIO_EXT = ["mp3", "m4a", "aac", "wav", "ogg", "opus", "flac"]
 export function mediaType(blob) {
   const m = String(blob?.type ?? "").toLowerCase()
   const ext = (/\.([a-z0-9]+)(?:[?#]|$)/i.exec(blob?.url ?? "")?.[1] ?? "").toLowerCase()
   if (m === "image/gif" || ext === "gif") return "gif"
   if (m.startsWith("image/") || ["jpg", "jpeg", "png", "webp", "avif", "heic"].includes(ext)) return "photo"
   if (m.startsWith("video/") || ["mp4", "mov", "webm", "m4v"].includes(ext)) return "video"
+  if (m.startsWith("audio/") || AUDIO_EXT.includes(ext)) return "audio"
   return "other"
 }
 
@@ -53,7 +55,7 @@ export function mergeNoteTiles(blobs, tiles) {
  *  those show on the Emoji page instead (RESEARCH/NV_CUSTOM_EMOJI_PLAN.md §4.1). */
 export const withoutEmoji = (blobs, hidden) => (hidden?.size ? blobs.filter(b => !hidden.has(b.sha256)) : blobs)
 
-export const TYPE_FILTERS = { all: () => true, photos: b => b.kind === "photo", videos: b => b.kind === "video", gifs: b => b.kind === "gif" }
+export const TYPE_FILTERS = { all: () => true, photos: b => b.kind === "photo", videos: b => b.kind === "video", gifs: b => b.kind === "gif", audio: b => b.kind === "audio" }
 
 // A signed "list" auth, kept until a minute before it runs out, so opening Media again doesn't ask the signer again.
 const listAuths = new Map()

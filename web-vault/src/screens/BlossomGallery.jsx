@@ -30,7 +30,7 @@ export const loadSort = (storage = globalThis.localStorage) => { const s = stora
 const saveSort = (s, storage = globalThis.localStorage) => { try { storage?.setItem(SORT_KEY, s) } catch {} }
 
 /** Photos, GIFs, videos, audio, then anything else (MediaGalleryView.typeRank). */
-export const isAudio = b => b.kind === "other" && /^audio\//i.test(b.type ?? "")
+export const isAudio = b => b.kind === "audio" || (b.kind === "other" && /^audio\//i.test(b.type ?? ""))
 export const typeRank = b => ({ photo: 0, gif: 1, video: 2 })[b.kind] ?? (isAudio(b) ? 3 : 4)
 
 /** The files in `sort` order, as sections: dated runs for the date sorts, one untitled run otherwise. */
@@ -166,7 +166,7 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
 /** One section as a mosaic: `columns` columns, each tile as tall as its file's known shape (square when unknown, or
  *  for a file that isn't a picture or video), so a tile never changes size when its picture loads. */
 function Mosaic({ blobs, columns, shapes, tile }) {
-  const aspectOf = b => (b.kind === "other" ? 1 : shapeOf(b, shapes))
+  const aspectOf = b => (b.kind === "other" || b.kind === "audio" ? 1 : shapeOf(b, shapes))
   return (
     <div class="vault-grid mosaic">
       {deal(blobs, columns, aspectOf).map((col, i) => <div key={i} class="mosaic-col">{col.map(b => tile(b, clampAspect(aspectOf(b))))}</div>)}
@@ -176,7 +176,9 @@ function Mosaic({ blobs, columns, shapes, tile }) {
 
 function Thumb({ blob, big = false }) {
   if (blob.kind === "video") return big ? <video src={blob.url} preload="metadata" controls playsinline /> : <VideoTile blob={blob} />
-  if (blob.kind === "other") return <span class="blossom-file" style={{ overflowWrap: "anywhere", textAlign: "center", padding: 4 }}>{isAudio(blob) ? "♪ " : ""}{blob.type || "file"}</span>
+  // Audio opened plays in a plain row (the browser's own controls); in the grid it is a labelled square.
+  if (big && isAudio(blob)) return <audio class="blossom-audio" src={blob.url} controls preload="metadata" />
+  if (blob.kind === "other" || blob.kind === "audio") return <span class="blossom-file" style={{ overflowWrap: "anywhere", textAlign: "center", padding: 4 }}>{isAudio(blob) ? "♪ " : ""}{blob.type || "file"}</span>
   return big ? <img src={blob.url} alt="" loading="eager" decoding="async" /> : <BlossomThumb blob={blob} />
 }
 

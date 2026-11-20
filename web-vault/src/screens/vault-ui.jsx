@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "preact/hooks"
 
 export const ICONS = {
+  audio: "M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
   bookmarks: "M6 3h12v18l-6-4-6 4z",
   apps: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
   emoji: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01",
@@ -35,7 +36,7 @@ export const ICONS = {
   more: "M5 12h.01M12 12h.01M19 12h.01",
   outside: "M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a8 8 0 0 1 12.5-6.6M18 15a2 2 0 1 1 2 2v1.5M20 21h.01",
 }
-export const FILTER_ICONS = { all: "stack", mentions: "at", tagged: "at", mine: "person", recipes: "fork", received: "trayIn", given: "trayOut", new: "sparkles", photos: "photo", videos: "video", gifs: "gif", notes: "notes", outside: "outside" }
+export const FILTER_ICONS = { all: "stack", mentions: "at", tagged: "at", mine: "person", recipes: "fork", received: "trayIn", given: "trayOut", new: "sparkles", photos: "photo", videos: "video", gifs: "gif", audio: "audio", notes: "notes", outside: "outside" }
 export const filterIcon = (mode, id) => ICONS[mode === "followers" && id === "all" ? "followers" : FILTER_ICONS[id]]
 export const Icon = ({ d, size = 16, width = 1.8 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width={width} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 

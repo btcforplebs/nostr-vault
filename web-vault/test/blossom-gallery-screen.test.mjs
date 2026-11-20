@@ -49,6 +49,8 @@ test("audio is told apart from other files", () => {
   assert.equal(isAudio(b("x", "other", 0, "application/pdf")), false)
   assert.equal(typeRank(b("x", "other", 0, "audio/ogg")), 3)
   assert.equal(typeRank(b("x", "other", 0, "")), 4)
+  assert.equal(isAudio(b("x", "audio", 0, "")), true)
+  assert.equal(typeRank(b("x", "audio", 0, "audio/mpeg")), 3)
 })
 
 const src = readFileSync(new URL("../src/screens/BlossomGallery.jsx", import.meta.url), "utf8")

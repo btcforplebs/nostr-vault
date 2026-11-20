@@ -50,7 +50,7 @@ export const FILTERS = {
   articles: [{ id: "mine", title: "Your articles", pill: "Yours" }, { id: "recipes", title: "Recipes only", pill: "Recipes" }],
   highlights: [{ id: "mine", title: "Your highlights", pill: "Yours" }],
   // The phone's gallery types (MediaGalleryToolbar) as one menu, then the pictures in your notes (web only, in ···).
-  media: [{ id: "photos", title: "Photos", group: "type" }, { id: "videos", title: "Videos", group: "type" }, { id: "gifs", title: "GIFs", group: "type" },
+  media: [{ id: "photos", title: "Photos", group: "type" }, { id: "videos", title: "Videos", group: "type" }, { id: "gifs", title: "GIFs", group: "type" }, { id: "audio", title: "Audio", group: "type" },
     { id: "notes", title: "In your notes", pill: "Notes", more: true }],
   likes: [{ id: "received", title: "Likes received", pill: "Received" }, { id: "given", title: "Likes given", pill: "Given" }],
   zaps: [{ id: "received", title: "Zaps received", pill: "Received" }, { id: "given", title: "Zaps given", pill: "Given" }],
