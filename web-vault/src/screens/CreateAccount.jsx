@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { newKey, checkPassword, localSession, localSigner, MIN_PASSWORD, CREATING } from "../signer/local.js"
 import { assertCanSeal } from "../signer/keyring.js"
-import { starterPacks, newAccountTemplates, signAll, publishNewAccount, NEW_ACCOUNT_RELAYS } from "../net/new-account.js"
+import { starterPacks, newAccountTemplates, signAll, publishNewAccount, nameInput, NEW_ACCOUNT_RELAYS } from "../net/new-account.js"
 import { StarterRelays } from "../components/StarterRelays.jsx"
 import { uploadPhoto, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { withTimeout } from "../signer/readonly.js"
@@ -16,6 +16,7 @@ import { askToKeep, sevenDayErase, KEEP_IT } from "../components/StorageNote.jsx
 import { KeyCard, painted } from "../components/KeyCard.jsx"
 import { ReferrerStep } from "./ReferrerStep.jsx"
 import "../styles/onboarding.css"
+import { SECRET_KEY_BLOCKED, holdsSecretKey } from "../net/secret-key-leak.js"
 
 // "referrer": who showed you this app (only here: new to Nostr, Logen 2026-11-05); whoever is picked joins the follows.
 const STEPS = ["intro", "keys", "password", "profile", "referrer", "follows", "relays", "done"]
@@ -143,6 +144,9 @@ function Password({ initial, onContinue }) {
 /** Step 11: name and photo, both optional. Nothing is uploaded until the last step. */
 function Profile({ name, setName, photo, setPhoto, onContinue, onSkip }) {
   const [err, setErr] = useState("")
+  // A secret key pasted as the name (the research note's 144 people): said here, Continue held, the text left to take
+  // out. Checked before the key is locked or a photo goes up (net/secret-key-leak.js; Done's signer checks again).
+  const keyInName = holdsSecretKey(name)
   const pick = async e => {
     const file = e.currentTarget.files?.[0]
     e.currentTarget.value = ""
@@ -165,9 +169,10 @@ function Profile({ name, setName, photo, setPhoto, onContinue, onSkip }) {
       {err && <p class="error small" role="alert">{err}</p>}
       <label class="field">
         <span>Name</span>
-        <input value={name} onInput={e => setName(e.currentTarget.value)} placeholder="Your name" autocomplete="nickname" maxLength={60} />
+        <input value={name} onInput={e => setName(nameInput(e.currentTarget.value))} placeholder="Your name" autocomplete="nickname" />
       </label>
-      <button type="button" class="primary onboard-main" onClick={onContinue}>Continue</button>
+      {keyInName && <p class="error small" role="alert">{SECRET_KEY_BLOCKED}</p>}
+      <button type="button" class="primary onboard-main" disabled={keyInName} onClick={() => { if (!keyInName) onContinue() }}>Continue</button>
       <button type="button" class="onboard-skip" onClick={onSkip}>Skip for Now</button>
     </>
   )

@@ -5,6 +5,7 @@ import { generateSecretKey } from "nostr-tools/pure"
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
 import { checkedPubkey, loadSession, saveSession, rememberAccount } from "../session.js"
 import { seal, unseal, assertCanSeal } from "./keyring.js"
+import { assertNoSecretKey } from "../net/secret-key-leak.js"
 
 // The bunker sends this URL, and a hostile bunker link is how a phishing attempt would start, so only web pages
 // are shown. The scheme check is what keeps a javascript: URL out; noopener only cuts the new page off from this one.
@@ -54,7 +55,7 @@ export async function bunkerSignIn(input, pool) {
   let clientSkSealed
   try { clientSkSealed = await seal(bytesToHex(clientSk), keyStore) } catch (e) { signer.close(); throw e }
   const session = { method: "nip46", pubkey, bunker: { pubkey: bp.pubkey, relays: bp.relays, secret: null }, clientSkSealed }
-  return { signer: wrap(Promise.resolve(signer)), session }
+  return { signer: wrap(Promise.resolve(signer), { pubkey }), session }
 }
 
 // Tests set this to a Map-backed key store; the page uses IndexedDB (keyring.js).
@@ -74,7 +75,7 @@ export function bunkerSigner(session, pool, storage = globalThis.localStorage) {
     return BunkerSigner.fromBunker(hexToBytes(hex), session.bunker, { pool, onauth: openAuthUrl })
   })()
   ready.catch(() => {}) // reported by whatever signs next, not as an unhandled rejection at boot
-  return wrap(ready)
+  return wrap(ready, { pubkey: session.pubkey })
 }
 
 export async function resealSession(session, storage) {
@@ -123,11 +124,12 @@ export function bunkerCrypto(ready, ms = ANSWER_TIMEOUT_MS) {
 }
 
 // `ready`: the BunkerSigner, once its client key is unsealed. Exported for tests, which pass a fake bunker.
-export function wrap(ready, { ms = ANSWER_TIMEOUT_MS } = {}) {
+export function wrap(ready, { ms = ANSWER_TIMEOUT_MS, pubkey } = {}) {
   return {
     method: "nip46",
     crypto: bunkerCrypto(ready, ms),
-    signEvent: t => ready.then(b => answered(b.signEvent(t), ms)),
+    // A secret key never goes to the bunker, not even encrypted (net/secret-key-leak.js).
+    signEvent: async t => { assertNoSecretKey(t, pubkey); return ready.then(b => answered(b.signEvent(t), ms)) },
     close: () => { ready.then(b => b.close(), () => {}) },
     /** -> true if the bunker confirmed it dropped the grant. Always closes the signer. */
     revoke: () => ready.then(b => answered(b.logout(), LOGOUT_TIMEOUT_MS).then(() => true, () => false).finally(() => b.close()), () => false),

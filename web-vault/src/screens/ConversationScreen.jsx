@@ -20,6 +20,7 @@ import { useMessages, SignerTrouble, AuthTrouble, OpenMore } from "./MessagesScr
 import { useChatScroll } from "../components/chat-scroll.js"
 import { canGoBack } from "../components/nav-depth.js"
 import { useKeyboardFrame } from "../components/keyboard-frame.js"
+import { SECRET_KEY_BLOCKED, containsSecretKey } from "../net/secret-key-leak.js"
 
 /** Return sends, as on the Mac app and every desktop chat; Shift or Option + Return is a new line. On a touch screen
  *  Return is a new line and Send is the button, as on the iPhone. Never mid-composition (an IME's Return picks a word). */
@@ -91,6 +92,8 @@ export function ConversationScreen({ ctx, peer }) {
     e.preventDefault()
     const t = text.trim()
     if ((!t && !photo) || preparing) return
+    // A secret key never goes out, and the box keeps it so it can be taken out (net/secret-key-leak.js).
+    if (containsSecretKey(t)) return setStatus(SECRET_KEY_BLOCKED)
     // As on the iPhone: the box clears and the bubble shows at once ("Sending…"); the next message can be typed and
     // sent straight away. A send that fails stays in the thread as "Not sent" with Try again (net/dms.js).
     const sending = photo

@@ -20,6 +20,7 @@ import { AUTH_WAIT, LIVE_RETRY, authedSubscribe, forgetDeclinedAuth, queryWithAu
 import { chunkBytesFor, dmCache } from "./dm-cache.js"
 import { settleWatch } from "./settle-early.js"
 import { fileContentOf, isFileLink, isVideoLink } from "./dm-file.js"
+import { assertNoSecretKey, containsSecretKey, secretKeyError } from "./secret-key-leak.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -49,6 +50,8 @@ export function rumorFor(me, peer, content, created_at = now(), { kind = 14, tag
  * -> the signed kind 1059
  */
 export async function wrapFor(rumor, { signer, crypto, me }, peer, recipient = peer) {
+  // The words are checked before they are sealed: once encrypted no signer could see a secret key in them.
+  assertNoSecretKey(rumor)
   const sealTemplate = { kind: 13, created_at: randomPast(), tags: [], content: await crypto.encrypt(peer, JSON.stringify(rumor)) }
   const seal = checkSigned(await signer.signEvent(sealTemplate), sealTemplate, me)
   const sk = generateSecretKey()
@@ -531,6 +534,8 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
   const me = ctx.session.pubkey
   const c = crypto ?? cryptoFor(ctx.session, { signer: ctx.signer })
   if (c.reason) throw sendError(`Can't send: ${c.reason}`)
+  // A secret key in the message: refused before any bubble shows it (net/secret-key-leak.js); the screens keep the words.
+  if (containsSecretKey(text)) throw secretKeyError()
   const pid = `pending:${++pendingSeq}`
   const at = now()
   let shown = { id: pid, from: me, peer, content: preview ?? text, at, legacy: false, pending: true }

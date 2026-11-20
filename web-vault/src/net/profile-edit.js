@@ -8,6 +8,7 @@ import { checkSigned } from "./sync.js"
 import { askRelay, MAX_SKEW, MAX_LOCAL_AGE } from "./follows.js"
 import { putProfile } from "./profiles.js"
 import { firstTaken } from "./actions.js"
+import { containsSecretKey, secretKeyError } from "./secret-key-leak.js"
 
 /** The kind-0 keys the form shows, in its order. */
 export const FIELDS = ["display_name", "name", "nip05", "about", "picture", "banner", "website", "lud16"]
@@ -118,15 +119,19 @@ export function profileGuard({ event, asked, answered, netFound, future }, at = 
  * throws when the newest copy can't be found, signing fails, or no relay took it. `lookup` and `publish` are for tests.
  */
 export async function saveProfile(ctx, initial, edited, { lookup = latestProfile, publish = (urls, ev) => pool.publish(urls, ev) } = {}) {
+  // A secret key typed into any field is never published (net/secret-key-leak.js); the form keeps it to be taken out.
+  if (Object.values(edited ?? {}).some(v => containsSecretKey(typeof v === "string" ? v : JSON.stringify(v ?? "")))) throw secretKeyError()
   const found = await lookup(ctx)
   const refused = profileGuard(found)
   if (refused) throw new Error(refused)
   const prev = found.event
+  // What the form doesn't show can still hold a key (another app's field, an old tag): it is taken out, never published.
+  const clean = withoutSecretKeys(merge(parseContent(prev?.content), initial, edited), prev?.tags ?? [])
   const template = {
     kind: 0,
     created_at: Math.max(now(), (prev?.created_at ?? 0) + 1),
-    tags: prev?.tags ?? [],
-    content: JSON.stringify(merge(parseContent(prev?.content), initial, edited)),
+    tags: clean.tags,
+    content: JSON.stringify(clean.profile),
   }
   const event = checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey)
   const urls = uniq([...publishRelays(ctx.account.relays.write).network, ...PROFILE_RELAYS])
@@ -138,5 +143,32 @@ export async function saveProfile(ctx, initial, edited, { lookup = latestProfile
   if (first < 0) throw new Error(`No relay took it (0 of ${urls.length})`)
   await ctx.vault.outbox.event(event).catch(() => {}) // the relays have it; Haven's copy only speeds the next open
   putProfile(event)
-  return { event, taken: urls[first], settled }
+  return { event, taken: urls[first], settled, removed: clean.removed }
 }
+
+/**
+ * The merged profile with every field and tag that holds a secret key left out (net/secret-key-leak.js). The form's own
+ * fields were checked before (an edited one with a key refuses the save), so what is left here came from the newest
+ * copy: a key the form doesn't show, or a newer value of a field the user didn't touch. -> { profile, tags, removed:
+ * the names of what was left out, never the key }
+ */
+export function withoutSecretKeys(profile, tags = []) {
+  const removed = []
+  const out = {}
+  for (const [k, v] of Object.entries(profile ?? {})) {
+    // The field's name too: a key pasted as a key name ({"nsec1…": "x"}) is published just the same. It is named
+    // as "a field" then, so the notice never shows it.
+    if (containsSecretKey(k)) removed.push("a field")
+    else if (containsSecretKey(typeof v === "string" ? v : JSON.stringify(v ?? null))) removed.push(k)
+    else out[k] = v
+  }
+  const kept = []
+  for (const t of tags ?? []) {
+    if (Array.isArray(t) && t.some(v => containsSecretKey(String(v ?? "")))) removed.push(`the ${String(t[0] ?? "")} tag`)
+    else kept.push(t)
+  }
+  return { profile: out, tags: kept, removed }
+}
+
+/** What the screen says after a save that left a key out: the field's name, never the key. "" when nothing was. */
+export const removedNotice = removed => (removed?.length ? `Removed a secret key from ${removed.join(", ")}.` : "")

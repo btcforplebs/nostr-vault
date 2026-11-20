@@ -16,6 +16,7 @@
 // three hops out through. Pure, so node tests and napplets load it.
 import { replyRefs, repostInner } from "./thread.js"
 import { isReply as isReplyNote } from "./feed-filters.js"
+import { isPublicKeyAccount } from "./secret-key-leak.js"
 
 export const VERDICTS = Object.freeze({ inside: "inside", hop3: "hop3", outside: "outside", blocked: "blocked" })
 /** How far a surface reaches. Only a feed has a setting; every other surface is "web". */
@@ -152,6 +153,9 @@ export function judge(subject, web, { reach = "web", always = [] } = {}) {
   if (isBlockedSubject(subject, web)) return VERDICTS.blocked
   const signer = String(subject.signer ?? "").toLowerCase()
   if (!signer) return VERDICTS.outside
+  // A key whose secret is published (net/secret-key-leak.js): anyone can sign as it, so no follow, whitelist or
+  // reach lets it in. Your own accounts and what this surface always shows stay.
+  if (isPublicKeyAccount(signer) && !web.own.has(signer) && !alwaysSet(always).has(signer)) return VERDICTS.outside
   if (web.own.has(signer) || web.whitelist.has(signer) || web.web.has(signer) || alwaysSet(always).has(signer)) return VERDICTS.inside
   if (reach === "everyone") return VERDICTS.inside
   if (reach === "webAndHop3" && web.hop3.has(signer)) return VERDICTS.hop3

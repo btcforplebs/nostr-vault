@@ -1,6 +1,7 @@
 // NIP-07: a browser extension (Alby, nos2x, ...) holds the key and signs.
 import { checkedPubkey } from "../session.js"
 import { shellNostr } from "../shell.js"
+import { assertNoSecretKey } from "../net/secret-key-leak.js"
 
 /** The extension's window.nostr, waiting briefly because some extensions inject after the page loads. In the site's
  *  frame (src/shell.js), the top page's when the extension didn't reach the frame. */
@@ -26,6 +27,7 @@ export function extensionSigner(pubkey) {
     method: "nip07",
     crypto: extensionCrypto(pubkey),
     signEvent: async t => {
+      assertNoSecretKey(t, pubkey) // before the extension sees it
       const ext = await findExtension()
       if (!ext) throw ours("Your browser's Nostr extension isn't answering, so nothing was signed. Reload the page, or check that the extension is allowed on this site.")
       if (typeof ext.signEvent !== "function") throw ours("Your extension can't sign for this site, so nothing was signed. Allow this site in the extension, or use one that signs.")

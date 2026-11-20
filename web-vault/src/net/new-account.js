@@ -8,6 +8,7 @@ import { DEFAULT_RELAYS, pool, isDead, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
 import { firstTaken } from "./actions.js"
 import packsData from "./starter-packs.js"
+import { holdsSecretKey } from "./secret-key-leak.js"
 
 const HEX = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -76,3 +77,9 @@ export async function publishNewAccount(events, { publish = (urls, ev) => pool.p
     return { kind: ev.kind, taken: (await firstTaken(sends)) >= 0, of: network.length, settled }
   }))
 }
+
+/** What the setup name box keeps of what was typed or pasted: NAME_MAX characters, cut only after the whole text was
+ *  checked (Tron round 2: a cut paste kept a brute-forceable piece of the key). A key stays whole in the box, so the
+ *  screen can say so and it can be taken out (net/secret-key-leak.js holdsSecretKey). */
+export const NAME_MAX = 60
+export const nameInput = raw => (holdsSecretKey(String(raw ?? "")) ? String(raw) : String(raw ?? "").slice(0, NAME_MAX))

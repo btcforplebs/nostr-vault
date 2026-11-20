@@ -3,7 +3,8 @@
 // lands in the field below, the same as pasting one. Save publishes a new kind 0 (net/profile-edit.js).
 import { useEffect, useRef, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
-import { formFields, hasChanges, latestProfile, localProfile, saveProfile } from "../net/profile-edit.js"
+import { formFields, hasChanges, latestProfile, localProfile, removedNotice, saveProfile } from "../net/profile-edit.js"
+import { showToast } from "../components/Toast.jsx"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
 import "../styles/profile-edit.css"
 
@@ -48,7 +49,12 @@ export function EditProfile({ ctx, onClose }) {
 
   const save = async () => {
     setErr(""); setSaving(true)
-    try { await saveProfile(ctx, initial, form); onClose() } catch (e) { setErr(String(e?.message ?? e)); setSaving(false) }
+    try {
+      const { removed } = await saveProfile(ctx, initial, form)
+      // A key the form didn't show was left out of what was published: say where, never what (net/profile-edit.js).
+      if (removed?.length) showToast({ key: "profile-key", message: removedNotice(removed), tone: "error", icon: "warn", seconds: 8 })
+      onClose()
+    } catch (e) { setErr(String(e?.message ?? e)); setSaving(false) }
   }
   const upload = async (key, file) => {
     if (!file) return

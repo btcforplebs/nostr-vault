@@ -3,6 +3,7 @@
 import { pool, PROFILE_RELAYS, uniq } from "./pool.js"
 import { storeAll } from "./sync.js"
 import { emojiMap } from "./custom-emoji.js"
+import { notePublicKeys } from "./secret-key-leak.js"
 
 const cache = new Map()
 const listeners = new Set()
@@ -26,6 +27,9 @@ function store(ev) {
   // Safe only because this event came through pool.js (nostr-tools SimplePool passes verifyEvent).
   // If you ever call this with an event from another source, check `signed` first — `lud16` decides who the Zap button pays.
   if (ev?.kind !== 0) return false
+  // A profile that publishes a secret key: that key's own account is marked public (net/secret-key-leak.js), even
+  // when this copy is older than the one kept.
+  notePublicKeys(ev)
   const have = cache.get(ev.pubkey)
   if (have && have.created_at >= ev.created_at) return false
   let c
