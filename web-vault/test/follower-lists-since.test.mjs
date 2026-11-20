@@ -43,13 +43,13 @@ test("marks are per relay: a relay first met later still gets its whole ask", as
 test("a relay that fails keeps no mark while the others get theirs", async () => {
   const storage = memStorage()
   keepLists(ME, [], storage)
-  await fetchFollowerLists(ME, ["wss://ok", "wss://down"], { storage, query: async ([url]) => { if (url === "wss://down") throw new Error("down"); return [] } })
+  await fetchFollowerLists(ME, ["wss://ok", "wss://down"], { storage, query: async ([url]) => { if (url === "wss://down") throw new Error("down"); return [list()] } })
   assert.deepEqual(Object.keys(listsChecked(ME, storage)), ["wss://ok"])
 })
 
 test("an ask from later than the mark does not move it: lists between the two were never asked for", async () => {
   const storage = memStorage()
-  const query = async () => []
+  const query = async () => [list()]
   const now = Math.floor(Date.now() / 1000)
   keepLists(ME, [], storage)
   await fetchFollowerLists(ME, ["wss://a"], { since: now - 30, storage, query })
@@ -73,7 +73,7 @@ test("every relay failing leaves the mark where it was", async () => {
 test("lists that can't be kept, or are gone, take the mark with them: the next ask is whole again", async () => {
   const storage = memStorage()
   keepLists(ME, [list()], storage)
-  await fetchFollowerLists(ME, ["wss://a"], { storage, query: async () => [] })
+  await fetchFollowerLists(ME, ["wss://a"], { storage, query: async () => [list()] })
   assert.ok(listsChecked(ME, storage)["wss://a"] > 0)
   storage.setItem = () => { throw new Error("QuotaExceededError") }
   keepLists(ME, [list()], storage)
@@ -98,4 +98,11 @@ test("a second whole ask while one is out joins it: the relays are asked once, b
   assert.equal(a.length, 1)
   assert.equal(b.length, 1)
   assert.equal(settled, 1)
+})
+
+test("a whole ask that brought nothing sets no mark: it may have timed out", async () => {
+  const storage = memStorage()
+  keepLists(ME, [], storage)
+  await fetchFollowerLists(ME, ["wss://a"], { storage, query: async () => [] })
+  assert.deepEqual(listsChecked(ME, storage), {})
 })

@@ -479,7 +479,9 @@ export async function fetchFollowerLists(me, relays, { limit = FULL_LISTS_LIMIT,
         if (!from) asking.set(key, run)
         try { evs = await run } finally { if (asking.get(key) === run) asking.delete(key) }
         // The mark moves only when this ask covered everything since it: a whole ask, or one from no later than the mark.
-        if (!from || (checked && from <= checked)) markListsChecked(me, url, started, storage)
+        // A whole ask that brought nothing may have run out of time (querySync's maxWait), so it is asked whole again:
+        // a relay with no lists costs nothing to ask.
+        if ((!from && evs.length) || (checked && from <= checked)) markListsChecked(me, url, started, storage)
       }
     } catch (e) { failed++; last = e; watch?.failed(); return }
     for (const e of evs) if (!seen.has(e.id)) { seen.add(e.id); all.push(e) }
