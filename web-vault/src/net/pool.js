@@ -1,7 +1,7 @@
 // The network side: nostr-tools SimplePool to the user's relays. The UI never renders from here directly;
 // what comes in is written to the in-page Haven and read back from it.
 import { SimplePool } from "nostr-tools/pool"
-import { validateEvent, verifyEvent as verifyInJs } from "nostr-tools/pure"
+import { getEventHash, validateEvent, verifyEvent as verifyInJs } from "nostr-tools/pure"
 import { setNostrWasm, verifyEvent as verifyInWasm } from "nostr-tools/wasm"
 import { normalizeURL } from "nostr-tools/utils"
 import { blocklist } from "./never-connect.js"
@@ -405,8 +405,40 @@ export const verifierReady = (async () => {
   return (wasmVerify = true)
 })().catch(() => false)
 
+// Each relay sends its own copy of the same event, and every copy was checked from scratch: the signature check is most
+// of a Vault or Notifications open (Tidy's audit 11-20, W9). An id whose signature checked out is remembered with that
+// signature, VERIFIED_MAX of them, oldest out first. A later copy skips only the schnorr step: it is still
+// validated, and its fields are hashed again and must give its id, so a copy with other content, tags, kind or time
+// under a known id (which would not hash to it) or another sig or pubkey is checked in full and fails as before.
+// Only small events take this path: the hash is cheap next to schnorr for them (~7 vs ~160 us), but a 50-100 KB contact
+// list hashed again in JS cost more than wasm's whole check (the Vault's first open went 1.8 -> 2.5 s), so those are
+// always checked in full and never remembered.
+export const VERIFIED_MAX = 10_000
+const verified = new Map() // id -> sig
+const small = ev => Array.isArray(ev.tags) && ev.tags.length <= 50 && typeof ev.content === "string" && ev.content.length <= 16_384
+// Compared as strings with ===, never coerced: a sig sent as ["<the real sig>"] is not a repeat (Tron, #2338). The pubkey
+// needs no entry of its own: it is in the hash, so a copy that hashes to a known id has that id's pubkey.
+const seenBefore = ev => typeof ev.sig === "string" && verified.get(ev.id) === ev.sig && small(ev)
+function remember(ev) {
+  if (verified.has(ev.id)) verified.delete(ev.id)
+  else if (verified.size >= VERIFIED_MAX) verified.delete(verified.keys().next().value)
+  verified.set(ev.id, ev.sig)
+}
+/** Tests: forget what was checked. */
+export const forgetVerified = () => verified.clear()
+/** How many events were checked in full, and how many were known repeats (tests, and measuring it in a page). */
+export const verifyCounts = { full: 0, repeat: 0 }
+
 /** True when `ev` is a well-formed event whose id is the hash of its fields and whose signature is its pubkey's. */
 export function verifyRelayEvent(ev) {
+  if (typeof ev?.id === "string" && seenBefore(ev) && validateEvent(ev) && getEventHash(ev) === ev.id) { verifyCounts.repeat++; return true }
+  verifyCounts.full++
+  const ok = checkInFull(ev)
+  if (ok && small(ev)) remember(ev)
+  return ok
+}
+
+function checkInFull(ev) {
   if (!wasmVerify) return verifyInJs(ev)
   // nostr-wasm copies the hex into fixed 32/64-byte slots without checking lengths (a short one would leave the
   // last event's bytes behind), and reads the fields to hash them: check both first.
