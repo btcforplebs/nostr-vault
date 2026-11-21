@@ -29,7 +29,7 @@ test("view shows a dash when downloads could not be read, and null for a bad fil
 test("the page carries the method line and loads its script from the site, nothing inline", async () => {
   const html = await readFile(new URL("../../../website/stats/index.html", import.meta.url), "utf8")
   assert.match(html, /Counted from public posts tagged Nostr Vault\./)
-  assert.match(html, /<script type="module" src="\/stats\/stats\.js"><\/script>/)
+  assert.match(html, /<script type="module" src="\/stats\/stats\.js(\?v=\d+)?"><\/script>/)
   assert.equal((html.match(/<script/g) ?? []).length, 1, "the site CSP (script-src 'self') blocks inline scripts")
   for (const key of Object.keys(view(sample).values)) assert.match(html, new RegExp(`data-stat="${key}"`))
 })

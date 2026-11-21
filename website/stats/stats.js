@@ -1,6 +1,7 @@
 // nostrvault.app/stats: reads /stats/stats.json (written once a day by scripts/stats/run.mjs) and fills in the totals.
 // The page shows totals only; the file holds nothing else. view() is pure and tested by scripts/stats/test/page.test.mjs.
-import { drawChart } from "./chart.js"
+// The ?v= query moves with each change: Cloudflare keeps /stats/*.js for 4 hours.
+import { drawChart } from "./chart.js?v=20261121"
 
 export const PLATFORM_ORDER = ["Android", "iPhone", "iPad", "Mac", "Linux", "Web"]
 
