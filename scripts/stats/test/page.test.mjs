@@ -6,7 +6,7 @@ import { view } from "../../../website/stats/stats.js"
 const sample = {
   generated_at: "2026-11-18T12:00:00.000Z",
   posting_users: 1234,
-  by_platform: { Android: 35, iPhone: 23, iPad: 0, Mac: 2, Web: 5 },
+  by_platform: { Android: 35, iPhone: 23, iPad: 0, Mac: 2, Linux: 3, Web: 5 },
   active_7d: 29,
   active_30d: 57,
   github_downloads: 207,
@@ -16,7 +16,7 @@ const sample = {
 test("view shows the totals, skips empty platforms and keeps their order", () => {
   const v = view(sample)
   assert.deepEqual(v.values, { posting_users: "1,234", active_7d: "29", active_30d: "57", github_downloads: "207" })
-  assert.deepEqual(v.platforms, [["Android", "35"], ["iPhone", "23"], ["Mac", "2"], ["Web", "5"]])
+  assert.deepEqual(v.platforms, [["Android", "35"], ["iPhone", "23"], ["Mac", "2"], ["Linux", "3"], ["Web", "5"]])
   assert.equal(v.updated, "Last counted 2026-11-18 (UTC), from posts since 2026-05-01.")
 })
 

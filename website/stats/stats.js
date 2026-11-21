@@ -1,7 +1,7 @@
 // nostrvault.app/stats: reads /stats/stats.json (written once a day by scripts/stats/run.mjs) and fills in the totals.
 // The page shows totals only; the file holds nothing else. view() is pure and tested by scripts/stats/test/page.test.mjs.
 
-export const PLATFORM_ORDER = ["Android", "iPhone", "iPad", "Mac", "Web"]
+export const PLATFORM_ORDER = ["Android", "iPhone", "iPad", "Mac", "Linux", "Web"]
 
 const fmt = n => (Number.isFinite(n) ? n.toLocaleString("en-US") : "–")
 

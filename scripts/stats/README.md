@@ -5,7 +5,7 @@ It writes one totals file for the page at `website/stats/` (`index.html` + `stat
 
 ## Method
 
-The apps add `["client", "Nostr Vault on iOS"]` (or "… on iPadOS", "… on MacOS", "… on Android", "… on Web") to
+The apps add `["client", "Nostr Vault on iOS"]` (or "… on iPadOS", "… on MacOS", "… on Android", "… on Linux", "… on Web") to
 kind 1 notes and kind 1111 comments: `EventPublisher.appendClientTag` in the Apple and Android apps, and
 `web-vault/src/net/client-tag.js`. Relays can't filter on a multi-letter tag, so the scan works in two steps:
 
@@ -47,6 +47,9 @@ node --test scripts/stats/test/                 # tests
 
 Needs Node 22 or later (built-in WebSocket and fetch, no npm install). A run takes about 20 minutes.
 
-**Not installed anywhere yet.** The daily job (cron or launchd) and the way `stats.json` reaches the live site wait
-on Logen. The site image is built from `website/` at deploy time, so a daily file needs a mount or a copy into the
-running container. Until a file exists, the page says the numbers haven't been counted yet.
+**The daily job** is `stats-job.sh`, run by launchd (`com.nostrvault.stats`, every 15 min) on prod-mini from a copy at
+`~/.buzz/REPOS/nv-stats-job/stats-job.sh`. Before each daily scan it fetches master, runs these tests on master's
+`scripts/stats` (plus `website/stats`, which the page test imports) in a staging dir and swaps it in only if they pass;
+a failed fetch or test keeps the last good copy and says why in `stats.log`. It installs a changed `stats-job.sh`
+the same way, so merging to master is enough: no hand copy. `stats-job.sh --refresh-only` does just that step.
+It then copies `stats.json` into the running site container, so the page has today's numbers.
