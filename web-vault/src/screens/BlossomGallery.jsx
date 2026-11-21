@@ -3,13 +3,15 @@
 // says how many of your servers hold it. A tile opens the file with Copy link, the servers that hold it, the notes on your
 // vault that use it ("Posted in N notes", net/media-notes.js: the phone's swipe up), Copy to the servers missing
 // it, and Delete from mirrors (every media server, any other that listed it and the server in its link, after asking). "In your notes" keeps the pictures your notes carry.
+// In box mode the box's own files come first: it heads the server list and takes uploads first (box/box-media.js).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { emptyMediaReason } from "../net/media-empty-reason.js"
 import { mediaServers } from "../net/upload.js"
 import { BlossomStats } from "./BlossomStats.jsx"
 import { BlossomUpload } from "./BlossomUpload.jsx"
-import { listBlobs, deleteBlob, deleteTargets, mirrorBlob, outcome, byDay, TYPE_FILTERS, mergeNoteTiles, withoutEmoji } from "../net/blossom-gallery.js"
+import { withBox, copyToServers } from "../box/box-media.js"
+import { listBlobs, deleteBlob, deleteTargets, outcome, byDay, TYPE_FILTERS, mergeNoteTiles, withoutEmoji } from "../net/blossom-gallery.js"
 import { watchFileNotes } from "../net/file-notes-live.js"
 import { sealMeshAuth } from "../net/pair-hello.js"
 import { SkeletonGrid, Waiting } from "../components/Loading.jsx"
@@ -70,7 +72,7 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
     // only if that list says otherwise.
     const was = rememberedServers(me)
     const early = was && !quiet ? (setServers(was), list(was)) : null
-    const s = await mediaServers(ctx).catch(() => [])
+    const s = withBox(await mediaServers(ctx).catch(() => [])) // in box mode the box first (box/box-media.js)
     rememberServers(me, s)
     const same = was && s.length === was.length && s.every((x, i) => x === was[i])
     if (!quiet && !same) setServers(s)
@@ -222,7 +224,7 @@ function Viewer({ ctx, blob, servers, order = [], onStep, onClose, onDeleted, on
   }
   const copy = run("copy", async () => { await navigator.clipboard.writeText(blob.url); setMsg("Link copied.") })
   const mirror = run("mirror", async () => {
-    const r = await mirrorBlob(blob, servers, { ctx })
+    const r = await copyToServers(blob, servers, { ctx })
     onMirrored([...blob.servers, ...r.filter(x => x.ok).map(x => x.server)])
     setMsg(outcome(r, "Copied"))
   })

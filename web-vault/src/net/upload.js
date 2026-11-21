@@ -99,8 +99,10 @@ export async function precheck(server, { sha256, size, mime, auth, fetch, signal
  * `signal` stops it (an AbortError; before the signer is asked, if it hasn't been yet); `onProgress(0..1)` follows the PUT.
  * `raw`: the bytes go up exactly as they are (a DM's encrypted file, dm-file.js: ciphertext has no location to remove,
  * and a change to it would break its hash and its seal).
+ * `linkOk(url)`: whether the server's link is one to keep (default serverUrl: https only). Vault › Media in box mode
+ * also takes the box's own link (box/box-media.js), which is plain http on the LAN.
  */
-export async function uploadPhoto(file, { ctx, servers, fetch, signal, onProgress, raw = false }) {
+export async function uploadPhoto(file, { ctx, servers, fetch, signal, onProgress, raw = false, linkOk = serverUrl }) {
   const stopped = () => { if (signal?.aborted) throw abortError() }
   const bytes = raw ? new Uint8Array(await file.arrayBuffer()) : withoutLocation(new Uint8Array(await file.arrayBuffer()))
   const sha256 = await sha256Hex(bytes)
@@ -125,7 +127,7 @@ export async function uploadPhoto(file, { ctx, servers, fetch, signal, onProgres
       const d = await res.json()
       // A BUD-02 blob descriptor always names the hash; no hash is as unproven as a wrong one.
       if (d?.sha256 !== sha256) { errors.push(`${hostOf(server)}: ${d?.sha256 ? "sent back a different file" : "didn't confirm the file's hash"}`); continue }
-      const url = typeof d?.url === "string" && serverUrl(d.url) ? d.url : null
+      const url = typeof d?.url === "string" && linkOk(d.url) ? d.url : null
       if (!url) { errors.push(`${hostOf(server)}: no link in its answer`); continue }
       return { url, sha256, mime: d.type || mime, size: bytes.length, server }
     } catch (e) {
