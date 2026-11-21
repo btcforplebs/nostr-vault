@@ -1,11 +1,14 @@
 // Translate under a note in another language (NoteTranslateButton.swift). The iPhone translates on the device with
 // Apple's Translation framework; the browser's own on-device Translator and LanguageDetector (Chrome 138+) do the same
 // here, so the text never goes to a server. Where the browser has neither, no button. Offered when the note has at
-// least 12 letters, the detector is at least 60% sure, and the language isn't yours (navigator.language).
+// least 12 letters, the detector is at least 60% sure, and the language isn't the one you translate to
+// (Settings › Appearance › Translate To, else navigator.language).
 import { useEffect, useState } from "preact/hooks"
+import { translateOn, translateTarget } from "../net/translate-prefs.js"
 
 const MIN_LETTERS = 12, MIN_CONFIDENCE = 0.6
-const target = () => String(globalThis.navigator?.language ?? "en").split("-")[0].toLowerCase()
+// Settings › Appearance › Translate To, else the browser's language; Translate Button on Posts off draws no button.
+const target = () => translateTarget()
 export const supported = () => typeof globalThis.Translator?.create === "function" && typeof globalThis.LanguageDetector?.create === "function"
 
 /** The text worth translating: links and nostr: references out (NoteTranslation.translatableText). */
@@ -38,12 +41,12 @@ export function TranslateButton({ id, content }) {
   const [showing, setShowing] = useState(false)
   const [state, setState] = useState("") // "" | "busy" | "failed"
   useEffect(() => {
-    if (!supported() || !text) return
+    if (!supported() || !translateOn() || !text) return
     let live = true
     detect(id, text).then(c => { if (live) setLang(c) }).catch(() => {})
     return () => { live = false }
   }, [id])
-  if (!supported() || !shouldOffer(lang, target())) return null
+  if (!supported() || !translateOn() || !shouldOffer(lang, target())) return null
   const go = async e => {
     e.stopPropagation()
     if (translated) return setShowing(!showing)

@@ -17,8 +17,7 @@ export const PRIVACY_URL = "https://nostrvault.app/privacy.html"
 
 /**
  * The phone's groups (SettingsView.groups), with the rows the web has. A row's `href` is where it goes: a page of
- * this screen ("#/settings/<page>"), another screen ("#/accounts" is the Accounts & Keys screen, "#/relay" the
- * Relay screen with its FIPS panel, which is the web's "Who Can Reach You"). Feed, Appearance, Media & Cache, Privacy
+ * this screen ("#/settings/<page>"), another screen ("#/accounts" is the Accounts & Keys screen). Feed, Appearance, Media & Cache, Privacy
  * and Notifications are pages as on the phone (screens/settings/, Logen 2026-11-05). Rows the phone has and the web
  * doesn't are left out rather than shown dead: Sync with Vault on Mac, Tutorials, Proof of Work, Start Relay
  * Automatically.
@@ -74,7 +73,7 @@ export const SETTINGS_GROUPS = [
     { id: "media-servers", title: "Media Servers", icon: "server", color: "#30d158", href: "#/settings/media-servers" },
   ] },
   { title: "Your Vault", rows: [
-    { id: "relay-access", title: "Who Can Reach You", icon: "reach", color: "#0a84ff", href: "#/relay" },
+    { id: "relay-access", title: "Who Can Reach You", icon: "reach", color: "#0a84ff", href: "#/settings/relay-access" },
     { id: "import", title: "Import Notes", icon: "import", color: "#ff9f0a", href: "#/settings/import" },
     { id: "backup", title: "Backup & Restore", icon: "drive", color: "#5e5ce6", href: "#/settings/backup" },
   ] },

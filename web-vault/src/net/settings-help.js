@@ -4,6 +4,12 @@
 
 export const HELP = {
   "account.blocked": ["Blocked", "Hides blocked accounts from your feed. For your main account, also blocks them from posting to your relay."],
+  "account.revealKey": ["Reveal Key", "Shows your secret key after verifying it's you."],
+  "feed.reposts": ["Reposts", "Show reposts in your feed."],
+  "feed.replies": ["Replies", "Show replies in your feed."],
+  "feed.autoLoad": ["Auto-Load", "Adds new posts to your feed as they arrive, instead of waiting for you to tap."],
+  "relay.minFollowers": ["Minimum Followers", "Minimum followers someone needs before they can reach your inbox."],
+  "relay.wotRefresh": ["Trust Refresh", "How often your trust list is recalculated."],
   "feed.relays": ["Feed Relays", "Relays your feed pulls posts from. Separate from your own relay."],
   "post.sendDelay": ["Send Delay", "How long posts, replies, reposts and deletes wait before going out, so you can undo or edit them. Off sends right away with no undo."],
   "display.threadedLines": ["Threaded View Lines", "How many lines of text show in Threaded View. Replies show one line fewer than the post that starts the thread."],

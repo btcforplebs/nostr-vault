@@ -4,6 +4,7 @@ import { useEffect, useState } from "preact/hooks"
 import { notifyOn, onNotifyPref, permission, setNotifyOn, turnOn } from "../net/notify-watch.js"
 import { TYPES, readTypes, setType, onTypes } from "../net/notify-prefs.js"
 import { SettingInfo } from "./SettingInfo.jsx"
+import { DmTextSwitch } from "./DmTextSwitch.jsx"
 
 export const WHY = {
   denied: "This browser blocks notifications for this site. Allow them in the browser's site settings, then turn this on again.",
@@ -40,6 +41,7 @@ export function NotifySwitch() {
           <input type="checkbox" role="switch" checked={types[t.id]} onChange={e => setType(t.id, e.currentTarget.checked)} />
         </label>
       ))}
+      {on && <DmTextSwitch />}
       <p class="settings-note muted small">{why || NOTIFY_NOTE}</p>
     </>
   )

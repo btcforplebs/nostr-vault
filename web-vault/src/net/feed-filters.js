@@ -22,9 +22,13 @@ export function loadFilters(storage = globalThis.localStorage) {
   }
   return out
 }
+const listeners = new Set()
 export function saveFilters(filters, storage = globalThis.localStorage) {
   try { storage?.setItem(KEY, JSON.stringify({ ...filters, v: SAVED_V })) } catch {}
+  for (const cb of listeners) cb()
 }
+/** Called after every save, so a Feed already on screen takes a switch flipped in Settings › Feed. */
+export const onFilters = cb => { listeners.add(cb); return () => listeners.delete(cb) }
 
 /** A kind 1 that answers another note (NIP-10), or a comment that answers one (NIP-22). */
 export const isReply = ev => (ev?.kind === 1 && !!replyRefs(ev).parent) || !!commentParent(ev)

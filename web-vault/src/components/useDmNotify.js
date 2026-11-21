@@ -5,7 +5,7 @@ import { getBlocks } from "../net/blocks.js"
 import { getProfile, fetchProfiles } from "../net/profiles.js"
 import { notifyOn, onNotifyPref, permission } from "../net/notify-watch.js"
 import { readTypes, onTypes } from "../net/notify-prefs.js"
-import { readDmMark, writeDmMark, dmNotices, dmOnScreen } from "../net/dm-notify.js"
+import { readDmMark, writeDmMark, dmNotices, dmOnScreen, showDmText } from "../net/dm-notify.js"
 import { showNotice } from "../net/notify-show.js"
 import { hiddenFromUnread, useDmTrust } from "./useDmTrust.js"
 
@@ -16,7 +16,7 @@ const wanted = () => notifyOn() && permission() === "granted" && readTypes().dms
  * Message notifications while the tab is open: with browser notifications and Messages on, the inbox is read and
  * listened to as the Messages screen does it (dms.js loadMessages + watchMessages, so the signer opens new messages
  * while the tab is open, and the Vault tab's dot counts them), and each new message from someone in your network
- * raises "New message" from X (never the text). Off, nothing here asks the signer.
+ * raises "New message" from X (the text only with Show message text on). Off, nothing here asks the signer.
  */
 export function useDmNotify(ctx) {
   const me = ctx.session?.pubkey
@@ -36,7 +36,7 @@ export function useDmNotify(ctx) {
       const hidden = hiddenFromUnread(s.messages, me, blocked, trusted.current)
       const peers = [...new Set([...s.messages.values()].filter(m => m.at > mark && m.from !== me).map(m => m.peer))]
       if (peers.length) await fetchProfiles(live.current.vault, peers, live.current.account?.relays?.read ?? []).catch(() => {})
-      const out = dmNotices(getMessages().messages, me, { mark, hidden, onScreen: dmOnScreen(), nameOf })
+      const out = dmNotices(getMessages().messages, me, { mark, hidden, onScreen: dmOnScreen(), nameOf, showText: showDmText() })
       if (out.mark !== mark) { mark = out.mark; writeDmMark(me, mark) }
       if (wanted()) for (const n of out.notices) await showNotice(n)
     }

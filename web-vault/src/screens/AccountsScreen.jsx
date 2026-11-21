@@ -1,12 +1,14 @@
 // Accounts (iOS Settings › Accounts); the backup is Settings › Backup & Restore (components/BackupCard.jsx). Each account on this browser has its own relay
-// stores; one is active at a time, and switching reloads into the other. Accounts sign with an extension or a bunker:
-// the web app never holds a secret key, so there is no key import or "Reveal Key" here (the iPhone has both).
+// stores; one is active at a time, and switching reloads into the other. Accounts sign with an extension or a bunker,
+// or with a key made in this browser (kept locked with its password); only those draw Reveal Key (components/RevealKey.jsx).
+// There is no key import here (the iPhone has one).
 import { useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { loadAccounts, rememberAccount } from "../session.js"
 import { switchAccount, removeAccount } from "../signer/accounts.js"
 import { pool } from "../net/pool.js"
 import { Avatar } from "../components/Avatar.jsx"
+import { RevealKey } from "../components/RevealKey.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { SignInOptions, accountName, methodLabel } from "./SignInScreen.jsx"
 import "../styles/accounts.css"
@@ -60,7 +62,7 @@ export function AccountsScreen({ ctx }) {
       </section>
       <section class="card">
         <h3>Your keys</h3>
-        <p class="muted small">Nostr Vault on the web never holds your secret key: your extension or bunker keeps it, and signs for you. Back up your key there. A bunker's connection to this browser is stored encrypted, and removing the account or signing out asks the bunker to drop it.</p>
+        <p class="muted small">For an account that signs with an extension or bunker, Nostr Vault on the web never holds your secret key: the extension or bunker keeps it, and signs for you. Back up your key there. A key made in this browser is kept here locked with its password; Reveal Key on that account shows it. A bunker's connection to this browser is stored encrypted, and removing the account or signing out asks the bunker to drop it.</p>
       </section>
     </main>
   )
@@ -97,6 +99,7 @@ function AccountRow({ account, active, open, ctx, others, onToggle, onRemoved })
       </button>
       {open && <div class="account-actions">
         <NpubLine pubkey={account.pubkey} />
+        <RevealKey account={account} />
         {active
           ? confirm
             ? <>

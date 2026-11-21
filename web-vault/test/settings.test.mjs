@@ -36,10 +36,10 @@ test("groups are the phone's, each row with a page or a screen to go to; every s
   assert.equal(rows.find(r => r.id === "accounts").title, "Accounts & Keys")
   assert.equal(rows.find(r => r.id === "following-backup").color, "#40c8e0") // teal
   assert.equal(rows.find(r => r.id === "relays").color, "var(--accent)") // havenPurple is the accent
-  assert.equal(rows.find(r => r.id === "relay-access").href, "#/relay")
+  assert.equal(rows.find(r => r.id === "relay-access").href, "#/settings/relay-access") // its own page, not the Mesh panel
   assert.equal(rows.find(r => r.id === "wallet").href, "#/wallet")
   for (const r of rows) assert.match(r.href, /^#\/[a-z-]+(\/[a-z-]+)?$/)
-  assert.deepEqual(Object.keys(PAGES).sort(), ["appearance", "backup", "blocked", "database", "feed", "following-backup", "import", "logs", "media", "media-servers", "notifications", "privacy", "recently-deleted", "recover-list", "relays"])
+  assert.deepEqual(Object.keys(PAGES).sort(), ["appearance", "backup", "blocked", "database", "feed", "following-backup", "import", "logs", "media", "media-servers", "notifications", "privacy", "recently-deleted", "recover-list", "relay-access", "relays"])
   assert.ok(isPage("backup") && !isPage("accounts") && !isPage("") && !isPage(undefined) && !isPage("constructor"))
   assert.match(APP_VERSION, /^\d+\.\d+\.\d+/)
   assert.match(SUPPORT_NPUB, /^npub1/)

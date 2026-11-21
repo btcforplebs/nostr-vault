@@ -1,6 +1,6 @@
 // Settings (iPhone SettingsView, the phone's single list): the relay status card first, then the groups of rows in
 // the phone's order (ORDER), then About. Close goes back to Profile, where the gear opened it (the phone shows Settings as a sheet from there). A row opens its page at "#/settings/<page>"; the Accounts & backup row opens the Accounts screen
-// (#/accounts) and Who Can Reach You the Relay screen's FIPS panel (#/relay).
+// (#/accounts).
 import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
@@ -28,6 +28,7 @@ import { MediaCachePage } from "./settings/MediaCachePage.jsx"
 import { PrivacyPage } from "./settings/PrivacyPage.jsx"
 import { FeedSettingsPage } from "./settings/FeedSettingsPage.jsx"
 import { NotificationsPage } from "./settings/NotificationsPage.jsx"
+import { RelayAccessPage } from "./settings/RelayAccessPage.jsx"
 import { BlockSomeone } from "./settings/BlockSomeone.jsx"
 import { blockedSections } from "./settings/block-someone.js"
 import {
@@ -168,6 +169,7 @@ function Page({ ctx, page }) {
       {page === "recover-list" && <RecoverListPage ctx={ctx} />}
       {page === "relays" && <RelaysPage ctx={ctx} />}
       {page === "media-servers" && <MediaServersPage ctx={ctx} />}
+      {page === "relay-access" && <RelayAccessPage />}
       {page === "import" && <Import ctx={ctx} />}
       {page === "backup" && <BackupCard ctx={ctx} />}
       {page === "database" && <Database ctx={ctx} />}

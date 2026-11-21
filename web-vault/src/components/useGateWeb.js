@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "preact/hooks"
 import { followLists } from "../net/wot.js"
 import { webLayers, gateWeb } from "../net/web-gate.js"
 import { loadAccounts } from "../session.js"
+import { minFollowers, onTrustSettings } from "../net/trust-settings.js"
 
 // The open account's web as the one gate reads it (net/web-gate.js), shared by every screen that asks. The layers
 // (web and hop 3, from the follows' contact lists, which wot.js followLists caches) are built once per account and
@@ -20,12 +21,15 @@ const ownKeys = me => {
 export function useGateWeb(ctx, blocked) {
   const me = ctx?.session?.pubkey ?? null
   const follows = ctx?.account?.follows ?? []
-  const key = `${me}:${follows.length}:${follows[0] ?? ""}:${follows[follows.length - 1] ?? ""}:${blocked?.size ?? 0}`
+  // Settings › Who Can Reach You › Minimum Followers is part of the key: a new bar builds the layers again.
+  const bar = minFollowers()
+  const key = `${me}:${follows.length}:${follows[0] ?? ""}:${follows[follows.length - 1] ?? ""}:${blocked?.size ?? 0}:${bar}`
   const [, setTick] = useState(0)
   useEffect(() => {
     const bump = () => setTick(t => t + 1)
     listeners.add(bump)
-    return () => listeners.delete(bump)
+    const off = onTrustSettings(bump)
+    return () => { listeners.delete(bump); off() }
   }, [])
   useEffect(() => {
     if (!me || !follows.length || latest.key === key || loading?.key === key) return
@@ -33,7 +37,7 @@ export function useGateWeb(ctx, blocked) {
     loading = run
     followLists(me, follows).then(lists => {
       if (loading !== run) return
-      latest = { key, layers: webLayers({ follows, lists, own: ownKeys(me), blocked }) }
+      latest = { key, layers: webLayers({ follows, lists, own: ownKeys(me), blocked, minFollowers: bar }) }
       for (const cb of listeners) cb()
     }).catch(() => {}).finally(() => { if (loading === run) loading = null })
   }, [key])
