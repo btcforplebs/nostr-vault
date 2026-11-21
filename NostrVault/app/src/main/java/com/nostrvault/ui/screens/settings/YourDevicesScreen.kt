@@ -100,6 +100,7 @@ fun YourDevicesScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             DevicesSection(YourDevicesRules.ordered(devices), status.running, viewModel, mac, onOpenDevice)
+            MeshSyncStatusSection(YourDevicesRules.ordered(devices), System.currentTimeMillis() / 1000)
             ConnectButton(
                 onClick = {
                     // The same call as the Mesh switch; queued, so pairing's own start waits for it.

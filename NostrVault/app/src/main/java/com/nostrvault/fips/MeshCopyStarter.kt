@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -109,9 +110,18 @@ class MeshCopyStarter internal constructor(
 
     private val lock = Mutex()
     private var record = records.load()
-        set(v) { if (v != field) { field = v; records.save(v) } }
+        set(v) { if (v != field) { field = v; records.save(v); _sync.update { it.copy(lastAt = v.copied) } } }
+
+    /**
+     * Each copied-from device's catch-up as Settings › Your Devices shows it ([MeshSyncState]). Declared after
+     * [record], which it starts from.
+     */
+    private val _sync = MutableStateFlow(MeshSyncState(lastAt = record.copied))
+    val sync: StateFlow<MeshSyncState> = _sync.asStateFlow()
+
     /** The peer the running copy or catch-up is with. */
     @Volatile private var current: String? = null
+        set(v) { field = v; _sync.update { it.copy(running = v) } }
 
     /** What is kept: for the tests. */
     internal val kept: MeshCopyV2.Record get() = record
@@ -124,6 +134,11 @@ class MeshCopyStarter internal constructor(
             val peer = synchronized(this) {
                 (current ?: record.pending?.peer)?.also { record = record.finished(l, it, nowS()) }.also { current = null }
             }
+            if (peer != null) {
+                _sync.update { if (l.stage == "done") it.copy(failed = it.failed - peer) else it.copy(failed = it.failed + (peer to l.error.ifEmpty { "failed" })) }
+            }
+            // Sync now's next device, if it queued more than one.
+            if (_sync.value.queued.isNotEmpty()) scope.launch(io) { syncQueued() }
             // Can't reach the device: try again every ~15 s for a few minutes, then say it failed (set before
             // [progress], which the copy screen follows).
             if (l.error == "unreachable" && peer != null && record.pending?.peer == peer) missed(peer)
@@ -242,6 +257,42 @@ class MeshCopyStarter internal constructor(
     }
 
     /**
+     * Settings › Your Devices › Sync now: a catch-up with every device this one copied from, the longest ago first,
+     * one after another (the engine runs one at a time), due or not. Not before setup, and not with the device a
+     * copy is still pending with (that copy resumes on its own). Twin of Apple's MeshCopyV2Service sync-now (A4).
+     */
+    fun syncNow() {
+        if (!setupDone()) return
+        val peers = synchronized(this) {
+            record.copied.entries.filter { it.key != record.pending?.peer }.sortedBy { it.value }.map { it.key }
+        }
+        if (peers.isEmpty()) return
+        _sync.update { s -> s.copy(queued = (s.queued + peers).distinct().filter { it != s.running }) }
+        scope.launch(io) { syncQueued() }
+    }
+
+    /**
+     * Starts the next queued catch-up, unless one is running (its end comes back here through [onLogLine]). A device
+     * that can't be dialed or that the engine refuses is marked and skipped; a busy engine keeps the queue.
+     */
+    internal suspend fun syncQueued() = lock.withLock {
+        while (current == null) {
+            val peer = _sync.value.queued.firstOrNull() ?: return@withLock
+            val split = link(peer)?.let(MeshCopyV2::splitLink)
+            val code = split?.let { (base, prefix) -> engine.copySync(peer, base + prefix, filesToo()) }
+            if (code == MeshCopyV2.RUN_BUSY) return@withLock
+            _sync.update { it.copy(queued = it.queued - peer) }
+            if (code == MeshCopyV2.RUN_STARTED) {
+                current = peer
+                synchronized(this) { record = record.copy(copied = record.copied + (peer to nowS())) }
+                _sync.update { it.copy(failed = it.failed - peer) }
+            } else {
+                _sync.update { it.copy(failed = it.failed + (peer to if (split == null) "unreachable" else "not_started")) }
+            }
+        }
+    }
+
+    /**
      * Hands the copy to the engine: [fresh] signs a start right before each call (A wants it within 60 s), else the
      * engine resumes with the token it holds. Retries while this device's relay comes up.
      */
@@ -319,3 +370,15 @@ private fun onWiFi(context: Context): Boolean {
     val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
     return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
 }
+
+/**
+ * The catch-ups Settings › Your Devices shows: when each copied-from device last synced ([lastAt], Unix s, the
+ * record's own map), the one running now, the ones Sync now still has to start, and the last failure per device
+ * (the engine's `COPY` error code, `unreachable` when it could not be dialed) until a later one finishes.
+ */
+data class MeshSyncState(
+    val lastAt: Map<String, Long> = emptyMap(),
+    val running: String? = null,
+    val queued: List<String> = emptyList(),
+    val failed: Map<String, String> = emptyMap(),
+)
