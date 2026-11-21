@@ -132,13 +132,19 @@ func run(args []string) error {
 		},
 		Prepare: func(dir string) error { return box.WriteEngineFiles(cfg, dir) },
 	}
-	// Seed the accounts baseline before the engine first reads the lists, so
-	// a change made while havend starts up still reloads it (Tron #2374).
+	// box/accounts.json: when the added accounts change, restart the engine
+	// so it reads its two account lists again (box/accounts.go). A change
+	// made through the box API reloads at once; a hand edit within 5 s.
+	// Seed the baseline before the engine first reads the lists, so a change
+	// made while havend starts up still reloads it (Tron #2374).
 	accountsWatch := &box.AccountsWatch{Config: cfg, Engine: engine}
 	accountsWatch.Seed()
 	if err := engine.Start(ctx, vaultDir); err != nil {
 		return fmt.Errorf("starting the vault engine: %w", err)
 	}
+
+	accounts := box.NewAccountStore(cfg)
+	accounts.Changed = func() { accountsWatch.Check() }
 
 	api := &box.API{
 		Auth:       box.NewOwnerAuth(cfg.OwnerHex),
@@ -167,7 +173,9 @@ func run(args []string) error {
 			FreeOf:   func(p string) (uint64, error) { d, err := box.DiskOf(p); return d.Free, err },
 			Headroom: 256 << 20,
 		},
-		Updater: &box.Updater{Hook: cfg.UpdateHook, BoxDir: cfg.BoxDir(), Store: cfg.UpdateVia},
+		Updater:   &box.Updater{Hook: cfg.UpdateHook, BoxDir: cfg.BoxDir(), Store: cfg.UpdateVia},
+		Accounts:  accounts,
+		JoinCodes: box.NewJoinCodes(),
 	}
 	// The owner's 10063 decides which devices nv-mesh lets in: read it now
 	// and every 30 s, so an approval or a removal reaches the mesh by itself.
@@ -176,8 +184,6 @@ func run(args []string) error {
 	// (box.RelayServerLists.Poll).
 	go api.Devices.Run(ctx, 30*time.Second)
 	go engineDevices.Run(ctx, 5*time.Second)
-	// box/accounts.json: when the added accounts change, restart the engine
-	// so it reads its two account lists again (box/accounts.go).
 	go accountsWatch.Run(ctx, 5*time.Second)
 
 	front := &box.Front{API: api, Engine: box.EngineProxy(cfg.EnginePort)}

@@ -170,4 +170,41 @@ func TestBoxAccountsEndToEnd(t *testing.T) {
 	engineUp()
 	mustRefuse("removed account", watch)
 	mustPost("first account after removals", owner)
+
+	// Through the box API: the first account makes a code, a new account
+	// joins with its own signature, and the engine reloads at once (no 5 s
+	// wait for the file check) so it reads the private side.
+	joiner := newKey(t)
+	mustRefuse("joiner before joining", joiner)
+	st, out := boxCall(t, base, owner, "POST", "/api/box/accounts/code", nil)
+	code, _ := out["code"].(string)
+	if st != 200 || code == "" {
+		t.Fatalf("code: %d %v", st, out)
+	}
+	jb, _ := json.Marshal(map[string]string{"code": code})
+	if st, out := boxCall(t, base, joiner, "POST", "/api/box/accounts/join", jb); st != 200 || out["state"] != "signedIn" {
+		t.Fatalf("join: %d %v", st, out)
+	}
+	deadline = time.Now().Add(30 * time.Second)
+	for {
+		lb, _ := os.ReadFile(logPath)
+		if strings.Contains(string(lb), "accounts changed (2 accounts, 2 private readers)") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the join never reloaded the engine")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	time.Sleep(500 * time.Millisecond)
+	engineUp()
+	mustPost("joined account", joiner)
+	// The same code again, by someone else: spent.
+	if st, _ := boxCall(t, base, stranger, "POST", "/api/box/accounts/join", jb); st != 403 {
+		t.Fatalf("code reused: %d, want 403", st)
+	}
+	// A joined account is no first account: box controls stay closed.
+	if st, _ := boxCall(t, base, joiner, "GET", "/api/box/status", nil); st != 403 {
+		t.Fatalf("joined account status: %d, want 403", st)
+	}
 }

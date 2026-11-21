@@ -25,18 +25,28 @@ func (c Config) AccountsFile() string { return filepath.Join(c.BoxDir(), "accoun
 // stay). Entries that are not a valid npub or hex pubkey (an nsec included)
 // are dropped, and every kept Npub is the canonical npub1 form.
 func LoadAccounts(path string) []Account {
-	raw, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
+	accounts, err := ReadAccounts(path)
+	if err != nil {
+		log.Printf("box: %v; holding the first account only", err)
 		return nil
 	}
+	return accounts
+}
+
+// ReadAccounts is LoadAccounts that reports an unreadable or unparsable
+// file instead of reading it as none. Changes (AccountStore) use it, so a
+// damaged file is never overwritten with a shorter list.
+func ReadAccounts(path string) ([]Account, error) {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
 	if err != nil {
-		log.Printf("box: reading %s: %v; holding the first account only", path, err)
-		return nil
+		return nil, fmt.Errorf("reading %s: %v", path, err)
 	}
 	var in []Account
 	if err := json.Unmarshal(raw, &in); err != nil {
-		log.Printf("box: %s is not an account list: %v; holding the first account only", path, err)
-		return nil
+		return nil, fmt.Errorf("%s is not an account list: %v", path, err)
 	}
 	out := make([]Account, 0, len(in))
 	for i, a := range in {
@@ -48,7 +58,7 @@ func LoadAccounts(path string) []Account {
 		a.Npub = npub
 		out = append(out, a)
 	}
-	return out
+	return out, nil
 }
 
 // SaveAccounts writes accounts to path atomically (temp file, then rename),
