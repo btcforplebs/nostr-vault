@@ -3,7 +3,6 @@ package box
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -45,92 +44,12 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	route := r.Method + " " + r.URL.Path
-	switch route {
-	case "GET /api/box/status":
-		writeJSON(w, http.StatusOK, a.status())
-	case "GET /api/box/storage":
-		st := a.Storage.Measure(a.Mover.Engine.VaultDir())
-		st.MoveOff = a.Mover.Off()
-		writeJSON(w, http.StatusOK, st)
-	case "GET /api/box/devices":
-		writeJSON(w, http.StatusOK, a.Devices.Report(r.Context()))
-	case "POST /api/box/update":
-		res, err := a.Updater.Request()
-		if errors.Is(err, ErrUpdateBusy) {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-			return
-		}
-		if err != nil {
-			log.Printf("box: update request failed: %v", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the update"})
-			return
-		}
-		res.From = a.Version
-		log.Printf("box: update requested via %s", res.Via)
-		if !res.Started {
-			writeJSON(w, http.StatusOK, res)
-			return
-		}
-		writeJSON(w, http.StatusAccepted, res)
-	case "POST /api/box/move":
-		var req struct {
-			Path string `json:"path"`
-		}
-		if err := json.Unmarshal(body, &req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `body must be {"path": "/mnt/..."}`})
-			return
-		}
-		st, err := a.Mover.Begin(req.Path)
-		if errors.Is(err, ErrMoveOff) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
-			return
-		}
-		if errors.Is(err, ErrMoveBusy) {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-			return
-		}
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
-		log.Printf("box: moving the vault from %s to %s", st.From, st.To)
-		writeJSON(w, http.StatusAccepted, MoveStarted{
-			OK: true, Path: st.To, MoveState: st,
-			Message: "Moving your vault to " + st.To + ". The box stops serving while it copies, then starts again.",
-		})
-	default:
+	route, ok := boxRoutes[r.Method+" "+r.URL.Path]
+	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such box API route"})
+		return
 	}
-}
-
-func (a *API) status() Status {
-	eng := a.Engine.State()
-	disk, _ := DiskOf(eng.VaultDir)
-	npub, _, _ := a.Mesh.Read()
-	return Status{
-		Version:   a.Version,
-		Uptime:    int64(time.Since(a.Started).Seconds()),
-		Mem:       readMem(eng.Pid),
-		Disk:      disk,
-		Mesh:      readMesh(a.MeshStatus, npub, time.Now()),
-		Engine:    eng,
-		Owner:     a.Owner,
-		Device:    npub,
-		Move:      a.Mover.State(),
-		RelayURL:  a.RelayURL,
-		UpdateVia: a.Updater.Store,
-		MoveOff:   a.Mover.Off(),
-	}
-}
-
-// MoveStarted is POST move's answer: the screens' {ok, path, message}
-// (api.js) plus the move's first progress. Progress continues in status.move.
-type MoveStarted struct {
-	OK      bool   `json:"ok"`
-	Path    string `json:"path"`
-	Message string `json:"message"`
-	*MoveState
+	route(a, w, r, body)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
