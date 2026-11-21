@@ -175,47 +175,62 @@ object DMFileLoader {
         return call.execute().use { r ->
             if (r.code != 200) throw IOException("HTTP ${r.code}")
             val body = r.body ?: throw IOException("empty")
-            fun over(): IOException = if (max < DMFile.MAX_FILE) TooBig() else IOException("too large")
-            val length = body.contentLength()
-            if (length > max) throw over()
-            if (length > HeapCap.of(DMFile.MAX_FILE)) throw IOException("too large for this phone's memory")
-            var told = 0L
-            fun progress(got: Int) {
-                // About every 256 KB: a progress ring, not a callback per read.
-                if (onProgress != null && got - told >= 256 * 1024) {
-                    told = got.toLong()
-                    onProgress(told, length)
-                }
-            }
-            val bytes = body.byteStream().use { input ->
-                if (length >= 0) {
-                    val out = ByteArray(length.toInt())
-                    var got = 0
-                    while (got < out.size) {
-                        val n = input.read(out, got, out.size - got)
-                        if (n < 0) throw IOException("cut short")
-                        got += n
-                        progress(got)
-                    }
-                    if (input.read() >= 0) throw IOException("longer than it said")
-                    out
-                } else {
-                    val out = ByteArrayOutputStream(64 * 1024)
-                    val buf = ByteArray(64 * 1024)
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        if (out.size() + n > max) throw over()
-                        out.write(buf, 0, n)
-                        progress(out.size())
-                    }
-                    // Unknown length only (rare): one copy out of the growing buffer.
-                    out.toByteArray()
-                }
-            }
-            onProgress?.invoke(bytes.size.toLong(), bytes.size.toLong())
-            bytes
+            body.byteStream().use { readCapped(it, body.contentLength(), max, HeapCap.of(DMFile.MAX_FILE), onProgress) }
         }
+    }
+
+    /**
+     * Reads a body of [length] bytes (-1: the server gave none) and stops at [max] and at
+     * [heapCap], the lower cap of a small heap. Both hold whether or not the server says a
+     * length: the sender picks the URL, and a body with no length would otherwise grow to
+     * [max] in memory.
+     */
+    internal fun readCapped(
+        input: java.io.InputStream,
+        length: Long,
+        max: Long,
+        heapCap: Long,
+        onProgress: ((Long, Long) -> Unit)? = null,
+    ): ByteArray {
+        fun over(): IOException = if (max < DMFile.MAX_FILE) TooBig() else IOException("too large")
+        fun overHeap() = IOException("too large for this phone's memory")
+        if (length > max) throw over()
+        if (length > heapCap) throw overHeap()
+        var told = 0L
+        fun progress(got: Int) {
+            // About every 256 KB: a progress ring, not a callback per read.
+            if (onProgress != null && got - told >= 256 * 1024) {
+                told = got.toLong()
+                onProgress(told, length)
+            }
+        }
+        val bytes = if (length >= 0) {
+            val out = ByteArray(length.toInt())
+            var got = 0
+            while (got < out.size) {
+                val n = input.read(out, got, out.size - got)
+                if (n < 0) throw IOException("cut short")
+                got += n
+                progress(got)
+            }
+            if (input.read() >= 0) throw IOException("longer than it said")
+            out
+        } else {
+            val out = ByteArrayOutputStream(64 * 1024)
+            val buf = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                if (out.size() + n > max) throw over()
+                if (out.size() + n > heapCap) throw overHeap()
+                out.write(buf, 0, n)
+                progress(out.size())
+            }
+            // Unknown length only (rare): one copy out of the growing buffer.
+            out.toByteArray()
+        }
+        onProgress?.invoke(bytes.size.toLong(), bytes.size.toLong())
+        return bytes
     }
 
     /** Writes the opened photo to a temp file for saving; the caller deletes it. */

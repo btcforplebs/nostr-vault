@@ -30,7 +30,13 @@ const (
 	// holds data (see init_badger.go).
 	smallSpaceVlogFileSize = 8 << 20
 	// smallSpaceTidyMaxVlogs: every open leaves one more value-log file, and
-	// each one is another map. 24 instead of badgerTidyMaxVlogs' 256.
+	// each one is another map. 24 instead of badgerTidyMaxVlogs' 256. This
+	// cuts the number of maps, not the room they take: a closed file is cut
+	// to its length and mapped at that, so thin files were already small.
+	// The 8 MiB file above is the real saving (16 MiB less per store, nine
+	// stores). A full vault still maps its whole size, and a tidy has the
+	// old and the new copy open together, so it briefly needs about twice
+	// the store's room (tidyMaxTries bounds how often).
 	smallSpaceTidyMaxVlogs = 24
 	// smallSpaceTidyThinVlog: at the lower count a store is only tidied
 	// while its files average under this, which is what files left by opens

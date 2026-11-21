@@ -81,4 +81,23 @@ class DMFileLoaderLimitsTest {
         assertFalse(files[1].exists())
         assertTrue(files[2].exists() && files[3].exists())
     }
+
+    /** Tron #2358 M1: the small-heap cap holds for a body that gives no length, not only one that does. */
+    @Test
+    fun `a body with no length stops at the small-heap cap`() {
+        val size = 300 * 1024
+        fun read(length: Long, heapCap: Long) =
+            DMFileLoader.readCapped(java.io.ByteArrayInputStream(ByteArray(size)), length, DMFile.MAX_FILE, heapCap)
+        assertEquals(size, read(-1, DMFile.MAX_FILE).size)
+        assertEquals(size, read(-1, size.toLong()).size)
+        assertEquals(size, read(size.toLong(), size.toLong()).size)
+        for (length in listOf(-1L, size.toLong())) {
+            try {
+                read(length, 200L * 1024)
+                fail("length $length: should stop at the heap cap")
+            } catch (e: java.io.IOException) {
+                assertTrue(e.message, e.message!!.contains("this phone's memory"))
+            }
+        }
+    }
 }
