@@ -159,7 +159,7 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 		st.FullAt = c.now().Unix()
 	}
 	c.Store.Compact()
-	return res, SaveState(c.Dir, st)
+	return res, c.Store.Checkpoint(c.Dir, st)
 }
 
 func (c *Crawler) now() time.Time {
