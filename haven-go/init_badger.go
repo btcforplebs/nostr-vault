@@ -75,17 +75,21 @@ func newBadgerStoreFor(path, goos string) *badgerStore {
 				//   - 2 compactor threads (vs 4): fewer goroutines (BadgerDB requires >= 2)
 				//   - No compression: saves CPU cycles
 				//   - Small block/index caches: avoids disk reads for hot data
+				vlogFileSize := int64(1 << 24) // 16 MiB
+				if goos == "android" && smallAddressSpace {
+					vlogFileSize = smallSpaceVlogFileSize // 32-bit: badger_small_space.go
+				}
 				return opts.
-					WithMemTableSize(8 << 20).        // 8 MiB (default 64 MiB)
-					WithValueLogFileSize(1 << 24).    // 16 MiB
-					WithNumMemtables(2).              // default 5; allows 1 background flush
-					WithNumLevelZeroTables(1).        // default 5
-					WithNumLevelZeroTablesStall(2).   // default 15
-					WithNumCompactors(2).             // default 4, minimum 2
-					WithCompression(badgeropts.None). // disable compression (saves CPU)
-					WithBlockCacheSize(4 << 20).      // 4 MiB per DB (20 MiB total across 5 DBs)
-					WithIndexCacheSize(2 << 20).      // 2 MiB per DB (10 MiB total across 5 DBs)
-					WithValueThreshold(1 << 10)       // 1 KB: inline small values
+					WithMemTableSize(8 << 20).          // 8 MiB (default 64 MiB)
+					WithValueLogFileSize(vlogFileSize). // 16 MiB, 8 on 32-bit
+					WithNumMemtables(2).                // default 5; allows 1 background flush
+					WithNumLevelZeroTables(1).          // default 5
+					WithNumLevelZeroTablesStall(2).     // default 15
+					WithNumCompactors(2).               // default 4, minimum 2
+					WithCompression(badgeropts.None).   // disable compression (saves CPU)
+					WithBlockCacheSize(4 << 20).        // 4 MiB per DB (20 MiB total across 5 DBs)
+					WithIndexCacheSize(2 << 20).        // 2 MiB per DB (10 MiB total across 5 DBs)
+					WithValueThreshold(1 << 10)         // 1 KB: inline small values
 			default:
 				// macOS / desktop: the server defaults are far too hungry for a
 				// menu-bar app — each memtable arena is a 64 MiB up-front
