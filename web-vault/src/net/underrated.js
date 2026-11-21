@@ -43,7 +43,9 @@ export function oneStepOut(me, follows, lists, blocked = new Set()) {
   for (const f of mine) {
     if (blocked.has(f)) continue
     const named = new Set()
-    for (const t of lists.get(f)?.tags ?? []) if (t[0] === "p" && /^[0-9a-f]{64}$/.test(t[1] ?? "")) named.add(t[1])
+    const ev = lists.get(f)
+    if (ev?.ps) for (const pk of ev.ps) named.add(pk) // wot-store.js FollowList: keys already checked
+    else for (const t of ev?.tags ?? []) if (t[0] === "p" && /^[0-9a-f]{64}$/.test(t[1] ?? "")) named.add(t[1])
     for (const pk of named) if (pk !== me && !mine.has(pk)) out.set(pk, (out.get(pk) ?? 0) + 1)
   }
   return out

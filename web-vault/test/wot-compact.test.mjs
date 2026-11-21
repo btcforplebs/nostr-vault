@@ -98,3 +98,18 @@ test("buildWebSoon gives buildWeb's web a slice at a time, and the same one agai
   assert.equal(builtWeb(me, follows, changed), null, "a list changed: built again")
   assert.notEqual(await buildWebSoon(me, follows, changed, { yieldTo: async () => {} }), w)
 })
+
+test("Discover, Underrated and the web gate read a held list's keys and give the plain kind 3's answers", async () => {
+  const { extendedNetwork } = await import("../src/net/discover.js")
+  const { oneStepOut } = await import("../src/net/underrated.js")
+  const { webLayers } = await import("../src/net/web-gate.js")
+  const fs = Array.from({ length: 12 }, (_, i) => key(i + 1))
+  const raw = new Map(fs.map((f, i) => [f, { kind: 3, pubkey: f, created_at: 1, tags: [["p", key(100 + (i % 3)), "wss://hint"], ["p", key(200)], ["p", "BAD"], ["e", key(5)], ["p", key(200)]] }]))
+  const held = new Map([...raw].map(([k, v]) => [k, compactList(v)]))
+  const me = key(999)
+  assert.deepEqual(extendedNetwork(me, fs, held), extendedNetwork(me, fs, raw))
+  assert.deepEqual([...oneStepOut(me, fs, held)], [...oneStepOut(me, fs, raw)])
+  const a = webLayers({ follows: fs, lists: held }), b = webLayers({ follows: fs, lists: raw })
+  assert.deepEqual(JSON.stringify(a, (k, v) => v instanceof Set ? [...v].sort() : v), JSON.stringify(b, (k, v) => v instanceof Set ? [...v].sort() : v))
+  assert.ok(extendedNetwork(me, fs, held).includes(key(200)))
+})

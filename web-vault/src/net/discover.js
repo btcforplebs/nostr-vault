@@ -14,15 +14,17 @@ const AUTHORS_PER_REQ = 250
 
 /** The people `lists` (follow pubkey -> kind 3) reach that are not `me`, a follow or blocked, most-followed first
  *  (ties by pubkey), at most `max`. Each follow's list counts once. */
+// The keys a follow's list names: a held list's `ps` (wot-store.js FollowList: checked, once each), else its p tags.
+const keysOf = ev => ev?.ps ?? (ev?.tags ?? []).flatMap(t => (t[0] === "p" && /^[0-9a-f]{64}$/.test(t[1] ?? "") ? [t[1]] : []))
+
 export function extendedNetwork(me, follows, lists, { blocked = new Set(), max = DISCOVER_MAX } = {}) {
   const skip = new Set([me, ...follows])
   const counts = new Map()
   for (const f of follows) {
     if (blocked.has(f)) continue
     const seen = new Set()
-    for (const t of lists.get(f)?.tags ?? []) {
-      const pk = t[0] === "p" ? t[1] : null
-      if (!/^[0-9a-f]{64}$/.test(pk ?? "") || skip.has(pk) || blocked.has(pk) || seen.has(pk)) continue
+    for (const pk of keysOf(lists.get(f))) {
+      if (skip.has(pk) || blocked.has(pk) || seen.has(pk)) continue
       seen.add(pk)
       counts.set(pk, (counts.get(pk) ?? 0) + 1)
     }
