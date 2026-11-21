@@ -14,12 +14,16 @@
 // A missing field reads as unknown, never as 0.
 import { getToken } from "nostr-tools/nip98"
 import { boxApiBase } from "./mode.js"
+import { statusApi } from "./api-status.js"
+import { storageApi } from "./api-storage.js"
+import { devicesApi } from "./api-devices.js"
+import { updateApi } from "./api-update.js"
 
 /** The NIP-98 Authorization header ("Nostr <base64 event>") for `method` `url`. `payload`: the object sent as the JSON
  *  body; its sha256 goes in the payload tag (nostr-tools hashes JSON.stringify(payload), the exact body sent). */
 export const nip98Header = (signer, url, method, payload) => getToken(url, method, e => signer.signEvent(e), true, payload)
 
-/** A client for the box API. `fetchImpl`: fetch (a mock in tests and the screenshot harness). */
+/** A client for the box API: the signed caller here, each area's routes in its own api-*.js file. `fetchImpl`: fetch (a mock in tests and the screenshot harness). */
 export function boxApi({ signer, base = boxApiBase(), fetchImpl = (...a) => fetch(...a) }) {
   const call = async (method, name, payload) => {
     if (!signer?.signEvent || signer.readOnly) throw new Error("Sign in as the box's owner to manage it.")
@@ -35,11 +39,5 @@ export function boxApi({ signer, base = boxApiBase(), fetchImpl = (...a) => fetc
     if (!res.ok) throw new Error(data?.message || data?.error || `The box answered ${res.status}`)
     return data ?? {}
   }
-  return {
-    status: () => call("GET", "status"),
-    storage: () => call("GET", "storage"),
-    devices: () => call("GET", "devices"),
-    update: () => call("POST", "update", {}),
-    move: path => call("POST", "move", { path }),
-  }
+  return { ...statusApi(call), ...storageApi(call), ...devicesApi(call), ...updateApi(call) }
 }
