@@ -65,6 +65,8 @@ extension VaultView {
     /// tab shows, and while a tap in is still on its way to the new list.
     var modeInSight: VaultMode? {
         guard vaultTabHostsMedia, vaultSection.isOnScreen, !vaultSection.opensNewActivity else { return nil }
+        // The Emoji page covers both halves: no dotted list is in sight.
+        if vaultSection.showsEmoji { return nil }
         return vaultShowsMedia ? .media : vaultMode
     }
 

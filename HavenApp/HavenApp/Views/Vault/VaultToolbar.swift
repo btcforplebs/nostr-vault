@@ -531,7 +531,7 @@ extension VaultView {
         }
         #if os(macOS)
         // iPad keeps ⌘F for the Search tab (ContentView).
-        .keyboardShortcut("f", modifiers: .command)
+        .keyboardShortcut(vaultPageShowing ? KeyboardShortcut("f", modifiers: .command) : nil)
         #endif
         .accessibilityLabel("Search your Vault")
     }

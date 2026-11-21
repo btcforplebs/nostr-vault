@@ -143,6 +143,9 @@ struct VaultView: View {
     /// The Duo: no floating Vault button (`showsFloatingVaultButton`).
     @Environment(\.dockInCameraStrip) var dockInCameraStrip
     @Environment(\.inVaultTab) var vaultTabHostsMedia
+    /// False while this half is hidden under Media, Emoji or the Mac's
+    /// dashboard page: its ⌘F stays quiet then.
+    @Environment(\.vaultPageShowing) var vaultPageShowing
 
     /// Opens a note in the split pane's detail column when there is one. On
     /// iPhone it pushes the thread view, as a feed tap does; the Mac keeps

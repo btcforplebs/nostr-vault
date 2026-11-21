@@ -62,7 +62,7 @@ struct MacVaultPage: View {
             .opacity(showsDashboard ? 0 : 1)
             .allowsHitTesting(!showsDashboard)
             .accessibilityHidden(showsDashboard)
-            .disabled(showsDashboard)
+            .environment(\.vaultPageShowing, !showsDashboard)
 
             if showsDashboard {
                 MacVaultDashboardPage(selectedTab: $selectedTab)

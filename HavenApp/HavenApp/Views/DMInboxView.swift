@@ -28,6 +28,9 @@ struct DMInboxView: View {
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
+    /// False while the Vault half holding the inbox is hidden: its ⌘R then
+    /// belongs to the Media page.
+    @Environment(\.vaultPageShowing) private var vaultPageShowing
 
     /// The list and the open conversation side by side, as Messages does on
     /// iPad, instead of the conversation pushing over the list.
@@ -156,7 +159,7 @@ struct DMInboxView: View {
                                 .foregroundColor(.accentText)
                         }
                         .help(String(localized: "dm.inbox.refresh"))
-                        .keyboardShortcut("r", modifiers: .command)
+                        .keyboardShortcut(vaultPageShowing ? KeyboardShortcut("r", modifiers: .command) : nil)
 
                         DMRequestsButton(size: 15) {
                             showingRequests = true
