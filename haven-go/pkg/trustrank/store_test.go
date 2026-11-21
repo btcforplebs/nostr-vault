@@ -262,3 +262,47 @@ func TestStoreGraphOwnerListMustBeRead(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Each kind keeps its own time: an older copy of one kind never replaces the
+// stored one, even when the other kind is newer; a reopen keeps both times.
+func TestStorePutListKindByKind(t *testing.T) {
+	dir := t.TempDir()
+	s, err := OpenStore(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.PutList(pk(0), List{FollowsAt: 300, Follows: []string{pk(2)}, MutesAt: 50, Mutes: []string{pk(5)}})
+	if ok, _ := s.PutList(pk(0), List{FollowsAt: 100, Follows: []string{pk(1)}, MutesAt: 50}); ok {
+		t.Fatal("nothing newer: must be refused")
+	}
+	if ok, err := s.PutList(pk(0), List{FollowsAt: 100, Follows: []string{pk(1)}, MutesAt: 400, Mutes: []string{pk(3)}}); !ok || err != nil {
+		t.Fatalf("newer mutes: %v %v", ok, err)
+	}
+	check := func(s *Store) {
+		t.Helper()
+		f, m := storedList(t, s, pk(0))
+		if len(f) != 1 || f[0] != pk(2) || len(m) != 1 || m[0] != pk(3) {
+			t.Fatalf("follows %v mutes %v", f, m)
+		}
+	}
+	check(s)
+	// Follows @200 is newer than the stored follows (@300)? No: refused per kind.
+	if ok, _ := s.PutList(pk(0), List{FollowsAt: 200, Follows: []string{pk(1)}}); ok {
+		t.Fatal("older follows must be refused")
+	}
+	// A newer follows list with no mutes read keeps the stored mutes.
+	if ok, _ := s.PutList(pk(0), List{FollowsAt: 500, Follows: []string{pk(2)}}); !ok {
+		t.Fatal("newer follows refused")
+	}
+	check(s)
+	s.Close()
+	s2, err := OpenStore(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	check(s2)
+	if ok, _ := s2.PutList(pk(0), List{FollowsAt: 450, MutesAt: 399, Follows: []string{pk(1)}}); ok {
+		t.Fatal("per-kind times must survive a reopen")
+	}
+}

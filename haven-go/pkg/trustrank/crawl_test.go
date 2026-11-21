@@ -25,7 +25,7 @@ func (f *fakeNet) Fetch(_ context.Context, pk string, since int64) (List, bool, 
 	}
 	f.since[pk] = since
 	l, ok := f.lists[pk]
-	if !ok || (since > 0 && l.CreatedAt < since) {
+	if !ok || (since > 0 && l.Newest() < since) {
 		return List{}, false, nil
 	}
 	return l, true, nil
@@ -47,17 +47,17 @@ func net() *fakeNet {
 	for i := 0; i < 5; i++ {
 		friends = append(friends, pk(10+i))
 	}
-	n := &fakeNet{lists: map[string]List{pk(0): {CreatedAt: 1, Follows: friends}}}
+	n := &fakeNet{lists: map[string]List{pk(0): {FollowsAt: 1, MutesAt: 1, Follows: friends}}}
 	for i, f := range friends {
 		fs := []string{pk(1)} // good
 		if i == 0 {
 			fs = append(fs, pk(2)) // weak
 		}
-		n.lists[f] = List{CreatedAt: 1, Follows: fs}
+		n.lists[f] = List{FollowsAt: 1, MutesAt: 1, Follows: fs}
 	}
-	n.lists[pk(1)] = List{CreatedAt: 1, Follows: []string{pk(3)}}
-	n.lists[pk(2)] = List{CreatedAt: 1, Follows: []string{pk(3)}}
-	n.lists[pk(3)] = List{CreatedAt: 1, Follows: []string{pk(4)}}
+	n.lists[pk(1)] = List{FollowsAt: 1, MutesAt: 1, Follows: []string{pk(3)}}
+	n.lists[pk(2)] = List{FollowsAt: 1, MutesAt: 1, Follows: []string{pk(3)}}
+	n.lists[pk(3)] = List{FollowsAt: 1, MutesAt: 1, Follows: []string{pk(4)}}
 	return n
 }
 
@@ -149,7 +149,7 @@ func TestRefreshAsksOnlyForNewerLists(t *testing.T) {
 	if _, err := c.RunPass(context.Background(), false); err != nil {
 		t.Fatal(err)
 	}
-	n.lists[pk(11)] = List{CreatedAt: 5, Follows: []string{pk(1), pk(5)}}
+	n.lists[pk(11)] = List{FollowsAt: 5, MutesAt: 5, Follows: []string{pk(1), pk(5)}}
 	n.calls = nil
 	res, err := c.RunPass(context.Background(), true)
 	if err != nil {
@@ -200,15 +200,15 @@ func TestCrawlResumeAfterReaderListShrinks(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			friends = append(friends, pk(10+i))
 		}
-		n := &fakeNet{lists: map[string]List{pk(0): {CreatedAt: 1, Follows: friends}}}
+		n := &fakeNet{lists: map[string]List{pk(0): {FollowsAt: 1, MutesAt: 1, Follows: friends}}}
 		for _, f := range friends {
-			n.lists[f] = List{CreatedAt: 1, Follows: []string{pk(20), pk(21), pk(22), pk(23)}}
+			n.lists[f] = List{FollowsAt: 1, MutesAt: 1, Follows: []string{pk(20), pk(21), pk(22), pk(23)}}
 		}
 		for i := 20; i <= 23; i++ {
-			n.lists[pk(i)] = List{CreatedAt: 1, Follows: []string{pk(30 + i)}}
+			n.lists[pk(i)] = List{FollowsAt: 1, MutesAt: 1, Follows: []string{pk(30 + i)}}
 		}
 		if mute {
-			n.lists[pk(21)] = List{CreatedAt: 1, Follows: []string{pk(51)}, Mutes: []string{pk(20)}}
+			n.lists[pk(21)] = List{FollowsAt: 1, MutesAt: 1, Follows: []string{pk(51)}, Mutes: []string{pk(20)}}
 		}
 		return n
 	}
@@ -280,7 +280,7 @@ func TestCrawlCheckpointKeepsPassKind(t *testing.T) {
 func TestCrawlClampsFutureCreatedAt(t *testing.T) {
 	n := net()
 	now := time.Unix(1_000_000, 0)
-	n.lists[pk(0)] = List{CreatedAt: 9_000_000_000, Follows: n.lists[pk(0)].Follows}
+	n.lists[pk(0)] = List{FollowsAt: 9_000_000_000, MutesAt: 9_000_000_000, Follows: n.lists[pk(0)].Follows}
 	c := crawler(t, n, t.TempDir())
 	c.Now = func() time.Time { return now }
 	if _, err := c.RunPass(context.Background(), false); err != nil {

@@ -11,12 +11,17 @@ import (
 	"time"
 )
 
-// List is one person's follow and mute lists as read from relays.
+// List is one person's follow and mute lists as read from relays. Each kind
+// has its own time (0: no relay had that kind).
 type List struct {
-	CreatedAt int64 // the newer of the follow and mute lists' times
+	FollowsAt int64
+	MutesAt   int64
 	Follows   []string
 	Mutes     []string
 }
+
+// Newest is the newer of the two lists' times.
+func (l List) Newest() int64 { return max(l.FollowsAt, l.MutesAt) }
 
 // Fetcher reads one person's lists. found is false when no relay had them.
 type Fetcher interface {
@@ -73,8 +78,7 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 	}
 	// pause keeps the place: lists on disk first, then the checkpoint.
 	pause := func() (*Result, error) {
-		c.Store.Sync()
-		SaveState(c.Dir, st)
+		c.Store.Checkpoint(c.Dir, st)
 		return nil, ErrStopped
 	}
 	// Hop 1 reads the owner's own list; hop h reads the lists of the people
@@ -109,12 +113,11 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 			}
 			l, found, err := c.Fetch.Fetch(ctx, pk, since)
 			if err == nil && found {
-				if limit := c.now().Add(maxSkew).Unix(); l.CreatedAt > limit {
-					l.CreatedAt = limit
-				}
-				if l.CreatedAt > have {
-					_, err = c.Store.Put(pk, l.CreatedAt, l.Follows, l.Mutes)
-				}
+				limit := c.now().Add(maxSkew).Unix()
+				l.FollowsAt, l.MutesAt = min(l.FollowsAt, limit), min(l.MutesAt, limit)
+				// Kind by kind: a stale copy of one kind never replaces a
+				// newer stored one, even when the other kind is new.
+				_, err = c.Store.PutList(pk, l)
 			}
 			if errors.Is(err, ErrFull) {
 				full = true // keep what we have and rank it
@@ -125,8 +128,7 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 				c.Progress(st.Hop, st.Next+1, len(readers))
 			}
 			if (st.Next+1)%checkpointEvery == 0 || c.now().Sub(lastSave) > 30*time.Second {
-				c.Store.Sync()
-				SaveState(c.Dir, st)
+				c.Store.Checkpoint(c.Dir, st)
 				lastSave = c.now()
 			}
 			if c.Pace > 0 {

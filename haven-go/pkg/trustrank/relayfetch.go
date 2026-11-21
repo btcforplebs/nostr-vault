@@ -44,13 +44,10 @@ func (f *RelayFetcher) Fetch(ctx context.Context, pubkey string, since int64) (L
 	}
 	var l List
 	if b3 != nil {
-		l.CreatedAt, l.Follows = int64(b3.CreatedAt), pTags(b3)
+		l.FollowsAt, l.Follows = int64(b3.CreatedAt), pTags(b3)
 	}
 	if b10000 != nil {
-		l.Mutes = pTags(b10000)
-		if t := int64(b10000.CreatedAt); t > l.CreatedAt {
-			l.CreatedAt = t
-		}
+		l.MutesAt, l.Mutes = int64(b10000.CreatedAt), pTags(b10000)
 	}
 	return l, true, nil
 }
