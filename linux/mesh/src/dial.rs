@@ -3,7 +3,7 @@
 //!
 //! The box's mesh key is nv-mesh's alone (README, "Files and uids"), so havend
 //! can neither open a mesh session nor sign as this device. It asks nv-mesh
-//! instead, over a Unix socket (`mesh/dial.sock`), one JSON line each way:
+//! instead, over a Unix socket (`/run/nv-mesh/dial.sock`), one JSON line each way:
 //!
 //! - `{"op":"dial","npub":"npub1…"}` → `{"ok":true,"base":"http://127.0.0.1:<port>/<token>"}`:
 //!   the loopback base whose requests reach that vault's own-device port over
@@ -18,10 +18,16 @@
 //!
 //! Both answer only for the owner's devices nv-mesh runs with (its current
 //! `mesh-devices.json` list): the box reaches *your* vaults, nobody else's.
-//! Only havend's uid (`NV_MESH_DIAL_UID`, default 10002, the container's and
-//! the .deb's "vault") and nv-mesh's own may use the socket; the kernel
-//! names the caller (SO_PEERCRED), so the socket's 0666 mode only lets them
-//! connect.
+//! Only havend's uid and nv-mesh's own may use the socket. havend's uid is
+//! looked up by name ("nvvault", the .deb's and the .apk's, then "vault", the
+//! container's), never assumed: a package gives nvvault another uid when 10002
+//! is a person's. `NV_MESH_DIAL_UID` overrides it; with neither, there is no
+//! socket. The kernel names the caller (SO_PEERCRED).
+//!
+//! Two walls: the socket lives in a private runtime dir (`NV_MESH_RUN_DIR`,
+//! default `/run/nv-mesh`, made by root before nv-mesh starts: nv-mesh's,
+//! group havend's, 0750), never on the data dir (a host bind mount under
+//! Docker), so other local uids can't reach it at all; and the uid check.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
@@ -38,8 +44,10 @@ use serde_json::{Value, json};
 
 /// The socket's name in `mesh/`.
 pub const SOCKET: &str = "dial.sock";
-/// havend's uid in the container and the .deb (linux/supervise.sh, native/).
-const DEFAULT_CLIENT_UID: u32 = 10002;
+/// Where the socket lives unless NV_MESH_RUN_DIR says otherwise.
+pub const DEFAULT_RUN_DIR: &str = "/run/nv-mesh";
+/// havend's user: the .deb's and the .apk's name, then the container's.
+const CLIENT_NAMES: [&str; 2] = ["nvvault", "vault"];
 /// A request is one short line.
 const MAX_REQUEST: u64 = 4096;
 /// A dial waits up to 10 s for the node (`nvfips::ingress`); then some slack.
@@ -61,13 +69,64 @@ pub struct Dialer {
     ingress: Ingress,
 }
 
-/// NV_MESH_DIAL_UID: havend's uid; unset is 10002.
-pub fn client_uid_env() -> Result<u32, String> {
-    match std::env::var("NV_MESH_DIAL_UID") {
-        Err(_) => Ok(DEFAULT_CLIENT_UID),
-        Ok(v) if v.trim().is_empty() => Ok(DEFAULT_CLIENT_UID),
-        Ok(v) => v.trim().parse().map_err(|_| format!("NV_MESH_DIAL_UID={v:?} is not a uid")),
+/// havend's uid: `NV_MESH_DIAL_UID` when set, else the uid of the first of
+/// CLIENT_NAMES that exists. None of them is an error: no socket, rather than
+/// a guessed uid that may be a person's.
+pub fn client_uid(env: Option<String>, lookup: impl Fn(&str) -> Option<u32>) -> Result<u32, String> {
+    if let Some(v) = env.filter(|v| !v.trim().is_empty()) {
+        return v.trim().parse().map_err(|_| format!("NV_MESH_DIAL_UID={v:?} is not a uid"));
     }
+    CLIENT_NAMES
+        .iter()
+        .find_map(|n| lookup(n))
+        .ok_or_else(|| format!("no {} user and no NV_MESH_DIAL_UID: no one to answer", CLIENT_NAMES.join(" or ")))
+}
+
+/// client_uid from this process's environment and the passwd database.
+pub fn client_uid_here() -> Result<u32, String> {
+    client_uid(std::env::var("NV_MESH_DIAL_UID").ok(), passwd_uid)
+}
+
+/// The uid of a user by name (getpwnam_r), or None.
+fn passwd_uid(name: &str) -> Option<u32> {
+    let cname = std::ffi::CString::new(name).ok()?;
+    let mut buf = vec![0u8; 16 * 1024];
+    // SAFETY: pwd, buf and out are valid for writes of their sizes; pw_uid is
+    // read only when getpwnam_r filled pwd (rc 0, out non-null).
+    unsafe {
+        let mut pwd: libc::passwd = std::mem::zeroed();
+        let mut out: *mut libc::passwd = std::ptr::null_mut();
+        let rc = libc::getpwnam_r(cname.as_ptr(), &mut pwd, buf.as_mut_ptr().cast(), buf.len(), &mut out);
+        (rc == 0 && !out.is_null()).then_some(pwd.pw_uid)
+    }
+}
+
+/// NV_MESH_RUN_DIR, else /run/nv-mesh.
+pub fn run_dir_env() -> PathBuf {
+    std::env::var("NV_MESH_RUN_DIR")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_RUN_DIR))
+}
+
+/// The socket's dir must be a real dir of this uid that other uids can't
+/// enter (no "other" bits, no group write): root made it (prepare,
+/// supervise.sh). nv-mesh never makes or fixes it: it can't give it
+/// havend's group, and a dir it made would be open or useless.
+pub fn check_run_dir(dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
+    let m = std::fs::symlink_metadata(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    if !m.file_type().is_dir() {
+        return Err(format!("{} is not a folder", dir.display()));
+    }
+    if m.uid() != crate::euid() {
+        return Err(format!("{} belongs to uid {}, not nv-mesh", dir.display(), m.uid()));
+    }
+    if m.mode() & 0o027 != 0 {
+        return Err(format!("{} is mode {:o}; it must be 0750 (others kept out)", dir.display(), m.mode() & 0o777));
+    }
+    Ok(())
 }
 
 impl Dialer {
@@ -88,9 +147,10 @@ impl Dialer {
         Ok(Dialer { keys, devices, allowed_uids, in_flight: AtomicUsize::new(0), ingress })
     }
 
-    /// Serve `mesh/dial.sock` on its own threads for the life of the process.
-    pub fn serve(self: Arc<Self>, mesh_dir: &Path) -> Result<PathBuf, String> {
-        let path = mesh_dir.join(SOCKET);
+    /// Serve `<run dir>/dial.sock` on its own threads for the life of the
+    /// process. The caller checks the dir first (check_run_dir).
+    pub fn serve(self: Arc<Self>, run_dir: &Path) -> Result<PathBuf, String> {
+        let path = run_dir.join(SOCKET);
         // A socket left by an earlier run is ours to replace; anything else
         // at that name is not touched.
         match std::fs::symlink_metadata(&path) {
@@ -101,7 +161,8 @@ impl Dialer {
             Err(_) => {}
         }
         let listener = UnixListener::bind(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        // Anyone may connect; only allowed_uids get an answer (peer_uid).
+        // The dir keeps other uids out; within it, only allowed_uids get an
+        // answer (peer_uid).
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666))
             .map_err(|e| format!("{}: chmod: {e}", path.display()))?;
         std::thread::Builder::new()
@@ -351,6 +412,50 @@ mod tests {
         let r = ask(&path);
         assert_eq!(r["ok"], false);
         assert_eq!(r["error"], "not allowed");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn havends_uid_is_looked_up_by_name() {
+        // The .deb on a host where 10002 is a person's: nvvault got 10005.
+        let host = |n: &str| match n {
+            "nvvault" => Some(10005),
+            "alice" => Some(10002),
+            _ => None,
+        };
+        assert_eq!(client_uid(None, host), Ok(10005));
+        let (d, _) = dialer(vec![], client_uid(None, host).unwrap());
+        assert!(!d.allowed_uids.contains(&10002), "{:?}", d.allowed_uids);
+        // The container: only "vault".
+        assert_eq!(client_uid(None, |n: &str| (n == "vault").then_some(10002)), Ok(10002));
+        // nvvault wins over vault.
+        assert_eq!(client_uid(None, |n: &str| Some(if n == "nvvault" { 7 } else { 8 })), Ok(7));
+        // An explicit override wins; a blank one is unset.
+        assert_eq!(client_uid(Some("4242".into()), host), Ok(4242));
+        assert_eq!(client_uid(Some(" ".into()), host), Ok(10005));
+        assert!(client_uid(Some("nvvault".into()), host).is_err());
+        // Neither name: no uid at all, never a default.
+        assert!(client_uid(None, |_: &str| None).is_err());
+        // The real lookup reads the passwd database.
+        assert_eq!(passwd_uid("root"), Some(0));
+        assert_eq!(passwd_uid("no-such-user-nv-mesh"), None);
+    }
+
+    #[test]
+    fn the_run_dir_must_keep_others_out() {
+        let dir = std::env::temp_dir().join(format!("nv-mesh-run-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (mode, ok) in [(0o750, true), (0o700, true), (0o755, false), (0o770, false), (0o751, false)] {
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(mode)).unwrap();
+            assert_eq!(check_run_dir(&dir).is_ok(), ok, "{mode:o}");
+        }
+        let link = dir.with_extension("link");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&dir, &link).unwrap();
+        assert!(check_run_dir(&link).is_err(), "a symlink is refused");
+        assert!(check_run_dir(&dir.join("missing")).is_err());
+        let _ = std::fs::remove_file(&link);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

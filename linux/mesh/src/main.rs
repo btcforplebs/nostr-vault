@@ -336,9 +336,17 @@ fn run() -> Result<(), String> {
     // The box dialing out (dial.rs): havend asks here to reach, and sign a
     // copy start for, the owner's devices the engine runs with.
     let dialable: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let dialer = dial::Dialer::new(&nsec, Arc::clone(&dialable), dial::client_uid_env()?, Box::new(nvfips::ingress))?;
-    let sock = Arc::new(dialer).serve(&s.dir)?;
-    tracing::info!(socket = %sock.display(), "dial socket ready for havend");
+    // No socket rather than a socket for the wrong uid or in a shared place:
+    // the mesh itself still runs.
+    let run_dir = dial::run_dir_env();
+    match dial::client_uid_here().and_then(|uid| dial::check_run_dir(&run_dir).map(|()| uid)) {
+        Ok(uid) => {
+            let dialer = dial::Dialer::new(&nsec, Arc::clone(&dialable), uid, Box::new(nvfips::ingress))?;
+            let sock = Arc::new(dialer).serve(&run_dir)?;
+            tracing::info!(socket = %sock.display(), uid, "dial socket ready for havend");
+        }
+        Err(e) => tracing::error!(error = %e, "no dial socket: the box can't dial out to your other vaults"),
+    }
 
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
     rt.block_on(async {
