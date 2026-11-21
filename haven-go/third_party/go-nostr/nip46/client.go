@@ -120,41 +120,48 @@ func NewBunker(
 			LimitZero: true,
 		}, nostr.WithLabel("bunker46client"))
 		for ie := range events {
-			if ie.Kind != nostr.KindNostrConnect {
-				continue
-			}
-
-			var resp Response
-			plain, err := nip44.Decrypt(ie.Content, conversationKey)
-			if err != nil {
-				plain, err = nip04.Decrypt(ie.Content, sharedSecret)
-				if err != nil {
-					continue
-				}
-			}
-
-			err = json.Unmarshal([]byte(plain), &resp)
-			if err != nil {
-				continue
-			}
-
-			if resp.Result == "auth_url" {
-				// special case
-				authURL := resp.Error
-				if _, ok := bunker.expectingAuth.Load(resp.ID); ok {
-					bunker.onAuth(authURL)
-				}
-				continue
-			}
-
-			if dispatcher, ok := bunker.listeners.Load(resp.ID); ok {
-				dispatcher <- resp
-				continue
-			}
+			bunker.handleReply(ie.Event, sharedSecret, conversationKey)
 		}
 	}()
 
 	return bunker
+}
+
+// handleReply routes one kind-24133 event to the request waiting for it.
+// Anyone can send an event tagged with our key, so a panic in decoding it
+// must not reach the goroutine: in a c-shared library that ends the app.
+func (bunker *BunkerClient) handleReply(ie *nostr.Event, sharedSecret []byte, conversationKey [32]byte) {
+	defer func() { _ = recover() }()
+	if ie.Kind != nostr.KindNostrConnect {
+		return
+	}
+
+	var resp Response
+	plain, err := nip44.Decrypt(ie.Content, conversationKey)
+	if err != nil {
+		plain, err = nip04.Decrypt(ie.Content, sharedSecret)
+		if err != nil {
+			return
+		}
+	}
+
+	err = json.Unmarshal([]byte(plain), &resp)
+	if err != nil {
+		return
+	}
+
+	if resp.Result == "auth_url" {
+		// special case
+		authURL := resp.Error
+		if _, ok := bunker.expectingAuth.Load(resp.ID); ok {
+			bunker.onAuth(authURL)
+		}
+		return
+	}
+
+	if dispatcher, ok := bunker.listeners.Load(resp.ID); ok {
+		dispatcher <- resp
+	}
 }
 
 func (bunker *BunkerClient) Ping(ctx context.Context) error {

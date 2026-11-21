@@ -114,6 +114,7 @@ struct BitcoinWalletSettingsView: View {
         let hexPubKey = decoded.hexString
         if let cAddr = hexPubKey.withCString({ DeriveTaprootAddressC(UnsafeMutablePointer(mutating: $0)) }) {
             taprootAddress = String(cString: cAddr)
+            free(cAddr)
         }
     }
 

@@ -157,7 +157,7 @@ func GenerateConversationKey(pub string, sk string) ([32]byte, error) {
 	var ck [32]byte
 
 	if sk >= "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141" || sk == "0000000000000000000000000000000000000000000000000000000000000000" {
-		return ck, fmt.Errorf("invalid private key: x coordinate %s is not on the secp256k1 curve", sk)
+		return ck, fmt.Errorf("invalid private key: out of range")
 	}
 
 	shared, err := computeSharedSecret(pub, sk)
