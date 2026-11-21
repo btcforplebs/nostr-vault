@@ -25,6 +25,17 @@ struct PlayerSheet: View {
     }
 }
 
+/// Presents the player once, from the app shell, so it outlives the dock
+/// that opened it: typing hides the dock, which took a sheet the mini player
+/// presented down with it (live chat, the music Share box). iPhone and iPad.
+struct PlayerSheetHost: ViewModifier {
+    @ObservedObject private var player = MusicPlayerService.shared
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: $player.showsPlayer) { PlayerSheet() }
+    }
+}
+
 struct NowPlayingView: View {
     @ObservedObject private var player = MusicPlayerService.shared
     @Environment(\.dismiss) private var dismiss

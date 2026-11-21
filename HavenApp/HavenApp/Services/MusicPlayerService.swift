@@ -57,6 +57,12 @@ final class MusicPlayerService: ObservableObject {
     /// bring its video back.
     @Published private(set) var liveStream: LiveStream?
 
+    /// The full player (or a minimized stream's window) is open. On iPhone
+    /// and iPad the app shell presents it (`PlayerSheetHost`), not the mini
+    /// player: typing hides the dock, and a sheet the dock presented went
+    /// with it.
+    @Published var showsPlayer = false
+
     /// Off, the whole queue over again, or this song over again.
     enum RepeatMode: CaseIterable {
         case off, all, one

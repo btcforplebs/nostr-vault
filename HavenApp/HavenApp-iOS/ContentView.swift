@@ -135,6 +135,7 @@ struct ContentView: View {
         }
         .modifier(OpensRelayTab(selectedTab: $selectedTab))
         .modifier(OpensLiveStream())
+        .modifier(PlayerSheetHost())
         .modifier(OpensWOTTab(selectedTab: $selectedTab,
                               pendingMentionNoteId: $pendingMentionNoteId,
                               pendingProfilePubkey: $pendingProfilePubkey))
