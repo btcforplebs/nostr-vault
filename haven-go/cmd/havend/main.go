@@ -45,6 +45,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -111,9 +112,22 @@ func run(args []string) error {
 	}
 
 	vaultDir := box.LoadVaultDir(cfg.BoxDir(), cfg.DefaultVaultDir())
+	// The engine's copy of the paired devices (the set the apps pass in with
+	// SetMeshDevicesC): written before the engine starts, then kept in step
+	// with mesh-devices.json every 5 s (box/devices_engine.go).
+	engineDevices := &box.EngineDevices{
+		Mesh: mesh,
+		From: cfg.MeshDevicesFile,
+		To:   filepath.Join(cfg.BoxDir(), "engine-mesh-devices.json"),
+	}
+	if _, err := engineDevices.Sync(); err != nil {
+		log.Printf("box: engine devices: %v", err)
+	}
 	engine := &box.Engine{
-		Bin:     cfg.EngineBin,
-		Env:     func(dir string) []string { return box.EngineEnvList(cfg, dir, os.Getenv) },
+		Bin: cfg.EngineBin,
+		Env: func(dir string) []string {
+			return append(box.EngineEnvList(cfg, dir, os.Getenv), "HAVEN_MESH_DEVICES_FILE="+engineDevices.To)
+		},
 		Prepare: func(dir string) error { return box.WriteEngineFiles(cfg, dir) },
 	}
 	if err := engine.Start(ctx, vaultDir); err != nil {
@@ -155,6 +169,7 @@ func run(args []string) error {
 	// when the vault has no list, or while theirs is newer than the vault's
 	// (box.RelayServerLists.Poll).
 	go api.Devices.Run(ctx, 30*time.Second)
+	go engineDevices.Run(ctx, 5*time.Second)
 
 	front := &box.Front{API: api, Engine: box.EngineProxy(cfg.EnginePort)}
 	if cfg.WebDir != "" {

@@ -310,6 +310,40 @@ func TestBoxEndToEnd(t *testing.T) {
 	if !strings.Contains(string(devFile), phone.npub) || strings.Contains(string(devFile), boxNpub) {
 		t.Fatalf("mesh-devices.json = %s", devFile)
 	}
+	// ... and the engine has the same set (box/devices_engine.go): the phone's
+	// own mesh key uploads through the mesh door. Without it the engine knows
+	// no paired device and refuses the phone's key.
+	phoneBlob := []byte("box e2e phone blob " + note.ID)
+	phoneSum := sha256.Sum256(phoneBlob)
+	phoneHash := hex.EncodeToString(phoneSum[:])
+	door := "http://127.0.0.1:" + strconv.Itoa(doorPort)
+	var doorCode int
+	var doorBody []byte
+	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(time.Second) {
+		dev := nostr.Event{Kind: 24242, CreatedAt: nostr.Now(), Content: nostr.GeneratePrivateKey(), Tags: nostr.Tags{
+			{"t", "upload"}, {"x", phoneHash}, {"p", meshKey.pk},
+			{"expiration", strconv.FormatInt(time.Now().Add(4*time.Minute).Unix(), 10)},
+		}}
+		dev.Sign(phone.sk)
+		db, _ := json.Marshal(dev)
+		req, _ := http.NewRequest("PUT", door+"/upload", bytes.NewReader(phoneBlob))
+		req.Header.Set("Authorization", "Nostr "+base64.StdEncoding.EncodeToString(db))
+		req.Header.Set("X-SHA-256", phoneHash)
+		req.Header.Set("Content-Type", "text/plain")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		doorBody, _ = io.ReadAll(resp.Body)
+		resp.Body.Close()
+		doorCode = resp.StatusCode
+		if doorCode/100 == 2 || time.Now().After(deadline) {
+			break
+		}
+	}
+	if doorCode/100 != 2 {
+		t.Fatalf("phone's device-key upload over the mesh door: %d %s", doorCode, doorBody)
+	}
 
 	// A client on the LAN (this machine's own LAN address, so it arrives as
 	// that address, not loopback) faces the private relay's connection limit:

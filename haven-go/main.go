@@ -159,6 +159,9 @@ func main() {
 	if _, err := startMeshDoorFromEnv(); err != nil {
 		log.Printf("🚫 mesh door not open: %v", err)
 	}
+	// And the box's paired devices, which the apps pass in with
+	// SetMeshDevicesC (mesh_devices_file.go).
+	startMeshDevicesFile(mainCtx)
 
 	addr := net.JoinHostPort(config.RelayBindAddress, strconv.Itoa(config.RelayPort))
 
