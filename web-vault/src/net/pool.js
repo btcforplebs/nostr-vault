@@ -407,20 +407,22 @@ export const verifierReady = (async () => {
 
 // Each relay sends its own copy of the same event, and every copy was checked from scratch: the signature check is most
 // of a Vault or Notifications open (Tidy's audit 11-20, W9). An id whose signature checked out is remembered with that
-// signature and pubkey, VERIFIED_MAX of them, oldest out first. A later copy skips only the schnorr step: it is still
+// signature, VERIFIED_MAX of them, oldest out first. A later copy skips only the schnorr step: it is still
 // validated, and its fields are hashed again and must give its id, so a copy with other content, tags, kind or time
 // under a known id (which would not hash to it) or another sig or pubkey is checked in full and fails as before.
 // Only small events take this path: the hash is cheap next to schnorr for them (~7 vs ~160 us), but a 50-100 KB contact
 // list hashed again in JS cost more than wasm's whole check (the Vault's first open went 1.8 -> 2.5 s), so those are
 // always checked in full and never remembered.
 export const VERIFIED_MAX = 10_000
-const verified = new Map() // id -> sig + pubkey
+const verified = new Map() // id -> sig
 const small = ev => Array.isArray(ev.tags) && ev.tags.length <= 50 && typeof ev.content === "string" && ev.content.length <= 16_384
-const seenBefore = ev => verified.get(ev.id) === ev.sig + ev.pubkey && small(ev)
+// Compared as strings with ===, never coerced: a sig sent as ["<the real sig>"] is not a repeat (Tron, #2338). The pubkey
+// needs no entry of its own: it is in the hash, so a copy that hashes to a known id has that id's pubkey.
+const seenBefore = ev => typeof ev.sig === "string" && verified.get(ev.id) === ev.sig && small(ev)
 function remember(ev) {
   if (verified.has(ev.id)) verified.delete(ev.id)
   else if (verified.size >= VERIFIED_MAX) verified.delete(verified.keys().next().value)
-  verified.set(ev.id, ev.sig + ev.pubkey)
+  verified.set(ev.id, ev.sig)
 }
 /** Tests: forget what was checked. */
 export const forgetVerified = () => verified.clear()

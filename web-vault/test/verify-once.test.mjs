@@ -88,3 +88,14 @@ test("a big event (a long contact list) is always checked in full: hashing it ag
   assert.equal(verifyRelayEvent(copy(big)), true)
   assert.deepEqual(delta(c), { full: 2, repeat: 0 })
 })
+
+test("a sig that only looks the same as a string (an array, an object) is never a repeat (Tron, #2338)", () => {
+  forgetVerified()
+  const ev = sign()
+  assert.equal(verifyRelayEvent(copy(ev)), true)
+  for (const sig of [[ev.sig], { toString: () => ev.sig }, [ev.sig.slice(0, 64), ev.sig.slice(64)].join("") + " "]) {
+    const c = counts()
+    assert.equal(verifyRelayEvent({ ...copy(ev), sig }), false)
+    assert.deepEqual(delta(c), { full: 1, repeat: 0 })
+  }
+})
