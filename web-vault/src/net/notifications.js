@@ -130,7 +130,11 @@ export const isOutside = (author, owner, whitelist, trusted) =>
  */
 export function trustedWeb(follows, lists) {
   const graph = new Set()
-  for (const ev of lists.values()) for (const t of ev.tags ?? []) if (t[0] === "p" && HEX64.test(t[1] ?? "")) graph.add(t[1])
+  // A held list (wot-store.js FollowList) has its keys checked, once each, in `ps`; a plain kind 3 is read by its tags.
+  for (const ev of lists.values()) {
+    if (ev.ps) for (const pk of ev.ps) graph.add(pk)
+    else for (const t of ev.tags ?? []) if (t[0] === "p" && HEX64.test(t[1] ?? "")) graph.add(t[1])
+  }
   for (const pk of follows) graph.add(pk)
   return graph
 }

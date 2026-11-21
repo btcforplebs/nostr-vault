@@ -97,7 +97,8 @@ export function scoreNotes(notes, t, { floor = MIN_REACTORS, now = Math.floor(Da
 export async function trustSet(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
   const set = new Set([me, ...follows].filter(Boolean))
   for (const ev of (await followLists(me, follows, { relays, query })).values())
-    for (const t of ev.tags ?? []) if (t[0] === "p" && /^[0-9a-f]{64}$/.test(t[1] ?? "")) set.add(t[1])
+    if (ev.ps) for (const pk of ev.ps) set.add(pk) // wot-store.js FollowList: keys already checked, once each
+    else for (const t of ev.tags ?? []) if (t[0] === "p" && /^[0-9a-f]{64}$/.test(t[1] ?? "")) set.add(t[1])
   return set
 }
 

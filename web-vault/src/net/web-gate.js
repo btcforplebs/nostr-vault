@@ -30,7 +30,8 @@ export const NEW_ACCOUNT_WEB_CAP = 1000
 
 const HEX64 = /^[0-9a-f]{64}$/
 const lower = keys => { const out = new Set(); for (const k of keys ?? []) if (k) out.add(String(k).toLowerCase()); return out }
-const followedBy = ev => (ev?.tags ?? []).filter(t => t?.[0] === "p" && HEX64.test(String(t[1] ?? "").toLowerCase())).map(t => t[1].toLowerCase())
+// A held list (wot-store.js FollowList) has its keys checked (lowercase hex) and once each in `ps`.
+const followedBy = ev => ev?.ps ?? (ev?.tags ?? []).filter(t => t?.[0] === "p" && HEX64.test(String(t[1] ?? "").toLowerCase())).map(t => t[1].toLowerCase())
 
 /**
  * The account's web and the hop past it, from its follows' contact lists (wot.js followLists: Map follow -> kind 3).
