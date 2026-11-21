@@ -1,9 +1,10 @@
 // Upload in Vault › Media (the iPhone's gallery Upload: Photos, Videos, Files): pick photos or videos and each goes to
 // the first of your media servers that takes it, through the same signed upload as a note's photo (net/upload.js
 // uploadPhoto, one kind 24242 authorisation per file). Copying a file to your other servers stays in its viewer. Not
-// offered when signed in read-only.
+// offered when signed in read-only. In box mode the box is the first server (box/box-media.js), so a file goes to it.
 import { useRef, useState } from "preact/hooks"
-import { megabytes, uploadPhoto } from "../net/upload.js"
+import { megabytes } from "../net/upload.js"
+import { uploadMedia } from "../box/box-media.js"
 import { mediaType } from "../net/blossom-gallery.js"
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
@@ -13,7 +14,7 @@ const hostOf = url => { try { return new URL(url).host } catch { return url } }
 export const MAX_UPLOAD_BYTES = 100_000_000
 
 /** Uploads `files` one at a time; one over MAX_UPLOAD_BYTES is skipped unread, with its own line. -> { added: [blob], errors: [string] }. `upload` is for tests. */
-export async function uploadFiles(files, { ctx, servers, upload = uploadPhoto, now = () => Math.floor(Date.now() / 1000) }) {
+export async function uploadFiles(files, { ctx, servers, upload = uploadMedia, now = () => Math.floor(Date.now() / 1000) }) {
   const added = [], errors = []
   for (const file of files) {
     if (file.size > MAX_UPLOAD_BYTES) { errors.push(`${file.name || "A file"}: ${megabytes(file.size)} is over the ${megabytes(MAX_UPLOAD_BYTES)} limit for uploads from the browser.`); continue }

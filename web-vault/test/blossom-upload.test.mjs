@@ -53,6 +53,10 @@ test("no Upload when signed in read-only or with no servers", () => {
 
 test("the upload is the note-photo path (net/upload.js uploadPhoto), not a second signing path", () => {
   const src = readFileSync(new URL("../src/screens/BlossomUpload.jsx", import.meta.url), "utf8")
-  assert.match(src, /import \{ megabytes, uploadPhoto \} from "\.\.\/net\/upload\.js"/)
+  // Through box/box-media.js uploadMedia, which is uploadPhoto taking the box's own link too (3.3.0 W2).
+  assert.match(src, /import \{ uploadMedia \} from "\.\.\/box\/box-media\.js"/)
   assert.equal(/signEvent|finalizeEvent/.test(src), false)
+  const media = readFileSync(new URL("../src/box/box-media.js", import.meta.url), "utf8")
+  assert.match(media, /export const uploadMedia = \(file, o\) => uploadPhoto\(file, \{ \.\.\.o, linkOk: url => mediaLinkOk\(url\) \}\)/)
+  assert.equal(/signEvent|finalizeEvent/.test(media), false)
 })
