@@ -2,10 +2,12 @@
 // with read and write switches per relay, Remove, and Add. Saving signs and publishes the new list. The list draws
 // from Haven's copy or the first relay to answer; editing waits until every relay has been asked (`pending`). Each
 // relay shows whether it answers from this browser and, if not, why (net/relay-probe.js, the iPhone's RelayProbe).
+// Two tabs, as the phone's: Your Relays, and Recommended (RelaysRecommended.jsx), whose Add puts a relay in the draft.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { probeRelay, probeLine } from "../net/relay-probe.js"
 import { RelayUrlList } from "./RelayUrlList.jsx"
+import { RelaysRecommended } from "./RelaysRecommended.jsx"
 import { latestList, publishList, ListNotSaved, relayUrl, relayUrlError, relayEntries, addRelay, setJob, removeRelay, relayTags, relayProblem, sameRows } from "../net/list-edit.js"
 import { SkeletonList } from "../components/Loading.jsx"
 
@@ -19,6 +21,7 @@ export function RelaysPage({ ctx }) {
   const [err, setErr] = useState("")
   const [probes, setProbes] = useState({}) // url -> { ms } | { why }, absent while probing
   const asked = useRef(new Set())
+  const [tab, setTab] = useState("relays") // "relays" | "recommended" (RelayMatrixView.Page)
 
   const early = ({ event }) => { setLoaded({ event, checked: false, pending: true }); setRows(relayEntries(event)) }
   const load = () => latestList(ctx, 10002, { on: early }).then(r => { setLoaded(r); setRows(relayEntries(r.event)) }).catch(e => { setLoaded({ event: undefined, checked: false }); setErr(String(e?.message ?? e)) })
@@ -27,13 +30,14 @@ export function RelaysPage({ ctx }) {
   const urls = rows.map(r => r.url).join(" ")
   const mounted = useRef(true)
   useEffect(() => () => { mounted.current = false }, [])
-  useEffect(() => {
-    for (const url of rows.map(r => r.url)) {
+  const probe = list => {
+    for (const url of list) {
       if (asked.current.has(url)) continue
       asked.current.add(url)
       probeRelay(url).then(r => { if (mounted.current) setProbes(p => ({ ...p, [url]: r })) })
     }
-  }, [urls])
+  }
+  useEffect(() => { probe(rows.map(r => r.url)) }, [urls])
 
   const saved = relayEntries(loaded?.event)
   const dirty = !sameRows(rows, saved)
@@ -45,6 +49,11 @@ export function RelaysPage({ ctx }) {
     const url = relayUrl(typed)
     if (!url) { setErr(relayUrlError(typed)); return }
     setRows(addRelay(rows, url)); setTyped(""); setErr(""); setStatus("")
+  }
+  /** Recommended's Add: follows' relays with Read, the fastest with Read and Write (RelayMatrixView). */
+  const addSuggested = (url, jobs) => {
+    if (rows.some(r => r.url === url)) return
+    setRows([...rows, { url, ...jobs }]); setErr(""); setStatus("")
   }
   const save = async () => {
     setBusy(true); setErr(""); setStatus("")
@@ -58,8 +67,27 @@ export function RelaysPage({ ctx }) {
     } finally { setBusy(false) }
   }
 
+  const saveRow = !readOnly && dirty && <>
+    <div class="settings-note row">
+      <button class="primary" disabled={busy || !!problem || !loaded.checked} onClick={save} aria-busy={busy || undefined}>{busy ? "Publishing…" : "Save and publish"}</button>
+      <button disabled={busy} onClick={() => { setRows(saved); setErr("") }}>Discard changes</button>
+    </div>
+    {problem && <p class="settings-note small error">{problem}</p>}
+  </>
+
   return (
     <>
+      <div class="segmented" role="tablist" aria-label="Relays">
+        <button role="tab" aria-selected={tab === "relays"} class={tab === "relays" ? "on" : ""} onClick={() => setTab("relays")}>Your Relays</button>
+        <button role="tab" aria-selected={tab === "recommended"} class={tab === "recommended" ? "on" : ""} onClick={() => setTab("recommended")}>Recommended</button>
+      </div>
+      {tab === "recommended" ? <>
+        <RelaysRecommended ctx={ctx} rows={rows} probes={probes} probe={probe} RelayName={RelayName} add={addSuggested}
+          locked={!loaded || locked} readOnly={readOnly} />
+        {loaded && saveRow}
+        {status && <p class="settings-note muted small">{status}</p>}
+        {err && <p class="settings-note small error">{err}</p>}
+      </> : <>
       {!loaded ? <SkeletonList count={4} rowClass="settings-row static" avatar={0} lines={1} label="Loading your relays…" /> : <>
       {loaded.pending && <p class="settings-note muted small" role="status">Checking your relays for a newer list…</p>}
       {!loaded.checked && !loaded.pending && <p class="settings-note small error">Your relays couldn't be checked, so this may not be your newest list. Go online before you change it.</p>}
@@ -81,13 +109,7 @@ export function RelaysPage({ ctx }) {
             <input type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck={false} placeholder="relay.example.com" aria-label="Relay address" value={typed} onInput={e => setTyped(e.currentTarget.value)} disabled={locked} />
             <button type="submit" class="small" disabled={locked || !typed.trim()}>Add</button>
           </form>
-          {dirty && (
-            <div class="settings-note row">
-              <button class="primary" disabled={busy || !!problem || !loaded.checked} onClick={save} aria-busy={busy || undefined}>{busy ? "Publishing…" : "Save and publish"}</button>
-              <button disabled={busy} onClick={() => { setRows(saved); setErr("") }}>Discard changes</button>
-            </div>
-          )}
-          {dirty && problem && <p class="settings-note small error">{problem}</p>}
+          {saveRow}
         </>
       )}
       {status && <p class="settings-note muted small">{status}</p>}
@@ -99,18 +121,19 @@ export function RelaysPage({ ctx }) {
       <RelayUrlList ctx={ctx} kind={10006} title="Never Connect" removeLabel="Unblock"
         note="The app won't open a connection to these, even when someone you follow uses them (your bunker's own relay excepted). Published as your blocked relay list (10006)."
         empty="No relays are on your never-connect list." />
+      </>}
     </>
   )
 }
 
 /** The relay's host, with a dot and a line saying how it answers from this browser (RelayMatrixView: health dot,
  *  "120 ms", "slow", or why it didn't connect). */
-function RelayName({ url, result }) {
+function RelayName({ url, result, detail }) {
   const line = probeLine(result)
   return (
     <span class="settings-title relay-name" title={url}>
       <span class="mono">{host(url)}</span>
-      <span class={`relay-probe ${line.tone}`} role="status"><span class="relay-dot" aria-hidden="true" />{line.text}</span>
+      <span class={`relay-probe ${line.tone}`} role="status"><span class="relay-dot" aria-hidden="true" />{line.text}{detail && ` · ${detail}`}</span>
     </span>
   )
 }
