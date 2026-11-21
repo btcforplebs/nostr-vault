@@ -288,8 +288,8 @@ func TestClaimCapBoxWide(t *testing.T) {
 	if st := directPost(c, "192.168.1.20:5000", owner, testCode); st != http.StatusTooManyRequests {
 		t.Fatalf("after %d wrong codes box-wide: %d, want 429", claimMaxFailsAll, st)
 	}
-	if len(c.fails) > claimMaxClients {
-		t.Fatalf("tracked %d clients", len(c.fails))
+	if len(c.limit.fails) > claimMaxClients {
+		t.Fatalf("tracked %d clients", len(c.limit.fails))
 	}
 }
 
@@ -301,8 +301,8 @@ func TestClaimClientMapBounded(t *testing.T) {
 			*now = now.Add(claimFailWindow) // keep the box-wide cap from stopping the run
 		}
 	}
-	if len(c.fails) > claimMaxClients {
-		t.Fatalf("tracked %d clients, cap %d", len(c.fails), claimMaxClients)
+	if len(c.limit.fails) > claimMaxClients {
+		t.Fatalf("tracked %d clients, cap %d", len(c.limit.fails), claimMaxClients)
 	}
 }
 
