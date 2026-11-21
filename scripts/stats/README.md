@@ -31,6 +31,7 @@ the same method as RESEARCH/NV_USER_STATS_2026_11_14.md, which found about 70 po
 | File | What | Public? |
 |---|---|---|
 | `website/stats/stats.json` (`--out`) | totals: posting users, by platform, 7/30-day active, GitHub release downloads | yes: the page reads it |
+| `stats-history.jsonl` (next to `stats.json` on the job box) | one line per day: date, posting users, by platform, 7/30-day active, GitHub downloads (`history.mjs`). Days before the first scan (from 2026-05-01) are rebuilt once with `history.mjs --rebuild` from `posters.json` and marked `"reconstructed": true`: posting users = posters first seen by the end of that day, platform = each poster's main platform as of the last scan. Their `active_7d`, `active_30d` and `github_downloads` are `null`, because the poster records keep only first/last dates and no download history. | no: it stays on the box; no keys, no page reads it |
 | `scripts/stats/posters.json` (`--state`) | one record per poster: public key, first/last note date, note count per platform | **no**: it stays on the box that runs the scan (gitignored). The page and the totals file never contain a key. |
 
 If fewer than 3 relays answer the scan, nothing is written and the exit code is 2, so a relay outage never shows
