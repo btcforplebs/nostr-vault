@@ -13,13 +13,20 @@ import (
 // list.
 type State struct {
 	Account string `json:"account"`
-	// Version of the weights the last rank used; a change re-ranks from the
-	// stored lists without downloading again.
+	// Version of the weights the last rank used; a change starts the pass
+	// again at hop 1.
 	ParamsVersion int `json:"paramsVersion"`
 	// Hop being read (1 = the owner's follows' lists).
 	Hop int `json:"hop"`
-	// Place in that hop's reader list.
+	// Place in that hop's reader list (progress only).
 	Next int `json:"next"`
+	// Last pubkey whose list was read in this hop; a resume goes on at the
+	// first reader after it.
+	Last string `json:"last,omitempty"`
+	// Refresh: the pass in progress asks only for newer lists.
+	Refresh bool `json:"refresh,omitempty"`
+	// Capped: the last pass stopped at the store cap (not a finished pass).
+	Capped bool `json:"capped,omitempty"`
 	// Unix seconds: last finished full pass, last daily refresh.
 	FullAt    int64 `json:"fullAt,omitempty"`
 	RefreshAt int64 `json:"refreshAt,omitempty"`

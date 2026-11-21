@@ -32,8 +32,8 @@ type Crawler struct {
 	Owner  string // the account, hex
 	Fetch  Fetcher
 	Params Params
-	// ParamsVersion goes in the checkpoint; a change re-ranks without
-	// downloading again.
+	// ParamsVersion goes in the checkpoint; a change drops the checkpoint's
+	// place and starts the pass again at hop 1 (lists are read again).
 	ParamsVersion int
 	// Bar (0-100): only people at or over it have their own list read.
 	Bar float64
@@ -55,28 +55,49 @@ var ErrStopped = errors.New("trustrank: crawl paused")
 
 const checkpointEvery = 50
 
+// maxSkew is how far past now a list's created_at may be. A later one is
+// stored as now+maxSkew, so a future-dated list cannot freeze that person's
+// list (a refresh asks only for lists newer than the stored time).
+const maxSkew = 5 * time.Minute
+
 // RunPass reads every reader's list hop by hop (resuming from the
 // checkpoint), ranks, and writes the result. refresh asks only for lists
 // newer than the stored ones.
 func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 	st := LoadState(c.Dir, c.Owner)
-	if st.ParamsVersion != c.ParamsVersion || st.Hop < 1 {
-		st = State{Account: c.Owner, ParamsVersion: c.ParamsVersion, Hop: 1, FullAt: st.FullAt, RefreshAt: st.RefreshAt}
+	if st.ParamsVersion != c.ParamsVersion || st.Hop < 1 || st.Refresh != refresh {
+		// New weights, no checkpoint, or a checkpoint of the other kind of
+		// pass: start this pass at hop 1.
+		st = State{Account: c.Owner, ParamsVersion: c.ParamsVersion, Hop: 1, Refresh: refresh,
+			FullAt: st.FullAt, RefreshAt: st.RefreshAt}
+	}
+	// pause keeps the place: lists on disk first, then the checkpoint.
+	pause := func() (*Result, error) {
+		c.Store.Sync()
+		SaveState(c.Dir, st)
+		return nil, ErrStopped
 	}
 	// Hop 1 reads the owner's own list; hop h reads the lists of the people
 	// at distance h-1 who pass the bar. Ranking out to MaxHop needs lists
 	// out to MaxHop-1.
 	full := false
-	for ; st.Hop <= c.Params.MaxHop && !full; st.Hop, st.Next = st.Hop+1, 0 {
+	for ; st.Hop <= c.Params.MaxHop && !full; st.Hop, st.Next, st.Last = st.Hop+1, 0, "" {
 		readers, err := c.readers(st.Hop)
 		if err != nil {
 			return nil, err
 		}
+		// The reader list is built again on resume, and lists read earlier
+		// in this hop can change it (a mute moves a score across the bar),
+		// so the place is the last pubkey read, not an index: go on at the
+		// first reader after it (readers are sorted).
+		st.Next = sort.SearchStrings(readers, st.Last)
+		if st.Next < len(readers) && readers[st.Next] == st.Last && st.Last != "" {
+			st.Next++
+		}
 		lastSave := c.now()
 		for ; st.Next < len(readers); st.Next++ {
 			if !c.Wait(ctx) || ctx.Err() != nil {
-				SaveState(c.Dir, st)
-				return nil, ErrStopped
+				return pause()
 			}
 			pk := readers[st.Next]
 			// A full pass reads every list again (a resumed one starts at
@@ -87,13 +108,19 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 				since = have + 1
 			}
 			l, found, err := c.Fetch.Fetch(ctx, pk, since)
-			if err == nil && found && l.CreatedAt > have {
-				_, err = c.Store.Put(pk, l.CreatedAt, l.Follows, l.Mutes)
+			if err == nil && found {
+				if limit := c.now().Add(maxSkew).Unix(); l.CreatedAt > limit {
+					l.CreatedAt = limit
+				}
+				if l.CreatedAt > have {
+					_, err = c.Store.Put(pk, l.CreatedAt, l.Follows, l.Mutes)
+				}
 			}
 			if errors.Is(err, ErrFull) {
 				full = true // keep what we have and rank it
 				break
 			}
+			st.Last = pk
 			if c.Progress != nil {
 				c.Progress(st.Hop, st.Next+1, len(readers))
 			}
@@ -105,8 +132,7 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 			if c.Pace > 0 {
 				select {
 				case <-ctx.Done():
-					SaveState(c.Dir, st)
-					return nil, ErrStopped
+					return pause() // this list is read; the place is st.Last
 				case <-time.After(c.Pace):
 				}
 			}
@@ -120,10 +146,14 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 	if err := writeResult(c.Dir, res, c.now()); err != nil {
 		return nil, err
 	}
-	st.Hop, st.Next = 1, 0
-	if refresh {
+	st.Hop, st.Next, st.Last, st.Refresh = 1, 0, "", false
+	// A pass cut short by a full store is ranked but not counted as done.
+	st.Capped = full
+	switch {
+	case full:
+	case refresh:
 		st.RefreshAt = c.now().Unix()
-	} else {
+	default:
 		st.FullAt = c.now().Unix()
 	}
 	c.Store.Compact()

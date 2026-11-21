@@ -176,6 +176,9 @@ func TestCrawlStopsCleanlyWhenFull(t *testing.T) {
 	if n.called(pk(1)) {
 		t.Fatal("after the store is full, no more lists are fetched")
 	}
+	if st := LoadState(dir, pk(0)); !st.Capped || st.FullAt != 0 {
+		t.Fatalf("a capped pass is not a finished pass: %+v", st)
+	}
 }
 
 func TestCrawlPaceHonoursCancel(t *testing.T) {
@@ -185,5 +188,105 @@ func TestCrawlPaceHonoursCancel(t *testing.T) {
 	defer cancel()
 	if _, err := c.RunPass(ctx, false); err != ErrStopped {
 		t.Fatalf("want ErrStopped, got %v", err)
+	}
+}
+
+// Tron's #2372 case: at hop 3, 21's list mutes 20, which drops 20 under the
+// bar, so the reader list built on resume is shorter. The resume must still
+// read 22's list (an index-based place skipped it).
+func TestCrawlResumeAfterReaderListShrinks(t *testing.T) {
+	build := func(mute bool) *fakeNet {
+		var friends []string
+		for i := 0; i < 5; i++ {
+			friends = append(friends, pk(10+i))
+		}
+		n := &fakeNet{lists: map[string]List{pk(0): {CreatedAt: 1, Follows: friends}}}
+		for _, f := range friends {
+			n.lists[f] = List{CreatedAt: 1, Follows: []string{pk(20), pk(21), pk(22), pk(23)}}
+		}
+		for i := 20; i <= 23; i++ {
+			n.lists[pk(i)] = List{CreatedAt: 1, Follows: []string{pk(30 + i)}}
+		}
+		if mute {
+			n.lists[pk(21)] = List{CreatedAt: 1, Follows: []string{pk(51)}, Mutes: []string{pk(20)}}
+		}
+		return n
+	}
+	resBefore, err := crawler(t, build(false), t.TempDir()).RunPass(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resAfter, err := crawler(t, build(true), t.TempDir()).RunPass(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _, _ := resBefore.Score(pk(20))
+	after, _, _ := resAfter.Score(pk(20))
+	s21, _, _ := resAfter.Score(pk(21))
+	if !(before > after && s21 > (before+after)/2) {
+		t.Fatalf("20 before %.3f after %.3f, 21 %.3f", before, after, s21)
+	}
+
+	n := build(true)
+	dir := t.TempDir()
+	c := crawler(t, n, dir)
+	c.Bar = (before + after) / 2
+	allowed := 1 + 5 + 2 // owner, 5 friends, then 20 and 21 at hop 3
+	c.Wait = func(context.Context) bool { allowed--; return allowed >= 0 }
+	if _, err := c.RunPass(context.Background(), false); err != ErrStopped {
+		t.Fatalf("want ErrStopped, got %v", err)
+	}
+	if st := LoadState(dir, pk(0)); st.Hop != 3 || st.Last != pk(21) {
+		t.Fatalf("checkpoint %+v", st)
+	}
+	before2 := len(n.calls)
+	c.Wait = func(context.Context) bool { return true }
+	if _, err := c.RunPass(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	got := n.calls[before2:]
+	if len(got) != 2 || got[0] != pk(22) || got[1] != pk(23) {
+		t.Fatalf("resume must read 22 then 23: %v", got)
+	}
+}
+
+// A refresh checkpoint is not resumed as a full pass (or the other way).
+func TestCrawlCheckpointKeepsPassKind(t *testing.T) {
+	n := net()
+	dir := t.TempDir()
+	c := crawler(t, n, dir)
+	if _, err := c.RunPass(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	allowed := 3
+	c.Wait = func(context.Context) bool { allowed--; return allowed >= 0 }
+	if _, err := c.RunPass(context.Background(), true); err != ErrStopped {
+		t.Fatalf("want ErrStopped, got %v", err)
+	}
+	if st := LoadState(dir, pk(0)); !st.Refresh || st.Hop != 2 {
+		t.Fatalf("checkpoint %+v", st)
+	}
+	n.calls = nil
+	c.Wait = func(context.Context) bool { return true }
+	if _, err := c.RunPass(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if !n.called(pk(0)) || n.since[pk(0)] != 0 {
+		t.Fatalf("a full pass after a refresh checkpoint starts at hop 1: %v", n.calls)
+	}
+}
+
+// A future-dated list is stored at now+maxSkew, not its own time.
+func TestCrawlClampsFutureCreatedAt(t *testing.T) {
+	n := net()
+	now := time.Unix(1_000_000, 0)
+	n.lists[pk(0)] = List{CreatedAt: 9_000_000_000, Follows: n.lists[pk(0)].Follows}
+	c := crawler(t, n, t.TempDir())
+	c.Now = func() time.Time { return now }
+	if _, err := c.RunPass(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if at, _ := c.Store.CreatedAt(pk(0)); at != now.Add(maxSkew).Unix() {
+		t.Fatalf("stored at %d", at)
 	}
 }

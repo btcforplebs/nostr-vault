@@ -7,8 +7,8 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 )
 
-// RelayFetcher reads lists from relays one at a time: the first relay that
-// has the follow list answers, the next is asked only on a miss.
+// RelayFetcher reads lists from relays one at a time: the next relay is asked
+// only for a kind (follows or mutes) that no relay so far had.
 type RelayFetcher struct {
 	Pool    *nostr.SimplePool
 	Relays  []string
@@ -17,17 +17,30 @@ type RelayFetcher struct {
 
 // Fetch returns pubkey's newest kind 3 (follows) and kind 10000 (public
 // mutes), signature-checked and authored by pubkey. With since, it first asks
-// only for lists newer than that, and reads both in full only if one changed.
+// only for lists newer than that; if one changed it reads both in full, and
+// keeps the newer of each kind from the two reads, so a stale relay that
+// answers the full read first cannot hide the change.
 func (f *RelayFetcher) Fetch(ctx context.Context, pubkey string, since int64) (List, bool, error) {
+	var fresh [2]*nostr.Event
 	if since > 0 {
-		b3, b10000, err := f.once(ctx, pubkey, since)
-		if err != nil || (b3 == nil && b10000 == nil) {
+		var err error
+		fresh, err = f.once(ctx, pubkey, since)
+		if err != nil || (fresh[0] == nil && fresh[1] == nil) {
 			return List{}, false, err
 		}
 	}
-	b3, b10000, err := f.once(ctx, pubkey, 0)
-	if err != nil || (b3 == nil && b10000 == nil) {
+	got, err := f.once(ctx, pubkey, 0)
+	if err != nil {
 		return List{}, false, err
+	}
+	for i := range got {
+		if newer(fresh[i], got[i]) {
+			got[i] = fresh[i]
+		}
+	}
+	b3, b10000 := got[0], got[1]
+	if b3 == nil && b10000 == nil {
+		return List{}, false, nil
 	}
 	var l List
 	if b3 != nil {
@@ -42,15 +55,30 @@ func (f *RelayFetcher) Fetch(ctx context.Context, pubkey string, since int64) (L
 	return l, true, nil
 }
 
-func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (best3, best10000 *nostr.Event, err error) {
-	filter := nostr.Filter{Authors: []string{pubkey}, Kinds: []int{3, 10000}}
-	if since > 0 {
-		ts := nostr.Timestamp(since)
-		filter.Since = &ts
-	}
+var listKinds = [2]int{3, 10000}
+
+func newer(a, b *nostr.Event) bool { return a != nil && (b == nil || a.CreatedAt > b.CreatedAt) }
+
+// once asks one relay at a time, and the next only for the kinds still
+// missing. best[0] is kind 3, best[1] kind 10000.
+func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (best [2]*nostr.Event, err error) {
 	for _, url := range f.Relays {
 		if ctx.Err() != nil {
-			return nil, nil, ctx.Err()
+			return best, ctx.Err()
+		}
+		var kinds []int
+		for i, k := range listKinds {
+			if best[i] == nil {
+				kinds = append(kinds, k)
+			}
+		}
+		if len(kinds) == 0 {
+			break
+		}
+		filter := nostr.Filter{Authors: []string{pubkey}, Kinds: kinds}
+		if since > 0 {
+			ts := nostr.Timestamp(since)
+			filter.Since = &ts
 		}
 		rctx, cancel := context.WithTimeout(ctx, f.timeout())
 		for re := range f.Pool.FetchMany(rctx, []string{url}, filter) {
@@ -58,22 +86,23 @@ func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (be
 			if ev == nil || ev.PubKey != pubkey {
 				continue
 			}
+			i := -1
+			for j, k := range listKinds {
+				if ev.Kind == k && best[j] == nil || ev.Kind == k && ev.CreatedAt > best[j].CreatedAt {
+					i = j
+				}
+			}
+			if i < 0 || (since > 0 && int64(ev.CreatedAt) < since) {
+				continue
+			}
 			if ok, err := ev.CheckSignature(); !ok || err != nil {
 				continue
 			}
-			switch {
-			case ev.Kind == 3 && (best3 == nil || ev.CreatedAt > best3.CreatedAt):
-				best3 = ev
-			case ev.Kind == 10000 && (best10000 == nil || ev.CreatedAt > best10000.CreatedAt):
-				best10000 = ev
-			}
+			best[i] = ev
 		}
 		cancel()
-		if best3 != nil || best10000 != nil {
-			break // first relay with an answer wins; the next is asked only on a miss
-		}
 	}
-	return best3, best10000, nil
+	return best, nil
 }
 
 func (f *RelayFetcher) timeout() time.Duration {
