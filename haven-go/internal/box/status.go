@@ -117,6 +117,10 @@ type Status struct {
 	Move    *MoveState     `json:"move,omitempty"`
 	// RelayURL: the box's own web address (NV_RELAY_URL), "" when none.
 	RelayURL string `json:"relay_url,omitempty"`
+	// UpdateVia: the store that updates the box (NV_UPDATE_VIA), "" when none.
+	UpdateVia string `json:"update_via,omitempty"`
+	// MoveOff: Storage › Move is off (empty NV_MOVE_ROOT).
+	MoveOff bool `json:"move_off,omitempty"`
 }
 
 // meshStale: a status.json older than this is from an nv-mesh that has
@@ -159,6 +163,9 @@ type Storage struct {
 	Used  uint64 `json:"used"`
 	Free  uint64 `json:"free"`
 	Total uint64 `json:"total"`
+
+	// MoveOff: Move is off on this box (empty NV_MOVE_ROOT); set by the API.
+	MoveOff bool `json:"move_off,omitempty"`
 
 	VaultDir      string `json:"vaultDir"`
 	DatabaseBytes uint64 `json:"databaseBytes"`

@@ -68,8 +68,17 @@ func (m *Mover) State() *MoveState {
 // ErrMoveBusy is returned while a move runs.
 var ErrMoveBusy = errors.New("a move is already running")
 
+// ErrMoveOff: NV_MOVE_ROOT is empty, a store owns the disk.
+var ErrMoveOff = errors.New("moving the vault is off on this box: its store manages the disk")
+
+// Off: Move is turned off (empty NV_MOVE_ROOT).
+func (m *Mover) Off() bool { return m.Root == "" }
+
 // Validate checks a requested target without touching anything.
 func (m *Mover) Validate(target, from string) (string, error) {
+	if m.Off() {
+		return "", ErrMoveOff
+	}
 	if target == "" || !filepath.IsAbs(target) {
 		return "", errors.New("path must be an absolute path")
 	}
@@ -109,6 +118,10 @@ func (m *Mover) Begin(target string) (*MoveState, error) {
 	if m.busy {
 		m.mu.Unlock()
 		return nil, ErrMoveBusy
+	}
+	if m.Off() {
+		m.mu.Unlock()
+		return nil, ErrMoveOff
 	}
 	from := m.Engine.VaultDir()
 	to, err := m.Validate(target, from)

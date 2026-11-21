@@ -6,7 +6,8 @@ cd "$(dirname "$0")/.."
 native="native/build.sh native/package.sh native/bin/nostr-vault-setup native/lib/prepare native/debian/postinst native/debian/prerm native/debian/postrm"
 for f in supervise.sh $native; do sh -n "$f"; done
 # shellcheck disable=SC2086
-if command -v shellcheck >/dev/null 2>&1; then shellcheck -s sh supervise.sh test/check.sh $native; fi
+if command -v shellcheck >/dev/null 2>&1; then shellcheck -s sh supervise.sh test/check.sh test/supervise-owner.sh $native; fi
+sh test/supervise-owner.sh
 python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' native/desktop/nostr-vault-desktop
 if command -v systemd-analyze >/dev/null 2>&1; then
   # A unit that systemd finds fault with fails the check (missing binaries and users are expected off-box).

@@ -11,12 +11,27 @@ set -eu
 export NV_DATA_DIR NV_PORT
 VAULT_UID=10002 MESH_UID=10001
 
-# The owner is set by install.sh, never claimed by whoever visits first: no owner, no box.
-case "${NV_OWNER:-}" in
-  npub1*) printf '%s' "$NV_OWNER" | grep -Eq '^npub1[02-9ac-hj-np-z]{58}$' || { echo "supervise: NV_OWNER isn't a valid npub" >&2; exit 64; } ;;
-  *) printf '%s' "${NV_OWNER:-}" | grep -Eq '^[0-9a-f]{64}$' || { echo "supervise: NV_OWNER must be the owner's npub (set by install.sh)" >&2; exit 64; } ;;
-esac
 [ -d "$NV_DATA_DIR" ] || { echo "supervise: $NV_DATA_DIR isn't there" >&2; exit 65; }
+
+# The owner is set by install.sh (NV_OWNER), never claimed by whoever visits first. A store with no install form
+# (Umbrel) sets NV_SETUP_CODE instead: havend then serves only a setup page until someone sends the owner's npub with
+# that code, and saves it in box/owner (haven-go/internal/box/claim.go), which is read here on every later start.
+OWNER_FILE="$NV_DATA_DIR/box/owner"
+if [ -z "${NV_OWNER:-}" ] && { [ -e "$OWNER_FILE" ] || [ -L "$OWNER_FILE" ]; }; then
+  [ -f "$OWNER_FILE" ] && [ ! -L "$OWNER_FILE" ] || { echo "supervise: $OWNER_FILE isn't a plain file" >&2; exit 64; }
+  NV_OWNER=$(head -c 200 "$OWNER_FILE" | tr -d ' \t\r\n')
+  export NV_OWNER
+fi
+if [ -z "${NV_OWNER:-}" ]; then
+  code=${NV_SETUP_CODE:-}
+  [ "${#code}" -ge 12 ] || { echo "supervise: no owner: NV_OWNER must be the owner's npub (set by install.sh), or a store sets NV_SETUP_CODE (12+ characters) to claim the box" >&2; exit 64; }
+  echo "supervise: no owner yet: claim mode, open the box and enter your npub with the setup code" >&2
+else
+  case "$NV_OWNER" in
+    npub1*) printf '%s' "$NV_OWNER" | grep -Eq '^npub1[02-9ac-hj-np-z]{58}$' || { echo "supervise: the owner isn't a valid npub" >&2; exit 64; } ;;
+    *) printf '%s' "$NV_OWNER" | grep -Eq '^[0-9a-f]{64}$' || { echo "supervise: NV_OWNER must be the owner's npub (set by install.sh)" >&2; exit 64; } ;;
+  esac
+fi
 
 # /data: havend's (it writes box/, vault/ and mesh-devices.json), mode 0711 so nv-mesh can reach mesh/ but not list
 # the rest. mesh/: nv-mesh's (it makes key/ 0700 inside, and writes npub and status.json for havend to read).

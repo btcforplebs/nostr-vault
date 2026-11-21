@@ -354,7 +354,8 @@ func TestBoxEndToEnd(t *testing.T) {
 		}
 	}
 	code, upd := boxCall(t, base, owner, "POST", "/api/box/update", nil)
-	if code != 202 || upd["via"] != "file" {
+	// No NV_UPDATE_HOOK and no NV_UPDATE_VIA: manual, nothing written (update.go).
+	if code != 200 || upd["via"] != "manual" || upd["manual"] != true {
 		t.Fatalf("update %d %v", code, upd)
 	}
 

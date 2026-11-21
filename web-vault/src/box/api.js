@@ -5,8 +5,11 @@
 //   GET  storage  -> { path, used, free, total }                       bytes
 //   GET  devices  -> { box: { npub, name }, devices: [{ npub, name, role, approved, lastSeen }] }
 //                    havend: the owner's 10063 has no names or seen times, so name is "" and lastSeen is left out
-//   POST update   -> { started, manual, from, to }                     manual: nothing on the box can update it;
+//   POST update   -> { started, manual, managed, via, from, to }       manual: nothing on the box can update it;
 //                    havend: started only with NV_UPDATE_HOOK set       the owner installs the newer package
+//                    managed: a store updates the box, via "startos" or "umbrel" (NV_UPDATE_VIA)
+//   status and storage carry move_off: true when Move is off (a store owns the disk, empty NV_MOVE_ROOT), and
+//   status carries update_via (the store) when one updates the box
 //   POST move     { path } -> { ok, path, message }
 // A missing field reads as unknown, never as 0.
 import { getToken } from "nostr-tools/nip98"
