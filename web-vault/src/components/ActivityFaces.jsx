@@ -3,12 +3,13 @@
 import { Avatar } from "./Avatar.jsx"
 import { AuthorName } from "./NoteCard.jsx"
 
-/** The faces of who did it, overlapping, six at most and "+N" for the rest (VaultActivityRow.avatars). */
+/** The faces of who did it, overlapping, six at most and "+N" for the rest (VaultActivityRow.avatars). Someone outside
+ *  `trusted` shows their constellation (Avatar `stars`), never their picture: their picture host learns nothing. */
 export const MAX_FACES = 6
 export function Faces({ who, trusted = () => false }) {
   return (
     <span class="notif-faces" aria-hidden="true">
-      {who.slice(0, MAX_FACES).map(pk => <Avatar key={pk} pubkey={pk} size={30} load={trusted(pk)} />)}
+      {who.slice(0, MAX_FACES).map(pk => <Avatar key={pk} pubkey={pk} size={30} load={trusted(pk)} stars />)}
       {who.length > MAX_FACES && <span class="notif-more">+{who.length - MAX_FACES}</span>}
     </span>
   )

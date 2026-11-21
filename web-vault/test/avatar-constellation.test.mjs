@@ -43,7 +43,7 @@ test("a profile with no picture draws its constellation, at the avatar's size, n
   assert.match(v.props.class, /avatar-stars/)
 })
 
-test("a gated stranger keeps the plain disc, with or without a picture (Logen decides that one later)", () => {
+test("without `stars`, a gated stranger keeps the plain disc, with or without a picture", () => {
   for (const pk of [NO_PIC, WITH_PIC]) {
     const v = Avatar({ pubkey: pk, size: 30, load: false })
     assert.equal(v.type, "div")
@@ -61,4 +61,23 @@ test("a profile with a picture still draws the picture path, not the constellati
   const v = Avatar({ pubkey: WITH_PIC, size: 30 })
   assert.doesNotMatch(String(v.props.src ?? ""), /^data:image\/svg/)
   assert.doesNotMatch(v.props.class, /avatar-stars|avatar-blank/)
+})
+
+test("a gated stranger with `stars` gets their constellation, never their picture (Logen 2026-11-21)", () => {
+  for (const pk of [NO_PIC, WITH_PIC]) {
+    const v = Avatar({ pubkey: pk, size: 30, load: false, stars: true })
+    assert.equal(v.type, "img")
+    assert.equal(v.props.src, constellationUrl(pk))
+    assert.doesNotMatch(JSON.stringify(v.props), /media\.example/, "the picture URL is nowhere in what is drawn")
+  }
+  const unknown = Avatar({ pubkey: UNKNOWN, size: 30, load: false, stars: true })
+  assert.equal(unknown.type, "div", "before their profile arrives, still the disc")
+})
+
+test("notification faces pass `stars` with the trust gate, so strangers there are constellations", async () => {
+  const { Faces } = await import("../src/components/ActivityFaces.jsx")
+  const tree = Faces({ who: [NO_PIC, WITH_PIC], trusted: () => false })
+  const faces = tree.props.children[0]
+  assert.equal(faces.length, 2)
+  for (const f of faces) { assert.equal(f.props.load, false); assert.equal(f.props.stars, true) }
 })
