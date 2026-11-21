@@ -189,3 +189,18 @@ func TestAccountsWatchReloadsOnlyOnChange(t *testing.T) {
 		t.Fatalf("removed: reloads = %d, want 3", r.n)
 	}
 }
+
+// Tron #2374: a change made after Seed (havend seeds before the engine
+// starts) but before the first Check must reload, not become the baseline.
+func TestAccountsWatchSeedCatchesAChangeBeforeTheFirstCheck(t *testing.T) {
+	ownerHex, owner := testNpub(t)
+	_, other := testNpub(t)
+	c := Config{DataDir: t.TempDir(), OwnerHex: ownerHex, OwnerNpub: owner}
+	r := &fakeReloader{}
+	w := &AccountsWatch{Config: c, Engine: r}
+	w.Seed()
+	SaveAccounts(c.AccountsFile(), []Account{{Npub: other, SignedIn: true}})
+	if !w.Check() || r.n != 1 {
+		t.Fatalf("a join before the first Check: reloads = %d, want 1", r.n)
+	}
+}

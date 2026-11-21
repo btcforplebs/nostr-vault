@@ -94,15 +94,26 @@ type AccountsWatch struct {
 	have bool
 }
 
+// Seed records the lists as they are now, without reloading. Call it before
+// the engine first starts (havend does): its Prepare then writes these lists
+// or newer ones, so a change made after Seed is a change the next Check sees.
+// Seeding later would let a join or hand edit made in between become the
+// baseline, and that account would not reach the engine until a restart
+// (Tron #2374). A change between Seed and the engine's start costs one extra
+// reload, never a missed one.
+func (w *AccountsWatch) Seed() {
+	w.last, w.have = ListsFor(w.Config.OwnerNpub, LoadAccounts(w.Config.AccountsFile())), true
+}
+
 // Check reads accounts.json and reloads the engine if its lists changed
-// since the last Check. The first Check only records them: the engine was
-// started with them. Reports whether it asked for a reload.
+// since Seed or the last Check. Without a Seed, the first Check only records
+// them. Reports whether it asked for a reload.
 func (w *AccountsWatch) Check() bool {
-	now := ListsFor(w.Config.OwnerNpub, LoadAccounts(w.Config.AccountsFile()))
 	if !w.have {
-		w.last, w.have = now, true
+		w.Seed()
 		return false
 	}
+	now := ListsFor(w.Config.OwnerNpub, LoadAccounts(w.Config.AccountsFile()))
 	if now.equal(w.last) {
 		return false
 	}

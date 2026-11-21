@@ -132,6 +132,10 @@ func run(args []string) error {
 		},
 		Prepare: func(dir string) error { return box.WriteEngineFiles(cfg, dir) },
 	}
+	// Seed the accounts baseline before the engine first reads the lists, so
+	// a change made while havend starts up still reloads it (Tron #2374).
+	accountsWatch := &box.AccountsWatch{Config: cfg, Engine: engine}
+	accountsWatch.Seed()
 	if err := engine.Start(ctx, vaultDir); err != nil {
 		return fmt.Errorf("starting the vault engine: %w", err)
 	}
@@ -174,7 +178,7 @@ func run(args []string) error {
 	go engineDevices.Run(ctx, 5*time.Second)
 	// box/accounts.json: when the added accounts change, restart the engine
 	// so it reads its two account lists again (box/accounts.go).
-	go (&box.AccountsWatch{Config: cfg, Engine: engine}).Run(ctx, 5*time.Second)
+	go accountsWatch.Run(ctx, 5*time.Second)
 
 	front := &box.Front{API: api, Engine: box.EngineProxy(cfg.EnginePort)}
 	if cfg.WebDir != "" {

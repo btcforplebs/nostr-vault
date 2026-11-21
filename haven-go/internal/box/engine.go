@@ -72,7 +72,7 @@ func (e *Engine) Start(ctx context.Context, vaultDir string) error {
 	e.gen++
 	gen := e.gen
 	e.mu.Unlock()
-	if err := e.spawn(); err != nil {
+	if err := e.spawn(gen); err != nil {
 		e.mu.Lock()
 		e.wanted = false
 		e.mu.Unlock()
@@ -82,9 +82,20 @@ func (e *Engine) Start(ctx context.Context, vaultDir string) error {
 	return nil
 }
 
-func (e *Engine) spawn() error {
+// errNotWanted: spawn was asked for by a Start or watch loop that is no
+// longer current (a Stop, or a Stop then Start, came in between).
+var errNotWanted = errors.New("engine stopped or restarted; not spawning")
+
+// spawn starts a child for generation gen. It checks under the same lock it
+// starts the child with that the engine is still wanted at that generation:
+// a Stop (a Move) landing after the caller's own check must win, or Stop sees
+// no child, returns, and a child opens the vault the Move is copying.
+func (e *Engine) spawn(gen int) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if !e.wanted || e.gen != gen {
+		return errNotWanted
+	}
 	if e.Prepare != nil {
 		if err := e.Prepare(e.vaultDir); err != nil {
 			return err
@@ -143,7 +154,10 @@ func (e *Engine) watch(ctx context.Context, gen int) {
 		}
 		if reload {
 			// Asked for (Reload), not a crash: no backoff, no restart count.
-			if err := e.spawn(); err != nil {
+			if err := e.spawn(gen); err != nil {
+				if errors.Is(err, errNotWanted) {
+					return
+				}
 				log.Printf("box: engine reload failed: %v", err)
 				e.mu.Lock()
 				d := make(chan struct{})
@@ -169,7 +183,10 @@ func (e *Engine) watch(ctx context.Context, gen int) {
 		}
 		e.restarts++
 		e.mu.Unlock()
-		if err := e.spawn(); err != nil {
+		if err := e.spawn(gen); err != nil {
+			if errors.Is(err, errNotWanted) {
+				return
+			}
 			log.Printf("box: engine restart failed: %v", err)
 			e.mu.Lock()
 			// Leave a closed done so the loop tries again after the next backoff.
@@ -188,7 +205,8 @@ func (e *Engine) watch(ctx context.Context, gen int) {
 // before the new child starts. It returns at once; the watch loop respawns
 // the child when the old one has exited. A stopped engine (during a Move)
 // is left stopped and reports false: its next Start runs Prepare anyway.
-// Unlike Stop then Start, it can never start an engine a Move just stopped.
+// Unlike Stop then Start, it never starts an engine a Move stopped: spawn
+// re-checks wanted and the generation under its own lock.
 func (e *Engine) Reload() bool {
 	e.mu.Lock()
 	cmd, done := e.cmd, e.done

@@ -69,3 +69,40 @@ func TestEngineReloadLeavesAStoppedEngineStopped(t *testing.T) {
 		t.Fatalf("a stopped engine was started by Reload: %v", runs(logPath))
 	}
 }
+
+// Tron #2374: a watch loop that saw a reload, then lost the CPU to a Move's
+// Stop, must not start a child after Stop returned. spawn re-checks wanted
+// and the generation under its own lock; a stale or stopped caller is refused.
+func TestEngineSpawnRefusesAStoppedOrOlderGeneration(t *testing.T) {
+	bin, logPath := fakeEngineBin(t)
+	e := &Engine{Bin: bin, Env: func(string) []string { return []string{"PATH=/bin:/usr/bin"} }, StopWait: time.Second}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := e.Start(ctx, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return e.State().Running && starts(logPath) == 1 })
+	e.mu.Lock()
+	gen1 := e.gen
+	e.mu.Unlock()
+
+	e.Stop() // the Move
+	if err := e.spawn(gen1); err != errNotWanted {
+		t.Fatalf("spawn after Stop: %v, want errNotWanted", err)
+	}
+	if e.State().Running || starts(logPath) != 1 {
+		t.Fatalf("a child started after Stop returned: %v", runs(logPath))
+	}
+
+	if err := e.Start(ctx, t.TempDir()); err != nil { // the Move's restart
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return e.State().Running && starts(logPath) == 2 })
+	if err := e.spawn(gen1); err != errNotWanted {
+		t.Fatalf("spawn from an older watch loop: %v, want errNotWanted", err)
+	}
+	if starts(logPath) != 2 {
+		t.Fatalf("an older watch loop started a second child: %v", runs(logPath))
+	}
+	e.Stop()
+}
