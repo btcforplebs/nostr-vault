@@ -26,7 +26,7 @@ func Rank(g *Graph, owner string, ownerBlocks []string, p Params) (*Result, erro
 		return nil, err
 	}
 	o, ok := g.index[owner]
-	if !ok {
+	if !ok || !g.listed[o] {
 		return nil, errors.New("trustrank: the owner's own list is not in the graph")
 	}
 	res := &Result{Owner: owner, Params: p, g: g, owner: o, ownerMuted: map[int32]bool{}}
@@ -70,6 +70,16 @@ func (r *Result) hops() {
 	}
 }
 
+// vouches reports whether u's follow of v counts. Trust flows outward only:
+// a follow counts when the rater is nearer the owner than the person
+// followed. People who follow each other at the same distance, or back
+// toward the owner, add nothing, so a ring that one trusted person follows
+// cannot lift itself. Mutes count from any trusted rater: a mute can only
+// lower a score (the certainty term grows slower than the weight).
+func (r *Result) vouches(u, v int32) bool {
+	return r.hop[u] >= 0 && r.hop[v] > r.hop[u]
+}
+
 // weight is how much rater u's rating of anyone counts, given trust t.
 func (r *Result) weight(u int32, t []float64, follow bool) float64 {
 	if u == r.owner {
@@ -102,8 +112,10 @@ func (r *Result) iterate() {
 			}
 			wf := r.weight(u, trust, true)
 			for _, v := range r.g.follows[u] {
-				sumW[v] += wf
-				sumWR[v] += wf
+				if r.vouches(u, v) {
+					sumW[v] += wf
+					sumWR[v] += wf
+				}
 			}
 			if wm := r.weight(u, trust, false); wm > 0 {
 				for _, v := range r.g.mutes[u] {
@@ -189,8 +201,9 @@ type Reason struct {
 	Weight float64 // how much this rating counted
 }
 
-// Explain lists who rated pk, heaviest first, at most n. Only raters the
-// owner trusts appear: an untrusted rating carries no weight.
+// Explain lists who rated pk, heaviest first, at most n. Only ratings that
+// counted appear: raters the owner trusts, and for a follow only a rater
+// nearer the owner (see vouches).
 func (r *Result) Explain(pk string, n int) []Reason {
 	v, ok := r.g.index[pk]
 	if !ok || r.hop[v] < 0 {
@@ -201,7 +214,7 @@ func (r *Result) Explain(pk string, n int) []Reason {
 		if r.hop[u] < 0 || r.ownerMuted[u] || (u != r.owner && r.trust[u] == 0) {
 			continue
 		}
-		if contains(r.g.follows[u], v) {
+		if r.vouches(u, v) && contains(r.g.follows[u], v) {
 			out = append(out, Reason{Rater: r.g.keys[u], Weight: r.weight(u, r.trust, true)})
 		} else if w := r.weight(u, r.trust, false); w > 0 && contains(r.g.mutes[u], v) {
 			out = append(out, Reason{Rater: r.g.keys[u], Muted: true, Weight: w})

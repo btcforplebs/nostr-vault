@@ -2,8 +2,9 @@
 // GrapeRank style: a follow is a rating of 1, a mute a rating of 0, and each
 // rating counts as much as its rater is trusted. The owner's trust is fixed;
 // everyone else's comes only from ratings by people the owner already trusts,
-// so accounts that follow each other gain nothing unless a trusted person
-// follows them.
+// and a follow counts only from someone nearer the owner, so accounts that
+// follow each other gain nothing from it, even when a trusted person follows
+// one of them.
 //
 // A score is personal: it is computed on the owner's own server from the
 // owner's own network and is never published or sent to anyone.
@@ -60,6 +61,9 @@ func (p Params) validate() error {
 	if p.Epsilon <= 0 || p.MaxRounds < 1 || p.MaxHop < 1 {
 		return errors.New("trustrank: epsilon, max rounds and max hop must be positive")
 	}
+	if p.MaxHop > 127 {
+		return errors.New("trustrank: max hop must be at most 127")
+	}
 	return nil
 }
 
@@ -70,10 +74,11 @@ type Graph struct {
 	index   map[string]int32
 	follows [][]int32
 	mutes   [][]int32
+	listed  map[int32]bool // raters whose own list was read
 }
 
 // NewGraph returns an empty graph.
-func NewGraph() *Graph { return &Graph{index: map[string]int32{}} }
+func NewGraph() *Graph { return &Graph{index: map[string]int32{}, listed: map[int32]bool{}} }
 
 func (g *Graph) id(pk string) int32 {
 	if i, ok := g.index[pk]; ok {
@@ -111,6 +116,7 @@ func (g *Graph) SetList(rater string, follows, mutes []string) {
 		}
 	}
 	g.follows[r], g.mutes[r] = fs, ms
+	g.listed[r] = true
 }
 
 // Size is the number of distinct pubkeys seen.

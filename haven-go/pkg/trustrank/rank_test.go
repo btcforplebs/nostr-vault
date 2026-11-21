@@ -209,3 +209,67 @@ func BenchmarkRank(b *testing.B) {
 		}
 	}
 }
+
+// One trusted follow lets a ring in, but the ring cannot lift itself: no
+// sybil scores above Attenuation times the attacker who vouches for it, and
+// the attacker scores no more than anyone else that friend follows (Tron's
+// #2370 setup: rings of 60+ used to climb to 72-99).
+func TestSybilRingWithOneTrustedFollowStaysCapped(t *testing.T) {
+	for _, n := range []int{40, 60, 100, 300} {
+		g := NewGraph()
+		g.SetList("me", []string{"friend", "f1"}, nil)
+		fs := []string{"A"}
+		for i := 0; i < 150; i++ {
+			fs = append(fs, fmt.Sprintf("normal%d", i))
+		}
+		g.SetList("friend", fs, nil)
+		var ring []string
+		for i := 0; i < n; i++ {
+			ring = append(ring, fmt.Sprintf("s%d", i))
+		}
+		g.SetList("A", ring, nil)
+		for _, s := range ring {
+			g.SetList(s, append(append([]string{}, ring...), "A"), nil)
+		}
+		r := mustRank(t, g, "me", nil)
+		a := score(t, r, "A")
+		capped := a*r.Params.Attenuation + 1e-9
+		for _, s := range ring {
+			if v := score(t, r, s); v > capped {
+				t.Fatalf("ring %d: %s scored %.4f, above A %.4f x attenuation", n, s, v, a)
+			}
+		}
+		if f1 := score(t, r, "f1"); a >= f1 || r.Passes("s0", 20) {
+			t.Fatalf("ring %d: A %.4f must stay under a real follow %.4f and s0 must not pass 20", n, a, f1)
+		}
+		// The ring following A back adds nothing: A scores like any other
+		// person friend follows.
+		if norm := score(t, r, "normal0"); a != norm {
+			t.Fatalf("ring %d: A %.4f must equal friend's normal follow %.4f", n, a, norm)
+		}
+		if r.Rounds >= r.Params.MaxRounds {
+			t.Fatalf("ring %d: did not converge in %d rounds", n, r.Rounds)
+		}
+	}
+}
+
+// The owner seen only inside someone else's list is not the owner's list.
+func TestOwnerOnlyInsideAnotherList(t *testing.T) {
+	g := NewGraph()
+	g.SetList("stranger", []string{"me"}, nil)
+	if _, err := Rank(g, "me", nil, DefaultParams()); err == nil {
+		t.Fatal("an owner with no list of their own must be an error")
+	}
+}
+
+func TestMaxHopFitsInt8(t *testing.T) {
+	p := DefaultParams()
+	p.MaxHop = 200
+	if _, err := Rank(base(), "me", nil, p); err == nil {
+		t.Fatal("max hop over 127 must be refused")
+	}
+	p.MaxHop = 127
+	if _, err := Rank(base(), "me", nil, p); err != nil {
+		t.Fatal(err)
+	}
+}
