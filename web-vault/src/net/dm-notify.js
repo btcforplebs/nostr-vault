@@ -19,10 +19,11 @@ export function setShowDmText(on, storage = globalThis.localStorage) {
   return showDmText(storage)
 }
 
-/** A message as notification text: one line, cut to `limit` (NotificationPolicy.dmPreview). "" when there's nothing
- *  to read, so the caller keeps "From X". */
+/** A message as notification text: one line, cut to `limit` (NotificationPolicy.dmPreview), any file link in it
+ *  replaced by "a file". "" when there's nothing to read, so the caller keeps "From X". */
 export function dmPreview(content, limit = 160) {
-  const line = String(content ?? "").split(/\s+/).filter(Boolean).join(" ")
+  // A file link carries the key that opens the file: one pasted among other words goes too, not just a link alone.
+  const line = String(content ?? "").replace(/https:\/\/\S+#nv-dm=\S+/g, "a file").split(/\s+/).filter(Boolean).join(" ")
   if (line.length <= limit) return line
   return line.slice(0, limit - 1).trim() + "…"
 }

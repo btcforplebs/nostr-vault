@@ -71,7 +71,9 @@ test("Show message text: off by default says only who; on shows the text, never 
   const file = dmNotices(new Map([msg("f", link)]), ME, { mark: 100, nameOf, now: 1000, showText: true })
   assert.equal(file.notices[0].body, "Sent a file")
   assert.ok(!JSON.stringify(file.notices).includes(hex(7)), "the file key never goes in a notification")
-  assert.equal(dmPreview("x".repeat(200)).length, 160)
+  const mixed = dmNotices(new Map([msg("g", `look ${link} ok`)]), ME, { mark: 100, nameOf, now: 1000, showText: true })
+  assert.equal(mixed.notices[0].body, "look a file ok", "a file link among other words loses its key too (Tron)")
+    assert.equal(dmPreview("x".repeat(200)).length, 160)
   assert.equal(setShowDmText(false, s), false)
 })
 

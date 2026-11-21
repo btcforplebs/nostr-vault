@@ -8,6 +8,10 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils"
 import { followLists, LISTS_WAIT_MS, REFRESH_MS } from "../src/net/wot.js"
+import { trustRefreshMs } from "../src/net/trust-settings.js"
+// Kept lists are checked again after Refresh Trust List (default every day); a list the relay didn't have is asked
+// for again after REFRESH_MS.
+const LIST_REFRESH_MS = trustRefreshMs()
 import { pack, unpack, wotStore } from "../src/net/wot-store.js"
 import { FRESH_MS, followsKey, markSynced, syncedRecently } from "../src/net/feed-synced.js"
 
@@ -79,14 +83,14 @@ test("a new follow's list is asked for on its own, and kept with the rest", asyn
   assert.ok(store.rows.has(f3))
 })
 
-test("lists already kept are checked for newer ones `since` the last check, after REFRESH_MS, behind the caller", async () => {
+test("lists already kept are checked for newer ones `since` the last check, after Refresh Trust List, behind the caller", async () => {
   const me = hex("e", 3), f1 = hex("1", 41)
   const checked = 1_000_000
   const store = memStore([list(f1, [hex("6")], 10)], checked)
   const asked = []
   let answered
   const done = new Promise(r => { answered = r })
-  const now = () => (checked * 1000) + REFRESH_MS + 1
+  const now = () => (checked * 1000) + LIST_REFRESH_MS + 1
   const got = await followLists(me, [f1], { store, now, reachable: async () => {}, query: async (r, f) => { asked.push(f); await new Promise(r => setTimeout(r, 5)); setTimeout(answered); return [list(f1, [hex("8")], 20)] } })
   assert.deepEqual(got.get(f1).tags, [["p", hex("6")]], "the kept list is handed out at once")
   await done; await new Promise(r => setTimeout(r, 0))
@@ -118,10 +122,10 @@ test("a follow whose list the relay didn't have is kept as missing, and not aske
   await followLists(me, [f1, f2], { store, query, retryMs: 0, now: () => clock })
   assert.deepEqual(asked.at(-1), [f2])
   await followLists(hex("e", 9), [], { store: memStore(), query: async () => [] })
-  clock += REFRESH_MS
+  clock += Math.max(REFRESH_MS, LIST_REFRESH_MS) // both due: the miss (REFRESH_MS) and the kept list's check
   const later = []
   await followLists(me, [f1, f2], { store, reachable: async () => {}, query: async (r, f) => { later.push(f.authors); return f.since ? [] : [list(f2, [hex("7")])] }, now: () => clock })
-  assert.deepEqual(later.map(a => a.join()).sort(), [f1, f2].sort(), "after REFRESH_MS: f1's kept list `since` the last check, f2 in full")
+  assert.deepEqual(later.map(a => a.join()).sort(), [f1, f2].sort(), "after both: f1's kept list `since` the last check, f2 in full")
   assert.ok(store.rows.get(f2).ps, "its list, once it comes, replaces the miss")
   // A failed ask, or an empty answer (what a timeout gives), is not a miss: it is asked again after RETRY_MS.
   const s2 = memStore()
@@ -132,7 +136,7 @@ test("a follow whose list the relay didn't have is kept as missing, and not aske
 
 test("a check that can't reach the relay, or is cut off, doesn't move the check time on; nor does a cut-off or capped answer make misses", async () => {
   const f1 = hex("1", 51), checked = 1_000_000
-  const late = (checked * 1000) + REFRESH_MS + 1
+  const late = (checked * 1000) + LIST_REFRESH_MS + 1
   // Unreachable: nothing asked, the old check time stays, so the next load asks from there again.
   const s1 = memStore([list(f1, [hex("6")], 10)], checked)
   const asked = []
@@ -215,4 +219,19 @@ test("the kept-lists store doesn't open (and so re-create) its database once its
   const other = wotStore(me, idb, () => hex("b", 72))
   await other.save([], 1)
   assert.equal(opens, 0, "another account signed in: never opened")
+})
+
+test("Refresh Trust List moves only the kept lists' check: a miss is still asked again after REFRESH_MS", async () => {
+  const me = hex("e", 21), f1 = hex("4", 1), f2 = hex("4", 2)
+  const store = memStore()
+  const query = async (r, f) => (f.authors.includes(f1) ? [list(f1, [hex("6")])] : [])
+  let clock = 6_000_000_000
+  await followLists(me, [f1, f2], { store, query, now: () => clock })
+  await followLists(hex("e", 22), [], { store: memStore(), query: async () => [] })
+  clock += REFRESH_MS + 1
+  const later = []
+  await followLists(me, [f1, f2], { store, reachable: async () => {}, refreshMs: 24 * 3600_000, query: async (r, f) => { later.push(f); return [] }, now: () => clock })
+  assert.ok(later.length > 0, "the miss is asked for again")
+  assert.deepEqual([...new Set(later.flatMap(f => f.authors))], [f2], "f2 (missed) asked again; f1's kept list waits for its day")
+  assert.ok(later.every(f => !f.since), "no `since` check of kept lists yet")
 })
