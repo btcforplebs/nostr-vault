@@ -1,0 +1,210 @@
+package trustrank
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"math"
+	"os"
+	"path/filepath"
+	"sort"
+	"time"
+)
+
+// List is one person's follow and mute lists as read from relays.
+type List struct {
+	CreatedAt int64 // the newer of the follow and mute lists' times
+	Follows   []string
+	Mutes     []string
+}
+
+// Fetcher reads one person's lists. found is false when no relay had them.
+type Fetcher interface {
+	Fetch(ctx context.Context, pubkey string, since int64) (l List, found bool, err error)
+}
+
+// Crawler walks out from one owner, reading only the lists of people who
+// already pass the bar, one list at a time, and ranks what it has read.
+// It signs nothing and publishes nothing.
+type Crawler struct {
+	Store  *Store
+	Dir    string // state_<account>.json and wot_rank_<account>.json go here
+	Owner  string // the account, hex
+	Fetch  Fetcher
+	Params Params
+	// ParamsVersion goes in the checkpoint; a change re-ranks without
+	// downloading again.
+	ParamsVersion int
+	// Bar (0-100): only people at or over it have their own list read.
+	Bar float64
+	// OwnerBlocks returns the owner's public and private mutes and blocks.
+	OwnerBlocks func() []string
+	// Wait blocks until the crawl may go on (window closed, no copy or
+	// import running). False stops the run.
+	Wait func(ctx context.Context) bool
+	// Pace is the pause after each list (working: 1 s).
+	Pace time.Duration
+	// Now is the clock (tests).
+	Now func() time.Time
+	// Progress, when set, hears hop, place and total after each list.
+	Progress func(hop, done, total int)
+}
+
+// ErrStopped: Wait said no, or ctx ended. The checkpoint holds the place.
+var ErrStopped = errors.New("trustrank: crawl paused")
+
+const checkpointEvery = 50
+
+// RunPass reads every reader's list hop by hop (resuming from the
+// checkpoint), ranks, and writes the result. refresh asks only for lists
+// newer than the stored ones.
+func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
+	st := LoadState(c.Dir, c.Owner)
+	if st.ParamsVersion != c.ParamsVersion || st.Hop < 1 {
+		st = State{Account: c.Owner, ParamsVersion: c.ParamsVersion, Hop: 1, FullAt: st.FullAt, RefreshAt: st.RefreshAt}
+	}
+	// Hop 1 reads the owner's own list; hop h reads the lists of the people
+	// at distance h-1 who pass the bar. Ranking out to MaxHop needs lists
+	// out to MaxHop-1.
+	full := false
+	for ; st.Hop <= c.Params.MaxHop && !full; st.Hop, st.Next = st.Hop+1, 0 {
+		readers, err := c.readers(st.Hop)
+		if err != nil {
+			return nil, err
+		}
+		lastSave := c.now()
+		for ; st.Next < len(readers); st.Next++ {
+			if !c.Wait(ctx) || ctx.Err() != nil {
+				SaveState(c.Dir, st)
+				return nil, ErrStopped
+			}
+			pk := readers[st.Next]
+			// A full pass reads every list again (a resumed one starts at
+			// the checkpoint's place); a refresh asks only for newer ones.
+			have, stored := c.Store.CreatedAt(pk)
+			since := int64(0)
+			if stored && refresh {
+				since = have + 1
+			}
+			l, found, err := c.Fetch.Fetch(ctx, pk, since)
+			if err == nil && found && l.CreatedAt > have {
+				_, err = c.Store.Put(pk, l.CreatedAt, l.Follows, l.Mutes)
+			}
+			if errors.Is(err, ErrFull) {
+				full = true // keep what we have and rank it
+				break
+			}
+			if c.Progress != nil {
+				c.Progress(st.Hop, st.Next+1, len(readers))
+			}
+			if (st.Next+1)%checkpointEvery == 0 || c.now().Sub(lastSave) > 30*time.Second {
+				c.Store.Sync()
+				SaveState(c.Dir, st)
+				lastSave = c.now()
+			}
+			if c.Pace > 0 {
+				select {
+				case <-ctx.Done():
+					SaveState(c.Dir, st)
+					return nil, ErrStopped
+				case <-time.After(c.Pace):
+				}
+			}
+		}
+		c.Store.Sync()
+	}
+	res, err := c.rank()
+	if err != nil {
+		return nil, err
+	}
+	if err := writeResult(c.Dir, res, c.now()); err != nil {
+		return nil, err
+	}
+	st.Hop, st.Next = 1, 0
+	if refresh {
+		st.RefreshAt = c.now().Unix()
+	} else {
+		st.FullAt = c.now().Unix()
+	}
+	c.Store.Compact()
+	return res, SaveState(c.Dir, st)
+}
+
+func (c *Crawler) now() time.Time {
+	if c.Now != nil {
+		return c.Now()
+	}
+	return time.Now()
+}
+
+func (c *Crawler) rank() (*Result, error) {
+	g, err := c.Store.Graph()
+	if err != nil {
+		return nil, err
+	}
+	var blocks []string
+	if c.OwnerBlocks != nil {
+		blocks = c.OwnerBlocks()
+	}
+	return Rank(g, c.Owner, blocks, c.Params)
+}
+
+// readers is who has their list read at hop h, in a fixed order so the
+// checkpoint's place means the same thing after a restart.
+func (c *Crawler) readers(h int) ([]string, error) {
+	if h == 1 {
+		return []string{c.Owner}, nil
+	}
+	if _, stored := c.Store.CreatedAt(c.Owner); !stored {
+		return nil, nil // no owner list: nobody to walk out to
+	}
+	res, err := c.rank()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, p := range res.People() {
+		if p.Hop == h-1 && res.Passes(p.Pubkey, c.Bar) {
+			out = append(out, p.Pubkey)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// ResultFile is wot_rank_<account>.json: what the phones read. Never
+// published.
+type ResultFile struct {
+	Account string   `json:"account"`
+	BuiltAt int64    `json:"builtAt"`
+	Version int      `json:"version"`
+	Params  Params   `json:"params"`
+	MaxHop  int      `json:"maxHop"`
+	People  [][3]any `json:"people"` // [pubkey, score 0-100 to 0.1, hop]
+}
+
+// ResultPath is the result's file for account in dir.
+func ResultPath(dir, account string) string {
+	return filepath.Join(dir, "wot_rank_"+account+".json")
+}
+
+func writeResult(dir string, r *Result, now time.Time) error {
+	f := ResultFile{Account: r.Owner, BuiltAt: now.Unix(), Version: 1, Params: r.Params, MaxHop: r.Params.MaxHop}
+	for _, p := range r.People() {
+		s := math.Round(p.Score*10) / 10
+		if s == 0 && p.Hop > 1 {
+			continue // nobody trusted vouches for them: not worth the bytes
+		}
+		f.People = append(f.People, [3]any{p.Pubkey, s, p.Hop})
+	}
+	b, err := json.Marshal(f)
+	if err != nil {
+		return err
+	}
+	path := ResultPath(dir, r.Owner)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
