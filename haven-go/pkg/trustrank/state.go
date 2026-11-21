@@ -1,7 +1,9 @@
 package trustrank
 
 import (
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -23,7 +25,18 @@ type State struct {
 	RefreshAt int64 `json:"refreshAt,omitempty"`
 }
 
-// StatePath is the checkpoint's file for account in dir.
+// validAccount: an account is a 64-character hex pubkey, so it can never
+// name a path outside dir.
+func validAccount(account string) bool {
+	if len(account) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(account)
+	return err == nil
+}
+
+// StatePath is the checkpoint's file for account in dir. Callers check the
+// account with validAccount first (LoadState and SaveState do).
 func StatePath(dir, account string) string {
 	return filepath.Join(dir, "state_"+account+".json")
 }
@@ -31,6 +44,9 @@ func StatePath(dir, account string) string {
 // LoadState reads the checkpoint; a missing or unreadable one starts over.
 func LoadState(dir, account string) State {
 	var st State
+	if !validAccount(account) {
+		return State{Account: account}
+	}
 	b, err := os.ReadFile(StatePath(dir, account))
 	if err != nil || json.Unmarshal(b, &st) != nil || st.Account != account {
 		return State{Account: account}
@@ -39,8 +55,13 @@ func LoadState(dir, account string) State {
 }
 
 // SaveState writes the checkpoint through a temp file and a rename, so a
-// reader never sees half of it.
+// reader never sees half of it. While a Store is being filled, use
+// Store.Checkpoint instead: it syncs the lists first, so the checkpoint
+// never claims a list the disk does not hold yet.
 func SaveState(dir string, st State) error {
+	if !validAccount(st.Account) {
+		return fmt.Errorf("trustrank: %q is not a hex pubkey", st.Account)
+	}
 	b, err := json.Marshal(st)
 	if err != nil {
 		return err

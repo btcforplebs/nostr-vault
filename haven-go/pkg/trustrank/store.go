@@ -100,8 +100,15 @@ func (s *Store) loadLists() error {
 	}
 	r := bufio.NewReader(io.NewSectionReader(s.listsF, 0, st.Size()))
 	var off int64
+	// Every number in a record, rater and list alike, must be inside
+	// keys.bin. After a power loss lists.bin can reach disk before keys.bin
+	// does; a number past the end would later point at whatever key is
+	// added next, a wrong trust edge. So the file is cut at the first record
+	// that fails. The crawl checkpoint is only saved after Sync (see
+	// Checkpoint), so lists cut here are read again on the next pass.
+	var scratch []uint32
 	for {
-		rater, created, size, ok := readRecord(r, uint32(len(s.keys)), nil)
+		rater, created, size, ok := readRecord(r, uint32(len(s.keys)), &scratch)
 		if !ok {
 			break
 		}
@@ -373,6 +380,16 @@ func (s *Store) Compact() error {
 	s.listsF.Close()
 	s.listsF, s.latest, s.listsLen, s.dead = tmp, latest, off, 0
 	return nil
+}
+
+// Checkpoint syncs the store, then saves st. The checkpoint must never get
+// ahead of the lists on disk: a list the checkpoint calls done but that a
+// power loss dropped would not be read again until the next full pass.
+func (s *Store) Checkpoint(dir string, st State) error {
+	if err := s.Sync(); err != nil {
+		return err
+	}
+	return SaveState(dir, st)
 }
 
 // Sync flushes both files to disk.

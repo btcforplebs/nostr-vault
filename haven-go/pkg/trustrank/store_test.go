@@ -152,21 +152,96 @@ func TestStoreRefusesBadInput(t *testing.T) {
 
 func TestStateCheckpoint(t *testing.T) {
 	dir := t.TempDir()
-	if st := LoadState(dir, "abc"); st.Account != "abc" || st.Hop != 0 {
+	if st := LoadState(dir, pk(0)); st.Account != pk(0) || st.Hop != 0 {
 		t.Fatalf("fresh %+v", st)
 	}
-	want := State{Account: "abc", ParamsVersion: 2, Hop: 2, Next: 1234, FullAt: 99}
+	want := State{Account: pk(0), ParamsVersion: 2, Hop: 2, Next: 1234, FullAt: 99}
 	if err := SaveState(dir, want); err != nil {
 		t.Fatal(err)
 	}
-	if got := LoadState(dir, "abc"); got != want {
+	if got := LoadState(dir, pk(0)); got != want {
 		t.Fatalf("got %+v", got)
 	}
-	os.WriteFile(StatePath(dir, "abc"), []byte("{half"), 0o600)
-	if st := LoadState(dir, "abc"); st.Next != 0 {
+	os.WriteFile(StatePath(dir, pk(0)), []byte("{half"), 0o600)
+	if st := LoadState(dir, pk(0)); st.Next != 0 {
 		t.Fatal("a damaged checkpoint must start over")
 	}
-	if _, err := os.Stat(StatePath(dir, "abc") + ".tmp"); !os.IsNotExist(err) {
+	if _, err := os.Stat(StatePath(dir, pk(0)) + ".tmp"); !os.IsNotExist(err) {
 		t.Fatal("temp file left behind")
+	}
+}
+
+func TestStateRefusesABadAccount(t *testing.T) {
+	dir := t.TempDir()
+	for _, acct := range []string{"../escape", "abc", pk(0)[:63] + "g"} {
+		if err := SaveState(dir, State{Account: acct, Next: 5}); err == nil {
+			t.Fatalf("%q saved", acct)
+		}
+		if st := LoadState(dir, acct); st.Next != 0 {
+			t.Fatalf("%q loaded %+v", acct, st)
+		}
+	}
+	if left, _ := os.ReadDir(dir); len(left) != 0 {
+		t.Fatalf("files written: %v", left)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(dir), "escape.json")); !os.IsNotExist(err) {
+		t.Fatal("wrote outside dir")
+	}
+}
+
+// A list number past the end of keys.bin (keys.bin lost its tail in a power
+// loss) must cut the record on open, not later point at an unrelated key.
+func TestStoreCutsAListPointingPastKeys(t *testing.T) {
+	dir := t.TempDir()
+	s := openT(t, dir, 0)
+	s.Put(pk(0), 1, []string{pk(1)}, nil) // keys a b
+	s.Put(pk(2), 1, []string{pk(3)}, nil) // keys c d
+	s.Close()
+	kp := filepath.Join(dir, "keys.bin")
+	st, _ := os.Stat(kp)
+	os.Truncate(kp, st.Size()-32) // d is gone; c's list still names it
+
+	s = openT(t, dir, 0)
+	if s.Lists() != 1 {
+		t.Fatalf("lists %d, want only a's", s.Lists())
+	}
+	if _, ok := s.CreatedAt(pk(2)); ok {
+		t.Fatal("c's list should be cut so the crawl reads it again")
+	}
+	if _, err := s.Graph(); err != nil {
+		t.Fatal(err)
+	}
+	s.Put(pk(0), 2, []string{pk(1), pk(4)}, nil) // e takes d's old number
+	s.Close()
+
+	s = openT(t, dir, 0)
+	g, err := s.Graph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := g.index[pk(2)]; len(g.follows[c]) != 0 {
+		t.Fatalf("c follows %v; its list was cut", g.follows[c])
+	}
+	if s.Lists() != 1 {
+		t.Fatalf("lists %d", s.Lists())
+	}
+}
+
+func TestStoreCheckpointSyncsFirst(t *testing.T) {
+	dir := t.TempDir()
+	s := openT(t, dir, 0)
+	s.Put(pk(0), 1, []string{pk(1)}, nil)
+	if err := s.Checkpoint(dir, State{Account: pk(0), Hop: 1, Next: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if got := LoadState(dir, pk(0)); got.Next != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	s.Close()
+	if err := s.Checkpoint(dir, State{Account: pk(0), Next: 2}); err == nil {
+		t.Fatal("a failed sync must not save the checkpoint")
+	}
+	if got := LoadState(dir, pk(0)); got.Next != 1 {
+		t.Fatalf("checkpoint moved past a failed sync: %+v", got)
 	}
 }
