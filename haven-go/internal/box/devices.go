@@ -102,15 +102,77 @@ type ServerListSource interface {
 	Newest(ctx context.Context, ownerHex string) (*nostr.Event, string)
 }
 
-// RelayServerLists asks the vault engine first and the directory relays
-// alongside it, and keeps the newest correctly signed list by the owner.
+// RelayServerLists asks the vault engine and the directory relays for the
+// owner's list, and keeps the newest correctly signed one.
+//
+// Newest (the devices screen) asks them all at once. Poll (Devices.Run, every
+// 30 s) asks the vault alone, and the directory relays only every
+// DirectoryEvery, when the vault has no list, or while the last directory
+// answer was newer than the vault's (the vault isn't getting the owner's
+// lists, so the relays stay on every poll until it catches up). Dialling the
+// vault plus 4 directory relays every 30 s was 11,520 connects a day (Tidy's
+// audit 11-20, L7).
 type RelayServerLists struct {
 	VaultURL  string // ws://127.0.0.1:<engine port>
 	Directory []string
 	Timeout   time.Duration
+	// DirectoryEvery is how often Poll also asks the directory relays; 0 is
+	// 10 minutes.
+	DirectoryEvery time.Duration
+
+	mu      sync.Mutex
+	dirAt   time.Time // the last time the directory relays were asked
+	lagging bool      // their last answer was newer than the vault's
+}
+
+type foundList struct {
+	ev  *nostr.Event
+	src string
 }
 
 func (s *RelayServerLists) Newest(ctx context.Context, ownerHex string) (*nostr.Event, string) {
+	vault, dir := s.query(ctx, ownerHex, true, true)
+	return s.settle(vault, dir, true)
+}
+
+// Poll is Newest for the background refresh: see the type.
+func (s *RelayServerLists) Poll(ctx context.Context, ownerHex string) (*nostr.Event, string) {
+	vault, _ := s.query(ctx, ownerHex, true, false)
+	s.mu.Lock()
+	every := s.DirectoryEvery
+	if every == 0 {
+		every = 10 * time.Minute
+	}
+	due := len(s.Directory) > 0 && (vault == nil || s.lagging || time.Since(s.dirAt) >= every)
+	s.mu.Unlock()
+	if !due {
+		return s.settle(vault, nil, false)
+	}
+	_, dir := s.query(ctx, ownerHex, false, true)
+	return s.settle(vault, dir, true)
+}
+
+// settle picks the newest of the two answers (a tie goes to the vault's own
+// copy) and, when the directory was asked, notes when and whether it was ahead.
+func (s *RelayServerLists) settle(vault, dir *nostr.Event, askedDir bool) (*nostr.Event, string) {
+	if askedDir {
+		s.mu.Lock()
+		s.dirAt = time.Now()
+		s.lagging = dir != nil && (vault == nil || dir.CreatedAt > vault.CreatedAt)
+		s.mu.Unlock()
+	}
+	switch {
+	case dir != nil && (vault == nil || dir.CreatedAt > vault.CreatedAt):
+		return dir, "relays"
+	case vault != nil:
+		return vault, "vault"
+	}
+	return nil, "none"
+}
+
+// query asks the vault and/or the directory relays at once and returns each
+// side's newest valid list.
+func (s *RelayServerLists) query(ctx context.Context, ownerHex string, askVault, askDir bool) (vault, dir *nostr.Event) {
 	timeout := s.Timeout
 	if timeout == 0 {
 		timeout = 6 * time.Second
@@ -119,11 +181,7 @@ func (s *RelayServerLists) Newest(ctx context.Context, ownerHex string) (*nostr.
 	defer cancel()
 	filter := nostr.Filter{Kinds: []int{serverListKind}, Authors: []string{ownerHex}, Limit: 1}
 
-	type found struct {
-		ev  *nostr.Event
-		src string
-	}
-	results := make(chan found, 1+len(s.Directory))
+	results := make(chan foundList, 1+len(s.Directory))
 	var wg sync.WaitGroup
 	ask := func(url, src string) {
 		defer wg.Done()
@@ -137,31 +195,34 @@ func (s *RelayServerLists) Newest(ctx context.Context, ownerHex string) (*nostr.
 			return
 		}
 		for _, ev := range evs {
-			results <- found{ev, src}
+			results <- foundList{ev, src}
 		}
 	}
-	if s.VaultURL != "" {
+	if askVault && s.VaultURL != "" {
 		wg.Add(1)
 		go ask(s.VaultURL, "vault")
 	}
-	for _, u := range s.Directory {
-		wg.Add(1)
-		go ask(u, "relays")
+	if askDir {
+		for _, u := range s.Directory {
+			wg.Add(1)
+			go ask(u, "relays")
+		}
 	}
 	go func() { wg.Wait(); close(results) }()
 
-	var best *nostr.Event
-	src := "none"
 	for f := range results {
 		if !validServerList(f.ev, ownerHex) {
 			continue
 		}
-		// Newest wins; on a tie the vault's own copy is preferred.
-		if best == nil || f.ev.CreatedAt > best.CreatedAt || (f.ev.CreatedAt == best.CreatedAt && f.src == "vault") {
-			best, src = f.ev, f.src
+		if f.src == "vault" {
+			if vault == nil || f.ev.CreatedAt > vault.CreatedAt {
+				vault = f.ev
+			}
+		} else if dir == nil || f.ev.CreatedAt > dir.CreatedAt {
+			dir = f.ev
 		}
 	}
-	return best, src
+	return vault, dir
 }
 
 func validServerList(ev *nostr.Event, ownerHex string) bool {
@@ -222,6 +283,25 @@ func (d *Devices) Report(ctx context.Context) DevicesReport {
 // Report's cache, so the screen never shows an answer older than its TTL.
 func (d *Devices) Refresh(ctx context.Context) DevicesReport {
 	ev, src := d.Source.Newest(ctx, d.OwnerHex)
+	return d.apply(ev, src)
+}
+
+// ServerListPoller is a ServerListSource with a cheaper read for the
+// background refresh (RelayServerLists.Poll).
+type ServerListPoller interface {
+	Poll(ctx context.Context, ownerHex string) (*nostr.Event, string)
+}
+
+// poll is Refresh for Run: the source's Poll when it has one.
+func (d *Devices) poll(ctx context.Context) {
+	if p, ok := d.Source.(ServerListPoller); ok {
+		d.apply(p.Poll(ctx, d.OwnerHex))
+		return
+	}
+	d.Refresh(ctx)
+}
+
+func (d *Devices) apply(ev *nostr.Event, src string) DevicesReport {
 	npub, pubkey, _ := d.Mesh.Read()
 	r := BuildDevicesReport(npub, pubkey, ev, src)
 	if d.DevicesFile != "" && ev != nil {
@@ -254,7 +334,7 @@ func (d *Devices) Run(ctx context.Context, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
-		d.Refresh(ctx)
+		d.poll(ctx)
 		select {
 		case <-ctx.Done():
 			return
