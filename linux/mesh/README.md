@@ -37,7 +37,7 @@ capabilities.
 | `NV_PORT` | `8080` | havend's port. Own devices get it. |
 | `NV_MESH_DOOR_PORT` | `NV_PORT+1` (8081) | havend's mesh door, loopback only. It must equal havend's `HAVEN_MESH_PLAIN_PORT`. |
 | `NV_MESH_UDP_PORT` | `0` (OS picks) | The mesh UDP port. Set it if the container publishes a port instead of using host networking. |
-| `NV_MESH_LAN_ADDR` | unset (this machine's interfaces) | Comma list of IP addresses offered to own devices as the box's LAN address. Set it when the container sits behind a bridge (StartOS): its own interfaces only carry the bridge address, which phones can't reach. The host's masquerade keeps the port, so a phone on the same Wi-Fi links directly. |
+| `NV_MESH_LAN_ADDR` | unset (this machine's interfaces) | Comma list of IP addresses offered to own devices as the box's LAN address. Set it when the container sits behind a bridge (StartOS): its own interfaces only carry the bridge address, which phones can't reach. IPv4 only (Docker and podman bridges don't NAT IPv6). The host's masquerade keeps the port, so a phone on the same Wi-Fi links directly; this needs the phone to share its own LAN address too (all clients do today), because the box's punch is what opens the host's NAT entry. |
 | `NV_MESH_DEVICES` | `$NV_DATA_DIR/mesh-devices.json` | |
 | `NV_MESH_RELAYS` | the Mac's finder relays | Comma list. Phones find the box on the same relays the Mac uses, so leave it unset. |
 | `RUST_LOG` | `info,nostr_relay_pool=warn` | |
