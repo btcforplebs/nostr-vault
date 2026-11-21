@@ -17,6 +17,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.nostrvault.data.model.ArticleHighlight
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.ui.components.AvatarTrustGate
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.NostrWebLinks
 import com.nostrvault.ui.components.QuotedNoteCard
@@ -73,6 +74,10 @@ fun ArticleReaderScreen(
     }
     val colors = LocalNostrVaultColors.current
 
+    val trusted by viewModel.trusted.collectAsState()
+    val trustAlways by viewModel.trustAlways.collectAsState()
+    // A stranger's avatar draws their constellation; their picture never loads (AvatarGate.kt).
+    AvatarTrustGate(trusted, trustAlways) {
     Scaffold(
         containerColor = WindowBackground,
         topBar = {
@@ -219,5 +224,6 @@ fun ArticleReaderScreen(
                 highlighting = false
             },
         )
+    }
     }
 }

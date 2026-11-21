@@ -208,6 +208,7 @@ fun FollowListScreen(
                         ) {
                         FollowListRow(
                             pubkey = p.pubkey,
+                            loadPicture = section.group != FollowListGroup.OUTSIDE,
                             name = p.name,
                             profile = profiles[p.pubkey],
                             followsYou = !isViewer &&

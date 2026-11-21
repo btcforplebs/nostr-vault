@@ -47,6 +47,7 @@ import coil.compose.AsyncImage
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.LiveStream
 import com.nostrvault.data.model.TrustGate
+import com.nostrvault.ui.components.AvatarTrustGate
 import com.nostrvault.ui.components.OutsideWebFoldRow
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.LiveChatService
@@ -290,6 +291,8 @@ fun LiveStreamScreen(
         return
     }
 
+    // A stranger's avatar draws their constellation; their picture never loads (AvatarGate.kt).
+    AvatarTrustGate(trusted, setOfNotNull(stream?.hostPubkey, viewModel.myPubkey.ifEmpty { null })) {
     Scaffold(
         containerColor = WindowBackground,
         topBar = {
@@ -629,5 +632,6 @@ fun LiveStreamScreen(
                 },
             )
         }
+    }
     }
 }
