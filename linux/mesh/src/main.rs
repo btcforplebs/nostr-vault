@@ -46,6 +46,26 @@ struct Settings {
     door_port: u16,
     udp_port: u16,
     relays: Vec<String>,
+    /// NV_MESH_LAN_ADDR: the LAN address(es) own devices are offered instead
+    /// of this machine's interfaces (a box behind a container bridge, StartOS).
+    lan_addrs: Vec<String>,
+}
+
+/// NV_MESH_LAN_ADDR: comma list of IP addresses; empty reads the interfaces.
+fn lan_addrs_env() -> Result<Vec<String>, String> {
+    parse_lan_addrs(&std::env::var("NV_MESH_LAN_ADDR").unwrap_or_default())
+}
+
+fn parse_lan_addrs(raw: &str) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    for a in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let ip: std::net::IpAddr = a.parse().map_err(|_| format!("NV_MESH_LAN_ADDR={a:?} is not an IP address"))?;
+        if ip.is_unspecified() || ip.is_loopback() || ip.is_multicast() {
+            return Err(format!("NV_MESH_LAN_ADDR={a:?} is not an address a phone on the LAN can reach"));
+        }
+        out.push(ip.to_string());
+    }
+    Ok(out)
 }
 
 fn port_env(name: &str, default: u16) -> Result<u16, String> {
@@ -80,7 +100,8 @@ fn settings() -> Result<Settings, String> {
         .filter(|s| !s.trim().is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| Path::new(&data).join("mesh-devices.json"));
-    Ok(Settings { dir: Path::new(&data).join("mesh"), devices, relay_port, door_port, udp_port, relays })
+    let lan_addrs = lan_addrs_env()?;
+    Ok(Settings { dir: Path::new(&data).join("mesh"), devices, relay_port, door_port, udp_port, relays, lan_addrs })
 }
 
 /// Write `contents` to `path` through a temp file and rename, so a reader
@@ -235,6 +256,7 @@ fn options(devices: &[String], s: &Settings) -> StartOptions {
         // Answers to the owner's devices carry the LAN address too, so a phone
         // on the same Wi-Fi links without router hairpin. Only they get answers.
         lan: true,
+        lan_addrs: s.lan_addrs.clone(),
         udp_port: s.udp_port,
         ..StartOptions::default()
     }
@@ -370,6 +392,15 @@ mod tests {
 
     fn mode(p: &Path) -> u32 {
         fs::metadata(p).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn lan_addr_list_is_ip_addresses_only() {
+        assert_eq!(parse_lan_addrs("").unwrap(), Vec::<String>::new());
+        assert_eq!(parse_lan_addrs(" 192.168.4.82 , fd00::5,").unwrap(), vec!["192.168.4.82", "fd00::5"]);
+        for bad in ["start9.local", "192.168.4.82:8080", "127.0.0.1", "0.0.0.0"] {
+            assert!(parse_lan_addrs(bad).is_err(), "{bad:?} must stop the start");
+        }
     }
 
     #[test]

@@ -14,6 +14,7 @@
 mod stack;
 
 mod node;
+mod lan_addrs;
 pub mod own_devices;
 pub mod relay_link;
 pub mod strangers;
@@ -48,6 +49,11 @@ pub struct StartOptions {
     pub udp_port: u16,
     /// Offer private LAN addresses to peers (same-network testing only).
     pub lan: bool,
+    /// With `lan`: offer these addresses instead of this machine's interfaces.
+    /// For a box in a container behind a bridge (StartOS), whose interfaces
+    /// carry only the bridge address: the host's LAN address goes here.
+    /// Every entry must be an IP address; empty reads the interfaces.
+    pub lan_addrs: Vec<String>,
     /// Stop sharing once this many bytes have gone to the mesh since sharing
     /// was turned on. 0 keeps the default; there is no "unlimited".
     pub max_serve_bytes: u64,
@@ -304,6 +310,7 @@ const MAX_INBOUND_FPR: f64 = 0.30;
 /// are JSON strings (valid YAML), so no input can add keys or peers.
 fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
     let nsec = Zeroizing::new(encode_nsec(&decode_nsec(nsec).context("nsec")?));
+    let lan_ips = lan_addrs::candidates_yaml(&opts.lan_addrs, opts.lan)?;
     let relays = if opts.relays.is_empty() {
         String::new()
     } else {
@@ -362,7 +369,7 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
       advertise: true
       policy: configured_only
 {allowlist}      share_local_candidates: {lan}
-      signal_ttl_secs: {SIGNAL_TTL_SECS}
+{lan_ips}      signal_ttl_secs: {SIGNAL_TTL_SECS}
 {relays}dns:
   enabled: false
 transports:
@@ -373,6 +380,7 @@ transports:
 {peers}"#,
         nsec = nsec.as_str(),
         lan = opts.lan,
+        lan_ips = lan_ips,
         port = opts.udp_port,
         native_api = native_api,
         allowlist = allowlist,
