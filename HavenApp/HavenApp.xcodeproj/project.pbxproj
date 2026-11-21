@@ -134,6 +134,7 @@
 		0E373455C57C8ADDD081117D /* NostrService+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A0902B97D14CA8823200AE /* NostrService+Search.swift */; };
 		0E98BA588F815B125D8333A4 /* VaultPublishHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEA9457F33DB60F95CB13102 /* VaultPublishHandoff.swift */; };
 		0EA0BA6FC52B56B4C373400C /* HomeVaultSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ADB1854DDD7D68150AD6CA7 /* HomeVaultSection.swift */; };
+		0EA203210363439F5E0B0F5E /* ConstellationImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDE9A4E8DB8BC878809641F1 /* ConstellationImage.swift */; };
 		0EA7C3C56E28349309CDCDF6 /* LockedKeyExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E97DE0A79D54F91CAE7557 /* LockedKeyExport.swift */; };
 		0EAF6627E32030E008F31576 /* DeleteAccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B21ED9CDC3721B689FC21229 /* DeleteAccountView.swift */; };
 		0EB571A6D00090B3DB44D60B /* LandscapeAllowance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0614BB693E3974CDBD73DA /* LandscapeAllowance.swift */; };
@@ -188,6 +189,7 @@
 		140F3D5A76813B47967BA63B /* MeshDeviceSetSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97020BD72A959C0373440242 /* MeshDeviceSetSync.swift */; };
 		146F984FD58E2303528869C8 /* ReturnPillManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A760EE9AFBDB368CEFB3ECB3 /* ReturnPillManager.swift */; };
 		14ABF30BD7FF762D64D8EE9A /* NostrEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D0631CF48FD1659E6F1005 /* NostrEvent.swift */; };
+		14AEAD057F7A22CDC6986C9A /* Constellation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 018126B9DAF160DF4101D230 /* Constellation.swift */; };
 		14AEBCF2AFEC15F67E1FF9B8 /* KeyPasswordStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = B49340F07334186EE08FB327 /* KeyPasswordStep.swift */; };
 		14CCF83D43C576A4CD7A130C /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B28025DEECA1DBE5C1594358 /* FeedView.swift */; };
 		14FE82E63F5A97838F91AAE6 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8A73E431CE524CF64925E0D /* CredentialStore.swift */; };
@@ -1259,6 +1261,7 @@
 		89E3A2C4B263A881A6C1FDFD /* View+SoftTopScrollEdge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA565C1761FBC06F35A11553 /* View+SoftTopScrollEdge.swift */; };
 		89E68678D241ADE8DCCE1C00 /* AdaptiveGridLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FA8251E55F8473F7A55C6E0 /* AdaptiveGridLayout.swift */; };
 		8A034824A472A4B51178F9CB /* GenmojiAddCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 062B559615452153EE2E788D /* GenmojiAddCard.swift */; };
+		8A0711773E6BBBD91467D616 /* Constellation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 018126B9DAF160DF4101D230 /* Constellation.swift */; };
 		8A194029008DF892CC4C47D7 /* FeedMenuEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF46EC38139B1B7E27E8114C /* FeedMenuEditor.swift */; };
 		8A8A672CB3CA7E14FE8B7D6B /* NVWidgetKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BEA112FAABC73A446279BB0 /* NVWidgetKit.swift */; };
 		8A9903724546906D5D2D829A /* BrowserRelaySender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09FE947064FD17B7489222A4 /* BrowserRelaySender.swift */; };
@@ -2120,6 +2123,7 @@
 		E405ECA10E10787620830F3F /* NVShareAction+Display.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11DACF33881364138C48F3B4 /* NVShareAction+Display.swift */; };
 		E449E2E084666AD88A404F90 /* RailPinsColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 667070BF7CD9F4EA19D897B6 /* RailPinsColumn.swift */; };
 		E4604A92F5669743FB7A6C3B /* WebRoleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 936CEE94651C4BE03EAC1D9C /* WebRoleService.swift */; };
+		E485B7ADE2FDF6A9049FC106 /* ConstellationImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDE9A4E8DB8BC878809641F1 /* ConstellationImage.swift */; };
 		E4D9036E6A98FD0E5E5E4624 /* GifPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A557F0804214239CCFEDDD8 /* GifPickerSheet.swift */; };
 		E4DC095F28C9D7FE3BBED27A /* ModeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA14EC3D2D24B98A94F93B56 /* ModeButton.swift */; };
 		E4DD291F338D4847D20FEF23 /* AccountUnreadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C295EC834C1EFDC6B042DC /* AccountUnreadStore.swift */; };
@@ -2444,6 +2448,7 @@
 		0006A2B10762A75E950F4478 /* ListVersionWording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListVersionWording.swift; sourceTree = "<group>"; };
 		0040BB6771C3E16494146D8E /* SuggestedMediaServersSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestedMediaServersSection.swift; sourceTree = "<group>"; };
 		0148FE6656C62C9C703374B7 /* LiveTrustPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTrustPath.swift; sourceTree = "<group>"; };
+		018126B9DAF160DF4101D230 /* Constellation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constellation.swift; sourceTree = "<group>"; };
 		01881425904539501ED65E3B /* SearchView+Outside.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SearchView+Outside.swift"; sourceTree = "<group>"; };
 		018ECF6ECF1913D9A3837177 /* CalendarShareParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarShareParser.swift; sourceTree = "<group>"; };
 		01A106C15E23BBB5AB0F9D2D /* SnoObjectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnoObjectView.swift; sourceTree = "<group>"; };
@@ -3655,6 +3660,7 @@
 		FD9D44519AE3AFB7DF22C301 /* LiveNoteCleanup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNoteCleanup.swift; sourceTree = "<group>"; };
 		FDB08989DAA08A101C01CEC2 /* NoteTranslation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteTranslation.swift; sourceTree = "<group>"; };
 		FDC471CDEB623A380FC45C62 /* MacModeComposeButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacModeComposeButton.swift; sourceTree = "<group>"; };
+		FDE9A4E8DB8BC878809641F1 /* ConstellationImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConstellationImage.swift; sourceTree = "<group>"; };
 		FDED9215AA68DE6E6DC154D9 /* DMShareAccountRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMShareAccountRow.swift; sourceTree = "<group>"; };
 		FE2060B412DD17816F0495D8 /* MediaItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaItem.swift; sourceTree = "<group>"; };
 		FE245B1EAB0D95B313A96D6B /* MeshKeyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshKeyAuth.swift; sourceTree = "<group>"; };
@@ -4705,6 +4711,7 @@
 				FF788B89ACD8B1FE30E03676 /* ComposerContext.swift */,
 				DF5D411E889E67C6FF5E16AF /* ComposerDraft.swift */,
 				5600D540B4446A14A59C8EC0 /* Config */,
+				018126B9DAF160DF4101D230 /* Constellation.swift */,
 				0AA8837A927A1C9B6B08A5F2 /* CopyAccounts.swift */,
 				3B372B39BC49ABA2ADD10179 /* CopySaving.swift */,
 				CA156FC0C0969693F67E9704 /* CopySettings.swift */,
@@ -4987,6 +4994,7 @@
 				A0A692460CA32D00E9050B99 /* AnimatedThumbnail.swift */,
 				EB285610AE543E6960BEBD1C /* AuthorQuickMenu.swift */,
 				382B059DAE5A61E52A3387E7 /* CondensedNoteLine.swift */,
+				FDE9A4E8DB8BC878809641F1 /* ConstellationImage.swift */,
 				DAA728904A7FCC83C21D5998 /* CustomEmojiImage.swift */,
 				0842F86AEFC979CFBDF29054 /* CustomEmojiText.swift */,
 				6CFC29BEE8A95187513A3787 /* CustomZapSheet.swift */,
@@ -5905,6 +5913,8 @@
 				B5262519D53519AF9645EA65 /* ConfigService+VaultWhitelist.swift in Sources */,
 				2B53A7CA9AAD906D7AE89502 /* ConfigService.swift in Sources */,
 				5225EC4BD08C0F185F7B7B30 /* ConnectSignerSheetView.swift in Sources */,
+				14AEAD057F7A22CDC6986C9A /* Constellation.swift in Sources */,
+				E485B7ADE2FDF6A9049FC106 /* ConstellationImage.swift in Sources */,
 				E3E261106E739296E6F290C4 /* ContactManager.swift in Sources */,
 				BA8810E4D83750FF74358B10 /* ContentView.swift in Sources */,
 				2E018B943122CCCE56765F6F /* CopiedInDate.swift in Sources */,
@@ -7118,6 +7128,8 @@
 				584CCA512626ED6224155B28 /* ConfigService+VaultWhitelist.swift in Sources */,
 				68B9084DB6D148FEFCE2C608 /* ConfigService.swift in Sources */,
 				CACFB26B1BB6D4A49C303D8B /* ConnectSignerSheetView.swift in Sources */,
+				8A0711773E6BBBD91467D616 /* Constellation.swift in Sources */,
+				0EA203210363439F5E0B0F5E /* ConstellationImage.swift in Sources */,
 				1F823537B9F13B3D4C003E11 /* ContactManager.swift in Sources */,
 				26221AAFE2617680C8D34696 /* CopiedInDate.swift in Sources */,
 				5290A9EDAB645E91D8E62FFE /* CopyAccounts.swift in Sources */,

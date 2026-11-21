@@ -118,7 +118,8 @@ extension VaultView {
                     ForEach(entries) { entry in
                         FollowerRow(
                             entry: entry,
-                            profile: nostrService.profiles[entry.pubkey]
+                            profile: nostrService.profiles[entry.pubkey],
+                            loadPicture: followersFilter != .outside
                         )
                         .onTapGesture { showingProfilePubkey = entry.pubkey }
                         Divider()
@@ -175,10 +176,13 @@ extension VaultView {
 struct FollowerRow: View {
     let entry: FollowerSnapshot.Entry
     let profile: FeedProfile?
+    /// False on "outside your web": a stranger's picture is not fetched; the
+    /// constellation is drawn instead.
+    var loadPicture = true
 
     var body: some View {
         HStack(spacing: 12) {
-            AvatarView(url: profile?.pictureURL, pubkey: entry.pubkey, size: 40)
+            AvatarView(url: profile?.pictureURL, pubkey: entry.pubkey, size: 40, load: loadPicture)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
