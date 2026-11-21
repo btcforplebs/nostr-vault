@@ -36,7 +36,8 @@ import { READERS } from "../readers/index.js"
 import { withParam } from "../desktop/routes.js"
 import { resolveList } from "../net/list-feed.js"
 import { hasLayouts, loadLayout, migrateCondensedLayouts, nextLayout, saveLayout } from "../net/feed-layout.js"
-import { applyFilters, layoutFilters, loadFilters, newerNotes, saveFilters } from "../net/feed-filters.js"
+import { applyFilters, layoutFilters, loadFilters, newerNotes, onFilters, saveFilters } from "../net/feed-filters.js"
+import { takeFeedReload } from "../net/feed-reload.js"
 import { EmptyFollowing, NewPostsPill, OlderButton, PullIndicator, SkeletonRows, usePullToRefresh, feedScroller, scrollTopOf, scrollToTop } from "../components/FeedExtras.jsx"
 
 if (import.meta.env) import("../styles/feeds.css")
@@ -84,6 +85,8 @@ export function FeedScreen({ ctx }) {
     return off
   })
   const changeFilters = f => { saveFilters(f); setFilters(f) }
+  // Settings › Feed flips the same switches; a Feed kept mounted behind it takes them at once.
+  useEffect(() => onFilters(() => setFilters(loadFilters())), [])
   const cycleLayout = () => {
     const l = nextLayout(layout)
     saveLayout(choice.mode, l)
@@ -442,7 +445,8 @@ export function FeedScreen({ ctx }) {
 
   // Back on the Feed soon after a sync (from another screen, or a reload): show Haven's notes and ask nothing; the
   // background sync and Refresh bring newer ones. An empty Haven (signed out and in again: sign-out wiped it) syncs.
-  useEffect(() => { if (following) reload().then(read => (read.length > 0 && syncedRecently(me, follows) ? undefined : sync({ have: read.length }))) }, [follows.length, following])
+  // Settings › Feed › Reload Feed asked for one (net/feed-reload.js): sync from the relays even when one just ran.
+  useEffect(() => { if (following) { const asked = takeFeedReload(); reload().then(read => (read.length > 0 && syncedRecently(me, follows) && !asked ? undefined : sync({ have: read.length }))) } }, [follows.length, following])
   // Following and Media share the notes read from /feed; Media reads a bigger page, so switching to it reads again.
   useEffect(() => { if (following && notes) reload() }, [media])
   useEffect(() => { if (!Reader && !following && !heldNotes(choice)) loadStrange(choice) }, [feedKey(choice), needsWeb && follows.length > 0])
@@ -468,7 +472,7 @@ export function FeedScreen({ ctx }) {
   const pull = usePullToRefresh(() => refreshNow.current(), { enabled: !Reader })
   useEffect(() => {
     if (!globalThis.addEventListener) return
-    const on = () => refreshNow.current()
+    const on = () => { takeFeedReload(); refreshNow.current() }
     addEventListener("nv:feed-refresh", on)
     return () => removeEventListener("nv:feed-refresh", on)
   }, [])

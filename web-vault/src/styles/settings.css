@@ -276,3 +276,8 @@ button.default-reaction:active { transform: none; }
    known shape (an inline aspect-ratio), so nothing moves when a picture loads. */
 .vault-grid.mosaic { display: flex; align-items: flex-start; gap: 3px; }
 .mosaic-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+/* Settings › Feed › Reload Feed: a button drawn as a row, in the accent like the iPhone's Form button. */
+button.reload-feed { width: 100%; border: 0; background: none; text-align: left; justify-content: flex-start; box-shadow: none; cursor: pointer; color: var(--accent); }
+button.reload-feed:active { transform: none; }
+/* Settings › Who Can Reach You › Refresh Trust List and Appearance › Translate To: a picker at the row's end. */
+.settings-select { margin-left: auto; max-width: 55%; }

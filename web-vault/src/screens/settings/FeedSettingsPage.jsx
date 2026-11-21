@@ -1,16 +1,20 @@
 // Settings › Feed (iPhone FeedSettingsView): where the feed reads from (Feed Relays, Settings › Relays) and Posting's
-// Send Delay, with the phone's words. Its What You See switches aren't on the web: new posts load on their own here,
-// and the web feed always shows reposts and replies.
+// Send Delay, What You See (Show Reposts, Show Replies, Auto-Load New Posts) and Troubleshooting's Reload Feed, with the
+// phone's words.
 import { SendDelayPicker } from "../../components/SendDelayPicker.jsx"
 import { SettingInfo } from "../../components/SettingInfo.jsx"
 import { Section } from "./Section.jsx"
 import { FeedReachSection } from "./FeedReachSection.jsx"
 import { OutsideSwitch } from "../../components/OutsideSwitch.jsx"
+import { FeedFilterSwitches } from "../../components/FeedFilterSwitches.jsx"
+import { askFeedReload } from "../../net/feed-reload.js"
 
 const Chevron = () => <svg class="settings-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
 
 export const FEED_RELAYS_NOTE = "Your feed reads from the relays marked Read."
-export const FEED_NOTE = "New posts load on their own. Reposts and replies always show in your feed on the web."
+// The Settings napplet's Feed page (napplet/SettingsPane.jsx) has no switches; this points to where they are.
+export const FEED_NOTE = "Reposts, Replies and Auto-load are also switched from the Feed's own menu."
+export const RELOAD_NOTE = "Loads your feed again from its relays."
 
 export function FeedSettingsPage() {
   return (
@@ -21,10 +25,15 @@ export function FeedSettingsPage() {
           <Chevron />
         </a>
       </Section>
+      <Section label="What You See"><FeedFilterSwitches /></Section>
       <FeedReachSection />
       <Section label="Web of Trust"><OutsideSwitch /></Section>
       <Section label="Posting"><SendDelayPicker /></Section>
-      <p class="settings-note muted small">{FEED_NOTE}</p>
+      <Section label="Troubleshooting" note={RELOAD_NOTE}>
+        <button type="button" class="settings-row reload-feed" onClick={() => askFeedReload()}>
+          <span class="settings-title">Reload Feed</span>
+        </button>
+      </Section>
     </>
   )
 }

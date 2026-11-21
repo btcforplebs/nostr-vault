@@ -7,6 +7,7 @@
 import { pool, PROFILE_RELAYS, uniq } from "./pool.js"
 import { emptyKept, wotStore, compactList, interner } from "./wot-store.js"
 import { fraction } from "./wot-pure.js"
+import { trustRefreshMs } from "./trust-settings.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 
@@ -26,10 +27,12 @@ export const EXTENDED_CAP = 2_500
 // web" put in the middle, so walking round other people's webs never empties the user's own. Each is for one person
 // at a time. The user's own ("home") are also kept in this browser (wot-store.js) and read back on the next load, so a
 // reload doesn't download every follow's list again; a follow's list is only asked for again `since` the last check,
-// at most every REFRESH_MS, or in full when they are a new follow. Follows whose list didn't come back are kept too and
-// asked for again after REFRESH_MS, not on every load: purplepag.es sends only ~560 of 1,054 follows' lists, and asking
-// for the rest on each load was 8-18 MB of mostly older copies of lists.
+// at most every Refresh Trust List (Settings › Who Can Reach You, trust-settings.js), or in full when they are a new
+// follow. Follows whose list didn't come back are kept too and asked for again after the same time, not on every load:
+// purplepag.es sends only ~560 of 1,054 follows' lists, and asking for the rest on each load was 8-18 MB of mostly older
+// copies of lists.
 export const RETRY_MS = 60_000
+/** The fixed refresh before Refresh Trust List; tests pass it as refreshMs. */
 export const REFRESH_MS = 6 * 3600_000
 // How long a group of 250 lists may take. A group is ~12 MB: in a first sign-in's busy page 8 s cut some off part way
 // (the relay itself sends them in ~3.5 s and ends with EOSE, which closes the ask sooner).
@@ -44,7 +47,7 @@ const caches = { home: newCache(""), visit: newCache("") }
  * `slot` is "home" (the user's follows) or "visit" (someone else's, for See their web). `query` and `now` are for tests.
  * -> Map(follow pubkey -> kind 3), only the follows whose list has come back
  */
-export async function followLists(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o), retryMs = RETRY_MS, now = Date.now, slot = "home", store = slot === "home" ? wotStore(me) : null, refreshMs = REFRESH_MS, reachable = relayUp, loadMs = LOAD_TIMEOUT_MS } = {}) {
+export async function followLists(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o), retryMs = RETRY_MS, now = Date.now, slot = "home", store = slot === "home" ? wotStore(me) : null, refreshMs = trustRefreshMs(), reachable = relayUp, loadMs = LOAD_TIMEOUT_MS } = {}) {
   if (caches[slot].me !== me) caches[slot] = newCache(me)
   const cache = caches[slot]
   const { lists, tried, inflight } = cache
@@ -72,7 +75,7 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
     if (lists.has(pk)) continue
     if (inflight.has(pk)) { waits.add(inflight.get(pk)); continue }
     if (tried.has(pk) && t - tried.get(pk) < retryMs) continue
-    // Missing on an earlier load: not again until REFRESH_MS has passed (Try again, retryMs 0, asks now).
+    // Missing on an earlier load: not again until refreshMs has passed (Try again, retryMs 0, asks now).
     if (retryMs && cache.missed.has(pk) && t - cache.missed.get(pk) * 1000 < refreshMs) continue
     want.push(pk)
   }
