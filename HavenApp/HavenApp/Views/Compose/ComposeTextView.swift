@@ -27,6 +27,9 @@ struct ComposeTextView {
         /// True while the view itself is applying the binding, so its own
         /// delegate callbacks are not echoed back as edits.
         var applying = false
+        /// The current focus request has been carried out (UIKit), so a
+        /// later update does not take focus again after the owner let go.
+        var focusApplied = false
         init(_ parent: ComposeTextView) { self.parent = parent }
 
         func report(text: String, selection: NSRange) {
@@ -86,10 +89,21 @@ extension ComposeTextView: UIViewRepresentable {
             let binding = $selection
             DispatchQueue.main.async { binding.wrappedValue = caret }
         }
-        if isFocused, !view.isFirstResponder, view.window != nil {
-            DispatchQueue.main.async { view.becomeFirstResponder() }
-        } else if !isFocused, view.isFirstResponder {
-            DispatchQueue.main.async { view.resignFirstResponder() }
+        // Focus is taken once per request. Hiding the keyboard reports the
+        // lost focus a turn later, and the dock coming back re-runs this in
+        // between: still `isFocused`, it pulled the keyboard straight back.
+        if isFocused {
+            if !coordinator.focusApplied, view.window != nil {
+                coordinator.focusApplied = true
+                if !view.isFirstResponder {
+                    DispatchQueue.main.async { view.becomeFirstResponder() }
+                }
+            }
+        } else {
+            coordinator.focusApplied = false
+            if view.isFirstResponder {
+                DispatchQueue.main.async { view.resignFirstResponder() }
+            }
         }
     }
 

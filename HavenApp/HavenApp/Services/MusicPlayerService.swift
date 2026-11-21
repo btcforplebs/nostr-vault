@@ -57,6 +57,12 @@ final class MusicPlayerService: ObservableObject {
     /// bring its video back.
     @Published private(set) var liveStream: LiveStream?
 
+    /// The full player (or a minimized stream's window) is open. On iPhone
+    /// and iPad the app shell presents it (`PlayerSheetHost`), not the mini
+    /// player: typing hides the dock, and a sheet the dock presented went
+    /// with it.
+    @Published var showsPlayer = false
+
     /// Off, the whole queue over again, or this song over again.
     enum RepeatMode: CaseIterable {
         case off, all, one
@@ -228,6 +234,10 @@ final class MusicPlayerService: ObservableObject {
     /// coming back to the app carries on with it (`resumeAfterReturning`).
     private var pausedByInterruption = false
 
+    /// Playing (song or stream) when the current audio interruption began,
+    /// so its end resumes only what it paused.
+    private var interruptedWhilePlaying = false
+
     /// Coming back to the app: a live stream that was playing until another
     /// app took the sound plays again. Songs, and anything the owner paused,
     /// stay paused.
@@ -238,6 +248,7 @@ final class MusicPlayerService: ObservableObject {
 
     func pause() {
         pausedByInterruption = false
+        interruptedWhilePlaying = false
         player.pause()
         isPlaying = false
         updateNowPlaying()
@@ -388,6 +399,7 @@ final class MusicPlayerService: ObservableObject {
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         switch type {
         case .began:
+            interruptedWhilePlaying = isPlaying
             if isPlaying {
                 isPlaying = false
                 pausedByInterruption = current?.isLive == true
@@ -396,7 +408,11 @@ final class MusicPlayerService: ObservableObject {
         case .ended:
             let options = AVAudioSession.InterruptionOptions(
                 rawValue: info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
-            if options.contains(.shouldResume), current != nil { resume() }
+            // Only what the interruption itself stopped: a stream the live
+            // window paused stays paused, or it plays over the window's video.
+            let wasPlaying = interruptedWhilePlaying
+            interruptedWhilePlaying = false
+            if wasPlaying, options.contains(.shouldResume), current != nil { resume() }
         @unknown default:
             break
         }

@@ -8,7 +8,6 @@ import SwiftUI
 /// is unchanged without music.
 struct CollapsedNowPlayingButton: View {
     @ObservedObject private var player = MusicPlayerService.shared
-    @State private var showingFull = false
 
     private static let size: CGFloat = 36
 
@@ -46,12 +45,13 @@ struct CollapsedNowPlayingButton: View {
             .buttonStyle(.plain)
             .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
             .accessibilityValue("\(track.title), \(track.artist)")
-            .accessibilityAction(named: "Open player") { showingFull = true }
+            .accessibilityAction(named: "Open player") { player.showsPlayer = true }
             .contextMenu {
-                Button { showingFull = true } label: { Label("Open player", systemImage: "music.note") }
+                Button { player.showsPlayer = true } label: { Label("Open player", systemImage: "music.note") }
                 MusicNowPlayingPageActions(track: track)
             }
-            .sheet(isPresented: $showingFull) { PlayerSheet() }
+            // Presented by the app shell (PlayerSheetHost): this button
+            // leaves with the folded bar when the keyboard comes up.
         }
     }
 }

@@ -10,7 +10,10 @@ import SwiftUI
 struct MiniPlayerBar: View {
     @ObservedObject private var player = MusicPlayerService.shared
     @ObservedObject private var row = FloatingButtonRow.shared
+    #if os(macOS)
+    /// The Mac has no app-wide host: each window's bar opens its own.
     @State private var showingFull = false
+    #endif
 
     /// Same height as the floating Post / Blossom / Relay capsule, so the
     /// two read as one row.
@@ -46,7 +49,7 @@ struct MiniPlayerBar: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isButton)
                 .accessibilityHint("Opens the player")
-                .accessibilityAction { showingFull = true }
+                .accessibilityAction { openPlayer() }
                 if player.isBuffering && player.isPlaying {
                     ProgressView().controlSize(.small).frame(width: 44, height: 44)
                 } else {
@@ -99,13 +102,27 @@ struct MiniPlayerBar: View {
             .overlay(Capsule().stroke(Color.ink.opacity(0.12), lineWidth: 1))
             .shadow(color: Color.shade.opacity(0.25), radius: 8, y: 2)
             .contentShape(Capsule())
-            .onTapGesture { showingFull = true }
+            .onTapGesture { openPlayer() }
             .contextMenu {
-                Button { showingFull = true } label: { Label("Open player", systemImage: "music.note") }
+                Button { openPlayer() } label: { Label("Open player", systemImage: "music.note") }
                 MusicNowPlayingPageActions(track: track)
             }
+            #if os(macOS)
             .sheet(isPresented: $showingFull) { PlayerSheet() }
+            #endif
         }
+    }
+}
+
+extension MiniPlayerBar {
+    /// iPhone and iPad: the app shell presents it (`PlayerSheetHost`), so
+    /// it stays up when typing hides the dock this bar rides in.
+    private func openPlayer() {
+        #if os(macOS)
+        showingFull = true
+        #else
+        player.showsPlayer = true
+        #endif
     }
 }
 

@@ -350,6 +350,13 @@ struct LiveStreamPlayerView: View {
     func listenInBackground() {
         // Already the mini player's stream: it plays on as it is.
         if miniPlayer != nil { dismiss(); return }
+        #if os(iOS)
+        // The same stream still up in PiP would play under the mini player:
+        // two copies, out of sync. Closing PiP pauses and mutes it.
+        if let url = stream.streamingURL, PiPManager.shared.isShowing(url) {
+            PiPManager.shared.stop()
+        }
+        #endif
         MusicPlayerService.shared.playLive(stream: stream, item: PlayerTrack(
             id: "live:\(stream.address)",
             title: stream.title ?? "Live stream",

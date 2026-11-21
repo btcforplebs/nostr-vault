@@ -456,5 +456,8 @@ struct ComposeView: View {
                 }
                 .padding(20)
             }
+            // A drag down the composer puts the keyboard away (iPad has no
+            // other way out of it in a sheet).
+            .scrollDismissesKeyboard(.interactively)
     }
 }
