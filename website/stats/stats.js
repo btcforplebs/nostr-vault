@@ -1,5 +1,6 @@
 // nostrvault.app/stats: reads /stats/stats.json (written once a day by scripts/stats/run.mjs) and fills in the totals.
 // The page shows totals only; the file holds nothing else. view() is pure and tested by scripts/stats/test/page.test.mjs.
+import { drawChart } from "./chart.js"
 
 export const PLATFORM_ORDER = ["Android", "iPhone", "iPad", "Mac", "Linux", "Web"]
 
@@ -52,6 +53,10 @@ async function load() {
   }
   document.getElementById("stats-platforms").hidden = v.platforms.length === 0
   document.getElementById("stats-updated").textContent = v.updated
+  try {
+    const res = await fetch("/stats/stats-history.jsonl", { cache: "no-cache" })
+    if (res.ok) drawChart(await res.text())
+  } catch {}
 }
 
 if (typeof document !== "undefined") load()

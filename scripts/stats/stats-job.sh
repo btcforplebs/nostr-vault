@@ -12,7 +12,7 @@
 #    totals stay; the next try waits 3 hours (scan.tried), so a failing day costs the relays a scan every 3 hours.
 #    After a scan that wrote stats.json, stats/history.mjs appends that day's public totals (no keys) to
 #    stats-history.jsonl, at most one line per day.
-# 3. Copy stats.json into the running site container whenever the live copy differs, so a redeploy (which starts
+# 3. Copy stats.json and stats-history.jsonl into the running site container whenever the live copy differs, so a redeploy (which starts
 #    from the image, without the file) has the numbers again within 15 minutes.
 # posters.json (public keys + dates of posters) stays in this folder and is never copied anywhere.
 #
@@ -22,7 +22,7 @@ export PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
 D="$(cd "$(dirname "$0")" && pwd)"
 LOG="$D/stats.log"
 CONTAINER=website-website-1
-TARGET=/usr/share/nginx/html/stats/stats.json
+TARGET_DIR=/usr/share/nginx/html/stats
 REPO="${STATS_REPO:-https://github.com/btcforplebs/nostr-vault.git}"
 REF="${STATS_REF:-master}"
 cd "$D" || exit 1
@@ -94,11 +94,14 @@ if [ "$due" = 1 ]; then
   fi
 fi
 
-[ -f stats.json ] || exit 0
-if ! docker exec "$CONTAINER" cat "$TARGET" 2>/dev/null | cmp -s - stats.json; then
-  if docker cp stats.json "$CONTAINER:$TARGET" >> "$LOG" 2>&1 && docker exec "$CONTAINER" chmod 644 "$TARGET"; then
-    log "copied stats.json into $CONTAINER"
-  else
-    log "copy into $CONTAINER FAILED"
+# stats.json and stats-history.jsonl (totals only, never a key) go next to each other in the site container.
+for f in stats.json stats-history.jsonl; do
+  [ -f "$f" ] || continue
+  if ! docker exec "$CONTAINER" cat "$TARGET_DIR/$f" 2>/dev/null | cmp -s - "$f"; then
+    if docker cp "$f" "$CONTAINER:$TARGET_DIR/$f" >> "$LOG" 2>&1 && docker exec "$CONTAINER" chmod 644 "$TARGET_DIR/$f"; then
+      log "copied $f into $CONTAINER"
+    else
+      log "copy of $f into $CONTAINER FAILED"
+    fi
   fi
-fi
+done

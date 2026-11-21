@@ -25,6 +25,15 @@
         .platforms li span:last-child { font-variant-numeric: tabular-nums; }
         .stats-content [hidden] { display: none !important; }
         .stats-note { opacity: 0.75; font-size: 0.95rem; margin-top: 30px; }
+        .chart-wrap { display: flex; flex-direction: column; gap: 4px; }
+        .chart-axis { display: flex; justify-content: space-between; font-size: 0.85rem; opacity: 0.7; font-variant-numeric: tabular-nums; }
+        .chart-svg { display: block; width: 100%; height: 220px; color: currentColor; border-bottom: 1px solid rgba(127, 127, 127, 0.5); }
+        .chart-legend { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.95rem; }
+        .chart-legend li { display: flex; align-items: center; gap: 6px; }
+        .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+        .swatch-android { background: #3ddc84; } .swatch-iphone { background: #0a84ff; } .swatch-ipad { background: #64d2ff; }
+        .swatch-mac { background: #bf5af2; } .swatch-linux { background: #ff9f0a; } .swatch-web { background: #ff375f; }
+        .chart-note { opacity: 0.75; font-size: 0.9rem; margin: 8px 0 0; }
     </style>
 </head>
 
@@ -50,6 +59,16 @@
         <section id="stats-platforms" hidden>
             <h2>Where they post from</h2>
             <ul class="platforms" id="platform-list"></ul>
+        </section>
+        <section id="stats-chart" hidden>
+            <h2>Posting users over time</h2>
+            <div class="chart-wrap">
+                <div class="chart-axis"><span id="chart-max"></span><span></span></div>
+                <div id="chart-plot"></div>
+                <div class="chart-axis"><span id="chart-from"></span><span id="chart-to"></span></div>
+            </div>
+            <ul class="chart-legend" id="chart-legend"></ul>
+            <p class="chart-note" id="chart-note"></p>
         </section>
         <p class="stats-note">How it's counted: the apps add a <code>client</code> tag ("Nostr Vault on iOS", "… on Android"
             and so on) to the notes you post. Once a day we read public notes on public relays and count the people whose
