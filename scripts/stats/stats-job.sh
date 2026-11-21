@@ -44,8 +44,8 @@ refresh() {
     rm -rf staging; log "refresh: archive of $sha failed; keeping stats/ ($old)"; return 1
   fi
   if ! node --test staging/scripts/stats/test/ > staging.test.log 2>&1; then
-    log "refresh: tests FAILED on $sha; keeping stats/ ($old). Last lines:"
-    tail -15 staging.test.log >> "$LOG"
+    log "refresh: tests FAILED on $sha; keeping stats/ ($old). Failing tests:"
+    grep -E '^✖|^ℹ (pass|fail)' staging.test.log | head -12 >> "$LOG"
     rm -rf staging staging.test.log; return 1
   fi
   log "refresh: tests pass on $sha ($(grep -E '^ℹ pass' staging.test.log | sed 's/ℹ //'))"
