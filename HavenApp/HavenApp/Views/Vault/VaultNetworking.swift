@@ -308,15 +308,25 @@ extension VaultView {
     func loadMore() {
         guard !nostrService.isFetching else { return }
 
-        // Get the oldest timestamp from events. In the Vault tab, Articles and
-        // Highlights page on their own and can reach far back; their pages
-        // mustn't move this cursor, or Notes would skip everything between.
+        // Each stream pages from its own oldest event (VaultFetchFilters
+        // .olderCursors), as on Android: one cursor for every kind sat past
+        // the likes when notes reached further back, and those likes were
+        // never asked for. In the Vault tab, Articles and Highlights page on
+        // their own and can reach far back; their pages mustn't move these
+        // cursors, or Notes would skip everything between.
         let pagedApart: Set<Int> = vaultTabHostsMedia ? [VaultNoteScope.articleKind, VaultNoteScope.highlightKind] : []
-        guard let oldestTimestamp = nostrService.events.last(where: { !pagedApart.contains($0.kind) })?.created_at else { return }
+        let owner = nostrService.activeHexPubkey
+        let authors = pagingAuthors
+        let loaded = nostrService.events.map { event in
+            VaultFetchFilters.Loaded(kind: event.kind, pubkey: event.pubkey, createdAt: event.created_at,
+                                     tagsOwner: !owner.isEmpty && event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == owner })
+        }
+        let cursors = VaultFetchFilters.olderCursors(loaded, ownerHex: owner, authors: authors,
+                                                     noteKinds: NostrService.relayTabNoteKinds, skipKinds: pagedApart)
+        guard !cursors.isEmpty else { return }
 
-        // Request events strictly older than the last one we have
         #if DEBUG
-        print("VaultView: Requesting older events until: \(oldestTimestamp - 1)")
+        print("VaultView: Requesting older events, cursors: \(cursors)")
         #endif
         var urls = [configService.config.nostrURL, configService.config.nostrURL + "/inbox"].compactMap { URL(string: $0) }
         guard !urls.isEmpty else { return }
@@ -325,7 +335,7 @@ extension VaultView {
             urls.append(macInbox)
         }
 
-        nostrService.fetchNotes(from: urls, until: oldestTimestamp - 1, authors: pagingAuthors)
+        nostrService.fetchNotes(from: urls, older: cursors, authors: authors)
     }
 
     /// Whose posts the relay lists page through: you and your whitelist.

@@ -57,8 +57,8 @@ final class VaultFetchFiltersTests: XCTestCase {
         return events
     }
 
-    private func filters(until: Int64? = nil) -> [[String: Any]] {
-        VaultFetchFilters.filters(ownerHex: owner, authors: [owner], until: until, since: nil, noteKinds: noteKinds)
+    private func filters() -> [[String: Any]] {
+        VaultFetchFilters.filters(ownerHex: owner, authors: [owner], since: nil, noteKinds: noteKinds)
     }
 
     func testLikesSurviveTwoHundredFollowerLists() {
@@ -88,7 +88,9 @@ final class VaultFetchFiltersTests: XCTestCase {
     }
 
     func testOlderPageUsesAndroidsOlderLimit() {
-        let engagement = filters(until: 5).first { ($0["kinds"] as? [Int]) == [7, 16, 9735] }
+        let older = VaultFetchFilters.olderFilters(ownerHex: owner, authors: [owner], noteKinds: noteKinds,
+                                                   cursors: [.taggedEngagement: 5])
+        let engagement = older.first { ($0["kinds"] as? [Int]) == [7, 16, 9735] }
         XCTAssertEqual(engagement?["limit"] as? Int, 200)
         XCTAssertEqual(engagement?["until"] as? Int64, 5)
     }
@@ -96,6 +98,77 @@ final class VaultFetchFiltersTests: XCTestCase {
     func testOwnLikesStayInTheAuthorFilter() {
         let authorMeta = filters().first { ($0["authors"] as? [String]) == [owner] && (($0["kinds"] as? [Int]) ?? []).contains(0) }
         XCTAssertTrue((authorMeta?["kinds"] as? [Int])?.contains(7) == true)
+    }
+
+    // MARK: - Load older: one cursor per stream
+
+    private func loaded(_ events: Set<Event>) -> [VaultFetchFilters.Loaded] {
+        events.map { .init(kind: $0.kind, pubkey: $0.author, createdAt: $0.createdAt, tagsOwner: $0.p == owner) }
+    }
+
+    /// Your notes go back far; likes on them are spread over the same time.
+    /// The first page holds 400 notes but only the newest 500 likes, so the
+    /// likes stop well after the notes do.
+    private func deepWindow() -> [Event] {
+        var events: [Event] = []
+        for i in 0..<1000 {
+            let t = Int64(10_000 + i * 10)
+            events.append(Event(id: "n\(i)", kind: 1, author: owner, createdAt: t, p: nil))
+            events.append(Event(id: "l\(i)a", kind: 7, author: "fan\(i)", createdAt: t + 1, p: owner))
+            events.append(Event(id: "l\(i)b", kind: 7, author: "fan\(i)", createdAt: t + 2, p: owner))
+        }
+        return events
+    }
+
+    func testEachStreamPagesFromItsOwnOldest() {
+        let first = answer(filters(), from: deepWindow())
+        let cursors = VaultFetchFilters.olderCursors(loaded(first), ownerHex: owner, authors: [owner], noteKinds: noteKinds)
+        let oldestNote = first.filter { $0.kind == 1 }.map(\.createdAt).min()!
+        let oldestLike = first.filter { $0.kind == 7 }.map(\.createdAt).min()!
+        XCTAssertGreaterThan(oldestLike, oldestNote, "fixture: likes must stop after notes")
+        XCTAssertEqual(cursors[.ownNotes], oldestNote - 1)
+        XCTAssertEqual(cursors[.taggedEngagement], oldestLike - 1)
+        // Nothing loaded for these, so they are not asked again.
+        XCTAssertNil(cursors[.taggedNotes])
+        XCTAssertNil(cursors[.ownMeta])
+        let older = VaultFetchFilters.olderFilters(ownerHex: owner, authors: [owner], noteKinds: noteKinds, cursors: cursors)
+        XCTAssertEqual(older.count, 2)
+    }
+
+    /// The likes between the oldest like and the oldest note come back on
+    /// the next page. With one cursor (the oldest of any kind) they were
+    /// skipped for good.
+    func testLoadOlderFillsTheLikesInBetween() {
+        let window = deepWindow()
+        let first = answer(filters(), from: window)
+        let oldestNote = first.filter { $0.kind == 1 }.map(\.createdAt).min()!
+        let between = Set(window.filter { $0.kind == 7 && $0.createdAt > oldestNote }).subtracting(first)
+        XCTAssertFalse(between.isEmpty, "fixture: some likes must be missing after the first page")
+
+        let cursors = VaultFetchFilters.olderCursors(loaded(first), ownerHex: owner, authors: [owner], noteKinds: noteKinds)
+        let perStream = answer(VaultFetchFilters.olderFilters(ownerHex: owner, authors: [owner], noteKinds: noteKinds,
+                                                              cursors: cursors), from: window)
+        // The first older page picks up right below the oldest like.
+        let newestOlderLike = perStream.filter { $0.kind == 7 }.map(\.createdAt).max()
+        XCTAssertEqual(newestOlderLike, between.map(\.createdAt).max())
+
+        // Control: the old single cursor starts below the oldest note and
+        // never returns a like newer than it.
+        let single = Array(Set(cursors.values)).min()!
+        let oneCursor = answer(VaultFetchFilters.olderFilters(ownerHex: owner, authors: [owner], noteKinds: noteKinds,
+                                                              cursors: Dictionary(uniqueKeysWithValues: cursors.keys.map { ($0, single) })),
+                               from: window)
+        XCTAssertTrue(oneCursor.filter { $0.kind == 7 }.allSatisfy { $0.createdAt <= oldestNote })
+    }
+
+    func testCursorsSkipKindsPagedApart() {
+        let events: [VaultFetchFilters.Loaded] = [
+            .init(kind: 30023, pubkey: owner, createdAt: 10, tagsOwner: false),
+            .init(kind: 1, pubkey: owner, createdAt: 500, tagsOwner: false),
+        ]
+        let cursors = VaultFetchFilters.olderCursors(events, ownerHex: owner, authors: [owner], noteKinds: noteKinds,
+                                                     skipKinds: [30023])
+        XCTAssertEqual(cursors[.ownNotes], 499)
     }
 
     private func differs(_ a: [String: Any], _ b: [String: Any]?) -> Bool {

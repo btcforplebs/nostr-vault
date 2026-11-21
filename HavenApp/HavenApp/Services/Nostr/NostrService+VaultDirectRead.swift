@@ -25,7 +25,7 @@ extension NostrService {
         }
         vaultStoreReading = true
         let authors = VaultView.activitySources(ConfigService.shared).authors
-        let filters = Self.vaultFilters(ownerHex: owner, authors: authors, until: nil, since: nil)
+        let filters = Self.vaultFilters(ownerHex: owner, authors: authors, since: nil)
         let passes = VaultDirectRead.storeRead(filters, answeredBefore: vaultStoreAnswered == owner)
         // Local, so processEvent never injects these back into the relay.
         let local = ConfigService.shared.config.nostrURL
