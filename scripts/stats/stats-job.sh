@@ -45,9 +45,10 @@ refresh() {
   if ! git -C repo.git archive "$sha" scripts/stats website/stats | tar -x -C staging; then
     rm -rf staging; log "refresh: archive of $sha failed; keeping stats/ ($old)"; return 1
   fi
-  if ! node --test staging/scripts/stats/test/ > staging.test.log 2>&1; then
+  # Test files by name: Node 22.14 (prod-mini) does not take a folder. The spec reporter prints ✖/ℹ lines off a TTY too.
+  if ! node --test --test-reporter=spec staging/scripts/stats/test/*.test.mjs > staging.test.log 2>&1; then
     log "refresh: tests FAILED on $sha; keeping stats/ ($old). Failing tests:"
-    grep -E '^✖|^ℹ (pass|fail)' staging.test.log | head -12 >> "$LOG"
+    { grep -E '^✖|^ℹ (pass|fail)' staging.test.log || tail -8 staging.test.log; } | head -12 >> "$LOG"
     rm -rf staging staging.test.log; return 1
   fi
   log "refresh: tests pass on $sha ($(grep -E '^ℹ pass' staging.test.log | sed 's/ℹ //'))"
