@@ -232,6 +232,7 @@ struct NostrIntroStep: View {
             return
         }
         let result = String(cString: resultCStr)
+        free(resultCStr)
         let parts = result.split(separator: ":")
         guard parts.count == 2 else {
             error = "Key generation returned invalid format"

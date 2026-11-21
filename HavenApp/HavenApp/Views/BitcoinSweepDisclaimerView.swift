@@ -359,6 +359,7 @@ struct BitcoinSweepDisclaimerView: View {
                 return
             }
             let address = String(cString: cAddr)
+            free(cAddr)
 
             fetchBitcoinBalance(address: address)
         }
