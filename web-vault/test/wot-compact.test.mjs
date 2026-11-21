@@ -3,7 +3,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { FollowList, compactList, interner, pack, unpack } from "../src/net/wot-store.js"
-import { askInTurn, buildWeb, buildWebSoon, builtWeb, followLists, LISTS_WAIT_MS } from "../src/net/wot.js"
+import { askInTurn, buildWeb, buildWebSoon, builtWeb, followLists, LISTS_WAIT_MS, HANDOFF_WAIT_MS } from "../src/net/wot.js"
 import { vouchesFrom } from "../src/net/for-you.js"
 import { trustedWeb } from "../src/net/notifications.js"
 
@@ -74,6 +74,12 @@ test("askInTurn: a failed, cut-off or capped answer marks the group cut; the nex
   const asked = []
   r = await askInTurn(["a", "b"], chunk, wanted, { query: async ([u], f) => { asked.push(u); return f.authors.map(list) } })
   assert.deepEqual(asked, ["a"], "all there: the second relay is never asked")
+  // A first relay that stalls hands on after HANDOFF_WAIT_MS; the last relay gets the whole LISTS_WAIT_MS.
+  const waits = []
+  t = 0
+  r = await askInTurn(["a", "b"], chunk, wanted, { query: async ([u], f, o) => { waits.push(o.maxWait); if (u === "a") { t += o.maxWait; return [] } return f.authors.map(list) }, now: () => t })
+  assert.deepEqual(waits, [HANDOFF_WAIT_MS, LISTS_WAIT_MS])
+  assert.equal(r.cut, true); assert.equal(r.evs.length, 2, "the second relay brought them")
 })
 
 test("buildWebSoon gives buildWeb's web a slice at a time, and the same one again while nothing changed", async () => {

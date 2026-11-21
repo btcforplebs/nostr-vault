@@ -108,16 +108,20 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
  * (Tidy's audit 11-20, W6). `cut`: an answer may be short (a relay failed, timed out at LISTS_WAIT_MS, or sent as many
  * as it was asked for, which may be its cap), so nobody missing from it is a known miss. -> { evs, cut }
  */
+export const HANDOFF_WAIT_MS = 8_000
 export async function askInTurn(relays, chunk, wanted, { query, now = Date.now }) {
   const evs = [], got = new Set()
   let cut = false
-  for (const url of relays) {
+  for (const [i, url] of relays.entries()) {
     const authors = chunk.filter(pk => !got.has(pk))
     if (!authors.length) break
+    // A relay with another after it gets HANDOFF_WAIT_MS, not the whole LISTS_WAIT_MS: a stalled first relay hands the
+    // rest on sooner, so a group never waits two full waits back to back (Tron's review of #2333).
+    const wait = i < relays.length - 1 ? HANDOFF_WAIT_MS : LISTS_WAIT_MS
     const started = now()
     let answer
-    try { answer = await query([url], { kinds: [3], authors, limit: authors.length }, { maxWait: LISTS_WAIT_MS }) } catch { cut = true; continue }
-    if (now() - started >= LISTS_WAIT_MS - 100 || answer.length >= authors.length) cut = true
+    try { answer = await query([url], { kinds: [3], authors, limit: authors.length }, { maxWait: wait }) } catch { cut = true; continue }
+    if (now() - started >= wait - 100 || answer.length >= authors.length) cut = true
     for (const ev of answer) if (ev?.kind === 3 && wanted.has(ev.pubkey)) got.add(ev.pubkey)
     evs.push(...answer)
   }
