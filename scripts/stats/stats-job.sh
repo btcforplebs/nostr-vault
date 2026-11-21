@@ -10,6 +10,8 @@
 #    A changed stats-job.sh from a passing master is installed over this file for the next run.
 # 2. Run the scan (scripts/stats/run.mjs, about 10 min). A scan that fails its relay gate writes nothing and the old
 #    totals stay; the next try waits 3 hours (scan.tried), so a failing day costs the relays a scan every 3 hours.
+#    After a scan that wrote stats.json, stats/history.mjs appends that day's public totals (no keys) to
+#    stats-history.jsonl, at most one line per day.
 # 3. Copy stats.json into the running site container whenever the live copy differs, so a redeploy (which starts
 #    from the image, without the file) has the numbers again within 15 minutes.
 # posters.json (public keys + dates of posters) stays in this folder and is never copied anywhere.
@@ -85,6 +87,8 @@ if [ "$due" = 1 ]; then
     node stats/run.mjs --out stats.json --state posters.json $seed >> "$LOG" 2>&1
     rc=$?
     log "scan exit $rc"
+    # One line per day of public totals (no keys) after a scan that wrote stats.json.
+    [ "$rc" = 0 ] && [ -f stats/history.mjs ] && node stats/history.mjs stats.json stats-history.jsonl >> "$LOG" 2>&1
     rmdir scan.lock
   fi
 fi
