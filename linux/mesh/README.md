@@ -27,6 +27,7 @@ capabilities.
 | `mesh/key/nsec` | nv-mesh | dir 0700, file 0600 | The box's mesh key, made on first boot. It is linked into place, never renamed over an existing key, and the directory is fsynced, so a power cut or two racing starts can't change the npub. nv-mesh refuses to use a key that is a symlink, belongs to another uid, can't be made 0600, or doesn't decode, and never replaces such a key. No API may ever serve it. |
 | `mesh/npub` | nv-mesh | 0644 | The box's mesh npub. The owner adds it on the phone: Profile › Mesh › My Devices › Add a device, then Paste instead with this npub. |
 | `mesh/status.json` | nv-mesh | 0644 | Written every 5 s. It holds the engine's `NvFipsStatusJSON` plus `npub`, `devices` (count), `error` (plain words, or null) and `updated` (unix s). It is written atomically. havend returns it as `mesh` in `GET /api/box/status`. |
+| `mesh/dial.sock` | nv-mesh | 0666, answers havend's uid only | The box dialing out (`src/dial.rs`). One JSON line each way. `{"op":"dial","npub":…}` gives the loopback base that reaches that vault over the mesh. `{"op":"sign_copy_start","npub":…,"base":…}` gives a copy-start proof (kind 27235, `p` = that vault) signed with the box's mesh key, built by nv-mesh itself: nothing else can be signed, and no account key is ever used. Both answer only for the owner's devices the engine runs with. The caller's uid comes from the kernel (SO_PEERCRED): only `NV_MESH_DIAL_UID` and nv-mesh's own. |
 | `mesh-devices.json` (`NV_MESH_DEVICES`) | havend | readable by nv-mesh | The owner's devices: `["npub1…"]`, `[{"npub":"npub1…","name":"…"}]` or `{"devices":[…]}`. It is re-read every 5 s, and a change restarts the engine (as on the Mac), so a removed device drops at once. If the file is unreadable, the last good list is kept. Bad npubs and the box's own npub are skipped. |
 
 ## Environment
@@ -40,6 +41,7 @@ capabilities.
 | `NV_MESH_LAN_ADDR` | unset (this machine's interfaces) | Comma list of IP addresses offered to own devices as the box's LAN address. Set it when the container sits behind a bridge (StartOS): its own interfaces only carry the bridge address, which phones can't reach. IPv4 only (Docker and podman bridges don't NAT IPv6). The host's masquerade keeps the port, so a phone on the same Wi-Fi links directly; this needs the phone to share its own LAN address too (all clients do today), because the box's punch is what opens the host's NAT entry. |
 | `NV_MESH_DEVICES` | `$NV_DATA_DIR/mesh-devices.json` | |
 | `NV_MESH_RELAYS` | the Mac's finder relays | Comma list. Phones find the box on the same relays the Mac uses, so leave it unset. |
+| `NV_MESH_DIAL_UID` | `10002` | havend's uid: the only other uid `mesh/dial.sock` answers. |
 | `RUST_LOG` | `info,nostr_relay_pool=warn` | |
 
 ## What the other lanes need

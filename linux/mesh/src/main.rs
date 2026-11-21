@@ -23,11 +23,14 @@ use std::fs;
 use std::io::{ErrorKind, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use fips::identity::{Identity, PeerIdentity, decode_nsec};
 use nvfips::StartOptions;
 use serde_json::{Value, json};
+
+mod dial;
 
 /// MeshDevices.swift `defaultFinderRelays`: where the Mac's engine finds and
 /// signals its devices, so a phone finds the box the same way.
@@ -330,6 +333,13 @@ fn run() -> Result<(), String> {
     write_atomic(&s.dir.join("npub"), format!("{npub}\n").as_bytes(), 0o644).map_err(|e| format!("npub: {e}"))?;
     tracing::info!(%npub, "box mesh npub");
 
+    // The box dialing out (dial.rs): havend asks here to reach, and sign a
+    // copy start for, the owner's devices the engine runs with.
+    let dialable: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let dialer = dial::Dialer::new(&nsec, Arc::clone(&dialable), dial::client_uid_env()?, Box::new(nvfips::ingress))?;
+    let sock = Arc::new(dialer).serve(&s.dir)?;
+    tracing::info!(socket = %sock.display(), "dial socket ready for havend");
+
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
     rt.block_on(async {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).map_err(|e| e.to_string())?;
@@ -364,6 +374,11 @@ fn run() -> Result<(), String> {
                     error = Some(e);
                     retry_at = Some(Instant::now() + RETRY);
                 }
+            }
+            // Dialable: the devices the engine is running for, none while it is not.
+            let live = if engine_running() { running_for.clone().unwrap_or_default() } else { Vec::new() };
+            if let Ok(mut d) = dialable.lock() {
+                *d = live;
             }
             write_status(&s.dir, &npub, devices.len(), error.as_deref());
             tokio::select! {

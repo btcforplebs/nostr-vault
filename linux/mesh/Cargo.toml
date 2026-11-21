@@ -15,6 +15,10 @@ nvfips = { package = "fips-v2-android", path = "../../fips-v2-android" }
 # the same rev as fips-v2-android, so one fips is linked.
 fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "c7d26da1" }
 serde_json = "1"
+# The box's own signature on a copy start (src/dial.rs), with its mesh key.
+# Same version fips already links, so no second nostr is built.
+nostr = { version = "=0.44.8", default-features = false, features = ["std"] }
+base64 = "0.22"
 libc = "0.2"
 tracing = "0.1"
 tokio = { version = "1", features = ["rt", "macros", "signal", "time"] }
