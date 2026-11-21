@@ -47,7 +47,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             .environmentObject(AppState.shared)
         
         window.overrideUserInterfaceStyle = AppAppearance.interfaceStyle
-        window.rootViewController = UIHostingController(rootView: contentView)
+        let root = UIHostingController(rootView: contentView)
+        // The page colour, not the system default: any gap the content leaves
+        // (a Stage Manager window's safe-area bands) would show up grey.
+        root.view.backgroundColor = UIColor(Color.platformWindowBackground)
+        window.rootViewController = root
         self.window = window
         window.makeKeyAndVisible()
 

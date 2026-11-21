@@ -122,7 +122,11 @@ struct NoteSplitPane<Content: View>: View {
                 }
             }
             .animation(singleColumn ? .easeInOut(duration: 0.25) : nil, value: selection.isEmpty)
-            .clipped()
+            // Clip the sides (the detail column slides in from the edge) but
+            // let the lists run under the status bar and the dock, as on
+            // iPhone. `.clipped()` stopped them at the safe area and left grey
+            // bands top and bottom on iPad.
+            .mask { Rectangle().ignoresSafeArea(edges: .vertical) }
         }
         .onChange(of: selection.note?.id) { _, id in
             if id != nil { setDetailHidden(false) }
