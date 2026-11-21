@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # release_all.sh — build and publish all three Nostr Vault releases:
-#   1. Android APK  → Blossom (logen.btcforplebs.com) → Zapstore (zsp publish)
+#   1. Android APKs → 64-bit to Blossom (logen.btcforplebs.com) → Zapstore (zsp publish);
+#                     64-bit + 32-bit (armeabi-v7a) both on the GitHub release
 #   2. macOS app    → zip in dist/ → attached to the GitHub release
 #   3. iOS app      → archive → TestFlight upload (falls back to Organizer)
 # plus the GitHub release (tag v<macVersion>-b<build>, notes from
-# HavenApp/RELEASE_NOTES.md, APK + macOS zip attached).
+# HavenApp/RELEASE_NOTES.md, both APKs + macOS zip attached).
 #
 # Usage:
 #   ./scripts/release_all.sh                 # build everything, then confirm each publish step
@@ -114,7 +115,7 @@ echo "  macOS   : $MAC_VERSION (build $MAC_BUILD)"
 echo "  iOS     : $IOS_VERSION (build $IOS_BUILD)"
 echo "  Android : $ANDROID_VERSION (versionCode $ANDROID_CODE)"
 echo "  Tag     : $TAG"
-echo "  APK     : $APK_NAME"
+echo "  APK     : $APK_NAME (+ ${APK_NAME%.apk}-32bit.apk)"
 
 if [ "$MAC_BUILD" != "$IOS_BUILD" ]; then
     warn "macOS build ($MAC_BUILD) and iOS build ($IOS_BUILD) differ — releases are keyed by build number; bump them together."
@@ -161,41 +162,63 @@ confirm "Release build $BUILD as $TAG?" || die "Aborted."
 mkdir -p "$DIST"
 
 # ── 1. Android ───────────────────────────────────────────────────────────────
+# Two APKs, one per ABI (abi splits in app/build.gradle.kts): the 64-bit one is
+# the main download, Blossom and Zapstore; the 32-bit one is for phones that
+# run a 32-bit-only Android build (budget Galaxy A0x/A1x, Tab A7 Lite), which
+# refuse the 64-bit APK as "not compatible". Both go on the GitHub release.
 APK_PATH="$DIST/$APK_NAME"
+APK32_NAME="${APK_NAME%.apk}-32bit.apk"
+APK32_PATH="$DIST/$APK32_NAME"
+APK_LABEL="Android 64-bit (most phones)"
+APK32_LABEL="Android 32-bit, for older budget Samsungs"
+APK_OUT="$ANDROID_DIR/app/build/outputs/apk/release"
 if [ "$SKIP_ANDROID" = 0 ]; then
-    log "Android: rebuilding Go relay (.so) and assembling release APK"
-    (cd "$ANDROID_DIR" && ./build_haven_android.sh arm64)
+    log "Android: rebuilding Go relay (.so) and assembling release APKs (arm64-v8a + armeabi-v7a)"
+    (cd "$ANDROID_DIR" && ./build_haven_android.sh arm64-v8a && ./build_haven_android.sh armeabi-v7a)
     # The FIPS mesh (libnvfips.so) is gitignored and optional at build time: an
     # APK without it builds fine and reports the mesh as unavailable.
-    (cd "$ANDROID_DIR" && ./build_fips_v2_android.sh)
+    (cd "$ANDROID_DIR" && ./build_fips_v2_android.sh arm64-v8a armeabi-v7a)
     # Translate post: Bergamot + fastText (.so) and the language-ID asset, both gitignored.
-    (cd "$ANDROID_DIR" && ./build_translate_android.sh)
+    (cd "$ANDROID_DIR" && ./build_translate_android.sh arm64-v8a armeabi-v7a)
+    rm -f "$APK_OUT"/*.apk
     (cd "$ANDROID_DIR" && ./gradlew assembleRelease -q)
-    # Each check reads a listing taken once. With pipefail, `unzip -l | grep -q`
-    # fails whenever grep stops reading early (unzip gets SIGPIPE), even on a
-    # match, so a good APK was refused (3.2.3 (104), 2026-11-18).
-    APK_BUILT="$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
-    APK_LISTING="$(unzip -l "$APK_BUILT")"
-    grep -qF "lib/arm64-v8a/libnvtranslate.so" <<< "$APK_LISTING" \
-        || die "APK has no libnvtranslate.so — Translate post would be missing"
-    grep -qF "assets/translate/lid.176.ftz" <<< "$APK_LISTING" \
-        || die "APK has no lid.176.ftz — Translate post would never show"
     # Zapstore lists Google services from its APK scan; keep the APK free of them.
     if grep -qE "com\.google\.android\.gms|com\.google\.firebase|com\.google\.mlkit" \
         "$ANDROID_DIR/app/build/outputs/mapping/release/mapping.txt"; then
         die "APK contains Google Play services / Firebase / ML Kit classes (mapping.txt)"
     fi
-    grep -qF "lib/arm64-v8a/libnvfips.so" <<< "$APK_LISTING" \
-        || die "APK has no libnvfips.so — the FIPS mesh would be missing"
-    # jniLibs are gitignored, so a stale libhaven.so ships silently. Refuse an
-    # APK whose Go core predates the per-account signer sessions (#168).
-    HAVEN_STRINGS="$(unzip -p "$APK_BUILT" lib/arm64-v8a/libhaven.so | strings)"
-    grep -qF NIP46SignEventWithC <<< "$HAVEN_STRINGS" \
-        || die "APK's libhaven.so is stale (no NIP46SignEventWithC) — rebuild it from master"
-    cp "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" "$APK_PATH"
+    # check_apk <apk> <abi> <other abi>: every native lib for its ABI, none for the other.
+    check_apk() {
+        local apk="$1" abi="$2" other="$3" listing strings_out
+        [ -f "$apk" ] || die "No $apk — did the abi splits change?"
+        # Each check reads a listing taken once. With pipefail, `unzip -l | grep -q`
+        # fails whenever grep stops reading early (unzip gets SIGPIPE), even on a
+        # match, so a good APK was refused (3.2.3 (104), 2026-11-18).
+        listing="$(unzip -l "$apk")"
+        grep -qF "lib/$abi/libnvtranslate.so" <<< "$listing" \
+            || die "$abi APK has no libnvtranslate.so — Translate post would be missing"
+        grep -qF "assets/translate/lid.176.ftz" <<< "$listing" \
+            || die "$abi APK has no lid.176.ftz — Translate post would never show"
+        grep -qF "lib/$abi/libnvfips.so" <<< "$listing" \
+            || die "$abi APK has no libnvfips.so — the FIPS mesh would be missing"
+        grep -qF "lib/$abi/libhaven.so" <<< "$listing" \
+            || die "$abi APK has no libhaven.so"
+        if grep -qF "lib/$other/" <<< "$listing"; then die "$abi APK also carries lib/$other/"; fi
+        # jniLibs are gitignored, so a stale libhaven.so ships silently. Refuse an
+        # APK whose Go core predates the per-account signer sessions (#168).
+        strings_out="$(unzip -p "$apk" "lib/$abi/libhaven.so" | strings)"
+        grep -qF NIP46SignEventWithC <<< "$strings_out" \
+            || die "$abi APK's libhaven.so is stale (no NIP46SignEventWithC) — rebuild it from master"
+    }
+    check_apk "$APK_OUT/app-arm64-v8a-release.apk" arm64-v8a armeabi-v7a
+    check_apk "$APK_OUT/app-armeabi-v7a-release.apk" armeabi-v7a arm64-v8a
+    cp "$APK_OUT/app-arm64-v8a-release.apk" "$APK_PATH"
+    cp "$APK_OUT/app-armeabi-v7a-release.apk" "$APK32_PATH"
     APK_SHA256="$(shasum -a 256 "$APK_PATH" | awk '{print $1}')"
-    echo "  APK: $APK_PATH"
+    echo "  APK (64-bit): $APK_PATH"
     echo "  SHA256: $APK_SHA256"
+    echo "  APK (32-bit): $APK32_PATH"
+    echo "  SHA256: $(shasum -a 256 "$APK32_PATH" | awk '{print $1}')"
 else
     warn "Skipping Android build"
     APK_SHA256=""
@@ -340,7 +363,9 @@ if confirm "Create/push tag $TAG and GitHub release with notes + artifacts?"; th
     git -C "$ROOT" rev-parse "$TAG" >/dev/null 2>&1 || git -C "$ROOT" tag "$TAG"
     git -C "$ROOT" push origin "$TAG"
     ASSETS=()
-    [ -f "$APK_PATH" ] && ASSETS+=("$APK_PATH")
+    # gh shows the text after '#' as the asset's label on the release page.
+    [ -f "$APK_PATH" ] && ASSETS+=("$APK_PATH#$APK_LABEL")
+    [ -f "$APK32_PATH" ] && ASSETS+=("$APK32_PATH#$APK32_LABEL")
     [ -f "$MAC_ZIP" ] && ASSETS+=("$MAC_ZIP")
     if gh release view "$TAG" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
         warn "Release $TAG exists — uploading assets with --clobber."
