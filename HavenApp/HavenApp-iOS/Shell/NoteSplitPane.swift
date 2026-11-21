@@ -47,10 +47,11 @@ struct NoteSplitPane<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     @StateObject private var selection = NoteDetailSelection()
-    /// Counts account switches. One subscription for the pane's life: an
-    /// `.onReceive` of the computed publisher is re-made on every redraw, and
-    /// the switch's own redraws dropped its delivery, so the note stayed open.
-    @StateObject private var accountSwitches = AccountSwitchCounter()
+    /// The active account. Part of the detail column's identity, so an
+    /// account switch keeps the open note and rebuilds it once as the new
+    /// account. Read from the `@Published` value itself, which hands a new
+    /// subscription its current value, so a redraw can't lose a switch.
+    @State private var activeAccount = ConfigService.shared.activeAccountHexPubkey
 
     /// Width of the list column, dragged by the reader and remembered across
     /// launches.
@@ -134,10 +135,11 @@ struct NoteSplitPane<Content: View>: View {
         .onChange(of: selection.noteId) { _, id in
             if id != nil { setDetailHidden(false) }
         }
-        // A note opened under the previous account would otherwise stay open
-        // and redraw for the new one (iPad account switch, Tim 11-04: ~62 ms
-        // per switch, and the longest hangs). Closed at once, no slide.
-        .onChange(of: accountSwitches.count) { _, _ in closeNote() }
+        // An account switch keeps the open note (as on iPhone); the column's
+        // `.id` includes the account, so it rebuilds once for the new one.
+        .onReceive(ConfigService.shared.$activeAccountHexPubkey.removeDuplicates()) { hex in
+            if hex != activeAccount { activeAccount = hex }
+        }
         .onReceive(NotificationCenter.default.publisher(for: closesOn ?? NoteSplitMetrics.never)) { _ in
             closeNote()
         }
@@ -227,7 +229,7 @@ struct NoteSplitPane<Content: View>: View {
                     NoteDetailView(note: note)
                 }
             }
-            .id(note.id)
+            .id("\(note.id)|\(activeAccount)")
         } else if let noteId = selection.noteId {
             // Opened by id (Vault lines, Live Vault, notification taps): the
             // same stack, so it gets ‹ Back and its quoted notes and response
@@ -235,7 +237,7 @@ struct NoteSplitPane<Content: View>: View {
             PaneDetailStack(stack: "pane-\(noteId)", showsBack: showsBack, onBack: { selection.clear() }) {
                 NoteDetailViewWrapper(noteId: noteId, pushed: true)
             }
-            .id(noteId)
+            .id("\(noteId)|\(activeAccount)")
         } else {
             ContentUnavailableView(
                 emptyTitle,
@@ -279,18 +281,5 @@ private struct PaneDetailStack<Root: View>: View {
         .environmentObject(NostrService.shared)
         .environmentObject(ConfigService.shared)
         .environment(\.pushNoteID, PushNoteAction(stack: stack) { path.pushNote(id: $0) })
-    }
-}
-
-/// Bumps `count` on each switch of the active account, so a view can react
-/// with `.onChange` and redraw only then (not on every config change).
-@MainActor
-final class AccountSwitchCounter: ObservableObject {
-    @Published private(set) var count = 0
-    private var subscription: AnyCancellable?
-
-    init() {
-        subscription = ConfigService.shared.activeAccountSwitches
-            .sink { [weak self] _ in self?.count += 1 }
     }
 }
