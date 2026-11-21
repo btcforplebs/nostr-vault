@@ -18,7 +18,8 @@ kind 1 notes and kind 1111 comments: `EventPublisher.appendClientTag` in the App
    authors per filter, and keeps the notes carrying the tag. A filter whose notes run past 40 pages of 500 on any
    relay is split in half and read again, so a busy batch is never cut short. The log names any single author still
    too busy to read in full. The project's own and test keys are never counted
-   (`EXCLUDED_PREFIXES`).
+   (`EXCLUDED_PREFIXES`), nor are the Linux CI's client tag test notes ("client tag e2e from …", throwaway keys
+   that reached public relays until #2348); a key whose notes are all such test notes is dropped from the state file.
 
 A poster stays counted once found, even if a later scan misses their notes. Each poster's main platform is the one
 they post from most. "Active" means their last tagged note is within 7 or 30 days.

@@ -43,9 +43,16 @@ export function platformOf(clientValue) {
   return "Other"
 }
 
+/**
+ * The Linux CI's client tag check (web-vault/tools/client-tag-e2e.mjs) posts two notes with this text from a throwaway
+ * key on every run. Until #2348 those reached public relays (the CI vault's blastr list), so they are not people.
+ */
+export const E2E_TEST_PREFIX = "client tag e2e from "
+export const isE2eTestNote = event => typeof event?.content === "string" && event.content.startsWith(E2E_TEST_PREFIX)
+
 /** The platform of a Nostr Vault note, or null when the note is not one we count. */
 export function nvPlatform(event) {
-  if (!event || !COUNTED_KINDS.includes(event.kind) || !Array.isArray(event.tags)) return null
+  if (!event || !COUNTED_KINDS.includes(event.kind) || !Array.isArray(event.tags) || isE2eTestNote(event)) return null
   const tag = event.tags.find(t => Array.isArray(t) && t[0] === "client")
   return tag ? platformOf(tag[1]) : null
 }
@@ -71,12 +78,25 @@ export function collectPosters(events) {
   return posters
 }
 
+/** Keys whose notes in `events` are all CI test notes (see E2E_TEST_PREFIX): earlier scans counted them; drop them. */
+export function testOnlyPosters(events) {
+  const test = new Set()
+  const real = new Set()
+  for (const ev of events) {
+    if (!ev?.pubkey) continue
+    if (isE2eTestNote(ev)) test.add(ev.pubkey)
+    else if (nvPlatform(ev)) real.add(ev.pubkey)
+  }
+  return new Set([...test].filter(pk => !real.has(pk)))
+}
+
 /**
  * Today's scan over what earlier scans found. A poster found again takes today's record (it was read in full);
  * one not found again keeps the old record, so a relay dropping old notes never shrinks the all-time total.
  */
-export function mergePosters(previous, today) {
+export function mergePosters(previous, today, drop = new Set()) {
   const merged = new Map(previous)
+  for (const pubkey of drop) if (!today.has(pubkey)) merged.delete(pubkey)
   for (const [pubkey, rec] of today) {
     const old = previous.get(pubkey)
     merged.set(pubkey, old ? { ...rec, first: Math.min(old.first, rec.first), last: Math.max(old.last, rec.last) } : rec)

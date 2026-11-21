@@ -11,7 +11,7 @@ const B = "b".repeat(64)
 const NOW = 1_800_000_000
 
 // A fake relay network: Logen follows A; B tagged Nostr Vault shows up in the firehose sample; A posts from Android.
-function fakeNetwork({ answering = RELAYS.length } = {}) {
+function fakeNetwork({ answering = RELAYS.length, ci = null } = {}) {
   const calls = []
   const q = async (relays, filter) => {
     calls.push(filter)
@@ -19,7 +19,11 @@ function fakeNetwork({ answering = RELAYS.length } = {}) {
     let events = []
     if (filter.kinds?.includes(3) && filter.authors) events = [{ id: "f", pubkey: filter.authors[0], kind: 3, created_at: 1, tags: [["p", A]] }]
     else if (filter.since && filter.kinds?.includes(1) && !filter.authors && !filter["#p"]) events = [{ id: "n2", pubkey: B, kind: 1, created_at: NOW - 100, tags: [["client", "Nostr Vault on Web"]] }]
-    else if (filter.authors) events = filter.authors.includes(A) ? [{ id: "n1", pubkey: A, kind: 1, created_at: NOW - 3 * 86400, tags: [["client", "Nostr Vault on Android"]] }] : []
+    else if (filter.authors) {
+      events = filter.authors.includes(A) ? [{ id: "n1", pubkey: A, kind: 1, created_at: NOW - 3 * 86400, tags: [["client", "Nostr Vault on Android"]], content: "hi" }] : []
+      if (ci && filter.authors.includes(ci)) for (const [id, c] of [["c1", "Nostr Vault on Linux"], ["c2", "Nostr Vault on Web"]])
+        events.push({ id, pubkey: ci, kind: 1, created_at: NOW - 86400, tags: [["client", c]], content: `client tag e2e from x ${id}` })
+    }
     return { events, answered }
   }
   return { q, calls }
@@ -137,4 +141,17 @@ test("one author busier than the page cap on their own is reported, not looped o
   const q = async (relays, filter) => ({ events: [], answered: relays, capped: relays })
   const res = await scanPosters({ relays: RELAYS, pool: ["1".repeat(64), "2".repeat(64)], q, batch: 2 })
   assert.equal(res.cutShort, 2)
+})
+
+test("a CI test key an earlier scan counted is dropped once its notes are read again", async t => {
+  const { dir, out, state } = await tmp()
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const CI = "c".repeat(64)
+  await writeFile(state, JSON.stringify({ [CI]: { first: NOW - 86400, last: NOW - 86400, notes: { Linux: 1, Web: 1 } } }))
+  const { q } = fakeNetwork({ ci: CI })
+  assert.equal(await main(["--out", out, "--state", state], { q, fetchFn: fakeFetch, nowSec: () => NOW }), 0)
+  const totals = JSON.parse(await readFile(out, "utf8"))
+  assert.equal(totals.posting_users, 2)
+  assert.equal(totals.by_platform.Linux, 0)
+  assert.deepEqual(Object.keys(JSON.parse(await readFile(state, "utf8"))).sort(), [A, B])
 })

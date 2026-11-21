@@ -13,7 +13,7 @@
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { COUNTED_KINDS, SINCE, collectPosters, mergePosters, nvPlatform, isExcluded, publicTotals, postersFromJson, postersToJson } from "./count.mjs"
+import { COUNTED_KINDS, SINCE, collectPosters, mergePosters, nvPlatform, isE2eTestNote, testOnlyPosters, isExcluded, publicTotals, postersFromJson, postersToJson } from "./count.mjs"
 import { downloadTotal } from "./github.mjs"
 import { queryRelays, closeAll } from "./nostr.mjs"
 
@@ -112,6 +112,7 @@ export async function scanPosters({ relays, pool, q = queryRelays, batch = 100, 
   const authors = [...pool]
   for (let i = 0; i < authors.length; i += batch) queue.push(authors.slice(i, i + batch))
   const events = []
+  const tests = [] // CI test notes (isE2eTestNote): only to drop their keys
   const answeredCount = new Map(relays.map(r => [r, 0]))
   const firstWhy = new Map()
   let filters = 0
@@ -129,14 +130,17 @@ export async function scanPosters({ relays, pool, q = queryRelays, batch = 100, 
       continue
     }
     if (res.capped?.length) cutShort++
-    for (const ev of res.events) if (nvPlatform(ev)) events.push(ev)
+    for (const ev of res.events) {
+      if (nvPlatform(ev)) events.push(ev)
+      else if (isE2eTestNote(ev)) tests.push(ev)
+    }
     read += group.length
     if (filters % 10 === 0) log(`scanned ${read} of ${authors.length}`)
   }
   const answered = relays.filter(r => filters === 0 || answeredCount.get(r) >= Math.ceil(filters * 0.9))
   // One line per relay for the log: how many filters it answered, and the first reason it failed one.
   const perRelay = relays.map(r => `${r.replace("wss://", "")} ${answeredCount.get(r)}/${filters}${firstWhy.has(r) ? ` (first failure: ${firstWhy.get(r)})` : ""}`)
-  return { events, answered, cutShort, perRelay }
+  return { events, tests, answered, cutShort, perRelay }
 }
 
 export async function main(argv = process.argv.slice(2), { q = queryRelays, fetchFn = fetch, nowSec = () => Math.floor(Date.now() / 1000) } = {}) {
@@ -155,7 +159,10 @@ export async function main(argv = process.argv.slice(2), { q = queryRelays, fetc
     return 2
   }
 
-  const posters = mergePosters(previous, collectPosters([...scan.events, ...direct]))
+  const drop = testOnlyPosters([...scan.events, ...(scan.tests ?? []), ...direct])
+  const dropped = [...drop].filter(pk => previous.has(pk)).length
+  if (drop.size) log(`CI test keys (only "client tag e2e" notes): ${drop.size} seen, ${dropped} dropped from earlier scans`)
+  const posters = mergePosters(previous, collectPosters([...scan.events, ...direct]), drop)
   let downloads = null
   try { downloads = await downloadTotal(fetchFn) } catch (e) { log(`GitHub downloads not read: ${e.message}`) }
   const totals = publicTotals(posters, { now, downloads, relays: scan.answered.length })
