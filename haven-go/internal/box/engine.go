@@ -27,7 +27,8 @@ type Engine struct {
 	wanted   bool          // restart on exit
 	started  time.Time
 	restarts int
-	gen      int // bumped by each Start; an older watch loop sees it and quits
+	gen      int  // bumped by each Start; an older watch loop sees it and quits
+	reload   bool // the current child was stopped by Reload: respawn at once
 }
 
 // EngineState is what status reports about the engine.
@@ -66,6 +67,7 @@ func (e *Engine) Start(ctx context.Context, vaultDir string) error {
 		return errors.New("engine already running")
 	}
 	e.wanted = true
+	e.reload = false
 	e.vaultDir = vaultDir
 	e.gen++
 	gen := e.gen
@@ -133,9 +135,23 @@ func (e *Engine) watch(ctx context.Context, gen int) {
 		e.mu.Lock()
 		wanted := e.wanted && e.gen == gen
 		ran := time.Since(e.started)
+		reload := e.reload
+		e.reload = false
 		e.mu.Unlock()
 		if !wanted {
 			return
+		}
+		if reload {
+			// Asked for (Reload), not a crash: no backoff, no restart count.
+			if err := e.spawn(); err != nil {
+				log.Printf("box: engine reload failed: %v", err)
+				e.mu.Lock()
+				d := make(chan struct{})
+				close(d)
+				e.done = d
+				e.mu.Unlock()
+			}
+			continue
 		}
 		if ran > 5*time.Minute {
 			backoff = time.Second
@@ -168,10 +184,41 @@ func (e *Engine) watch(ctx context.Context, gen int) {
 	}
 }
 
+// Reload restarts a running engine so it reads its files again: Prepare runs
+// before the new child starts. It returns at once; the watch loop respawns
+// the child when the old one has exited. A stopped engine (during a Move)
+// is left stopped and reports false: its next Start runs Prepare anyway.
+// Unlike Stop then Start, it can never start an engine a Move just stopped.
+func (e *Engine) Reload() bool {
+	e.mu.Lock()
+	cmd, done := e.cmd, e.done
+	if !e.wanted || cmd == nil || cmd.Process == nil {
+		e.mu.Unlock()
+		return false
+	}
+	e.reload = true
+	wait := e.StopWait
+	e.mu.Unlock()
+	if wait == 0 {
+		wait = 20 * time.Second
+	}
+	_ = cmd.Process.Signal(syscall.SIGTERM)
+	go func() {
+		select {
+		case <-done:
+		case <-time.After(wait):
+			log.Printf("box: engine did not stop for a reload in %s; killing it", wait)
+			_ = cmd.Process.Kill()
+		}
+	}()
+	return true
+}
+
 // Stop ends the engine and waits for it to exit (SIGTERM, then SIGKILL).
 func (e *Engine) Stop() {
 	e.mu.Lock()
 	e.wanted = false
+	e.reload = false
 	cmd, done := e.cmd, e.done
 	e.mu.Unlock()
 	if cmd == nil || cmd.Process == nil {

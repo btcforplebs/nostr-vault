@@ -60,7 +60,10 @@ func EngineEnv(c Config, vaultDir string) map[string]string {
 		"HAVEN_LOG_LEVEL":    "INFO",
 
 		"WHITELISTED_NPUBS_FILE": "whitelisted_npubs.json",
-		"BLACKLISTED_NPUBS_FILE": "blacklisted_npubs.json",
+		// Always named: with no readers file the engine lets every
+		// whitelisted account read the private side (accounts.go).
+		"PRIVATE_READER_NPUBS_FILE": "private_reader_npubs.json",
+		"BLACKLISTED_NPUBS_FILE":    "blacklisted_npubs.json",
 
 		"PRIVATE_RELAY_NAME":                                        "Nostr Vault Private",
 		"PRIVATE_RELAY_NPUB":                                        owner,
@@ -184,7 +187,9 @@ func EngineEnvList(c Config, vaultDir string, getenv func(string) string) []stri
 
 // WriteEngineFiles writes the JSON files the engine reads from its working
 // directory. Existing relay lists are kept (an owner may have edited them);
-// the owner whitelist is always rewritten from NV_OWNER.
+// the two account lists are always rewritten: the first account plus
+// box/accounts.json (ListsFor), so an added account appears, gains reads
+// when it signs in, or goes when removed, on the next engine start.
 func WriteEngineFiles(c Config, vaultDir string) error {
 	if err := os.MkdirAll(vaultDir, 0o700); err != nil {
 		return err
@@ -205,7 +210,13 @@ func WriteEngineFiles(c Config, vaultDir string) error {
 		}
 		return nil
 	}
-	if err := write("whitelisted_npubs.json", []string{c.OwnerNpub}, false); err != nil {
+	lists := ListsFor(c.OwnerNpub, LoadAccounts(c.AccountsFile()))
+	// Readers first, so a failed write never leaves a grown account list
+	// beside an older readers list (and the engine refuses to start).
+	if err := write("private_reader_npubs.json", lists.Readers, false); err != nil {
+		return err
+	}
+	if err := write("whitelisted_npubs.json", lists.Accounts, false); err != nil {
 		return err
 	}
 	if err := write("blacklisted_npubs.json", []string{}, true); err != nil {
