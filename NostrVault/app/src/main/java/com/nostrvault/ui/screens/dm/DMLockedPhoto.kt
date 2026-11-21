@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.dm
 
+import com.nostrvault.service.HeapCap
 import android.content.Context
 import android.net.Uri
 import com.nostrvault.service.BlossomService
@@ -74,7 +75,7 @@ object DMLockedPhoto {
             } catch (e: IOException) {
                 throw Unsendable(UNREADABLE)
             }
-            if (size > MAX_PHOTO) throw Unsendable(TOO_BIG)
+            if (size > HeapCap.of(MAX_PHOTO)) throw Unsendable(HeapCap.tooBigHere(MAX_PHOTO) ?: TOO_BIG)
             val head = temp.inputStream().use { s -> ByteArray(4).also { s.read(it) } }
             // A GIF by its own header, never by its type: a JPEG renamed .gif would otherwise go up as it is.
             if (GifStrip.isGif(head)) {

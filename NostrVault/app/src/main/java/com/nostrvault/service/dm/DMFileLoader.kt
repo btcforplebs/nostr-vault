@@ -1,5 +1,6 @@
 package com.nostrvault.service
 
+import com.nostrvault.service.HeapCap
 import android.content.Context
 import android.net.Uri
 import coil.ImageLoader
@@ -124,6 +125,8 @@ object DMFileLoader {
         val name = f.x ?: DMFile.sha256Hex(f.url.toByteArray())
         val kept = File(directory(context), name)
         if (kept.isFile && kept.length() > max) throw if (max < DMFile.MAX_FILE) TooBig() else IOException("too large")
+        // Held whole and decrypted into a second copy: not more than this phone's heap takes (HeapCap).
+        if (kept.isFile && kept.length() > HeapCap.of(DMFile.MAX_FILE)) throw IOException("too large for this phone's memory")
         val cached = if (kept.isFile) runCatching { kept.readBytes() }.getOrNull() else null
         if (cached != null) {
             try {
@@ -175,6 +178,7 @@ object DMFileLoader {
             fun over(): IOException = if (max < DMFile.MAX_FILE) TooBig() else IOException("too large")
             val length = body.contentLength()
             if (length > max) throw over()
+            if (length > HeapCap.of(DMFile.MAX_FILE)) throw IOException("too large for this phone's memory")
             var told = 0L
             fun progress(got: Int) {
                 // About every 256 KB: a progress ring, not a callback per read.

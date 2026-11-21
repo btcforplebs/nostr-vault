@@ -32,8 +32,10 @@ internal object VaultDashboardModel {
     }
 
     /** Plain words for what is wrong and what the one button does; null when nothing is. */
-    fun problemText(state: RunState, isPortConflict: Boolean, port: Int): String? = when (state) {
-        RunState.PAUSED -> "It isn't saving new notes or messages. Start it to catch up."
+    fun problemText(state: RunState, isPortConflict: Boolean, port: Int, startHeld: Boolean = false): String? = when (state) {
+        RunState.PAUSED ->
+            if (startHeld) "It stopped the app twice while starting, so it was left off. Start it to try again."
+            else "It isn't saving new notes or messages. Start it to catch up."
         RunState.NEEDS_FIX ->
             if (isPortConflict) "Another app is blocking your vault. Restarting clears it."
             else "The last session didn't shut down cleanly. Restarting clears the lock."

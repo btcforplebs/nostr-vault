@@ -50,6 +50,10 @@ class VaultDashboardModelTest {
     fun `problem text and fix button`() {
         assertNull(m.problemText(RunState.RUNNING, false, 3355))
         assertEquals("It isn't saving new notes or messages. Start it to catch up.", m.problemText(RunState.PAUSED, false, 3355))
+        assertEquals(
+            "It stopped the app twice while starting, so it was left off. Start it to try again.",
+            m.problemText(RunState.PAUSED, false, 3355, startHeld = true),
+        )
         assertEquals("Another app is blocking your vault. Restarting clears it.", m.problemText(RunState.NEEDS_FIX, true, 3355))
         assertEquals("The last session didn't shut down cleanly. Restarting clears the lock.", m.problemText(RunState.NEEDS_FIX, false, 3355))
         assertEquals("Start vault", m.fixButtonTitle(RunState.PAUSED))

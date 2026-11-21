@@ -205,11 +205,21 @@ object RelayConfiguration {
      * Moto that let Go keep ~900 MiB, and the app died at 680-776 MB RSS six
      * times on 10-31 (sweep 11-01). [HavenBridge.trimMemory] hands the rest
      * back when the app leaves the screen.
+     *
+     * A phone with 2 GB or less gets a 256 MiB floor instead: 384 is a fifth
+     * of everything it has, and Android ends the app long before Go reaches
+     * it (a 2 GB Samsung, 2026-11-21). The collector may run more on a full
+     * vault there; that costs battery, the other costs the app. A phone whose
+     * RAM can't be read keeps 384.
      */
     fun phoneGoMemLimitMB(physicalMemory: Long): Int {
         val eighth = (physicalMemory.coerceAtLeast(0L) / 8 / (1L shl 20)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        return eighth.coerceIn(384, 1024)
+        val floor = if (physicalMemory in 1..SMALL_PHONE_BYTES) 256 else 384
+        return eighth.coerceIn(floor, 1024)
     }
+
+    /** At or under this much RAM (MemTotal reads a little under the 2 GB on the box) the Go floor is lower. */
+    private const val SMALL_PHONE_BYTES = 2L shl 30
 
     /** This phone's RAM in bytes (MemTotal in /proc/meminfo), or 0 when it can't be read. */
     fun totalMemoryBytes(meminfo: File = File("/proc/meminfo")): Long = runCatching {

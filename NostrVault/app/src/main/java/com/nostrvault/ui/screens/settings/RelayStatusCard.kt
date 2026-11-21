@@ -127,7 +127,7 @@ fun RelayStatusCard(viewModel: RelayStatusCardViewModel = hiltViewModel()) {
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
                     .background(SuccessGreen.copy(alpha = 0.18f))
-                    .clickable(role = Role.Button) { RelayForegroundService.start(context) }
+                    .clickable(role = Role.Button) { RelayForegroundService.start(context, byHand = true) }
                     .heightIn(min = 44.dp)
                     .padding(vertical = 10.dp),
                 horizontalArrangement = Arrangement.Center,

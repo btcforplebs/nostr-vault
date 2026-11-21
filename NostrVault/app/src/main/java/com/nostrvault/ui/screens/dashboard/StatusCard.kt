@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.dashboard
 
+import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.ui.notification.LocalNotificationManager
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloat
@@ -27,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -114,7 +116,8 @@ internal fun StatusCard(
     var didCopy by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
 
-    val problem = if (isExternal) null else VaultDashboardModel.problemText(runState, isPortConflict, port)
+    val startHeld by RelayForegroundService.startHeld.collectAsState()
+    val problem = if (isExternal) null else VaultDashboardModel.problemText(runState, isPortConflict, port, startHeld)
     val statusColor = if (runState == RunState.RUNNING && !syncing) SuccessGreen else ZapOrange
     val background by animateColorAsState(
         if (problem == null) SecondaryGroupedBg else ZapOrange.copy(alpha = 0.08f),

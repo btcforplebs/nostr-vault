@@ -1,5 +1,6 @@
 package com.nostrvault.service.shareportal
 
+import com.nostrvault.service.HeapCap
 import android.content.Context
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.PostingAccount
@@ -52,7 +53,7 @@ class PrivateCopyService @Inject constructor(
         title: String?,
         lock: PostingAccount.Lock,
     ): String? {
-        if (plain.size > PrivateCopyRecord.MAX_BYTES) return TOO_BIG
+        if (plain.size > HeapCap.of(PrivateCopyRecord.MAX_BYTES.toLong())) return HeapCap.tooBigHere(PrivateCopyRecord.MAX_BYTES.toLong()) ?: TOO_BIG
         val privateUrl = privateUrl() ?: return NO_VAULT
         if (lock.hex.isEmpty() || nostrService.activeHexPubkey != lock.hex) return ACCOUNT_CHANGED
         val sealed = withContext(Dispatchers.Default) { PrivateCopyRecord.seal(plain) }
@@ -109,7 +110,7 @@ class PrivateCopyService @Inject constructor(
      * the blob is gone from this vault or doesn't open with the record.
      */
     suspend fun open(record: PrivateCopyRecord.Record): File? = withContext(Dispatchers.IO) {
-        val blob = localBlob(record.x)?.takeIf { it.length() <= PrivateCopyRecord.MAX_BYTES + 16L }?.readBytes()
+        val blob = localBlob(record.x)?.takeIf { it.length() <= HeapCap.of(PrivateCopyRecord.MAX_BYTES.toLong()) + 16L }?.readBytes()
             ?: return@withContext null
         val plain = runCatching { PrivateCopyRecord.open(blob, record) }.getOrNull() ?: return@withContext null
         val dir = openedDir(context).apply { deleteRecursively(); mkdirs() }
