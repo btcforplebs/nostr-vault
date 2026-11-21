@@ -51,15 +51,19 @@ struct VaultTabView<Notes: View>: View {
 
     var body: some View {
         ZStack {
+            // A hidden half is also disabled, so its keyboard shortcuts stay
+            // quiet: on the Mac both halves bind ⌘R (Media, Messages) and ⌘F.
             notes()
                 .opacity(notesShow ? 1 : 0)
                 .allowsHitTesting(notesShow)
                 .accessibilityHidden(!notesShow)
+                .disabled(!notesShow)
             if mediaBuilt || section.showsMedia {
                 MediaTabView()
                     .opacity(section.showsMedia ? 1 : 0)
                     .allowsHitTesting(section.showsMedia)
                     .accessibilityHidden(!section.showsMedia)
+                    .disabled(!section.showsMedia)
             }
             // Built only while shown: it holds no scroll worth keeping.
             if section.showsEmoji {
