@@ -112,7 +112,7 @@ class ArticleReaderViewModel @Inject constructor(
     // ── Outside your web (TrustGate) ─────────────────────────────────
 
     /** Null = shield on Everyone; empty = web not loaded, only you and the author pass. */
-    private val trusted: StateFlow<Set<String>?> = feedService.trustGateSet
+    val trusted: StateFlow<Set<String>?> = feedService.trustGateSet
         .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.globalTrustSet())
     /** The article's author: their own comments and highlights always show. */
     private val articleAuthor = MutableStateFlow("")
@@ -120,7 +120,7 @@ class ArticleReaderViewModel @Inject constructor(
     /** Whether comments and highlights from outside your web are opened. */
     val showOutside: StateFlow<Boolean> = _showOutside
     fun toggleOutside() = _showOutside.update { !it }
-    private val trustAlways: StateFlow<Set<String>> = articleAuthor
+    val trustAlways: StateFlow<Set<String>> = articleAuthor
         .map { author -> setOf(author, myPubkey).filter { it.isNotEmpty() }.toSet() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
     /** Wallet settings' default zap, in sats: where the zap sheet starts. */

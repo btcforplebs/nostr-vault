@@ -96,6 +96,7 @@ fun ReactorsSheet(
                             AvatarImage(
                                 url = profile?.pictureURL,
                                 pubkey = reaction.pubkey,
+                                load = gated.loads(reaction.pubkey),
                                 size = 40.dp,
                                 displayName = profile?.bestName,
                             )
@@ -184,6 +185,7 @@ fun ZappersSheet(
                             AvatarImage(
                                 url = profile?.pictureURL,
                                 pubkey = zap.zapperPubkey,
+                                load = gated.loads(zap.zapperPubkey),
                                 size = 40.dp,
                                 displayName = profile?.bestName,
                             )
@@ -288,6 +290,7 @@ fun RepostersSheet(
                             AvatarImage(
                                 url = profile?.pictureURL,
                                 pubkey = repost.pubkey,
+                                load = gated.loads(repost.pubkey),
                                 size = 40.dp,
                                 displayName = profile?.bestName,
                             )
@@ -309,8 +312,13 @@ fun RepostersSheet(
 }
 
 /** A sheet's people after blocks, split for the "Outside your web" fold. */
-private class GatedList<T>(val all: List<T>, val inside: List<T>, val outside: List<T>, val expanded: Boolean, val toggle: () -> Unit) {
+private class GatedList<T>(
+    val all: List<T>, val inside: List<T>, val outside: List<T>, val expanded: Boolean,
+    private val outsiders: Set<String>, val toggle: () -> Unit,
+) {
     val shown: List<T> get() = if (expanded) all else inside
+    /** A stranger's picture never loads; they get their constellation (AvatarGate.kt). */
+    fun loads(pubkey: String): Boolean = pubkey !in outsiders
 }
 
 @Composable
@@ -326,7 +334,8 @@ private fun <T> rememberGated(
         val unblocked = if (blocked.isEmpty()) items else items.filter { author(it) !in blocked }
         unblocked to TrustGate.split(unblocked, trusted, always, author)
     }
-    return GatedList(all, split.first, split.second, expanded) { expanded = !expanded }
+    val outsiders = remember(split) { split.second.mapTo(HashSet(), author) }
+    return GatedList(all, split.first, split.second, expanded, outsiders) { expanded = !expanded }
 }
 
 /** The fold row at the top of a sheet's list, when anyone is outside your web. */

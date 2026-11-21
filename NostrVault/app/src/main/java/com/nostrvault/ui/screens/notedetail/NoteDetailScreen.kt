@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import com.nostrvault.ui.components.AvatarTrustGate
 import com.nostrvault.ui.components.OutsideWebFoldRow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -370,6 +371,8 @@ fun NoteDetailScreen(
         )
     }
 
+    // A stranger's avatar draws their constellation; their picture never loads (AvatarGate.kt).
+    AvatarTrustGate(trustedPubkeys, threadAlways) {
     GlassScaffold(
         toolbar = {
             Row(
@@ -723,6 +726,7 @@ fun NoteDetailScreen(
             }
             }
         }
+    }
     }
 
     // ── Bottom sheets ────────────────────────────────────────────

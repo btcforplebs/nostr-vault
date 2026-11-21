@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,7 +63,8 @@ private fun avatarImageLoader(context: Context): ImageLoader {
  * Replaces all bare AsyncImage avatar calls in the app. Key behaviors:
  * - Derives a stable gradient from the pubkey (same user = same color, always)
  * - Constrains Coil decode to 128px (sufficient for up to 80dp @ 3x density)
- * - Shows first letter of display name on the gradient while loading / on error
+ * - Shows first letter of display name on the gradient while the picture loads
+ * - Draws the pubkey's constellation when there is no picture, it fails, or the trust gate holds it back
  * - Hardware bitmaps enabled (off-heap on Android, doesn't count against Java GC)
  */
 @Composable
@@ -70,7 +74,14 @@ fun AvatarImage(
     size: Dp,
     modifier: Modifier = Modifier,
     displayName: String? = null,
+    load: Boolean = true,
 ) {
+    // A stranger the trust gate holds back never has their picture fetched (AvatarGate.kt).
+    val allowed = load && LocalAvatarGate.current(pubkey)
+    val picture = url?.takeIf { allowed && it.isNotBlank() }
+    // Remember which URL failed, so a newer profile with a working picture gets its chance.
+    var failed by remember(pubkey) { mutableStateOf<String?>(null) }
+    val stars = Constellation.isPubkey(pubkey) && (picture == null || failed == picture)
     val gradient = remember(pubkey) { avatarGradient(pubkey) }
     val letter = remember(displayName, pubkey) {
         val source = displayName?.firstOrNull()?.takeIf { it.isLetterOrDigit() }
@@ -91,21 +102,27 @@ fun AvatarImage(
             .clip(CircleShape)
             .background(gradient),
     ) {
-        // Fallback letter (always rendered behind the image)
-        Text(
-            text = letter,
-            color = Color.White,
-            fontSize = fontSize,
-            fontWeight = FontWeight.Bold,
-        )
+        if (stars) {
+            // No picture, a picture that failed, or a gated stranger: their constellation (Constellation.kt).
+            ConstellationAvatar(pubkey, size, Modifier.clip(CircleShape))
+        } else {
+            // Fallback letter (rendered behind the image while it loads)
+            Text(
+                text = letter,
+                color = Color.White,
+                fontSize = fontSize,
+                fontWeight = FontWeight.Bold,
+            )
+        }
 
         // Actual image overlays the gradient+letter when loaded
-        if (url != null) {
+        if (picture != null && failed != picture) {
             AsyncImage(
                 imageLoader = avatarImageLoader(context),
-                model = remember(url) { avatarRequest(context, url) },
+                model = remember(picture) { avatarRequest(context, picture) },
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                onError = { failed = picture },
                 modifier = Modifier
                     .size(size)
                     .clip(CircleShape),

@@ -46,6 +46,8 @@ internal fun FollowListRow(
     followState: FollowButtonState?,
     onOpen: () -> Unit,
     onToggleFollow: () -> Unit,
+    /** false: someone outside your web; their constellation, never their picture (AvatarGate.kt). */
+    loadPicture: Boolean = true,
 ) {
     // A profile that never arrives stops shimmering after a while.
     var gaveUp by remember(pubkey) { mutableStateOf(false) }
@@ -62,9 +64,9 @@ internal fun FollowListRow(
             verticalAlignment = Alignment.Top,
             modifier = Modifier.weight(1f).clickable(role = Role.Button, onClick = onOpen),
         ) {
-            val url = profile?.pictureURL?.takeIf { it.isNotBlank() }
-            if (url != null) {
-                AvatarImage(url = url, pubkey = pubkey, size = 44.dp, displayName = profile.bestName)
+            // Plain disc while the profile loads; then the picture, or the constellation when there is none.
+            if (profile != null) {
+                AvatarImage(url = profile.pictureURL, pubkey = pubkey, size = 44.dp, displayName = profile.bestName, load = loadPicture)
             } else {
                 EmptyAvatar()
             }
