@@ -50,7 +50,9 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /api/box/status":
 		writeJSON(w, http.StatusOK, a.status())
 	case "GET /api/box/storage":
-		writeJSON(w, http.StatusOK, a.Storage.Measure(a.Mover.Engine.VaultDir()))
+		st := a.Storage.Measure(a.Mover.Engine.VaultDir())
+		st.MoveOff = a.Mover.Off()
+		writeJSON(w, http.StatusOK, st)
 	case "GET /api/box/devices":
 		writeJSON(w, http.StatusOK, a.Devices.Report(r.Context()))
 	case "POST /api/box/update":
@@ -80,6 +82,10 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		st, err := a.Mover.Begin(req.Path)
+		if errors.Is(err, ErrMoveOff) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			return
+		}
 		if errors.Is(err, ErrMoveBusy) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
@@ -103,16 +109,18 @@ func (a *API) status() Status {
 	disk, _ := DiskOf(eng.VaultDir)
 	npub, _, _ := a.Mesh.Read()
 	return Status{
-		Version:  a.Version,
-		Uptime:   int64(time.Since(a.Started).Seconds()),
-		Mem:      readMem(eng.Pid),
-		Disk:     disk,
-		Mesh:     readMesh(a.MeshStatus, npub, time.Now()),
-		Engine:   eng,
-		Owner:    a.Owner,
-		Device:   npub,
-		Move:     a.Mover.State(),
-		RelayURL: a.RelayURL,
+		Version:   a.Version,
+		Uptime:    int64(time.Since(a.Started).Seconds()),
+		Mem:       readMem(eng.Pid),
+		Disk:      disk,
+		Mesh:      readMesh(a.MeshStatus, npub, time.Now()),
+		Engine:    eng,
+		Owner:     a.Owner,
+		Device:    npub,
+		Move:      a.Mover.State(),
+		RelayURL:  a.RelayURL,
+		UpdateVia: a.Updater.Store,
+		MoveOff:   a.Mover.Off(),
 	}
 }
 

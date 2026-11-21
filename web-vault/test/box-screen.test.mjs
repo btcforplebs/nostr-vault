@@ -109,3 +109,25 @@ test("a refused part says why and the others still show; missing numbers read â€
   assert.match(el.textContent, /\/data/, "storage still shows")
   render(null, el)
 })
+
+for (const [store, words] of [["startos", "the StartOS Marketplace"], ["umbrel", "the Umbrel App Store"]]) {
+  test(`a box ${store} installed: Move is hidden, Update names ${words}`, async () => {
+    const el = await mount(mockBox({ store }))
+    assert.ok(!button(el, "Move vault toâ€¦"), "no Move on a store box")
+    assert.match(el.textContent, /app store manages its disk/)
+    assert.ok(!button(el, "Check for update and install"), "no update button: the store updates it")
+    assert.ok(el.textContent.includes(`Updates come from ${words}: update Nostr Vault there.`), el.textContent)
+    assert.ok(!/install the newer package/.test(el.textContent))
+    render(null, el)
+  })
+}
+
+test("an update answered managed names the store, even when status had no update_via", async () => {
+  const box = mockBox({ store: "umbrel" })
+  const fetchImpl = async (url, init) => url.endsWith("/status") ? new Response(JSON.stringify({ version: "1.0.0" }), { status: 200 }) : box(url, init)
+  const el = await mount(fetchImpl)
+  fire(button(el, "Check for update and install"), "click"); await tick(30)
+  assert.match(el.textContent, /Update Nostr Vault from the Umbrel App Store\./)
+  assert.ok(!/Updates are manual for now\. On the box/.test(el.textContent))
+  render(null, el)
+})

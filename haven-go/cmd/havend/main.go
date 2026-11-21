@@ -10,15 +10,21 @@
 //
 // Environment:
 //
-//	NV_OWNER            owner npub (or hex). Required. Set by the installer.
+//	NV_OWNER            owner npub (or hex), set by the installer. Unset: the
+//	                    npub in $NV_DATA_DIR/box/owner, which claim mode saves
+//	NV_SETUP_CODE       claim mode (no owner yet): only the setup page runs,
+//	                    and the npub sent with this code becomes the owner
+//	NV_UPDATE_VIA       startos or umbrel: the store updates the box, so POST
+//	                    update answers managed
 //	NV_DATA_DIR         data dir, default /data
 //	NV_PORT             the box's port, default 8080
 //	NV_WEB_DIR          built web app; unset = the vault's own page at /
 //	NV_ENGINE_BIN       vault engine, default /usr/local/bin/haven-engine
 //	NV_ENGINE_PORT      engine's loopback port, default 3355
 //	NV_RELAY_URL        the URL the vault calls itself (NIP-42), optional
-//	NV_MOVE_ROOT        where POST move may move the vault, default /mnt
-//	NV_UPDATE_HOOK      program run on POST update; unset = request file
+//	NV_MOVE_ROOT        where POST move may move the vault, default /mnt;
+//	                    set but empty: Move is off (a store owns the disk)
+//	NV_UPDATE_HOOK      program run on POST update; unset = manual
 //	NV_MESH_STATUS_FILE mesh status JSON, default $NV_DATA_DIR/mesh/status.json
 //	NV_MESH_DEVICES     owner's devices for nv-mesh, default $NV_DATA_DIR/mesh-devices.json
 //	NV_MESH_DOOR_PORT   the engine's loopback mesh door, default NV_PORT+1
@@ -56,17 +62,17 @@ func main() {
 	}
 }
 
-func run(args []string) error {
-	getenv := os.Getenv
-	if version != "" && os.Getenv("NV_VERSION") == "" {
-		getenv = func(k string) string {
-			if k == "NV_VERSION" {
-				return version
-			}
-			return os.Getenv(k)
-		}
+// lookupEnv is os.LookupEnv with the build's version as NV_VERSION's default.
+func lookupEnv(k string) (string, bool) {
+	v, ok := os.LookupEnv(k)
+	if k == "NV_VERSION" && v == "" && version != "" {
+		return version, true
 	}
-	cfg, err := box.ConfigFromEnv(getenv)
+	return v, ok
+}
+
+func run(args []string) error {
+	cfg, err := box.ConfigFromLookup(lookupEnv)
 	if err != nil {
 		return err
 	}
@@ -87,6 +93,22 @@ func run(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
+
+	if cfg.Claiming() {
+		if err := serveClaim(ctx, cfg); err != nil {
+			return err
+		}
+		if ctx.Err() != nil {
+			return nil
+		}
+		// Claimed: read the settings again, now with box/owner.
+		if cfg, err = box.ConfigFromLookup(lookupEnv); err != nil {
+			return err
+		}
+		if cfg.Claiming() {
+			return errors.New("claimed, but box/owner did not read back")
+		}
+	}
 
 	vaultDir := box.LoadVaultDir(cfg.BoxDir(), cfg.DefaultVaultDir())
 	engine := &box.Engine{
@@ -125,7 +147,7 @@ func run(args []string) error {
 			FreeOf:   func(p string) (uint64, error) { d, err := box.DiskOf(p); return d.Free, err },
 			Headroom: 256 << 20,
 		},
-		Updater: &box.Updater{Hook: cfg.UpdateHook, BoxDir: cfg.BoxDir()},
+		Updater: &box.Updater{Hook: cfg.UpdateHook, BoxDir: cfg.BoxDir(), Store: cfg.UpdateVia},
 	}
 	// The owner's 10063 decides which devices nv-mesh lets in: read it now
 	// and every 30 s, so an approval or a removal reaches the mesh by itself.
@@ -166,5 +188,32 @@ func run(args []string) error {
 		log.Printf("havend: shutdown: %v", err)
 	}
 	engine.Stop()
+	return nil
+}
+
+// serveClaim runs claim mode on NV_PORT until the box is claimed or stopped:
+// only the setup page, no engine and no box API (box/claim.go).
+func serveClaim(ctx context.Context, cfg box.Config) error {
+	claim := box.NewClaim(cfg)
+	srv := &http.Server{
+		Addr:              net.JoinHostPort("", strconv.Itoa(cfg.Port)),
+		Handler:           claim,
+		ReadHeaderTimeout: 15 * time.Second,
+	}
+	log.Printf("havend %s: no owner yet, claim mode on :%d (open it and enter your npub with the setup code)", cfg.Version, cfg.Port)
+	errc := make(chan error, 1)
+	go func() { errc <- srv.ListenAndServe() }()
+	select {
+	case err := <-errc:
+		return err
+	case <-claim.Done:
+	case <-ctx.Done():
+	}
+	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(shutCtx)
+	if err := <-errc; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
 	return nil
 }

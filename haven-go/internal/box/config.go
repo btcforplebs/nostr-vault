@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,7 +18,9 @@ import (
 )
 
 // Config is everything the box reads from its environment. The owner comes
-// from the installer (NV_OWNER); nothing on the box can claim or change it.
+// from the installer (NV_OWNER), or from box/owner, which only claim mode
+// writes and only for someone holding the store's setup code
+// (NV_SETUP_CODE, claim.go). Nothing else on the box can claim or change it.
 type Config struct {
 	// DataDir holds the box's own files (box/) and, unless moved, the vault (vault/).
 	DataDir string
@@ -50,8 +54,16 @@ type Config struct {
 	// UpdateHook, if set, is run on POST update. Otherwise the request is left
 	// as a file for the container side to pick up.
 	UpdateHook string
-	// MoveRoot is the only tree POST move may move the vault into.
+	// MoveRoot is the only tree POST move may move the vault into. Empty
+	// (NV_MOVE_ROOT set to nothing): Move is off, because a store (StartOS,
+	// Umbrel) owns the disk.
 	MoveRoot string
+	// UpdateVia names the store that updates the box ("startos", "umbrel");
+	// POST update then answers managed. Empty: NV_UPDATE_HOOK or manual.
+	UpdateVia string
+	// SetupCode is NV_SETUP_CODE, used only while the box has no owner
+	// (Claiming): the code a store shows its user, which claims the box.
+	SetupCode string
 	// DirectoryRelays are asked for the owner's server list (kind 10063)
 	// when the vault itself has none yet.
 	DirectoryRelays []string
@@ -66,8 +78,23 @@ var DefaultDirectoryRelays = []string{
 	"wss://purplepag.es",
 }
 
-// ConfigFromEnv reads the box's settings through getenv (os.Getenv in main).
+// UpdateStores are the NV_UPDATE_VIA values: the stores that own updates.
+var UpdateStores = map[string]bool{"startos": true, "umbrel": true}
+
+// MinSetupCode is the shortest NV_SETUP_CODE the box takes: a short code
+// could be guessed by a LAN visitor before the owner claims the box.
+const MinSetupCode = 12
+
+// ConfigFromEnv reads the box's settings through getenv. A variable set to
+// "" reads as unset; use ConfigFromLookup (os.LookupEnv in main) to tell
+// NV_MOVE_ROOT= (Move off) from no NV_MOVE_ROOT (/mnt).
 func ConfigFromEnv(getenv func(string) string) (Config, error) {
+	return ConfigFromLookup(func(k string) (string, bool) { v := getenv(k); return v, v != "" })
+}
+
+// ConfigFromLookup reads the box's settings through lookup (os.LookupEnv).
+func ConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
+	getenv := func(k string) string { v, _ := lookup(k); return v }
 	c := Config{
 		DataDir:        orDefault(getenv("NV_DATA_DIR"), "/data"),
 		WebDir:         getenv("NV_WEB_DIR"),
@@ -76,7 +103,14 @@ func ConfigFromEnv(getenv func(string) string) (Config, error) {
 		Version:        getenv("NV_VERSION"),
 		MeshStatusFile: getenv("NV_MESH_STATUS_FILE"),
 		UpdateHook:     getenv("NV_UPDATE_HOOK"),
-		MoveRoot:       orDefault(getenv("NV_MOVE_ROOT"), "/mnt"),
+		MoveRoot:       "/mnt",
+		UpdateVia:      strings.ToLower(strings.TrimSpace(getenv("NV_UPDATE_VIA"))),
+	}
+	if v, set := lookup("NV_MOVE_ROOT"); set {
+		c.MoveRoot = strings.TrimSpace(v)
+	}
+	if c.UpdateVia != "" && !UpdateStores[c.UpdateVia] {
+		return c, fmt.Errorf("NV_UPDATE_VIA must be startos or umbrel, got %q", c.UpdateVia)
 	}
 	var err error
 	if c.Port, err = port(getenv("NV_PORT"), 8080, "NV_PORT"); err != nil {
@@ -105,10 +139,12 @@ func ConfigFromEnv(getenv func(string) string) (Config, error) {
 		return c, fmt.Errorf("NV_DATA_DIR must be an absolute path, got %q", c.DataDir)
 	}
 	c.DataDir = filepath.Clean(c.DataDir)
-	if !filepath.IsAbs(c.MoveRoot) {
-		return c, fmt.Errorf("NV_MOVE_ROOT must be an absolute path, got %q", c.MoveRoot)
+	if c.MoveRoot != "" {
+		if !filepath.IsAbs(c.MoveRoot) {
+			return c, fmt.Errorf("NV_MOVE_ROOT must be an absolute path or empty (Move off), got %q", c.MoveRoot)
+		}
+		c.MoveRoot = filepath.Clean(c.MoveRoot)
 	}
-	c.MoveRoot = filepath.Clean(c.MoveRoot)
 	if c.MeshStatusFile == "" {
 		c.MeshStatusFile = filepath.Join(c.DataDir, "mesh", "status.json")
 	}
@@ -129,9 +165,44 @@ func ConfigFromEnv(getenv func(string) string) (Config, error) {
 			}
 		}
 	}
-	c.OwnerHex, c.OwnerNpub, err = ParseOwner(getenv("NV_OWNER"))
-	return c, err
+	return c, c.readOwner(getenv("NV_OWNER"), getenv("NV_SETUP_CODE"))
 }
+
+// readOwner: NV_OWNER if set; else box/owner (a claim made earlier); else,
+// with a setup code, claim mode (Claiming). A box/owner that is there but
+// unreadable or not an npub is an error, never a way back into claim mode.
+func (c *Config) readOwner(env, code string) error {
+	var err error
+	if strings.TrimSpace(env) != "" {
+		c.OwnerHex, c.OwnerNpub, err = ParseOwner(env)
+		return err
+	}
+	raw, ferr := os.ReadFile(c.OwnerFile())
+	if ferr == nil {
+		if c.OwnerHex, c.OwnerNpub, err = ParseOwner(string(raw)); err != nil {
+			return fmt.Errorf("%s: %v", c.OwnerFile(), err)
+		}
+		return nil
+	}
+	if !errors.Is(ferr, fs.ErrNotExist) {
+		return fmt.Errorf("reading %s: %v", c.OwnerFile(), ferr)
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return errors.New("NV_OWNER is not set: the installer must name the owner's npub (or a store sets NV_SETUP_CODE for claim mode)")
+	}
+	if len(code) < MinSetupCode {
+		return fmt.Errorf("NV_SETUP_CODE must be at least %d characters", MinSetupCode)
+	}
+	c.SetupCode = code
+	return nil
+}
+
+// Claiming: no owner yet, so havend serves only the setup page (claim.go).
+func (c Config) Claiming() bool { return c.OwnerHex == "" && c.SetupCode != "" }
+
+// OwnerFile is box/owner: the owner npub claim mode saved.
+func (c Config) OwnerFile() string { return filepath.Join(c.BoxDir(), "owner") }
 
 // ParseOwner takes the installer's NV_OWNER (npub or 64-char hex) and returns
 // both forms. An empty owner is an error: the box never lets the first

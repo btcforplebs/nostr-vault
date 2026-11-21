@@ -61,9 +61,21 @@ machine's network: the vault listens on `NV_PORT` (8080), and on loopback only t
 | `/app/web` | the web app (`NV_WEB_DIR`), built with `NV_BOX=1`: served at the box's root, its vault the box itself. |
 | `/data` | `NV_DATA_DIR`: the host path the owner chose. Mode 0711, havend's: `box/` (device key, state), `vault/` (the engine's), `mesh-devices.json`. `mesh/` is nv-mesh's (0755): `key/` (0700, the mesh key, nv-mesh only), `npub`, `status.json`. |
 
-Environment: `NV_OWNER` (npub or hex, required), `NV_DATA_DIR=/data`, `NV_PORT=8080`, `NV_MESH_DOOR_PORT=8081`
+Environment: `NV_OWNER` (npub or hex; required unless a store sets `NV_SETUP_CODE`, below), `NV_DATA_DIR=/data`, `NV_PORT=8080`, `NV_MESH_DOOR_PORT=8081`
 (= `HAVEN_MESH_PLAIN_PORT`), `NV_WEB_DIR=/app/web`, `NV_ENGINE_BIN`, `NV_VERSION` (the build's commit). The health
 check passes when anything answers HTTP on `NV_PORT`.
+
+For app stores (Start9, Umbrel), three more switches:
+
+- `NV_SETUP_CODE`: claim mode for a store with no install form. With no `NV_OWNER` and no `box/owner`, havend serves
+  only a setup page on `NV_PORT` (no vault, relay or box API). The owner opens it and sends their npub with the code
+  (Umbrel's app password); the npub is saved to `box/owner` and the box starts as theirs. A visitor without the code
+  can't claim it (5 wrong codes a minute from one address, or 100 from all, then a wait), the code must be 12+ characters, and a saved owner is never
+  replaced. `supervise.sh` reads `box/owner` on later starts; a broken or linked `box/owner` stops the box rather
+  than reopening claim mode.
+- `NV_UPDATE_VIA=startos|umbrel`: the store updates the box, so Update answers `managed` and the box screen says to
+  update from the StartOS Marketplace or the Umbrel App Store.
+- `NV_MOVE_ROOT=` (set, empty): Storage › Move is off, because the store owns the disk.
 
 ## Build
 

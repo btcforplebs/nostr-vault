@@ -21,7 +21,7 @@ for LMDB.
 
 | What | Where |
 |---|---|
-| Owner | `NV_OWNER` (npub or hex), required, set by the installer. Never claimed by a visitor. |
+| Owner | `NV_OWNER` (npub or hex), set by the installer; else `box/owner`, which claim mode saves. Never claimed by a visitor: claim mode (no owner, `NV_SETUP_CODE` of 12+ characters) serves only a setup page until someone sends an npub with that code (`internal/box/claim.go`; 5 wrong codes a minute from one address or 100 box-wide, then 429; the first claim wins, `box/owner` is never overwritten) |
 | Port | `NV_PORT` (8080): relay WebSocket at `/` (and `/private`, `/chat`, `/inbox`, `/feed`), Blossom, web app, `/api/box/` |
 | Data | `NV_DATA_DIR` (`/data`): `box/` (state), `vault/` (the engine's working dir), `mesh-devices.json`; `mesh/` is nv-mesh's |
 | Engine | `NV_ENGINE_BIN` (`/usr/local/bin/haven-engine`), on `127.0.0.1:NV_ENGINE_PORT` (3355). Run with `HAVEN_BEHIND_PROXY=1`: every client arrives through havend on loopback, so the engine rate-limits the client havend names in `X-Forwarded-For`, and only a request with none (havend's own) or a loopback client keeps the loopback pass |
@@ -30,8 +30,8 @@ for LMDB.
 | Box npub | nv-mesh's `/data/mesh/npub`: the one key the owner approves. `havend device` prints it (and fails until nv-mesh's first start). |
 | Mesh devices | havend writes `NV_MESH_DEVICES` (`/data/mesh-devices.json`, 0644, atomically, only on change): `[{"npub": …}]`, the owner's other `fipsmesh` entries in their newest 10063, and `[]` while that list doesn't name the box. Refreshed every 30 s and on each devices read; with no list found the file is kept. |
 | Mesh status | nv-mesh writes `NV_MESH_STATUS_FILE` (`/data/mesh/status.json`) every 5 s. status returns it as `mesh` with `up` = its `running` while `updated` is under 30 s old, `peers` = the length of its `peers` list, `npub` the box's (no file: `up:false, peers:0`) |
-| Update | `NV_UPDATE_HOOK` is run on `POST update`; unset, the answer is `manual` (install the newer package) and nothing is written |
-| Move | `POST move {path}` only into `NV_MOVE_ROOT` (`/mnt`): mount extra disks there |
+| Update | `NV_UPDATE_VIA` (`startos`, `umbrel`): the answer is `managed` with `via` the store, nothing runs. Else `NV_UPDATE_HOOK` is run on `POST update`; unset, the answer is `manual` (install the newer package) and nothing is written |
+| Move | `POST move {path}` only into `NV_MOVE_ROOT` (`/mnt`): mount extra disks there. `NV_MOVE_ROOT` set but empty: Move is off (403), and status and storage say `move_off: true` |
 
 ## Box API
 

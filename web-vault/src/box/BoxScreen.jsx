@@ -44,7 +44,7 @@ export function BoxScreen({ ctx, api: given }) {
         {status && <PublicOnWeb ctx={ctx} relayUrl={status.relay_url} />}
       </Part>
       <Part title="Update" state={data.status}>
-        {status && <Update api={api} version={status.version} />}
+        {status && <Update api={api} version={status.version} store={STORES[status.update_via]} />}
       </Part>
     </div>
   )
@@ -103,7 +103,8 @@ function Storage({ api, storage, onMoved }) {
       <Row label="Vault folder" value={storage.path || "—"} />
       <Meter label="Used" used={storage.used} total={storage.total} />
       <Row label="Free" value={bytes(storage.free)} />
-      {!moving ? <button type="button" class="settings-row box-action" onClick={() => setMoving(true)}>Move vault to…</button>
+      {storage.move_off ? <p class="muted small box-pad">This box's app store manages its disk, so the vault stays where it is.</p>
+        : !moving ? <button type="button" class="settings-row box-action" onClick={() => setMoving(true)}>Move vault to…</button>
         : <form class="box-form" onSubmit={move}>
           <label class="field"><span>New folder on the box</span>
             <input value={path} onInput={e => setPath(e.currentTarget.value)} placeholder="/mnt/disk/nostr-vault" autocapitalize="off" spellcheck={false} />
@@ -138,23 +139,29 @@ function Devices({ devices }) {
 
 // linux/README.md: installing the newer package is the update (audit K2: nothing on the box runs one yet).
 const RELEASES = "https://github.com/btcforplebs/nostr-vault/releases"
+// NV_UPDATE_VIA: a store installed the box and updates it; the box answers update with { managed, via }.
+const STORES = { startos: "the StartOS Marketplace", umbrel: "the Umbrel App Store" }
 
-function Update({ api, version }) {
+function Update({ api, version, store: given }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const run = async () => {
     setBusy(true); setMsg(null)
     try {
       const r = await api.update()
-      setMsg({ ok: true, text: !r.started || r.via === "file" ? `Updates are manual for now. On the box, install the newer package from ${RELEASES}` : r.to ? `Updating ${r.from || version} to ${r.to}.` : "Update started." })
+      const store = r.managed ? STORES[r.via] ?? given : null
+      setMsg({ ok: true, text: r.managed ? `Update Nostr Vault from ${store ?? "the app store that installed it"}.` : !r.started || r.via === "file" ? `Updates are manual for now. On the box, install the newer package from ${RELEASES}` : r.to ? `Updating ${r.from || version} to ${r.to}.` : "Update started." })
     } catch (e) { setMsg({ ok: false, text: String(e?.message ?? e) }) }
     setBusy(false)
   }
   return (
     <div class="settings-rows">
       <Row label="Running" value={version ? `Version ${version}` : "—"} />
-      <button type="button" class="settings-row box-action" disabled={busy} aria-busy={busy || undefined} onClick={run}>{busy ? "Asking the box…" : "Check for update and install"}</button>
-      <p class="muted small box-pad">Updates are manual for now: install the newer package on the box. There is no automatic way back to the old version yet.</p>
+      {given ? <p class="muted small box-pad">Updates come from {given}: update Nostr Vault there.</p>
+        : <>
+          <button type="button" class="settings-row box-action" disabled={busy} aria-busy={busy || undefined} onClick={run}>{busy ? "Asking the box…" : "Check for update and install"}</button>
+          <p class="muted small box-pad">Updates are manual for now: install the newer package on the box. There is no automatic way back to the old version yet.</p>
+        </>}
       {msg && <p class={`small box-pad ${msg.ok ? "muted" : "error"}`} role={msg.ok ? "status" : "alert"}>{msg.text}</p>}
     </div>
   )
