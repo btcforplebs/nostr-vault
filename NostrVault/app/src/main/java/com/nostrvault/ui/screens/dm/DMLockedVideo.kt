@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.dm
 
+import com.nostrvault.service.HeapCap
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -48,7 +49,8 @@ object DMLockedVideo {
     private const val TAG = "DMLockedVideo"
 
     /** The message for a compressed video of [bytes], null when it may be sent. Encrypting adds 16 bytes. */
-    fun sizeError(bytes: Long): String? = if (bytes + 16 > DMFile.MAX_FILE) TOO_BIG else null
+    fun sizeError(bytes: Long, cap: Long = HeapCap.of(DMFile.MAX_FILE)): String? =
+        if (bytes + 16 > cap) HeapCap.tooBigHere(DMFile.MAX_FILE) ?: TOO_BIG else null
 
     /**
      * Throws [DMLockedPhoto.Unsendable] for a video that can't be read or is too big after compressing,
@@ -82,8 +84,8 @@ object DMLockedVideo {
         val (durationMs, sourceBitrate) = withContext(Dispatchers.IO) { probe(context, uri) }
         // Never more than the clip already has: a small clip must not grow.
         val bitrate = if (sourceBitrate in 1 until VIDEO_BITRATE) sourceBitrate else VIDEO_BITRATE
-        if (durationMs > 0 && durationMs / 1000.0 * (bitrate + 128_000) / 8 > DMFile.MAX_FILE) {
-            throw DMLockedPhoto.Unsendable(TOO_BIG)
+        if (durationMs > 0 && durationMs / 1000.0 * (bitrate + 128_000) / 8 > HeapCap.of(DMFile.MAX_FILE)) {
+            throw DMLockedPhoto.Unsendable(HeapCap.tooBigHere(DMFile.MAX_FILE) ?: TOO_BIG)
         }
         val out = withContext(Dispatchers.IO) { File.createTempFile("dm_video_", ".mp4", context.cacheDir) }
         val ok = try {

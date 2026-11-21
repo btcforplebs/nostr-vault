@@ -21,7 +21,7 @@ class GoMemLimitTest {
 
     /** Never down at the 256 MiB that ran GC back to back, never above 1 GiB on a 12 GiB+ phone. */
     @Test fun `clamped both ways`() {
-        assertEquals(384, RelayConfiguration.phoneGoMemLimitMB(512L shl 20))
+        assertEquals(384, RelayConfiguration.phoneGoMemLimitMB(3 * gib))
         assertEquals(384, RelayConfiguration.phoneGoMemLimitMB(0))
         assertEquals(384, RelayConfiguration.phoneGoMemLimitMB(-1))
         assertEquals(1024, RelayConfiguration.phoneGoMemLimitMB(12 * gib))
@@ -50,5 +50,13 @@ class GoMemLimitTest {
         )
         val mb = env.getValue("GO_MEM_LIMIT_MB").toInt()
         assertTrue("limit $mb within 384..1024", mb in 384..1024)
+    }
+
+    /** 2 GB or less: 384 is a fifth of the phone, and Android ends the app first (a 2 GB Samsung, 2026-11-21). */
+    @Test fun `a small phone gets the lower floor`() {
+        assertEquals(256, RelayConfiguration.phoneGoMemLimitMB(1_900L shl 20)) // what a "2 GB" phone reports
+        assertEquals(256, RelayConfiguration.phoneGoMemLimitMB(2 * gib))
+        assertEquals(256, RelayConfiguration.phoneGoMemLimitMB(512L shl 20))
+        assertEquals(384, RelayConfiguration.phoneGoMemLimitMB(2 * gib + 1))
     }
 }

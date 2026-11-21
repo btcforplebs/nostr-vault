@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.shareportal
 
+import com.nostrvault.service.HeapCap
 import android.content.Context
 import android.text.format.Formatter
 import androidx.compose.foundation.layout.*
@@ -152,7 +153,7 @@ class PrivateCopyReviewViewModel @Inject constructor(
         val shared = intent.files.firstOrNull()
         val (bytes, name, mime) = if (shared != null) {
             val file = queue.claimedFile(intent, shared)?.takeIf { it.isFile } ?: return "The shared file is missing."
-            if (file.length() > PrivateCopyRecord.MAX_BYTES) return PrivateCopyService.TOO_BIG
+            if (file.length() > HeapCap.of(PrivateCopyRecord.MAX_BYTES.toLong())) return HeapCap.tooBigHere(PrivateCopyRecord.MAX_BYTES.toLong()) ?: PrivateCopyService.TOO_BIG
             Triple(withContext(Dispatchers.IO) { file.readBytes() }, shared.name, shared.mime)
         } else {
             val url = pageUrl(intent) ?: return "Nothing to keep."

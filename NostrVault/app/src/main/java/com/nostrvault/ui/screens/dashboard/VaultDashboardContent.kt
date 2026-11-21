@@ -205,14 +205,14 @@ internal fun VaultDashboardContent(
                 connections = connections,
             ),
             syncing = wotSyncing && !isExternal,
-            onStart = { if (!vaultViewModel.refusedWhileBusy()) RelayForegroundService.start(context) },
+            onStart = { if (!vaultViewModel.refusedWhileBusy()) RelayForegroundService.start(context, byHand = true) },
             // One busy flag: stop, restart and force-clean never cut an import, backup or restore.
             onStop = { if (!vaultViewModel.refusedWhileBusy()) RelayForegroundService.stop(context) },
             onRestart = {
                 if (vaultViewModel.refusedWhileBusy()) return@StatusCard
                 RelayForegroundService.stop(context)
                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    RelayForegroundService.start(context)
+                    RelayForegroundService.start(context, byHand = true)
                 }, 1500)
             },
             onForceRestart = { if (!vaultViewModel.refusedWhileBusy()) RelayForegroundService.forceRestart(context) },

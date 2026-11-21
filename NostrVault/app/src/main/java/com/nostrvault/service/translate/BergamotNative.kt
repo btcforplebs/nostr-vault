@@ -14,9 +14,20 @@ internal object BergamotNative {
      * hidden. Loaded when this object is first touched, so no native call can
      * run before the library is in.
      */
-    val isAvailable: Boolean = runCatching { System.loadLibrary("nvtranslate") }
-        .onFailure { Log.w("BergamotNative", "libnvtranslate not loaded", it) }
-        .isSuccess
+    val isAvailable: Boolean = runsHere(android.os.Process.is64Bit()) &&
+        runCatching { System.loadLibrary("nvtranslate") }
+            .onFailure { Log.w("BergamotNative", "libnvtranslate not loaded", it) }
+            .isSuccess
+
+    /**
+     * Not on a 32-bit phone, for now: the 32-bit library is built with
+     * hand-made changes to the maths code and has never run on a real phone,
+     * a chip without NEON-VFPv4 would stop the app with an illegal
+     * instruction no catch can stop, and each model asks for a 128 MB work
+     * area a 2 GB phone doesn't have. The library is not even loaded there.
+     * Take this out once Translate has run on a real 32-bit phone.
+     */
+    internal fun runsHere(is64BitProcess: Boolean): Boolean = is64BitProcess
 
     /**
      * The one Bergamot service for the process. Bergamot registers global

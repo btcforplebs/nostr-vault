@@ -181,7 +181,7 @@ func tidyBadgerDir(path string, opts func(badgerdb.Options) badgerdb.Options) (t
 		return res, err
 	}
 	res.VlogsBefore, res.BytesBefore = vlogs, bytes
-	if vlogs <= badgerTidyMaxVlogs {
+	if !needsTidy(vlogs, vlogBytes(path)) {
 		res.SkippedBecause = "few files"
 		return res, nil
 	}

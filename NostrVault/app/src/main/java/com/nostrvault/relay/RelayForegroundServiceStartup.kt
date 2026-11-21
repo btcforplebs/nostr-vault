@@ -106,6 +106,7 @@ import kotlinx.coroutines.withTimeoutOrNull
         }
         if (retryCount >= MAX_RETRY_ATTEMPTS || isShuttingDown) {
             Log.e(TAG, "Giving up: retries=$retryCount/$MAX_RETRY_ATTEMPTS, shuttingDown=$isShuttingDown")
+            clearEngineStartCount() // it failed, but the app lived
             lifecycleState = LifecycleState.IDLE
             _relayStatus.value = RelayStatus.OFFLINE
             updateNotification(RelayStatus.OFFLINE)
@@ -196,6 +197,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 
         _relayStatus.value = RelayStatus.BOOTING
         updateNotification(RelayStatus.BOOTING)
+        countEngineStart()
 
         try {
             // Set up relay data directory
@@ -270,6 +272,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 
             // Start the health watchdog so we detect if Go dies post-startup
             startHealthWatchdog()
+            settleEngineStartLater()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start relay: ${e.message}")
             lifecycleState = LifecycleState.IDLE

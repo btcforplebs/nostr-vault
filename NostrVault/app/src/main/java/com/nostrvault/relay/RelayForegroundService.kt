@@ -109,6 +109,10 @@ class RelayForegroundService : Service() {
         private val _isPortConflict = MutableStateFlow(false)
         val isPortConflict: StateFlow<Boolean> = _isPortConflict.asStateFlow()
 
+        /** The vault was left off because its last starts ended the app ([EngineStartGuard]). */
+        internal val _startHeld = MutableStateFlow(false)
+        val startHeld: StateFlow<Boolean> = _startHeld.asStateFlow()
+
         /** The Go stop from the last [onDestroy], off the main thread ([RelayStopper]). */
         internal val stopper = RelayStopper()
 
@@ -161,7 +165,7 @@ class RelayForegroundService : Service() {
             clearErrorStates()
             // Small delay to let the service fully stop before restarting
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                start(context)
+                start(context, byHand = true)
             }, 1500)
         }
 
@@ -310,8 +314,11 @@ class RelayForegroundService : Service() {
         fun crashRestartDelay(stickyRestart: Boolean, sinceLastStartMs: Long, windowMs: Long, delayMs: Long): Long =
             if (stickyRestart && sinceLastStartMs in 1 until windowMs) delayMs else 0L
 
-        /** [duringSetup]: first run starts the relay before setup is finished (it serves while `setup` runs). */
-        fun start(context: Context, duringSetup: Boolean = false) {
+        /**
+         * [duringSetup]: first run starts the relay before setup is finished (it serves while `setup` runs).
+         * [byHand]: a person tapped Start or Restart, which starts a vault [EngineStartGuard] left off.
+         */
+        fun start(context: Context, duringSetup: Boolean = false, byHand: Boolean = false) {
             if (externalMode) return
             StartupMarks.markOnce("engine start asked")
             // Never under a running import: this service's StopRelayC on any later destroy would cancel it
@@ -331,6 +338,7 @@ class RelayForegroundService : Service() {
                 return
             }
             val intent = Intent(context, RelayForegroundService::class.java)
+                .putExtra(EngineStartGuard.EXTRA_BY_HAND, byHand)
             context.startForegroundService(intent)
         }
 
@@ -556,6 +564,12 @@ class RelayForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (engineStartHeld(byHand = intent?.getBooleanExtra(EngineStartGuard.EXTRA_BY_HAND, false) == true)) {
+            Log.e(TAG, "The last ${EngineStartGuard.MAX_UNFINISHED} engine starts ended the app — leaving the vault off until someone taps Start")
+            _relayStatus.value = RelayStatus.OFFLINE
+            stopSelf()
+            return START_NOT_STICKY
+        }
         syncWakeLock()
 
         // If relay is already running (e.g. service restarted by the system or
@@ -605,6 +619,8 @@ class RelayForegroundService : Service() {
         }
 
         serviceAlive = false
+        // A stop that got here was no crash; a vault left off keeps its count (it never started).
+        if (!_startHeld.value) clearEngineStartCount()
 
         // Never on the main thread: stopRelay() waits for Go's lifecycle lock, which a booting
         // relay holds for its whole start, and a JNI call can't be cut by a timeout, so blocking
