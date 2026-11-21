@@ -129,6 +129,9 @@ func run(args []string) error {
 	}
 	// The owner's 10063 decides which devices nv-mesh lets in: read it now
 	// and every 30 s, so an approval or a removal reaches the mesh by itself.
+	// Each read asks the vault; the directory relays only every 10 minutes,
+	// when the vault has no list, or while theirs is newer than the vault's
+	// (box.RelayServerLists.Poll).
 	go api.Devices.Run(ctx, 30*time.Second)
 
 	front := &box.Front{API: api, Engine: box.EngineProxy(cfg.EnginePort)}
