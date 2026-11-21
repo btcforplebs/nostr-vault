@@ -77,3 +77,26 @@ test("StarBands draws what the old string-keyed bands drew, in the same order", 
     }
   }
 })
+
+test("packStars gives the GPU each star's place, colour, alphas, weight and size, follows as ring stars", async () => {
+  const { packStars, STRIDE } = await import("../src/screens/wot-globe-stars.js")
+  const nodes = [
+    { pk: "me", layer: "me", p: [0, 0, 0] },
+    { pk: "a", layer: "follow", p: [1, 0, 0] },
+    { pk: "b", layer: "extended", p: [0, 1.3, 0] },
+    { pk: "c", layer: "further", p: [0, 0, 1.62] },
+  ]
+  const weight = new Float64Array([0, 1, 0.35, 0.08])
+  const a = packStars(nodes, [1, 3], weight, STAR)
+  assert.equal(a.length, 2 * STRIDE)
+  const row = n => Array.from(a.subarray(n * STRIDE, (n + 1) * STRIDE))
+  const near = (got, want) => want.forEach((v, i) => assert.ok(Math.abs(got[i] - v) < 1e-6, `${i}: ${got[i]} vs ${v}`))
+  near(row(0), [1, 0, 0, STAR.ring[0] / 255, STAR.ring[1] / 255, STAR.ring[2] / 255, STAR.ring[3], STAR.ring[4], 1, SIZE.ring])
+  near(row(1), [0, 0, 1.62, STAR.further[0] / 255, STAR.further[1] / 255, STAR.further[2] / 255, STAR.further[3], STAR.further[4], 0.08, SIZE.further])
+})
+
+test("GlStars.create is null without WebGL, so the globe draws its stars on the 2D canvas", async () => {
+  const { GlStars } = await import("../src/screens/wot-globe-stars.js")
+  assert.equal(GlStars.create({ getContext: () => null }), null)
+  assert.equal(GlStars.create({ getContext: () => { throw new Error("blocked") } }), null)
+})
