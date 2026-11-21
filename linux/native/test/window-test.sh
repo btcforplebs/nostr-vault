@@ -11,6 +11,8 @@
 #     desk   the vault is set up: signed in as the owner (desk-probe.py, a stub signer), the window's desktop layout must
 #            draw the phone's own screens, not the napplets: the box build turns them off (NV_DESK_NAPPLETS, Logen
 #            2026-11-20). NV_WT_OWNER: the owner's pubkey hex. NV_WT_DESK_EXPECT=napplets checks the other way.
+#     narrow (x11 only) the window asked for 600x700, a half-width tile on a 1280 px screen (narrow-probe.py), must
+#            be 600 px wide or less, or the tile clips it; a copy with the old 800x640 minimum must not be (the control).
 #     paste  (x11 only) Ctrl+V, pressed with xdotool, into a text field in the window's own web view
 #            (paste-probe.py): with an empty clipboard the window must survive, and with text on the clipboard the
 #            text must arrive. Where WebKitGTK has the empty-clipboard crash (2.54.0, 2.54.1), a copy of the window
@@ -29,7 +31,7 @@ set -u
 MODE=${1:-}; STAGE=${2:-}; OUT=${3:-}
 CMD=${NV_WT_CMD:-nostr-vault-desktop}
 MIN_COLOURS=${NV_WT_MIN_COLOURS:-64} # a drawn page has hundreds (anti-aliased text); a blank window has 1 or 2
-case "$MODE.$STAGE" in x11.setup|x11.vault|x11.paste|x11.desk|wayland.setup|wayland.vault|wayland.desk) ;; *) echo "usage: $0 <x11|wayland> <setup|vault> <out dir>  (or: x11 paste <out dir>)" >&2; exit 2 ;; esac
+case "$MODE.$STAGE" in x11.setup|x11.vault|x11.paste|x11.desk|x11.narrow|wayland.setup|wayland.vault|wayland.desk) ;; *) echo "usage: $0 <x11|wayland> <setup|vault> <out dir>  (or: x11 paste <out dir>)" >&2; exit 2 ;; esac
 [ -n "$OUT" ] || { echo "no out dir" >&2; exit 2; }
 
 if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
@@ -39,8 +41,9 @@ if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
   cp "$(dirname "$0")/ua-probe.py" /tmp/nvwt-ua-probe.py && chmod 644 /tmp/nvwt-ua-probe.py
   cp "$(dirname "$0")/paste-probe.py" /tmp/nvwt-paste-probe.py && chmod 644 /tmp/nvwt-paste-probe.py
   cp "$(dirname "$0")/desk-probe.py" /tmp/nvwt-desk-probe.py && chmod 644 /tmp/nvwt-desk-probe.py
+  cp "$(dirname "$0")/narrow-probe.py" /tmp/nvwt-narrow-probe.py && chmod 644 /tmp/nvwt-narrow-probe.py
   exec runuser -u nvwt -- env NV_WT_INNER=1 NV_WT_CMD="$CMD" NV_WT_CONTROL="${NV_WT_CONTROL:-1}" NV_WT_VAULT_URL="${NV_WT_VAULT_URL:-}" \
-    NV_WT_PROBE=/tmp/nvwt-ua-probe.py NV_WT_PASTE_PROBE=/tmp/nvwt-paste-probe.py NV_WT_DESK_PROBE=/tmp/nvwt-desk-probe.py \
+    NV_WT_PROBE=/tmp/nvwt-ua-probe.py NV_WT_PASTE_PROBE=/tmp/nvwt-paste-probe.py NV_WT_DESK_PROBE=/tmp/nvwt-desk-probe.py NV_WT_NARROW_PROBE=/tmp/nvwt-narrow-probe.py \
     NV_WT_OWNER="${NV_WT_OWNER:-}" NV_WT_DESK_EXPECT="${NV_WT_DESK_EXPECT:-classic}" NV_WT_PY="${NV_WT_PY:-}" NV_WT_BIN="${NV_WT_BIN:-}" \
     NV_WT_MIN_COLOURS="$MIN_COLOURS" PATH="$PATH" HOME=/home/nvwt sh /tmp/nvwt-window-test.sh "$MODE" "$STAGE" "$OUT"
 fi
@@ -129,6 +132,26 @@ if [ "$STAGE" = setup ]; then
     *" NostrVaultLinux/"*) ok "$MODE: the window's pages see the Linux word in their user agent ($ua)" ;;
     *) no "$MODE: the window's user agent has no NostrVaultLinux/ word: '${ua}'"; tail -20 "$OUT/$MODE-ua-probe.log" ;;
   esac
+fi
+
+if [ "$STAGE" = narrow ]; then
+  nprobe=${NV_WT_NARROW_PROBE:-$(dirname "$0")/narrow-probe.py}
+  # width <script> <log name>: the window's width after it was asked for 600x700.
+  width() { dbus-run-session -- ${NV_WT_PY:-python3 -I} - "$1" <"$nprobe" 2>"$OUT/$MODE-narrow-$2.log" | sed -n 's/^SIZE \([0-9]*\)x.*/\1/p'; }
+  w=$(width "$bin" window)
+  if [ -n "$w" ] && [ "$w" -le 600 ]; then ok "$MODE: asked for a 600 px tile, the window is $w px wide (not clipped)"
+  else no "$MODE: asked for a 600 px tile, the window is '${w}' px wide"; tail -10 "$OUT/$MODE-narrow-window.log"; fi
+  if [ "${NV_WT_CONTROL:-1}" = 1 ]; then
+    # Control: the old 800x640 minimum must leave it wider than the tile, or the check above can't tell.
+    sed 's/win.set_size_request([0-9]*, [0-9]*)/win.set_size_request(800, 640)/' "$bin" >"$RUN/old-min"
+    if cmp -s "$bin" "$RUN/old-min"; then no "control: couldn't put the old minimum back in $bin"; else
+      c=$(width "$RUN/old-min" control)
+      if [ -n "$c" ] && [ "$c" -gt 600 ]; then ok "control: with the old 800x640 minimum the window stays $c px wide"
+      else no "control: the old minimum gave '${c}' px, so the check above can't tell"; fi
+    fi
+  fi
+  echo "RESULT $MODE $STAGE pass=$pass fail=$fail"
+  [ "$fail" = 0 ]; exit
 fi
 
 if [ "$STAGE" = desk ]; then
