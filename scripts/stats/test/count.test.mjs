@@ -11,6 +11,7 @@ test("platformOf reads the values every app writes", () => {
   assert.equal(platformOf("Nostr Vault on MacOS"), "Mac")
   assert.equal(platformOf("Nostr Vault on Android"), "Android")
   assert.equal(platformOf("Nostr Vault on Web"), "Web")
+  assert.equal(platformOf("Nostr Vault on Linux"), "Linux") // the Linux desktop window
   assert.equal(platformOf("Nostr Vault"), "Other")
   assert.equal(platformOf("Damus"), null)
   assert.equal(platformOf("nostr-vault"), null) // file notes, not posts
@@ -65,7 +66,7 @@ test("publicTotals counts windows from each poster's last note", () => {
   assert.equal(t.posting_users, 3)
   assert.equal(t.active_7d, 1)
   assert.equal(t.active_30d, 2)
-  assert.deepEqual(t.by_platform, { Android: 1, iPhone: 1, iPad: 0, Mac: 0, Web: 1 })
+  assert.deepEqual(t.by_platform, { Android: 1, iPhone: 1, iPad: 0, Mac: 0, Linux: 0, Web: 1 })
   assert.equal(t.github_downloads, 207)
 })
 
@@ -83,4 +84,11 @@ test("postersFromJson drops anything that is not a poster record", () => {
   const m = postersFromJson({ [pk("1")]: { first: 1, last: 2, notes: {} }, nothex: { last: 1 }, [pk("2")]: { first: 1 } })
   assert.deepEqual([...m.keys()], [pk("1")])
   assert.equal(postersFromJson(null).size, 0)
+})
+
+test("a poster from the Linux desktop window counts under Linux, not Other", () => {
+  const posters = collectPosters([note("l1", pk("4"), 10, "Nostr Vault on Linux"), note("l2", pk("4"), 20, "Nostr Vault on Linux")])
+  const t = publicTotals(posters, { now: 30, downloads: null, relays: 7 })
+  assert.equal(t.by_platform.Linux, 1)
+  assert.equal(Object.values(t.by_platform).reduce((a, b) => a + b, 0), 1)
 })

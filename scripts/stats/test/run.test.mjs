@@ -40,7 +40,7 @@ test("a full run writes totals and the local state", async t => {
   assert.equal(code, 0)
   const totals = JSON.parse(await readFile(out, "utf8"))
   assert.equal(totals.posting_users, 2)
-  assert.deepEqual(totals.by_platform, { Android: 1, iPhone: 0, iPad: 0, Mac: 0, Web: 1 })
+  assert.deepEqual(totals.by_platform, { Android: 1, iPhone: 0, iPad: 0, Mac: 0, Linux: 0, Web: 1 })
   assert.equal(totals.active_7d, 2)
   assert.equal(totals.github_downloads, 7)
   assert.equal(totals.relays, RELAYS.length)

@@ -24,11 +24,11 @@ export const EXCLUDED_PREFIXES = [
 export const isExcluded = pubkey => EXCLUDED_PREFIXES.some(p => String(pubkey).startsWith(p))
 
 /** The platforms the page shows, in its order. */
-export const PLATFORMS = ["Android", "iPhone", "iPad", "Mac", "Web"]
+export const PLATFORMS = ["Android", "iPhone", "iPad", "Mac", "Linux", "Web"]
 
 /**
  * The platform a ["client", value] names, from the values the apps write: "Nostr Vault on iOS" (iPhone),
- * "… on iPadOS", "… on MacOS", "… on Android", "… on Web". null when the value is not Nostr Vault's;
+ * "… on iPadOS", "… on MacOS", "… on Android", "… on Linux" (the Linux desktop window), "… on Web". null when the value is not Nostr Vault's;
  * "Other" for a Nostr Vault value that names no platform this list knows.
  */
 export function platformOf(clientValue) {
@@ -38,6 +38,7 @@ export function platformOf(clientValue) {
   if (on === "ipados") return "iPad"
   if (on === "macos") return "Mac"
   if (on === "android") return "Android"
+  if (on === "linux") return "Linux"
   if (on === "web") return "Web"
   return "Other"
 }

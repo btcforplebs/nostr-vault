@@ -5,7 +5,7 @@ It writes one totals file for the page at `website/stats/` (`index.html` + `stat
 
 ## Method
 
-The apps add `["client", "Nostr Vault on iOS"]` (or "… on iPadOS", "… on MacOS", "… on Android", "… on Web") to
+The apps add `["client", "Nostr Vault on iOS"]` (or "… on iPadOS", "… on MacOS", "… on Android", "… on Linux", "… on Web") to
 kind 1 notes and kind 1111 comments: `EventPublisher.appendClientTag` in the Apple and Android apps, and
 `web-vault/src/net/client-tag.js`. Relays can't filter on a multi-letter tag, so the scan works in two steps:
 
