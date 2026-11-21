@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"time"
 )
 
 // The vault engine is haven-go's own relay (the code the Mac app runs as
@@ -210,13 +211,18 @@ func WriteEngineFiles(c Config, vaultDir string) error {
 		}
 		return nil
 	}
-	lists := ListsFor(c.OwnerNpub, LoadAccounts(c.AccountsFile()))
+	added := LoadAccounts(c.AccountsFile())
+	lists := ListsFor(c.OwnerNpub, added)
 	// Readers first, so a failed write never leaves a grown account list
 	// beside an older readers list (and the engine refuses to start).
 	if err := write("private_reader_npubs.json", lists.Readers, false); err != nil {
 		return err
 	}
 	if err := write("whitelisted_npubs.json", lists.Accounts, false); err != nil {
+		return err
+	}
+	// The accounts a copy offers another device (copy_accounts.go).
+	if err := write(copyAccountsName, copyAccountsFor(c.OwnerNpub, added, time.Now()), false); err != nil {
 		return err
 	}
 	if err := write("blacklisted_npubs.json", []string{}, true); err != nil {
