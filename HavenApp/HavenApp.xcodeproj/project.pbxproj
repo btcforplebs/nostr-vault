@@ -255,6 +255,7 @@
 		1CB925192845B8F8219CD4B4 /* MediaPostShareTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB41FAD5B11E1C7F4245F7E1 /* MediaPostShareTags.swift */; };
 		1CC5A64F92A00678610A9D4C /* EmojiPaletteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B589B40DCA89EA8C175FEF32 /* EmojiPaletteStore.swift */; };
 		1CD9EA6DE7FC6EEA28DFAE37 /* StartupMarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8035EC9D9270146F2FA33BC /* StartupMarks.swift */; };
+		1CF6609A6E8D7B55E7EAC0AA /* MacVaultImportProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D499A8692D54F384FADA473 /* MacVaultImportProgress.swift */; };
 		1CFC00E39549C03B9D03810D /* ListHistoryScanStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BD3061693CB7921DAB3A13 /* ListHistoryScanStatus.swift */; };
 		1D451F208E8281044673DE53 /* MediaImportAfterMovingInRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2629DCD7132AF2247C1ADC8 /* MediaImportAfterMovingInRule.swift */; };
 		1D654A11277DD0529E08D4B5 /* VaultNetworking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48F5705A371573904C7229D4 /* VaultNetworking.swift */; };
@@ -342,6 +343,7 @@
 		25A9B88F6613E3C34DB04DB6 /* ListWipeAlarmWording.swift in Sources */ = {isa = PBXBuildFile; fileRef = A26B400CA78D02446D6677B0 /* ListWipeAlarmWording.swift */; };
 		25AC009A9676E31F793F17CE /* UploadProgressDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81D090A7CDA296F45DA4F4DC /* UploadProgressDelegate.swift */; };
 		25BF3441E0039F7830274C38 /* LNURLService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B14053AFA5E916B43335BEE /* LNURLService.swift */; };
+		25E05401A7DF3B5F6FAAE1AE /* MacVaultAdvancedRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22B02528C3BB3A184108725D /* MacVaultAdvancedRows.swift */; };
 		25ECCEBF4F6DD214E5813735 /* LongFormComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70AE6A634DDA4FCAD0EE552D /* LongFormComposeView.swift */; };
 		25FACF25F2439FE721A58144 /* CollapsedNowPlayingButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABC7040B1702C92C635F0E6D /* CollapsedNowPlayingButton.swift */; };
 		26221AAFE2617680C8D34696 /* CopiedInDate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1F7CB0B345248873D75E62 /* CopiedInDate.swift */; };
@@ -456,6 +458,7 @@
 		316A42CFB310571FFBEA0C2A /* MeshSiteRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC0483F9DFD12CDCE049B7B /* MeshSiteRetry.swift */; };
 		317391DCBA9DF606C5BD6011 /* HavenApp_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1A35E8F156B18C3269D943 /* HavenApp_iOS.swift */; };
 		317F503A1708A580ED8FF693 /* PopularRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0C028D1E2DC57C43CED675 /* PopularRanking.swift */; };
+		31B5C902C0FD752DABBCACD4 /* MacVaultLockBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B617FFD5AD4CF201C13C67D /* MacVaultLockBanner.swift */; };
 		3208D3B22DE1AA8D963D030B /* LeaveNostrForeverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B08D21E9A541EB40D045D137 /* LeaveNostrForeverView.swift */; };
 		32174E530F51223398BEAAE9 /* MarketplaceFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECAA69E57DB3F7947D9032C /* MarketplaceFeedService.swift */; };
 		321F6C9A4B91AB71059FD83E /* PrivateCopiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FA86449BB36268EF0B29217 /* PrivateCopiesView.swift */; };
@@ -493,6 +496,7 @@
 		3554633B7944BB367104EFDC /* FeedDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B67F3F4FE41AEE7F267AC59 /* FeedDashboardView.swift */; };
 		358A1A18DE8227A6CC491966 /* DMService+Publishing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B66DBC6F906E98DB63E2AAD /* DMService+Publishing.swift */; };
 		358F0887B8E6AF3275F43C7E /* MediaCacheService+MemoryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCB3C0E4C43D7B5971396CBC /* MediaCacheService+MemoryCache.swift */; };
+		358FF4A3AF70BB051A27F731 /* MacVaultImportProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D499A8692D54F384FADA473 /* MacVaultImportProgress.swift */; };
 		35AFA5B050700FDD3363075F /* MediaDeleteWording.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2777E951D68131C64DAEAA23 /* MediaDeleteWording.swift */; };
 		35B3ACB355AC14190BBF9158 /* RelayProcessManager+NewsDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FB46C6C2AC828A2B9914601 /* RelayProcessManager+NewsDot.swift */; };
 		35B7147C9A6D81334FD194D0 /* ComposerDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF5D411E889E67C6FF5E16AF /* ComposerDraft.swift */; };
@@ -569,6 +573,7 @@
 		3E1CF7FF7BF9CC321886CD3E /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558FCD15C2C7144DF3D20135 /* EmojiPickerView.swift */; };
 		3E29BA26158C9979FC763CE2 /* WebGate+Zaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13A1DB1083E3B5E7E5B06310 /* WebGate+Zaps.swift */; };
 		3E53AB37D8C661294466026D /* VertexReputation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B5E98764373253F27F8526F /* VertexReputation.swift */; };
+		3E87EEC2B0B45C4B4CAE2F25 /* MacVaultLockBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B617FFD5AD4CF201C13C67D /* MacVaultLockBanner.swift */; };
 		3EBEC2F605993B37DDB345AB /* NoteRow+EngagementBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CED90605A0EC0CF574801DE /* NoteRow+EngagementBar.swift */; };
 		3F21BB94AF95CD331C1DD1EE /* BlossomService+LocalUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB509F2A30B9B45176A3489 /* BlossomService+LocalUpload.swift */; };
 		3F250B1A05771CA62C2D6227 /* NostrService+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A0902B97D14CA8823200AE /* NostrService+Search.swift */; };
@@ -1451,6 +1456,7 @@
 		9D208319D9FEC1D6A76B339D /* CustomEmoji.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5491B12E550308F38BE003 /* CustomEmoji.swift */; };
 		9D36295ACBCF6AA25D9409B3 /* ProfileNoteList.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83D457E26F0DF095EFF3FAB /* ProfileNoteList.swift */; };
 		9D582A3BB5F004CBF65A8196 /* FeedService+Snapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B41128CC30843928E849EA /* FeedService+Snapshots.swift */; };
+		9D7078357B6BED680B05C2E4 /* MacVaultAdvancedRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22B02528C3BB3A184108725D /* MacVaultAdvancedRows.swift */; };
 		9D74848925393F3A0BA89DBC /* RelayMatrixView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A236C874DC2ACEF2B73EF2 /* RelayMatrixView.swift */; };
 		9D8C4B533215C3CB63C3E7E8 /* FilterButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE65F95458326DF0C43FCEAC /* FilterButton.swift */; };
 		9DBA13DB50ECFF3FFF4832F8 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7B2365D506330BA6CF87F8 /* AppearanceSettingsView.swift */; };
@@ -2608,6 +2614,7 @@
 		220CCFE2E1EB4539CE6C22C4 /* LiveChatAttachMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChatAttachMenu.swift; sourceTree = "<group>"; };
 		2273735721EB06B1A2815C4E /* NVShareClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVShareClassifier.swift; sourceTree = "<group>"; };
 		22900149BE690CB8BA39CE5A /* NewToVaultQuestion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewToVaultQuestion.swift; sourceTree = "<group>"; };
+		22B02528C3BB3A184108725D /* MacVaultAdvancedRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacVaultAdvancedRows.swift; sourceTree = "<group>"; };
 		22D8D67DB985CB4EA94E4FAF /* RelayProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayProcessManager.swift; sourceTree = "<group>"; };
 		22FE21A74271B43AAD2C18F3 /* ListBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListBackupView.swift; sourceTree = "<group>"; };
 		23082A59191D1E9993BAE72B /* NostrService+MuteList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+MuteList.swift"; sourceTree = "<group>"; };
@@ -2715,6 +2722,7 @@
 		3AB256B302F132F38FBEA3C5 /* ProfilePostsLoadPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePostsLoadPlan.swift; sourceTree = "<group>"; };
 		3ADBFCE4923AF67D80521F44 /* FipsMeshMyDevicesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FipsMeshMyDevicesSection.swift; sourceTree = "<group>"; };
 		3B372B39BC49ABA2ADD10179 /* CopySaving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopySaving.swift; sourceTree = "<group>"; };
+		3B617FFD5AD4CF201C13C67D /* MacVaultLockBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacVaultLockBanner.swift; sourceTree = "<group>"; };
 		3B6DA4C382CFBC12FA3199EB /* FileNotesLive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileNotesLive.swift; sourceTree = "<group>"; };
 		3B9646E91993C4D774E5F139 /* ActivityTargetFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityTargetFetcher.swift; sourceTree = "<group>"; };
 		3BD728058427FFD0AC9A3FAB /* StatusPulseRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusPulseRule.swift; sourceTree = "<group>"; };
@@ -3206,6 +3214,7 @@
 		9C9ED8487C01090F998A7D0E /* FipsMeshThisDeviceSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FipsMeshThisDeviceSection.swift; sourceTree = "<group>"; };
 		9CB1418A113C8C037133410C /* NewPostsFold.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewPostsFold.swift; sourceTree = "<group>"; };
 		9CF690589679CB773B651985 /* ListShrinkRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListShrinkRule.swift; sourceTree = "<group>"; };
+		9D499A8692D54F384FADA473 /* MacVaultImportProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacVaultImportProgress.swift; sourceTree = "<group>"; };
 		9D539D337278666988D68FA9 /* VaultActivityRow+Compact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VaultActivityRow+Compact.swift"; sourceTree = "<group>"; };
 		9D6D0338C56E23B350F9FCD0 /* FipsMeshAdvancedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FipsMeshAdvancedView.swift; sourceTree = "<group>"; };
 		9DA52B454082978B0E4ED6F3 /* ComposeEmoji.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeEmoji.swift; sourceTree = "<group>"; };
@@ -4329,6 +4338,9 @@
 				0B67F3F4FE41AEE7F267AC59 /* FeedDashboardView.swift */,
 				F8152C31E47774D859AE128B /* MacRelaySyncStatusView.swift */,
 				8CCBDC2A4AF4AEB828097AEC /* MacSyncSettingsPage.swift */,
+				22B02528C3BB3A184108725D /* MacVaultAdvancedRows.swift */,
+				9D499A8692D54F384FADA473 /* MacVaultImportProgress.swift */,
+				3B617FFD5AD4CF201C13C67D /* MacVaultLockBanner.swift */,
 				EDC94C3AA61FEF07180139DD /* MediaCopyFileRow.swift */,
 				8C52A97A40D28F1C1381665A /* MediaServersPage.swift */,
 				104C14D088ED0825A8996A61 /* RelayActivityViews.swift */,
@@ -6329,7 +6341,10 @@
 				5CBEF5F2AC14BB8532BAEA06 /* MacSpaceColumn.swift in Sources */,
 				977686D6FA85A360A19AF0DF /* MacSyncSettingsPage.swift in Sources */,
 				EB354F44D6F2F56F9C31CB22 /* MacThreadPane.swift in Sources */,
+				25E05401A7DF3B5F6FAAE1AE /* MacVaultAdvancedRows.swift in Sources */,
 				20015B733260DE1F1BE09D4E /* MacVaultGlance.swift in Sources */,
+				1CF6609A6E8D7B55E7EAC0AA /* MacVaultImportProgress.swift in Sources */,
+				31B5C902C0FD752DABBCACD4 /* MacVaultLockBanner.swift in Sources */,
 				D3B77C56EC565671BAFBCEF5 /* MacWebcamScanner.swift in Sources */,
 				64D2AF480E978EDB43455605 /* MarkdownBodyView.swift in Sources */,
 				F4DE1594633DA412BFEADFFE /* MarketListing.swift in Sources */,
@@ -7538,7 +7553,10 @@
 				ADAA735F232D5B43B1372F32 /* MacSpaceColumn.swift in Sources */,
 				E5641EAC3823ADC19D08F76E /* MacSyncSettingsPage.swift in Sources */,
 				002578C1F96B98D9427A7EFD /* MacThreadPane.swift in Sources */,
+				9D7078357B6BED680B05C2E4 /* MacVaultAdvancedRows.swift in Sources */,
 				C15BC1150640134489643E12 /* MacVaultGlance.swift in Sources */,
+				358FF4A3AF70BB051A27F731 /* MacVaultImportProgress.swift in Sources */,
+				3E87EEC2B0B45C4B4CAE2F25 /* MacVaultLockBanner.swift in Sources */,
 				6DA2E5B10A1631F8EE72122C /* MacWebcamScanner.swift in Sources */,
 				EDE74CB342AEFD9F004D4EEA /* MarkdownBodyView.swift in Sources */,
 				3B221FE87F958B072139054D /* MarketListing.swift in Sources */,
