@@ -27,13 +27,9 @@ struct VaultView: View {
     /// Bumped to put the cursor back in the open search bar.
     @State var searchFocusRequest = 0
     @StateObject var vaultSearch = VaultSearchModel()
-    /// The phone and iPad open the Vault tab on "Vault", everything new in
-    /// one list. The Mac's relay page has no such list.
-    #if os(iOS)
+    /// The Vault opens on "Vault", everything new in one list: the phone,
+    /// the iPad and, since the one Vault (MacVaultFold), the Mac.
     @State var viewMode: ViewMode = .activity
-    #else
-    @State var viewMode: ViewMode = .notes
-    #endif
 
     @State var initialLoad = false
     @State var isLoadingMore = false

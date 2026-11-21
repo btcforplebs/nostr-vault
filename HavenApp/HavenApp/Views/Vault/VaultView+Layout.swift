@@ -90,7 +90,7 @@ extension VaultView {
                 if showingRelayDashboard {
                     VStack(spacing: 0) {
                         HStack {
-                            Text("Relay Dashboard")
+                            Text(vaultTabHostsMedia ? VaultDashboard.title : "Relay Dashboard")
                                 .font(.appSystem(size: 16, weight: .bold))
                                 .foregroundColor(.primary)
                             Spacer()
@@ -105,7 +105,8 @@ extension VaultView {
 
                         Divider()
 
-                        DashboardView()
+                        // The one Vault's dashboard (MacVaultFold.dashboardIsPage off).
+                        NavigationStack { relayDashboardContent }
                             .environmentObject(relayManager)
                             .environmentObject(configService)
                             .environmentObject(nostrService)

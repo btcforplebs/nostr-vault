@@ -26,6 +26,10 @@ extension VaultView {
 
     var viewContent: some View {
         viewContentBase
+        #if os(macOS)
+        // The Vault tab's wiring, for the Mac's one Vault (MacVaultFold).
+        .modifier(VaultOneVaultHandlers(view: self))
+        #endif
         // A filter tap's count lands with the rebuilt list (as on iOS).
         .onChange(of: displayPass) { _, _ in filterListLanded() }
         .onChange(of: viewMode) { _, _ in pendingFilterNote = nil }
@@ -123,6 +127,10 @@ extension VaultView {
             scheduleUpdateDisplayData()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openRelayDashboard)) { _ in
+            #if os(macOS)
+            // The Mac's one Vault opens its dashboard as a page (MacVaultPage).
+            if vaultTabHostsMedia && MacVaultFold.dashboardIsPage { return }
+            #endif
             showingRelayDashboard = true
         }
         // Not iOS-only: this is the macOS body, and gating these meant a notification

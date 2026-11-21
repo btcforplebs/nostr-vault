@@ -406,7 +406,35 @@ extension VaultView {
     /// with the Thread column open it can be ~560 pt, narrower than the six
     /// labelled pages. So the bar steps down until it fits: labelled pages,
     /// then icon pages, then icon pages over a scrolling filter row.
+    @ViewBuilder
     var macModeFilterRow: some View {
+        if vaultTabHostsMedia {
+            // The one Vault: pages are in the pill over this bar (MacVaultPageBar).
+            // The Vault list has no Mac filters: it takes the phone's bar.
+            if viewMode == .activity {
+                HStack {
+                    Spacer(minLength: 8)
+                    trailingToolbarInline
+                }
+            } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    pageFilterView
+                    Spacer(minLength: 8)
+                    searchToggleButton
+                }
+                HStack(spacing: 8) {
+                    ScrollView(.horizontal, showsIndicators: false) { pageFilterView }
+                    searchToggleButton
+                }
+            }
+            }
+        } else {
+            macPageButtonsRow
+        }
+    }
+
+    private var macPageButtonsRow: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 16) {
                 modeView

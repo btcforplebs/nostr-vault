@@ -14,6 +14,7 @@ struct VaultDashboardView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var statsService: StatsService
+    @Environment(\.vaultActivityBeside) private var activityBeside
     @ObservedObject private var mirrorService = MirrorService.shared
     @ObservedObject private var followingBackup = FollowingBackupService.shared
     @ObservedObject private var feedService = FeedService.shared
@@ -45,7 +46,7 @@ struct VaultDashboardView: View {
                 StillToBringInSection()
                 keepItFullSection
                 settingsSection
-                activitySection
+                if !activityBeside { activitySection }
                 advancedSection
             }
             .padding(.horizontal, 16)

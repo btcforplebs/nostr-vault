@@ -279,59 +279,85 @@ extension MenuBarView {
             Color.platformWindowBackground
                 .ignoresSafeArea()
 
-            switch selectedTab {
-            case .feed:
-                FeedView()
-                    .transition(.opacity)
-            case .search:
-                SearchView()
-                    .transition(.opacity)
-            case .media:
-                MediaTabView()
-                    .environmentObject(relayManager)
-                    .environmentObject(configService)
-                    .environmentObject(nostrService)
-                    .environmentObject(StatsService.shared)
-                    .transition(.opacity)
-            case .profile:
-                MyProfileView(pubkey: activeHex)
-                    .id(activeHex)
-                    .environmentObject(nostrService)
-                    .environmentObject(configService)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            case .relay:
-                DashboardView(isSidebar: true)
-                    .environmentObject(relayManager)
-                    .environmentObject(configService)
-                    .environmentObject(nostrService)
-                    .environmentObject(StatsService.shared)
-                    .transition(.opacity)
-            case .notes:
-                VaultView()
-                    .environmentObject(configService)
-                    .environmentObject(nostrService)
-                    .environmentObject(relayManager)
-                    .transition(.opacity)
-            case .emoji:
-                EmojiVaultView()
-                    .environmentObject(nostrService)
-                    .transition(.opacity)
-            case .wot:
-                WOTTabView()
-                    .environmentObject(configService)
-                    .environmentObject(nostrService)
-                    .transition(.opacity)
-            case .settings:
-                SettingsView(isEmbedded: true, paneRequest: $settingsPaneRequest)
-                    .environmentObject(relayManager)
-                    .environmentObject(configService)
-                    .environmentObject(nostrService)
-                    .environmentObject(StatsService.shared)
-                    .transition(.opacity)
+            if Self.showsOneVault(selectedTab) {
+                oneVaultPage
+            } else {
+                switch selectedTab {
+                case .feed:
+                    FeedView()
+                        .transition(.opacity)
+                case .search:
+                    SearchView()
+                        .transition(.opacity)
+                case .media:
+                    MediaTabView()
+                        .environmentObject(relayManager)
+                        .environmentObject(configService)
+                        .environmentObject(nostrService)
+                        .environmentObject(StatsService.shared)
+                        .transition(.opacity)
+                case .profile:
+                    MyProfileView(pubkey: activeHex)
+                        .id(activeHex)
+                        .environmentObject(nostrService)
+                        .environmentObject(configService)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                case .relay:
+                    DashboardView(isSidebar: true)
+                        .environmentObject(relayManager)
+                        .environmentObject(configService)
+                        .environmentObject(nostrService)
+                        .environmentObject(StatsService.shared)
+                        .transition(.opacity)
+                case .notes:
+                    VaultView()
+                        .environmentObject(configService)
+                        .environmentObject(nostrService)
+                        .environmentObject(relayManager)
+                        .transition(.opacity)
+                case .emoji:
+                    EmojiVaultView()
+                        .environmentObject(nostrService)
+                        .transition(.opacity)
+                case .wot:
+                    WOTTabView()
+                        .environmentObject(configService)
+                        .environmentObject(nostrService)
+                        .transition(.opacity)
+                case .settings:
+                    SettingsView(isEmbedded: true, paneRequest: $settingsPaneRequest)
+                        .environmentObject(relayManager)
+                        .environmentObject(configService)
+                        .environmentObject(nostrService)
+                        .environmentObject(StatsService.shared)
+                        .transition(.opacity)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(Motion.toggle, value: selectedTab)
         .animation(Motion.fade, value: activeHex)
+    }
+
+    /// The Mac's one Vault (MacVaultFold) takes the Vault, Media, Emoji and
+    /// Relay destinations. The iPad sidebar keeps its own pages.
+    static func showsOneVault(_ tab: Tab) -> Bool {
+        #if os(macOS)
+        MacVaultFold.isVault(tab)
+        #else
+        false
+        #endif
+    }
+
+    @ViewBuilder
+    private var oneVaultPage: some View {
+        #if os(macOS)
+        MacVaultPage(selectedTab: $selectedTab)
+            .environmentObject(relayManager)
+            .environmentObject(configService)
+            .environmentObject(nostrService)
+            .environmentObject(StatsService.shared)
+            .transition(.opacity)
+        #endif
     }
 }

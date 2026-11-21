@@ -79,19 +79,20 @@ struct MacRail: View {
                     MacRailItem(title: "WoT", selected: selectedTab == .wot) { selectedTab = .wot } icon: {
                         Image("WoTTab").renderingMode(.template).resizable().scaledToFit().frame(width: 22, height: 22)
                     }
-                    MacRailItem(title: "Vault", selected: selectedTab == .notes) { selectedTab = .notes } icon: {
+                    // The one Vault (MacVaultFold): Media, Emoji and the
+                    // dashboard are its pages, as on the phone. It opens the
+                    // Vault page you were last on.
+                    MacRailItem(title: "Vault", selected: MacVaultFold.isVault(selectedTab)) {
+                        selectedTab = MacVaultFold.pageTab()
+                    } icon: {
                         Image(systemName: "lock.rectangle.stack")
                     }
                     // The Vault (VaultView): what the return pill's arrow points at.
                     .vaultAnchor(.leading)
-                    MacRailItem(title: "Media", selected: selectedTab == .media) { selectedTab = .media } icon: {
-                        Image(systemName: "photo.on.rectangle")
-                    }
-                    MacRailItem(title: "Emoji", selected: selectedTab == .emoji) { selectedTab = .emoji } icon: {
-                        Image(systemName: "face.smiling")
-                    }
-                    MacRailItem(title: "Relay", selected: selectedTab == .relay) { selectedTab = .relay } icon: {
-                        Image(systemName: "server.rack")
+                    if !MacVaultFold.foldsEmoji {
+                        MacRailItem(title: "Emoji", selected: selectedTab == .emoji) { selectedTab = .emoji } icon: {
+                            Image(systemName: "face.smiling")
+                        }
                     }
                 }
             }
@@ -113,7 +114,7 @@ struct MacRail: View {
     }
 
     /// The vault's state as a dot and a word, as at the foot of the web rail.
-    /// Opens the Relay page.
+    /// Opens the Vault Dashboard.
     private var statusFoot: some View {
         Button { selectedTab = .relay } label: {
             VStack(spacing: 4) {
