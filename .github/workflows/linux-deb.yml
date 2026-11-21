@@ -283,6 +283,19 @@ jobs:
           docker exec nv sh -c 'umask 077; keytool gen >/root/owner.key; nostr-vault-setup --owner "$(cut -d" " -f2 /root/owner.key)" --sd-ok
             for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8080/ | grep -qi "<html" && { echo "vault answers"; exit 0; }; sleep 2; done
             journalctl --no-pager -u nostr-vault -n 40; exit 1'
+      - name: Keep test notes on this container - empty the vault's blastr list
+        run: |
+          # The box seeds relays_blastr.json with public relays (haven-go/internal/box/engineenv.go), and the vault sends
+          # every note its owner posts there. The client tag check below posts as the throwaway owner, so without this
+          # its notes reached public relays and /stats counted each CI run as a person (2026-11-21). The box keeps an
+          # existing list, so an empty one survives the restart that makes the engine read it.
+          docker exec nv sh -c 'f=/var/lib/nostr-vault/vault/relays_blastr.json
+            for i in $(seq 1 30); do [ -f "$f" ] && break; sleep 1; done
+            [ -f "$f" ] || { echo "no $f after setup"; ls -la /var/lib/nostr-vault/vault; exit 1; }
+            echo "[]" >"$f" && chown nvvault:nvvault "$f" && chmod 600 "$f" && systemctl restart nostr-vault
+            for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8080/ | grep -qi "<html" && break; sleep 2; done
+            [ "$(tr -d " \n" <"$f")" = "[]" ] || { echo "blastr list is not empty after the restart:"; cat "$f"; exit 1; }
+            echo "vault answers; blastr list: $(cat "$f")"'
       - name: After setup, X11 and Wayland - the web app, a killed page, and the control
         run: |
           r=0
@@ -304,6 +317,8 @@ jobs:
           ua=$(docker exec nv cat /tmp/nvwt-out/x11-ua.txt); echo "window user agent: $ua"
           [ "$ua" = "$(docker exec nv cat /tmp/nvwt-out/wayland-ua.txt)" ] || { echo "X11 and Wayland user agents differ"; exit 1; }
           ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' nv)
+          # The throwaway owner's public key, so anyone can check a public relay holds nothing from this run.
+          echo "throwaway owner (hex): $(docker exec nv cut -d' ' -f3 /root/owner.key)"
           node web-vault/tools/client-tag-e2e.mjs "ws://$ip:8080" "$(docker exec nv cut -d' ' -f1 /root/owner.key)" "$ua"
       - name: Screenshots
         if: always()
