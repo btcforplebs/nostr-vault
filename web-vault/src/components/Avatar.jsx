@@ -6,8 +6,9 @@ import { constellationUrl } from "./constellation.js"
 /** Round avatar; `ring` draws the accent ring (profile header, active Profile tab). `load` false: the blank disc
  *  only, so a stranger's picture host (any server they name in their kind 0) learns nothing when it draws. Someone
  *  whose profile has no picture (or whose picture fails) gets their constellation (constellation.js), drawn here,
- *  nothing fetched; before their profile arrives, and for a gated stranger, the plain disc stays. */
-export function Avatar({ pubkey, size = 40, ring = false, load = true }) {
+ *  nothing fetched; before their profile arrives the plain disc stays. A gated stranger keeps the disc too, unless the
+ *  caller passes `stars` (Logen 2026-11-21, notification faces): then their constellation, still never their picture. */
+export function Avatar({ pubkey, size = 40, ring = false, load = true, stars = false }) {
   const p = useProfile(pubkey)
   // Remember which URL failed, not just "failed": a newer kind 0 with a working picture must get its chance.
   const [broken, setBroken] = useState("")
@@ -18,6 +19,6 @@ export function Avatar({ pubkey, size = 40, ring = false, load = true }) {
   const small = useSmallSrc(pic, { box: { w: size, h: size }, fit: "cover" })
   if (pic && !small.ready) return <div ref={small.ref} class={cls} style={style} />
   if (pic) return <img ref={small.ref} class={cls} style={style} src={small.src} alt="" loading="lazy" onError={() => setBroken(pic)} {...small.hover} />
-  if (load && p && /^[0-9a-f]{64}$/.test(pubkey)) return <img class={cls + " avatar-stars"} style={style} src={constellationUrl(pubkey)} alt="" />
+  if ((load || stars) && p && /^[0-9a-f]{64}$/.test(pubkey)) return <img class={cls + " avatar-stars"} style={style} src={constellationUrl(pubkey)} alt="" />
   return <div class={cls + " avatar-blank"} style={{ ...style, background: `hsl(${parseInt(pubkey.slice(0, 6), 16) % 360} 45% 35%)` }} />
 }
