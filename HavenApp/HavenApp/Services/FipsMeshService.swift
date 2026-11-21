@@ -779,7 +779,7 @@ final class FipsMeshService: ObservableObject {
     nonisolated static func meshNpubFromKey() -> String? {
         guard let nsec = meshNsec(), let decoded = Bech32.decode(nsec), decoded.hrp == "nsec",
               decoded.data.count == 32,
-              let pkCStr = GetPublicKeyC(UnsafeMutablePointer(mutating: (decoded.hexString as NSString).utf8String))
+              let pkCStr = withCStrings([decoded.hexString], { p in GetPublicKeyC(p[0]) })
         else { return nil }
         let pk = String(cString: pkCStr)
         free(pkCStr)

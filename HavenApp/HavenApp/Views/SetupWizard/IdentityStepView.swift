@@ -540,6 +540,7 @@ struct IdentityStepView: View {
     private func generateNewIdentity() {
         guard let resultCStr = GenerateKeyPairC() else { return }
         let result = String(cString: resultCStr)
+        free(resultCStr)
         let parts = result.split(separator: ":")
         guard parts.count == 2 else { return }
         let sk = String(parts[0])
