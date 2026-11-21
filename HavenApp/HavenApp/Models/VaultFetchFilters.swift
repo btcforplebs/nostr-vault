@@ -1,6 +1,12 @@
 import Foundation
 
 enum VaultFetchFilters {
+    /// Others' likes, generic reposts and zap receipts that tag you.
+    static let taggedEngagementKinds = [7, 16, 9735]
+    /// Same as Android's PAGE and OLDER_PAGE (VaultActivityViewModel).
+    static let engagementLimit = 500
+    static let engagementOlderLimit = 200
+
     /// The Vault's read: the socket REQ and the direct store read
     /// (NostrService+VaultDirectRead) ask the same filters. `noteKinds` is
     /// NostrService.relayTabNoteKinds.
@@ -18,6 +24,7 @@ enum VaultFetchFilters {
         let metaKinds = [0, 3, 4, 7, 1063, 9735, 10000, 10063]
         let noteLimit = isHistorical ? 100 : 400
         let metaLimit = isHistorical ? 100 : 200
+        let tagLimit = isHistorical ? engagementOlderLimit : engagementLimit
 
         func makeFilter(kinds: [Int], limit: Int, mentionsOwner: String?) -> [String: Any] {
             var f: [String: Any] = ["limit": limit, "kinds": kinds]
@@ -42,9 +49,16 @@ enum VaultFetchFilters {
         // CRITICAL: Always subscribe to mentions (#p) of the owner so "tagged notes"
         // from people we don't follow still show up in the viewer. Split the same way
         // so replies aren't starved by reactions/zaps tagging the owner.
+        //
+        // Likes, reposts and zaps that tag you get their own filter, as on
+        // Android (TAGGED_KINDS, PAGE 500): in the shared 200-cap one, every
+        // follower's kind 3 list and kind 4 DM that tags you pushed them out,
+        // and the Vault showed no likes (Logen 2026-11-21).
         if !ownerHex.isEmpty {
             filters.append(makeFilter(kinds: noteKinds, limit: noteLimit, mentionsOwner: ownerHex))
-            filters.append(makeFilter(kinds: metaKinds, limit: metaLimit, mentionsOwner: ownerHex))
+            filters.append(makeFilter(kinds: taggedEngagementKinds, limit: tagLimit, mentionsOwner: ownerHex))
+            filters.append(makeFilter(kinds: metaKinds.filter { !taggedEngagementKinds.contains($0) },
+                                      limit: metaLimit, mentionsOwner: ownerHex))
         }
         return filters
     }
