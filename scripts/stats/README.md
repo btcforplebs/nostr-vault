@@ -31,7 +31,7 @@ the same method as RESEARCH/NV_USER_STATS_2026_11_14.md, which found about 70 po
 | File | What | Public? |
 |---|---|---|
 | `website/stats/stats.json` (`--out`) | totals: posting users, by platform, 7/30-day active, GitHub release downloads | yes: the page reads it |
-| `stats-history.jsonl` (next to `stats.json` on the job box) | one line per day: date, posting users, by platform, 7/30-day active, GitHub downloads (`history.mjs`). Days before the first scan (from 2026-05-01) are rebuilt once with `history.mjs --rebuild` from `posters.json` and marked `"reconstructed": true`: posting users = posters first seen by the end of that day, platform = each poster's main platform as of the last scan. Their `active_7d`, `active_30d` and `github_downloads` are `null`, because the poster records keep only first/last dates and no download history. | no: it stays on the box; no keys, no page reads it |
+| `stats-history.jsonl` (next to `stats.json` on the job box) | one line per day: date, posting users, by platform, 7/30-day active, GitHub downloads (`history.mjs`). Days before the first scan (from 2026-05-01) are rebuilt once with `history.mjs --rebuild` from `posters.json` and marked `"reconstructed": true`: posting users = posters first seen by the end of that day, platform = each poster's main platform as of the last scan. Their `active_7d`, `active_30d` and `github_downloads` are `null`, because the poster records keep only first/last dates and no download history. | yes: the job copies it next to `stats.json`, and the page draws "Posting users over time" from it (`website/stats/chart.js`). It holds totals only, never a key. |
 | `scripts/stats/posters.json` (`--state`) | one record per poster: public key, first/last note date, note count per platform | **no**: it stays on the box that runs the scan (gitignored). The page and the totals file never contain a key. |
 
 If fewer than 3 relays answer the scan, nothing is written and the exit code is 2, so a relay outage never shows
@@ -53,4 +53,4 @@ Needs Node 22 or later (built-in WebSocket and fetch, no npm install). A run tak
 `scripts/stats` (plus `website/stats`, which the page test imports) in a staging dir and swaps it in only if they pass;
 a failed fetch or test keeps the last good copy and says why in `stats.log`. It installs a changed `stats-job.sh`
 the same way, so merging to master is enough: no hand copy. `stats-job.sh --refresh-only` does just that step.
-It then copies `stats.json` into the running site container, so the page has today's numbers.
+It then copies `stats.json` and `stats-history.jsonl` into the running site container, so the page has today's numbers and chart.
