@@ -5,7 +5,7 @@
 // ratio) and kept as a small still image; an animated one plays only while hovered or focused, and the lightbox still
 // opens the original. Where that can't be done (no CORS on the server, no createImageBitmap) the caller draws the
 // original as before.
-import { useEffect, useRef, useState } from "preact/hooks"
+import { useEffect, useState } from "preact/hooks"
 
 /** Done stills per url and size: { src, animated }; src null = draw the original. Oldest dropped past MAX. */
 const done = new Map()
@@ -83,23 +83,26 @@ export function useSmallSrc(url, { box, fit = "cover", lazy = true } = {}) {
   const ok = httpUrl(url)
   const [got, setGot] = useState(null) // { url, src, animated }
   const [live, setLive] = useState(false)
-  const ref = useRef()
+  // The node itself, not a ref read once: Preact can put a new node under the same component (the row redrawn), and
+  // an observer left on the old, detached one never fires, so the face stayed on its grey placeholder for good
+  // (Logen's Notifications 2026-11-20: 37-79 faces). A callback ref re-runs the effect for each node it gets.
+  const [el, ref] = useState(null)
+  const has = got?.url === url
   useEffect(() => {
-    if (!ok) return
+    if (!ok || has) return
     let gone = false, io = null
     const go = () => {
-      const el = ref.current
       const b = typeof box === "function" ? box(el) : box
       if (!b?.w || !b?.h) { setGot({ url, src: null, animated: false }); return }
       stillOf(url, b, fit).then(v => { if (!gone) setGot({ url, ...v }) })
     }
-    if (!lazy || typeof IntersectionObserver !== "function" || !ref.current) go()
-    else {
+    if (!lazy || typeof IntersectionObserver !== "function") go()
+    else if (el) {
       io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); io = null; go() } }, { rootMargin: "800px" })
-      io.observe(ref.current)
+      io.observe(el)
     }
     return () => { gone = true; io?.disconnect() }
-  }, [url, ok])
+  }, [url, ok, el, has])
   const mine = got?.url === url ? got : null
   const on = () => setLive(true), off = () => setLive(false)
   const hover = mine?.animated ? { onPointerEnter: on, onPointerLeave: off, onFocus: on, onBlur: off } : {}
