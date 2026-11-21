@@ -23,13 +23,20 @@ final class MeshCopyV2Service: ObservableObject {
     /// The other device can't be reached: `.after` while B keeps trying,
     /// `.gaveUp` once it has tried for a few minutes (then `tryAgain`).
     @Published private(set) var unreachable: MeshCopyV2.Retry = .none
+    /// Each copied-from device's catch-up, as Settings › Your Devices shows
+    /// it (MeshSyncStatusRow). Android: MeshCopyStarter.sync.
+    @Published private(set) var syncState = MeshSyncState()
 
     private static let recordKey = "meshCopyV2.record"
     private var record: MeshCopyV2.Record {
-        didSet { if record != oldValue { save() } }
+        didSet { if record != oldValue { save(); syncState.lastAt = record.copied } }
     }
     /// The peer the running copy (or catch-up) is with.
-    private var current: String?
+    private var current: String? {
+        didSet { syncState.running = current }
+    }
+    /// Sync now's queue is being worked through (it awaits the dial).
+    private var draining = false
     private var watchers: Set<AnyCancellable> = []
     /// The next try at an unreachable copy, while one is waiting.
     private var retryTask: Task<Void, Never>?
@@ -52,6 +59,7 @@ final class MeshCopyV2Service: ObservableObject {
         } else {
             record = MeshCopyV2.Record()
         }
+        syncState.lastAt = record.copied
     }
 
     private func save() {
@@ -150,6 +158,8 @@ final class MeshCopyV2Service: ObservableObject {
         if current == peer { cancel() }
         if record.pending?.peer == peer { stopRetrying() }
         record.forget(peer)
+        syncState.queued.removeAll { $0 == peer }
+        syncState.failed[peer] = nil
     }
 
     /// The pending copy resumes; copied devices get a catch-up when due.
@@ -161,6 +171,10 @@ final class MeshCopyV2Service: ObservableObject {
             stopRetrying()
             peerName = p.name
             Task { await run(peer: p.peer, fresh: p.freshStart) }
+            return
+        }
+        if !syncState.queued.isEmpty {
+            Task { await syncQueued() }
             return
         }
         guard let peer = record.syncDue(now: Self.now).first else { return }
@@ -176,15 +190,62 @@ final class MeshCopyV2Service: ObservableObject {
             Self.log(.noMeshLink(seconds: 0), peer: peer)
             return
         }
+        if catchUp(peer: peer, base: base) == .started {
+            current = peer
+            record.copied[peer] = Self.now
+        }
+    }
+
+    /// Hands one catch-up to the engine. No signed start: the engine holds
+    /// the copy token, and the mesh never uses the account key.
+    private func catchUp(peer: String, base: String) -> MeshCopyV2.StartResult {
         // A light phone (Full copy off), or a full one off Wi-Fi while Wi-Fi
         // only is on, catches up on notes only (multi-Mac rules §3, rule 7).
         let filesToo = catchUpMovesFiles
-        let code = MeshCopyV2.StartResult(code: peer.withCString { p in base.withCString { b in
+        return MeshCopyV2.StartResult(code: peer.withCString { p in base.withCString { b in
             filesToo ? CopySyncC(mutating(p), mutating(b)) : CopySyncNotesOnlyC(mutating(p), mutating(b))
         } })
-        if code == .started {
-            current = peer
-            record.copied[peer] = Self.now
+    }
+
+    // MARK: Sync now
+
+    /// Settings › Your Devices › Sync now: a catch-up with every device this
+    /// one copied from, the longest ago first, one after another (the engine
+    /// runs one at a time), due or not. Not before setup, and not with the
+    /// device a copy is still pending with (that copy resumes on its own).
+    /// Twin of Android's MeshCopyStarter.syncNow (D1).
+    func syncNow() {
+        guard ConfigService.shared.config.hasCompletedSetup else { return }
+        let peers = MeshSyncStatus.syncNowOrder(copied: record.copied, pending: record.pending?.peer, running: current)
+        guard !peers.isEmpty else { return }
+        syncState.queued = MeshSyncStatus.queued(syncState.queued, adding: peers, running: current)
+        Task { await syncQueued() }
+    }
+
+    /// Starts the next queued catch-up, unless one is running (its end comes
+    /// back here through `handle`). A device that can't be dialled or that
+    /// the engine refuses is marked and skipped; a busy engine or a stopped
+    /// relay keeps the queue for the next end or start.
+    private func syncQueued() async {
+        guard !draining else { return }
+        draining = true
+        defer { draining = false }
+        while current == nil, !starting, let peer = syncState.queued.first {
+            guard RelayProcessManager.shared.isRunning else { return }
+            let base = await Self.base(peer)
+            // Removed, or started by someone else, while the mesh dialled.
+            guard syncState.queued.first == peer, current == nil, !starting else { continue }
+            let code = base.map { catchUp(peer: peer, base: $0) }
+            if code == .busy { return }
+            syncState.queued.removeFirst()
+            if code == .started {
+                current = peer
+                record.copied[peer] = Self.now
+                syncState.failed[peer] = nil
+            } else {
+                if base == nil { Self.log(.noMeshLink(seconds: 0), peer: peer) }
+                syncState.failed[peer] = base == nil ? "unreachable" : "not_started"
+            }
         }
     }
 
@@ -293,10 +354,7 @@ final class MeshCopyV2Service: ObservableObject {
         for line in lines {
             let following = current != nil || record.pending != nil
             let peer = current ?? record.pending?.peer
-            if line.isFinished {
-                if let peer { record.finished(line, peer: peer, now: Self.now) }
-                current = nil
-            }
+            if line.isFinished { finished(line, peer: peer) }
             // Set before `progress`, which the copy screen follows.
             followReach(line, peer: peer)
             if following { progress = line }
@@ -308,6 +366,17 @@ final class MeshCopyV2Service: ObservableObject {
             // on their own.
             CopyAccountsSync.shared.refreshOffer()
         }
+    }
+
+    /// A copy or catch-up ended: into the record, and for Your Devices its
+    /// failure kept until a later one ends well, then Sync now's next device.
+    private func finished(_ line: MeshCopyV2.Progress, peer: String?) {
+        if let peer {
+            record.finished(line, peer: peer, now: Self.now)
+            syncState.failed[peer] = line.stage == "done" ? nil : (line.error.isEmpty ? "failed" : line.error)
+        }
+        current = nil
+        if !syncState.queued.isEmpty { Task { await syncQueued() } }
     }
 
     /// Can't reach the device: keep trying every ~15 s for a few minutes,
