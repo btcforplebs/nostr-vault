@@ -48,6 +48,7 @@ struct YourDevicesSettingsView: View {
     private var content: some View {
         List {
             devicesSection
+            MeshSyncStatusSection(devices: devices)
             Section {
                 Button(action: connect) {
                     Label("Connect a computer or phone", systemImage: "qrcode.viewfinder")
@@ -154,6 +155,7 @@ struct YourDevicesSettingsView: View {
             } footer: {
                 Text(Self.connectFooter + " Rename or remove a device under Mesh, below.")
             }
+            MeshSyncStatusSection(devices: devices)
         }
         .warmFormBackground()
         .groupedFormStyleCompat()
