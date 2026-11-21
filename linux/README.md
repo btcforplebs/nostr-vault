@@ -70,7 +70,7 @@ For app stores (Start9, Umbrel), three more switches:
 - `NV_SETUP_CODE`: claim mode for a store with no install form. With no `NV_OWNER` and no `box/owner`, havend serves
   only a setup page on `NV_PORT` (no vault, relay or box API). The owner opens it and sends their npub with the code
   (Umbrel's app password); the npub is saved to `box/owner` and the box starts as theirs. A visitor without the code
-  can't claim it (5 wrong codes a minute, then a wait), the code must be 12+ characters, and a saved owner is never
+  can't claim it (5 wrong codes a minute from one address, or 100 from all, then a wait), the code must be 12+ characters, and a saved owner is never
   replaced. `supervise.sh` reads `box/owner` on later starts; a broken or linked `box/owner` stops the box rather
   than reopening claim mode.
 - `NV_UPDATE_VIA=startos|umbrel`: the store updates the box, so Update answers `managed` and the box screen says to

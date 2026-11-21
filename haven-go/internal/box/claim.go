@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,11 +25,17 @@ import (
 // owner. A visitor without the code can never claim the box, and after the
 // claim the page is gone (box/owner is read on every start).
 
-// claimFailWindow and claimMaxFails cap wrong codes: past the cap every
-// claim is refused until the window passes, so a LAN visitor cannot guess.
+// Wrong codes are capped per client (claimMaxFails a minute from one
+// address) and for the whole box (claimMaxFailsAll a minute), so a LAN
+// visitor can't guess the code, and one sending wrong codes can't lock the
+// owner out on another address. Past a cap, claims wait out the window.
+// At most claimMaxClients addresses are tracked; past that only the box-wide
+// cap counts for new ones.
 const (
-	claimFailWindow = time.Minute
-	claimMaxFails   = 5
+	claimFailWindow  = time.Minute
+	claimMaxFails    = 5
+	claimMaxFailsAll = 100
+	claimMaxClients  = 1024
 )
 
 // Claim serves the setup page and takes the one claim.
@@ -38,14 +45,23 @@ type Claim struct {
 	Done      chan struct{}
 	Now       func() time.Time
 
-	mu      sync.Mutex
-	claimed bool
-	fails   []time.Time
+	mu       sync.Mutex
+	claimed  bool
+	fails    map[string][]time.Time // per client address
+	failsAll []time.Time
 }
 
 // NewClaim is a Claim for cfg (cfg.Claiming() must be true).
 func NewClaim(cfg Config) *Claim {
 	return &Claim{Code: cfg.SetupCode, OwnerFile: cfg.OwnerFile(), Done: make(chan struct{}), Now: time.Now}
+}
+
+// finish marks the box claimed and lets havend go on (once).
+func (c *Claim) finish() {
+	if !c.claimed {
+		c.claimed = true
+		close(c.Done)
+	}
 }
 
 // ServeHTTP: GET / or /setup is the page, POST /setup the claim, anything
@@ -83,14 +99,21 @@ func (c *Claim) post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := c.Now()
+	client := clientOf(r)
 	c.dropOldFails(now)
-	if len(c.fails) >= claimMaxFails {
+	if len(c.fails[client]) >= claimMaxFails || len(c.failsAll) >= claimMaxFailsAll {
 		w.Header().Set("Retry-After", "60")
 		c.page(w, http.StatusTooManyRequests, claimPage{Error: "Too many wrong codes. Wait a minute, then try again.", Npub: npubIn})
 		return
 	}
 	if !sameCode(codeIn, c.Code) {
-		c.fails = append(c.fails, now)
+		c.failsAll = append(c.failsAll, now)
+		if c.fails == nil {
+			c.fails = map[string][]time.Time{}
+		}
+		if _, known := c.fails[client]; known || len(c.fails) < claimMaxClients {
+			c.fails[client] = append(c.fails[client], now)
+		}
 		log.Printf("box: claim refused: wrong setup code")
 		c.page(w, http.StatusForbidden, claimPage{Error: "That setup code isn't right. Copy it again from your store's app page.", Npub: npubIn})
 		return
@@ -106,7 +129,9 @@ func (c *Claim) post(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := WriteOwnerFile(c.OwnerFile, npub); err != nil {
 		if errors.Is(err, fs.ErrExist) {
-			c.claimed = true
+			// Saved already (another claim, or an owner put there by hand):
+			// havend reads it and starts as that owner's box.
+			c.finish()
 			c.page(w, http.StatusConflict, claimPage{Error: "This box already has an owner."})
 			return
 		}
@@ -114,20 +139,39 @@ func (c *Claim) post(w http.ResponseWriter, r *http.Request) {
 		c.page(w, http.StatusInternalServerError, claimPage{Error: "The box couldn't save its owner. Check its logs."})
 		return
 	}
-	c.claimed = true
 	log.Printf("box: claimed by %s (%s)", npub, hexKey)
 	c.page(w, http.StatusOK, claimPage{Done: true, Npub: npub})
-	close(c.Done)
+	c.finish()
 }
 
 func (c *Claim) dropOldFails(now time.Time) {
-	keep := c.fails[:0]
-	for _, t := range c.fails {
-		if now.Sub(t) < claimFailWindow {
-			keep = append(keep, t)
+	recent := func(ts []time.Time) []time.Time {
+		keep := ts[:0]
+		for _, t := range ts {
+			if now.Sub(t) < claimFailWindow {
+				keep = append(keep, t)
+			}
+		}
+		return keep
+	}
+	c.failsAll = recent(c.failsAll)
+	for k, ts := range c.fails {
+		if ts = recent(ts); len(ts) == 0 {
+			delete(c.fails, k)
+		} else {
+			c.fails[k] = ts
 		}
 	}
-	c.fails = keep
+}
+
+// clientOf is the request's peer address without the port. Claim mode is
+// served straight on NV_PORT, so RemoteAddr is the visitor (no proxy header
+// is trusted).
+func clientOf(r *http.Request) string {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 // sameCode compares in constant time: hashing first makes the lengths equal.

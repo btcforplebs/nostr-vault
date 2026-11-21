@@ -21,7 +21,7 @@ for LMDB.
 
 | What | Where |
 |---|---|
-| Owner | `NV_OWNER` (npub or hex), set by the installer; else `box/owner`, which claim mode saves. Never claimed by a visitor: claim mode (no owner, `NV_SETUP_CODE` of 12+ characters) serves only a setup page until someone sends an npub with that code (`internal/box/claim.go`; 5 wrong codes a minute, then 429; the first claim wins, `box/owner` is never overwritten) |
+| Owner | `NV_OWNER` (npub or hex), set by the installer; else `box/owner`, which claim mode saves. Never claimed by a visitor: claim mode (no owner, `NV_SETUP_CODE` of 12+ characters) serves only a setup page until someone sends an npub with that code (`internal/box/claim.go`; 5 wrong codes a minute from one address or 100 box-wide, then 429; the first claim wins, `box/owner` is never overwritten) |
 | Port | `NV_PORT` (8080): relay WebSocket at `/` (and `/private`, `/chat`, `/inbox`, `/feed`), Blossom, web app, `/api/box/` |
 | Data | `NV_DATA_DIR` (`/data`): `box/` (state), `vault/` (the engine's working dir), `mesh-devices.json`; `mesh/` is nv-mesh's |
 | Engine | `NV_ENGINE_BIN` (`/usr/local/bin/haven-engine`), on `127.0.0.1:NV_ENGINE_PORT` (3355). Run with `HAVEN_BEHIND_PROXY=1`: every client arrives through havend on loopback, so the engine rate-limits the client havend names in `X-Forwarded-For`, and only a request with none (havend's own) or a loopback client keeps the loopback pass |

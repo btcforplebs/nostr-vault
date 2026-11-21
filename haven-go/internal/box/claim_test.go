@@ -255,3 +255,73 @@ func TestAPIStoreManaged(t *testing.T) {
 		t.Fatal("a move started with Move off")
 	}
 }
+
+func directPost(c *Claim, addr, npub, code string) int {
+	req := httptest.NewRequest("POST", "/setup", strings.NewReader(url.Values{"npub": {npub}, "code": {code}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.RemoteAddr = addr
+	w := httptest.NewRecorder()
+	c.ServeHTTP(w, req)
+	return w.Code
+}
+
+func TestClaimCapIsPerClient(t *testing.T) {
+	c, _, _ := newTestClaim(t)
+	owner := npubOf(t, newTestKey(t))
+	for i := 0; i < claimMaxFails+3; i++ {
+		directPost(c, "192.168.1.66:4000", owner, "guess")
+	}
+	if st := directPost(c, "192.168.1.66:4001", owner, testCode); st != http.StatusTooManyRequests {
+		t.Fatalf("guesser with the right code: %d, want 429", st)
+	}
+	if st := directPost(c, "192.168.1.20:5000", owner, testCode); st != 200 {
+		t.Fatalf("owner on another address: %d, want 200 (no lockout)", st)
+	}
+}
+
+func TestClaimCapBoxWide(t *testing.T) {
+	c, _, _ := newTestClaim(t)
+	owner := npubOf(t, newTestKey(t))
+	for i := 0; i < claimMaxFailsAll; i++ {
+		directPost(c, "10.0."+itoa(i/250)+"."+itoa(i%250)+":1", owner, "guess")
+	}
+	if st := directPost(c, "192.168.1.20:5000", owner, testCode); st != http.StatusTooManyRequests {
+		t.Fatalf("after %d wrong codes box-wide: %d, want 429", claimMaxFailsAll, st)
+	}
+	if len(c.fails) > claimMaxClients {
+		t.Fatalf("tracked %d clients", len(c.fails))
+	}
+}
+
+func TestClaimClientMapBounded(t *testing.T) {
+	c, _, now := newTestClaim(t)
+	for i := 0; i < claimMaxClients+50; i++ {
+		directPost(c, "10.1."+itoa(i/250)+"."+itoa(i%250)+":1", "x", "guess")
+		if i%90 == 89 {
+			*now = now.Add(claimFailWindow) // keep the box-wide cap from stopping the run
+		}
+	}
+	if len(c.fails) > claimMaxClients {
+		t.Fatalf("tracked %d clients, cap %d", len(c.fails), claimMaxClients)
+	}
+}
+
+func TestClaimOwnerAlreadySavedLetsHavendGoOn(t *testing.T) {
+	c, srv, _ := newTestClaim(t)
+	first := npubOf(t, newTestKey(t))
+	if err := WriteOwnerFile(c.OwnerFile, first); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := claimPost(t, srv, npubOf(t, newTestKey(t)), testCode); st != http.StatusConflict {
+		t.Fatalf("claim over a saved owner: %d, want 409", st)
+	}
+	select {
+	case <-c.Done:
+	case <-time.After(time.Second):
+		t.Fatal("Done not closed: havend would sit in claim mode")
+	}
+	if b, _ := os.ReadFile(c.OwnerFile); strings.TrimSpace(string(b)) != first {
+		t.Fatalf("owner changed: %q", b)
+	}
+	claimPost(t, srv, npubOf(t, newTestKey(t)), testCode) // a second 409 must not close Done again (panic)
+}
