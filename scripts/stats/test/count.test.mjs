@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { platformOf, nvPlatform, collectPosters, mergePosters, mainPlatform, publicTotals, postersFromJson, postersToJson, isExcluded } from "../count.mjs"
+import { platformOf, nvPlatform, collectPosters, mergePosters, testOnlyPosters, isE2eTestNote, mainPlatform, publicTotals, postersFromJson, postersToJson, isExcluded } from "../count.mjs"
 
 const pk = c => c.repeat(64).slice(0, 64)
 const note = (id, pubkey, created_at, client, kind = 1) => ({ id, pubkey, created_at, kind, tags: client ? [["client", client]] : [], content: "" })
@@ -91,4 +91,19 @@ test("a poster from the Linux desktop window counts under Linux, not Other", () 
   const t = publicTotals(posters, { now: 30, downloads: null, relays: 7 })
   assert.equal(t.by_platform.Linux, 1)
   assert.equal(Object.values(t.by_platform).reduce((a, b) => a + b, 0), 1)
+})
+
+test("CI client tag test notes are not counted, and keys with nothing else are dropped from earlier scans", () => {
+  const ci = { ...note("c1", pk("5"), 10, "Nostr Vault on Linux"), content: "client tag e2e from the desktop window 1763650000000" }
+  const ci2 = { ...note("c2", pk("5"), 11, "Nostr Vault on Web"), content: "client tag e2e from a plain browser 1763650000001" }
+  const realToo = { ...note("c3", pk("6"), 12, "Nostr Vault on Linux"), content: "client tag e2e from the desktop window 1" }
+  const realNote = { ...note("r1", pk("6"), 13, "Nostr Vault on Linux"), content: "gm" }
+  assert.equal(isE2eTestNote(ci), true)
+  assert.equal(isE2eTestNote(realNote), false)
+  assert.equal(nvPlatform(ci), null)
+  assert.equal(collectPosters([ci, ci2]).size, 0)
+  assert.deepEqual([...testOnlyPosters([ci, ci2, realToo, realNote])], [pk("5")])
+  const previous = new Map([[pk("5"), { first: 10, last: 11, notes: { Linux: 1, Web: 1 } }], [pk("7"), { first: 1, last: 2, notes: { Web: 1 } }]])
+  const merged = mergePosters(previous, collectPosters([realNote]), testOnlyPosters([ci, ci2, realNote]))
+  assert.deepEqual([...merged.keys()].sort(), [pk("6"), pk("7")])
 })
