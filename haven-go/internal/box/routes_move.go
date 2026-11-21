@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	handle("POST /api/box/move", func(a *API, w http.ResponseWriter, _ *http.Request, body []byte) {
+	handle("POST /api/box/move", FirstAccount, func(a *API, w http.ResponseWriter, _ *http.Request, _ Caller, body []byte) {
 		var req struct {
 			Path string `json:"path"`
 		}

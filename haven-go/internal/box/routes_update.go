@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	handle("POST /api/box/update", func(a *API, w http.ResponseWriter, _ *http.Request, _ []byte) {
+	handle("POST /api/box/update", FirstAccount, func(a *API, w http.ResponseWriter, _ *http.Request, _ Caller, _ []byte) {
 		res, err := a.Updater.Request()
 		if errors.Is(err, ErrUpdateBusy) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
