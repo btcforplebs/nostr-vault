@@ -14,8 +14,9 @@ and 9 stores, an idle engine woke ~1,000 times a second and used ~2.9 % of a cor
 
 Changes from upstream are listed below. Keep every other file byte-identical to v4.9.1.
 
-- `levels.go`, `runCompactor`: a pass that finds work schedules the next one in 50 ms, as before;
-  a pass that finds nothing sleeps 1 s. The Lmax-to-Lmax pass (off unless `LmaxCompaction`) runs
+- `levels.go`, `runCompactor`: a pass that finds work schedules the next one in 50 ms, as before,
+  and so does a pass whose work another compactor held the tables for (`errFillTables`); a pass
+  that finds nothing sleeps 1 s. The Lmax-to-Lmax pass (off unless `LmaxCompaction`) runs
   every 10 s by clock instead of every 200th tick.
 - `levels.go`, new `compactWake` channel and `wakeCompactors`: `addLevel0Table` wakes the
   compactors after it adds a table, and on every 10 ms check while a write is stalled on a full L0,

@@ -460,13 +460,16 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 		return prios
 	}
 
+	// blocked: a pass found work another compactor held the tables for
+	// (errFillTables). HAVEN_FORK.md: it polls again on the busy tick.
+	blocked := false
 	run := func(p compactionPriority) bool {
 		err := s.doCompact(id, p)
 		switch err {
 		case nil:
 			return true
 		case errFillTables:
-			// pass
+			blocked = true
 		default:
 			s.kv.opt.Warningf("While running doCompact: %v\n", err)
 		}
@@ -523,13 +526,14 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 			return
 		}
 		worked := false
+		blocked = false
 		if s.kv.opt.LmaxCompaction && id == 2 && time.Since(lastLmax) >= lmaxEvery {
 			tryLmaxToLmaxCompaction()
 			lastLmax = time.Now()
 		} else {
 			worked = runOnce()
 		}
-		if worked {
+		if worked || blocked {
 			timer.Reset(busyTick)
 		} else {
 			timer.Reset(idleTick)
