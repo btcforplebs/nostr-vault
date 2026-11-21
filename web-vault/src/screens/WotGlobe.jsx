@@ -15,9 +15,9 @@ import { faceCache, FACE_PX } from "../net/face-cache.js"
 import { fraction } from "../net/wot.js"
 import {
   RADIUS, newCamera, moving, drag, flick, zoomBy, zoomNow, flyTo, facing, direction, home, step, projector, outline,
-  faceShown, faceRadius, dotLight, seatFade, faceSize, seats, hit, OUTER_ALPHA, LAYER_WEIGHTS, SIZE, STAR, RIM, STAR_DAY, RIM_DAY, globeDay, starAlpha,
+  faceShown, faceRadius, dotLight, seatFade, faceSize, seats, hit, onScreen, OUTER_ALPHA, LAYER_WEIGHTS, SIZE, STAR, RIM, STAR_DAY, RIM_DAY, globeDay, starAlpha,
 } from "../net/wot-globe.js"
-import { lightBand, pointProjector, StarBands } from "./wot-globe-stars.js"
+import { lightBand, pointProjector, StarBands, GlStars, packStars } from "./wot-globe-stars.js"
 
 /** New pictures a frame may start loading: a fast spin brings faces into seats faster than they need decoding at once;
  *  the rest show their coloured disc a frame or two longer. */
@@ -27,11 +27,14 @@ const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: re
 const DIMMED = 0.08
 /** A face's own colour while it has no picture: the hue of its spot on the globe, as the iPhone tints it. */
 const hueOf = pk => Math.round(fraction(pk, 0) * 360)
+/** No path traced: one array, so a render without one doesn't count as a new path. */
+const NO_PATH = []
 /** Pictures already drawn into small round bitmaps, kept across globes (see `images` below). */
 const sharedImages = faceCache({ onDrop: e => { if (typeof e === "object") e.width = e.height = 0 } })
 
-export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer = "everyone", lit = null, path = [], whose = null }) {
-  const box = useRef(null), canvas = useRef(null)
+export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer = "everyone", lit = null, path = NO_PATH, whose = null }) {
+  const box = useRef(null), canvas = useRef(null), glCanvas = useRef(null)
+  const glStars = useRef(null) // the stars' GPU layer under the canvas, or null to draw them on it (wot-globe-stars.js)
   const cam = useRef(newCamera())
   const size = useRef({ w: 0, h: 0 })
   const drawn = useRef([])
@@ -76,50 +79,57 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     const pinned = pk => pk === target || !!traced?.has(pk)
     const shade = pk => (!lit || lit.has(pk) || pinned(pk) ? 1 : DIMMED)
 
-    // Project everyone once; stars go into a few brightness bands per kind, so a big web is a handful of fills. A layer
-    // the picker put out isn't drawn, and can't be tapped. Nothing is allocated per star (wot-globe-stars.js): the
-    // point and the star records are reused, and only faces get new objects.
-    if (!stars.current) stars.current = { bands: new StarBands(), recs: [], scene: null, target: null, weight: null }
-    const st = stars.current, { bands, recs } = st
-    bands.reset()
-    // Each node's weight depends on the scene and the open card, not on the camera: worked out once, not every frame.
-    if (st.scene !== scene.current || st.target !== target) {
-      st.scene = scene.current; st.target = target
-      st.weight = new Float64Array(nodes.length)
-      nodes.forEach((node, i) => { st.weight[i] = node.layer === "me" ? 0 : pinned(node.pk) ? 1 : weights[node.layer] * shade(node.pk) })
+    // Who is a face and who a star, and each one's weight, depend on the people, the layer, the filter, the open card
+    // and the colours, not on the camera: worked out again only when one of those changes (a parent render with the
+    // same ones, such as profiles arriving mid-drag, keeps them). A layer the picker put out isn't drawn, and can't be
+    // tapped. While a path is traced its people are faces whether or not they had a seat as one (GlobeScene
+    // traceBridges).
+    if (!stars.current) stars.current = { bands: new StarBands(), nodes: null, weight: null, faces: [], stars: [], packed: null }
+    const st = stars.current
+    if (st.nodes !== nodes || st.weights !== weights || st.path !== path || st.lit !== lit || st.target !== target || st.colours !== STARS) {
+      Object.assign(st, { nodes, weights, path, lit, target, colours: STARS, weight: new Float64Array(nodes.length), faces: [], stars: [], packed: null, pickedPk: undefined })
+      nodes.forEach((node, i) => {
+        const weight = st.weight[i] = node.layer === "me" ? 0 : pinned(node.pk) ? 1 : weights[node.layer] * shade(node.pk)
+        if (weight) (traced ? traced.has(node.pk) : node.face && shade(node.pk) === 1) ? st.faces.push(i) : st.stars.push(i)
+      })
     }
     const into = { x: 0, y: 0, depth: 0, scale: 0 }, put = pointProjector(k, w, h), zoomed = Math.min(k.zoom, 1.8)
     const left = -40, top = -40, right = w + 40, bottom = h + 40 // onScreen's 40 pt margin, inline
-    const out = [], faces = []
-    for (let i = 0; i < nodes.length; i++) {
-      const weight = st.weight[i]
-      if (!weight) continue
-      const node = nodes[i]
-      if (!put(node.p, into) || into.x < left || into.y < top || into.x > right || into.y > bottom) continue
-      // While a path is traced its people are faces whether or not they had a seat as one (GlobeScene traceBridges).
-      if (traced ? traced.has(node.pk) : node.face && shade(node.pk) === 1) {
-        const p = { ...into }, lead = node.layer === "follow"
-        const kind = node.pk === target ? "traced" : traced ? "bridge" : lead ? "follow" : "outer"
-        faces.push({ pk: node.pk, node, kind, x: p.x, y: p.y, depth: p.depth, r: faceSize(kind === "traced" ? "traced" : lead ? "follow" : "outer", p, k.zoom),
-          lead: lead || !!traced, alpha: Math.min(1, (lead || traced ? 1 : OUTER_ALPHA) * weight) })
-        continue
+    const seen = i => put(nodes[i].p, into) && into.x >= left && into.y >= top && into.x <= right && into.y <= bottom
+    // Stars: on the GPU when there is one (wot-globe-stars.js GlStars: nothing per star here), else a few brightness
+    // bands per kind on this canvas, a handful of fills for a big web.
+    const gl = glStars.current
+    if (gl) {
+      if (st.packed !== gl) { gl.load(packStars(nodes, st.stars, st.weight, STARS)); st.packed = gl }
+      gl.draw(k, w, h, dpr)
+    } else {
+      const { bands } = st
+      bands.reset()
+      for (const i of st.stars) {
+        if (!seen(i)) continue
+        const kind = nodes[i].layer === "follow" ? "ring" : nodes[i].layer
+        bands.add(kind, st.weight[i], lightBand(into.depth), into.x, into.y, SIZE[kind] * into.scale * zoomed)
       }
-      const kind = traced?.has(node.pk) ? "hot" : node.layer === "follow" ? "ring" : node.layer
-      bands.add(kind, weight, lightBand(into.depth), into.x, into.y, SIZE[kind === "hot" ? "ring" : kind] * into.scale * zoomed)
-      const rec = recs[out.length] ?? (recs[out.length] = { node: null, x: 0, y: 0, depth: 0, face: false })
-      rec.node = node; rec.x = into.x; rec.y = into.y; rec.depth = into.depth
-      out.push(rec)
+      bands.draw(g, ({ kind, weight, band }) => {
+        const star = STARS[kind]
+        return `rgb(${star[0]} ${star[1]} ${star[2]} / ${Math.min(1, starAlpha(star, 0.35 + 0.65 * (band + 0.5) / 4) * weight)})`
+      })
     }
-    bands.draw(g, ({ kind, weight, band }) => {
-      const star = STARS[kind]
-      return `rgb(${star[0]} ${star[1]} ${star[2]} / ${Math.min(1, starAlpha(star, 0.35 + 0.65 * (band + 0.5) / 4) * weight)})`
-    })
+    const faces = []
+    for (const i of st.faces) {
+      if (!seen(i)) continue
+      const node = nodes[i], weight = st.weight[i], p = { ...into }, lead = node.layer === "follow"
+      const kind = node.pk === target ? "traced" : traced ? "bridge" : lead ? "follow" : "outer"
+      faces.push({ pk: node.pk, node, kind, x: p.x, y: p.y, depth: p.depth, r: faceSize(kind === "traced" ? "traced" : lead ? "follow" : "outer", p, k.zoom),
+        lead: lead || !!traced, alpha: Math.min(1, (lead || traced ? 1 : OUTER_ALPHA) * weight) })
+    }
 
     // Seats: who shows a face this frame, each fading in or out over a quarter second. You hold the middle seat, so a
     // face rolling across you fades rather than covering you.
     const meP = project([0, 0, 0])
     const me = { pk: web.me, node: nodes[0], kind: "me", x: meP.x, y: meP.y, depth: Infinity, r: faceSize("me", meP, k.zoom), lead: true, alpha: 1, shown: 1, me: true }
     const seated = seats([me, ...faces])
+    const out = []
     const next = new Map()
     let still = true
     for (const f of faces) {
@@ -143,11 +153,10 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
 
     // The open card's trust path, as the iPhone traces it: from the middle to each bridge showing (a faint inner leg),
     // then on to the person (the outer leg), warm amber over an orange glow.
-    const at = new Map()
-    for (const d of out) at.set(d.node.pk, d)
-    for (const f of faces) at.set(f.pk, f)
-    const to = target && at.get(target)
-    if (to && traced) {
+    // A traced path's people are all faces.
+    const at = traced ? new Map(faces.map(f => [f.pk, f])) : null
+    const to = at?.get(target)
+    if (to) {
       const legs = []
       for (const pk of path) { const b = at.get(pk); if (b && b.depth >= -0.2 && (b.shown ?? 1) >= 0.3) legs.push(b) }
       const stroke = (width, colour, inner) => {
@@ -176,7 +185,8 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
       if (f.shown > 0.01) face(g, f.pk, f.x, f.y, f.me ? f.r : faceRadius(f.r, f.shown), f.shown * f.alpha, f.kind, f.me || seated.has(f.pk))
       out.push({ node: f.node, x: f.x, y: f.y, depth: f.depth, r: f.r, shown: f.shown, face: true })
     }
-    drawn.current = out
+    // What a tap can land on: these faces, and the stars as this frame put them (worked out only on a tap, starsAt).
+    drawn.current = { faces: out, cam: k, w, h }
 
     // The middle's name under it: "You", or whose web this is (GlobeScene: the core's label, 13pt bold).
     g.font = "700 13px -apple-system, BlinkMacSystemFont, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "top"
@@ -184,9 +194,10 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     g.fillStyle = day ? "#1e2733" : "#fff"; g.fillText(label, me.x, me.y + me.r + 5)
 
     // A star whose card is open (a face wears its own rim).
-    const p = pickedRef.current && out.find(d => d.node.pk === pickedRef.current)
-    if (p && !p.face && p.depth > -0.2) {
-      g.beginPath(); g.arc(p.x, p.y, 9, 0, 2 * Math.PI); g.lineWidth = 2; g.strokeStyle = day ? "rgb(217 164 0)" : "rgb(255 214 10)"; g.stroke()
+    if (st.pickedPk !== pickedRef.current) { st.pickedPk = pickedRef.current; st.pickedStar = st.pickedPk ? st.stars.find(i => nodes[i].pk === st.pickedPk) : undefined }
+    const pi = st.pickedStar
+    if (pi !== undefined && seen(pi) && into.depth > -0.2) {
+      g.beginPath(); g.arc(into.x, into.y, 9, 0, 2 * Math.PI); g.lineWidth = 2; g.strokeStyle = day ? "rgb(217 164 0)" : "rgb(255 214 10)"; g.stroke()
     }
   }
 
@@ -244,12 +255,20 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
       const w = Math.round(e.contentRect.width), h = Math.round(e.contentRect.height)
       const dpr = globalThis.devicePixelRatio || 1
       size.current = { w, h }
-      canvas.current.width = w * dpr; canvas.current.height = h * dpr
+      canvas.current.width = glCanvas.current.width = w * dpr; canvas.current.height = glCanvas.current.height = h * dpr
       request()
     })
     ro.observe(box.current)
     const off = onProfiles(request) // names and pictures arriving
-    return () => { ro.disconnect(); off(); cancelAnimationFrame(frame.current); frame.current = 0 }
+    const under = glCanvas.current
+    glStars.current = GlStars.create(under)
+    const lost = () => { glStars.current = null; request() } // the stars go back on the canvas
+    under.addEventListener("webglcontextlost", lost)
+    return () => {
+      ro.disconnect(); off(); cancelAnimationFrame(frame.current); frame.current = 0
+      under.removeEventListener("webglcontextlost", lost)
+      glStars.current?.release(); glStars.current = null
+    }
   }, [])
   useEffect(request, [nodes, picked, layer, path, lit])
   useEffect(() => {
@@ -258,6 +277,15 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     request()
     onCentred()
   }, [centre])
+
+  // The last frame's faces and every star on screen in it, for a tap.
+  const starsAt = () => {
+    const d = drawn.current, st = stars.current
+    if (!d || !st?.nodes) return d?.faces ?? []
+    const put = pointProjector(d.cam, d.w, d.h), into = { x: 0, y: 0, depth: 0, scale: 0 }, all = [...d.faces]
+    for (const i of st.stars) if (put(st.nodes[i].p, into) && onScreen(into.x, into.y, d.w, d.h)) all.push({ node: st.nodes[i], x: into.x, y: into.y, depth: into.depth, face: false })
+    return all
+  }
 
   // Gestures: one finger or the mouse spins (a flick carries on), two fingers pinch, the wheel zooms, a double-click
   // goes home, a tap opens a card.
@@ -297,7 +325,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     cam.current = { ...cam.current, dragging: false }
     if (gs.moved < 6) {
       const [x, y] = local(e)
-      const n = hit(drawn.current, x, y)
+      const n = hit(starsAt(), x, y)
       onPick(n ? n.pk : null)
       request()
       return
@@ -335,6 +363,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
 
   return (
     <div class="wot-globe" ref={box}>
+      <canvas ref={glCanvas} aria-hidden="true" style={{ pointerEvents: "none" }} />
       <canvas ref={canvas} tabIndex={0} role="img"
         aria-label={`Globe of ${whose ? `${whose}'s` : "your"} web: ${web.follows.length} follows, ${web.extended.length} vouched, ${web.further.length} further out. Drag to spin, scroll or pinch to zoom, double-click to come back to the start.`}
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onDblClick={goHome} onKeyDown={key} />
