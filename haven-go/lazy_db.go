@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/nbd-wtf/go-nostr"
 )
@@ -25,7 +26,16 @@ type lazyDB struct {
 	cur    atomic.Pointer[DBBackend]
 	mu     sync.Mutex // serialises open and close
 	closed bool
+
+	// A failed open is not tried again for lazyOpenRetry: calls in that
+	// window get the same error, so a broken store (a restore writing many
+	// events into it) is not reopened on every call.
+	openErr  error
+	failedAt time.Time
 }
+
+// lazyOpenRetry is how long a failed open is answered from memory.
+const lazyOpenRetry = 5 * time.Second
 
 func newLazyDB(name string, open func() (DBBackend, error)) *lazyDB {
 	return &lazyDB{name: name, open: open}
@@ -40,7 +50,7 @@ func (l *lazyDB) opened() DBBackend {
 }
 
 // get returns the store, opening it on first use. A failed open is
-// returned to the caller and tried again on the next call.
+// returned to the caller and tried again after lazyOpenRetry.
 func (l *lazyDB) get() (DBBackend, error) {
 	if db := l.opened(); db != nil {
 		return db, nil
@@ -53,11 +63,16 @@ func (l *lazyDB) get() (DBBackend, error) {
 	if l.closed {
 		return nil, errDBClosing
 	}
+	if l.openErr != nil && time.Since(l.failedAt) < lazyOpenRetry {
+		return nil, l.openErr
+	}
 	db, err := l.open()
 	if err != nil {
 		slog.Warn("database failed to open on first use", "name", l.name, "err", err)
-		return nil, fmt.Errorf("%sDB open failed: %w", l.name, err)
+		l.openErr, l.failedAt = fmt.Errorf("%sDB open failed: %w", l.name, err), time.Now()
+		return nil, l.openErr
 	}
+	l.openErr = nil
 	l.cur.Store(&db)
 	startupMark("store " + l.name + " open (first use)")
 	return db, nil
@@ -70,6 +85,8 @@ func (l *lazyDB) Close() {
 	defer l.mu.Unlock()
 	l.closed = true
 	if db := l.opened(); db != nil {
+		// Cleared first, so get's lock-free path cannot hand out a closed store.
+		l.cur.Store(nil)
 		db.Close()
 	}
 }

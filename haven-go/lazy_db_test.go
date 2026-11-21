@@ -4,8 +4,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/nbd-wtf/go-nostr"
 )
@@ -104,5 +106,47 @@ func TestLazyDBOpensOnce(t *testing.T) {
 	l.Close()
 	if c.opens != 1 || c.closes != 1 {
 		t.Fatalf("opens=%d closes=%d, want 1 and 1", c.opens, c.closes)
+	}
+}
+
+// A failed open is answered from memory for lazyOpenRetry, then tried again.
+func TestLazyDBFailedOpenWaitsBeforeRetry(t *testing.T) {
+	opens := 0
+	fail := true
+	l := newLazyDB("t", func() (DBBackend, error) {
+		opens++
+		if fail {
+			return nil, errors.New("broken")
+		}
+		return &closeCounter{c: &countingOpen{}}, nil
+	})
+	for range 10 {
+		if _, err := l.CountEvents(context.Background(), nostr.Filter{}); err == nil {
+			t.Fatal("open failure not returned")
+		}
+	}
+	if opens != 1 {
+		t.Fatalf("a failed open was tried %d times inside the retry window", opens)
+	}
+	fail = false
+	l.failedAt = time.Now().Add(-lazyOpenRetry)
+	if _, err := l.CountEvents(context.Background(), nostr.Filter{}); err != nil || opens != 2 {
+		t.Fatalf("after the window: err=%v opens=%d", err, opens)
+	}
+}
+
+// Close drops the open store, so nothing reaches it through the lock-free path.
+func TestLazyDBCloseDropsTheStore(t *testing.T) {
+	l := newLazyDB("t", (&countingOpen{}).open)
+	l.CountEvents(context.Background(), nostr.Filter{})
+	if l.opened() == nil {
+		t.Fatal("not open after a call")
+	}
+	l.Close()
+	if l.opened() != nil {
+		t.Fatal("closed store still handed out")
+	}
+	if s := l.Serial(); s != nil {
+		t.Fatalf("Serial after close = %v", s)
 	}
 }
