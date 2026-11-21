@@ -157,7 +157,9 @@ func run(args []string) error {
 		MeshStatus: cfg.MeshStatusFile,
 		Storage:    &box.StorageMeter{},
 		Devices: &box.Devices{
-			OwnerHex:    cfg.OwnerHex,
+			OwnerHex: cfg.OwnerHex,
+			Accounts: accounts.Readers, // signed-in accounts vouch for devices too
+
 			Mesh:        mesh,
 			DevicesFile: cfg.MeshDevicesFile,
 			Source: &box.RelayServerLists{

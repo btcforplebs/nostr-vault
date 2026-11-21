@@ -2,7 +2,6 @@ package box
 
 import (
 	"context"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +31,8 @@ type MeshEntry struct {
 	Name     string `json:"name"`
 	Role     string `json:"role,omitempty"`
 	Approved bool   `json:"approved"`
+	// VouchedBy: the npubs of the signed-in accounts whose lists name it.
+	VouchedBy []string `json:"vouchedBy,omitempty"`
 }
 
 // DevicesReport is GET /api/box/devices.
@@ -50,6 +51,9 @@ type DevicesReport struct {
 	Source  string `json:"source"` // "vault", "relays" or "none"
 	Checked int64  `json:"checkedAt"`
 	Hint    string `json:"hint,omitempty"`
+	// Lists: each counted account's list (ListAt, ListID and Source above
+	// stay the first account's, as before accounts).
+	Lists []AccountList `json:"lists,omitempty"`
 }
 
 // MeshEntries reads the fipsmesh entries of a kind-10063 event. Only the
@@ -120,9 +124,11 @@ type RelayServerLists struct {
 	// 10 minutes.
 	DirectoryEvery time.Duration
 
+	// Per account (the key asked about): a box polls the list of every
+	// signed-in account (devices_accounts.go).
 	mu      sync.Mutex
-	dirAt   time.Time // the last time the directory relays were asked
-	lagging bool      // their last answer was newer than the vault's
+	dirAt   map[string]time.Time // the last time the directory relays were asked
+	lagging map[string]bool      // their last answer was newer than the vault's
 }
 
 type foundList struct {
@@ -132,7 +138,7 @@ type foundList struct {
 
 func (s *RelayServerLists) Newest(ctx context.Context, ownerHex string) (*nostr.Event, string) {
 	vault, dir := s.query(ctx, ownerHex, true, true)
-	return s.settle(vault, dir, true)
+	return s.settle(ownerHex, vault, dir, true)
 }
 
 // Poll is Newest for the background refresh: see the type.
@@ -143,22 +149,25 @@ func (s *RelayServerLists) Poll(ctx context.Context, ownerHex string) (*nostr.Ev
 	if every == 0 {
 		every = 10 * time.Minute
 	}
-	due := len(s.Directory) > 0 && (vault == nil || s.lagging || time.Since(s.dirAt) >= every)
+	due := len(s.Directory) > 0 && (vault == nil || s.lagging[ownerHex] || time.Since(s.dirAt[ownerHex]) >= every)
 	s.mu.Unlock()
 	if !due {
-		return s.settle(vault, nil, false)
+		return s.settle(ownerHex, vault, nil, false)
 	}
 	_, dir := s.query(ctx, ownerHex, false, true)
-	return s.settle(vault, dir, true)
+	return s.settle(ownerHex, vault, dir, true)
 }
 
 // settle picks the newest of the two answers (a tie goes to the vault's own
 // copy) and, when the directory was asked, notes when and whether it was ahead.
-func (s *RelayServerLists) settle(vault, dir *nostr.Event, askedDir bool) (*nostr.Event, string) {
+func (s *RelayServerLists) settle(ownerHex string, vault, dir *nostr.Event, askedDir bool) (*nostr.Event, string) {
 	if askedDir {
 		s.mu.Lock()
-		s.dirAt = time.Now()
-		s.lagging = dir != nil && (vault == nil || dir.CreatedAt > vault.CreatedAt)
+		if s.dirAt == nil {
+			s.dirAt, s.lagging = map[string]time.Time{}, map[string]bool{}
+		}
+		s.dirAt[ownerHex] = time.Now()
+		s.lagging[ownerHex] = dir != nil && (vault == nil || dir.CreatedAt > vault.CreatedAt)
 		s.mu.Unlock()
 	}
 	switch {
@@ -238,10 +247,16 @@ func validServerList(ev *nostr.Event, ownerHex string) bool {
 
 // Devices builds DevicesReport, caching the answer for a minute so the
 // screen can poll without asking relays each time. Each fresh read also
-// rewrites mesh-devices.json, so the owner's 10063 is what lets a device in
-// over the mesh, and dropping it from the list is what shuts it out.
+// rewrites mesh-devices.json, so the signed-in accounts' 10063s are what let
+// a device in over the mesh, and dropping it from them is what shuts it out
+// (devices_accounts.go).
 type Devices struct {
-	OwnerHex string
+	OwnerHex string // the first account
+	// Accounts: the hex keys whose lists count, the first account and every
+	// signed-in account (AccountStore.Readers). Nil: the first account alone.
+	// Watch-only accounts never count: whoever holds such a key could
+	// otherwise pair a device and read everything.
+	Accounts func() []string
 	Mesh     MeshID // the box's one npub
 	Source   ServerListSource
 	TTL      time.Duration
@@ -252,10 +267,12 @@ type Devices struct {
 	cached *DevicesReport
 	at     time.Time
 
-	// wmu serialises file writes; wroteAt is the list last written, so a
-	// slow read of an older list (Run and Report race) never undoes a newer.
-	wmu     sync.Mutex
-	wroteAt nostr.Timestamp
+	// wmu guards lists, each account's newest list seen, which only moves
+	// forward: a slow read of an older list (Run and Report race) never
+	// undoes a newer, and an account whose list can't be read right now
+	// keeps its last one. File writes happen under it too.
+	wmu   sync.Mutex
+	lists map[string]foundList
 }
 
 func (d *Devices) Report(ctx context.Context) DevicesReport {
@@ -277,13 +294,13 @@ func (d *Devices) Report(ctx context.Context) DevicesReport {
 	return r
 }
 
-// Refresh reads the owner's newest list now and writes mesh-devices.json
-// from it. With no list found (relays and vault both silent) the file is
-// left as it was: an outage must not drop every device. It does not fill
-// Report's cache, so the screen never shows an answer older than its TTL.
+// Refresh reads every counted account's newest list now and writes
+// mesh-devices.json from them. With no list known at all (relays and vault
+// both silent since start) the file is left as it was: an outage must not
+// drop every device. It does not fill Report's cache, so the screen never
+// shows an answer older than its TTL.
 func (d *Devices) Refresh(ctx context.Context) DevicesReport {
-	ev, src := d.Source.Newest(ctx, d.OwnerHex)
-	return d.apply(ev, src)
+	return d.read(ctx, d.Source.Newest)
 }
 
 // ServerListPoller is a ServerListSource with a cheaper read for the
@@ -295,37 +312,10 @@ type ServerListPoller interface {
 // poll is Refresh for Run: the source's Poll when it has one.
 func (d *Devices) poll(ctx context.Context) {
 	if p, ok := d.Source.(ServerListPoller); ok {
-		d.apply(p.Poll(ctx, d.OwnerHex))
+		d.read(ctx, p.Poll)
 		return
 	}
 	d.Refresh(ctx)
-}
-
-func (d *Devices) apply(ev *nostr.Event, src string) DevicesReport {
-	npub, pubkey, _ := d.Mesh.Read()
-	r := BuildDevicesReport(npub, pubkey, ev, src)
-	if d.DevicesFile != "" && ev != nil {
-		d.writeDevices(r, ev)
-	}
-	return r
-}
-
-func (d *Devices) writeDevices(r DevicesReport, ev *nostr.Event) {
-	d.wmu.Lock()
-	defer d.wmu.Unlock()
-	if ev.CreatedAt < d.wroteAt {
-		return
-	}
-	devices := MeshDevices(r)
-	changed, err := writeMeshDevices(d.DevicesFile, devices)
-	if err != nil {
-		log.Printf("box: %v", err)
-		return
-	}
-	d.wroteAt = ev.CreatedAt
-	if changed {
-		log.Printf("box: mesh devices now %d (owner's list %s)", len(devices), ev.ID)
-	}
 }
 
 // Run refreshes every interval until ctx ends, so approvals and removals
