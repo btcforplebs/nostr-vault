@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // MARK: - AvatarView
 
@@ -9,7 +10,31 @@ struct AvatarView: View {
     /// A neutral silhouette instead of the coloured initial, for lists where
     /// a pubkey's first hex digit would read as noise.
     var neutralPlaceholder = false
+    /// False for a stranger the WoT gate holds back: their picture is never
+    /// fetched (its host would learn you looked), and their constellation is
+    /// drawn instead (Logen 2026-11-21).
+    var load = true
     @State private var image: PlatformImage?
+    /// The picture that failed, so a newer picture still gets its chance.
+    @State private var failedURL: URL?
+    @State private var profileArrived = false
+
+    /// The picture to fetch, if any.
+    private var pictureURL: URL? { load ? url : nil }
+
+    /// No picture to show, and nothing still loading: the profile has no
+    /// picture, its picture failed, or the gate holds it back. Before a
+    /// profile arrives the plain disc stays (spec: NV_CONSTELLATION_AVATAR_SPEC).
+    private var showsConstellation: Bool {
+        guard image == nil else { return false }
+        if !load { return true }
+        if let pictureURL { return failedURL == pictureURL }
+        return profileKnown
+    }
+
+    private var profileKnown: Bool {
+        profileArrived || NostrService.shared.profiles[pubkey] != nil
+    }
 
     var body: some View {
         ZStack {
@@ -23,7 +48,9 @@ struct AvatarView: View {
                     .frame(width: size, height: size)
             }
 
-            if let image = image {
+            if showsConstellation {
+                ConstellationFace(pubkey: pubkey, size: size)
+            } else if let image = image {
                 Image(platformImage: image)
                     .resizable()
                     .scaledToFill()
@@ -46,14 +73,25 @@ struct AvatarView: View {
         }
         .frame(width: size, height: size)
         .clipped()
+        .background {
+            // Only a face still waiting for its profile listens for it.
+            if load && pictureURL == nil && !profileKnown {
+                ProfileArrivalWatch(pubkey: pubkey) { profileArrived = true }
+            }
+        }
         .modifier(LiveAvatarRing(pubkey: pubkey, size: size))
         .onAppear { loadImage() }
         .onChange(of: url) { _, _ in
             image = nil
             loadImage()
         }
+        .onChange(of: load) { _, _ in
+            image = nil
+            loadImage()
+        }
         .onChange(of: pubkey) { _, _ in
             image = nil
+            profileArrived = false
             loadImage()
         }
     }
@@ -74,7 +112,7 @@ struct AvatarView: View {
     }
 
     private func loadImage() {
-        guard let url = url else { return }
+        guard let url = pictureURL else { return }
 
         // Fast synchronous path for the memory cache so already-loaded avatars
         // render without a flash.
@@ -85,7 +123,26 @@ struct AvatarView: View {
 
         guard image == nil else { return }
         AvatarImageCache.shared.load(url: url) { img in
-            if let img = img { image = img }
+            if let img = img {
+                image = img
+            } else if url == pictureURL {
+                failedURL = url
+            }
         }
+    }
+}
+
+/// Sets `profileArrived` once a profile for `pubkey` lands, so a face drawn
+/// before its kind 0 turns into the constellation without its parent
+/// re-rendering.
+private struct ProfileArrivalWatch: View {
+    let pubkey: String
+    let arrived: () -> Void
+
+    var body: some View {
+        Color.clear
+            .onReceive(NostrService.shared.$profiles.map { $0[pubkey] != nil }.removeDuplicates()) { known in
+                if known { arrived() }
+            }
     }
 }

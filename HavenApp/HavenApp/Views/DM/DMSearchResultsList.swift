@@ -76,7 +76,8 @@ struct DMSearchResultsList: View {
         // A Requests hit says so, ahead of the matched words or the latest message.
         let text = hit.excerpt ?? (hit.isRequest ? String(DMFile.displayText(hit.conversation.lastMessage?.content ?? "").prefix(60)) : nil)
         let preview = hit.isRequest ? "Request · " + (text ?? "") : text
-        return ConversationRow(conversation: hit.conversation, nostrService: nostrService, preview: preview)
+        return ConversationRow(conversation: hit.conversation, nostrService: nostrService, preview: preview,
+                               loadPicture: !hit.isRequest)
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .listRowSeparator(.hidden)
     }

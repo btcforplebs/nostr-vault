@@ -361,7 +361,8 @@ struct DMRequestsView: View {
                     NavigationLink(destination: DMThreadView(counterpartyPubkey: hit.id)
                         .environmentObject(nostrService)
                         .environmentObject(configService)) {
-                        ConversationRow(conversation: hit.conversation, nostrService: nostrService, preview: hit.excerpt)
+                        ConversationRow(conversation: hit.conversation, nostrService: nostrService, preview: hit.excerpt,
+                                        loadPicture: false)
                     }
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     .listRowBackground(Color.platformSecondaryGroupedBackground)
@@ -408,7 +409,8 @@ extension DMInboxView {
                 List(selection: $selectedConversation) {
                     Section {
                         ForEach(showingRequestsInPane ? dmService.requestConversations : dmService.visibleConversations) { conversation in
-                            ConversationRow(conversation: conversation, nostrService: nostrService)
+                            ConversationRow(conversation: conversation, nostrService: nostrService,
+                                            loadPicture: !showingRequestsInPane)
                                 .tag(conversation.id)
                                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                                 .listRowSeparator(.hidden)
@@ -464,6 +466,9 @@ struct ConversationRow: View {
     let nostrService: NostrService
     /// Shown instead of the latest message (a search hit's matched words).
     var preview: String? = nil
+    /// False for a Request: the sender is outside your web, so their picture
+    /// is not fetched and their constellation is drawn instead.
+    var loadPicture = true
 
     private var counterpartyProfile: FeedProfile? {
         nostrService.profiles[conversation.id]
@@ -497,7 +502,7 @@ struct ConversationRow: View {
     var body: some View {
         HStack(spacing: 14) {
             ZStack(alignment: .topTrailing) {
-                AvatarView(url: counterpartyProfile?.pictureURL, pubkey: conversation.id, size: 52)
+                AvatarView(url: counterpartyProfile?.pictureURL, pubkey: conversation.id, size: 52, load: loadPicture)
                     .clipShape(Circle())
 
                 if hasUnread {
