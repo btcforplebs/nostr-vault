@@ -58,7 +58,7 @@ final class VaultReturnRulesTests: XCTestCase {
 
     func testTheStoreReadAsksNoSince() throws {
         let direct = try vaultAppSource("HavenApp/Services/Nostr/NostrService+VaultDirectRead.swift")
-        XCTAssertTrue(direct.contains("until: nil, since: nil)"))
+        XCTAssertTrue(direct.contains("vaultFilters(ownerHex: owner, authors: authors, since: nil)"))
     }
 
     func testSocketTopUpNeverStartsAheadOfNow() {

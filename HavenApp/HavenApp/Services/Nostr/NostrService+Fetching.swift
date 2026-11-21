@@ -3,7 +3,9 @@ import Combine
 import SwiftUI
 
 extension NostrService {
-    func fetchNotes(from relayURLs: [URL], until: Int64? = nil, since: Int64? = nil, authors: [String]? = nil) {
+    /// `older`: Load older, each Vault stream from its own cursor
+    /// (VaultFetchFilters.olderCursors); nil reads the newest window.
+    func fetchNotes(from relayURLs: [URL], older: [VaultFetchFilters.Stream: Int64]? = nil, since: Int64? = nil, authors: [String]? = nil) {
         // Count only the subscriptions we actually open/request below — NOT every
         // URL passed in. Skipped URLs (local relay not ready, already connecting,
         // reconnecting, or backing off) never deliver an EOSE, so pre-counting
@@ -28,7 +30,7 @@ extension NostrService {
 
             if let existing = clients[urlString] {
                 if existing.connectionState == .connected {
-                    sendRequest(to: existing, url: url, until: until, since: since, authors: authors)
+                    sendRequest(to: existing, url: url, older: older, since: since, authors: authors)
                     awaiting += 1
                     continue
                 } else if existing.connectionState == .connecting {
@@ -60,7 +62,7 @@ extension NostrService {
                     DispatchQueue.main.asyncAfter(deadline: .now() + (delay - timeSinceLastAttempt)) { [weak self] in
                         guard let self = self else { return }
                         guard self.clients[urlString] != nil else { return }
-                        self.fetchNotes(from: [url], until: until, since: since, authors: authors)
+                        self.fetchNotes(from: [url], older: older, since: since, authors: authors)
                     }
                     continue
                 }
@@ -103,7 +105,7 @@ extension NostrService {
                         // staying up long enough (stableConnectionTime), not here.
                         self.relayConnectedAt[urlString] = Date()
                         self.relaysReconnecting.remove(urlString)
-                        self.sendRequest(to: client!, url: url, until: until, since: since, authors: authors)
+                        self.sendRequest(to: client!, url: url, older: older, since: since, authors: authors)
                     } else if state == .error {
                         self.relaysReconnecting.remove(urlString)
 
@@ -142,7 +144,7 @@ extension NostrService {
                         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                             guard let self = self else { return }
                             guard self.clients[urlString] != nil else { return }
-                            self.fetchNotes(from: [url], until: until, since: since, authors: authors)
+                            self.fetchNotes(from: [url], older: older, since: since, authors: authors)
                         }
                     }
                 }
@@ -189,9 +191,9 @@ extension NostrService {
     }
 
 
-    private func sendRequest(to client: WebSocketClient, url: URL, until: Int64? = nil, since: Int64? = nil, authors: [String]? = nil) {
+    private func sendRequest(to client: WebSocketClient, url: URL, older: [VaultFetchFilters.Stream: Int64]? = nil, since: Int64? = nil, authors: [String]? = nil) {
         let urlString = url.absoluteString
-        let isHistorical = until != nil
+        let isHistorical = older != nil
 
         let context = url.lastPathComponent.isEmpty ? "root" : url.lastPathComponent
         let subscriptionId: String
@@ -214,8 +216,10 @@ extension NostrService {
             activeSubscriptions[urlString] = subscriptionId
         }
 
-        let filters = Self.vaultFilters(ownerHex: self.activeHexPubkey, authors: authors,
-                                        until: until, since: since)
+        let filters = older.map {
+            VaultFetchFilters.olderFilters(ownerHex: self.activeHexPubkey, authors: authors,
+                                           noteKinds: Self.relayTabNoteKinds, cursors: $0)
+        } ?? Self.vaultFilters(ownerHex: self.activeHexPubkey, authors: authors, since: since)
 
         let req = ["REQ", subscriptionId] + filters
         if let reqData = try? JSONSerialization.data(withJSONObject: req),
@@ -229,8 +233,8 @@ extension NostrService {
 
     /// The Vault's read: the socket REQ and the direct store read
     /// (NostrService+VaultDirectRead) ask the same filters (VaultFetchFilters).
-    static func vaultFilters(ownerHex: String, authors: [String]?, until: Int64?, since: Int64?) -> [[String: Any]] {
-        VaultFetchFilters.filters(ownerHex: ownerHex, authors: authors, until: until, since: since,
+    static func vaultFilters(ownerHex: String, authors: [String]?, since: Int64?) -> [[String: Any]] {
+        VaultFetchFilters.filters(ownerHex: ownerHex, authors: authors, since: since,
                                   noteKinds: relayTabNoteKinds)
     }
 }
