@@ -199,7 +199,7 @@ test("a follows' list that didn't come back is asked again after a while, or at 
   assert.equal((await followLists(me, [f1, f2], { query, now })).size, 0)
   assert.equal(missingLists([f1, f2]), 2)
   await followLists(me, [f1, f2], { query, now })
-  assert.equal(asks.length, 1, "not asked again straight away")
+  assert.equal(asks.length, 2, "each profile relay once, and not asked again straight away")
   answer = async (r, f) => f.authors.map(a => list(a, [hex("6")]))
   t += RETRY_MS
   assert.equal((await followLists(me, [f1, f2], { query, now })).size, 2, "asked again after RETRY_MS")
@@ -233,7 +233,7 @@ test("follows' lists: asked for once each this session, a new follow on its own,
   assert.deepEqual([...got.keys()], [f1])
   assert.deepEqual(got.get(f1).tags, [["p", hex("7")]], "the newest")
   await followLists(me, [f1, f2, f3], { query })
-  assert.deepEqual(asked, [[f1, f2], [f3]], "only the new follow is asked for")
+  assert.deepEqual(asked, [[f1, f2], [f2], [f3], [f3]], "only the new follow is asked for (the next relay only for who the last didn't have)")
   await followLists(me, [f1, f2, f3], { query: async () => assert.fail("nothing new to ask") })
 })
 
@@ -243,7 +243,7 @@ test("unsettled lists: a cut-off answer leaves them unsettled, one the relay doe
   await followLists(me, [f1, f2], { query: async () => [], now: () => 1_000 })
   assert.deepEqual([missingLists([f1, f2]), unsettledLists([f1, f2])], [2, 2])
   // The relay answered with f1's list and not f2's: f2 is a known miss, so nothing is left to wait for.
-  await followLists(me, [f1, f2], { query: async () => [list(f1, [hex("6")])], retryMs: 0, now: () => 2_000_000 })
+  await followLists(me, [f1, f2], { query: async (r, f) => [list(f1, [hex("6")])].filter(e => f.authors.includes(e.pubkey)), retryMs: 0, now: () => 2_000_000 })
   assert.deepEqual([missingLists([f1, f2]), unsettledLists([f1, f2])], [1, 0])
 })
 
