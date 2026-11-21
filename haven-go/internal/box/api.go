@@ -44,12 +44,17 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	route, ok := boxRoutes[r.Method+" "+r.URL.Path]
+	rt, ok := boxRoutes[r.Method+" "+r.URL.Path]
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such box API route"})
 		return
 	}
-	route(a, w, r, body)
+	c := a.callerOf(r)
+	if !c.may(rt.level) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only the box's first account may do this"})
+		return
+	}
+	rt.serve(a, w, r, c, body)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
