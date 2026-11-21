@@ -5,7 +5,7 @@
 // EXTENDED_MIN of your follows follow) and further out. Everything here is other people's data and stays in memory,
 // except your own follows' lists, which this browser keeps so a reload doesn't download them again (wot-store.js).
 import { pool, PROFILE_RELAYS, uniq } from "./pool.js"
-import { emptyKept, wotStore } from "./wot-store.js"
+import { emptyKept, wotStore, compactList, interner } from "./wot-store.js"
 import { fraction } from "./wot-pure.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
@@ -34,7 +34,7 @@ export const REFRESH_MS = 6 * 3600_000
 // How long a group of 250 lists may take. A group is ~12 MB: in a first sign-in's busy page 8 s cut some off part way
 // (the relay itself sends them in ~3.5 s and ends with EOSE, which closes the ask sooner).
 export const LISTS_WAIT_MS = 20_000
-const newCache = me => ({ me, lists: new Map(), tried: new Map(), inflight: new Map(), disk: null, checkedAt: 0, refreshed: false, missed: new Map() })
+const newCache = me => ({ me, intern: interner(), lists: new Map(), tried: new Map(), inflight: new Map(), disk: null, checkedAt: 0, refreshed: false, missed: new Map() })
 const caches = { home: newCache(""), visit: newCache("") }
 
 /**
@@ -54,7 +54,7 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
   // unread badge, ~0.36 s for 1,054 follows), and done during boot that put a reload's first note ~0.4 s later. Still
   // seconds sooner than the download it replaces.
   // A read that never answers (an IndexedDB open that hangs) counts as nothing kept after loadMs.
-  if (store && !cache.disk) cache.disk = idle().then(() => within(store.load(), loadMs, emptyKept())).then(({ lists: kept, misses, checkedAt }) => {
+  if (store && !cache.disk) cache.disk = idle().then(() => within(store.load(cache.intern), loadMs, emptyKept())).then(({ lists: kept, misses, checkedAt }) => {
     for (const [pk, ev] of kept) if (!(lists.get(pk)?.created_at >= ev.created_at)) lists.set(pk, ev)
     cache.missed = misses
     cache.checkedAt = checkedAt
@@ -78,18 +78,15 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
   }
   for (let i = 0; i < want.length; i += 250) {
     const chunk = want.slice(i, i + 250), wanted = new Set(chunk)
-    const started = now()
-    const job = query(uniq(relays), { kinds: [3], authors: chunk, limit: chunk.length }, { maxWait: LISTS_WAIT_MS })
-      .catch(() => [])
-      .then(evs => {
+    const job = askInTurn(uniq(relays), chunk, wanted, { query, now })
+      .then(({ evs, cut }) => {
         const got = []
-        for (const ev of evs) if (ev?.kind === 3 && wanted.has(ev.pubkey) && !(lists.get(ev.pubkey)?.created_at >= ev.created_at)) { lists.set(ev.pubkey, ev); got.push(ev) }
+        for (const ev of evs) if (ev?.kind === 3 && wanted.has(ev.pubkey) && !(lists.get(ev.pubkey)?.created_at >= ev.created_at)) { const l = compactList(ev, cache.intern); lists.set(ev.pubkey, l); got.push(l) }
         for (const pk of chunk) { tried.set(pk, t); inflight.delete(pk) }
         // An answer with some of the group's lists but not someone's: kept as missing. A failed or empty answer, or one
         // cut off at LISTS_WAIT_MS (querySync ends a timeout as if the relay had sent EOSE), keeps nothing, so it is
         // asked again after RETRY_MS as before.
         // An answer as long as the limit may be a relay's cap rather than all it has: no misses from that either.
-        const cut = now() - started >= LISTS_WAIT_MS - 100 || evs.length >= chunk.length
         const misses = !cut && evs.some(ev => wanted.has(ev?.pubkey)) ? chunk.filter(pk => !lists.has(pk)) : []
         for (const pk of misses) cache.missed.set(pk, Math.floor(t / 1000))
         const saved = keep(got, false, misses)
@@ -103,6 +100,32 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
   const mine = new Map()
   for (const pk of follows) if (lists.has(pk)) mine.set(pk, lists.get(pk))
   return mine
+}
+
+/**
+ * One group's lists from the profile relays one at a time: the first is asked for all of them, the next only for those
+ * still missing. Asked together, each relay sent its own copy of the same lists, ~25 MB over again on a first sign-in
+ * (Tidy's audit 11-20, W6). `cut`: an answer may be short (a relay failed, timed out at LISTS_WAIT_MS, or sent as many
+ * as it was asked for, which may be its cap), so nobody missing from it is a known miss. -> { evs, cut }
+ */
+export const HANDOFF_WAIT_MS = 8_000
+export async function askInTurn(relays, chunk, wanted, { query, now = Date.now }) {
+  const evs = [], got = new Set()
+  let cut = false
+  for (const [i, url] of relays.entries()) {
+    const authors = chunk.filter(pk => !got.has(pk))
+    if (!authors.length) break
+    // A relay with another after it gets HANDOFF_WAIT_MS, not the whole LISTS_WAIT_MS: a stalled first relay hands the
+    // rest on sooner, so a group never waits two full waits back to back (Tron's review of #2333).
+    const wait = i < relays.length - 1 ? HANDOFF_WAIT_MS : LISTS_WAIT_MS
+    const started = now()
+    let answer
+    try { answer = await query([url], { kinds: [3], authors, limit: authors.length }, { maxWait: wait }) } catch { cut = true; continue }
+    if (now() - started >= wait - 100 || answer.length >= authors.length) cut = true
+    for (const ev of answer) if (ev?.kind === 3 && wanted.has(ev.pubkey)) got.add(ev.pubkey)
+    evs.push(...answer)
+  }
+  return { evs, cut }
 }
 
 export const BOOT_GRACE_MS = 1500
@@ -132,7 +155,7 @@ async function refreshLists(cache, follows, { relays, query, keep, reachable, no
   await Promise.all(Array.from({ length: Math.ceil(held.length / 250) }, (_, k) => held.slice(k * 250, k * 250 + 250)).map(chunk => {
     const wanted = new Set(chunk)
     return query(uniq(relays), { kinds: [3], authors: chunk, since, limit: chunk.length }, { maxWait: 8000 })
-      .then(evs => { for (const ev of evs) if (ev?.kind === 3 && wanted.has(ev.pubkey) && !(cache.lists.get(ev.pubkey)?.created_at >= ev.created_at)) { cache.lists.set(ev.pubkey, ev); got.push(ev) } })
+      .then(evs => { for (const ev of evs) if (ev?.kind === 3 && wanted.has(ev.pubkey) && !(cache.lists.get(ev.pubkey)?.created_at >= ev.created_at)) { const l = compactList(ev, cache.intern); cache.lists.set(ev.pubkey, l); got.push(l) } })
       .catch(() => { ok = false })
   }))
   // A check that failed keeps the old time, so the next load asks from there again.
@@ -154,7 +177,8 @@ const progressListeners = new Set()
 export const onListsProgress = cb => { progressListeners.add(cb); return () => progressListeners.delete(cb) }
 const notifyProgress = slot => { for (const cb of progressListeners) { try { cb(slot) } catch {} } }
 
-const followedBy = ev => uniq((ev?.tags ?? []).filter(t => t[0] === "p" && HEX64.test(t[1] ?? "")).map(t => t[1]))
+// A held list (FollowList) already has its keys checked and once each; a plain kind 3 (tests, a visit) is read as before.
+const followedBy = ev => ev?.ps ?? uniq((ev?.tags ?? []).filter(t => t[0] === "p" && HEX64.test(t[1] ?? "")).map(t => t[1]))
 
 /**
  * The web from the follows' lists. -> {
@@ -166,12 +190,20 @@ const followedBy = ev => uniq((ev?.tags ?? []).filter(t => t[0] === "p" && HEX64
  * through one. (The screen builds the web once and applies blocks with filterWeb, which gives the same result.)
  * `extendedMin` is for tests.
  */
-export function buildWeb(me, allFollows, lists, { blocked = new Set(), extendedMin = EXTENDED_MIN } = {}) {
+export function buildWeb(me, allFollows, lists, opts = {}) {
+  const steps = webSteps(me, allFollows, lists, opts)
+  for (;;) { const r = steps.next(); if (r.done) return r.value }
+}
+
+// buildWeb's work, pausing (yield) every `slice` follows so buildWebSoon can let the page draw in between.
+function* webSteps(me, allFollows, lists, { blocked = new Set(), extendedMin = EXTENDED_MIN, slice = Infinity } = {}) {
   const follows = allFollows.filter(f => !blocked.has(f))
   const followSet = new Set(follows)
   const linkers = new Map()
   const followsMe = new Set()
+  let n = 0
   for (const f of follows) {
+    if (++n % slice === 0) yield
     for (const pk of followedBy(lists.get(f))) {
       if (pk === me) { followsMe.add(f); continue }
       if (followSet.has(pk) || blocked.has(pk)) continue
@@ -184,14 +216,44 @@ export function buildWeb(me, allFollows, lists, { blocked = new Set(), extendedM
     const by = linkers.get(pk)
     if (by) by.push(f); else linkers.set(pk, [f])
   }
+  yield
   const byLinks = (a, b) => (linkers.get(b)?.length ?? 0) - (linkers.get(a)?.length ?? 0) || (a < b ? -1 : 1)
   const extended = [], further = []
   for (const [pk, by] of linkers) {
     if (followSet.has(pk)) continue
     ;(by.length >= extendedMin ? extended : further).push(pk)
   }
-  extended.sort(byLinks); further.sort(byLinks)
+  extended.sort(byLinks)
+  yield
+  further.sort(byLinks)
   return assemble(me, follows, extended, further, linkers, followsMe, extendedMin)
+}
+
+// The last web built from the user's lists, kept across visits to the Web tab: a returning phone spent ~1.5 s frozen
+// rebuilding the same web on every visit (Tidy's audit 11-20, W10). Reused while the person, their follows and every
+// follow's list object are the same; a list that changes is a new object (followLists), so the web is built again.
+let lastWeb = null
+const sameAsLast = (me, fs, evs) => lastWeb && lastWeb.me === me && lastWeb.fs.length === fs.length && lastWeb.fs.every((f, i) => f === fs[i] && lastWeb.evs[i] === evs[i])
+const nextTask = () => new Promise(r => setTimeout(r, 0))
+
+/**
+ * buildWeb (no blocks: the screen applies them with filterWeb) off the tap: the last web when nothing changed, else
+ * built WEB_SLICE follows at a time between tasks, so the screen draws its loading state first and the page never
+ * freezes for the whole web. -> Promise of the web
+ */
+export const WEB_SLICE = 40
+export async function buildWebSoon(me, allFollows, lists, { slice = WEB_SLICE, yieldTo = nextTask } = {}) {
+  const fs = [...allFollows], evs = fs.map(f => lists.get(f))
+  if (sameAsLast(me, fs, evs)) return lastWeb.web
+  const steps = webSteps(me, fs, lists, { slice })
+  let r
+  while (!(r = steps.next()).done) await yieldTo()
+  lastWeb = { me, fs, evs, web: r.value }
+  return r.value
+}
+/** The last web buildWebSoon built, if it is for these lists: the screen draws it at once on a return. */
+export function builtWeb(me, allFollows, lists) {
+  return sameAsLast(me, [...allFollows], [...allFollows].map(f => lists.get(f))) ? lastWeb.web : null
 }
 
 function assemble(me, follows, extended, further, linkers, followsMe, extendedMin) {

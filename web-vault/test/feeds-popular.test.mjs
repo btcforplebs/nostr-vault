@@ -82,7 +82,8 @@ test("the trust set is the user, their follows and who those follow, newest cont
   ] }
   const set = await trustSet(AUTHOR, [R1, R2], { query })
   assert.deepEqual([...set].sort(), [AUTHOR, R1, R2, R3].sort())
-  assert.deepEqual(asked, [[PROFILE_RELAYS, { kinds: [3], authors: [R1, R2], limit: 2 }]], "contact lists from the profile relay only")
+  assert.deepEqual(asked, [[[PROFILE_RELAYS[0]], { kinds: [3], authors: [R1, R2], limit: 2 }], [[PROFILE_RELAYS[1]], { kinds: [3], authors: [R2], limit: 1 }]],
+    "contact lists from the profile relays one at a time, the next only for who the first didn't have")
   await trustSet(AUTHOR, [R1, R2], { query: async () => assert.fail("built once") })
 })
 
@@ -91,12 +92,12 @@ test("a big follow list asks for its contact lists in chunks of 250, all at once
   let open = 0, most = 0, asks = 0
   const query = async (r, f) => {
     asks++; open++; most = Math.max(most, open)
-    assert.deepEqual(r, PROFILE_RELAYS); assert.equal(f.authors.length, 250)
+    assert.deepEqual(r, [PROFILE_RELAYS[0]]); assert.equal(f.authors.length, 250)
     await new Promise(res => setTimeout(res, 10)); open--
     return f.authors.map(pk => ({ kind: 3, pubkey: pk, created_at: 1, tags: [["p", hex("7")]] }))
   }
   const set = await trustSet(hex("9"), follows, { query })
-  assert.equal(asks, 4); assert.equal(most, 4, "not one after another")
+  assert.equal(asks, 4, "the first relay had them all: the second is never asked"); assert.equal(most, 4, "groups not one after another")
   assert.ok(set.has(hex("7")))
 })
 

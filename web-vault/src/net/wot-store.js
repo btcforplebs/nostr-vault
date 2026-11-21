@@ -10,29 +10,64 @@ const HEX64 = /^[0-9a-f]{64}$/
 export const wotDbName = pubkey => `haven:${pubkey}:wotlists`
 const LOAD_BATCH = 40
 
+/**
+ * A follow's contact list as this page holds it: who they follow and when, nothing else. A relay's kind 3 carries
+ * petnames, relay hints and a content blob, and held whole for 1,040 follows it was most of the page's heap once the
+ * lists were read (Tidy's audit 11-20, W8). `ps` is the followed keys, once each, as shared strings (interner): the
+ * same person on 300 lists is one string. `tags` is made on each read, for the readers that walk a kind 3's p tags
+ * (Popular, Messages' trust, For you, the web gate...), so they need not change; only p tags are kept.
+ */
+export class FollowList {
+  constructor(pubkey, created_at, ps) {
+    this.kind = 3
+    this.pubkey = pubkey
+    this.created_at = created_at
+    this.ps = ps
+  }
+  get tags() { return this.ps.map(pk => ["p", pk]) }
+}
+
+/** One copy of each key string: -> intern(s) giving back the first string equal to s. */
+export function interner() {
+  const seen = new Map()
+  return s => { const had = seen.get(s); if (had !== undefined) return had; seen.set(s, s); return s }
+}
+const same = s => s
+
+/** A relay's kind 3 (or a FollowList) as a FollowList: valid p keys only, once each. */
+export function compactList(ev, intern = same) {
+  if (ev instanceof FollowList) return ev
+  const seen = new Set(), ps = []
+  for (const t of ev.tags ?? []) {
+    if (t[0] !== "p" || typeof t[1] !== "string" || t[1].length !== 64 || !HEX64.test(t[1]) || seen.has(t[1])) continue
+    seen.add(t[1]); ps.push(intern(t[1]))
+  }
+  return new FollowList(ev.pubkey, ev.created_at, ps)
+}
+
 /** A kind 3 as kept: { pubkey, created_at, ps: Uint8Array of 32-byte keys }. A follow whose list the relay didn't
  *  have is kept as { pubkey, missed: unix seconds }. */
 export function pack(ev) {
-  const ps = [...new Set((ev.tags ?? []).filter(t => t[0] === "p" && HEX64.test(t[1] ?? "")).map(t => t[1]))]
+  const ps = ev instanceof FollowList ? ev.ps : compactList(ev).ps
   const bytes = new Uint8Array(ps.length * 32)
   ps.forEach((pk, i) => { for (let j = 0; j < 32; j++) bytes[i * 32 + j] = parseInt(pk.substr(j * 2, 2), 16) })
   return { pubkey: ev.pubkey, created_at: ev.created_at, ps: bytes }
 }
 
 const HEX = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"))
-/** Back to the shape followLists hands out: a kind 3 with only its `p` tags. */
-export function unpack({ pubkey, created_at, ps }) {
-  const tags = []
+/** Back to the shape followLists hands out: a FollowList, its keys shared through `intern`. */
+export function unpack({ pubkey, created_at, ps }, intern = same) {
+  const out = []
   for (let i = 0; i < ps.length; i += 32) {
     let pk = ""
     for (let j = i; j < i + 32; j++) pk += HEX[ps[j]]
-    tags.push(["p", pk])
+    out.push(intern(pk))
   }
-  return { kind: 3, pubkey, created_at, tags }
+  return new FollowList(pubkey, created_at, out)
 }
 
 /**
- * -> { load(): { lists: Map(pk -> kind 3), misses: Map(pk -> unix seconds), checkedAt }, save(events, checkedAt, misses, missedAt) },
+ * -> { load(intern): { lists: Map(pk -> FollowList), misses: Map(pk -> unix seconds), checkedAt }, save(events, checkedAt, misses, missedAt) },
  * or a store that keeps nothing where
  * there is no IndexedDB (node, the tests). `checkedAt` (unix seconds) is when the relays were last asked for newer
  * lists; followLists asks again `since` then. A failed read or write keeps nothing: the lists are only a cache.
@@ -82,7 +117,7 @@ function openStore(pubkey, idb, signedIn) {
   return {
     // LOAD_BATCH rows a transaction, with a pause between, rather than one getAll: reading ~20 MB of lists back in one
     // go held the page ~0.5 s, and a reload's first note waited behind it.
-    async load() {
+    async load(intern) {
       try {
         const lists = new Map(), misses = new Map()
         let checked = 0, after = null
@@ -92,7 +127,7 @@ function openStore(pubkey, idb, signedIn) {
             store.getAll(after === null ? null : IDBKeyRange.lowerBound(after, true), LOAD_BATCH).onsuccess = e => { rows = e.target.result ?? [] }
             if (after === null) meta.get("checkedAt").onsuccess = e => { checked = e.target.result ?? 0 }
           })
-          for (const r of rows) if (r.ps) lists.set(r.pubkey, unpack(r)); else misses.set(r.pubkey, r.missed)
+          for (const r of rows) if (r.ps) lists.set(r.pubkey, unpack(r, intern)); else misses.set(r.pubkey, r.missed)
           if (rows.length < LOAD_BATCH) break
           after = rows.at(-1).pubkey
           await new Promise(r => setTimeout(r, 0))

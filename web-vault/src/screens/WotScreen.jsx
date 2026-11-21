@@ -18,7 +18,7 @@ import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles, getProfile, onProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { followsOf } from "../net/follows.js"
-import { followLists, missingLists, buildWeb, filterWeb, shownByKey, trustPath, layerCounts, FURTHER_CAP, EXTENDED_CAP } from "../net/wot.js"
+import { followLists, missingLists, buildWeb, buildWebSoon, builtWeb, filterWeb, shownByKey, trustPath, layerCounts, FURTHER_CAP, EXTENDED_CAP } from "../net/wot.js"
 import { layout, layerFaceCandidates, pictured, LAYER_FACES, RING_FACES } from "../net/wot-globe.js"
 import { WotGlobe } from "./WotGlobe.jsx"
 import { TrustCard } from "./WotCard.jsx"
@@ -78,9 +78,21 @@ export function WotScreen({ ctx, pubkey }) {
     return () => { live = false }
   }, [me, follows.length, round])
 
-  // Built once per set of lists; blocking or unblocking only filters it (buildWeb reads every list, filterWeb doesn't).
-  // With no follows yet, an empty web: the globe still shows you (as on the iPhone), with a hint under the bar.
-  const built = useMemo(() => (lists ? buildWeb(me, follows, lists) : !follows.length && account.loaded ? buildWeb(me, [], new Map()) : null), [lists, follows.length, account.loaded])
+  // Built once per set of lists, and kept across visits (wot.js buildWebSoon): the same lists draw the last web at once,
+  // new ones are built a slice at a time behind "Mapping your web", so the tap never freezes (Tidy's audit 11-20, W10).
+  // Blocking or unblocking only filters it (buildWeb reads every list, filterWeb doesn't). With no follows yet, an
+  // empty web: the globe still shows you (as on the iPhone), with a hint under the bar.
+  const [fromLists, setFromLists] = useState(null)
+  useEffect(() => {
+    if (!lists) return
+    const ready = builtWeb(me, follows, lists)
+    if (ready) { setFromLists(ready); return }
+    let live = true
+    setStatus("Mapping your web")
+    buildWebSoon(me, follows, lists).then(w => { if (live) { setFromLists(w); setStatus("") } })
+    return () => { live = false }
+  }, [lists])
+  const built = useMemo(() => (lists ? fromLists : !follows.length && account.loaded ? buildWeb(me, [], new Map()) : null), [lists, fromLists, follows.length, account.loaded])
   const web = useMemo(() => (built ? filterWeb(built, lists ?? new Map(), blocked) : null), [built, blocked])
 
   // The address moved (see the top). Anything that isn't a step along the trail starts it again from you, with the

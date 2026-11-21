@@ -50,7 +50,8 @@ test("a kept list is only who it follows, 32 bytes each, and reads back as the s
   const ev = { ...list(hex("1"), [hex("a"), hex("b"), hex("a")], 7), tags: [["p", hex("a"), "wss://hint", "pet"], ["p", hex("b")], ["p", hex("a")], ["t", "x"], ["p", "nothex"]] }
   const row = pack(ev)
   assert.equal(row.ps.length, 64, "two people, once each")
-  assert.deepEqual(unpack(row), { kind: 3, pubkey: hex("1"), created_at: 7, tags: [["p", hex("a")], ["p", hex("b")]] })
+  const back = unpack(row)
+  assert.deepEqual({ kind: back.kind, pubkey: back.pubkey, created_at: back.created_at, tags: back.tags }, { kind: 3, pubkey: hex("1"), created_at: 7, tags: [["p", hex("a")], ["p", hex("b")]] })
 })
 
 test("the next page load reads the follows' lists from this browser and asks the relays for none of them", async () => {
@@ -112,7 +113,7 @@ test("a follow whose list the relay didn't have is kept as missing, and not aske
   clock += RETRY_MS_PLUS
   const got = await followLists(me, [f1, f2], { store, query, now: () => clock })
   assert.equal(got.size, 1)
-  assert.deepEqual(asked, [[f1, f2]], "nothing asked on the next load")
+  assert.deepEqual(asked, [[f1, f2], [f2]], "the second relay only for the one the first didn't have; nothing asked on the next load")
   // Try again (retryMs 0) asks at once, and after REFRESH_MS it is asked again on its own.
   await followLists(me, [f1, f2], { store, query, retryMs: 0, now: () => clock })
   assert.deepEqual(asked.at(-1), [f2])
