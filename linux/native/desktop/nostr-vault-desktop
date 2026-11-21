@@ -477,7 +477,9 @@ class App(Gtk.Application):
 
         win = Gtk.ApplicationWindow(application=self, title="Nostr Vault")
         win.set_default_size(1240, 860)  # the Mac window's first size
-        win.set_size_request(800, 640)
+        # Small enough for a half-width tile (Hyprland, sway: ~628 px on a 1280 px screen); below 760 px the web app
+        # draws its phone layout. 800x640 made a tiling WM squeeze the window instead (beta 9).
+        win.set_size_request(360, 480)
         win.set_icon_name(ICON)
         win.add(view)
         # Closing hides the window; the vault and the tray keep running (as on the Mac). With no tray, close quits,
