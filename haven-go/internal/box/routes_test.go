@@ -14,14 +14,20 @@ func TestRoutesRegistered(t *testing.T) {
 		"GET /api/box/accounts",
 		"GET /api/box/accounts/me",
 		"GET /api/box/devices",
+		"GET /api/box/media/auto-mirror",
+		"GET /api/box/media/copy",
 		"GET /api/box/status",
 		"GET /api/box/storage",
 		"POST /api/box/accounts/add",
 		"POST /api/box/accounts/code",
 		"POST /api/box/accounts/join",
 		"POST /api/box/accounts/remove",
+		"POST /api/box/media/auto-mirror/run",
+		"POST /api/box/media/copy",
+		"POST /api/box/media/copy/check",
 		"POST /api/box/move",
 		"POST /api/box/update",
+		"PUT /api/box/media/auto-mirror",
 	}
 	var got []string
 	for r := range boxRoutes {
@@ -34,14 +40,22 @@ func TestRoutesRegistered(t *testing.T) {
 }
 
 // Every route is first-account only except the two that let an account
-// ask whether the box holds it and join with a code (E9). Opening any other
+// ask whether the box holds it and join with a code (E9), and the media
+// routes any signed-in account uses for its own files (E6). Opening any other
 // route to more callers must be a deliberate edit here.
 func TestRouteLevels(t *testing.T) {
 	anyone := map[string]bool{"GET /api/box/accounts/me": true, "POST /api/box/accounts/join": true}
+	signedIn := map[string]bool{
+		"GET /api/box/media/auto-mirror": true, "POST /api/box/media/auto-mirror/run": true,
+		"POST /api/box/media/copy/check": true, "POST /api/box/media/copy": true, "GET /api/box/media/copy": true,
+	}
 	for path, rt := range boxRoutes {
 		want := FirstAccount
 		if anyone[path] {
 			want = Anyone
+		}
+		if signedIn[path] {
+			want = SignedIn
 		}
 		if rt.level != want {
 			t.Errorf("%s: level %d, want %d", path, rt.level, want)
