@@ -129,6 +129,8 @@ func main() {
 		runsafe.Go("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(mainCtx, config.WotRefreshInterval) })
 		// havend as B: a first copy (or its resume) asked for at start.
 		startCopyFromEnv(mainCtx, hostGetenv, runsafe.Go)
+		// havend: Auto-Mirror and Copy to servers (auto_mirror.go, media_copy_job.go).
+		startMediaJobs(mainCtx, runsafe.Go)
 		runsafe.Go("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(mainCtx, wot.EmptyGraphRefreshInterval, ownerFollowListStamp) })
 		runsafe.Go("wot.RefreshOnFollowListChange", func() { wot.RefreshOnFollowListChange(mainCtx, wot.FollowListCheckInterval, ownerFollowListAt) })
 	})
