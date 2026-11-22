@@ -1,20 +1,26 @@
 // Settings › Accounts in box mode: the accounts this box holds (One Vault addendum A.3), for the box's first account
 // only. Each shows its state (first / signed in / watch-only); Add an account makes a one-time code the new account
 // types after signing in with its own signer; Remove takes an account off the box, its notes and files stay.
-// Any other account sees nothing here: the box answers it 403, and this section stays out of the way.
+// Any other account sees nothing here, and isn't asked to sign for it: the list is only asked for when the page's check
+// (box-vault.js boxAccount) says this is the first account (Tron L1). Without a check (tests), it asks, and a 403 hides it.
 import { useEffect, useMemo, useState } from "preact/hooks"
 import { accountsApi, STATE_LABEL } from "../api-accounts.js"
+import { boxAccount } from "../box-vault.js"
 import { Part, Row } from "./Parts.jsx"
 import { shortNpub } from "../format.js"
 if (import.meta.env) import("../box.css")
 
-/** `api`: an accountsApi; built from the signer when not given (tests pass one over a mock). */
-export function AccountsSection({ ctx, api: given }) {
+/** `api`: an accountsApi; built from the signer when not given (tests pass one over a mock). `account`: the page's
+ *  boxAccountCheck (boxAccount() when not given; null = none, so the list is asked for and a 403 hides it). */
+export function AccountsSection({ ctx, api: given, account: givenAccount }) {
   const api = useMemo(() => given ?? accountsApi({ signer: ctx.signer }), [given, ctx.signer])
+  const account = givenAccount !== undefined ? givenAccount : boxAccount()
+  const [who, setWho] = useState(account ? account.state : "first")
+  useEffect(() => { if (!account) return; setWho(account.state); return account.subscribe(s => setWho(s.state)) }, [account])
   const [state, setState] = useState(null) // { value: accounts } | { error } | { hidden }
   const load = () => api.list().then(value => setState({ value }), e => setState(e?.status === 403 ? { hidden: true } : { error: String(e?.message ?? e) }))
-  useEffect(() => { load() }, [api])
-  if (state?.hidden) return null
+  useEffect(() => { if (who === "first") load() }, [api, who])
+  if (who !== "first" || state?.hidden) return null
   return (
     <div class="box-screen box-accounts">
       <Part title="Accounts on this box" state={state}>

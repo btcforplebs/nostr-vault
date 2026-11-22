@@ -117,6 +117,35 @@ test("a secret key typed as the code is refused here and never sent", async () =
   render(null, el)
 })
 
+test("a 64-hex secret key, or anything that isn't a 12-letter code, is refused here and never sent (Tron L3)", async () => {
+  const box = fakeAccountsBox({ owner: first.hex })
+  const c = checkFor(box, key()); await c.check()
+  const el = await mount(c)
+  const before = box.log.length
+  for (const typed of [Buffer.from(generateSecretKey()).toString("hex"), "ABCD-EFGH", "ABCD-EFGH-JKMN-PQRS", "ABCD-EFGH-JK!N"]) {
+    await type(el, typed); fire(form(el), "submit"); await tick(30)
+    assert.match(el.textContent, /A code is 12 letters and digits/, typed)
+    assert.equal(box.log.length, before, `nothing sent for ${typed}`)
+  }
+  render(null, el)
+})
+
+test("a check that failed says so in This Box, with Retry, instead of the plain link (Tron L2)", async () => {
+  const box = fakeAccountsBox({ owner: first.hex })
+  let down = true
+  const fetchImpl = (url, o) => down ? Promise.resolve(new Response(JSON.stringify({ error: "too many" }), { status: 429 })) : box.fetchImpl(url, o)
+  const c = boxAccountCheck({ api: accountsApi({ signer: key().signer, base: "http://box.test/api/box", fetchImpl }) })
+  await c.check()
+  assert.equal(c.state, null)
+  const el = await mount(c)
+  assert.match(el.textContent, /Couldn't ask this box whether it holds this account/)
+  down = false
+  fire(button(el, "Retry"), "click"); await tick(80)
+  assert.equal(c.state, "none")
+  assert.match(el.textContent, /This box doesn't hold this account yet/, "the retry's answer shows the join form")
+  render(null, el)
+})
+
 test("the box answers after Settings opened: the row turns into the join form", async () => {
   const box = fakeAccountsBox({ owner: first.hex })
   const c = checkFor(box, key())

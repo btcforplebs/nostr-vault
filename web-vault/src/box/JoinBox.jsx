@@ -10,6 +10,9 @@ const SAYS = {
   watchOnly: "This box keeps this account's notes and files, but shows nothing private until the account signs in to it. Ask the box's owner for a code: on their account, Settings › Accounts › Add an account.",
 }
 const looksLikeNsec = s => /^(nostr:)?nsec1/i.test(s.trim())
+/** A code is 12 letters and digits; dashes and spaces are ignored (the box strips them too). Anything else, such as a
+ *  64-hex secret key, is refused here and never sent (Tron L3). */
+const asCode = s => { const c = s.replace(/[-\s]/g, "").toUpperCase(); return /^[A-Z0-9]{12}$/.test(c) ? c : null }
 
 /** `account`: the page's boxAccountCheck (box-vault.js); `state`: its current state. `reload`: after a join, the page
  *  opens again on the box's new lists (location.reload; a stub in tests). */
@@ -21,9 +24,11 @@ export function JoinBox({ account, state, reload = () => globalThis.location?.re
     e?.preventDefault?.()
     if (looksLikeNsec(code)) { setMsg({ ok: false, text: "That is a secret key (nsec). Never paste it anywhere: the box only needs the code." }); setCode(""); return }
     if (!code.trim()) return
+    const c = asCode(code)
+    if (!c) { setMsg({ ok: false, text: "A code is 12 letters and digits, like ABCD-EFGH-JKMN. Never paste a key here." }); if (code.replace(/[-\s]/g, "").length > 12) setCode(""); return }
     setBusy(true); setMsg(null)
     try {
-      const r = await account.join(code.trim())
+      const r = await account.join(c)
       setMsg({ ok: true, text: r.already ? "This account is already signed in to the box." : "You're on this box now. It restarts its relay for you (a few seconds), then this page opens again." })
       setTimeout(reload, r.already ? 0 : 4000)
     } catch (err) { setMsg({ ok: false, text: String(err?.message ?? err) }); setBusy(false) }
