@@ -33,10 +33,18 @@ enum ReferralLookup {
                       follows: ReferralSuggestions.follows(inContactListTags: list?.tags ?? []))
     }
 
-    /// Up to `ReferralSuggestions.limit` of `person`'s follows, most-followed
-    /// first, with their profiles fetched. `exclude`: you and the people you
-    /// already follow.
-    static func suggestions(for person: Person, exclude: Set<String>) async -> [String] {
+    /// What the people step offers: up to `ReferralSuggestions.pool` of the
+    /// referrer's follows, closest to the referrer first, and topic chips
+    /// from their recent notes.
+    struct Suggestions {
+        let picks: [ReferralSuggestions.Pick]
+        let topics: [(topic: String, people: Set<String>)]
+    }
+
+    /// `person`'s follows ranked by their close circle (`ReferralSuggestions`),
+    /// with profiles and recent hashtags fetched. `exclude`: you and the
+    /// people you already follow.
+    static func suggestions(for person: Person, exclude: Set<String>) async -> Suggestions {
         let readers = Array(person.follows.prefix(ReferralSuggestions.listsToRead))
         var lists: [String: [String]] = [:]
         if !readers.isEmpty {
@@ -46,13 +54,24 @@ enum ReferralLookup {
                 lists[event.pubkey] = ReferralSuggestions.follows(inContactListTags: event.tags) // newest wins
             }
         }
-        let picked = ReferralSuggestions.rank(referrerFollows: person.follows, lists: lists,
-                                              exclude: exclude.union([person.pubkey]))
-        if !picked.isEmpty {
-            let profiles = await NostrService.shared.fetchEvents(
-                filter: ["kinds": [0], "authors": picked], from: relays)
-            NostrService.shared.ingestProfiles(profiles.filter { picked.contains($0.pubkey) })
-        }
-        return picked
+        let picks = ReferralSuggestions.rank(referrer: person.pubkey, referrerFollows: person.follows, lists: lists,
+                                             exclude: exclude.union([person.pubkey]))
+        guard !picks.isEmpty else { return Suggestions(picks: [], topics: []) }
+        let keys = picks.map(\.pubkey)
+        // Profiles, the last month of notes and their public interest lists
+        // (kind 10015), side by side. The notes' and lists' `t` tags make the
+        // topic chips; many people use no hashtags, so either can be empty.
+        let since = Int(Date().timeIntervalSince1970) - 30 * 86_400
+        async let profiles = NostrService.shared.fetchEvents(
+            filter: ["kinds": [0], "authors": keys], from: relays)
+        async let notes = NostrService.shared.fetchEvents(
+            filter: ["kinds": [1], "authors": keys, "since": since, "limit": 500], from: listRelays)
+        async let interests = NostrService.shared.fetchEvents(
+            filter: ["kinds": [10015], "authors": keys], from: listRelays)
+        let (found, recent, interestLists) = await (profiles, notes, interests)
+        NostrService.shared.ingestProfiles(found.filter { keys.contains($0.pubkey) })
+        let tagged = (recent + interestLists).map { (author: $0.pubkey, tags: $0.tags) }
+        let topics = ReferralSuggestions.topics(notes: tagged, among: keys)
+        return Suggestions(picks: picks, topics: topics)
     }
 }

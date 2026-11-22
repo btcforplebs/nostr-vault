@@ -4,8 +4,9 @@ import SwiftUI
 
 /// Setup's referrer step, on the create-account and bring-your-own-key
 /// paths, skippable: scan their QR code or paste their link or npub, see
-/// their profile card, follow them, then pick from up to 10 of the people
-/// they follow (most-followed first, all ticked). Nothing is published here:
+/// their profile card, follow them, then "Lena's people": their follows,
+/// closest to them first (`ReferralSuggestions`, the top 7 ticked), with
+/// topic chips that filter the list. Nothing is published here:
 /// the wizard follows them once setup has stored the key
 /// (`SetupReferral.pendingFollows`). A profile link opened before setup
 /// (`SetupReferral.pendingReferrer`) starts the step on that person.
@@ -30,7 +31,9 @@ struct ReferrerStep: View {
     @State private var input = ""
     @State private var errorText: String?
     @State private var person: ReferralLookup.Person?
-    @State private var suggestions: [String] = []
+    @State private var suggestions: [ReferralSuggestions.Pick] = []
+    @State private var topics: [(topic: String, people: Set<String>)] = []
+    @State private var topic: String?
     @State private var picked: Set<String> = []
     @State private var loadingSuggestions = false
     @State private var showingScanner = false
@@ -85,7 +88,7 @@ struct ReferrerStep: View {
 
     private var header: some View {
         VStack(spacing: 8) {
-            Text("Who told you about Nostr Vault?")
+            Text(title)
                 .font(.appSystem(size: 24, weight: .bold))
                 .foregroundColor(WizardColors.textPrimary)
                 .multilineTextAlignment(.center)
@@ -97,9 +100,14 @@ struct ReferrerStep: View {
         }
     }
 
+    private var title: String {
+        if case .suggest(let pubkey) = phase { return "\(name(pubkey))'s people" }
+        return "Who told you about Nostr Vault?"
+    }
+
     private var subtitle: String {
         switch phase {
-        case .suggest(let pubkey): return "These are people \(name(pubkey)) follows. Untick anyone you'd rather not follow."
+        case .suggest(let pubkey): return "The people closest to \(name(pubkey)) come first. Tap to follow."
         default:
             #if os(iOS)
             return "Scan their profile code, or paste their link or npub, and follow them. People they follow are a good start."
@@ -217,10 +225,13 @@ struct ReferrerStep: View {
                     .foregroundColor(WizardColors.textSecondary)
                     .padding(.vertical, 16)
             } else {
+                if !topics.isEmpty {
+                    PeopleTopicChips(topics: topics.map(\.topic), selected: $topic)
+                }
                 VStack(spacing: 0) {
-                    ForEach(suggestions, id: \.self) { key in
-                        suggestionRow(key)
-                        if key != suggestions.last {
+                    ForEach(shown, id: \.pubkey) { pick in
+                        suggestionRow(pick, referrer: pubkey)
+                        if pick != shown.last {
                             Divider().overlay(WizardColors.borderSubtle).padding(.leading, 60)
                         }
                     }
@@ -231,7 +242,7 @@ struct ReferrerStep: View {
             }
 
             VStack(spacing: 12) {
-                WizardPrimaryButton(title: followTitle, action: { finish([pubkey] + suggestions.filter(picked.contains)) },
+                WizardPrimaryButton(title: followTitle, action: { finish([pubkey] + pickedKeys) },
                                     disabled: loadingSuggestions)
                 if !suggestions.isEmpty && !loadingSuggestions {
                     WizardSkipLink(title: "Only follow \(name(pubkey))") { finish([pubkey]) }
@@ -241,7 +252,22 @@ struct ReferrerStep: View {
         }
     }
 
-    private func suggestionRow(_ key: String) -> some View {
+    /// The people listed: the top ones, or everyone in the pool who used
+    /// the picked topic.
+    private var shown: [ReferralSuggestions.Pick] {
+        guard let topic, let people = topics.first(where: { $0.topic == topic })?.people else {
+            return Array(suggestions.prefix(ReferralSuggestions.limit))
+        }
+        return suggestions.filter { people.contains($0.pubkey) }
+    }
+
+    /// Ticked, in rank order, whether or not a topic hides them now.
+    private var pickedKeys: [String] {
+        suggestions.map(\.pubkey).filter(picked.contains)
+    }
+
+    private func suggestionRow(_ pick: ReferralSuggestions.Pick, referrer: String) -> some View {
+        let key = pick.pubkey
         let on = picked.contains(key)
         return Button {
             if on { picked.remove(key) } else { picked.insert(key) }
@@ -253,7 +279,9 @@ struct ReferrerStep: View {
                         .font(.appSystem(size: 15, weight: .semibold))
                         .foregroundColor(WizardColors.textPrimary)
                         .lineLimit(1)
-                    if let about = nostr.profiles[key]?.about, !about.isEmpty {
+                    if pick.close > 0 {
+                        closeLine(pick.close, referrer: referrer)
+                    } else if let about = nostr.profiles[key]?.about, !about.isEmpty {
                         Text(about)
                             .font(.appSystem(size: 13))
                             .foregroundColor(WizardColors.textSecondary)
@@ -275,8 +303,24 @@ struct ReferrerStep: View {
         .accessibilityHint(on ? "Ticked: you'll follow them" : "Not ticked")
     }
 
+    /// Dots (up to 5) and "N of Lena's close people".
+    private func closeLine(_ count: Int, referrer: String) -> some View {
+        HStack(spacing: 6) {
+            HStack(spacing: 3) {
+                ForEach(0..<min(count, 5), id: \.self) { _ in
+                    Circle().fill(WizardColors.accentPrimary).frame(width: 6, height: 6)
+                }
+            }
+            .accessibilityHidden(true)
+            Text("\(count) of \(name(referrer))'s close people")
+                .font(.appSystem(size: 13))
+                .foregroundColor(WizardColors.textSecondary)
+                .lineLimit(1)
+        }
+    }
+
     private var followTitle: String {
-        let count = 1 + suggestions.filter(picked.contains).count
+        let count = 1 + pickedKeys.count
         return count == 1 ? "Follow 1 person" : "Follow \(count) people"
     }
 
@@ -334,10 +378,12 @@ struct ReferrerStep: View {
                 exclude.insert(ownPubkey)
                 if excludeOwnFollows { exclude.formUnion(await ReferralLookup.person(ownPubkey).follows) }
             }
-            let picks = await ReferralLookup.suggestions(for: person, exclude: exclude)
+            let found = await ReferralLookup.suggestions(for: person, exclude: exclude)
             guard phase == .suggest(pubkey) else { return }
-            suggestions = picks
-            picked = Set(picks)
+            suggestions = found.picks
+            topics = found.topics
+            topic = nil
+            picked = Set(found.picks.prefix(ReferralSuggestions.preTicked).map(\.pubkey))
             loadingSuggestions = false
         }
     }

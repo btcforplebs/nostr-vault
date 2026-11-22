@@ -594,6 +594,7 @@
 		40E0AD8F7C51942A0382F52C /* LiveChatAttachMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 220CCFE2E1EB4539CE6C22C4 /* LiveChatAttachMenu.swift */; };
 		4103D3EF38F088EB79B4F109 /* TrustWebView+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7D56F5AAF9F6D61DDAF4893 /* TrustWebView+Search.swift */; };
 		4106C6045599C6DAD5BE65A4 /* PersonProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70F880615FDC71BDC17B8A74 /* PersonProfileView.swift */; };
+		413047517810F195DEFE4310 /* PeopleTopicChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6733C4BC4E3AA98AD65E4A6C /* PeopleTopicChips.swift */; };
 		4138860007014EACC05BE78D /* UserStatusPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C7A2A3CB521D10A7E697FAB /* UserStatusPublisher.swift */; };
 		4154AB9BB343944BBCCF0E57 /* MeshSiteRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC0483F9DFD12CDCE049B7B /* MeshSiteRetry.swift */; };
 		417A107EDCE8ED4BB06C8C3D /* DMCatchUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D49413971796142180D204C0 /* DMCatchUp.swift */; };
@@ -630,6 +631,7 @@
 		44E80A628D1FFA5E86841553 /* MediaCopyFileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC94C3AA61FEF07180139DD /* MediaCopyFileRow.swift */; };
 		44F1646379AB87C0FA885525 /* MirrorStatusSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B779245F219AC33231205A4 /* MirrorStatusSheet.swift */; };
 		45071FA73ADFB578758D68FD /* GenmojiSets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60A1E10F94FF5804C696BE7 /* GenmojiSets.swift */; };
+		4539D933A9BC84FC1A5E0C99 /* PeopleTopicChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6733C4BC4E3AA98AD65E4A6C /* PeopleTopicChips.swift */; };
 		4585BE1DF91DD69CE38F8E9E /* NuclearUnfollowPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86633B902F0A5821CF7C13F2 /* NuclearUnfollowPlan.swift */; };
 		4588E6C2BB47FACE97191F2E /* ProfileContent+Header.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74DC08C4C796F5023B17EB8 /* ProfileContent+Header.swift */; };
 		45A08FC28D8D4EE624C83E4A /* AccountWeb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 737C297DFD1BEAF9966EB868 /* AccountWeb.swift */; };
@@ -2926,6 +2928,7 @@
 		66A0902B97D14CA8823200AE /* NostrService+Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+Search.swift"; sourceTree = "<group>"; };
 		66C02A451295D2B6C9573E95 /* DraftSyncPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftSyncPlan.swift; sourceTree = "<group>"; };
 		671F0CF1A73CA1BA693AE904 /* GlobalSearchSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSearchSession.swift; sourceTree = "<group>"; };
+		6733C4BC4E3AA98AD65E4A6C /* PeopleTopicChips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeopleTopicChips.swift; sourceTree = "<group>"; };
 		674B477FC2EDC213BEA34279 /* RelayConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayConfiguration.swift; sourceTree = "<group>"; };
 		678F22C7D5983DCD0CEDBCDC /* FollowingBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowingBackupView.swift; sourceTree = "<group>"; };
 		682F17D5D376226F91123615 /* YourDevicesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YourDevicesSettingsView.swift; sourceTree = "<group>"; };
@@ -4548,6 +4551,7 @@
 				E24A0DC4906F9AE38D430125 /* NewKeyPair.swift */,
 				2FC6197FC5445D1791E20673 /* NewToVaultStep.swift */,
 				7D6D901711AB80C224DA70D6 /* NostrIntroStep.swift */,
+				6733C4BC4E3AA98AD65E4A6C /* PeopleTopicChips.swift */,
 				76BAFE194F5C54218E6F3555 /* PushNotificationStep.swift */,
 				77B0047748F38EBE8344E522 /* ReferrerStep.swift */,
 				1D633CB1F0E50D722BF08E61 /* RelayCheckStep.swift */,
@@ -6585,6 +6589,7 @@
 				473C6EBEEEFADFB87D97CB51 /* PendingActionFlush.swift in Sources */,
 				5B4B810EDFE852DC0C45DAB6 /* PendingPostEdit.swift in Sources */,
 				FCCCFD519D53A12A81C43930 /* PendingPostManager.swift in Sources */,
+				413047517810F195DEFE4310 /* PeopleTopicChips.swift in Sources */,
 				E9D274D706419EC3343C6F38 /* PersonProfileView.swift in Sources */,
 				7C227BD34B8AB5B7878BE831 /* PiPManager.swift in Sources */,
 				8D5284BD7B49353800E6A9B5 /* PiPRules.swift in Sources */,
@@ -7777,6 +7782,7 @@
 				4CF4478492AEA2D3085CD501 /* PendingActionFlush.swift in Sources */,
 				0FA85F744A23C0A864D63585 /* PendingPostEdit.swift in Sources */,
 				27BBFB192439FAD50AEB34EC /* PendingPostManager.swift in Sources */,
+				4539D933A9BC84FC1A5E0C99 /* PeopleTopicChips.swift in Sources */,
 				4106C6045599C6DAD5BE65A4 /* PersonProfileView.swift in Sources */,
 				3B4E633BA61CFF38AAD71471 /* PiPManager.swift in Sources */,
 				6D0E6DD6F2EAF23297E5849E /* PiPRules.swift in Sources */,
