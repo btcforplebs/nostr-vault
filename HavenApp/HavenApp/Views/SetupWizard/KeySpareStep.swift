@@ -88,6 +88,7 @@ struct KeySpareStep: View {
                 .textSelection(.disabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .privacySensitive()
+                .keySnapshotCover()
                 .accessibilityLabel(shown ? "Secret key shown" : "Secret key hidden")
             Button(shown ? "Hide" : "Show") {
                 withAnimation(WizardAnimations.springGentle) { shown.toggle() }

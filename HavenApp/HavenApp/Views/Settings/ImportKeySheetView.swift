@@ -100,6 +100,7 @@ struct ImportKeySheetView: View {
             Form {
                 Section("Private Key") {
                     TextEditor(text: $importNsec).font(.system(.body, design: .monospaced)).frame(minHeight: 80)
+                        .keySnapshotCover()
                 }
                 Section("Encrypt with Password") {
                     // Hidden username field anchors AutoFill to the npub

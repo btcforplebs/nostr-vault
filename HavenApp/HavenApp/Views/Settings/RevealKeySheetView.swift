@@ -154,6 +154,7 @@ struct RevealKeySheetView: View {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                 )
+                .keySnapshotCover()
 
             Button {
                 copyNsec(nsec)

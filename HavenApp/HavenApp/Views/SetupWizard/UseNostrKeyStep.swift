@@ -108,6 +108,8 @@ struct UseNostrKeyStep: View {
                 // The keyboard covers Continue on a phone; Return does the same.
                 .submitLabel(.continue)
                 .onSubmit { if canContinue && !isWorking { handleContinue() } }
+                // A pasted nsec must not show in the app switcher.
+                .keySnapshotCover()
             #if os(iOS)
             Button { showingScanner = true } label: {
                 Image(systemName: "qrcode.viewfinder")
