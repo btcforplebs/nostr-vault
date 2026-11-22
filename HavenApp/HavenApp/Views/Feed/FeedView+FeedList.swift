@@ -153,6 +153,9 @@ extension FeedView {
                             .frame(height: 1)
                             .id("top")
 
+                        // A new account's inviter, first (InviterWelcome).
+                        InviterWelcomeSlot()
+
                         if EveryoneBanner.shows(everyone: configService.config.globalShowsEveryone, globalLike: feedService.isGlobalLikeMode) {
                             EveryoneBannerView { setGlobalShowsEveryone(false) }
                                 .padding(.horizontal, 16)
