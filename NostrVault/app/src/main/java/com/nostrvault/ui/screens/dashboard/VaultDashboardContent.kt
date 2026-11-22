@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.SettingsInputAntenna
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -375,6 +376,11 @@ internal fun VaultDashboardContent(
                     enabled = !exportBusy && actionsEnabled,
                     onClick = { vaultViewModel.exportJsonl(context) },
                 )
+            }
+            DashDivider()
+            // The backup zip left setup (Logen 2026-11-05): restored from here, as web's Keep it full does.
+            SettingLink(Icons.Filled.Restore, "Restore from a backup", null) {
+                onOpenScreen(Screen.BackupSettings)
             }
             if (!actionsEnabled || exportStatus.isNotEmpty()) {
                 DashDivider()
