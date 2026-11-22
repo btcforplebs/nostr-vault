@@ -129,9 +129,11 @@ func TestChatRelayServesOnlyYourOwnMessages(t *testing.T) {
 }
 
 func TestMustReadOnlyOwnChat(t *testing.T) {
-	own, other, reader := hexid('a'), hexid('b'), hexid('c')
+	own, other, added, reader := hexid('a'), hexid('b'), hexid('d'), hexid('c')
 	setupSyncConfig(own)
-	config.WhitelistedPubKeys[other] = struct{}{} // a second account, e.g. watch-only
+	config.WhitelistedPubKeys[other] = struct{}{} // a second account with its key here
+	config.WhitelistedPubKeys[added] = struct{}{} // a watch-only added npub: no key here
+	config.PrivateReaderPubKeys = map[string]struct{}{own: {}, other: {}}
 	p := func(pks ...string) nostr.Filter { return nostr.Filter{Tags: nostr.TagMap{"p": pks}} }
 	for name, c := range map[string]struct {
 		as     string
@@ -140,6 +142,9 @@ func TestMustReadOnlyOwnChat(t *testing.T) {
 	}{
 		"own account, anything":          {own, nostr.Filter{}, false},
 		"own account, another account's": {other, p(own), false},
+		"added npub, an account's wraps": {added, p(own), true},
+		"added npub, anything":           {added, nostr.Filter{}, true},
+		"added npub, its own wraps":      {added, p(added), false},
 		"reader, own wraps":              {reader, p(reader), false},
 		"reader, own events":             {reader, nostr.Filter{Authors: []string{reader}}, false},
 		"reader, nothing named":          {reader, nostr.Filter{}, true},
