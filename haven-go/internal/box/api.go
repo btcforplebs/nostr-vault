@@ -67,7 +67,18 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only the box's first account may do this"})
 		return
 	}
-	if !a.Auth.FirstUse(proof.ID) {
+	first, busy := true, false
+	if c.member() {
+		first = a.Auth.FirstUse(proof.ID)
+	} else {
+		first, busy = a.Auth.StrangerFirstUse(proof.ID)
+	}
+	if busy {
+		w.Header().Set("Retry-After", "60")
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many requests from keys this box does not hold; try again in a minute"})
+		return
+	}
+	if !first {
 		w.Header().Set("WWW-Authenticate", `Nostr`)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authorization was already used"})
 		return

@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
@@ -50,12 +49,20 @@ type OwnerAuth struct {
 	OwnerHex string
 	Now      func() time.Time
 
-	mu   sync.Mutex
-	seen map[string]time.Time
+	// Members' (owner and signed-in accounts') proofs and strangers' proofs
+	// (the Anyone routes) are kept apart: a stranger minting throwaway keys
+	// fills only the capped strangers cache, and once it is full only
+	// strangers are refused (Tron #2375).
+	members   *replayCache
+	strangers *replayCache
 }
 
+// strangerReplayLimit caps the ids remembered from callers the box does not
+// hold. 4096 in two auth windows is far more than real joins ever need.
+const strangerReplayLimit = 4096
+
 func NewOwnerAuth(ownerHex string) *OwnerAuth {
-	return &OwnerAuth{OwnerHex: ownerHex, Now: time.Now, seen: map[string]time.Time{}}
+	return &OwnerAuth{OwnerHex: ownerHex, Now: time.Now, members: newReplayCache(0), strangers: newReplayCache(strangerReplayLimit)}
 }
 
 // Proof is a request's checked NIP-98 proof: who signed it, its event id
@@ -146,27 +153,36 @@ func (a *OwnerAuth) Verify(r *http.Request) (Proof, error) {
 	return Proof{Pubkey: strings.ToLower(ev.PubKey), ID: ev.ID, Body: body}, nil
 }
 
-// FirstUse records a verified proof's id; false if it was used already.
+// FirstUse records a verified member's proof id; false if it was used
+// already. The cache is memory only: a header captured in the last
+// authWindow works once more after havend restarts. Accepted: a restart takes
+// longer than most of the window, and the replay is limited to the same
+// method, URL and body.
 func (a *OwnerAuth) FirstUse(id string) bool { return a.firstUse(id, a.Now()) }
 
-// firstUse records id; false if it was seen within the window. The cache is
-// memory only: a header captured in the last authWindow works once more
-// after havend restarts. Accepted: a restart takes longer than most of the
-// window, and the replay is limited to the same method, URL and body. Entries older
-// than twice the window are dropped: an event that old fails the time check.
+// An id first used while its signer was a stranger (a join, after which
+// they are a member) stays used.
 func (a *OwnerAuth) firstUse(id string, now time.Time) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	for k, t := range a.seen {
-		if now.Sub(t) > 2*authWindow {
-			delete(a.seen, k)
-		}
-	}
-	if _, dup := a.seen[id]; dup {
+	if a.strangers.has(id) {
 		return false
 	}
-	a.seen[id] = now
-	return true
+	return a.members.use(id, now) == replayFirst
+}
+
+// StrangerFirstUse is FirstUse for a caller the box does not hold, on an
+// Anyone route. busy: the strangers cache is full; refuse with 429.
+// An id first used while its signer was a member (since removed) stays used.
+func (a *OwnerAuth) StrangerFirstUse(id string) (first, busy bool) {
+	if a.members.has(id) {
+		return false, false
+	}
+	switch a.strangers.use(id, a.Now()) {
+	case replayFirst:
+		return true, false
+	case replayFull:
+		return false, true
+	}
+	return false, false
 }
 
 func tagValue(tags nostr.Tags, name string) string {

@@ -123,10 +123,47 @@ func TestBoxAccountsEndToEnd(t *testing.T) {
 		}
 	}
 
+	// readPrivate: how many notes k gets back from a REQ at /private after
+	// AUTH. A refused REQ (CLOSED, or no answer) counts as none.
+	readPrivate := func(k key) int {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		r, err := nostr.RelayConnect(ctx, "ws://127.0.0.1:"+strconv.Itoa(port)+"/private")
+		if err != nil {
+			return 0
+		}
+		defer r.Close()
+		time.Sleep(500 * time.Millisecond)
+		if err := r.Auth(ctx, func(e *nostr.Event) error { return e.Sign(k.sk) }); err != nil {
+			return 0
+		}
+		evs, err := r.QuerySync(ctx, nostr.Filter{Kinds: []int{1}, Limit: 50})
+		if err != nil {
+			return 0
+		}
+		return len(evs)
+	}
+
 	mustPost("first account", owner)
 	mustPost("signed-in added account", signed)
 	mustRefuse("watch-only added account", watch)
 	mustRefuse("stranger", stranger)
+
+	// Reads (Tron #2375): the readers see the private notes; a watch-only
+	// account and a stranger get none. The owner's count is the control that
+	// this REQ can return notes at all.
+	if n := readPrivate(owner); n < 2 {
+		t.Fatalf("first account read %d private notes, want 2+", n)
+	}
+	if n := readPrivate(signed); n < 2 {
+		t.Fatalf("signed-in account read %d private notes, want 2+", n)
+	}
+	if n := readPrivate(watch); n != 0 {
+		t.Fatalf("watch-only added account read %d private notes, want 0", n)
+	}
+	if n := readPrivate(stranger); n != 0 {
+		t.Fatalf("stranger read %d private notes, want 0", n)
+	}
 
 	// Both lists are on disk, the readers list named and short.
 	var readers []string
