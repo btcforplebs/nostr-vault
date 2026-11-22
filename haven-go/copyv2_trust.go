@@ -42,13 +42,21 @@ func (s *copyServer) serveSyncTrust(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	f, err := trustrank.ReadResult(trustRankDir(), account)
+	// "Nothing newer" is answered from the start of the file: most catch-ups
+	// find the device up to date, and reading every row for that cost about
+	// 75 MB a request on a 78,855-row map (Tron, #2409).
+	built, err := trustrank.ResultBuiltAt(trustRankDir(), account)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	if since, _ := strconv.ParseInt(q.Get("since"), 10, 64); since >= f.BuiltAt {
+	if since, _ := strconv.ParseInt(q.Get("since"), 10, 64); since >= built {
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	f, err := trustrank.ReadResult(trustRankDir(), account)
+	if err != nil {
+		http.NotFound(w, r)
 		return
 	}
 	// A copy this Haven itself got from another one is already trimmed.
@@ -76,6 +84,7 @@ func (c *copyClient) syncTrust(ctx context.Context) int {
 		return 0
 	}
 	dir, got := copyTrustKeepDir(), 0
+	pruneTrustRank(dir)
 	for _, account := range trustRankAccounts() {
 		since := int64(0)
 		if mine, err := trustrank.ReadResult(dir, account); err == nil {
@@ -105,4 +114,33 @@ func (c *copyClient) syncTrust(ctx context.Context) int {
 		slog.Info("trust rank copy kept", "account", account[:8], "people", len(f.People), "bytes", len(raw))
 	}
 	return got
+}
+
+// trustRankAccountsSure: the accounts ranked or kept here, and whether that
+// list comes from the app's account file. Without the file the list falls
+// back to the owner alone (fail closed), which says nothing about the other
+// accounts, so nothing is pruned on it.
+func trustRankAccountsSure() ([]string, bool) {
+	raw, err := os.ReadFile(copyAccountsFile)
+	if err != nil {
+		return nil, false
+	}
+	if _, why := copyAccountsRefusal(raw); why != "" {
+		return nil, false
+	}
+	return trustRankAccounts(), true
+}
+
+// pruneTrustRank removes the result (and, on a Haven, the crawl checkpoint)
+// of every account that has signed out of this device (Tron, #2409): on a
+// phone its copy from the Haven, on a Mac or box its own result. The shared
+// list store stays.
+func pruneTrustRank(dir string) {
+	keep, sure := trustRankAccountsSure()
+	if !sure {
+		return
+	}
+	for _, a := range trustrank.PruneAccounts(dir, keep) {
+		slog.Info("trust rank: signed-out account's result removed", "account", a[:8])
+	}
 }
