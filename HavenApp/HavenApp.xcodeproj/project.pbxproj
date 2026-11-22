@@ -826,6 +826,7 @@
 		5893CC6FC11E90B44611FC3D /* NostrService+ProfileRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4E3B844DF3DFEDC00802292 /* NostrService+ProfileRefresh.swift */; };
 		589D29DD2C678AC0B5A63616 /* ImportTourStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA03816123BAFD2424954F9 /* ImportTourStep.swift */; };
 		58D6FB018CF1CB34DF28DA90 /* ZapPending.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06657D09FD1DD91D9D5087A6 /* ZapPending.swift */; };
+		590715EB1D21B171CEA7210D /* NewKeyPair.swift in Sources */ = {isa = PBXBuildFile; fileRef = E24A0DC4906F9AE38D430125 /* NewKeyPair.swift */; };
 		5959493ACAC5D0FC9D4EFE76 /* FeedView+EmptyStates.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C196064FDD02127CFA047C /* FeedView+EmptyStates.swift */; };
 		59965C511D2D8F2DCDA83D3C /* BitcoinSweepDisclaimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A56934F313BFA876DC49BA /* BitcoinSweepDisclaimerView.swift */; };
 		5A18F0E563ACEBF4039D462E /* NVShareIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69FCE89FDCC4D758B3B2AE81 /* NVShareIntent.swift */; };
@@ -1054,6 +1055,7 @@
 		73C69EA442770FAC406C9494 /* GatedArticle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A66B764FCF1CB44F6DBFBEB /* GatedArticle.swift */; };
 		73C910AED6338C7F8D3EF378 /* ModePostPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1613215C4C17A2C82C64F4 /* ModePostPublisher.swift */; };
 		73DA5629CDA66CE308B85186 /* ArticleClipReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BCCF93729CB6A3A2DD9C2B3 /* ArticleClipReviewView.swift */; };
+		73DCA65532864D955C6460B7 /* NewKeyPair.swift in Sources */ = {isa = PBXBuildFile; fileRef = E24A0DC4906F9AE38D430125 /* NewKeyPair.swift */; };
 		73DF2F6C863A8187F012AEDF /* FeedView+Toolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3530A78B65463AB53A515D98 /* FeedView+Toolbar.swift */; };
 		73EAFB57B852A6E9E57ECFD1 /* SearchView+Results.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0256D9CC9FF9955E7D6AE9 /* SearchView+Results.swift */; };
 		7403636C0857528211AF52E0 /* SigningKeyCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95A127DD2A70200F458E9D25 /* SigningKeyCache.swift */; };
@@ -1359,7 +1361,6 @@
 		92BA603CA1FF1A6F13674A52 /* BitcoinSweepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */; };
 		92BAAC238F493C5533857956 /* BlobCopyRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9053BAEF74D259A303D5CD57 /* BlobCopyRun.swift */; };
 		92DB818E57A0FE64416DB611 /* EmojiNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1471A91DECBB5D725A1715F2 /* EmojiNote.swift */; };
-		92E001C76E4D8DD3132624D2 /* StarterRelayListStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28CDA4D972E3E7E90396580D /* StarterRelayListStep.swift */; };
 		92EAC0D39F5301AE83A1115A /* HashtagLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B14385A5620C648E978F548 /* HashtagLink.swift */; };
 		92EBD4156406F61914CAE362 /* PostEngagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DB298CA7BDB0FE78BDEA42D /* PostEngagement.swift */; };
 		92F867A8549DC38245196D99 /* AppAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 518E7523B8F652B19F1A342A /* AppAppearance.swift */; };
@@ -1524,7 +1525,6 @@
 		A49FC40BE10691F314548972 /* FipsURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C48773D215B6C7086533AEF /* FipsURL.swift */; };
 		A4A4A36358D5DF5225F268F6 /* DMChatAccountGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC4C205308FD0F164CF43E7 /* DMChatAccountGuard.swift */; };
 		A4A5458BD59261AAFB1B9B23 /* HomeVaultFileNoteLane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3ED66FFABA906619D374265 /* HomeVaultFileNoteLane.swift */; };
-		A4B9D7D9C2964C6BC57A9CB5 /* SetupRelayChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */; };
 		A4BAA99F88D98EE2DD56E3E3 /* LiveStreamFullScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D84FADCC2EC4A2CB21D6008 /* LiveStreamFullScreen.swift */; };
 		A4CC418BB19F41A7C051EF00 /* EngagementTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EFA5F14E595113B47E8FC2 /* EngagementTracker.swift */; };
 		A508E036FAB3F12B766FA245 /* PairShowQRView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD384C3591A5893EF389394 /* PairShowQRView.swift */; };
@@ -1620,7 +1620,6 @@
 		ADFC4468999746C7C2BD5032 /* MacGlassVaultPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C7292366CB76407559AEB4 /* MacGlassVaultPanel.swift */; };
 		AE14C4EAA114B02298A68A83 /* SearchRecommendationsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F9425ED11E6941459090BF /* SearchRecommendationsSection.swift */; };
 		AE37789FA8A675627D6EB342 /* NostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65D86DC20FC17947852F5719 /* NostrService.swift */; };
-		AE39A635C13AE65B2484FD98 /* StarterRelayListStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28CDA4D972E3E7E90396580D /* StarterRelayListStep.swift */; };
 		AE46397810B882815701A231 /* PairLinkedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35C3EABFD4B9128CDFEF1E95 /* PairLinkedView.swift */; };
 		AE7EE7795067BC53A690AAAB /* UnlikePill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49B848AAC08254AED757D954 /* UnlikePill.swift */; };
 		AE94E403F97DD618D99B561C /* FactoryResetGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D1E52DF70BE0757C1CDD664 /* FactoryResetGate.swift */; };
@@ -2020,7 +2019,6 @@
 		D9E6776AF72FF1585C93E257 /* VaultReturnRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F9219034E71FF230B258B6C /* VaultReturnRules.swift */; };
 		D9E8EC6D2923CC7E627C8F2B /* FeedActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A85E435417789F6ABE84846C /* FeedActions.swift */; };
 		D9EE6842BF37449F3BF3AA0E /* NostrService+ServerListAdoption.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20CD71E4D4331E21582E6E2 /* NostrService+ServerListAdoption.swift */; };
-		DA0527CA8795AC3C49DAC7CF /* SetupRelayChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */; };
 		DA168364485DBA9AC9FD8385 /* ListingDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB07D1CAEE1E5FBF436D7371 /* ListingDraft.swift */; };
 		DA405ED1B5A70690B85F8E01 /* NostrWebLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1A64222EFDE647C6491CFB /* NostrWebLink.swift */; };
 		DA455878A98B3172DC89DA14 /* TrustGlobeCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE61C621EC79CB4E00F63F9 /* TrustGlobeCanvas.swift */; };
@@ -2636,7 +2634,6 @@
 		27BB588F35E19129A12047AE /* BottomTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomTabBar.swift; sourceTree = "<group>"; };
 		2801D4ACC69F3FF4C1D2C620 /* StillToBringInSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StillToBringInSection.swift; sourceTree = "<group>"; };
 		288BA92372A8506F03AF9217 /* DMService+ExternalFetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+ExternalFetch.swift"; sourceTree = "<group>"; };
-		28CDA4D972E3E7E90396580D /* StarterRelayListStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarterRelayListStep.swift; sourceTree = "<group>"; };
 		28E8ADDC3D1ACC497D08EF92 /* PlatformClipboard+Secret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlatformClipboard+Secret.swift"; sourceTree = "<group>"; };
 		2967E3C73285483C276E373D /* MeshDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshDiagnostics.swift; sourceTree = "<group>"; };
 		29767A3AEABFBE965362EE96 /* ShareActionList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareActionList.swift; sourceTree = "<group>"; };
@@ -3533,7 +3530,6 @@
 		DFA1340FD03E8DB6CA418503 /* NIP10Thread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP10Thread.swift; sourceTree = "<group>"; };
 		E0039FDA639F750CD6823F0C /* ReturnSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReturnSummary.swift; sourceTree = "<group>"; };
 		E02263EA7B83AAC9AB47B12A /* PullDownToCloseRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PullDownToCloseRule.swift; sourceTree = "<group>"; };
-		E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupRelayChoice.swift; sourceTree = "<group>"; };
 		E13000616CA698B02FE82B9A /* QuotedNoteSkeleton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotedNoteSkeleton.swift; sourceTree = "<group>"; };
 		E190901293187475A54BE0E3 /* DMService+SendStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+SendStatus.swift"; sourceTree = "<group>"; };
 		E1A58EA5A96FF1042528234F /* VaultFollowers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultFollowers.swift; sourceTree = "<group>"; };
@@ -3545,6 +3541,7 @@
 		E224D9ABE474A15D697A39D0 /* AccountSingleFlight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSingleFlight.swift; sourceTree = "<group>"; };
 		E22DCF8AB8337406564BAC9E /* NVRelayAsk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVRelayAsk.swift; sourceTree = "<group>"; };
 		E23194264AA64ADEF638EDF8 /* ZoomSwipeWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomSwipeWatch.swift; sourceTree = "<group>"; };
+		E24A0DC4906F9AE38D430125 /* NewKeyPair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewKeyPair.swift; sourceTree = "<group>"; };
 		E29E19875274ECE1D3381131 /* HighlightReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightReviewView.swift; sourceTree = "<group>"; };
 		E2C295EC834C1EFDC6B042DC /* AccountUnreadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountUnreadStore.swift; sourceTree = "<group>"; };
 		E30504C7086C0BB20CEE367D /* NostrService+Moderation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+Moderation.swift"; sourceTree = "<group>"; };
@@ -4540,6 +4537,7 @@
 				7CA03816123BAFD2424954F9 /* ImportTourStep.swift */,
 				B49340F07334186EE08FB327 /* KeyPasswordStep.swift */,
 				30F99815B3480ACD67F45648 /* MirrorMediaStep.swift */,
+				E24A0DC4906F9AE38D430125 /* NewKeyPair.swift */,
 				42D6D26983405B254844C21F /* NewProfileStep.swift */,
 				2FC6197FC5445D1791E20673 /* NewToVaultStep.swift */,
 				7D6D901711AB80C224DA70D6 /* NostrIntroStep.swift */,
@@ -4549,7 +4547,6 @@
 				AA754FD69CE3C70A03501C91 /* RelayConfigStep.swift */,
 				442E3717FC3F71EB86FDEB6B /* SetupStoredOwnerKey.swift */,
 				EC2FFB887BB8F9193F493F61 /* SetupWizardView.swift */,
-				28CDA4D972E3E7E90396580D /* StarterRelayListStep.swift */,
 				E662ABBCA6DC83B396C0F5CE /* UseNostrKeyStep.swift */,
 				53A8823C6BC0316D01846166 /* WalletSetupStep.swift */,
 				5B5F614D06F85D01C096F9F2 /* WelcomeStepView.swift */,
@@ -4935,7 +4932,6 @@
 				7507E56424A5CF8EA46857DA /* SettingsHelp.swift */,
 				648E05F35CCEDA3203E337DF /* SetupOwnerKey.swift */,
 				0CB3928B13EED1E152C1D081 /* SetupReferral.swift */,
-				E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */,
 				55812FB11A77C917BDE1A406 /* ShellLayout.swift */,
 				F1D86B4CAED70F8DF0C9EE68 /* ShellLayout+Space.swift */,
 				B66050958913C4DFE7CAABBA /* SignerWaitGate.swift */,
@@ -6487,6 +6483,7 @@
 				D17798B2BB014CC904A3D33F /* NWCService.swift in Sources */,
 				EAC4A84A849CA8EEF43F89E5 /* NativeVideoPlayer.swift in Sources */,
 				CE12AE67E50B1FDB1B643D65 /* NetworkSyncService.swift in Sources */,
+				590715EB1D21B171CEA7210D /* NewKeyPair.swift in Sources */,
 				3A09511D6FBF57B51898CE91 /* NewPostsFold.swift in Sources */,
 				CE1050B9CAEC605B30A93EF6 /* NewProfileStep.swift in Sources */,
 				FB1F53BA1D7E5F80F063230C /* NewToVaultQuestion.swift in Sources */,
@@ -6746,7 +6743,6 @@
 				E7453F3324FA74A7FEB56F45 /* SettingsView.swift in Sources */,
 				44DE283DB5141C6E5477A90E /* SetupOwnerKey.swift in Sources */,
 				0DDBA0634E1D7658E773326D /* SetupReferral.swift in Sources */,
-				DA0527CA8795AC3C49DAC7CF /* SetupRelayChoice.swift in Sources */,
 				37DA9D9A22EFC9A037902B79 /* SetupStoredOwnerKey.swift in Sources */,
 				973C4F0062DF084625E96527 /* SetupWizardView.swift in Sources */,
 				DFA500676066690C57933ABC /* ShareAccountSection.swift in Sources */,
@@ -6780,7 +6776,6 @@
 				50ADAE37B7796A07D93D0145 /* SpaceLayoutStore.swift in Sources */,
 				C37FC32D56AA53499C57CFD3 /* SpacePanelCard.swift in Sources */,
 				1597A09CA45445BBDE879AFC /* StarterPack.swift in Sources */,
-				AE39A635C13AE65B2484FD98 /* StarterRelayListStep.swift in Sources */,
 				1CD9EA6DE7FC6EEA28DFAE37 /* StartupMarks.swift in Sources */,
 				6E79FC2D8586974CAE8F0EA7 /* StartupSettingsView.swift in Sources */,
 				ED6FCAF4DF7249BB3EB94A07 /* StatsService.swift in Sources */,
@@ -7680,6 +7675,7 @@
 				6B7C1697E43C11DAD27D850A /* NWCService.swift in Sources */,
 				16307146D5F4F4B654EA73D1 /* NativeVideoPlayer.swift in Sources */,
 				D70D5D2A4C419AE701099A57 /* NetworkSyncService.swift in Sources */,
+				73DCA65532864D955C6460B7 /* NewKeyPair.swift in Sources */,
 				12144F9EE4AE61920792462D /* NewPostsFold.swift in Sources */,
 				2A2F6CC44894D37523DF2C4D /* NewProfileStep.swift in Sources */,
 				FCBF68208A74829E90036409 /* NewToVaultQuestion.swift in Sources */,
@@ -7930,7 +7926,6 @@
 				5847D6E37160D84ADF6839D3 /* SettingsView.swift in Sources */,
 				2C21B39B27C4FFE3C8755944 /* SetupOwnerKey.swift in Sources */,
 				0557B421D566C5250C0E8FF8 /* SetupReferral.swift in Sources */,
-				A4B9D7D9C2964C6BC57A9CB5 /* SetupRelayChoice.swift in Sources */,
 				41C5B078A487AD432F41BAC0 /* SetupStoredOwnerKey.swift in Sources */,
 				E92A45E9141FE09A2704B7AA /* SetupWizardView.swift in Sources */,
 				784867DD88E116B06281DDD1 /* ShareAccountSection.swift in Sources */,
@@ -7962,7 +7957,6 @@
 				ADBEAAA01D4A29E1D42295A0 /* SpaceLayout.swift in Sources */,
 				84DDBDF96D482935C25B0CFD /* SpaceLayoutStore.swift in Sources */,
 				34760E06C9CE16B9730639F4 /* StarterPack.swift in Sources */,
-				92E001C76E4D8DD3132624D2 /* StarterRelayListStep.swift in Sources */,
 				273C85AD25918EDB4330F064 /* StartupMarks.swift in Sources */,
 				A23830E08BFDAE516043A625 /* StartupSettingsView.swift in Sources */,
 				F869E49FB6A5FA8DDFC1A20C /* StatsService.swift in Sources */,
