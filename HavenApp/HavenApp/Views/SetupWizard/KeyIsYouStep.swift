@@ -4,8 +4,8 @@ import SwiftUI
 
 /// The first key step (setup screens r3, Way 1a): your photo and name, "=",
 /// and the key. The key was made when Create an account was picked
-/// (NewKeyPair); the secret stays hidden until Show. Keeping a spare is the
-/// next step (KeyBackupStep), the password the one after (KeyPasswordStep).
+/// (NewKeyPair); the secret stays hidden until Show, and Copy puts it on the
+/// clipboard for 60 s. Backing it up is the next step (KeyBackupStep), the password the one after (KeyPasswordStep).
 struct KeyIsYouStep: View {
     @Binding var npub: String
     @Binding var nsec: String
@@ -14,6 +14,7 @@ struct KeyIsYouStep: View {
     let onNext: () -> Void
 
     @State private var shown = false
+    @State private var copied = false
     @State private var error: String?
     @State private var appeared = false
 
@@ -114,6 +115,7 @@ struct KeyIsYouStep: View {
                     .foregroundColor(WizardColors.accentPrimary)
                     .frame(minHeight: 44)
                     .accessibilityLabel(shown ? "Hide secret key" : "Show secret key")
+                    KeyCopyButton(nsec: nsec, copied: $copied)
                 }
                 Text(shown ? nsec : String(repeating: "•", count: 24))
                     .font(.appSystem(size: 13, design: .monospaced))

@@ -35,7 +35,7 @@ struct KeyPasswordStep: View {
                     .foregroundColor(WizardColors.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                 if !isTyping {
-                    Text("A password locks your key in the vault on this device. It never leaves it, and we can't reset it.")
+                    Text(lockLine)
                         .font(.appSystem(size: 15))
                         .foregroundColor(WizardColors.textSecondary)
                         .multilineTextAlignment(.center)
@@ -92,14 +92,14 @@ struct KeyPasswordStep: View {
 
             // Above the warning so it stays above the keyboard while typing;
             // the warning was already read before a field took focus.
-            WizardPrimaryButton(title: "Lock", action: validateAndContinue, disabled: !isPasswordValid)
+            WizardPrimaryButton(title: "Open", action: validateAndContinue, disabled: !isPasswordValid)
 
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.shield")
                     .font(.appSystem(size: 16))
                     .foregroundColor(WizardColors.accentPrimary)
                     .accessibilityHidden(true)
-                Text("Write this password down and keep it with your spare.")
+                Text("Write this password down and keep it with your key backup.")
                     .font(.appSystem(size: 13))
                     .foregroundColor(WizardColors.textSecondary)
                     .lineSpacing(2)
@@ -118,6 +118,18 @@ struct KeyPasswordStep: View {
             Spacer()
         }
         .animation(WizardAnimations.springGentle, value: isTyping)
+    }
+
+    /// iPhone and iPad keep the key's password in the keychain, this device
+    /// only, whose keys the Secure Enclave guards (Logen 2026-11-22 asked for
+    /// the Secure Element line). The Mac keeps it in the login keychain, which
+    /// the Secure Enclave does not guard, so it doesn't name it.
+    private var lockLine: String {
+        #if os(iOS)
+        return "Your key is locked on this device behind this password, guarded by its secure hardware (Secure Enclave). It never leaves this device, and we can't reset the password."
+        #else
+        return "Your key is locked on this Mac behind this password. It never leaves this Mac, and we can't reset the password."
+        #endif
     }
 
     /// The VaultMark arch with the key sitting in its glowing keyhole.

@@ -121,7 +121,7 @@ struct SetupWizardView: View {
         // Setup screens r3 (Logen 2026-11-22): profile, people, key, lock,
         // then the feed. No Welcome to Nostr cards, relay list (Settings >
         // Relays) or done screen; the Mac keeps done for its menu-bar hint.
-        // Key steps: this key is you (9), keep a spare (18), lock it in (10).
+        // Key steps: this key is you (9), back up your key (18), lock it in (10).
         case .newToNostr: return isIOSDevice ? [11, 15, 9, 18, 10] : [11, 15, 9, 18, 10, 8]
         // People who already use Nostr: "New to Nostr Vault?" comes before the relay import.
         case .browse: return NewToVaultQuestion.steps(path: .browse, isIOS: isIOSDevice)
@@ -440,9 +440,9 @@ struct SetupWizardView: View {
             } else if currentStep == 9 {
                 currentStep = 15 // Your key: back to people
             } else if currentStep == 18 {
-                currentStep = 9 // Spare: back to your key
+                currentStep = 9 // Backup: back to your key
             } else if currentStep == 10 {
-                currentStep = 18 // Lock: back to the spare
+                currentStep = 18 // Lock: back to the backup
             } else if currentStep == 8 {
                 if setupPath == .newToNostr {
                     currentStep = 10 // New to Nostr (Mac): back to the lock

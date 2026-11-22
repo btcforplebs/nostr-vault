@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// The three key steps' header (setup screens r3): Your key · Spare · Lock.
+/// The three key steps' header (setup screens r3): Your key · Backup · Lock.
 /// Each part turns green once done; the current one is orange.
 struct KeyStepsStrip: View {
-    enum Part: Int, CaseIterable { case key, spare, lock }
+    enum Part: Int, CaseIterable { case key, backup, lock }
     let current: Part
 
     var body: some View {
@@ -39,7 +39,7 @@ struct KeyStepsStrip: View {
     private func label(_ part: Part) -> String {
         switch part {
         case .key: return "Your key"
-        case .spare: return "Spare"
+        case .backup: return "Backup"
         case .lock: return "Lock"
         }
     }
@@ -47,7 +47,7 @@ struct KeyStepsStrip: View {
     private func icon(_ part: Part) -> String {
         switch part {
         case .key: return "key.fill"
-        case .spare: return "doc.on.doc.fill"
+        case .backup: return "doc.on.doc.fill"
         case .lock: return "lock.fill"
         }
     }
