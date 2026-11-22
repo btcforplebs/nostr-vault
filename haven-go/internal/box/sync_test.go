@@ -198,3 +198,26 @@ func TestPrepareControlDir(t *testing.T) {
 		t.Fatal("a set NV_BOX_RUN_DIR fell back to the data dir")
 	}
 }
+
+func TestSyncNowThrottle(t *testing.T) {
+	s := &Syncer{NowEvery: time.Minute}
+	t0 := time.Unix(1000, 0)
+	if w := s.allowNow("npub1mac", t0); w != 0 {
+		t.Fatalf("first ask waited %v", w)
+	}
+	if w := s.allowNow("npub1mac", t0.Add(10*time.Second)); w != 50*time.Second {
+		t.Fatalf("second ask within a minute: wait %v, want 50s", w)
+	}
+	if w := s.allowNow("npub1phone", t0.Add(10*time.Second)); w != 0 {
+		t.Fatalf("another device waited %v", w)
+	}
+	if w := s.allowNow("", t0.Add(20*time.Second)); w != 0 {
+		t.Fatalf("all waited %v", w)
+	}
+	if w := s.allowNow("npub1laptop", t0.Add(30*time.Second)); w != 50*time.Second {
+		t.Fatalf("a device right after all: wait %v, want 50s", w)
+	}
+	if w := s.allowNow("npub1mac", t0.Add(81*time.Second)); w != 0 {
+		t.Fatalf("after the window: wait %v", w)
+	}
+}

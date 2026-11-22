@@ -4,14 +4,17 @@
 import { useEffect, useMemo, useState } from "preact/hooks"
 import { BOX } from "./mode.js"
 import { boxApi } from "./api.js"
+import { syncApi } from "./api-sync.js"
 
 export const BOX_PARTS = ["status", "storage", "devices", "contents", "connections", "logs"]
 const POLL_MS = 30_000
 
 /** `on`: box mode (tests pass true); `api`: a boxApi (tests and the harness pass one over a mock).
- *  -> null off the box, else { api, data: { part: { value } | { error } }, load(part), look() } */
-export function useBoxDashboard(ctx, { on = BOX, api: given } = {}) {
+ *  `sync`: a syncApi; a mock box (given api) with none has no sync rows.
+ *  -> null off the box, else { api, sync, data: { part: { value } | { error } }, load(part), look() } */
+export function useBoxDashboard(ctx, { on = BOX, api: given, sync: givenSync } = {}) {
   const api = useMemo(() => (on ? given ?? boxApi({ signer: ctx.signer }) : null), [on, given, ctx.signer])
+  const sync = useMemo(() => (on ? givenSync ?? (given ? null : syncApi({ signer: ctx.signer })) : null), [on, given, givenSync, ctx.signer])
   const [data, setData] = useState({})
   const load = part => api[part]().then(value => setData(d => ({ ...d, [part]: { value } })), e => setData(d => ({ ...d, [part]: { error: String(e?.message ?? e) } })))
   const look = () => { for (const p of BOX_PARTS) load(p) }
@@ -22,7 +25,7 @@ export function useBoxDashboard(ctx, { on = BOX, api: given } = {}) {
     const t = setInterval(() => { for (const p of ["status", "connections", "logs"]) load(p) }, POLL_MS)
     return () => clearInterval(t)
   }, [api])
-  return api ? { api, data, load, look } : null
+  return api ? { api, sync, data, load, look } : null
 }
 
 /** The In your vault numbers from the box's contents answer: { usage, media } in the shape the browser's are. */

@@ -36,6 +36,9 @@ type Syncer struct {
 	FirstWait time.Duration // before the first round; 1 min when 0
 	Poll      time.Duration // how often a run is checked on; 2 s when 0
 	RunLimit  time.Duration // longest wait on one device's run; 6 h when 0
+	// NowEvery: Sync now for one device (or all) at most this often; 1 min
+	// when 0 (routes_sync.go allowNow).
+	NowEvery time.Duration
 
 	mu        sync.Mutex
 	kick      chan string // a device's npub, or "" for all
@@ -43,6 +46,7 @@ type Syncer struct {
 	nextRound time.Time
 	round     bool // a round is running
 	dialErr   map[string]string
+	lastNow   map[string]time.Time // Sync now asked, by device ("" = all)
 }
 
 // ErrNotPaired: the device is not one of the owner's devices on this box's mesh.
