@@ -21,6 +21,7 @@ registerHooks({
 const { pool, DEFAULT_RELAYS } = await import("../src/net/pool.js")
 const { STEPS, prepareVault, hasLocalData, wasPrepared, markPrepared, progressOf, READY_KEY, FIRST_PAGE, backgroundFill } = await import("../src/net/vault-ready.js")
 const { VaultReady, stepDetail } = await import("../src/components/VaultReady.jsx")
+const { readHistory } = await import("../src/net/vault-history.js")
 
 Object.defineProperty(globalThis.navigator, "onLine", { value: true, configurable: true })
 const hex = n => n.toString(16).padStart(64, "0")
@@ -255,6 +256,19 @@ test("first run with the setup job: you're in only once setup is done or partial
   assert.equal(opened, true)
   assert.deepEqual([steps.notes.state, steps.notes.count], ["done", 77])
 })
+
+// The dashboard's "Import notes" row said "Never ran." after a first-run setup import had brought everything in
+// (parity report gap E). A complete setup stamps "Last ran"; a partial or failed one doesn't.
+for (const [status, stamped] of [["done", true], ["partial", false], ["failed", false]]) {
+  test(`a ${status} setup import ${stamped ? "stamps" : "doesn't stamp"} the dashboard's notes import "Last ran"`, async t => {
+    localStorage.m.clear()
+    relays(t)
+    const setup = () => Promise.resolve({ status, stored: 3 })
+    const { filled } = await prepareVault({ vault: vault(), pubkey: ME, local: empty, setup })
+    await filled
+    assert.equal(typeof readHistory(ME).notesImport === "number", stamped)
+  })
+}
 
 // "Open now" while setup still brings in your own notes: the app showed "Loading your follows…" and 0 Following until
 // setup ended, minutes for a big account. The account is handed over as soon as it is read.
