@@ -38,7 +38,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
@@ -299,6 +302,7 @@ class ConfigStore @Inject constructor(
             }
         }
 
+        ownerKeyFromFile = keyInFile
         setConfig(loaded)
         if (removedStarterPicks || droppedDamus || condensedLayouts != null || repliesBackOn || keyInFile != null || secretsInFile.isNotEmpty()) CoroutineScope(Dispatchers.IO).launch { save() }
 
@@ -358,11 +362,11 @@ class ConfigStore @Inject constructor(
                     store = { account, value -> try { secretVault.write(account, value) } catch (_: Exception) { false } },
                     delete = { account -> try { secretVault.delete(account) } catch (_: Exception) { false } },
                 )
-                vaultOwnerKeyForSave(cfg)
+                val keepInFile = vaultOwnerKeyForSave(cfg)
                 val onDisk = ConfigSecrets.stripped(cfg, secretsInVault)
                 val tmp = File(configFile.parentFile, configFile.name + ".tmp")
                 tmp.outputStream().use { out ->
-                    out.write(json.encodeToString(onDisk).toByteArray())
+                    out.write(encodeForDisk(onDisk, keepInFile).toByteArray())
                     out.fd.sync()
                 }
                 Files.move(tmp.toPath(), configFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
@@ -412,16 +416,35 @@ class ConfigStore @Inject constructor(
     val ownerKeyNotSaved: StateFlow<Boolean> = _ownerKeyNotSaved.asStateFlow()
 
     /**
-     * Puts the owner's key in [keyVault]. A different key the vault already
-     * holds for the owner is never overwritten. The file never gets the key,
-     * even when the vault can't take it ([ownerKeyNotSaved]); a key an older
-     * build left in the file comes out on this save.
+     * The owner key an older build left in the file at load. Older builds only
+     * left it there when the credential store refused it, so for those installs
+     * the file is the only copy on disk: it stays in the file until the store
+     * takes it.
      */
-    private fun vaultOwnerKeyForSave(cfg: HavenConfig) {
+    @Volatile private var ownerKeyFromFile: String? = null
+
+    /**
+     * Puts the owner's key in [keyVault]. A different key the vault already
+     * holds for the owner is never overwritten. A key is never added to the
+     * file: one the vault can't take is in memory only ([ownerKeyNotSaved]).
+     * The one exception is a key an older build left in the file
+     * ([ownerKeyFromFile]): returned here so it is written back, until the
+     * vault takes it and it comes out.
+     */
+    private fun vaultOwnerKeyForSave(cfg: HavenConfig): String? {
         val key = cfg.ownerHexKey
         val saved = key == null || vaultOwnerKey(key, cfg.ownerNpub)
-        if (!saved) Log.w("ConfigStore", "owner key not stored in the credential store; kept in memory only")
         _ownerKeyNotSaved.value = !saved
+        if (saved) {
+            ownerKeyFromFile = null
+            return null
+        }
+        if (key == ownerKeyFromFile) {
+            Log.w("ConfigStore", "owner key not stored in the credential store; left in config where an older build put it")
+            return key
+        }
+        Log.w("ConfigStore", "owner key not stored in the credential store; kept in memory only")
+        return null
     }
 
     /** Whether [key] is now in [keyVault], under [ownerNpub] or else its own pubkey. */
@@ -436,6 +459,12 @@ class ConfigStore @Inject constructor(
         }
         if (stored) vaulted = pub to key
         return stored
+    }
+
+    private fun encodeForDisk(cfg: HavenConfig, ownerKey: String?): String {
+        if (ownerKey == null) return json.encodeToString(cfg)
+        val fields = json.encodeToJsonElement(cfg).jsonObject
+        return json.encodeToString(JsonObject(fields + (OWNER_KEY_FIELD to JsonPrimitive(ownerKey))))
     }
 
     private fun ownerHexKeyIn(text: String): String? = try {
@@ -645,6 +674,7 @@ class ConfigStore @Inject constructor(
             wipeAppFiles(context.filesDir)
             try { wipeOutsideFiles() } catch (_: Exception) { }
             vaulted = null
+            ownerKeyFromFile = null
             secretSync = ConfigSecretSync()
             secretsInVault = emptySet()
             plaintextSecrets.clear()

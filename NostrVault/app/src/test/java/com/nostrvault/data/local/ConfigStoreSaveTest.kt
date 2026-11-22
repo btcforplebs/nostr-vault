@@ -146,7 +146,8 @@ class ConfigStoreSaveTest {
     }
 
     @Test
-    fun `a key an older build left in the file comes out even when the credential store can't take it`() = runBlocking {
+    fun `a key an older build left in the file stays there while the credential store can't take it`() = runBlocking {
+        // Older builds only left the key in the file when the store refused it: the file is the only copy on disk.
         configFile.writeText("""{"ownerNpub":"$owner","hasCompletedSetup":true,"ownerHexKey":"$secret"}""")
         vault.works = false
 
@@ -154,8 +155,42 @@ class ConfigStoreSaveTest {
         assertEquals(secret, store.config.value.ownerHexKey)
         store.save()
 
-        assertFalse(configFile.readText().contains(secret))
+        assertTrue(configFile.readText().contains(secret))
         assertTrue(store.ownerKeyNotSaved.value)
+        // A later save (any setting) keeps it too, and a relaunch still finds it.
+        store.updateAsync { it.copy(relayPort = 4999) }
+        assertTrue(configFile.readText().contains(secret))
+        assertEquals(secret, store().config.value.ownerHexKey)
+    }
+
+    @Test
+    fun `a key an older build left in the file comes out once the credential store takes it`() = runBlocking {
+        configFile.writeText("""{"ownerNpub":"$owner","hasCompletedSetup":true,"ownerHexKey":"$secret"}""")
+        vault.works = false
+        val store = store()
+        store.save()
+        assertTrue(configFile.readText().contains(secret))
+
+        vault.works = true
+        store.save()
+        assertEquals(secret, vault.keys[ownerHex])
+        assertFalse(configFile.readText().contains(secret))
+        assertFalse(store.ownerKeyNotSaved.value)
+        // And it doesn't come back if the store refuses again later.
+        vault.works = false
+        store.updateAsync { it.copy(relayPort = 4998) }
+        assertFalse(configFile.readText().contains(secret))
+    }
+
+    @Test
+    fun `a new key replacing the file's old one is not written to the file`() = runBlocking {
+        configFile.writeText("""{"ownerNpub":"$owner","hasCompletedSetup":true,"ownerHexKey":"$secret"}""")
+        vault.works = false
+        val store = store()
+        val other = "6b".repeat(32)
+        store.updateAsync { it.copy(ownerHexKey = other) }
+        assertFalse(configFile.readText().contains(other))
+        assertFalse(configFile.readText().contains(secret))
     }
 
     @Test
