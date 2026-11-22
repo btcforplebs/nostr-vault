@@ -55,6 +55,7 @@ class GlobalNewAccountReqTest {
             notificationManager = mockk(relaxed = true),
             followingBackupService = mockk(relaxed = true),
             lookupPool = mockk(relaxed = true),
+            discoveryReach = mockk(relaxed = true) { every { admitted } returns com.nostrvault.data.model.DiscoveryReach.Admitted.NONE },
         )
         feed.feedClients["wss://relay.example"] = mockk<WebSocketClient>(relaxed = true) {
             every { send(any()) } answers { sent += firstArg<String>(); true }

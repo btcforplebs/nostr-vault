@@ -1,5 +1,6 @@
 package com.nostrvault.service
 
+import com.nostrvault.data.model.DiscoveryReach
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.isLocalDvm
 import com.nostrvault.data.model.FeedNote
@@ -95,9 +96,14 @@ object FeedFilterEngine {
         reach: WebGate.Reach = WebGate.Reach.WEB,
         /** This device's accounts: always inside the gate. */
         ownPubkeys: Set<String> = emptySet(),
+        /** Who the Discovery reach bar lets in (Underrated and Discover only, [DiscoveryReach]). */
+        discovery: DiscoveryReach.Admitted = DiscoveryReach.Admitted.NONE,
     ): List<FeedNote> {
-        // Built only for a feed that reads it (Underrated): it scans the web and the loose set.
-        val gateWeb by lazy { WebGate.Web(own = ownPubkeys, web = wotPubkeys, loose = loosePubkeys) }
+        val (ranked, rankedLoose) = if (mode in DiscoveryReach.modes) DiscoveryReach.gateSets(discovery) else emptySet<String>() to emptySet()
+        // Built only for a feed that reads it (Underrated, Discover's ranked people): it scans the web and the loose set.
+        val gateWeb by lazy {
+            WebGate.Web(own = ownPubkeys, web = wotPubkeys, loose = loosePubkeys, ranked = ranked, rankedLoose = rankedLoose)
+        }
         fun verdict(note: FeedNote): WebGate.Verdict = WebGate.judge(note.repostedBy ?: note.pubkey, gateWeb, reach)
         // Articles and Recipes: Following keeps to follows; Global follows
         // the same Web of Trust / Everyone rule as Global, failing closed.
@@ -124,7 +130,8 @@ object FeedFilterEngine {
 
             when (mode) {
                 FeedMode.FOLLOWING -> authorForMembership in followedPubkeys
-                FeedMode.DISCOVERY -> authorForMembership !in followedPubkeys && authorForMembership in wotPubkeys
+                FeedMode.DISCOVERY -> authorForMembership !in followedPubkeys && (authorForMembership in wotPubkeys ||
+                    isRanked(authorForMembership, ranked, rankedLoose) && verdict(note) != WebGate.Verdict.OUTSIDE)
                 FeedMode.GLOBAL -> {
                     // Web of Trust by default, judged on the note's author
                     // (iOS parity). Fails CLOSED: an empty graph means "not
@@ -186,10 +193,17 @@ object FeedFilterEngine {
             filtered.sortedByDescending { it.createdAt }
         }
 
-        if (mode == FeedMode.UNDERRATED && reach == WebGate.Reach.WEB_AND_LOOSE) {
+        if ((mode == FeedMode.UNDERRATED && reach == WebGate.Reach.WEB_AND_LOOSE) || rankedLoose.isNotEmpty()) {
             filtered = WebGate.capLoose(filtered, ::verdict, author = { it.repostedBy ?: it.pubkey }, isReply = { it.isReply })
         }
         return filtered
+    }
+
+    /** [signer] is one of the Discovery reach bar's people (the gate's sets are lowercase). */
+    private fun isRanked(signer: String, ranked: Set<String>, rankedLoose: Set<String>): Boolean {
+        if (ranked.isEmpty() && rankedLoose.isEmpty()) return false
+        val key = signer.lowercase()
+        return key in ranked || key in rankedLoose
     }
 
     /**

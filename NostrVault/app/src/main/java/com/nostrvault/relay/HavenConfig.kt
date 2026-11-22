@@ -281,6 +281,12 @@ data class HavenConfig(
      * is the feed's default. Mirrors iOS `feedReach`.
      */
     val feedReach: Map<String, String> = emptyMap(),
+    /**
+     * Settings › Feed › Discovery Reach: the shown score (0-100) Underrated and
+     * Discover admit from the desktop Vault's rank. Null: the rank file's own
+     * starting bar ([com.nostrvault.data.model.DiscoveryReach.bar]). Mirrors iOS `discoveryBar`.
+     */
+    val discoveryBar: Double? = null,
     /** A "Translate" button under notes written in another language (on-device, Mozilla Bergamot). On by default. */
     val showTranslateButton: Boolean = true,
     /** ISO 639-1 code notes translate into. Empty follows the device language. */

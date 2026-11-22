@@ -60,6 +60,7 @@ import kotlinx.serialization.json.*
         loosePubkeys = _wotLoosePubkeys.value,
         reach = currentFeedReach(),
         ownPubkeys = deviceAccountHexes(),
+        discovery = discoveryReach.admitted,
     )
 
     /** The saved web plus your follows, so Global shows a new follow at once. */

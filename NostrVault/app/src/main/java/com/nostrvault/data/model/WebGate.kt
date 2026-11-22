@@ -12,10 +12,12 @@ import com.nostrvault.util.PublicKeyRegistry
  *    always shows;
  * 2. [Verdict.OUTSIDE] (or inside on reach [Reach.EVERYONE]) when its secret
  *    key is public ([PublicKeyRegistry]);
- * 3. [Verdict.INSIDE] in your web;
+ * 3. [Verdict.INSIDE] in your web, or (Underrated and Discover only) ranked
+ *    over the Discovery reach bar ([Web.ranked]);
  * 4. [Verdict.INSIDE] anywhere when the reach is [Reach.EVERYONE];
  * 5. [Verdict.LOOSE] when the reach is [Reach.WEB_AND_LOOSE] and it is one
- *    hop past your web;
+ *    hop past your web, or always for a ranked distant connection
+ *    ([Web.rankedLoose], rationed while [DiscoveryReach.CAP_DISTANT]);
  * 6. [Verdict.OUTSIDE] otherwise.
  *
  * What is not: iOS judges blocks and the mute list inside the gate too
@@ -51,7 +53,15 @@ object WebGate {
     }
 
     /** One account's web, built once and read for every note. Keys are lowercase hex. */
-    class Web(own: Set<String>, web: Set<String>, loose: Set<String> = emptySet()) {
+    class Web(
+        own: Set<String>,
+        web: Set<String>,
+        loose: Set<String> = emptySet(),
+        /** Ranked over the Discovery reach bar, judged as the web is ([DiscoveryReach]). Lowercase hex. */
+        val ranked: Set<String> = emptySet(),
+        /** Ranked over the bar but rationed as [Verdict.LOOSE] whatever the reach ([DiscoveryReach.CAP_DISTANT]). */
+        val rankedLoose: Set<String> = emptySet(),
+    ) {
         /** Every account on this device, the one being judged for included. */
         val own: Set<String> = lowered(own)
         val web: Set<String> = lowered(web)
@@ -72,10 +82,11 @@ object WebGate {
         if (key in web.own || always.any { it.equals(key, ignoreCase = true) }) return Verdict.INSIDE
         // A key anyone can post with is no longer the person you trusted.
         if (isPublic(key)) return if (reach == Reach.EVERYONE) Verdict.INSIDE else Verdict.OUTSIDE
-        if (key in web.web) return Verdict.INSIDE
+        if (key in web.web || key in web.ranked) return Verdict.INSIDE
         return when {
             reach == Reach.EVERYONE -> Verdict.INSIDE
             reach == Reach.WEB_AND_LOOSE && key in web.loose -> Verdict.LOOSE
+            key in web.rankedLoose -> Verdict.LOOSE
             else -> Verdict.OUTSIDE
         }
     }
