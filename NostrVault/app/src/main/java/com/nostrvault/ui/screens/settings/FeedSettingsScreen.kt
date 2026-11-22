@@ -118,6 +118,10 @@ fun FeedSettingsScreen(
 
             Spacer(Modifier.height(24.dp))
 
+            DiscoveryReachSettingsSection()
+
+            Spacer(Modifier.height(24.dp))
+
             // ── Feed relays ──────────────────────────────────────
             Surface(shape = RoundedCornerShape(12.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
                 GroupRow(icon = NostrVaultIcons.Relay, title = "Feed relays", onClick = onOpenRelays) {

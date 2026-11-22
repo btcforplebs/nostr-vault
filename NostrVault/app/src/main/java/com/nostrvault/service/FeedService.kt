@@ -57,6 +57,7 @@ class FeedService @Inject constructor(
     internal val notificationManager: NotificationManager,
     internal val followingBackupService: FollowingBackupService,
     internal val lookupPool: LookupSocketPool,
+    internal val discoveryReach: DiscoveryReachStore,
 ) {
     companion object {
         /** The relay writes this into its data root (haven-go WOT_CACHE_PATH default). */
