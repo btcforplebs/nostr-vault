@@ -3,6 +3,8 @@
 // Keep it full, Vault settings, Relay activity, Advanced. What a browser can't do is left out (an address and port,
 // Start and Stop, Sync with Vault on Mac, clearing the media cache, publishing a relay list, Import media).
 // Opened by "?sheet=dashboard" on any address (openDashboard), so Back closes it and the links in it leave it.
+// In box mode (One Vault W1) it is the box's dashboard: status, storage, media, connections and log come from the box
+// (box/useBoxDashboard.js), the counts from the box's relay, and the old Box screen's sections fold in (box/BoxFold.jsx).
 import { useEffect, useRef, useState } from "preact/hooks"
 import { StatusCard } from "../components/dashboard/StatusCard.jsx"
 import { SafetySection } from "../components/dashboard/SafetySection.jsx"
@@ -34,6 +36,10 @@ import { saveFile } from "../net/save-file.js"
 import { uniq } from "../net/pool.js"
 import { APP_VERSION, APP_COMMIT } from "../net/settings.js"
 import { closeDashboard } from "../net/dashboard-route.js"
+import { useBoxDashboard, boxStorage } from "../box/useBoxDashboard.js"
+import { boxActivityItems } from "../box/box-activity.js"
+import { BoxLogView } from "../box/BoxLogView.jsx"
+import { BoxStatusDetails, BoxDevices, BoxStorage, BoxPublic, BoxUpdate } from "../box/BoxFold.jsx"
 import "../styles/dashboard.css"
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -70,7 +76,8 @@ export function useVaultDashboard(ctx) {
   }
   const look = () => {
     count().catch(() => setCounts({ contents: null, counting: false, failed: true }))
-    scanMedia(me).then(setMedia).catch(() => setMedia(null))
+    // A box's media files are the box's (GET /api/box/contents): this browser keeps none.
+    if (!vault.box) scanMedia(me).then(setMedia).catch(() => setMedia(null))
     // Your own GM / Pura Vida notes, from this browser's vault only (net/greeting-counts.js). Can't answer: keep the last.
     readGreetings(vault.outbox, me).then(g => { if (g) setGreetings(g) })
     navigator.storage?.estimate?.().then(e => setStorage(s => ({ ...s, usage: e.usage }))).catch(() => {})
@@ -132,11 +139,17 @@ export function useVaultDashboard(ctx) {
 }
 
 /** `napplet`: the desktop with napplets on, where the dashboard itself is the Dashboard napplet (one plan step 9). */
-export function VaultDashboard({ ctx, napplet = false }) {
+/** `boxOptions`: useBoxDashboard's options (tests turn box mode on and pass a mock box). */
+export function VaultDashboard({ ctx, napplet = false, boxOptions }) {
   const { vault, session } = ctx
   const d = useVaultDashboard(ctx)
-  const { counts, media, greetings, storage, followSavedAt, servers, jobs, history, historyRelays, setHistoryRelays, look, exportFile, mediaFile, importNotes, items, startedInMs, relayCount, syncing } = d
-  const [view, setView] = useState("dashboard") // or "activity" (View All), or "pair" (Link a device)
+  const box = useBoxDashboard(ctx, boxOptions)
+  const { counts, greetings, storage, followSavedAt, servers, jobs, history, historyRelays, setHistoryRelays, exportFile, mediaFile, importNotes, startedInMs, relayCount, syncing } = d
+  const onBox = boxStorage(box?.data.contents)
+  const media = box ? onBox.media : d.media
+  const look = box ? () => { d.look(); box.look() } : d.look
+  const items = box ? boxActivityItems(box.data.logs?.value?.lines) : d.items
+  const [view, setView] = useState("dashboard") // or "activity" (View All), "logs" (the box's full log), or "pair" (Link a device)
   const [pairMode, setPairMode] = useState("show") // PairDevice: "show" this browser's code or "scan" the other's
   const pair = mode => { setPairMode(mode); setView("pair") }
   // Escape closes the sheet wherever focus is (the HUD that opened it keeps focus), unless a dialog over it has it.
@@ -153,26 +166,31 @@ export function VaultDashboard({ ctx, napplet = false }) {
       <div class="dash-panel">
         <header class="dash-bar-top">
           {view !== "dashboard" ? <button type="button" class="dash-link" onClick={() => setView("dashboard")}>Back</button> : <span />}
-          <h2 id="dash-title"><DashIcon />{view === "activity" ? "Vault Activity" : view === "pair" ? "Link a device" : "Vault Dashboard"}</h2>
+          <h2 id="dash-title"><DashIcon />{view === "activity" ? "Vault Activity" : view === "logs" ? "Box Log" : view === "pair" ? "Link a device" : "Vault Dashboard"}</h2>
           <button type="button" class="dash-link done" onClick={closeDashboard} autofocus>Done</button>
         </header>
         <div class={view === "dashboard" && napplet ? "dash-scroll napp" : "dash-scroll"}>
           {view === "dashboard" && napplet ? <DashboardPane ctx={ctx} d={d} onPair={pair} version={`${APP_VERSION}${APP_COMMIT ? ` · ${APP_COMMIT}` : ""}`} />
-          : view === "activity" ? <ActivityWindow items={items} version={`${APP_VERSION}${APP_COMMIT ? ` · ${APP_COMMIT}` : ""}`} />
+          : view === "activity" ? <ActivityWindow items={items} version={`${APP_VERSION}${APP_COMMIT ? ` · ${APP_COMMIT}` : ""}`} onFullLogs={box ? () => setView("logs") : undefined} />
+          : view === "logs" && box ? <BoxLogView state={box.data.logs} />
           : view === "pair" ? <PairDevice key={pairMode} ctx={ctx} mode={pairMode} onMode={setPairMode} onClose={() => setView("dashboard")} /> : <>
-            <StatusCard syncing={syncing} />
-            <YourDevicesSection ctx={ctx} onPair={pair} />
+            <StatusCard syncing={syncing} box={box ? { status: box.data.status, connections: box.data.connections } : undefined} />
+            {box && <BoxStatusDetails box={box} />}
+            {box ? <BoxDevices box={box} /> : <YourDevicesSection ctx={ctx} onPair={pair} />}
             <ListWipeBanner ctx={ctx} />
             <SafetySection method={session.method} followSavedAt={followSavedAt} backupAt={history.notesBackup} onBackup={exportFile} backupBusy={jobs.export} />
             <ReachSection trusted={d.trusted} blocked={d.blocked} />
-            <ContentsSection {...counts} usage={storage.usage} kept={storage.kept} media={media} onRetry={look} me={session.pubkey} greetings={greetings} />
+            <ContentsSection {...counts} usage={box ? onBox.usage : storage.usage} kept={storage.kept} media={media} onRetry={look} me={session.pubkey} greetings={greetings} box={!!box}>
+              {box && <BoxStorage box={box} />}
+            </ContentsSection>
             {!vault.box && <StillToBringIn ctx={ctx} />}
             <KeepFullSection startDate={IMPORT_START_DATE} history={history} importing={jobs.importing} mediaBusy={jobs.media} exportBusy={jobs.export}
               status={jobs.status} onImport={importNotes} onMedia={mediaFile} onExport={exportFile}
               historyRelays={historyRelays} onHistoryRelays={setHistoryRelays} onSkip={d.skip} />
             <SettingsSection relays={relayCount} mediaServers={servers} />
+            {box && <BoxPublic ctx={ctx} box={box} />}
             <ActivitySection items={items} onViewAll={() => setView("activity")} />
-            <AdvancedSection startedInMs={startedInMs} />
+            {box ? <AdvancedSection box={box.data.status?.value ?? null}><BoxUpdate box={box} /></AdvancedSection> : <AdvancedSection startedInMs={startedInMs} />}
           </>}
         </div>
       </div>

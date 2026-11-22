@@ -13,3 +13,10 @@ export function boxRelayUrl(route = "/", loc = globalThis.location) {
 
 /** The box API's base URL: same origin. */
 export const boxApiBase = (loc = globalThis.location) => `${loc.origin}/api/box`
+
+/** One Vault W1: on a box, #/relay and #/box open the Vault Dashboard over the Vault (the box's dashboard is the
+ *  dashboard). -> the address to go to instead of `hash`, or null to stay. */
+export function boxDashboardRedirect(hash = "") {
+  const route = hash.replace(/^#\/?/, "").split(/[/?]/)[0]
+  return route === "relay" || route === "box" ? "#/vault?sheet=dashboard" : null
+}

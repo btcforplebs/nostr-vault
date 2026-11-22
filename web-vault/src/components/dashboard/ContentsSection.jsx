@@ -21,7 +21,9 @@ export const storageParts = (usage, media) => [
 // The phone's "Public events only" never applies: this browser's device key is whitelisted on every route.
 export const statusText = ({ counting }) => (counting ? "Counting…" : "Couldn't count.")
 
-export function ContentsSection({ contents, counting, failed, usage, media, kept, onRetry, me, greetings }) {
+/** `box`: box mode, where usage and media are the box's (GET /api/box/contents) and the browser's own storage warning
+ *  doesn't apply; `children` (the box's Storage and Move) close the card. */
+export function ContentsSection({ contents, counting, failed, usage, media, kept, onRetry, me, greetings, box = false, children }) {
   const parts = storageParts(usage, media?.size)
   const total = Math.max(1, parts.reduce((n, p) => n + p.size, 0))
   const status = counting || failed
@@ -44,7 +46,8 @@ export function ContentsSection({ contents, counting, failed, usage, media, kept
         {MEDIA_BUCKETS.filter(([k]) => media?.buckets[k].count > 0).map(([k, t]) => <Line key={k} title={t} value={`${media.buckets[k].count.toLocaleString()} · ${sizeText(media.buckets[k].size)}`} />)}
       </ExpandingRow>
       {me && <CacheRow me={me} />}
-      <div class="dash-row dash-note"><StorageNote kept={kept} /></div>
+      {!box && <div class="dash-row dash-note"><StorageNote kept={kept} /></div>}
+      {children}
     </Section>
   )
 }
