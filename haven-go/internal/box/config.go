@@ -47,6 +47,10 @@ type Config struct {
 	// MeshDevicesFile is mesh-devices.json (NV_MESH_DEVICES): havend writes
 	// it from the owner's server list, nv-mesh reads it.
 	MeshDevicesFile string
+	// MeshRunDir is nv-mesh's runtime dir (NV_MESH_RUN_DIR, default
+	// /run/nv-mesh), where its dial.sock lets havend reach the owner's other
+	// vaults (linux/mesh/src/dial.rs).
+	MeshRunDir string
 	// MeshDoorPort is the engine's loopback mesh door (NV_MESH_DOOR_PORT,
 	// default Port+1), where nv-mesh sends strangers. The engine gets it as
 	// HAVEN_MESH_PLAIN_PORT.
@@ -149,6 +153,7 @@ func ConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 		c.MeshStatusFile = filepath.Join(c.DataDir, "mesh", "status.json")
 	}
 	c.MeshNpubFile = filepath.Join(c.DataDir, "mesh", "npub")
+	c.MeshRunDir = orDefault(strings.TrimSpace(getenv("NV_MESH_RUN_DIR")), "/run/nv-mesh")
 	c.MeshDevicesFile = orDefault(getenv("NV_MESH_DEVICES"), filepath.Join(c.DataDir, "mesh-devices.json"))
 	if !filepath.IsAbs(c.MeshDevicesFile) {
 		return c, fmt.Errorf("NV_MESH_DEVICES must be an absolute path, got %q", c.MeshDevicesFile)
@@ -261,4 +266,11 @@ func port(raw string, def int, name string) (int, error) {
 func (c Config) BoxDir() string { return filepath.Join(c.DataDir, "box") }
 
 // DefaultVaultDir is where the vault lives until it is moved.
+// ControlDir holds the engine's control socket (EngineControlSocket): a
+// 0700 dir of havend's, so only havend and its engine reach the socket.
+func (c Config) ControlDir() string { return filepath.Join(c.BoxDir(), "run") }
+
+// EngineControlSocket is HAVEN_BOX_CONTROL_SOCK (haven-go copyv2_box.go).
+func (c Config) EngineControlSocket() string { return filepath.Join(c.ControlDir(), "engine.sock") }
+
 func (c Config) DefaultVaultDir() string { return filepath.Join(c.DataDir, "vault") }
