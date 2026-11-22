@@ -55,10 +55,40 @@ class ReferrerFollowsTest {
     }
 
     @Test fun `skipped people are never offered and the pool is capped`() {
-        val ranked = ReferrerFollows.rank(k(99), (1..50).map(::k), emptyMap(), skip = setOf(k(1), k(3)))
+        val ranked = ReferrerFollows.rank(k(999), (1..150).map(::k), emptyMap(), skip = setOf(k(1), k(3)))
         assertEquals(ReferrerFollows.POOL, ranked.size)
         assertEquals(k(2), ranked.first().pubkey)
         assertFalse(k(1) in keys(ranked) || k(3) in keys(ranked))
+    }
+
+    @Test fun `who the referrer talks with most comes first, over close circle and fame`() {
+        val me = k(50)
+        val follows = (1..4).map(::k)
+        // k1 is close (follows the referrer back); k4 is the one they talk with most.
+        val lists = mapOf(k(1) to listOf(me), k(2) to listOf(k(3)), k(3) to listOf(k(2)))
+        val talks = mapOf(k(4) to 9, k(6) to 4)
+        val ranked = ReferrerFollows.rank(me, follows, lists, talks = talks, followers = listOf(k(6), k(7), k(1)))
+        assertEquals(listOf(k(4), k(6)), keys(ranked).take(2))
+        assertEquals(9, ranked.first().talks)
+        // A follower is offered, once, after the follows when nothing else ranks them.
+        assertEquals(k(7), keys(ranked).last())
+        assertEquals(1, keys(ranked).count { it == k(1) })
+        assertFalse(ranked.first { it.pubkey == k(6) }.followedByReferrer)
+        assertEquals(true, ranked.first { it.pubkey == k(1) }.followedByReferrer)
+    }
+
+    @Test fun `talks count replies, reactions and zaps both ways, and zaps the referrer sent`() {
+        val ref = k(50)
+        fun e(pk: String, kind: Int, vararg tags: List<String>) = com.nostrvault.data.model.TrustMap.Interaction(pk, kind, tags.toList())
+        val events = listOf(
+            e(ref, 1, listOf("p", k(9)), listOf("p", k(1))), // their reply to k1: 2
+            e(ref, 7, listOf("p", k(2))), // their reaction to k2: 2
+            e(k(3), 1, listOf("p", ref)), // k3 replied to them: 1
+            e(k(99), 9735, listOf("p", ref), listOf("P", k(4))), // k4 zapped them: 3
+            e(k(99), 9735, listOf("p", k(5)), listOf("P", ref)), // they zapped k5: 6
+        )
+        val talks = ReferrerFollows.talks(ref, events)
+        assertEquals(mapOf(k(1) to 2, k(2) to 2, k(3) to 1, k(4) to 3, k(5) to 6), talks)
     }
 
     @Test fun `a follow list is its p tags, hex only, once each`() {

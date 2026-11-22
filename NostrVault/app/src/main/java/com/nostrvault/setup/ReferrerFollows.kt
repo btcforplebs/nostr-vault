@@ -10,14 +10,20 @@ package com.nostrvault.setup
  * setup leaves its id here too, and the step starts with it filled in.
  */
 object ReferrerFollows {
-    /** How many people are offered with no topic picked (iOS `limit`). */
-    const val SUGGESTION_CAP = 10
+    /**
+     * How many are ranked, kept and listed (a scrolling list, Logen
+     * 2026-11-22: "a longer list than the top ~11"). Topic chips filter it.
+     */
+    const val POOL = 100
 
-    /** How many are ranked and kept, so a topic chip still has people to show (iOS `pool`). */
-    const val POOL = 30
+    /**
+     * How many start ticked: none. Each person is a choice, made on their row
+     * or their preview, not a stranger ticked for you (Logen 2026-11-22).
+     */
+    const val PRE_TICKED = 0
 
-    /** How many of the top ones start ticked (iOS `preTicked`). */
-    const val PRE_TICKED = 7
+    /** How many of the referrer's followers are read (kind 3 lists that tag them). */
+    const val FOLLOWERS_TO_READ = 500
 
     /** At most this many topic chips. */
     const val TOPIC_LIMIT = 6
@@ -51,8 +57,13 @@ object ReferrerFollows {
     /** The picks, once: a second call (or a second setup) gets nothing. */
     fun take(): List<String> = picks.also { picks = emptyList() }
 
-    /** One person offered, and how many of the referrer's close circle follow them. */
-    data class Pick(val pubkey: String, val close: Int)
+    /**
+     * One person offered: how much the referrer and they interact ([talks],
+     * [com.nostrvault.data.model.TrustMap.engagementScores]), how many of the
+     * referrer's close circle follow them, and whether they are someone the
+     * referrer follows or only one of the referrer's followers.
+     */
+    data class Pick(val pubkey: String, val close: Int, val talks: Int = 0, val followedByReferrer: Boolean = true)
 
     /**
      * The referrer's close circle: their mutuals among the [lists] read,
@@ -64,14 +75,14 @@ object ReferrerFollows {
     }
 
     /**
-     * Up to [cap] of [follows], closest to the referrer first (setup screens
-     * r3, Logen 2026-11-22, iOS `ReferralSuggestions.rank` #2414): a follow
-     * comes first when more of the referrer's close circle ([closeCircle])
-     * follow them too. Ties go to how many of all the referrer's follows'
-     * [lists] name them, then to the referrer's own list order. With no mutual
-     * found, the overall count decides, as before. Lists by anyone outside
-     * [follows] are ignored, and an author never counts itself. Never the
-     * referrer, or anyone in [skip].
+     * Up to [cap] of the referrer's [follows] and [followers], the people the
+     * referrer interacts with most first (Logen 2026-11-22: replies,
+     * reactions, zaps and mentions, both ways, [talks]), not the most
+     * followed. Ties go to how many of the referrer's close circle
+     * ([closeCircle]) follow them, then how many of all the referrer's
+     * follows' [lists] name them, then follows before followers, then list
+     * order. Lists by anyone outside [follows] are ignored, and an author
+     * never counts itself. Never the referrer, or anyone in [skip].
      */
     fun rank(
         referrer: String,
@@ -79,6 +90,8 @@ object ReferrerFollows {
         lists: Map<String, List<String>>,
         skip: Set<String> = emptySet(),
         cap: Int = POOL,
+        talks: Map<String, Int> = emptyMap(),
+        followers: List<String> = emptyList(),
     ): List<Pick> {
         val following = follows.toSet()
         val close = closeCircle(referrer, follows, lists)
@@ -93,18 +106,33 @@ object ReferrerFollows {
                 if (isClose) near[key] = (near[key] ?: 0) + 1
             }
         }
-        return follows.asSequence()
+        return (follows + followers).asSequence()
             .distinct()
             .filter { it != referrer && it !in skip }
             .withIndex()
             .sortedWith(
-                compareByDescending<IndexedValue<String>> { near[it.value] ?: 0 }
+                compareByDescending<IndexedValue<String>> { talks[it.value] ?: 0 }
+                    .thenByDescending { near[it.value] ?: 0 }
                     .thenByDescending { all[it.value] ?: 0 }
                     .thenBy { it.index },
             )
-            .map { Pick(it.value, near[it.value] ?: 0) }
+            .map { Pick(it.value, near[it.value] ?: 0, talks[it.value] ?: 0, it.value in following) }
             .take(cap)
             .toList()
+    }
+
+    /**
+     * How much [referrer] and each person interact, from [events] by them and
+     * aimed at them: [com.nostrvault.data.model.TrustMap.engagementScores] (their
+     * own count double, a zap triples). A zap they sent is a receipt signed by
+     * the zap service with them in `P`, so it counts as their own.
+     */
+    fun talks(referrer: String, events: List<com.nostrvault.data.model.TrustMap.Interaction>): Map<String, Int> {
+        val sentZaps = events
+            .filter { it.kind == 9735 && it.tags.any { t -> t.size > 1 && t[0] == "P" && t[1] == referrer } }
+            .map { it.copy(pubkey = referrer) }
+        val theirs = events.filter { it.pubkey == referrer } + sentZaps
+        return com.nostrvault.data.model.TrustMap.engagementScores(theirs, events, referrer)
     }
 
     /** A topic chip: a hashtag and who of the people offered used it. */
