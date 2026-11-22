@@ -581,6 +581,11 @@ struct SetupWizardView: View {
         // one follow-list edit, published once the list is known (a new key's
         // is empty; an existing key's is read first, so nothing is lost).
         let referralFollows = SetupReferral().takeFollows()
+        // The inviter (first of those follows) gets the new account's first
+        // feed card, with Wave back (InviterWelcome). Only a new account.
+        if setupPath == .newToNostr {
+            InviterWelcome().start(account: configService.activeAccountHexPubkey, inviter: referralFollows.first)
+        }
         if !referralFollows.isEmpty {
             FeedService.shared.followUsers(referralFollows)
         }
