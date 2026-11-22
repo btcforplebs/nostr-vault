@@ -33,7 +33,10 @@ enum WebGate {
     enum Reach: String, Codable, CaseIterable, Sendable {
         case web
         /// Your web plus a few one hop past it, rationed by `capHop3`.
-        case webAndHop3
+        /// The raw value is the word saved in `HavenConfig.feedReach`: it
+        /// stays "webAndHop3" whatever the case is called, or every saved
+        /// Reach choice falls back to its default.
+        case webAndHop3 = "webAndHop3"
         /// A Global-style feed with the shield on Everyone. Blocks still apply.
         case everyone
     }

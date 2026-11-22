@@ -115,6 +115,22 @@ final class FeedGateTests: XCTestCase {
         XCTAssertEqual(FeedReach.setting(.webAndHop3, for: .underrated, in: [:]), [:], "the default is stored as absent")
     }
 
+    /// The saved words are a format: a build that renames the cases must still
+    /// read what an older build wrote, and write what an older build reads.
+    func testSavedReachWordsNeverChange() {
+        XCTAssertEqual(WebGate.Reach.web.rawValue, "web")
+        XCTAssertEqual(WebGate.Reach(rawValue: "webAndHop3")?.rawValue, "webAndHop3")
+        XCTAssertEqual(WebGate.Reach.everyone.rawValue, "everyone")
+        XCTAssertEqual(Set(WebGate.Reach.allCases.map(\.rawValue)), ["web", "webAndHop3", "everyone"])
+
+        let saved = ["Popular": "webAndHop3", "Underrated": "web"]
+        XCTAssertEqual(FeedReach.reach(for: .popular, settings: saved), FeedReach.defaultReach(for: .underrated),
+                       "a Popular feed saved one hop out by an older build still reads one hop out")
+        XCTAssertEqual(FeedReach.reach(for: .underrated, settings: saved), .web)
+        XCTAssertEqual(FeedReach.setting(FeedReach.defaultReach(for: .underrated), for: .popular, in: [:]),
+                       ["Popular": "webAndHop3"], "and is written the way an older build reads it")
+    }
+
     // MARK: - Blocks and mutes, through the gate
 
     func testRepostOfABlockedPersonIsHidden() {
