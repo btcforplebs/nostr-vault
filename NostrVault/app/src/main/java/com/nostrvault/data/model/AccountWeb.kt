@@ -63,11 +63,24 @@ object AccountWeb {
      * file as a stream (several MB for a big web) and keeps only the answer.
      * Null when it isn't the relay's `{"follows":[…],"links":{…}}` shape.
      */
-    fun vouched(reader: Reader, follows: Set<String>, minFollowers: Int): Set<String>? = runCatching {
+    fun vouched(reader: Reader, follows: Set<String>, minFollowers: Int): Set<String>? {
+        val need = bar(minFollowers)
+        return counted(reader, follows) { it >= need }?.keys
+    }
+
+    /**
+     * For everyone in the links file: how many of [follows] follow them, only
+     * those at least one follows (the hop past the web is the ones under the
+     * bar, [WebGate.loose]). iOS `AccountWeb.vouchCounts`. Null as [vouched].
+     */
+    fun vouchCounts(reader: Reader, follows: Set<String>): Map<String, Int>? = counted(reader, follows) { it > 0 }
+
+    /** Each person's count of [follows] following them, kept when [keep] says so. */
+    private fun counted(reader: Reader, follows: Set<String>, keep: (Int) -> Boolean): Map<String, Int>? = runCatching {
         Scanner(reader).run {
             expect('{')
             var mine: BooleanArray? = null
-            val out = HashSet<String>()
+            val out = HashMap<String, Int>()
             var done = false
             while (!done) {
                 when (val key = string()) {
@@ -78,7 +91,6 @@ object AccountWeb {
                     "links" -> {
                         expect(':')
                         val m = mine ?: return@runCatching null // links before follows: can't count
-                        val need = bar(minFollowers)
                         expect('{')
                         if (peek() == '}') next() else do {
                             val person = string()
@@ -87,7 +99,7 @@ object AccountWeb {
                             val counted = HashSet<Int>()
                             ints { if (it in m.indices && m[it]) counted += it }
                             val count = counted.size
-                            if (count >= need) out += person
+                            if (keep(count)) out[person] = count
                         } while (comma('}'))
                     }
                     else -> { expect(':'); skipValue(); key }

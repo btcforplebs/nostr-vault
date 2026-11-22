@@ -18,6 +18,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.FeedService
+import com.nostrvault.service.setFeedReach
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,6 +50,13 @@ class FeedSettingsViewModel @Inject constructor(
     fun setShowReplies(on: Boolean) = feedService.setShowReplies(on)
     fun setAutoLoadNewPosts(on: Boolean) = configStore.update { it.copy(autoLoadNewPosts = on) }
 
+    val feedReach: StateFlow<Map<String, String>> = configStore.config
+        .map { it.feedReach }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.feedReach)
+
+    fun setFeedReach(mode: com.nostrvault.data.model.FeedMode, reach: com.nostrvault.data.model.WebGate.Reach) =
+        feedService.setFeedReach(mode, reach)
+
     /** Drops the in-memory feed and fetches it again (forceReload refreshes itself). */
     fun reloadFeed() = feedService.forceReload()
 }
@@ -64,6 +72,7 @@ fun FeedSettingsScreen(
     val showReplies by viewModel.showReplies.collectAsState()
     val autoLoadNewPosts by viewModel.autoLoadNewPosts.collectAsState()
     val isLoadingFeed by viewModel.isLoadingFeed.collectAsState()
+    val feedReach by viewModel.feedReach.collectAsState()
 
     Scaffold(
         topBar = {
@@ -101,6 +110,11 @@ fun FeedSettingsScreen(
                     FeedToggle("Auto-Load New Posts", SettingsHelp.FEED_AUTO_LOAD, autoLoadNewPosts, viewModel::setAutoLoadNewPosts)
                 }
             }
+
+            Spacer(Modifier.height(24.dp))
+
+            // ── Reach ────────────────────────────────────────────
+            FeedReachSettingsSection(feedReach, viewModel::setFeedReach)
 
             Spacer(Modifier.height(24.dp))
 

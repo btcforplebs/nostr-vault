@@ -57,6 +57,9 @@ import kotlinx.serialization.json.*
         pollStatus = _pollStatusFilter.value,
         languageOf = ::languageOf,
         authorOf = ::authorOf,
+        loosePubkeys = _wotLoosePubkeys.value,
+        reach = currentFeedReach(),
+        ownPubkeys = deviceAccountHexes(),
     )
 
     /** The saved web plus your follows, so Global shows a new follow at once. */

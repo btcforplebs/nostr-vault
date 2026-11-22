@@ -485,6 +485,8 @@ class FeedService @Inject constructor(
 
     internal val _wotPubkeys = MutableStateFlow<Set<String>>(emptySet())
     val wotPubkeys: StateFlow<Set<String>> = _wotPubkeys.asStateFlow()
+    /** One hop past the open account's web ([com.nostrvault.data.model.WebGate.loose]); see FeedServiceWebGate.kt. */
+    internal val _wotLoosePubkeys = MutableStateFlow<Set<String>>(emptySet())
     /** The relay's web as saved, every device account pooled ([trustedPubkeysFor] another account). */
     internal val _pooledWotPubkeys = MutableStateFlow<Set<String>>(emptySet())
     /** One [loadWotPubkeys] run at a time; a call during a run asks for one more after it. */
