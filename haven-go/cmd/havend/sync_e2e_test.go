@@ -58,6 +58,7 @@ func startBox(t *testing.T, root, name, havend, engine string, owner, mesh key, 
 		"NV_ENGINE_PORT=" + strconv.Itoa(enginePort), "NV_ENGINE_BIN=" + engine,
 		"NV_MOVE_ROOT=", "NV_DIRECTORY_RELAYS=ws://127.0.0.1:1",
 		"NV_MESH_DOOR_PORT=" + strconv.Itoa(doorPort), "NV_MESH_RUN_DIR=" + runDir,
+		"NV_BOX_RUN_DIR=" + filepath.Join(root, name+"-run"),
 	}
 	logf, _ := os.Create(b.log)
 	b.cmd.Stdout, b.cmd.Stderr = logf, logf

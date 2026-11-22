@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -192,10 +193,27 @@ func (e EngineCopy) State(ctx context.Context, peers []string) (CopyState, error
 }
 
 // PrepareControlDir makes the engine's control dir havend's alone (0700)
-// before the engine starts (the engine replaces a socket an earlier one left).
-func PrepareControlDir(c Config) error {
-	if err := os.MkdirAll(c.ControlDir(), 0o700); err != nil {
+// and refuses a link there. When the default /run dir can't be made (havend
+// not started by root, so nothing made it), it falls back to box/run under
+// the data dir, logged: the data dir is already that uid's, so this gives
+// nothing new away (Tron #2385 L1). A dir set with NV_BOX_RUN_DIR never
+// falls back.
+func PrepareControlDir(c *Config) error {
+	err := prepareDir(c.ControlDir())
+	if err != nil && c.RunDir == DefaultRunDir {
+		log.Printf("box: engine control dir %s: %v; using the data dir instead", c.RunDir, err)
+		c.RunDir = ""
+		err = prepareDir(c.ControlDir())
+	}
+	return err
+}
+
+func prepareDir(dir string) error {
+	if fi, err := os.Lstat(dir); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s is a link", dir)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	return os.Chmod(c.ControlDir(), 0o700)
+	return os.Chmod(dir, 0o700)
 }

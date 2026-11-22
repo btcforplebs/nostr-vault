@@ -7,16 +7,18 @@ import (
 	"strings"
 )
 
-// The box catching up from the owner's other vaults (sync.go). Any signed-in
-// account: the box starts copies with its own device key, so who asks
-// changes nothing, and the state is per device.
+// The box catching up from the owner's other vaults (sync.go). The box
+// copies with its own mesh key, so who asks signs nothing. Any signed-in
+// account may see that it runs and ask it to catch up now; only the first
+// account sees the owner's devices and starts a first copy, which makes that
+// vault zip its whole vault (Tron #2385 M1, L2).
 func init() {
-	handle("GET /api/box/sync", SignedIn, func(a *API, w http.ResponseWriter, r *http.Request, _ Caller, _ []byte) {
+	handle("GET /api/box/sync", SignedIn, func(a *API, w http.ResponseWriter, r *http.Request, c Caller, _ []byte) {
 		if a.Sync == nil {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this box does not catch up from other vaults"})
 			return
 		}
-		rep, err := a.Sync.Report(r.Context())
+		rep, err := a.Sync.Report(r.Context(), c.First)
 		if err != nil {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 			return
@@ -38,7 +40,7 @@ func init() {
 		}
 		writeJSON(w, http.StatusAccepted, map[string]any{"started": true, "device": device})
 	})
-	handle("POST /api/box/sync/first", SignedIn, func(a *API, w http.ResponseWriter, r *http.Request, _ Caller, body []byte) {
+	handle("POST /api/box/sync/first", FirstAccount, func(a *API, w http.ResponseWriter, r *http.Request, _ Caller, body []byte) {
 		device, ok := syncDeviceArg(w, body, true)
 		if !ok {
 			return
@@ -83,7 +85,7 @@ func syncError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotPaired):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-	case errors.Is(err, ErrCopyBusy):
+	case errors.Is(err, ErrCopyBusy), errors.Is(err, ErrHasCopy):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 	default:
 		// nv-mesh could not reach it, or the engine is down.

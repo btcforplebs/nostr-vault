@@ -47,8 +47,9 @@ RestrictNamespaces=yes
 LockPersonality=yes
 SystemCallArchitectures=native
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
-# The data dir (nostr-vault-setup adds another one in a drop-in) and where Storage > Move vault may go (NV_MOVE_ROOT).
-ReadWritePaths=-/var/lib/nostr-vault -/mnt
+# The data dir (nostr-vault-setup adds another one in a drop-in), where Storage > Move vault may go (NV_MOVE_ROOT), and
+# /run/nv-vault (made by prepare): the engine's control socket.
+ReadWritePaths=-/var/lib/nostr-vault -/mnt -/run/nv-vault
 
 [Install]
 WantedBy=multi-user.target

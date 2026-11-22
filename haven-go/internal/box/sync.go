@@ -48,6 +48,10 @@ type Syncer struct {
 // ErrNotPaired: the device is not one of the owner's devices on this box's mesh.
 var ErrNotPaired = errors.New("not one of the owner's devices on this box's mesh")
 
+// ErrHasCopy: the box already holds a copy token from that device, so it
+// catches up (Sync now) instead of building a whole new copy.
+var ErrHasCopy = errors.New("this box already has a copy from that device: use Sync now")
+
 func (s *Syncer) init() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -191,10 +195,20 @@ func (s *Syncer) First(ctx context.Context, device string) error {
 	if !ok {
 		return ErrNotPaired
 	}
-	if st, err := s.Engine.State(ctx, nil); err != nil {
+	st, err := s.Engine.State(ctx, []string{device})
+	if err != nil {
 		return err
-	} else if st.Busy {
+	}
+	if st.Busy {
 		return ErrCopyBusy
+	}
+	// Each first copy makes that vault drop its old token and zip its whole
+	// vault (Tron #2385 M1), so one is started only while the box holds no
+	// working token: none yet, or the vault refused the one it has.
+	for _, d := range st.Devices {
+		if d.Peer == device && d.Token && !tokenRefused(d) {
+			return ErrHasCopy
+		}
 	}
 	base, err := s.Dial.Dial(ctx, device)
 	s.noteDial(device, err)
@@ -206,6 +220,12 @@ func (s *Syncer) First(ctx context.Context, device string) error {
 		return err
 	}
 	return s.Engine.First(ctx, device, base, auth)
+}
+
+// tokenRefused: the last run from d failed because d no longer takes the
+// box's token, so only a new first copy can bring one.
+func tokenRefused(d CopyDevice) bool {
+	return d.Last != nil && d.Last.Error == "auth_refused" // the engine stores the bare code (copyv2_box.go end)
 }
 
 // waitIdle waits until the engine runs no copy (RunLimit at most).
@@ -257,8 +277,11 @@ type SyncReport struct {
 	Devices   []SyncDevice `json:"devices"`
 }
 
-// Report is the per-device state for the state route.
-func (s *Syncer) Report(ctx context.Context) (SyncReport, error) {
+// Report is the per-device state for the state route. Only the first
+// account sees the devices (the owner's device npubs, nv-mesh's errors):
+// an added account gets the round's times and whether a copy is running
+// (Tron #2385 L2).
+func (s *Syncer) Report(ctx context.Context, first bool) (SyncReport, error) {
 	s.init()
 	r := SyncReport{Devices: []SyncDevice{}, Every: int64(orDur(s.Every, 15*time.Minute) / time.Second)}
 	devices, err := s.Devices()
@@ -277,6 +300,10 @@ func (s *Syncer) Report(ctx context.Context) (SyncReport, error) {
 	}
 	if !s.nextRound.IsZero() {
 		r.NextRound = s.nextRound.Unix()
+	}
+	if !first {
+		r.Running = ""
+		return r, nil
 	}
 	for _, d := range st.Devices {
 		sd := SyncDevice{CopyDevice: d, Reach: s.dialErr[d.Peer]}

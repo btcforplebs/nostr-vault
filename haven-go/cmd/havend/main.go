@@ -33,6 +33,9 @@
 //	NV_MESH_RUN_DIR     nv-mesh's runtime dir, default /run/nv-mesh: its
 //	                    dial.sock lets the box catch up from the owner's
 //	                    other vaults (box/sync.go)
+//	NV_BOX_RUN_DIR      havend's runtime dir, default /run/nv-vault (root
+//	                    makes it): the engine's control socket; without it,
+//	                    box/run under the data dir
 //	NV_DIRECTORY_RELAYS comma list, where to look for the owner's 10063
 //	NV_BACKUP_PROVIDER  "s3" to turn on backups, with NV_S3_* settings
 //
@@ -132,7 +135,7 @@ func run(args []string) error {
 	}
 	// The engine's control socket: havend starts first copies and
 	// catch-ups through it (box/sync.go, haven-go copyv2_box.go).
-	if err := box.PrepareControlDir(cfg); err != nil {
+	if err := box.PrepareControlDir(&cfg); err != nil {
 		return fmt.Errorf("engine control dir: %w", err)
 	}
 	engine := &box.Engine{

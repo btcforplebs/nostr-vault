@@ -3,6 +3,8 @@ package box
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -33,11 +35,12 @@ func (f *fakeDialer) SignCopyStart(_ context.Context, npub, _ string) (string, e
 }
 
 type fakeCopyEngine struct {
-	mu     sync.Mutex
-	tokens map[string]bool
-	busy   bool
-	synced []string
-	firsts []string
+	mu      sync.Mutex
+	tokens  map[string]bool
+	lastErr map[string]string
+	busy    bool
+	synced  []string
+	firsts  []string
 }
 
 func (f *fakeCopyEngine) First(_ context.Context, peer, _, auth string) error {
@@ -62,7 +65,11 @@ func (f *fakeCopyEngine) State(_ context.Context, peers []string) (CopyState, er
 	defer f.mu.Unlock()
 	st := CopyState{Busy: f.busy, Devices: []CopyDevice{}}
 	for _, p := range peers {
-		st.Devices = append(st.Devices, CopyDevice{Peer: p, Token: f.tokens[p]})
+		d := CopyDevice{Peer: p, Token: f.tokens[p]}
+		if e := f.lastErr[p]; e != "" {
+			d.Last = &CopyRun{Kind: "sync", Error: e}
+		}
+		st.Devices = append(st.Devices, d)
 	}
 	return st, nil
 }
@@ -81,7 +88,10 @@ func TestSyncerRoundCatchesUpOnlyWithTokens(t *testing.T) {
 	if len(eng.firsts) != 0 || len(dial.signed) != 0 {
 		t.Fatalf("a round started a first copy or asked for a proof: %v %v", eng.firsts, dial.signed)
 	}
-	rep, _ := s.Report(context.Background())
+	if rep, _ := s.Report(context.Background(), false); len(rep.Devices) != 0 {
+		t.Fatalf("an added account sees the owner's devices: %+v", rep.Devices)
+	}
+	rep, _ := s.Report(context.Background(), true)
 	for _, d := range rep.Devices {
 		switch d.Peer {
 		case "npub1phone":
@@ -127,6 +137,32 @@ func TestSyncerFirstCopy(t *testing.T) {
 	}
 }
 
+// Tron #2385 M1: a first copy makes that vault zip its whole vault, so it
+// is refused while the box holds a working token, and allowed again only
+// once the vault refuses that token.
+func TestSyncerFirstCopyRefusedWithToken(t *testing.T) {
+	dial := &fakeDialer{}
+	eng := &fakeCopyEngine{tokens: map[string]bool{"npub1mac": true}, lastErr: map[string]string{}}
+	s := &Syncer{Devices: func() ([]string, error) { return []string{"npub1mac"}, nil }, Dial: dial, Engine: eng}
+	if err := s.First(context.Background(), "npub1mac"); !errors.Is(err, ErrHasCopy) {
+		t.Fatalf("with a token: %v, want ErrHasCopy", err)
+	}
+	if len(dial.signed) != 0 || len(dial.dialed) != 0 || len(eng.firsts) != 0 {
+		t.Fatalf("reached the vault anyway: %v %v %v", dial.dialed, dial.signed, eng.firsts)
+	}
+	eng.lastErr["npub1mac"] = "network"
+	if err := s.First(context.Background(), "npub1mac"); !errors.Is(err, ErrHasCopy) {
+		t.Fatalf("token kept after a network error: %v, want ErrHasCopy", err)
+	}
+	eng.lastErr["npub1mac"] = "auth_refused"
+	if err := s.First(context.Background(), "npub1mac"); err != nil {
+		t.Fatalf("token refused by the vault: %v, want a new first copy", err)
+	}
+	if len(eng.firsts) != 1 {
+		t.Fatalf("firsts %v", eng.firsts)
+	}
+}
+
 func TestSyncerNowNeverBlocks(t *testing.T) {
 	s := &Syncer{Devices: func() ([]string, error) { return []string{"npub1mac"}, nil }}
 	for range 5 {
@@ -136,5 +172,29 @@ func TestSyncerNowNeverBlocks(t *testing.T) {
 	}
 	if got := <-s.kick; got != "" {
 		t.Fatalf("pending kick %q, want all devices after several asks", got)
+	}
+}
+
+// Tron #2385 L1: the control socket lives in its own run dir, 0700, never
+// under the data dir unless no run dir can be made, and never through a link.
+func TestPrepareControlDir(t *testing.T) {
+	root := t.TempDir()
+	c := Config{DataDir: filepath.Join(root, "data"), RunDir: filepath.Join(root, "run")}
+	if err := PrepareControlDir(&c); err != nil {
+		t.Fatal(err)
+	}
+	if c.EngineControlSocket() != filepath.Join(root, "run", "engine.sock") {
+		t.Fatalf("socket %s, want it in the run dir", c.EngineControlSocket())
+	}
+	if fi, err := os.Stat(c.RunDir); err != nil || fi.Mode().Perm() != 0o700 {
+		t.Fatalf("run dir: %v %v", fi, err)
+	}
+	link := Config{DataDir: c.DataDir, RunDir: filepath.Join(root, "link")}
+	os.Symlink(filepath.Join(root, "run"), link.RunDir)
+	if err := PrepareControlDir(&link); err == nil {
+		t.Fatal("took a link as the run dir")
+	}
+	if link.RunDir != filepath.Join(root, "link") {
+		t.Fatal("a set NV_BOX_RUN_DIR fell back to the data dir")
 	}
 }

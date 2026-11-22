@@ -41,13 +41,14 @@ func TestRoutesRegistered(t *testing.T) {
 
 // Every route is first-account only except the two that let an account
 // ask whether the box holds it and join with a code (E9), the read routes
-// any signed-in account may use (E4), and the sync routes (E3: the box
-// copies with its own device key, so any signed-in account may ask).
-// Opening any other route to more callers must be a deliberate edit here.
+// any signed-in account may use (E4), and the sync routes (E3: any
+// signed-in account may see a round runs and ask for one now; a first copy
+// stays the first account's, Tron #2385 M1). Opening any other route to
+// more callers must be a deliberate edit here.
 func TestRouteLevels(t *testing.T) {
 	anyone := map[string]bool{"GET /api/box/accounts/me": true, "POST /api/box/accounts/join": true}
 	signedIn := map[string]bool{"GET /api/box/contents": true, "GET /api/box/connections": true,
-		"GET /api/box/sync": true, "POST /api/box/sync/now": true, "POST /api/box/sync/first": true}
+		"GET /api/box/sync": true, "POST /api/box/sync/now": true}
 	for path, rt := range boxRoutes {
 		want := FirstAccount
 		if anyone[path] {

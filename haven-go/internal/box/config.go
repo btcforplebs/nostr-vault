@@ -51,6 +51,13 @@ type Config struct {
 	// /run/nv-mesh), where its dial.sock lets havend reach the owner's other
 	// vaults (linux/mesh/src/dial.rs).
 	MeshRunDir string
+	// RunDir holds the engine's control socket (NV_BOX_RUN_DIR, default
+	// /run/nv-vault): root makes it havend's, 0700, outside the data dir (a
+	// host bind mount under Docker), like nv-mesh's dial.sock. With no such
+	// dir and no right to make one (havend not started by root), havend
+	// falls back to box/run under the data dir and says so
+	// (PrepareControlDir).
+	RunDir string
 	// MeshDoorPort is the engine's loopback mesh door (NV_MESH_DOOR_PORT,
 	// default Port+1), where nv-mesh sends strangers. The engine gets it as
 	// HAVEN_MESH_PLAIN_PORT.
@@ -154,6 +161,10 @@ func ConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 	}
 	c.MeshNpubFile = filepath.Join(c.DataDir, "mesh", "npub")
 	c.MeshRunDir = orDefault(strings.TrimSpace(getenv("NV_MESH_RUN_DIR")), "/run/nv-mesh")
+	c.RunDir = orDefault(strings.TrimSpace(getenv("NV_BOX_RUN_DIR")), DefaultRunDir)
+	if !filepath.IsAbs(c.RunDir) {
+		return c, fmt.Errorf("NV_BOX_RUN_DIR must be an absolute path, got %q", c.RunDir)
+	}
 	c.MeshDevicesFile = orDefault(getenv("NV_MESH_DEVICES"), filepath.Join(c.DataDir, "mesh-devices.json"))
 	if !filepath.IsAbs(c.MeshDevicesFile) {
 		return c, fmt.Errorf("NV_MESH_DEVICES must be an absolute path, got %q", c.MeshDevicesFile)
@@ -266,9 +277,17 @@ func port(raw string, def int, name string) (int, error) {
 func (c Config) BoxDir() string { return filepath.Join(c.DataDir, "box") }
 
 // DefaultVaultDir is where the vault lives until it is moved.
+// DefaultRunDir is NV_BOX_RUN_DIR when unset.
+const DefaultRunDir = "/run/nv-vault"
+
 // ControlDir holds the engine's control socket (EngineControlSocket): a
 // 0700 dir of havend's, so only havend and its engine reach the socket.
-func (c Config) ControlDir() string { return filepath.Join(c.BoxDir(), "run") }
+func (c Config) ControlDir() string {
+	if c.RunDir == "" {
+		return filepath.Join(c.BoxDir(), "run")
+	}
+	return c.RunDir
+}
 
 // EngineControlSocket is HAVEN_BOX_CONTROL_SOCK (haven-go copyv2_box.go).
 func (c Config) EngineControlSocket() string { return filepath.Join(c.ControlDir(), "engine.sock") }
