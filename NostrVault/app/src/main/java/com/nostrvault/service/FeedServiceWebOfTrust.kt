@@ -83,7 +83,7 @@ import java.io.File
                         }
                         // The relay's web is every device account's pooled; keep the open account's part.
                         val loaded = accountWeb(parsed.pubkeys, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.chatRelayMinFollowers)
-                        val loose = accountLoose(parsed.pubkeys, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.chatRelayMinFollowers)
+                        val loose = accountLoose(parsed.pubkeys, loaded, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.chatRelayMinFollowers)
                         val vouches = parsed.vouches
                         if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {

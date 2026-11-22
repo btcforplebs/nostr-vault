@@ -89,14 +89,15 @@ object FeedFilterEngine {
         pollStatus: com.nostrvault.data.model.PollStatusFilter = com.nostrvault.data.model.PollStatusFilter.ALL,
         languageOf: (FeedNote) -> String? = { null },
         authorOf: (String) -> String? = { null },
-        /** One hop past [wotPubkeys] ([WebGate.loose]). */
+        /** One hop past [wotPubkeys] ([WebGate.loose]), ideally already [WebGate.cleanLoose]d. */
         loosePubkeys: Set<String> = emptySet(),
         /** How far this feed reaches ([FeedReach]); only Underrated reads it today, as on iOS. */
         reach: WebGate.Reach = WebGate.Reach.WEB,
         /** This device's accounts: always inside the gate. */
         ownPubkeys: Set<String> = emptySet(),
     ): List<FeedNote> {
-        val gateWeb = WebGate.Web(own = ownPubkeys, web = wotPubkeys, loose = loosePubkeys)
+        // Built only for a feed that reads it (Underrated): it scans the web and the loose set.
+        val gateWeb by lazy { WebGate.Web(own = ownPubkeys, web = wotPubkeys, loose = loosePubkeys) }
         fun verdict(note: FeedNote): WebGate.Verdict = WebGate.judge(note.repostedBy ?: note.pubkey, gateWeb, reach)
         // Articles and Recipes: Following keeps to follows; Global follows
         // the same Web of Trust / Everyone rule as Global, failing closed.
@@ -185,7 +186,7 @@ object FeedFilterEngine {
             filtered.sortedByDescending { it.createdAt }
         }
 
-        if (reach == WebGate.Reach.WEB_AND_LOOSE) {
+        if (mode == FeedMode.UNDERRATED && reach == WebGate.Reach.WEB_AND_LOOSE) {
             filtered = WebGate.capLoose(filtered, ::verdict, author = { it.repostedBy ?: it.pubkey }, isReply = { it.isReply })
         }
         return filtered

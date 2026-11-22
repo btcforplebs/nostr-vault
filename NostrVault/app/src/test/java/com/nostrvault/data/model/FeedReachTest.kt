@@ -35,4 +35,15 @@ class FeedReachTest {
         assertEquals(start, FeedReach.setting(WebGate.Reach.WEB_AND_LOOSE, FeedMode.UNDERRATED, set))
         assertEquals(emptyMap<String, String>(), FeedReach.setting(WebGate.Reach.WEB, FeedMode.GLOBAL, start))
     }
+
+    @Test fun `only Underrated is gated on Android so far, so only it has a row`() {
+        assertEquals(listOf(FeedMode.UNDERRATED), FeedReach.gatedModes)
+    }
+
+    @Test fun `the loose set is saved lowercased, without the web or blanks`() {
+        val clean = WebGate.cleanLoose(setOf("AB", "cd", "", "EF"), setOf("ef"))
+        assertEquals(setOf("ab", "cd"), clean)
+        val web = WebGate.Web(own = emptySet(), web = setOf("ef"), loose = clean)
+        assertEquals(true, web.loose === clean)
+    }
 }

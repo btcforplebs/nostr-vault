@@ -18,8 +18,8 @@ import com.nostrvault.ui.theme.*
  * Settings › Feed › Reach: how far each feed reaches past the people you
  * follow. iOS `FeedReachSettingsSection.swift`. "Your web" is the people in
  * your web of trust; "+ a few one hop out" lets in a rationed few followed
- * by some of your follows, too few to be in your web. Underrated starts
- * there; every other feed starts on your web.
+ * by some of your follows, too few to be in your web. Only Underrated has a
+ * row so far: it is the one feed gated on Android ([FeedReach.gatedModes]).
  */
 @Composable
 fun FeedReachSettingsSection(
@@ -35,7 +35,7 @@ fun FeedReachSettingsSection(
     )
     Surface(shape = RoundedCornerShape(12.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
         Column {
-            FeedReach.modes.forEachIndexed { i, mode ->
+            FeedReach.gatedModes.forEachIndexed { i, mode ->
                 if (i > 0) HorizontalDivider(color = TertiaryGroupedBg, thickness = 0.5.dp)
                 ReachRow(mode, FeedReach.reach(mode, settings)) { onChange(mode, it) }
             }
@@ -43,7 +43,7 @@ fun FeedReachSettingsSection(
     }
     Text(
         text = "How far each feed reaches past the people you follow. One hop out shows at most one post per person " +
-            "and a few per feed. Global's Everyone shield still opens Global to everyone.",
+            "and a few per feed.",
         color = TertiaryText,
         fontSize = 12.sp,
         modifier = Modifier.padding(start = 4.dp, top = 6.dp),

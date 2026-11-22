@@ -17,7 +17,11 @@ import java.io.File
  * a links file it cannot read, is nobody (depth 3) or the pooled rest (other
  * depths, as iOS).
  */
-internal fun FeedService.accountLoose(saved: Set<String>, links: File, depth: Int?, minFollowers: Int): Set<String> {
+internal fun FeedService.accountLoose(saved: Set<String>, web: Set<String>, links: File, depth: Int?, minFollowers: Int): Set<String> =
+    WebGate.cleanLoose(accountLooseRaw(saved, links, depth, minFollowers), web)
+
+/** [accountLoose] before it is lowercased and has [accountWeb] taken out. */
+private fun FeedService.accountLooseRaw(saved: Set<String>, links: File, depth: Int?, minFollowers: Int): Set<String> {
     val follows = followedPubkeySet()
     val counts = if (depth == 3 && links.exists()) {
         runCatching { links.bufferedReader().use { AccountWeb.vouchCounts(it, follows) } }.getOrNull()
@@ -33,8 +37,12 @@ internal fun FeedService.feedReach(mode: FeedMode, globalLike: Boolean): WebGate
     return FeedReach.reach(mode, config.feedReach)
 }
 
-/** The current feed's reach. */
-internal fun FeedService.currentFeedReach(): WebGate.Reach = feedReach(_feedMode.value, isGlobalLikeMode())
+/** The current feed's reach; a feed not gated on Android yet ([FeedReach.gatedModes]) keeps to its web. */
+internal fun FeedService.currentFeedReach(): WebGate.Reach {
+    val mode = _feedMode.value
+    if (mode !in FeedReach.gatedModes) return WebGate.Reach.WEB
+    return feedReach(mode, isGlobalLikeMode())
+}
 
 /** Saves [reach] for [mode] and re-judges the notes on screen. */
 fun FeedService.setFeedReach(mode: FeedMode, reach: WebGate.Reach) {

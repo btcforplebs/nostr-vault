@@ -56,8 +56,8 @@ object WebGate {
         val own: Set<String> = lowered(own)
         val web: Set<String> = lowered(web)
 
-        /** One hop past [web], never in it. */
-        val loose: Set<String> = lowered(loose) - this.web
+        /** One hop past [web], never in it. A set already [cleanLoose]d is used as it is. */
+        val loose: Set<String> = lowered(loose).let { l -> if (l.none { it in this.web }) l else l - this.web }
     }
 
     fun judge(
@@ -147,6 +147,14 @@ object WebGate {
     /** iOS `AccountWeb.newAccountWebCap`. */
     const val NEW_ACCOUNT_WEB_CAP = 1000
 
+    /** [loose] lowercased with [web] taken out, saved that way so [Web] need not copy it on every filter. */
+    fun cleanLoose(loose: Set<String>, web: Set<String>): Set<String> {
+        val w = lowered(web)
+        return lowered(loose).filterTo(HashSet()) { it !in w }
+    }
+
+    /** [keys] lowercased without "", and the same set back when it already is (no copy). */
     private fun lowered(keys: Set<String>): Set<String> =
-        if (keys.none { k -> k.any { it in 'A'..'Z' } }) keys - "" else keys.mapTo(HashSet()) { it.lowercase() } - ""
+        if ("" !in keys && keys.none { k -> k.any { it in 'A'..'Z' } }) keys
+        else keys.mapTo(HashSet()) { it.lowercase() } - ""
 }

@@ -17,6 +17,14 @@ object FeedReach {
     /** The feeds with a Reach setting, in Settings order, with their saved keys (iOS raw values). */
     val modes: List<FeedMode> = listOf(FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR, FeedMode.UNDERRATED, FeedMode.MEDIA)
 
+    /**
+     * The feeds that go through [WebGate] on Android so far, and so get a
+     * Reach row and have their reach applied. Popular, Media, Discovery and
+     * Global are not gated here yet: their saved words are kept (iOS shares
+     * them) but read as [WebGate.Reach.WEB] until they are (Tron, #2415).
+     */
+    val gatedModes: List<FeedMode> = listOf(FeedMode.UNDERRATED)
+
     fun key(mode: FeedMode): String = when (mode) {
         FeedMode.DISCOVERY -> "Discovery"
         else -> mode.displayName

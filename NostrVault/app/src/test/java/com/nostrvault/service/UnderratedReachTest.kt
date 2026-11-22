@@ -49,4 +49,10 @@ class UnderratedReachTest {
         assertEquals(listOf("web"), shown(WebGate.Reach.WEB_AND_LOOSE, mode = FeedMode.DISCOVERY))
         assertEquals(listOf("follow", "web"), shown(WebGate.Reach.WEB_AND_LOOSE, mode = FeedMode.GLOBAL))
     }
+
+    @Test fun `a feed not gated yet is not rationed either (Tron, #2415)`() {
+        for (mode in listOf(FeedMode.POPULAR, FeedMode.MEDIA, FeedMode.DISCOVERY, FeedMode.GLOBAL)) {
+            assertEquals(mode.name, shown(WebGate.Reach.WEB, mode = mode), shown(WebGate.Reach.WEB_AND_LOOSE, mode = mode))
+        }
+    }
 }
