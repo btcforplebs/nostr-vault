@@ -127,6 +127,7 @@ func main() {
 		runsafe.Go("ingestPopularEngagement", func() { ingestPopularEngagement(mainCtx) })
 		runsafe.Go("periodicCloudBackups", func() { startPeriodicCloudBackups(mainCtx) })
 		runsafe.Go("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(mainCtx, config.WotRefreshInterval) })
+		runsafe.Go("trustRank", func() { runTrustRank(mainCtx, pool, false) })
 		// havend as B: a first copy (or its resume) asked for at start.
 		startCopyFromEnv(mainCtx, hostGetenv, runsafe.Go)
 		// havend: Auto-Mirror and Copy to servers (auto_mirror.go, media_copy_job.go).
