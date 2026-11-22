@@ -84,6 +84,58 @@ final class StreamingBlobDownloadTests: XCTestCase {
         XCTAssertEqual(leftovers(), [])
     }
 
+    // MARK: Auto-Mirror's box checks (AutoMirrorGuard, parity report §4)
+
+    func testOverTheCapIsRefusedAtTheHeaders() async {
+        ChunkedStub.configure(chunks: 8, chunkSize: 1 << 20)
+        let request = URLRequest(url: URL(string: "https://media.example/big.mp4")!)
+        let result = await StreamingBlobDownload.fetch(request, configuration: config(), directory: dir,
+                                                       maxBytes: 4 << 20, freeBytes: plenty)
+        XCTAssertEqual(result, .failure(.tooBig(limit: 4 << 20)))
+        XCTAssertEqual(leftovers(), [])
+        XCTAssertLessThan(ChunkedStub.sentChunks, 8, "the body should not be read")
+    }
+
+    func testOverTheCapWithNoLengthIsCutOffWhileArriving() async {
+        ChunkedStub.configure(chunks: 8, chunkSize: 1 << 20, sendLength: false)
+        let request = URLRequest(url: URL(string: "https://media.example/big.mp4")!)
+        let result = await StreamingBlobDownload.fetch(request, configuration: config(), directory: dir,
+                                                       maxBytes: (4 << 20) + 1, freeBytes: plenty)
+        XCTAssertEqual(result, .failure(.tooBig(limit: (4 << 20) + 1)))
+        XCTAssertEqual(leftovers(), [])
+    }
+
+    func testAtTheCapIsKept() async throws {
+        ChunkedStub.configure(chunks: 4, chunkSize: 1 << 20, sendLength: false)
+        let request = URLRequest(url: URL(string: "https://media.example/ok.mp4")!)
+        let file = try await StreamingBlobDownload.fetch(request, configuration: config(), directory: dir,
+                                                         maxBytes: 4 << 20, freeBytes: plenty).get()
+        XCTAssertEqual(file.size, 4 << 20)
+        try FileManager.default.removeItem(at: file.url)
+    }
+
+    func testAPageTypeIsRefused() async {
+        ChunkedStub.configure(chunks: 1, chunkSize: 100, contentType: "image/svg+xml")
+        let request = URLRequest(url: URL(string: "https://media.example/pic")!)
+        let result = await StreamingBlobDownload.fetch(request, configuration: config(), directory: dir, allowsType: { AutoMirrorGuard.allowsType(declared: $0, url: $1) },
+                                                       freeBytes: plenty)
+        XCTAssertEqual(result, .failure(.typeNotAllowed("image/svg+xml")))
+        XCTAssertEqual(leftovers(), [])
+    }
+
+    func testNoTypeFallsBackToTheExtension() async throws {
+        ChunkedStub.configure(chunks: 1, chunkSize: 100, contentType: nil)
+        let page = URLRequest(url: URL(string: "https://media.example/x.html")!)
+        let refused = await StreamingBlobDownload.fetch(page, configuration: config(), directory: dir, allowsType: { AutoMirrorGuard.allowsType(declared: $0, url: $1) },
+                                                        freeBytes: plenty)
+        guard case .failure(.typeNotAllowed) = refused else { return XCTFail("\(refused)") }
+        ChunkedStub.configure(chunks: 1, chunkSize: 100, contentType: nil)
+        let photo = URLRequest(url: URL(string: "https://media.example/x.jpg")!)
+        let file = try await StreamingBlobDownload.fetch(photo, configuration: config(), directory: dir, allowsType: { AutoMirrorGuard.allowsType(declared: $0, url: $1) },
+                                                         freeBytes: plenty).get()
+        try FileManager.default.removeItem(at: file.url)
+    }
+
     func testRoomRule() {
         let margin = BlobImportRoom.margin
         XCTAssertEqual(BlobImportRoom.decide(declared: 600 << 20, free: 1200 << 20 + margin), .fits)
@@ -113,6 +165,8 @@ final class ChunkedStub: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) private static var chunks = 0
     nonisolated(unsafe) private static var chunkSize = 0
     nonisolated(unsafe) private static var status = 200
+    nonisolated(unsafe) private static var contentType: String? = "video/mp4"
+    nonisolated(unsafe) private static var sendLength = true
     nonisolated(unsafe) private static var sent = 0
     nonisolated(unsafe) private(set) static var sha256 = ""
     private var stopped = false
@@ -121,11 +175,13 @@ final class ChunkedStub: URLProtocol, @unchecked Sendable {
 
     static func reset() { lock.withLock { sent = 0 } }
 
-    static func configure(chunks: Int, chunkSize: Int, status: Int = 200) {
+    static func configure(chunks: Int, chunkSize: Int, status: Int = 200, contentType: String? = "video/mp4", sendLength: Bool = true) {
         lock.withLock {
             self.chunks = chunks
             self.chunkSize = chunkSize
             self.status = status
+            self.contentType = contentType
+            self.sendLength = sendLength
             self.sent = 0
         }
         var hasher = SHA256()
@@ -141,9 +197,12 @@ final class ChunkedStub: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        let (n, size, code) = Self.lock.withLock { (Self.chunks, Self.chunkSize, Self.status) }
+        let (n, size, code, type, withLength) = Self.lock.withLock { (Self.chunks, Self.chunkSize, Self.status, Self.contentType, Self.sendLength) }
+        var headers: [String: String] = [:]
+        if withLength { headers["Content-Length"] = "\(n * size)" }
+        if let type { headers["Content-Type"] = type }
         let response = HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: "HTTP/1.1",
-                                       headerFields: ["Content-Length": "\(n * size)", "Content-Type": "video/mp4"])!
+                                       headerFields: headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         DispatchQueue.global().async {
             for i in 0..<n {

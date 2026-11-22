@@ -19,6 +19,11 @@ struct BlossomSettingsView: View {
     /// page under Vault › Advanced until 2026-11-12, now part of this one.
     @StateObject private var health = MediaServersModel()
     @State private var showFiles = false
+    /// What the last Save's publish did, shown under the Save bar until the
+    /// next Save (nil while none ran, or one is on its way).
+    @State private var publishOutcome: ServerListPublishOutcome?
+    /// The plan a refused publish can try again with.
+    @State private var retryPlan: MediaServersDraft.SavePlan?
     @Environment(\.dismiss) private var dismiss
     
     private func waitingLine(_ post: QueuedMediaPost) -> String {
@@ -328,10 +333,22 @@ struct BlossomSettingsView: View {
             .buttonStyle(.borderedProminent)
             .tint(.havenPurple)
             .disabled(changes == 0)
-            Text("Only Save publishes your media server list.")
-                .font(.appCaption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            if let publishOutcome {
+                Text(publishOutcome.message)
+                    .font(.appCaption)
+                    .foregroundColor(publishOutcome.isRefusal ? .orange : .secondary)
+                    .multilineTextAlignment(.center)
+                if let retryPlan {
+                    Button("Try again") { publish(retryPlan) }
+                        .font(.appCaption)
+                        .buttonStyle(.borderless)
+                }
+            } else {
+                Text("Only Save publishes your media server list.")
+                    .font(.appCaption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -343,13 +360,22 @@ struct BlossomSettingsView: View {
     private func save() {
         let plan = draft.savePlan
         guard draft.hasChanges else { return }
+        // A list with no public server isn't published (NIP-F1): refuse before
+        // anything is stored, as web does, rather than save and publish nothing.
+        let nostr = NostrService.shared
+        if draft.leavesNoPublicServer(published: nostr.serverLists[nostr.activeHexPubkey],
+                                      others: [configService.config.macRelayHttpsURL].filter { !$0.isEmpty }) {
+            publishOutcome = .noPublicServer
+            retryPlan = nil
+            return
+        }
         if plan.mirrorsChanged {
             configService.config.blossomMirrors = plan.mirrors
             // A published list older than this edit is not adopted over it.
             configService.config.blossomMirrorsUpdatedAt = Int64(Date().timeIntervalSince1970)
             configService.save()
         }
-        NostrService.shared.publishServerList(meshAdd: plan.meshAdd, meshRemove: plan.meshRemove)
+        publish(plan)
         draft.didSave()
         // The publish can change nothing (relays didn't answer): show the
         // published list again after a while rather than a tap that didn't land.
@@ -361,6 +387,16 @@ struct BlossomSettingsView: View {
         }
     }
     
+    /// Publishes the list once and shows what happened under the Save bar.
+    private func publish(_ plan: MediaServersDraft.SavePlan) {
+        publishOutcome = nil
+        retryPlan = nil
+        NostrService.shared.publishServerList(meshAdd: plan.meshAdd, meshRemove: plan.meshRemove) { outcome in
+            publishOutcome = outcome
+            retryPlan = outcome.canRetry ? plan : nil
+        }
+    }
+
     private func loadHealth() async {
         await health.load(configService: configService, nostrService: NostrService.shared)
     }

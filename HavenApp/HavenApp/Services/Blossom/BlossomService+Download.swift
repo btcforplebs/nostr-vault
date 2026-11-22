@@ -62,13 +62,15 @@ extension BlossomService {
 
     /// A blob from the first configured mirror that has it, as a temp file
     /// checked against `sha256`. The caller deletes the file.
-    func fetchFromMirrors(sha256: String) async -> StreamingBlobDownload.File? {
+    /// `autoMirror`: the box's size and type checks too (AutoMirrorGuard).
+    func fetchFromMirrors(sha256: String, autoMirror: Bool = false) async -> StreamingBlobDownload.File? {
         let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
         guard !mirrors.isEmpty else {
             logger.warning("No Blossom mirrors configured for download")
             return nil
         }
 
+        let limits = AutoMirrorGuard.limits(autoMirror: autoMirror)
         // Try each mirror until one succeeds
         for mirror in mirrors {
             guard var mirrorURL = URL(string: mirror) else { continue }
@@ -94,6 +96,7 @@ extension BlossomService {
             }
             let result: Result<StreamingBlobDownload.File, StreamingBlobDownload.Failure> = await StreamingBlobDownload.fetch(
                 request, configuration: session.configuration, expectedSHA256: sha256,
+                maxBytes: limits.maxBytes, allowsType: limits.allowsType,
                 challenge: local ? trustLocal : nil)
             switch result {
             case .success(let file):
@@ -110,10 +113,15 @@ extension BlossomService {
     }
 
     /// Media from any link, as a temp file hashed as it arrived. The caller deletes the file.
-    func fetchFromURL(_ url: URL) async -> StreamingBlobDownload.File? {
+    /// Auto-Mirror passes `autoMirror`: the box's checks (AutoMirrorGuard):
+    /// the hash the link or its note names, at most 256 MiB, no page or script types.
+    func fetchFromURL(_ url: URL, expectedSHA256: String? = nil, autoMirror: Bool = false) async -> StreamingBlobDownload.File? {
         var request = URLRequest(url: url)
         request.timeoutInterval = 120  // video files
-        switch await StreamingBlobDownload.fetch(request, configuration: remoteSession.configuration) {
+        let limits = AutoMirrorGuard.limits(autoMirror: autoMirror)
+        switch await StreamingBlobDownload.fetch(
+            request, configuration: remoteSession.configuration, expectedSHA256: expectedSHA256,
+            maxBytes: limits.maxBytes, allowsType: limits.allowsType) {
         case .failure(let why):
             logger.warning("Download from \(url.absoluteString) skipped: \(why.reason)")
             return nil
