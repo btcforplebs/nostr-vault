@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Vault Dashboard › Status, Mac only: what the phone's one "Restart vault"
 /// button stands for when the vault needs fixing. Carried over from the Mac
-/// relay console's recovery banner (DashboardView+StatusHeader) so the fold
+/// relay console's recovery banner (the old DashboardView+StatusHeader, gone since A3) so the fold
 /// into the one Vault loses nothing: Force Restart, Clear Locks Only for a
 /// stale database lock, and where the port lives for a port conflict.
 struct MacVaultLockBanner: View {

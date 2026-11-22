@@ -153,7 +153,7 @@ extension MenuBarView {
                                     .environmentObject(configService)
                                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
                             case .relay:
-                                DashboardView()
+                                NavigationStack { VaultDashboardView() }
                                     .environmentObject(relayManager)
                                     .environmentObject(configService)
                                     .environmentObject(nostrService)
