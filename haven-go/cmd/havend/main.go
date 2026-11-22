@@ -164,6 +164,7 @@ func run(args []string) error {
 			Source: &box.RelayServerLists{
 				VaultURL:  "ws://127.0.0.1:" + strconv.Itoa(cfg.EnginePort),
 				Directory: cfg.DirectoryRelays,
+				First:     cfg.OwnerHex,
 			},
 		},
 		Mover: &box.Mover{

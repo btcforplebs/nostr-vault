@@ -81,11 +81,17 @@ func (d *Devices) read(ctx context.Context, get func(context.Context, string) (*
 	if d.lists == nil {
 		d.lists = map[string]foundList{}
 	}
+	// Who counts now, not when the fetches began: a slow read that started
+	// before an account was removed must not put its list (and its devices)
+	// back after the removal's own read wrote them out (Tron #2376).
+	now := d.counted()
 	keep := map[string]bool{}
-	for i, pk := range accounts {
+	for _, pk := range now {
 		keep[pk] = true
+	}
+	for i, pk := range accounts {
 		f := found[i]
-		if f.ev == nil {
+		if f.ev == nil || !keep[pk] {
 			continue
 		}
 		if old, ok := d.lists[pk]; ok && f.ev.CreatedAt < old.ev.CreatedAt {
@@ -101,7 +107,7 @@ func (d *Devices) read(ctx context.Context, get func(context.Context, string) (*
 		}
 	}
 	npub, pubkey, _ := d.Mesh.Read()
-	r := buildAccountsReport(npub, pubkey, accounts, d.lists)
+	r := buildAccountsReport(npub, pubkey, now, d.lists)
 	// With no list known the file is left as it was (an outage must not
 	// drop every device), unless this read just forgot an account: then the
 	// lists left, even none, are the whole truth, and the removed account's

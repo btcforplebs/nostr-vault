@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -145,5 +146,54 @@ func TestDevicesAskEveryAccountAtOnce(t *testing.T) {
 	d.Refresh(context.Background())
 	if took := time.Since(start); took > 600*time.Millisecond {
 		t.Fatalf("5 accounts took %v; want about one answer's time", took)
+	}
+}
+
+// gatedLists answers at once, except for one key, whose answer waits for
+// release.
+type gatedLists struct {
+	perKeyLists
+	slow    string
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (g gatedLists) Newest(ctx context.Context, pk string) (*nostr.Event, string) {
+	if pk == g.slow {
+		close(g.entered)
+		<-g.release
+	}
+	return g.perKeyLists.Newest(ctx, pk)
+}
+
+// Tron #2376: a poll already fetching when an account is removed must not
+// put its list, and its phone, back after the removal's read.
+func TestASlowReadCannotBringARemovedAccountBack(t *testing.T) {
+	owner, signed := newTestKey(t), newTestKey(t)
+	boxKey, phone := newTestKey(t), newTestKey(t)
+	lists := perKeyLists{signed.pk: serverList(t, signed, nostr.Now(), npubOf(t, boxKey), npubOf(t, phone))}
+	file := filepath.Join(t.TempDir(), "mesh-devices.json")
+	var mu sync.Mutex
+	counted := []string{owner.pk, signed.pk}
+	accounts := func() []string { mu.Lock(); defer mu.Unlock(); return slices.Clone(counted) }
+	d := &Devices{OwnerHex: owner.pk, Accounts: accounts, Mesh: testMeshID(t, boxKey), Source: lists, DevicesFile: file}
+	d.Refresh(context.Background())
+
+	g := gatedLists{lists, signed.pk, make(chan struct{}), make(chan struct{})}
+	done := make(chan struct{})
+	go func() { d.read(context.Background(), g.Newest); close(done) }()
+	<-g.entered // the poll is fetching the signed-in account's list
+
+	mu.Lock()
+	counted = []string{owner.pk}
+	mu.Unlock()
+	d.Refresh(context.Background()) // the removal's read
+	if got := readDevicesFile(t, file); len(got) != 0 {
+		t.Fatalf("after removal: %v", got)
+	}
+	close(g.release)
+	<-done
+	if got := readDevicesFile(t, file); len(got) != 0 {
+		t.Fatalf("the slow poll let the removed account's phone back in: %v", got)
 	}
 }

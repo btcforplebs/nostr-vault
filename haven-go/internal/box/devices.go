@@ -124,6 +124,10 @@ type RelayServerLists struct {
 	// DirectoryEvery is how often Poll also asks the directory relays; 0 is
 	// 10 minutes.
 	DirectoryEvery time.Duration
+	// First is the first account's hex key. It is never backed off: on a new
+	// box nobody has a list yet, and the first approval may reach only the
+	// directory relays.
+	First string
 
 	// Per account (the key asked about): a box polls the list of every
 	// signed-in account (devices_accounts.go).
@@ -155,7 +159,7 @@ func (s *RelayServerLists) Poll(ctx context.Context, ownerHex string) (*nostr.Ev
 	if every == 0 {
 		every = 10 * time.Minute
 	}
-	due := len(s.Directory) > 0 && ((vault == nil && !s.dirEmpty[ownerHex]) || s.lagging[ownerHex] || time.Since(s.dirAt[ownerHex]) >= every)
+	due := len(s.Directory) > 0 && ((vault == nil && (!s.dirEmpty[ownerHex] || strings.EqualFold(ownerHex, s.First))) || s.lagging[ownerHex] || time.Since(s.dirAt[ownerHex]) >= every)
 	s.mu.Unlock()
 	if !due {
 		return s.settle(ownerHex, vault, nil, false)

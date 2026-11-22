@@ -205,3 +205,17 @@ func TestPollBacksOffTheDirectoryWhenNobodyHasAList(t *testing.T) {
 		t.Fatalf("due poll: %v %s", ev, src)
 	}
 }
+
+// The first account is never backed off: on a new box the first approval
+// may reach only the directory relays (Tron #2376 note).
+func TestPollNeverBacksOffTheFirstAccount(t *testing.T) {
+	owner := newTestKey(t)
+	vault, dir := newListRelay(t), newListRelay(t)
+	s := &RelayServerLists{VaultURL: vault.url, Directory: []string{dir.url}, DirectoryEvery: time.Hour, First: owner.pk}
+	for i := 0; i < 3; i++ {
+		s.Poll(context.Background(), owner.pk)
+	}
+	if d := dir.dials.Load(); d != 3 {
+		t.Fatalf("directory dialled %d times for the first account with no list; want every poll", d)
+	}
+}
