@@ -69,4 +69,29 @@ func TestBoxOffersFirstAndSignedInAccounts(t *testing.T) {
 	if _, ok := got[watch.pk]; ok {
 		t.Fatal("a watch-only account is offered")
 	}
+
+	// Another device's copy offers the first account and W, which is
+	// watch-only here (Tron #2378): it is own already, so it is not offered,
+	// and the box still never sends it on to a third device. A stranger's
+	// account it lacks is still offered to the app.
+	stranger := newTestKey(t)
+	theirs, _ := json.Marshal(copyAccountList{V: 1, UpdatedAt: 1, Accounts: []copyAccount{
+		{Npub: npubOf(t, owner.pk)}, {Npub: npubOf(t, watch.pk), Name: "W"}, {Npub: npubOf(t, stranger.pk)},
+	}})
+	if r := takeCopyAccounts(theirs); r != "offered" {
+		t.Fatalf("incoming copy: %s", r)
+	}
+	if got := sent(); len(got) != 2 || got[signed.pk] != "Work" {
+		t.Fatalf("after an incoming offer of W: sent %v, want first + Work only", got)
+	}
+	var file copyAccountList
+	raw, _ = os.ReadFile(copyAccountsFile)
+	_ = json.Unmarshal(raw, &file)
+	offered := map[string]bool{}
+	for _, a := range file.Accounts {
+		offered[a.Npub] = true
+	}
+	if offered[npubOf(t, watch.pk)] || !offered[npubOf(t, stranger.pk)] {
+		t.Fatalf("copy-accounts.json after the offer: %s", raw)
+	}
 }

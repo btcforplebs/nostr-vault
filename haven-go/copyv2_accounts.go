@@ -248,6 +248,12 @@ func takeCopyAccounts(raw []byte) string {
 // offerCopyAccounts merges theirs into copy-accounts.json. The app asks the
 // person which of those it lacks to add, and adds only the ticked ones
 // (AddAccountsC and its whitelist file). Merging never removes one.
+//
+// An account that is already own here is never offered: the offer is only
+// for accounts this vault lacks. Merging one in would put it in the list
+// localCopyAccounts sends, so a box's watch-only account offered by another
+// device would be offered on to a third as if signed in (Tron #2378, the
+// #1810 class). One the app already lists keeps its place (and gains a name).
 func offerCopyAccounts(theirs copyAccountList) {
 	if err := recordBroughtAccounts(theirs); err != nil {
 		// The catch-up restores nothing of theirs, and a copy recorded
@@ -261,7 +267,21 @@ func offerCopyAccounts(theirs copyAccountList) {
 			mine = f
 		}
 	}
-	merged := mergeCopyAccounts(mine.Accounts, theirs.Accounts)
+	own := whitelist()
+	listed := map[string]bool{}
+	for _, a := range mine.Accounts {
+		listed[a.Npub] = true
+	}
+	var offer []copyAccount
+	for _, a := range theirs.Accounts {
+		if h, ok := npubHex(a.Npub); ok && !listed[a.Npub] {
+			if _, isOwn := own[h]; isOwn {
+				continue
+			}
+		}
+		offer = append(offer, a)
+	}
+	merged := mergeCopyAccounts(mine.Accounts, offer)
 	if len(merged) > copyAccountsMax {
 		merged = merged[:copyAccountsMax]
 	}
