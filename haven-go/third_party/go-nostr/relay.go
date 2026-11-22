@@ -32,6 +32,7 @@ type Relay struct {
 	connectionContext       context.Context // will be canceled when the connection closes
 	connectionContextCancel context.CancelCauseFunc
 
+	challengeMu                   sync.Mutex   // the read loop writes challenge while Auth reads it
 	challenge                     string       // NIP-42 challenge, we only keep the last
 	noticeHandler                 func(string) // NIP-01 NOTICEs
 	customHandler                 func(string) // nonstandard unparseable messages
@@ -272,7 +273,9 @@ func (r *Relay) ConnectWithTLS(ctx context.Context, tlsConfig *tls.Config) error
 				if env.Challenge == nil {
 					continue
 				}
+				r.challengeMu.Lock()
 				r.challenge = *env.Challenge
+				r.challengeMu.Unlock()
 			case *EventEnvelope:
 				// we already have the subscription from the pre-check above, so we can just reuse it
 				if sub == nil {
@@ -344,12 +347,15 @@ func (r *Relay) Publish(ctx context.Context, event Event) error {
 // You don't have to build the AUTH event yourself, this function takes a function to which the
 // event that must be signed will be passed, so it's only necessary to sign that.
 func (r *Relay) Auth(ctx context.Context, sign func(event *Event) error) error {
+	r.challengeMu.Lock()
+	challenge := r.challenge
+	r.challengeMu.Unlock()
 	authEvent := Event{
 		CreatedAt: Now(),
 		Kind:      KindClientAuthentication,
 		Tags: Tags{
 			Tag{"relay", r.URL},
-			Tag{"challenge", r.challenge},
+			Tag{"challenge", challenge},
 		},
 		Content: "",
 	}

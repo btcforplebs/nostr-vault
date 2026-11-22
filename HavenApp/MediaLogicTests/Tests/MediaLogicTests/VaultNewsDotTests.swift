@@ -31,10 +31,10 @@ final class VaultNewsDotTests: XCTestCase {
         try String(contentsOf: Self.app.appendingPathComponent(path), encoding: .utf8)
     }
 
-    /// Both dashboards (iPhone/iPad Vault Dashboard, Mac relay dashboard)
-    /// see the news on open, and the tab dot reads the rule.
+    /// The Vault Dashboard (iPhone, iPad and Mac since the one-Vault fold)
+    /// sees the news on open, and the tab dot reads the rule.
     func testDashboardsClearTheDot() throws {
-        for path in ["HavenApp/Views/Dashboard/VaultDashboardView.swift", "HavenApp/Views/Dashboard/DashboardView.swift"] {
+        for path in ["HavenApp/Views/Dashboard/VaultDashboardView.swift"] {
             XCTAssertTrue(try source(path).contains("relayManager.markVaultDashboardViewed(dmUnread:"), path)
         }
         let manager = try source("HavenApp/Services/RelayProcessManager.swift")

@@ -83,13 +83,16 @@ func waitIdle() {
 // goSpawn stands in for a relay cycle's spawn.
 func goSpawn(_ string, fn func()) { go fn() }
 
-// runJobAndWait runs name to its end on ctx.
+// runJobAndWait runs name to its end on ctx, and whatever it chains to:
+// setup starts wider_network before its own done closes (autoStartWider), so
+// a plain wait() can return while wider_network still holds the runner, and
+// the test's next run comes back runBusy (flaky under a loaded full run).
 func runJobAndWait(t *testing.T, ctx context.Context, name string, resume bool) {
 	t.Helper()
 	if got := importJobsRunner.run(ctx, goSpawn, name, resume); got != runStarted {
 		t.Fatalf("run %s: %d", name, got)
 	}
-	importJobsRunner.wait()
+	waitIdle()
 }
 
 // Seeds as given: all answer the connect check, or only those in reach.
