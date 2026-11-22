@@ -78,6 +78,9 @@ type SimpleInMemory struct {
 	pubkeys atomic.Pointer[map[string]bool]
 	// layers is the follows + vouches of the graph in pubkeys, saved with it.
 	layers atomic.Pointer[layers]
+	// webs is each account's own web (accounts.go), built beside the pooled
+	// graph in pubkeys.
+	webs atomic.Pointer[accountWebs]
 
 	// Dependencies for Refresh
 	Pool               *nostr.SimplePool
@@ -95,6 +98,11 @@ type SimpleInMemory struct {
 	// only the seed relays could get the list from before it and keep
 	// everyone the unfollowed account brought in. Nil asks only the seeds.
 	LocalFollowLists func() []*nostr.Event
+
+	// ReachFor returns one account's own Follow Distance, and false when the
+	// account has none of its own: it then uses WotDepth and MinFollowers.
+	// Nil means no account has its own.
+	ReachFor func(owner string) (AccountReach, bool)
 
 	// builtAt is when the graph in pubkeys started building (unix seconds),
 	// or the saved cache's time. A follow list newer than this is not in it.
@@ -213,6 +221,7 @@ func (wt *SimpleInMemory) LoadFromCache() (ok bool, ageMinutes int64) {
 	wt.pubkeys.Store(&cache.Pubkeys)
 	wt.layers.Store(&layers{follows: cache.Follows, vouches: cache.Vouches})
 	wt.builtAt.Store(cache.Timestamp)
+	wt.loadAccountWebs()
 	slog.Info("💾 Loaded WoT from cache", "pubkeys", len(cache.Pubkeys), "age_minutes", age)
 	return true, age
 }
@@ -389,7 +398,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		wt.builtAt.Store(started)
 		wt.SaveCache()
 		wt.saveLinks(nil, nil)
-		wt.saveLists(nil, 0, 0)
+		wt.buildAccounts(ctx, started, nil, true, nil)
 		phase, size = "saved", len(newWot)
 		return
 	}
@@ -398,33 +407,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	filter := nostr.Filter{
-		Authors: slices.Collect(maps.Keys(wt.WhitelistedPubKeys)),
-		Kinds:   []int{nostr.KindFollowList},
-	}
-
-	slog.Info("🛜 fetching Nostr events to build WoT")
-
-	// The owners' lists wait for every relay: no quorum cut. Every other
-	// list hangs off them, and a first build has no saved web to fall back
-	// on if the one relay holding them was cut.
-	got := fetchListsFromEvery(timeoutCtx, wt.Pool, wt.SeedRelays, filter)
-	ownersWhole := got.whole()
-	eventsAnalysed.Add(got.received)
-	ownerLists := got.lists
-	if wt.LocalFollowLists != nil {
-		for _, ev := range wt.LocalFollowLists() {
-			if _, owner := wt.WhitelistedPubKeys[ev.PubKey]; !owner || ev.Kind != nostr.KindFollowList {
-				continue
-			}
-			if old, ok := ownerLists[ev.PubKey]; !ok || ev.CreatedAt > old.CreatedAt {
-				if !ok {
-					eventsAnalysed.Add(1)
-				}
-				ownerLists[ev.PubKey] = ev
-			}
-		}
-	}
+	ownerLists, ownersWhole := wt.fetchOwnerLists(timeoutCtx, &eventsAnalysed)
 	for _, ev := range ownerLists {
 		for contact := range ev.Tags.FindAll("p") {
 			if len(contact) > 1 {
@@ -456,7 +439,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		wt.builtAt.Store(started)
 		wt.SaveCache()
 		wt.saveLinks(nil, nil)
-		wt.saveLists(nil, 0, 0)
+		wt.buildAccounts(ctx, started, ownerLists, ownersWhole, nil)
 		phase, size = "saved", len(newWot)
 		return
 	}
@@ -606,6 +589,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		since = 0
 	}
 	wt.saveLists(lists, since, fullAt)
+	wt.buildAccounts(ctx, started, ownerLists, ownersWhole, lists)
 	phase, size = "saved", len(newWot)
 	debug.FreeOSMemory()
 }

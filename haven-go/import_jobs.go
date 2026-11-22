@@ -713,7 +713,7 @@ func runWiderNetworkJob(ctx context.Context, res *jobResult) {
 	if ctx.Err() != nil {
 		return
 	}
-	model := wot.NewSimpleInMemory(
+	model := newWotModel(
 		pool,
 		whitelist(),
 		config.ImportSeedRelays,
@@ -768,15 +768,19 @@ const firstRunEnv = "HAVEN_FIRST_RUN"
 // flow (a jobs file for this account) the wider web is a job the user runs
 // (Logen, answer 2); until it has, the relay keeps to the follows web, which
 // takes a second, not 90. Everyone else keeps the configured depth.
-func effectiveWotDepth() int {
-	if config.WotDepth <= 2 || (!jobsFileExists() && hostGetenv(firstRunEnv) != "1") {
-		return config.WotDepth
+func effectiveWotDepth() int { return effectiveDepthFor(config.WotDepth) }
+
+// effectiveDepthFor is effectiveWotDepth's rule for any level: the vault's
+// single value, or one account's own (account_reach.go).
+func effectiveDepthFor(depth int) int {
+	if depth <= 2 || (!jobsFileExists() && hostGetenv(firstRunEnv) != "1") {
+		return depth
 	}
 	jobsMu.Lock()
 	f := loadJobsFile()
 	jobsMu.Unlock()
 	if j := f.job(jobWiderNetwork); j != nil && (j.Status == jobDone || j.Status == jobPartial) {
-		return config.WotDepth
+		return depth
 	}
 	return 2
 }
