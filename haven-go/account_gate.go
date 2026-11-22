@@ -67,6 +67,19 @@ func admittingAccounts(ctx context.Context, tagged []string, pubkey string, ev *
 	return admitted
 }
 
+// mayNowReach rechecks a remembered refusal: pubkey is not blocked and is
+// now in the web of one of accounts, the accounts its event tagged. With
+// none named, any account's web is asked.
+func mayNowReach(ctx context.Context, pubkey string, accounts []string) bool {
+	if isBlacklisted(pubkey) {
+		return false
+	}
+	if len(accounts) == 0 {
+		return inAnyAccountsWeb(ctx, pubkey)
+	}
+	return slices.ContainsFunc(accounts, func(account string) bool { return inAccountsWeb(ctx, account, pubkey) })
+}
+
 // inAnyAccountsWeb reports whether pubkey is in the web of at least one of
 // the vault's accounts. Only for the questions that name no account: a read
 // of the chat relay, an event that tags none of them, and the recheck of a

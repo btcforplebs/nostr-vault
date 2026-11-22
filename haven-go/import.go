@@ -323,8 +323,8 @@ func subscribeInboxAndChat(ctx context.Context) {
 		// author admitted since their event was rejected (the WoT is recomputed
 		// on a 24h ticker) gets that event re-offered and imported this round,
 		// instead of staying hidden behind a stub until process restart.
-		rejects.reevaluate(func(pk string) bool {
-			return !isBlacklisted(pk) && inAnyAccountsWeb(ctx, pk)
+		rejects.reevaluate(func(pk string, accounts []string) bool {
+			return mayNowReach(ctx, pk, accounts)
 		})
 		var fallback []string
 		if config.NegentropySyncEnabled {

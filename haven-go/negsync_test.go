@@ -301,7 +301,7 @@ func TestTempRejectsPrune(t *testing.T) {
 	var nilR *tempRejects
 	nilR.prune(now)
 	nilR.add(stale, now, hexid('9'))
-	nilR.reevaluate(func(string) bool { return true })
+	nilR.reevaluate(func(string, []string) bool { return true })
 	if evs := nilR.appendStubs(nil, nostr.Filter{}); len(evs) != 0 {
 		t.Fatal("nil tempRejects should yield no stubs")
 	}
@@ -318,7 +318,7 @@ func TestTempRejectsReevaluate(t *testing.T) {
 	r.add(hexid('a'), now, admitted)
 	r.add(hexid('b'), now, stillOut)
 
-	r.reevaluate(func(pk string) bool { return pk == admitted })
+	r.reevaluate(func(pk string, _ []string) bool { return pk == admitted })
 
 	if _, ok := r.m.Load(hexid('a')); ok {
 		t.Fatal("admitted author's stub not dropped")
