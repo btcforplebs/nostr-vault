@@ -101,13 +101,63 @@ func TestImportsRunAndCancelAskTheEngine(t *testing.T) {
 func TestAskEngineKeepsOtherAreas(t *testing.T) {
 	shortAsk(t)
 	dir := t.TempDir()
-	askEngine(dir, "wot", nil)
-	askEngine(dir, "import", map[string]any{"action": "run", "job": "setup"})
-	askEngine(dir, "wot", nil)
+	fileEngineAsk(dir, "wot", nil)
+	fileEngineAsk(dir, "import", map[string]any{"action": "run", "job": "setup"})
+	fileEngineAsk(dir, "wot", nil)
 	var asks map[string]map[string]any
 	raw, _ := os.ReadFile(filepath.Join(dir, "box-jobs.json"))
 	json.Unmarshal(raw, &asks)
 	if asks["wot"]["seq"].(float64) != 2 || asks["import"]["seq"].(float64) != 1 {
 		t.Fatalf("asks %v", asks)
+	}
+}
+
+// A Move copies the vault folder: the four routes that write into it answer
+// 409 and leave it alone until the Move ends (Tron's E5 review #1).
+func TestEngineAsksWaitForAMove(t *testing.T) {
+	shortAsk(t)
+	srv, owner, member, api := signedInAPI(t)
+	dir := api.Mover.Engine.VaultDir()
+	api.Mover.mu.Lock()
+	api.Mover.busy = true
+	api.Mover.state = &MoveState{From: dir, Phase: "copying"}
+	api.Mover.mu.Unlock()
+	for _, c := range []struct {
+		who  *testKey
+		path string
+		body any
+	}{
+		{&member, "/api/box/imports/run", map[string]string{"job": "replies"}},
+		{&member, "/api/box/imports/cancel", map[string]string{"job": "replies"}},
+		{&member, "/api/box/trust/refresh", nil},
+		{&owner, "/api/box/blocklist", map[string][]string{"npubs": {}}},
+	} {
+		var body []byte
+		if c.body != nil {
+			body = jsonBody(c.body)
+		}
+		if st, out := call(t, srv, c.who, "POST", c.path, body); st != 409 {
+			t.Fatalf("%s during a move: %d %v", c.path, st, out)
+		}
+	}
+	for _, f := range []string{"box-jobs.json", "blacklisted_npubs.json"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			t.Fatalf("%s written during a move", f)
+		}
+	}
+	// The move ended: asks go through again.
+	api.Mover.mu.Lock()
+	api.Mover.state.Finished = time.Now().Unix()
+	api.Mover.busy = false
+	api.Mover.mu.Unlock()
+	if st, out := call(t, srv, &owner, "POST", "/api/box/trust/refresh", nil); st != 200 {
+		t.Fatalf("after the move: %d %v", st, out)
+	}
+	// A backup, restore or restart holds busy without a move: asks still go.
+	api.Mover.mu.Lock()
+	api.Mover.busy = true
+	api.Mover.mu.Unlock()
+	if st, out := call(t, srv, &member, "POST", "/api/box/imports/run", jsonBody(map[string]string{"job": "setup"})); st != 200 {
+		t.Fatalf("during an engine job: %d %v", st, out)
 	}
 }

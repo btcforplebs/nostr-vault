@@ -37,9 +37,9 @@ func init() {
 		writeJSON(w, http.StatusOK, map[string]any{"trust": trust, "last": engineDone(a.Mover.Engine.VaultDir(), "wot")})
 	})
 	handle("POST /api/box/trust/refresh", SignedIn, func(a *API, w http.ResponseWriter, _ *http.Request, _ Caller, _ []byte) {
-		ans, err := askEngine(a.Mover.Engine.VaultDir(), "wot", nil)
+		ans, err := a.Mover.askEngine("wot", nil, nil)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			answerAskErr(w, err)
 			return
 		}
 		ans.Message = map[bool]string{true: map[int]string{0: "Rebuilding who can reach you.", 1: "Trust is off on this vault."}[ans.Code], false: "Asked. The vault rebuilds as soon as it is running."}[ans.Answered]
@@ -66,14 +66,11 @@ func init() {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		dir := a.Mover.Engine.VaultDir()
-		if err := writeJSONAtomic(filepath.Join(dir, "blacklisted_npubs.json"), npubs); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		ans, err := askEngine(dir, "blocklist", nil)
+		ans, err := a.Mover.askEngine("blocklist", nil, func(dir string) error {
+			return writeJSONAtomic(filepath.Join(dir, "blacklisted_npubs.json"), npubs)
+		})
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			answerAskErr(w, err)
 			return
 		}
 		out := map[string]any{"npubs": npubs, "answered": ans.Answered}

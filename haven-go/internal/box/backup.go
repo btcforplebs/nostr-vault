@@ -31,6 +31,11 @@ const backupsKept = 5
 
 var backupName = regexp.MustCompile(`^vault-\d{8}-\d{6}\.zip$`)
 
+// engineCmdTimeout: how long the engine's own backup or restore may run
+// before the box kills it, so a hung one can't leave the vault down and the
+// busy flag held for good.
+var engineCmdTimeout = 6 * time.Hour
+
 // EngineJob is the current or last backup, restore or restart.
 type EngineJob struct {
 	Kind     string `json:"kind"` // backup, restore, restart
@@ -133,10 +138,16 @@ func (m *Mover) runEngineJob(kind, name string, work func(vaultDir string) error
 	if !m.hold() {
 		return nil, ErrEngineBusy
 	}
+	dir := m.Engine.VaultDir()
+	// After a Move that couldn't put the vault back, its folder is gone:
+	// starting the engine there would serve a new empty vault.
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		m.release()
+		return nil, fmt.Errorf("the vault's folder %s is missing; the box log says where the last move left it", dir)
+	}
 	engineJobs.mu.Lock()
 	engineJobs.last = &EngineJob{Kind: kind, Name: name, Phase: "stopping", Started: time.Now().Unix()}
 	engineJobs.mu.Unlock()
-	dir := m.Engine.VaultDir()
 	go func() {
 		defer m.release()
 		log.Printf("box: %s: stopping the engine", kind)
@@ -172,6 +183,17 @@ func (m *Mover) command(args ...string) (*exec.Cmd, error) {
 	return c.Command(args...), nil
 }
 
+// runEngineCmd runs cmd, killed after engineCmdTimeout.
+func runEngineCmd(cmd *exec.Cmd) error {
+	cmd.WaitDelay = 10 * time.Second
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	t := time.AfterFunc(engineCmdTimeout, func() { _ = cmd.Process.Kill() })
+	defer t.Stop()
+	return cmd.Wait()
+}
+
 // BackupNow writes a new backup and keeps the newest backupsKept.
 func (m *Mover) BackupNow(now time.Time) (*EngineJob, error) {
 	name := "vault-" + now.UTC().Format("20060102-150405") + ".zip"
@@ -182,29 +204,75 @@ func (m *Mover) BackupNow(now time.Time) (*EngineJob, error) {
 	if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
 		return nil, errors.New("a backup was made this second; try again")
 	}
+	if err := m.backupFits(dir); err != nil {
+		return nil, err
+	}
 	return m.runEngineJob("backup", name, func(string) error {
 		out := filepath.Join(dir, name)
+		// Make room first: the new one is the backupsKept-th.
+		m.pruneBackups(backupsKept - 1)
 		cmd, err := m.command("backup", "-o", out)
 		if err != nil {
 			return err
 		}
-		if err := cmd.Run(); err != nil {
-			_ = os.Remove(out)
+		if err := runEngineCmd(cmd); err != nil {
+			removeBackupFile(out)
 			return fmt.Errorf("the vault's backup didn't finish (%v); the box log says why", err)
 		}
 		if st, err := os.Stat(out); err != nil || st.Size() == 0 {
-			_ = os.Remove(out)
+			removeBackupFile(out)
 			return errors.New("the vault's backup wrote nothing")
 		}
-		m.pruneBackups()
 		return nil
 	})
 }
 
-func (m *Mover) pruneBackups() {
-	for _, b := range m.Backups()[min(len(m.Backups()), backupsKept):] {
-		if err := os.Remove(filepath.Join(m.backupsDir(), b.Name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+// backupFits: the backups folder has room for one more backup the vault's
+// size (a zip is never bigger) plus Headroom, counting the old backups the
+// job removes first. Backups stay on the box's own disk after a Move, and
+// that disk also holds the box's state.
+func (m *Mover) backupFits(dir string) error {
+	if m.FreeOf == nil {
+		return nil
+	}
+	size, err := treeSize(m.Engine.VaultDir(), onDisk)
+	if err != nil {
+		return fmt.Errorf("measuring the vault: %v", err)
+	}
+	free, err := m.FreeOf(dir)
+	if err != nil {
+		return fmt.Errorf("checking free space: %v", err)
+	}
+	for _, b := range m.Backups()[min(len(m.Backups()), backupsKept-1):] {
+		free += uint64(b.Size)
+	}
+	if free < size+m.Headroom {
+		return fmt.Errorf("not enough space for a backup: the vault is %d bytes, %s has %d free", size, dir, free)
+	}
+	return nil
+}
+
+// removeBackupFile removes a failed backup and the engine's half-written
+// <name>.partial.
+func removeBackupFile(out string) {
+	_ = os.Remove(out)
+	_ = os.Remove(out + ".partial")
+}
+
+// pruneBackups keeps the newest keep backups and drops any half-written one
+// a killed backup left. Only called inside a job, so no backup is writing.
+func (m *Mover) pruneBackups(keep int) {
+	dir := m.backupsDir()
+	all := m.Backups()
+	for _, b := range all[min(len(all), keep):] {
+		if err := os.Remove(filepath.Join(dir, b.Name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			log.Printf("box: removing old backup %s: %v", b.Name, err)
+		}
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if n, ok := strings.CutSuffix(e.Name(), ".partial"); ok && backupName.MatchString(n) {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
 		}
 	}
 }
@@ -224,7 +292,7 @@ func (m *Mover) Restore(name string) (*EngineJob, error) {
 		if err != nil {
 			return err
 		}
-		if err := cmd.Run(); err != nil {
+		if err := runEngineCmd(cmd); err != nil {
 			return fmt.Errorf("the vault's restore didn't finish (%v); the box log says why", err)
 		}
 		return nil

@@ -86,7 +86,8 @@ func TestBackupsKeepTheNewest(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, fmt.Sprintf("vault-2026110%d-000000.zip", i)), []byte("z"), 0o600)
 	}
 	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("mine"), 0o600)
-	api.Mover.pruneBackups()
+	os.WriteFile(filepath.Join(dir, "vault-20261101-000001.zip.partial"), []byte("half"), 0o600)
+	api.Mover.pruneBackups(backupsKept)
 	got := api.Mover.Backups()
 	if len(got) != backupsKept || got[0].Name != "vault-20261107-000000.zip" {
 		t.Fatalf("kept %+v", got)
@@ -94,6 +95,95 @@ func TestBackupsKeepTheNewest(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "notes.txt")); err != nil {
 		t.Fatal("a file that isn't a backup was removed")
 	}
+	if _, err := os.Stat(filepath.Join(dir, "vault-20261101-000001.zip.partial")); err == nil {
+		t.Fatal("a killed backup's .partial was kept")
+	}
+}
+
+// A backup prunes before it writes, so the folder never holds more than
+// backupsKept; and it refuses up front when the disk can't take one more,
+// counting what the prune frees (Tron's E5 review #2).
+func TestBackupPrunesFirstAndChecksSpace(t *testing.T) {
+	srv, owner, _, api, _ := backupAPI(t, `[ "$1" = backup ] && ls "$(dirname "$3")" | grep -c '^vault-.*\.zip$' > "$3.count" && printf zipped > "$3"`)
+	dir := api.Mover.backupsDir()
+	os.MkdirAll(dir, 0o700)
+	for i := 1; i <= backupsKept; i++ {
+		os.WriteFile(filepath.Join(dir, fmt.Sprintf("vault-2026110%d-000000.zip", i)), make([]byte, 1000), 0o600)
+	}
+	vaultSize, _ := treeSize(api.Mover.Engine.VaultDir(), onDisk)
+	api.Mover.Headroom = 100
+	// Free plus the one old backup the prune drops is one byte short.
+	api.Mover.FreeOf = func(string) (uint64, error) { return vaultSize + 100 - 1000 - 1, nil }
+	if st, out := call(t, srv, &owner, "POST", "/api/box/backups/now", nil); st != 400 || !strings.Contains(out["error"].(string), "not enough space") {
+		t.Fatalf("short of space: %d %v", st, out)
+	}
+	if lastEngineJob() != nil {
+		t.Fatal("the engine was stopped for a backup that can't fit")
+	}
+	api.Mover.FreeOf = func(string) (uint64, error) { return vaultSize + 100 - 1000, nil }
+	time.Sleep(1100 * time.Millisecond)
+	if st, out := call(t, srv, &owner, "POST", "/api/box/backups/now", nil); st != 202 {
+		t.Fatalf("fits: %d %v", st, out)
+	}
+	if j := waitJob(t); j.Phase != "done" {
+		t.Fatalf("job %+v", j)
+	}
+	got := api.Mover.Backups()
+	if len(got) != backupsKept || got[len(got)-1].Name != "vault-20261102-000000.zip" {
+		t.Fatalf("kept %+v", got)
+	}
+	count, _ := os.ReadFile(filepath.Join(dir, got[0].Name+".count"))
+	if strings.TrimSpace(string(count)) != fmt.Sprint(backupsKept-1) {
+		t.Fatalf("backups on disk while writing: %q, want %d", count, backupsKept-1)
+	}
+}
+
+// A hung backup is killed, its half-written file removed, and the engine
+// started again.
+func TestHungBackupIsKilled(t *testing.T) {
+	old := engineCmdTimeout
+	engineCmdTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { engineCmdTimeout = old })
+	srv, owner, _, api, eng := backupAPI(t, `printf half > "$3.partial"; exec sleep 30`)
+	call(t, srv, &owner, "POST", "/api/box/backups/now", nil)
+	if j := waitJob(t); j.Phase != "failed" {
+		t.Fatalf("job %+v", j)
+	}
+	entries, _ := os.ReadDir(api.Mover.backupsDir())
+	if len(entries) != 0 {
+		t.Fatalf("left behind: %v", entries)
+	}
+	vault := api.Mover.Engine.VaultDir()
+	eng.mu.Lock()
+	defer eng.mu.Unlock()
+	if eng.log[len(eng.log)-1] != "start "+vault {
+		t.Fatalf("engine not started again: %v", eng.log)
+	}
+}
+
+// After a Move that couldn't put the vault back, its folder is gone: a
+// restart or backup must not start the engine on a new empty one (Tron's E5
+// review #3).
+func TestEngineJobRefusesAMissingVault(t *testing.T) {
+	_, _, _, api, eng := backupAPI(t, `true`)
+	dir := api.Mover.Engine.VaultDir()
+	os.RemoveAll(dir)
+	if _, err := api.Mover.Restart(); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("restart: %v", err)
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Fatal("the vault folder was made again")
+	}
+	eng.mu.Lock()
+	n := len(eng.log)
+	eng.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("engine touched: %v", eng.log)
+	}
+	if !api.Mover.hold() {
+		t.Fatal("busy flag left held")
+	}
+	api.Mover.release()
 }
 
 // Restore takes only this box's backups by name, never a path.

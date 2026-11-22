@@ -49,9 +49,9 @@ func init() {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "job must be one of " + strings.Join(importJobNames, ", ")})
 				return
 			}
-			ans, err := askEngine(a.Mover.Engine.VaultDir(), "import", map[string]any{"action": action, "job": strings.TrimSpace(req.Job)})
+			ans, err := a.Mover.askEngine("import", map[string]any{"action": action, "job": strings.TrimSpace(req.Job)}, nil)
 			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				answerAskErr(w, err)
 				return
 			}
 			ans.Message = importMessage(action, ans)
@@ -87,12 +87,63 @@ var (
 	engineAskPoll = 100 * time.Millisecond
 )
 
+// ErrMoving: a Move is copying the vault folder, so nothing may write into
+// it until the Move ends (the copy would miss the write, or fail its check).
+var ErrMoving = errors.New("the vault is moving to another disk; try again when the move ends")
+
+// moving: a Move holds the busy flag (a backup, restore or restart holds it
+// too, but leaves m.state alone). Call with m.mu held.
+func (m *Mover) moving() bool {
+	return m.busy && m.state != nil && m.state.Finished == 0
+}
+
+// unlessMoving runs write with the Mover's lock held, so no Move can start
+// part way through it, or returns ErrMoving while one runs.
+func (m *Mover) unlessMoving(write func() error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.moving() {
+		return ErrMoving
+	}
+	return write()
+}
+
 // askEngine files a request for area ("import", "wot", "blocklist") in the
 // vault's box-jobs.json under a new seq, then waits a little for the
 // engine's answer in box-jobs-state.json. The file keeps every area's last
-// request, so one area's ask never drops another's.
-func askEngine(vaultDir, area string, ask map[string]any) (EngineAnswer, error) {
+// request, so one area's ask never drops another's. before, when set, is
+// written first under the same check (the block list). ErrMoving while a
+// Move runs.
+func (m *Mover) askEngine(area string, ask map[string]any, before func(vaultDir string) error) (EngineAnswer, error) {
+	var vaultDir string
+	var seq int64
+	err := m.unlessMoving(func() error {
+		vaultDir = m.Engine.VaultDir()
+		if before != nil {
+			if err := before(vaultDir); err != nil {
+				return err
+			}
+		}
+		var err error
+		seq, err = fileEngineAsk(vaultDir, area, ask)
+		return err
+	})
+	if err != nil {
+		return EngineAnswer{}, err
+	}
+	for until := time.Now().Add(engineAskWait); time.Now().Before(until); time.Sleep(engineAskPoll) {
+		if d := engineDone(vaultDir, area); d.Seq >= seq {
+			return EngineAnswer{Asked: true, Answered: true, Code: d.Code}, nil
+		}
+	}
+	return EngineAnswer{Asked: true}, nil
+}
+
+// fileEngineAsk writes area's next request into box-jobs.json and returns
+// its seq.
+func fileEngineAsk(vaultDir, area string, ask map[string]any) (int64, error) {
 	engineAskMu.Lock()
+	defer engineAskMu.Unlock()
 	asks := map[string]map[string]any{}
 	if raw, err := os.ReadFile(filepath.Join(vaultDir, "box-jobs.json")); err == nil {
 		_ = json.Unmarshal(raw, &asks)
@@ -110,17 +161,16 @@ func askEngine(vaultDir, area string, ask map[string]any) (EngineAnswer, error) 
 		next[k] = v
 	}
 	asks[area] = next
-	err := writeJSONAtomic(filepath.Join(vaultDir, "box-jobs.json"), asks)
-	engineAskMu.Unlock()
-	if err != nil {
-		return EngineAnswer{}, err
+	return seq, writeJSONAtomic(filepath.Join(vaultDir, "box-jobs.json"), asks)
+}
+
+// answerAskErr: 409 while a Move runs, 500 for anything else.
+func answerAskErr(w http.ResponseWriter, err error) {
+	code := http.StatusInternalServerError
+	if errors.Is(err, ErrMoving) {
+		code = http.StatusConflict
 	}
-	for until := time.Now().Add(engineAskWait); time.Now().Before(until); time.Sleep(engineAskPoll) {
-		if d := engineDone(vaultDir, area); d.Seq >= seq {
-			return EngineAnswer{Asked: true, Answered: true, Code: d.Code}, nil
-		}
-	}
-	return EngineAnswer{Asked: true}, nil
+	writeJSON(w, code, map[string]string{"error": err.Error()})
 }
 
 type engineDoneEntry struct {
