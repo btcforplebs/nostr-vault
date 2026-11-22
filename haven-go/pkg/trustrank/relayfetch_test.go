@@ -2,6 +2,7 @@ package trustrank
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -155,5 +156,34 @@ func TestRelayFetchBenchesAHangingRelay(t *testing.T) {
 	f.Fetch(context.Background(), author, 0)
 	if d := time.Since(start); d > 250*time.Millisecond {
 		t.Fatalf("the benched relay must be skipped, took %s", d)
+	}
+}
+
+// Tron's #2394 must-fix: with every relay benched (a blip timed them all out),
+// Fetch must not say "no list" in no time. It asks them all again, and when
+// none answers it returns ErrNoRelay; once a relay is back, the list is found.
+func TestRelayFetchAllBenchedIsAnErrorNotNoList(t *testing.T) {
+	sk := nostr.GeneratePrivateKey()
+	author, _ := nostr.GetPublicKey(sk)
+	good := listRelay(t, signedList(t, sk, 3, 1000, pk(1)))
+	f := &RelayFetcher{Pool: nostr.NewSimplePool(context.Background()),
+		Relays: []string{good}, Timeout: 2 * time.Second}
+	f.bench(good, time.Now()) // benched, but answering fine
+	if _, found, err := f.Fetch(context.Background(), author, 0); err != nil || !found {
+		t.Fatalf("all benched: must ask anyway and find the list, got found=%v err=%v", found, err)
+	}
+
+	hang := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2 * time.Second)
+	}))
+	defer hang.Close()
+	dead := "ws" + strings.TrimPrefix(hang.URL, "http")
+	f = &RelayFetcher{Pool: nostr.NewSimplePool(context.Background()),
+		Relays: []string{dead, "ws://127.0.0.1:1"}, Timeout: 300 * time.Millisecond}
+	for i := 0; i < 2; i++ { // first: both time out or fail; second: both benched
+		_, found, err := f.Fetch(context.Background(), author, 0)
+		if found || !errors.Is(err, ErrNoRelay) {
+			t.Fatalf("round %d: no relay answered, want ErrNoRelay, got found=%v err=%v", i, found, err)
+		}
 	}
 }

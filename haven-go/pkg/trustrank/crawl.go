@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -112,7 +113,17 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 				since = have + 1
 			}
 			l, found, err := c.Fetch.Fetch(ctx, pk, since)
-			if err == nil && found {
+			if err != nil {
+				// No answer (no relay reached, or ctx ended) is not "no
+				// list": keep the place and stop, so the person is asked
+				// again on the next run instead of passed by.
+				c.Store.Checkpoint(c.Dir, st)
+				if ctx.Err() != nil {
+					return nil, ErrStopped
+				}
+				return nil, fmt.Errorf("trustrank: list of %s…: %w", pk[:8], err)
+			}
+			if found {
 				limit := c.now().Add(maxSkew).Unix()
 				l.FollowsAt, l.MutesAt = min(l.FollowsAt, limit), min(l.MutesAt, limit)
 				// Kind by kind: a stale copy of one kind never replaces a

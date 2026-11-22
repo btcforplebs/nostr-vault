@@ -2,6 +2,7 @@ package trustrank
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -20,9 +21,9 @@ type RelayFetcher struct {
 }
 
 // benchFor: a relay that did not finish in time is skipped this long. One
-// that hangs (nos.lol on 2026-11-22: 15 s for an empty answer, past the
-// timeout, because the pool's dial ignores ctx) would otherwise cost every
-// list without a mute list its full wait.
+// that hangs (nos.lol on 2026-11-22 took 15 s, the pool's dial cap, so most
+// likely a connect that never finished) would otherwise cost every list
+// without a mute list its full wait.
 const benchFor = 10 * time.Minute
 
 func (f *RelayFetcher) usable(url string, now time.Time) bool {
@@ -30,6 +31,21 @@ func (f *RelayFetcher) usable(url string, now time.Time) bool {
 	defer f.mu.Unlock()
 	return now.After(f.benched[url])
 }
+
+// allBenched: no relay may be asked. Then every relay is asked anyway, so a
+// network blip that benched them all costs one round of timeouts, not 10 min.
+func (f *RelayFetcher) allBenched(now time.Time) bool {
+	for _, url := range f.Relays {
+		if f.usable(url, now) {
+			return false
+		}
+	}
+	return true
+}
+
+// ErrNoRelay: no relay connected and answered in time, so "no list" is not
+// known. The crawler pauses on it instead of passing the person by.
+var ErrNoRelay = errors.New("trustrank: no relay answered")
 
 func (f *RelayFetcher) bench(url string, now time.Time) {
 	f.mu.Lock()
@@ -84,6 +100,8 @@ func newer(a, b *nostr.Event) bool { return a != nil && (b == nil || a.CreatedAt
 // once asks one relay at a time, and the next only for the kinds still
 // missing. best[0] is kind 3, best[1] kind 10000.
 func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (best [2]*nostr.Event, err error) {
+	ignoreBench := f.allBenched(time.Now())
+	answered := false
 	for _, url := range f.Relays {
 		if ctx.Err() != nil {
 			return best, ctx.Err()
@@ -102,11 +120,21 @@ func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (be
 			ts := nostr.Timestamp(since)
 			filter.Since = &ts
 		}
-		if !f.usable(url, time.Now()) {
+		if !ignoreBench && !f.usable(url, time.Now()) {
 			continue
 		}
 		rctx, cancel := context.WithTimeout(ctx, f.timeout())
+		if !f.dial(rctx, url) {
+			// Could not connect in time (or at all): this relay said
+			// nothing, which is not the same as "no list".
+			if ctx.Err() == nil && rctx.Err() != nil {
+				f.bench(url, time.Now())
+			}
+			cancel()
+			continue
+		}
 		ch := f.Pool.FetchMany(rctx, []string{url}, filter)
+		timedOut := false
 		for {
 			var re nostr.RelayEvent
 			var open bool
@@ -115,6 +143,7 @@ func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (be
 			case <-rctx.Done():
 				// Out of time: stop waiting even if the pool has not let go
 				// of the channel yet, and skip this relay for a while.
+				timedOut = true
 				if ctx.Err() == nil {
 					f.bench(url, time.Now())
 				}
@@ -145,8 +174,33 @@ func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (be
 			best[i] = ev
 		}
 		cancel()
+		if !timedOut {
+			answered = true
+		}
+	}
+	if ctx.Err() != nil {
+		return best, ctx.Err()
+	}
+	if !answered {
+		return best, ErrNoRelay
 	}
 	return best, nil
+}
+
+// dial connects to url, giving up when ctx ends. The pool's own dial ignores
+// ctx (it waits up to 15 s), so it runs aside and is left to finish alone.
+func (f *RelayFetcher) dial(ctx context.Context, url string) bool {
+	done := make(chan bool, 1)
+	go func() {
+		_, err := f.Pool.EnsureRelay(url)
+		done <- err == nil
+	}()
+	select {
+	case ok := <-done:
+		return ok
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (f *RelayFetcher) timeout() time.Duration {
