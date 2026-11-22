@@ -38,6 +38,7 @@
 //	                    box/run under the data dir
 //	NV_DIRECTORY_RELAYS comma list, where to look for the owner's 10063
 //	NV_BACKUP_PROVIDER  "s3" to turn on backups, with NV_S3_* settings
+//	NV_TRUST_RANK       "off" stops the trust rank crawler (on by default)
 //
 // `havend device` prints the box's npub (the mesh's, from mesh/npub) and
 // exits: the npub the owner adds in My Devices. It fails until nv-mesh has

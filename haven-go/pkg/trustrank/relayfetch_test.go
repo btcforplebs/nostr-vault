@@ -2,6 +2,8 @@ package trustrank
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -127,5 +129,91 @@ func TestRefreshKeepsNewerStoredFollowsWhenOnlyMutesChanged(t *testing.T) {
 	}
 	if at, _ := s.CreatedAt(author); at != 400 {
 		t.Fatalf("stored at %d", at)
+	}
+}
+
+// A relay that never answers costs one timeout, then is skipped; the next
+// list goes straight to the relays that work.
+func TestRelayFetchBenchesAHangingRelay(t *testing.T) {
+	hang := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(3 * time.Second) // never upgrades within the timeout
+	}))
+	defer hang.Close()
+	sk := nostr.GeneratePrivateKey()
+	author, _ := nostr.GetPublicKey(sk)
+	good := listRelay(t, signedList(t, sk, 3, 1000, pk(1)))
+	f := &RelayFetcher{Pool: nostr.NewSimplePool(context.Background()),
+		Relays: []string{good, "ws" + strings.TrimPrefix(hang.URL, "http")}, Timeout: 300 * time.Millisecond}
+
+	start := time.Now()
+	if _, found, _ := f.Fetch(context.Background(), author, 0); !found {
+		t.Fatal("the working relay's list must be found")
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("a hanging relay must cost at most its timeout, took %s", d)
+	}
+	start = time.Now()
+	f.Fetch(context.Background(), author, 0)
+	if d := time.Since(start); d > 250*time.Millisecond {
+		t.Fatalf("the benched relay must be skipped, took %s", d)
+	}
+}
+
+// Tron's #2394 must-fix: with every relay benched (a blip timed them all out),
+// Fetch must not say "no list" in no time. It asks them all again, and when
+// none answers it returns ErrNoRelay; once a relay is back, the list is found.
+func TestRelayFetchAllBenchedIsAnErrorNotNoList(t *testing.T) {
+	sk := nostr.GeneratePrivateKey()
+	author, _ := nostr.GetPublicKey(sk)
+	good := listRelay(t, signedList(t, sk, 3, 1000, pk(1)))
+	f := &RelayFetcher{Pool: nostr.NewSimplePool(context.Background()),
+		Relays: []string{good}, Timeout: 2 * time.Second}
+	f.bench(good, time.Now()) // benched, but answering fine
+	if _, found, err := f.Fetch(context.Background(), author, 0); err != nil || !found {
+		t.Fatalf("all benched: must ask anyway and find the list, got found=%v err=%v", found, err)
+	}
+
+	hang := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2 * time.Second)
+	}))
+	defer hang.Close()
+	dead := "ws" + strings.TrimPrefix(hang.URL, "http")
+	f = &RelayFetcher{Pool: nostr.NewSimplePool(context.Background()),
+		Relays: []string{dead, "ws://127.0.0.1:1"}, Timeout: 300 * time.Millisecond}
+	for i := 0; i < 2; i++ { // first: both time out or fail; second: both benched
+		_, found, err := f.Fetch(context.Background(), author, 0)
+		if found || !errors.Is(err, ErrNoRelay) {
+			t.Fatalf("round %d: no relay answered, want ErrNoRelay, got found=%v err=%v", i, found, err)
+		}
+	}
+}
+
+// Tron's #2394 should-fix: a relay that refuses the ask (CLOSED
+// rate-limited) has not answered; with no other relay, Fetch is ErrNoRelay.
+// A relay that sends EOSE with nothing is a real "no list".
+func TestRelayFetchRefusalIsNotAnAnswer(t *testing.T) {
+	sk := nostr.GeneratePrivateKey()
+	author, _ := nostr.GetPublicKey(sk)
+	rl := khatru.NewRelay()
+	rl.RejectFilter = append(rl.RejectFilter, func(context.Context, nostr.Filter) (bool, string) {
+		return true, "rate-limited: slow down"
+	})
+	srv := httptest.NewServer(rl)
+	defer srv.Close()
+	refusing := "ws" + strings.TrimPrefix(srv.URL, "http")
+	f := &RelayFetcher{Pool: nostr.NewSimplePool(context.Background()),
+		Relays: []string{refusing}, Timeout: 2 * time.Second}
+	start := time.Now()
+	if _, found, err := f.Fetch(context.Background(), author, 0); found || !errors.Is(err, ErrNoRelay) {
+		t.Fatalf("refused ask: want ErrNoRelay, got found=%v err=%v", found, err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("a CLOSED must end the ask at once, took %s", d)
+	}
+
+	empty := listRelay(t)
+	f.Relays = []string{refusing, empty}
+	if _, found, err := f.Fetch(context.Background(), author, 0); found || err != nil {
+		t.Fatalf("EOSE with nothing is no list: got found=%v err=%v", found, err)
 	}
 }

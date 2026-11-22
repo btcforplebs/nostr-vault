@@ -3,6 +3,7 @@ package trustrank
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"sync"
 	"testing"
@@ -288,5 +289,57 @@ func TestCrawlClampsFutureCreatedAt(t *testing.T) {
 	}
 	if at, _ := c.Store.CreatedAt(pk(0)); at != now.Add(maxSkew).Unix() {
 		t.Fatalf("stored at %d", at)
+	}
+}
+
+// downNet: no relay answers for anyone after the first n reads.
+type downNet struct {
+	*fakeNet
+	n int
+}
+
+func (d *downNet) Fetch(ctx context.Context, pk string, since int64) (List, bool, error) {
+	d.mu.Lock()
+	down := len(d.calls) >= d.n
+	d.mu.Unlock()
+	if down {
+		d.fakeNet.mu.Lock()
+		d.calls = append(d.calls, pk)
+		d.fakeNet.mu.Unlock()
+		return List{}, false, ErrNoRelay
+	}
+	return d.fakeNet.Fetch(ctx, pk, since)
+}
+
+// Tron's #2394 must-fix: a fetch error is not "no list". The crawl stops at
+// the person it could not read, keeps the place, does not mark the pass
+// done, and reads that person first on the next run.
+func TestCrawlFetchErrorKeepsPlaceAndDoesNotFinish(t *testing.T) {
+	n := net()
+	dir := t.TempDir()
+	d := &downNet{fakeNet: n, n: 3} // owner + 2 friends, then relays are gone
+	c := crawler(t, n, dir)
+	c.Fetch = d
+	if _, err := c.RunPass(context.Background(), false); !errors.Is(err, ErrNoRelay) {
+		t.Fatalf("want ErrNoRelay, got %v", err)
+	}
+	if got := len(n.calls); got != 4 {
+		t.Fatalf("must stop at the first unanswered read, made %d: %v", got, n.calls)
+	}
+	failed := n.calls[3]
+	st := LoadState(dir, pk(0))
+	if st.FullAt != 0 || st.Hop != 2 || st.Last == failed {
+		t.Fatalf("checkpoint passed the unread person or finished: %+v", st)
+	}
+	d.n = 1 << 30 // relays back
+	before := len(n.calls)
+	if _, err := c.RunPass(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if n.calls[before] != failed {
+		t.Fatalf("resume must read %s first, read %s", failed[:8], n.calls[before][:8])
+	}
+	if st := LoadState(dir, pk(0)); st.FullAt == 0 {
+		t.Fatalf("pass must finish once relays answer: %+v", st)
 	}
 }

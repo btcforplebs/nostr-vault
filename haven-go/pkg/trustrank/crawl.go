@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -112,7 +112,17 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 				since = have + 1
 			}
 			l, found, err := c.Fetch.Fetch(ctx, pk, since)
-			if err == nil && found {
+			if err != nil {
+				// No answer (no relay reached, or ctx ended) is not "no
+				// list": keep the place and stop, so the person is asked
+				// again on the next run instead of passed by.
+				c.Store.Checkpoint(c.Dir, st)
+				if ctx.Err() != nil {
+					return nil, ErrStopped
+				}
+				return nil, fmt.Errorf("trustrank: list of %s…: %w", pk[:8], err)
+			}
+			if found {
 				limit := c.now().Add(maxSkew).Unix()
 				l.FollowsAt, l.MutesAt = min(l.FollowsAt, limit), min(l.MutesAt, limit)
 				// Kind by kind: a stale copy of one kind never replaces a
@@ -207,12 +217,16 @@ func (c *Crawler) readers(h int) ([]string, error) {
 // ResultFile is wot_rank_<account>.json: what the phones read. Never
 // published.
 type ResultFile struct {
-	Account string   `json:"account"`
-	BuiltAt int64    `json:"builtAt"`
-	Version int      `json:"version"`
-	Params  Params   `json:"params"`
-	MaxHop  int      `json:"maxHop"`
-	People  [][3]any `json:"people"` // [pubkey, score 0-100 to 0.1, hop]
+	Account string `json:"account"`
+	BuiltAt int64  `json:"builtAt"`
+	Version int    `json:"version"`
+	Params  Params `json:"params"`
+	MaxHop  int    `json:"maxHop"`
+	// [pubkey, shown score 0-100 to 0.1, hop]. Version 2: the shown (log)
+	// scale (shown.go); version 1 carried the rank score.
+	People [][3]any `json:"people"`
+	// ViewBar is where the slider starts, on the shown scale.
+	ViewBar float64 `json:"viewBar"`
 }
 
 // ResultPath is the result's file for account in dir.
@@ -221,9 +235,9 @@ func ResultPath(dir, account string) string {
 }
 
 func writeResult(dir string, r *Result, now time.Time) error {
-	f := ResultFile{Account: r.Owner, BuiltAt: now.Unix(), Version: 1, Params: r.Params, MaxHop: r.Params.MaxHop}
+	f := ResultFile{Account: r.Owner, BuiltAt: now.Unix(), Version: 2, Params: r.Params, MaxHop: r.Params.MaxHop, ViewBar: DefaultViewBar}
 	for _, p := range r.People() {
-		s := math.Round(p.Score*10) / 10
+		s := ShownRounded(p.Score)
 		if s == 0 && p.Hop > 1 {
 			continue // nobody trusted vouches for them: not worth the bytes
 		}

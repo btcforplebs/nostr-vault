@@ -99,6 +99,9 @@ final class BackgroundMode: ObservableObject {
         RelayProcessManager.shared.logStore.logs.removeAll()
         NostrService.shared.enterBackground()
         startTrimming()
+        // The engine's trust rank crawler runs only now: background mode
+        // on, window closed (haven-go/trust_rank_job.go).
+        SetTrustRankC(1)
         // What the window freed is still counted against the app until malloc
         // hands the empty pages back: SwiftUI's views, the notes and decoded
         // images are torn down over the next run loop turns, so give them a
@@ -110,6 +113,7 @@ final class BackgroundMode: ObservableObject {
 
     private func restoreWindowServices() {
         isReleased = false
+        SetTrustRankC(0)
         stopTrimming()
         URLCache.shared.memoryCapacity = Self.defaultMemoryCapacity
         FillYourVaultCoordinator.shared.start()
