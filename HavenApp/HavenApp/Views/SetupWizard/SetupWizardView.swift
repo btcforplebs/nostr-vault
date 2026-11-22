@@ -80,8 +80,6 @@ struct SetupWizardView: View {
     // New account state: published once setup completes and the key can sign
     @State private var profileName = ""
     @State private var profilePhotoJPEG: Data?
-    /// The relay list to publish for the new key (step 17); nil publishes none.
-    @State private var starterRelayList: [String]?
     /// Their own relays picked in the relay check: the import reads them,
     /// nothing saves them.
     @State private var importOwnRelays: [String] = []
@@ -120,7 +118,10 @@ struct SetupWizardView: View {
         switch setupPath {
         case .none: return []
         // "Who showed you this app?" (15) is only for people new to Nostr (Logen 2026-11-05).
-        case .newToNostr: return [9, 10, 11, 17, 15, 8] // keys, password, profile, relay list, who showed you, done
+        // Setup screens r3 (Logen 2026-11-22): profile, people, key, lock,
+        // then the feed. No Welcome to Nostr cards, relay list (Settings >
+        // Relays) or done screen; the Mac keeps done for its menu-bar hint.
+        case .newToNostr: return isIOSDevice ? [11, 15, 9, 10] : [11, 15, 9, 10, 8]
         // People who already use Nostr: "New to Nostr Vault?" comes before the relay import.
         case .browse: return NewToVaultQuestion.steps(path: .browse, isIOS: isIOSDevice)
         case .full: return NewToVaultQuestion.steps(path: .full, isIOS: isIOSDevice)
@@ -286,10 +287,13 @@ struct SetupWizardView: View {
             KeyPasswordStep(
                 nsecPassword: $nsecPassword,
                 onContinue: {
-                    saveIntermediateConfig()
-                    direction = .forward
-                    withAnimation(WizardAnimations.springEnter) {
-                        currentStep = 11
+                    // The last new-account step: the key is locked, so in
+                    // to the feed (the Mac shows done first).
+                    if isIOSDevice {
+                        saveAndComplete()
+                    } else {
+                        saveIntermediateConfig()
+                        go(to: 8)
                     }
                 }
             )
@@ -300,19 +304,10 @@ struct SetupWizardView: View {
                 onContinue: {
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
-                        currentStep = 17
+                        currentStep = 15
                     }
                 }
             )
-        case 17:
-            StarterRelayListStep(recommended: starterRelays, picked: starterRelayList ?? []) { relays in
-                // Published in publishNewAccount, once the key is stored.
-                starterRelayList = relays.isEmpty ? nil : relays
-                direction = .forward
-                withAnimation(WizardAnimations.springEnter) {
-                    currentStep = 15
-                }
-            }
         case 15:
             ReferrerStep(
                 ownPubkey: NpubValidation.hexPubkey(fromNpub: npub),
@@ -374,10 +369,17 @@ struct SetupWizardView: View {
         direction = .forward
         withAnimation(WizardAnimations.springEnter) {
             switch path {
-            case .newToNostr: currentStep = 9
+            case .newToNostr: currentStep = 11 // Edit Profile
             case .useNostr: currentStep = 12
             default: currentStep = 2
             }
+        }
+        // The new key is made now, silently: the people step leaves it out
+        // and the key step only shows it. The same way again keeps it (it may
+        // already be written down).
+        if path == .newToNostr, nsec.isEmpty, let pair = NewKeyPair.generate() {
+            npub = pair.npub
+            nsec = pair.nsec
         }
         if path == .newToNostr || path == .useNostr {
             saveIntermediateConfig()
@@ -392,7 +394,7 @@ struct SetupWizardView: View {
             } else if currentStep == 14 {
                 currentStep = 13 // relay check → import tour
             } else if currentStep == 15 {
-                currentStep = 8 // who showed you (new to Nostr) → done
+                currentStep = 9 // people (new to Nostr) → your key
             } else if currentStep == 4 && setupPath == .browse {
                 // Browse mode: after import, skip mirror/wallet/notifications — go to complete
                 currentStep = 8
@@ -413,7 +415,7 @@ struct SetupWizardView: View {
     private func goBack() {
         direction = .backward
         withAnimation(WizardAnimations.springEnter) {
-            if currentStep == 12 || currentStep == 9 || currentStep == 2 {
+            if currentStep == 12 || currentStep == 11 || currentStep == 2 {
                 currentStep = 0 // Back to the front door
             } else if currentStep == OtherVaultCopy.step {
                 currentStep = OtherVaultCopy.backStep // the copy: back to the import choice
@@ -424,16 +426,14 @@ struct SetupWizardView: View {
             } else if currentStep == 13 {
                 currentStep = 14 // Import tour: back to the relay check
             } else if currentStep == 15 {
-                currentStep = 17 // Who showed you (new to Nostr only): back to the relay list
-            } else if currentStep == 17 {
-                currentStep = 11 // Relay list: back to profile
-            } else if currentStep == 11 {
-                currentStep = 10 // Profile: back to password
+                currentStep = 11 // People (new to Nostr only): back to Edit Profile
+            } else if currentStep == 9 {
+                currentStep = 15 // Your key: back to people
             } else if currentStep == 10 {
                 currentStep = 9 // Password: back to your keys
             } else if currentStep == 8 {
                 if setupPath == .newToNostr {
-                    currentStep = 15 // New to Nostr: back to who told you
+                    currentStep = 10 // New to Nostr (Mac): back to the lock
                 } else if setupPath == .browse {
                     currentStep = 4 // Browse: back to import
                 } else if isIOSDevice {
@@ -586,9 +586,10 @@ struct SetupWizardView: View {
         dismiss()
     }
 
-    /// The servers step 17 recommends: this device's Write relays others
-    /// can reach. By default the five starter relays, the same as the read
-    /// relays (Logen 2026-10-31). Only suggestions: the person picks.
+    /// The relay list a new account publishes: this device's Write relays
+    /// others can reach. By default the five starter relays, the same as the
+    /// read relays (Logen 2026-10-31). Setup no longer asks (r3, Logen
+    /// 2026-11-22): it is changed in Settings > Relays.
     private var starterRelays: [String] {
         RelayConfiguration.newAccountRelayListTags(
             broadcastRelays: RelayConfiguration.directBroadcastRelays(
@@ -599,7 +600,7 @@ struct SetupWizardView: View {
     }
 
     /// Publishes what a brand-new account needs to exist for other people:
-    /// the relay list picked in step 17 (none when skipped) and a profile. Its follow list starts with its first
+    /// the recommended relay list (`starterRelays`) and a profile. Its follow list starts with its first
     /// follow, in the Fill your feed guide. Runs once, after
     /// `saveAndComplete` has stored the key, because each event has to be
     /// signed by it. Only for the New to Nostr path, whose key was generated
@@ -619,13 +620,14 @@ struct SetupWizardView: View {
         TutorialCenter.shared.startIfEligible(.fillYourVault, account: ownerHex)
         let name = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
         let photo = profilePhotoJPEG
+        let relays = starterRelays
         let configService = self.configService
 
         Task { @MainActor in
             let nostr = NostrService.shared
 
-            // The list picked in step 17; none picked (Skip), nothing is published.
-            let relayTags = RelayConfiguration.newAccountRelayListTags(broadcastRelays: starterRelayList ?? [])
+            // The recommended list; Settings > Relays changes it later.
+            let relayTags = RelayConfiguration.newAccountRelayListTags(broadcastRelays: relays)
             if !relayTags.isEmpty,
                let relayList = await nostr.signEventAsync(kind: 10002, content: "", tags: relayTags, signAsNpub: ownerNpub),
                relayList.pubkey.lowercased() == ownerHex.lowercased() {

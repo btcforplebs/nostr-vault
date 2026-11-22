@@ -1,17 +1,17 @@
 import SwiftUI
 
-// MARK: - Step 9: Nostr Intro (New to Nostr path)
+// MARK: - Step 9: Your keys (New to Nostr path)
 
-/// What Nostr is, then the new keypair: both keys explained, and the nsec
-/// backed up before the user can move on. The password is its own step (10)
-/// so neither page needs scrolling.
+/// The new keypair, made when New to Nostr was picked (NewKeyPair): both
+/// keys explained, and the nsec backed up before the user can move on. The
+/// password is its own step (10). The "Welcome to Nostr" cards that used to
+/// come first were dropped (setup screens r3, Logen 2026-11-22).
 struct NostrIntroStep: View {
     @Binding var npub: String
     @Binding var nsec: String
     let onContinue: () -> Void
 
     @State private var appeared = false
-    @State private var isGenerating = false
     @State private var error: String?
     @State private var savedKey = false
     @State private var copiedKey: String?
@@ -36,46 +36,9 @@ struct NostrIntroStep: View {
         .onAppear { appeared = true }
     }
 
+    /// Only seen if making the key failed when New to Nostr was picked.
     @ViewBuilder
     private var introContent: some View {
-        // Card 1: What is Nostr
-        WizardGlassCard(isSelected: false) {
-            VStack(spacing: 12) {
-                Text("Welcome to Nostr")
-                    .font(.appSystem(size: 20, weight: .semibold))
-                    .foregroundColor(WizardColors.textPrimary)
-                    .multilineTextAlignment(.center)
-
-                Text("Nostr is an open social protocol. You own your identity through a cryptographic keypair -- no company controls your account. Your posts are broadcast to relays and can be read by anyone.")
-                    .font(.appSystem(size: 15))
-                    .foregroundColor(WizardColors.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-            }
-        }
-        .opacity(appeared ? 1 : 0)
-        .offset(y: appeared ? 0 : 16)
-        .animation(WizardAnimations.springEnter.delay(0.15), value: appeared)
-
-        // Card 2: Why Nostr Vault is unique
-        WizardGlassCard(isSelected: false) {
-            VStack(spacing: 12) {
-                Text("Your Personal Archive")
-                    .font(.appSystem(size: 20, weight: .semibold))
-                    .foregroundColor(WizardColors.textPrimary)
-                    .multilineTextAlignment(.center)
-
-                Text("Nostr Vault runs a HAVEN relay right on your device. Every note, message, and media file you interact with is archived locally. Your data stays with you -- not on someone else's server.")
-                    .font(.appSystem(size: 15))
-                    .foregroundColor(WizardColors.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-            }
-        }
-        .opacity(appeared ? 1 : 0)
-        .offset(y: appeared ? 0 : 16)
-        .animation(WizardAnimations.springEnter.delay(0.3), value: appeared)
-
         if let errorText = error {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle")
@@ -86,16 +49,7 @@ struct NostrIntroStep: View {
             .foregroundColor(WizardColors.error)
         }
 
-        WizardPrimaryButton(title: "Create My Account", action: generateKeys)
-            .disabled(isGenerating)
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 10)
-            .animation(WizardAnimations.springEnter.delay(0.45), value: appeared)
-
-        if isGenerating {
-            ProgressView()
-                .tint(WizardColors.accentPrimary)
-        }
+        WizardPrimaryButton(title: "Make My Key", action: generateKeys)
     }
 
     private var keysContent: some View {
@@ -223,37 +177,14 @@ struct NostrIntroStep: View {
     }
 
     private func generateKeys() {
-        isGenerating = true
-        error = nil
-
-        guard let resultCStr = GenerateKeyPairC() else {
+        guard let pair = NewKeyPair.generate() else {
             error = "Key generation failed"
-            isGenerating = false
             return
         }
-        let result = String(cString: resultCStr)
-        let parts = result.split(separator: ":")
-        guard parts.count == 2 else {
-            error = "Key generation returned invalid format"
-            isGenerating = false
-            return
-        }
-        let sk = String(parts[0])
-        let pk = String(parts[1])
-
-        var newNpub: String?
-        var newNsec: String?
-        if let pubData = Bech32.hexToData(pk) {
-            newNpub = Bech32.encode(hrp: "npub", data: pubData)
-        }
-        if let secData = Bech32.hexToData(sk) {
-            newNsec = Bech32.encode(hrp: "nsec", data: secData)
-        }
-
+        error = nil
         withAnimation(WizardAnimations.springBounce) {
-            if let newNpub { npub = newNpub }
-            if let newNsec { nsec = newNsec }
+            npub = pair.npub
+            nsec = pair.nsec
         }
-        isGenerating = false
     }
 }
