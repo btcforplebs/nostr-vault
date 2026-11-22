@@ -1,3 +1,5 @@
+#if os(iOS)
+// iPhone and iPad only: the Mac stays silent about sync (Logen, 3.3.0).
 import SwiftUI
 
 /// Settings › Your Devices › Sync with your vaults: one row per device this
@@ -71,3 +73,4 @@ struct MeshSyncStatusRow: View {
         }
     }
 }
+#endif
