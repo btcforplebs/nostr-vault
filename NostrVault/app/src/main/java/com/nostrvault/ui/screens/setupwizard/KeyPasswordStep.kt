@@ -36,7 +36,13 @@ import com.nostrvault.ui.theme.*
 
 /**
  * Lock it in: the last key step (setup screens r3, Way 1c). The password
- * that encrypts the new nsec (NIP-49), under the VaultMark with the key in
+ * encrypts a NIP-49 copy of the new nsec (the ncryptsec, in app config); the
+ * password is kept in the AndroidKeyStore-backed CredentialStore. The hex key
+ * is also saved by CredentialStore.saveNsec and signing reads that first, so
+ * the key is not behind the password and not in secure hardware: the text
+ * says only that the store is sealed by the Keystore and the password
+ * encrypts a copy. Open
+ * finishes setup. It sits under the VaultMark with the key in
  * its keyhole. Its own page so the fields sit above the keyboard without
  * scrolling. While a field has focus the picture and subtitle step aside.
  * Twin of iOS KeyPasswordStep (#2416).
@@ -67,7 +73,7 @@ internal fun KeyPasswordStep(viewModel: SetupWizardViewModel, onComplete: () -> 
         Text("Lock it in", color = PrimaryText, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         AnimatedVisibility(visible = !isTyping) {
             Text(
-                text = "A password locks your key in the vault on this device. It never leaves it, and we can't reset it.",
+                text = "Your key is stored encrypted on this device, sealed by Android Keystore. This password encrypts a copy of it (NIP-49). It never leaves this device, and we can't reset the password.",
                 color = SecondaryText,
                 fontSize = 15.sp,
                 textAlign = TextAlign.Center,
@@ -133,7 +139,7 @@ internal fun KeyPasswordStep(viewModel: SetupWizardViewModel, onComplete: () -> 
         // warning was already read before a field took focus.
         Spacer(Modifier.height(16.dp))
         WizardPrimaryButton(
-            text = "Lock",
+            text = "Open",
             enabled = isPasswordValid,
             isLoading = isLoading,
             onClick = { viewModel.advanceFromKeyPassword(onComplete) },
@@ -152,7 +158,7 @@ internal fun KeyPasswordStep(viewModel: SetupWizardViewModel, onComplete: () -> 
             Icon(Icons.Default.Shield, contentDescription = null, tint = WizardAccent, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
             Text(
-                "Write this password down and keep it with your spare.",
+                "Write this password down and keep it with your key backup.",
                 color = SecondaryText,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,

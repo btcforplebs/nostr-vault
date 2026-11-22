@@ -320,7 +320,7 @@ class SetupWizardViewModel @Inject constructor(
 
     /** Steps for "New to Nostr" mode (Create an account). Setup screens r3
      *  (Logen 2026-11-22), same as iOS #2410: profile, ("Who told you",
-     *  added by withReferrerStep), this key is you, keep a spare, lock it
+     *  added by withReferrerStep), this key is you, back up your key, lock it
      *  in, then the feed (key steps: iOS #2416). The key
      *  is made silently when the path is picked. No relay choice (the
      *  built-in relay), Welcome to Nostr cards, relay list (the recommended

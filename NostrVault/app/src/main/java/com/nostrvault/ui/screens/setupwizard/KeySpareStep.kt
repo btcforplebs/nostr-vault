@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -28,30 +27,26 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.*
-import kotlinx.coroutines.delay
 
 // ══════════════════════════════════════════════════════════════════
-// Step: Keep a spare (New to Nostr path)
+// Step: Back up your key (New to Nostr path)
 // ══════════════════════════════════════════════════════════════════
 
 /**
- * The second key step (setup screens r3, Way 1b): the key with lines down
- * to two spares, written on paper or copied. No print option anywhere
- * (Logen 2026-11-22, via Tod): the key is shown here (masked until Show) to
- * write down, and Copy is the only button. Next waits for "I saved my secret
- * key", which only the user ticks: a copy clears from the clipboard after a
- * minute, so it never counts as a spare on its own. No Save to Passwords.
+ * The second key step (setup screens r3, Way 1b), "Back up your key" (Logen
+ * 2026-11-22: the step is a backup, not a spare). The key with lines down to
+ * the two ways to back it up: written on paper or copied. No print option
+ * anywhere: the key is shown here (masked until Show) to write down, next to
+ * a visible Copy my key button. Next waits for "I backed up my key", which
+ * only the user ticks: a copy clears from the clipboard after a minute, so it
+ * never counts as a backup on its own. No Save to Passwords.
  */
 @Composable
 internal fun KeySpareStep(viewModel: SetupWizardViewModel) {
     val nsec = viewModel.generatedNsec.collectAsState().value
-    val context = LocalContext.current
     var shown by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
     var savedKey by remember { mutableStateOf(false) }
-    LaunchedEffect(copied) {
-        if (copied) { delay(com.nostrvault.ui.screens.settings.SECRET_CLIP_LIFETIME_MS); copied = false }
-    }
     if (nsec == null) {
         // Back past the key step and a new way in dropped the key: nothing to keep.
         Text("Go back to your key first.", color = SecondaryText, fontSize = 15.sp)
@@ -59,20 +54,21 @@ internal fun KeySpareStep(viewModel: SetupWizardViewModel) {
     }
     // The nsec can be shown here: keep it out of screenshots and Recents.
     com.nostrvault.ui.components.SecureWindowEffect()
-    val copy = { com.nostrvault.ui.screens.settings.copySecretKey(context, nsec); copied = true }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
         Spacer(Modifier.height(8.dp))
-        KeyStepsStrip(KeyStepPart.SPARE)
+        KeyStepsStrip(KeyStepPart.BACKUP)
         Spacer(Modifier.height(22.dp))
-        Text("Keep a spare", color = PrimaryText, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+        Text("Back up your key", color = PrimaryText, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
         Spacer(Modifier.height(22.dp))
-        SparePicture()
+        BackupPicture()
         Spacer(Modifier.height(18.dp))
         SecretKeyCard(nsec, shown) { shown = !shown }
+        Spacer(Modifier.height(12.dp))
+        KeyCopyButton(nsec) { copied = it }
         Spacer(Modifier.height(14.dp))
         Text(
-            "Write it down on paper and keep it somewhere safe. Lose this phone and the spare is your only way back in.",
+            "Write your key down on paper and keep it somewhere safe. If you lose this device, your backup is the only way back in.",
             color = SecondaryText, fontSize = 15.sp, lineHeight = 21.sp, textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(10.dp))
@@ -94,11 +90,10 @@ internal fun KeySpareStep(viewModel: SetupWizardViewModel) {
                 colors = CheckboxDefaults.colors(checkedColor = WizardAccent, uncheckedColor = SecondaryText),
             )
             Spacer(Modifier.width(10.dp))
-            Text("I saved my secret key", color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text("I backed up my key", color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
         }
         Spacer(Modifier.height(20.dp))
         WizardPrimaryButton(text = "Next", enabled = savedKey, onClick = viewModel::advanceFromKeySpare)
-        SmallLink(if (copied) "Copied" else "Copy it", copy)
         Spacer(Modifier.height(8.dp))
     }
 }
@@ -132,12 +127,12 @@ private fun SecretKeyCard(nsec: String, shown: Boolean, onToggle: () -> Unit) {
     }
 }
 
-/** The key, wired down to the two spares: on paper and a copy. */
+/** The key, wired down to the two ways to back it up: on paper and a copy. */
 @Composable
-private fun SparePicture() {
+private fun BackupPicture() {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clearAndSetSemantics { contentDescription = "Your key, with a spare on paper or a copy" },
+        modifier = Modifier.clearAndSetSemantics { contentDescription = "Your key, backed up on paper or as a copy" },
     ) {
         Icon(Icons.Default.Key, contentDescription = null, tint = WizardAccent, modifier = Modifier.size(48.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(140.dp), modifier = Modifier.height(30.dp)) {
@@ -145,8 +140,8 @@ private fun SparePicture() {
             Wire(done = false)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            SpareTile(Icons.Default.Edit, "On paper", done = false)
-            SpareTile(Icons.Default.ContentCopy, "Copy", done = false)
+            BackupTile(Icons.Default.Edit, "On paper", done = false)
+            BackupTile(Icons.Default.ContentCopy, "Copy", done = false)
         }
     }
 }
@@ -166,7 +161,7 @@ private fun Wire(done: Boolean) {
 }
 
 @Composable
-private fun SpareTile(icon: ImageVector, label: String, done: Boolean) {
+private fun BackupTile(icon: ImageVector, label: String, done: Boolean) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -179,12 +174,5 @@ private fun SpareTile(icon: ImageVector, label: String, done: Boolean) {
         Icon(if (done) Icons.Default.CheckCircle else icon, contentDescription = null, tint = if (done) SuccessGreen else WizardAccent, modifier = Modifier.size(26.dp))
         Spacer(Modifier.height(8.dp))
         Text(label, color = PrimaryText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-private fun SmallLink(text: String, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = Modifier.heightIn(min = 44.dp)) {
-        Text(text, color = WizardAccent, fontSize = 15.sp, fontWeight = FontWeight.Medium)
     }
 }

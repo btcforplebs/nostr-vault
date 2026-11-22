@@ -34,9 +34,9 @@ import com.nostrvault.ui.theme.*
 /**
  * The first key step (setup screens r3, Way 1a): your photo and name, "=",
  * and the key. The key was made when Create an account was picked; the
- * secret stays masked until Show. Keeping a spare is the next step
- * (KeySpareStep), the password the one after (KeyPasswordStep). Twin of iOS
- * KeyIsYouStep (#2416).
+ * secret stays masked until Show, with a visible Copy button. Backing it up
+ * is the next step (KeySpareStep), the password the one after
+ * (KeyPasswordStep). Twin of iOS KeyIsYouStep (#2416).
  */
 @Composable
 internal fun KeyIsYouStep(viewModel: SetupWizardViewModel) {
@@ -46,6 +46,7 @@ internal fun KeyIsYouStep(viewModel: SetupWizardViewModel) {
     val name by viewModel.profileName.collectAsState()
     val photo by viewModel.profilePhotoJpeg.collectAsState()
     var shown by remember { mutableStateOf(false) }
+    var copied by remember { mutableStateOf(false) }
     // The nsec can be shown here: keep it out of screenshots and Recents.
     com.nostrvault.ui.components.SecureWindowEffect()
 
@@ -99,9 +100,12 @@ internal fun KeyIsYouStep(viewModel: SetupWizardViewModel) {
                     .clearAndSetSemantics { contentDescription = if (shown) "Secret key shown" else "Secret key hidden" },
             )
         }
+        Spacer(Modifier.height(12.dp))
+        KeyCopyButton(nsec) { copied = it }
         Spacer(Modifier.height(14.dp))
         Text(
-            "Anyone with it can post as you. Nobody can get it back for you, not even us.",
+            if (copied) "Copied. Paste it somewhere safe within a minute; then the clipboard clears."
+            else "Anyone with it can post as you. Nobody can get it back for you, not even us.",
             color = SecondaryText,
             fontSize = 15.sp,
             lineHeight = 21.sp,
