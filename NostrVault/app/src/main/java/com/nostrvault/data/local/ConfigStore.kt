@@ -38,10 +38,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
@@ -361,10 +358,11 @@ class ConfigStore @Inject constructor(
                     store = { account, value -> try { secretVault.write(account, value) } catch (_: Exception) { false } },
                     delete = { account -> try { secretVault.delete(account) } catch (_: Exception) { false } },
                 )
+                vaultOwnerKeyForSave(cfg)
                 val onDisk = ConfigSecrets.stripped(cfg, secretsInVault)
                 val tmp = File(configFile.parentFile, configFile.name + ".tmp")
                 tmp.outputStream().use { out ->
-                    out.write(encodeForDisk(onDisk, ownerKeyForFile(cfg)).toByteArray())
+                    out.write(json.encodeToString(onDisk).toByteArray())
                     out.fd.sync()
                 }
                 Files.move(tmp.toPath(), configFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
@@ -403,17 +401,27 @@ class ConfigStore @Inject constructor(
     private fun setAsideCopies(): List<File> =
         configFile.parentFile?.listFiles()?.filter { it.name.startsWith("${configFile.name}.unreadable-") }.orEmpty()
 
+    private val _ownerKeyNotSaved = MutableStateFlow(false)
+
     /**
-     * Puts the owner's key in [keyVault]. Returns the key only if the vault
-     * couldn't take it, so it stays in the file as before instead of being
-     * lost. A different key the vault already holds for the owner is never
-     * overwritten.
+     * True while the owner's key could not go into the credential store: it is
+     * then only in memory and gone when the app closes. The app warns
+     * (OwnerKeyNotSavedDialog); the key is never written to the config file
+     * instead.
      */
-    private fun ownerKeyForFile(cfg: HavenConfig): String? {
-        val key = cfg.ownerHexKey ?: return null
-        if (vaultOwnerKey(key, cfg.ownerNpub)) return null
-        Log.w("ConfigStore", "owner key not stored in the credential store; kept in config")
-        return key
+    val ownerKeyNotSaved: StateFlow<Boolean> = _ownerKeyNotSaved.asStateFlow()
+
+    /**
+     * Puts the owner's key in [keyVault]. A different key the vault already
+     * holds for the owner is never overwritten. The file never gets the key,
+     * even when the vault can't take it ([ownerKeyNotSaved]); a key an older
+     * build left in the file comes out on this save.
+     */
+    private fun vaultOwnerKeyForSave(cfg: HavenConfig) {
+        val key = cfg.ownerHexKey
+        val saved = key == null || vaultOwnerKey(key, cfg.ownerNpub)
+        if (!saved) Log.w("ConfigStore", "owner key not stored in the credential store; kept in memory only")
+        _ownerKeyNotSaved.value = !saved
     }
 
     /** Whether [key] is now in [keyVault], under [ownerNpub] or else its own pubkey. */
@@ -428,12 +436,6 @@ class ConfigStore @Inject constructor(
         }
         if (stored) vaulted = pub to key
         return stored
-    }
-
-    private fun encodeForDisk(cfg: HavenConfig, ownerKey: String?): String {
-        if (ownerKey == null) return json.encodeToString(cfg)
-        val fields = json.encodeToJsonElement(cfg).jsonObject
-        return json.encodeToString(JsonObject(fields + (OWNER_KEY_FIELD to JsonPrimitive(ownerKey))))
     }
 
     private fun ownerHexKeyIn(text: String): String? = try {

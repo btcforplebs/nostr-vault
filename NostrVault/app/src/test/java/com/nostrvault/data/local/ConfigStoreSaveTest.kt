@@ -127,19 +127,42 @@ class ConfigStoreSaveTest {
     }
 
     @Test
-    fun `a key the credential store can't take stays in the file`() = runBlocking {
+    fun `a key the credential store can't take never goes in the file, and the app is warned`() = runBlocking {
         vault.works = false
         val store = store()
         store.updateAsync { it.copy(ownerNpub = owner, ownerHexKey = secret) }
 
-        assertTrue(configFile.readText().contains(secret))
-        assertEquals(secret, store().config.value.ownerHexKey)
-
-        // Once the store works again, the next save moves it there.
-        vault.works = true
-        store().save()
         assertFalse(configFile.readText().contains(secret))
+        assertTrue(store.ownerKeyNotSaved.value)
+        // Still signing this session: the key is in memory.
+        assertEquals(secret, store.config.value.ownerHexKey)
+
+        // Once the store works again, the next save puts it there and the warning goes.
+        vault.works = true
+        store.save()
         assertEquals(secret, vault.keys[ownerHex])
+        assertFalse(store.ownerKeyNotSaved.value)
+        assertFalse(configFile.readText().contains(secret))
+    }
+
+    @Test
+    fun `a key an older build left in the file comes out even when the credential store can't take it`() = runBlocking {
+        configFile.writeText("""{"ownerNpub":"$owner","hasCompletedSetup":true,"ownerHexKey":"$secret"}""")
+        vault.works = false
+
+        val store = store()
+        assertEquals(secret, store.config.value.ownerHexKey)
+        store.save()
+
+        assertFalse(configFile.readText().contains(secret))
+        assertTrue(store.ownerKeyNotSaved.value)
+    }
+
+    @Test
+    fun `a saved key raises no warning`() = runBlocking {
+        val store = store()
+        store.updateAsync { it.copy(ownerNpub = owner, ownerHexKey = secret) }
+        assertFalse(store.ownerKeyNotSaved.value)
     }
 
     @Test
@@ -148,7 +171,9 @@ class ConfigStoreSaveTest {
         val store = store()
         store.updateAsync { it.copy(ownerNpub = owner, ownerHexKey = secret) }
         assertEquals("7a".repeat(32), vault.keys[ownerHex])
-        assertTrue(configFile.readText().contains(secret))
+        // Not saved anywhere on disk, then: kept out of the file, and the app warns.
+        assertFalse(configFile.readText().contains(secret))
+        assertTrue(store.ownerKeyNotSaved.value)
     }
 
     @Test

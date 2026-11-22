@@ -123,9 +123,12 @@ object CredentialStore {
         FreshStoreSwap(storeFile(context), deleteLive = { context.deleteSharedPreferences(PREFS_NAME) })
 
     private fun open(context: Context): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
+        val masterKey = withStrongBoxFallback { strongBox ->
+            MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .setRequestStrongBoxBacked(strongBox)
+                .build()
+        }
         return EncryptedSharedPreferences.create(
             context,
             PREFS_NAME,
@@ -133,6 +136,19 @@ object CredentialStore {
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
         )
+    }
+
+    /**
+     * [build] with StrongBox asked for, and again without it when that throws
+     * (a phone that lists StrongBox but can't make the key there). Only a new
+     * master key lands in StrongBox: one already in the keystore is reused
+     * as it is, so existing installs keep their key and nothing migrates.
+     */
+    internal fun <T> withStrongBoxFallback(build: (strongBox: Boolean) -> T): T = try {
+        build(true)
+    } catch (e: Exception) {
+        Log.w(TAG, "StrongBox master key failed, using the keystore without it: ${e.message}")
+        build(false)
     }
 
     /**
