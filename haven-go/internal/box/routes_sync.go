@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // The box catching up from the owner's other vaults (sync.go). The box
@@ -32,6 +34,11 @@ func init() {
 		}
 		if a.Sync == nil {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this box does not catch up from other vaults"})
+			return
+		}
+		if wait := a.Sync.allowNow(device, time.Now()); wait > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Round(time.Second)/time.Second)))
+			writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "a catch-up was just asked for; try again shortly", "retryAfter": int(wait.Round(time.Second) / time.Second)})
 			return
 		}
 		if err := a.Sync.Now(device); err != nil {
@@ -79,6 +86,31 @@ func syncDeviceArg(w http.ResponseWriter, body []byte, required bool) (string, b
 		return "", false
 	}
 	return npub, true
+}
+
+// allowNow throttles Sync now (Tron #2385 low): one ask per device, and one
+// for all, per NowEvery; a recent ask for all also covers each device. It
+// records an allowed ask; a refused one returns how long to wait.
+func (s *Syncer) allowNow(device string, now time.Time) time.Duration {
+	every := orDur(s.NowEvery, time.Minute)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lastNow == nil {
+		s.lastNow = map[string]time.Time{}
+	}
+	wait := time.Duration(0)
+	for _, k := range []string{"", device} {
+		if at, ok := s.lastNow[k]; ok {
+			if left := every - now.Sub(at); left > wait {
+				wait = left
+			}
+		}
+	}
+	if wait > 0 {
+		return wait
+	}
+	s.lastNow[device] = now
+	return 0
 }
 
 func syncError(w http.ResponseWriter, err error) {
