@@ -230,6 +230,18 @@ func TestEachAccountGetsItsOwnWeb(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Error("the pooled cache must stay")
 	}
+	// A public relay (level 0) builds nothing, and still clears them.
+	altPath := filepath.Join(filepath.Dir(path), accountCachePrefix+alt.pk+".json")
+	if _, err := os.Stat(altPath); err != nil {
+		t.Fatal("fixture: alt's file should exist")
+	}
+	NewSimpleInMemory(nil, owners(main), nil, 0, 0, 5, path, 60).Init(ctx)
+	if _, err := os.Stat(altPath); !os.IsNotExist(err) {
+		t.Error("level 0: a removed account's web file was left behind")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), accountCachePrefix+main.pk+".json")); err != nil {
+		t.Error("level 0: the remaining account's file must stay")
+	}
 }
 
 // An account can be at a higher level than the vault's single value. The
@@ -310,6 +322,31 @@ func TestAccountWebsSurviveAnEmptyFetch(t *testing.T) {
 	}
 	if file, _, _ := readAccountWeb(t, path, main.pk); !file.Pubkeys[a.pk] {
 		t.Error("an empty fetch rewrote main's file without a")
+	}
+}
+
+// An account added while the relay runs was in no build: the pooled web
+// holds only the other accounts' people, and must not let them through to it.
+func TestAccountAddedLiveGetsNobodyFromThePooledWeb(t *testing.T) {
+	main, added, a := newTestKey(t), newTestKey(t), newTestKey(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	path := filepath.Join(t.TempDir(), "wot_cache.json")
+	for _, withWebs := range []bool{true, false} {
+		wt := NewSimpleInMemory(nostr.NewSimplePool(ctx), owners(main), []string{seedRelay(t, main.followList(t, a))}, 2, 0, 5, path, 60)
+		wt.Refresh(ctx)
+		if !withWebs {
+			wt.webs.Store(nil) // a pooled graph only, as on the first start after the update
+		}
+		if !wt.Has(ctx, a.pk) || !wt.HasFor(ctx, main.pk, a.pk) {
+			t.Fatal("fixture: main follows a")
+		}
+		if wt.HasFor(ctx, added.pk, a.pk) {
+			t.Errorf("webs built %v: main's follow reached an account added since the build", withWebs)
+		}
+		if !wt.HasFor(ctx, added.pk, main.pk) {
+			t.Errorf("webs built %v: your own account must still reach the added one", withWebs)
+		}
 	}
 }
 

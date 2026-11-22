@@ -167,10 +167,10 @@ func (wt *SimpleInMemory) MissingFiles() bool {
 	return false
 }
 
-// removeOtherAccountFiles deletes the web and links files of anyone who is
-// not in webs: an account removed from this device leaves no file naming its
-// follows behind.
-func (wt *SimpleInMemory) removeOtherAccountFiles(webs accountWebs) {
+// removeOtherAccountFiles deletes the web and links files of anyone keep
+// does not name: an account removed from this device leaves no file naming
+// its follows behind.
+func (wt *SimpleInMemory) removeOtherAccountFiles(keep func(owner string) bool) {
 	if wt.CachePath == "" {
 		return
 	}
@@ -188,7 +188,7 @@ func (wt *SimpleInMemory) removeOtherAccountFiles(webs accountWebs) {
 			}
 			owner, ok = strings.CutSuffix(owner, ".json")
 			// Only names this code writes: a 64-character hex pubkey.
-			if !ok || len(owner) != 64 || webs[owner] != nil {
+			if !ok || len(owner) != 64 || keep(owner) {
 				continue
 			}
 			if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {

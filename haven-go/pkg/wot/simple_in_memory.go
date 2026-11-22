@@ -345,6 +345,12 @@ func (wt *SimpleInMemory) Init(ctx context.Context) {
 		}
 	}
 	if wt.WotDepth == 0 {
+		// A public relay builds no web, so nothing else would clear the
+		// files of an account removed since.
+		wt.removeOtherAccountFiles(func(owner string) bool {
+			_, own := wt.WhitelistedPubKeys[owner]
+			return own
+		})
 		return
 	}
 	wt.build(ctx)

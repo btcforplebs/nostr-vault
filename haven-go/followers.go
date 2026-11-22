@@ -11,7 +11,6 @@ import (
 
 	"github.com/barrydeen/haven/internal/followers"
 	"github.com/barrydeen/haven/pkg/runsafe"
-	"github.com/barrydeen/haven/pkg/wot"
 	"github.com/nbd-wtf/go-nostr"
 )
 
@@ -280,8 +279,8 @@ func followersSnapshot(ctx context.Context, owner string) (followers.Snapshot, b
 	if l == nil {
 		return followers.Snapshot{}, false
 	}
-	model := wot.GetInstance()
-	snap := l.Snapshot(owner, func(pk string) bool { return model != nil && model.Has(ctx, pk) })
+	// Judged by owner's own web, not the vault's.
+	snap := l.Snapshot(owner, func(pk string) bool { return inAccountsWeb(ctx, owner, pk) })
 	return snap.Without(isBlacklisted), true
 }
 

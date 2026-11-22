@@ -61,12 +61,22 @@ func (wt *SimpleInMemory) reachOf(owner string) AccountReach {
 // The owner's other accounts on this device always get through, at every
 // level, whether or not owner follows them (Logen, 2026-11-22).
 //
-// Until owner's web has been built (the first start after an update, or an
-// account added since the last rebuild) the answer is the pooled web's, the
-// one Has gives.
+// Until owner's web has been built (the first start after an update, or its
+// Follow Distance changed since the last rebuild) the answer is the pooled
+// web's, the one Has gives: that web was built from owner's follows too.
+//
+// An owner this model was not built for (an account added while the relay
+// runs) has no web and no part in the pooled one, which holds only the other
+// accounts' people. Nobody but the vault's own accounts reaches it until a
+// relay start builds its web; the refusals are temporary and are offered
+// again then.
 func (wt *SimpleInMemory) HasFor(ctx context.Context, owner, pubkey string) bool {
 	if wt.WotDepth == 0 {
 		return true
+	}
+	if _, known := wt.WhitelistedPubKeys[owner]; !known {
+		_, own := wt.WhitelistedPubKeys[pubkey]
+		return own
 	}
 	webs := wt.webs.Load()
 	if webs == nil {
