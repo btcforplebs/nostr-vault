@@ -12,8 +12,10 @@ package main
 // reconciles stores between your own devices, and a peer told an event is
 // missing would only send it again.
 //
-// Gift wraps and zap receipts pass: their authors are a throwaway key and the
-// wallet server, never the person. The app checks those once opened.
+// Gift wraps pass: their author is a throwaway key, never the person, and the
+// app checks them once opened. Zap receipts are signed by the wallet server,
+// so they are judged by the person who sent the zap (servesEvent), even when
+// the read names the wallet server as the author (readHidesAnyone).
 
 import (
 	"context"
@@ -113,6 +115,17 @@ func hidesAnyone(scope, filterAuthors []string) bool {
 	return found
 }
 
+// readHidesAnyone is hidesAnyone for a whole filter. A zap receipt's author is
+// the wallet server, so a read naming only that server can still match a
+// blocked person's zap: when the filter can match zap receipts, the authors
+// it names do not narrow the question (Tron, #2405 low A).
+func readHidesAnyone(scope []string, filter nostr.Filter) bool {
+	if len(filter.Kinds) == 0 || slices.Contains(filter.Kinds, nostr.KindZap) {
+		return hidesAnyone(scope, nil)
+	}
+	return hidesAnyone(scope, filter.Authors)
+}
+
 // hiddenAuthors is the people hidden from a read with this scope, each once,
 // narrowed to filterAuthors when the filter names any.
 func hiddenAuthors(scope, filterAuthors []string) []string {
@@ -137,7 +150,7 @@ func hideBlacklistedQuery(query func(context.Context, nostr.Filter) (chan *nostr
 			return ch, err
 		}
 		scope := readScope(filter)
-		if !hidesAnyone(scope, filter.Authors) {
+		if !readHidesAnyone(scope, filter) {
 			return ch, err
 		}
 		out := make(chan *nostr.Event)
