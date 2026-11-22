@@ -9,7 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,19 +36,17 @@ import kotlinx.coroutines.delay
 
 /**
  * The second key step (setup screens r3, Way 1b): the key with lines down
- * to two spares, a paper card and a copy. Print a card is the big button,
- * Copy the small one. Next waits for "I saved my secret key", which only the
- * user ticks: a print job may not reach paper, and a copy clears from the
- * clipboard after a minute, so neither counts as a spare on its own. No Save
- * to Passwords. Twin of iOS KeySpareStep (#2416).
+ * to two spares, written on paper or copied. No print option anywhere
+ * (Logen 2026-11-22, via Tod): the key is shown here (masked until Show) to
+ * write down, and Copy is the only button. Next waits for "I saved my secret
+ * key", which only the user ticks: a copy clears from the clipboard after a
+ * minute, so it never counts as a spare on its own. No Save to Passwords.
  */
 @Composable
 internal fun KeySpareStep(viewModel: SetupWizardViewModel) {
     val nsec = viewModel.generatedNsec.collectAsState().value
-    val npub = viewModel.generatedNpub.collectAsState().value.orEmpty()
-    val name by viewModel.profileName.collectAsState()
     val context = LocalContext.current
-    var printed by remember { mutableStateOf(false) }
+    var shown by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
     var savedKey by remember { mutableStateOf(false) }
     LaunchedEffect(copied) {
@@ -59,7 +57,8 @@ internal fun KeySpareStep(viewModel: SetupWizardViewModel) {
         Text("Go back to your key first.", color = SecondaryText, fontSize = 15.sp)
         return
     }
-    val print = { KeySpare.printCard(context, name, npub, nsec) { sent -> if (sent) printed = true } }
+    // The nsec can be shown here: keep it out of screenshots and Recents.
+    com.nostrvault.ui.components.SecureWindowEffect()
     val copy = { com.nostrvault.ui.screens.settings.copySecretKey(context, nsec); copied = true }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
@@ -68,16 +67,18 @@ internal fun KeySpareStep(viewModel: SetupWizardViewModel) {
         Spacer(Modifier.height(22.dp))
         Text("Keep a spare", color = PrimaryText, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
         Spacer(Modifier.height(22.dp))
-        SparePicture(printed)
-        Spacer(Modifier.height(22.dp))
+        SparePicture()
+        Spacer(Modifier.height(18.dp))
+        SecretKeyCard(nsec, shown) { shown = !shown }
+        Spacer(Modifier.height(14.dp))
         Text(
-            "Lose this phone and the spare is your only way back in.",
+            "Write it down on paper and keep it somewhere safe. Lose this phone and the spare is your only way back in.",
             color = SecondaryText, fontSize = 15.sp, lineHeight = 21.sp, textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(10.dp))
         Text(
             if (copied) "Copied. Paste it somewhere safe within a minute; then the clipboard clears."
-            else "Print it on paper. Don't save it to Photos, Files or Google Drive.",
+            else "Don't save it to Photos, Files or Google Drive.",
             color = WizardTextMuted, fontSize = 13.sp, lineHeight = 18.sp, textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(12.dp))
@@ -96,39 +97,55 @@ internal fun KeySpareStep(viewModel: SetupWizardViewModel) {
             Text("I saved my secret key", color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
         }
         Spacer(Modifier.height(20.dp))
-        if (!printed && !savedKey) {
-            WizardPrimaryButton(text = "Print a card", onClick = print)
-        } else {
-            WizardPrimaryButton(text = "Next", enabled = savedKey, onClick = viewModel::advanceFromKeySpare)
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (printed || savedKey) {
-                SmallLink("Print again", print)
-                Text("·", color = WizardTextMuted)
-            }
-            SmallLink(if (copied) "Copied" else "Copy it instead", copy)
-        }
+        WizardPrimaryButton(text = "Next", enabled = savedKey, onClick = viewModel::advanceFromKeySpare)
+        SmallLink(if (copied) "Copied" else "Copy it", copy)
         Spacer(Modifier.height(8.dp))
     }
 }
 
-/**
- * The key, wired down to the two spares. Only paper turns green: a copy
- * leaves the clipboard after a minute, so it never shows as a finished spare.
- */
+/** The secret key, masked until Show, to write down. */
 @Composable
-private fun SparePicture(printed: Boolean) {
+private fun SecretKeyCard(nsec: String, shown: Boolean, onToggle: () -> Unit) {
+    WizardCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Key, contentDescription = null, tint = WizardAccent, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Secret key", color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            TextButton(onClick = onToggle, modifier = Modifier.heightIn(min = 44.dp)) {
+                Text(if (shown) "Hide" else "Show", color = WizardAccent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = if (shown) nsec else "\u2022".repeat(24),
+            color = if (shown) WizardAccent else WizardTextMuted,
+            fontSize = 13.sp,
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(WizardBgElevated)
+                .border(1.dp, WizardBorderSubtle, RoundedCornerShape(8.dp))
+                .padding(10.dp)
+                .clearAndSetSemantics { contentDescription = if (shown) "Secret key shown" else "Secret key hidden" },
+        )
+    }
+}
+
+/** The key, wired down to the two spares: on paper and a copy. */
+@Composable
+private fun SparePicture() {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clearAndSetSemantics { contentDescription = if (printed) "Spare printed" else "No spare yet" },
+        modifier = Modifier.clearAndSetSemantics { contentDescription = "Your key, with a spare on paper or a copy" },
     ) {
         Icon(Icons.Default.Key, contentDescription = null, tint = WizardAccent, modifier = Modifier.size(48.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(140.dp), modifier = Modifier.height(30.dp)) {
-            Wire(done = printed)
+            Wire(done = false)
             Wire(done = false)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            SpareTile(Icons.Default.Print, "On paper", done = printed)
+            SpareTile(Icons.Default.Edit, "On paper", done = false)
             SpareTile(Icons.Default.ContentCopy, "Copy", done = false)
         }
     }
