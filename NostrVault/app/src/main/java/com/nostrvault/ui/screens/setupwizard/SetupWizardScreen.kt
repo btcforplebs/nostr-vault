@@ -108,7 +108,7 @@ fun SetupWizardScreen(
                     // Drawn outside this scrolling column; see FrontDoor above.
                     WizardStep.WELCOME -> Unit
                     WizardStep.RELAY_CHOICE -> RelayChoiceStep(viewModel)
-                    WizardStep.NOSTR_INTRO -> NostrIntroStep(viewModel)
+                    WizardStep.NOSTR_INTRO -> KeyIsYouStep(viewModel)
                     WizardStep.KEY_PASSWORD -> KeyPasswordStep(viewModel, onComplete)
                     WizardStep.USE_NOSTR_KEY -> UseNostrKeyStep(viewModel)
                     WizardStep.REFERRER -> ReferrerStep(viewModel)

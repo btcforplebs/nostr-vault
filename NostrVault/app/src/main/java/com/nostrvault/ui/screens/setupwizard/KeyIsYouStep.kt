@@ -35,7 +35,7 @@ import com.nostrvault.ui.theme.*
 // ══════════════════════════════════════════════════════════════════
 
 @Composable
-internal fun NostrIntroStep(viewModel: SetupWizardViewModel) {
+internal fun KeyIsYouStep(viewModel: SetupWizardViewModel) {
     val generatedNsec by viewModel.generatedNsec.collectAsState()
     val generatedNpub by viewModel.generatedNpub.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
