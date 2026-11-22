@@ -22,13 +22,6 @@ object DiscoveryReach {
     const val CIRCLE_HOPS = 2
 
     /**
-     * Distant connections keep the old one-hop-out ration until Logen calls
-     * the Underrated cap (Tod 2026-11-22): at most one post each and a fifth
-     * of the list ([WebGate.capLoose]). False lets them in as your circle is.
-     */
-    const val CAP_DISTANT = true
-
-    /**
      * The bar in use: the saved one, else the file's starting bar, kept
      * between the file's floor (people under it never reached the phone) and
      * 100, in whole steps. A saved bar outside 0-100 reads as unset.
@@ -86,7 +79,10 @@ object DiscoveryReach {
     /** The saved value for [bar]: null when it is the file's starting bar, so a later file still moves it. */
     fun saved(bar: Double, copy: TrustRankCopy): Double? = if (bar == bar(null, copy)) null else bar
 
-    /** The gate's ranked sets: ring 2 always inside; rings 3+ inside, or rationed as loose while [CAP_DISTANT]. */
-    fun gateSets(admitted: Admitted, capDistant: Boolean = CAP_DISTANT): Pair<Set<String>, Set<String>> =
-        if (capDistant) admitted.circle to admitted.distant else (admitted.circle + admitted.distant) to emptySet()
+    /**
+     * The gate's ranked sets: your circle (ring 2) inside, distant
+     * connections (rings 3+) always rationed as loose: at most one post each
+     * and a fifth of the list ([WebGate.capLoose], Logen 2026-11-22).
+     */
+    fun gateSets(admitted: Admitted): Pair<Set<String>, Set<String>> = admitted.circle to admitted.distant
 }

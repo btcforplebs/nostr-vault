@@ -145,8 +145,9 @@ enum FeedFilterEngine {
             case .discovery:
                 // The wider web minus your follows. The feed also pulls in
                 // every note that tags you, so the gate drops anyone outside
-                // the web (Android FeedFilterEngine.kt DISCOVERY).
-                if followedPubkeys.contains(author) || v != .inside { return false }
+                // the web (Android FeedFilterEngine.kt DISCOVERY). Loose here
+                // is only a ranked distant connection (rationed below).
+                if followedPubkeys.contains(author) || (v != .inside && v != .loose) { return false }
             case .following:
                 // Your own notes stay although your list need not follow you.
                 // Excluding non-follows here makes an unfollowed author's notes
@@ -172,7 +173,7 @@ enum FeedFilterEngine {
             }
         }
 
-        if reach == .webAndLoose {
+        if reach == .webAndLoose || !gate.rankedLoose.isEmpty {
             filtered = WebGate.capLoose(filtered, verdict: verdict, author: { $0.repostedBy ?? $0.pubkey },
                                        isReply: \.isReply)
         }

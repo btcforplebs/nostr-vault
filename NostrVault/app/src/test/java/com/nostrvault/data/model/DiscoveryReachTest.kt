@@ -63,10 +63,9 @@ class DiscoveryReachTest {
         assertEquals(setOf(FeedMode.UNDERRATED, FeedMode.DISCOVERY), DiscoveryReach.modes)
     }
 
-    @Test fun `distant connections are rationed while the flag is on`() {
+    @Test fun `distant connections are always rationed`() {
         val admitted = DiscoveryReach.Admitted(setOf(pk('c')), setOf(pk('e')))
-        assertEquals(setOf(pk('c')) to setOf(pk('e')), DiscoveryReach.gateSets(admitted, capDistant = true))
-        assertEquals(setOf(pk('c'), pk('e')) to emptySet<String>(), DiscoveryReach.gateSets(admitted, capDistant = false))
+        assertEquals(setOf(pk('c')) to setOf(pk('e')), DiscoveryReach.gateSets(admitted))
     }
 
     // ── The gate ─────────────────────────────────────────────────
