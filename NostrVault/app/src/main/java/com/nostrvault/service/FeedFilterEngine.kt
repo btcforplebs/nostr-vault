@@ -130,8 +130,12 @@ object FeedFilterEngine {
 
             when (mode) {
                 FeedMode.FOLLOWING -> authorForMembership in followedPubkeys
-                FeedMode.DISCOVERY -> authorForMembership !in followedPubkeys && (authorForMembership in wotPubkeys ||
-                    isRanked(authorForMembership, ranked, rankedLoose) && verdict(note) != WebGate.Verdict.OUTSIDE)
+                // Your web or ranked over the Discovery reach bar, and never a key
+                // anyone can post with: the gate's public-key check runs for
+                // every Discover note, as iOS (FeedFilterEngine.swift `.discovery`).
+                FeedMode.DISCOVERY -> authorForMembership !in followedPubkeys &&
+                    (authorForMembership in wotPubkeys || isRanked(authorForMembership, ranked, rankedLoose)) &&
+                    verdict(note) != WebGate.Verdict.OUTSIDE
                 FeedMode.GLOBAL -> {
                     // Web of Trust by default, judged on the note's author
                     // (iOS parity). Fails CLOSED: an empty graph means "not
