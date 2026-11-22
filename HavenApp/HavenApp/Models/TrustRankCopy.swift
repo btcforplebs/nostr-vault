@@ -58,7 +58,7 @@ struct TrustRankCopy: Equatable {
             people[pk] = Person(score: score, hop: hop)
         }
         return TrustRankCopy(account: account, builtAt: builtAt, maxHop: maxHop,
-                             viewBar: number(root["viewBar"]) ?? 55, floor: number(root["floor"]) ?? 0,
+                             viewBar: score(root["viewBar"]) ?? 55, floor: score(root["floor"]) ?? 0,
                              people: people)
     }
 
@@ -66,6 +66,12 @@ struct TrustRankCopy: Equatable {
     private static func number(_ value: Any?) -> Double? {
         guard let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() else { return nil }
         return n.doubleValue
+    }
+
+    /// A number on the 0-100 shown scale; anything else is as if missing,
+    /// so a corrupt bar can never reach the sheet's arithmetic (Tron, #2427).
+    private static func score(_ value: Any?) -> Double? {
+        number(value).flatMap { (0...100).contains($0) ? $0 : nil }
     }
 
     /// A JSON whole number: `2`, not `2.5` or `"2"`.

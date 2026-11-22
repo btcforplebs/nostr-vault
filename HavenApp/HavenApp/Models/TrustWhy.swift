@@ -53,8 +53,12 @@ struct TrustWhy: Equatable {
                         followers: followers, exact: path?.complete == true, reach: path?.reach)
     }
 
-    /// Kotlin's `roundToInt`: halves round up.
-    private static func whole(_ x: Double) -> Int { Int((x + 0.5).rounded(.down)) }
+    /// Kotlin's `roundToInt`: halves round up. Clamped to 0-100 so no value
+    /// can trap the `Int` conversion.
+    private static func whole(_ x: Double) -> Int {
+        guard x.isFinite else { return 0 }
+        return Int((min(max(x, 0), 100) + 0.5).rounded(.down))
+    }
 }
 
 /// The sheet's words, kept apart so they can be tested. Android twin: `TrustWhyText` in `TrustWhy.kt`.

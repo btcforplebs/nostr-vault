@@ -66,7 +66,10 @@ struct TrustWhySheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .task(id: pubkey) { trust.track(pubkey) }
+        .task(id: pubkey) {
+            trust.track(pubkey)
+            nostrService.fetchMissingProfiles(for: [pubkey])
+        }
         .onChange(of: why?.followers) { _, followers in
             nostrService.fetchMissingProfiles(for: [pubkey] + (followers ?? []).prefix(TrustWhy.shown).map(\.pubkey))
         }

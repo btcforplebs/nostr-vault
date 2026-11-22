@@ -91,7 +91,16 @@ final class TrustWhyTests: XCTestCase {
         XCTAssertTrue(why.overBar)
     }
 
-    func testTheSheetHasNoMuteWords() throws {
+    func testAHugeBarCannotCrashTheSheet() throws {
+        for bar in [1e300, -1e300, .infinity] {
+            let odd = TrustRankCopy(account: me, builtAt: 1, maxHop: 4, viewBar: bar, floor: 0,
+                                    people: [them: Person(score: 50, hop: 3)])
+            let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: odd, path: nil))
+            XCTAssertTrue((0...100).contains(why.bar))
+        }
+    }
+
+        func testTheSheetHasNoMuteWords() throws {
         let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([hi])))
         let words = [TrustWhyText.headline(why), TrustWhyText.place(why), TrustWhyText.followersTitle(why), TrustWhyText.how]
             .compactMap { $0 }

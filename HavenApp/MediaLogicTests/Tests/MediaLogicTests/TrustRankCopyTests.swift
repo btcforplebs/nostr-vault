@@ -45,4 +45,14 @@ final class TrustRankCopyTests: XCTestCase {
         ]
         for (why, text) in cases { XCTAssertNil(parse(text), why) }
     }
+
+    func testABarOffTheScaleReadsAsMissing() throws {
+        for bad in ["1e300", "-1e300", "101", "-1"] {
+            let text = file().replacingOccurrences(of: "\"viewBar\":55,\"floor\":45", with: "\"viewBar\":\(bad),\"floor\":\(bad)")
+            XCTAssertNotEqual(text, file(), bad)
+            let copy = try XCTUnwrap(parse(text), bad)
+            XCTAssertEqual(copy.viewBar, 55, bad)
+            XCTAssertEqual(copy.floor, 0, bad)
+        }
+    }
 }
