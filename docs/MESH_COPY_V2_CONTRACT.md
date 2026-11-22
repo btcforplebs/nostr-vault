@@ -391,6 +391,21 @@ The app calls the engine when a linked device comes into reach. The engine then:
    older files stay in the next round's window.
 4. **Settings** (§5).
 
+5. **Trust rank** (`haven-go/copyv2_trust.go`). A device that does not rank for itself (a phone) asks for each of
+   its signed-in accounts: `GET /copy/v2/sync/trust?account=<64 hex>&since=<builtAt of the copy it holds, or 0>`
+   (Bearer, the same copy token: a paired device's mesh key, never the account key; nothing is signed).
+   - `200`: the Haven's `wot_rank_<account>.json` with **only the rows a device can show**: the account's own
+     follows (ring 1) and everyone whose score is at or over `floor` (45; `trustrank.HandoffFloor`). The body is
+     `{account, builtAt, version: 2, params, maxHop, viewBar, floor, people: [[pubkey, score 0-100, ring], …]}`.
+     The whole trimmed file is sent; there is no changed-rows form yet.
+   - `204`: the device's copy is as new as the Haven's. `404`: the Haven does not rank that account, has no result
+     yet, or is an engine from before this.
+   - B keeps a copy only when it is for the account it asked for, `version` 2, newer than the one it holds, and
+     every row is a hex pubkey with a score 0-100 in rings 1 to `maxHop` (at most 6). Anything else is dropped and
+     the last good copy stays. The file is kept next to the WoT cache and its `builtAt` is its age.
+   - A Mac or a box ranks for itself and never asks. Nothing is ever sent the other way: `PUT` is 404.
+   - It never fails or delays the catch-up's mark: a 404 or a refused copy just leaves the device without one.
+
 Before the notes, **accounts** (§3.4): B `GET /copy/v2/sync/accounts` and takes A's, then `PUT`s its own, which A
 takes the same way. Each side **offers** the other's list to its app (copy-accounts.json) only when the lists share an
 account; neither adds an account by itself, and neither removes one.

@@ -229,6 +229,9 @@ type ResultFile struct {
 	People [][3]any `json:"people"`
 	// ViewBar is where the slider starts, on the shown scale.
 	ViewBar float64 `json:"viewBar"`
+	// Floor is set only on a copy handed to a device (handoff.go): people
+	// who show under it were left out.
+	Floor float64 `json:"floor,omitempty"`
 }
 
 // ResultPath is the result's file for account in dir.
