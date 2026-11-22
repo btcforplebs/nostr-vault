@@ -179,3 +179,43 @@ func TestRunUsesPollAndTheScreenUsesNewest(t *testing.T) {
 		t.Fatalf("polls %d, newest %d: Run polls, the screen asks everyone", src.polls, src.calls)
 	}
 }
+
+// Tron #2376: a signed-in account that never made a 10063 has none in the
+// vault or on the directory. After one empty directory answer, the
+// directory waits until due, not every 30 s poll.
+func TestPollBacksOffTheDirectoryWhenNobodyHasAList(t *testing.T) {
+	owner := newTestKey(t)
+	vault, dir := newListRelay(t), newListRelay(t)
+	s := &RelayServerLists{VaultURL: vault.url, Directory: []string{dir.url}, DirectoryEvery: time.Hour}
+	ctx := context.Background()
+	for i := 0; i < 4; i++ {
+		if ev, _ := s.Poll(ctx, owner.pk); ev != nil {
+			t.Fatalf("poll %d found a list", i)
+		}
+	}
+	if d := dir.dials.Load(); d != 1 {
+		t.Fatalf("directory dialled %d times for an account with no list; want 1", d)
+	}
+	// The list then appears on the directory only: found once due.
+	dir.set(signedList(t, owner, time.Now().Unix()-10))
+	s.mu.Lock()
+	s.dirAt[owner.pk] = time.Now().Add(-2 * time.Hour)
+	s.mu.Unlock()
+	if ev, src := s.Poll(ctx, owner.pk); ev == nil || src != "relays" {
+		t.Fatalf("due poll: %v %s", ev, src)
+	}
+}
+
+// The first account is never backed off: on a new box the first approval
+// may reach only the directory relays (Tron #2376 note).
+func TestPollNeverBacksOffTheFirstAccount(t *testing.T) {
+	owner := newTestKey(t)
+	vault, dir := newListRelay(t), newListRelay(t)
+	s := &RelayServerLists{VaultURL: vault.url, Directory: []string{dir.url}, DirectoryEvery: time.Hour, First: owner.pk}
+	for i := 0; i < 3; i++ {
+		s.Poll(context.Background(), owner.pk)
+	}
+	if d := dir.dials.Load(); d != 3 {
+		t.Fatalf("directory dialled %d times for the first account with no list; want every poll", d)
+	}
+}
