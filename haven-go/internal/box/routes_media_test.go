@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/nbd-wtf/go-nostr"
 )
@@ -91,9 +92,15 @@ func TestAutoMirrorRoutes(t *testing.T) {
 		t.Fatalf("run now kept the switch: %v", f)
 	}
 	// The engine's state comes back as written.
-	os.WriteFile(filepath.Join(api.Mover.Engine.VaultDir(), autoMirrorStateName), []byte(`{"last_start":5,"last":{"saved":3}}`), 0o600)
-	if _, out := callAny(t, srv, owner, "GET", "/api/box/media/auto-mirror", nil); out["state"].(map[string]any)["last_start"] != float64(5) {
+	os.WriteFile(filepath.Join(api.Mover.Engine.VaultDir(), autoMirrorStateName), []byte(`{"last_start":5,"last":{"saved":3,"unreachable":["owner-server.example"]}}`), 0o600)
+	_, out := callAny(t, srv, owner, "GET", "/api/box/media/auto-mirror", nil)
+	if st := out["state"].(map[string]any); st["last_start"] != float64(5) || st["last"].(map[string]any)["unreachable"] == nil {
 		t.Fatalf("state: %v", out)
+	}
+	// The unreachable hosts are every account's servers: first account only.
+	_, out = callAny(t, srv, other, "GET", "/api/box/media/auto-mirror", nil)
+	if last := out["state"].(map[string]any)["last"].(map[string]any); last["unreachable"] != nil || last["saved"] != float64(3) {
+		t.Fatalf("added account sees every account's servers: %v", out)
 	}
 }
 
@@ -122,6 +129,17 @@ func TestMediaCopyRoutes(t *testing.T) {
 		t.Fatalf("no auths: %d", st)
 	}
 	body, _ := json.Marshal(map[string]any{"auths": []string{"x"}, "pubkey": other.pk})
+	// other's check is still waiting: owner may not replace it.
+	if st, _ := callAny(t, srv, owner, "POST", "/api/box/media/copy", body); st != http.StatusConflict {
+		t.Fatalf("replaced another account's waiting request: %d", st)
+	}
+	if f := readVaultJSON(t, api, mediaCopyRequestName); f["pubkey"] != other.pk {
+		t.Fatalf("waiting request changed: %v", f)
+	}
+	// One left over from a stopped engine may be replaced.
+	req := filepath.Join(api.Mover.Engine.VaultDir(), mediaCopyRequestName)
+	old := time.Now().Add(-2 * mediaCopyWaitStale)
+	os.Chtimes(req, old, old)
 	if st, _ := callAny(t, srv, owner, "POST", "/api/box/media/copy", body); st != http.StatusAccepted {
 		t.Fatalf("copy: %d", st)
 	}

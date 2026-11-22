@@ -56,14 +56,50 @@ func storeAccountBlob(ctx context.Context, pubkey, file, sha, mimeType string) e
 	if err := storeOwnerBlobFile(sha, f); err != nil {
 		return err
 	}
+	_, err = addAccountBlobRecord(ctx, pubkey, sha, mimeType, st.Size())
+	return err
+}
+
+// claimAccountBlob: pubkey's record for a file another account already
+// stored here, so it is pubkey's file too (Tron #2386). The bytes are not
+// touched. added: false when pubkey already had the record.
+func claimAccountBlob(ctx context.Context, pubkey, sha string) (bool, error) {
+	ownerBlobImportMu.Lock()
+	defer ownerBlobImportMu.Unlock()
+	if blossomDB == nil {
+		return false, errors.New("vault media store is not open")
+	}
+	if !isBlobHash(sha) || !isLowerHex64(pubkey) {
+		return false, errors.New("bad hash or account")
+	}
+	file := copyBlobFile(sha)
+	if file == "" {
+		return false, errors.New("not stored here")
+	}
+	st, err := os.Stat(file)
+	if err != nil || !st.Mode().IsRegular() {
+		return false, errors.New("not a file")
+	}
+	mimeType := storedBlobType(sha)
+	if !isRestorableBlobType(mimeType) {
+		return false, errors.New("media type not allowed")
+	}
+	return addAccountBlobRecord(ctx, pubkey, sha, mimeType, st.Size())
+}
+
+// addAccountBlobRecord: the 24242 record that makes sha pubkey's file.
+// Caller holds ownerBlobImportMu.
+func addAccountBlobRecord(ctx context.Context, pubkey, sha, mimeType string, size int64) (bool, error) {
 	rec := &nostr.Event{PubKey: pubkey, Kind: 24242, CreatedAt: nostr.Now(),
-		Tags: nostr.Tags{{"x", sha}, {"type", mimeType}, {"size", strconv.FormatInt(st.Size(), 10)}}}
+		Tags: nostr.Tags{{"x", sha}, {"type", mimeType}, {"size", strconv.FormatInt(size, 10)}}}
 	rec.ID = rec.GetID()
 	switch importBlobRecord(ctx, blossomDB, rec, time.Now()) {
-	case restoreStored, restoreDup:
-		return nil
+	case restoreStored:
+		return true, nil
+	case restoreDup:
+		return false, nil
 	default:
-		return errors.New("blob record not stored")
+		return false, errors.New("blob record not stored")
 	}
 }
 

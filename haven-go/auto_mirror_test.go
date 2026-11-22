@@ -79,7 +79,8 @@ func (f *fakeBlossom) hitsOn(p string) int { f.mu.Lock(); defer f.mu.Unlock(); r
 // memVault is the vault side of a run: what is stored, by whom.
 type memVault struct {
 	mu     sync.Mutex
-	stored map[string]string // sha -> account
+	stored map[string]string // sha -> account that downloaded it
+	owners map[string]bool   // pubkey+sha: a record claimed for a file already here
 	notes  []*nostr.Event
 }
 
@@ -109,7 +110,19 @@ func (v *memVault) deps(t *testing.T, f *fakeBlossom, accounts ...string) autoMi
 			v.mu.Unlock()
 			return nil
 		},
-		freeOK:  func(int64) bool { return true },
+		claim: func(_ context.Context, pk, sha string) (bool, error) {
+			v.mu.Lock()
+			defer v.mu.Unlock()
+			if v.owners == nil {
+				v.owners = map[string]bool{}
+			}
+			if v.stored[sha] == pk || v.owners[pk+sha] {
+				return false, nil
+			}
+			v.owners[pk+sha] = true
+			return true, nil
+		},
+		room:    func() int64 { return maxBlobBytes },
 		tempDir: dir,
 		links:   loadAutoMirrorLinks(filepath.Join(dir, "links.json")),
 		log:     func(string, ...any) {},
@@ -208,8 +221,12 @@ func TestAutoMirrorRun(t *testing.T) {
 	}
 	d := v.deps(t, f, owner, other)
 	res := runAutoMirror(context.Background(), d)
-	if res.Saved != 2 || res.Skipped != 0 || len(res.Unreachable) != 0 {
+	// 2 downloads, plus other's claim on the owner's copy of held.
+	if res.Saved != 3 || res.Skipped != 0 || len(res.Unreachable) != 0 {
 		t.Fatalf("run 1: %+v", res)
+	}
+	if !v.owners[other+shaOf(held)] {
+		t.Fatal("other's link to a file already here added no record for other")
 	}
 	if v.stored[shaOf(listed)] != owner || v.stored[shaOf([]byte("beach, linked by name only"))] != other {
 		t.Fatalf("stored under the wrong account: %v", v.stored)
@@ -221,9 +238,15 @@ func TestAutoMirrorRun(t *testing.T) {
 		t.Fatal("a box run sent an Authorization header: it has nothing to sign with")
 	}
 	before := f.hitsOn("/pics/beach.jpg")
+	// The fake lists every file for every account, so run 2 claims for
+	// other the file run 1 was downloading for owner; it downloads nothing.
+	hits := f.hitsOn("/" + shaOf(listed))
 	res = runAutoMirror(context.Background(), d)
-	if res.Saved != 0 || f.hitsOn("/pics/beach.jpg") != before {
-		t.Fatalf("run 2 downloaded again: %+v, beach hits %d", res, f.hitsOn("/pics/beach.jpg"))
+	if res.Saved != 1 || !v.owners[other+shaOf(listed)] || f.hitsOn("/pics/beach.jpg") != before || f.hitsOn("/"+shaOf(listed)) != hits {
+		t.Fatalf("run 2: %+v, beach hits %d", res, f.hitsOn("/pics/beach.jpg"))
+	}
+	if res = runAutoMirror(context.Background(), d); res.Saved != 0 {
+		t.Fatalf("run 3 did something: %+v", res)
 	}
 }
 

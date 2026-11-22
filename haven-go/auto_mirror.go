@@ -127,10 +127,16 @@ type autoMirrorDeps struct {
 	notes    func(ctx context.Context, pubkey string, until nostr.Timestamp) []*nostr.Event // newest first, kind 1
 	stored   func(sha string) bool
 	store    func(ctx context.Context, pubkey, file, sha, mimeType string) error
-	freeOK   func(size int64) bool
-	tempDir  string
-	links    *autoMirrorLinks
-	log      func(msg string, args ...any)
+	// claim adds pubkey's record for a file already stored here (another
+	// account's copy), so the file counts as this account's too (Copy to
+	// servers offers only an account's own files). added: a new record.
+	claim func(ctx context.Context, pubkey, sha string) (added bool, err error)
+	// room: the most bytes one download may write (Tron #2386: the cap is
+	// enforced while reading, not checked after the file is on disk).
+	room    func() int64
+	tempDir string
+	links   *autoMirrorLinks
+	log     func(msg string, args ...any)
 }
 
 type blobListEntry struct {
@@ -153,6 +159,26 @@ func runAutoMirror(ctx context.Context, d autoMirrorDeps) autoMirrorResult {
 	picked := map[string]bool{} // hashes queued this run, across accounts and steps
 	room := func() int { return autoMirrorMaxPerRun - len(jobs) }
 	unreachable := map[string]bool{}
+	var claimed int
+	tried := map[string]bool{} // pubkey+sha claims tried this run
+	// have: the file is stored here already, or queued this run. A stored
+	// file is claimed for pk (its record added, nothing downloaded), even
+	// when another account's copy is the one on disk.
+	have := func(pk, sha string) bool {
+		if !d.stored(sha) {
+			return picked[sha]
+		}
+		if tried[pk+sha] {
+			return true
+		}
+		tried[pk+sha] = true
+		if added, err := d.claim(ctx, pk, sha); err != nil {
+			d.log("auto-mirror: claim failed", "sha", sha, "err", err)
+		} else if added {
+			claimed++
+		}
+		return true
+	}
 
 	for _, pk := range d.accounts() {
 		if room() <= 0 {
@@ -171,7 +197,7 @@ func runAutoMirror(ctx context.Context, d autoMirrorDeps) autoMirrorResult {
 			}
 			for _, e := range entries {
 				sha := strings.ToLower(e.SHA256)
-				if !isBlobHash(sha) || picked[sha] || d.stored(sha) {
+				if !isBlobHash(sha) || have(pk, sha) {
 					continue
 				}
 				if room() <= 0 {
@@ -187,7 +213,7 @@ func runAutoMirror(ctx context.Context, d autoMirrorDeps) autoMirrorResult {
 			res.CapReached = true
 			break
 		}
-		picker := newLinkPicker(func(sha string) bool { return picked[sha] || d.stored(sha) })
+		picker := newLinkPicker(func(sha string) bool { return have(pk, sha) })
 		var until nostr.Timestamp
 		edge := map[string]bool{}
 	pages:
@@ -270,7 +296,7 @@ func runAutoMirror(ctx context.Context, d autoMirrorDeps) autoMirrorResult {
 		}(j)
 	}
 	wg.Wait()
-	res.Saved = int(saved.Load())
+	res.Saved = int(saved.Load()) + claimed
 	res.Skipped = int(skipped.Load())
 	for h := range unreachable {
 		res.Unreachable = append(res.Unreachable, h)
@@ -312,6 +338,8 @@ func fetchBlobList(ctx context.Context, c *http.Client, server, pubkey string) (
 
 var errHashMismatch = errors.New("the file is not the one its hash names")
 
+var errNoRoom = errors.New("the file is too big for one blob, or for the room left on the vault's disk")
+
 // fetchIntoVault downloads one file to a temp file, checks it, and stores it
 // as the account's. Returns the file's sha256.
 func fetchIntoVault(ctx context.Context, d autoMirrorDeps, j autoMirrorJob) (string, error) {
@@ -327,8 +355,9 @@ func fetchIntoVault(ctx context.Context, d autoMirrorDeps, j autoMirrorJob) (str
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	if resp.ContentLength > 0 && !d.freeOK(resp.ContentLength) {
-		return "", errors.New("no room on the vault's disk")
+	limit := d.room()
+	if limit <= 0 || resp.ContentLength > limit {
+		return "", errNoRoom
 	}
 	ct := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if ct == "" {
@@ -348,15 +377,17 @@ func fetchIntoVault(ctx context.Context, d autoMirrorDeps, j autoMirrorJob) (str
 	}
 	defer os.Remove(tmp.Name())
 	h := newSHA256()
-	n, err := io.Copy(io.MultiWriter(tmp, h), resp.Body)
+	// One byte over the limit is how a body with no (or a false)
+	// Content-Length is caught: at most limit+1 bytes ever reach the disk.
+	n, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(resp.Body, limit+1))
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
 		return "", err
 	}
-	if !d.freeOK(n) {
-		return "", errors.New("no room on the vault's disk")
+	if n > limit {
+		return "", errNoRoom
 	}
 	sha := h.hex()
 	if j.sha != "" && sha != j.sha {
@@ -393,9 +424,22 @@ func accountNotes(ctx context.Context, pubkey string, until nostr.Timestamp) []*
 	return out
 }
 
-func vaultHasRoom(size int64) bool {
-	free, ok := freeBytes(config.BlossomPath)
-	return !ok || uint64(size)+autoMirrorHeadroom <= free
+// vaultRoom: the most one download may write: the blob cap, and no more
+// than its share (one of autoMirrorParallel) of the free space above the
+// headroom, so the downloads running at once cannot fill the disk between
+// them. Unknown free space: the blob cap alone.
+func vaultRoom() int64 {
+	return downloadRoom(freeBytes(config.BlossomPath))
+}
+
+func downloadRoom(free uint64, known bool) int64 {
+	if !known {
+		return maxBlobBytes
+	}
+	if free <= autoMirrorHeadroom {
+		return 0
+	}
+	return min(int64(maxBlobBytes), int64((free-autoMirrorHeadroom)/autoMirrorParallel))
 }
 
 func liveAutoMirrorDeps() autoMirrorDeps {
@@ -406,7 +450,8 @@ func liveAutoMirrorDeps() autoMirrorDeps {
 		notes:    accountNotes,
 		stored:   blobStoredHere,
 		store:    storeAccountBlob,
-		freeOK:   vaultHasRoom,
+		claim:    claimAccountBlob,
+		room:     vaultRoom,
 		tempDir:  config.BlossomPath,
 		links:    loadAutoMirrorLinks(autoMirrorLinksFile),
 		log: func(msg string, args ...any) {

@@ -69,16 +69,21 @@ func writeJSONFileAtomic(file string, v any) error {
 	return os.Rename(tmp, file)
 }
 
-// autoMirrorView: the switch and the engine's state, as one answer.
-func autoMirrorView(a *API) map[string]any {
+// autoMirrorView: the switch and the engine's state, as one answer. The
+// last run's unreachable servers are every account's server hosts, so only
+// the first account sees them (Tron #2386).
+func autoMirrorView(a *API, c Caller) map[string]any {
 	var s autoMirrorSettingsJSON
 	readJSONFile(mediaFile(a, autoMirrorSettingsName), &s)
 	var st map[string]any
 	readJSONFile(mediaFile(a, autoMirrorStateName), &st)
+	if last, ok := st["last"].(map[string]any); ok && !c.First {
+		delete(last, "unreachable")
+	}
 	return map[string]any{"enabled": s.Enabled, "runNowAt": s.RunNowAt, "state": st}
 }
 
-func updateAutoMirror(a *API, w http.ResponseWriter, change func(*autoMirrorSettingsJSON)) {
+func updateAutoMirror(a *API, w http.ResponseWriter, c Caller, change func(*autoMirrorSettingsJSON)) {
 	mediaFilesMu.Lock()
 	file := mediaFile(a, autoMirrorSettingsName)
 	var s autoMirrorSettingsJSON
@@ -90,7 +95,7 @@ func updateAutoMirror(a *API, w http.ResponseWriter, change func(*autoMirrorSett
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save the setting"})
 		return
 	}
-	writeJSON(w, http.StatusOK, autoMirrorView(a))
+	writeJSON(w, http.StatusOK, autoMirrorView(a, c))
 }
 
 func newJobID() string {
@@ -99,9 +104,24 @@ func newJobID() string {
 	return hex.EncodeToString(b)
 }
 
+// mediaCopyWaitStale: a request the engine has not taken in this long is
+// left over (the engine was stopped), and another account may replace it.
+const mediaCopyWaitStale = time.Minute
+
 func queueMediaCopy(a *API, w http.ResponseWriter, req map[string]any) {
 	mediaFilesMu.Lock()
-	err := writeJSONFileAtomic(mediaFile(a, mediaCopyRequestName), req)
+	file := mediaFile(a, mediaCopyRequestName)
+	// One request file for the box: another account's waiting request is
+	// not replaced (Tron #2386); the caller's own is.
+	var waiting map[string]any
+	if fi, err := os.Stat(file); err == nil && time.Since(fi.ModTime()) < mediaCopyWaitStale && readJSONFile(file, &waiting) {
+		if pk, _ := waiting["pubkey"].(string); pk != req["pubkey"] {
+			mediaFilesMu.Unlock()
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "another account's check or copy is about to start; try again in a few seconds"})
+			return
+		}
+	}
+	err := writeJSONFileAtomic(file, req)
 	mediaFilesMu.Unlock()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the job"})
@@ -111,10 +131,10 @@ func queueMediaCopy(a *API, w http.ResponseWriter, req map[string]any) {
 }
 
 func init() {
-	handle("GET /api/box/media/auto-mirror", SignedIn, func(a *API, w http.ResponseWriter, _ *http.Request, _ Caller, _ []byte) {
-		writeJSON(w, http.StatusOK, autoMirrorView(a))
+	handle("GET /api/box/media/auto-mirror", SignedIn, func(a *API, w http.ResponseWriter, _ *http.Request, c Caller, _ []byte) {
+		writeJSON(w, http.StatusOK, autoMirrorView(a, c))
 	})
-	handle("PUT /api/box/media/auto-mirror", FirstAccount, func(a *API, w http.ResponseWriter, _ *http.Request, _ Caller, body []byte) {
+	handle("PUT /api/box/media/auto-mirror", FirstAccount, func(a *API, w http.ResponseWriter, _ *http.Request, c Caller, body []byte) {
 		var in struct {
 			Enabled *bool `json:"enabled"`
 		}
@@ -122,16 +142,16 @@ func init() {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `send {"enabled":true|false}`})
 			return
 		}
-		updateAutoMirror(a, w, func(s *autoMirrorSettingsJSON) { s.Enabled = *in.Enabled })
+		updateAutoMirror(a, w, c, func(s *autoMirrorSettingsJSON) { s.Enabled = *in.Enabled })
 	})
-	handle("POST /api/box/media/auto-mirror/run", SignedIn, func(a *API, w http.ResponseWriter, _ *http.Request, _ Caller, _ []byte) {
+	handle("POST /api/box/media/auto-mirror/run", SignedIn, func(a *API, w http.ResponseWriter, _ *http.Request, c Caller, _ []byte) {
 		var s autoMirrorSettingsJSON
 		readJSONFile(mediaFile(a, autoMirrorSettingsName), &s)
 		if !s.Enabled {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "Auto-Mirror is off"})
 			return
 		}
-		updateAutoMirror(a, w, func(s *autoMirrorSettingsJSON) { s.RunNowAt = time.Now().Unix() })
+		updateAutoMirror(a, w, c, func(s *autoMirrorSettingsJSON) { s.RunNowAt = time.Now().Unix() })
 	})
 	handle("POST /api/box/media/copy/check", SignedIn, func(a *API, w http.ResponseWriter, _ *http.Request, c Caller, _ []byte) {
 		queueMediaCopy(a, w, map[string]any{"id": newJobID(), "action": "check", "pubkey": c.Pubkey})
