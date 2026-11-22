@@ -13,7 +13,6 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -130,7 +129,7 @@ func trustRankDir() string {
 // runTrustRank is the job: until ctx ends, for each account whose pass is
 // due, run it while allowed; a pause keeps the place for next time.
 func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
-	if !trustRankWanted(runtime.GOOS, os.Getenv("TRUST_RANK")) {
+	if !trustRankWanted(runtime.GOOS, hostGetenv("TRUST_RANK")) {
 		return
 	}
 	dir := trustRankDir()
