@@ -275,6 +275,12 @@ data class HavenConfig(
     val globalFeedLanguages: List<String> = emptyList(),
     /** Global (and Media's Global) shows everyone, not only your Web of Trust. Off by default. Mirrors iOS. */
     val globalShowsEveryone: Boolean = false,
+    /**
+     * Settings › Feed › Reach: a feed's key (iOS FeedMode raw value) to a
+     * reach's stored word ([com.nostrvault.data.model.FeedReach]). Missing
+     * is the feed's default. Mirrors iOS `feedReach`.
+     */
+    val feedReach: Map<String, String> = emptyMap(),
     /** A "Translate" button under notes written in another language (on-device, Mozilla Bergamot). On by default. */
     val showTranslateButton: Boolean = true,
     /** ISO 639-1 code notes translate into. Empty follows the device language. */

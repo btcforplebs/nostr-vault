@@ -83,6 +83,7 @@ import java.io.File
                         }
                         // The relay's web is every device account's pooled; keep the open account's part.
                         val loaded = accountWeb(parsed.pubkeys, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.chatRelayMinFollowers)
+                        val loose = accountLoose(parsed.pubkeys, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.chatRelayMinFollowers)
                         val vouches = parsed.vouches
                         if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {
@@ -90,6 +91,8 @@ import java.io.File
                             _wotCacheRead.value = true
                             // Before the graph: its collectors read the vouches straight away.
                             _wotVouches.value = vouches
+                            val looseChanged = loose != _wotLoosePubkeys.value
+                            _wotLoosePubkeys.value = loose
                             if (loaded != _wotPubkeys.value) {
                                 val reask = graphArrivalReasksGlobal(
                                     _wotPubkeys.value, loaded, _feedMode.value,
@@ -100,6 +103,8 @@ import java.io.File
                                 // already on screen have to be re-judged.
                                 recomputeFilteredNotes()
                                 if (reask) resubscribePrimaryToConnected()
+                            } else if (looseChanged) {
+                                recomputeFilteredNotes()
                             }
                         }
                     }

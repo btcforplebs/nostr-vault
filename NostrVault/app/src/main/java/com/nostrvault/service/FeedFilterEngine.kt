@@ -6,6 +6,7 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.poll
 import com.nostrvault.data.model.RecipeTopics
+import com.nostrvault.data.model.WebGate
 
 /**
  * Port of FeedFilterEngine.swift -- pure feed filtering and sorting.
@@ -88,7 +89,15 @@ object FeedFilterEngine {
         pollStatus: com.nostrvault.data.model.PollStatusFilter = com.nostrvault.data.model.PollStatusFilter.ALL,
         languageOf: (FeedNote) -> String? = { null },
         authorOf: (String) -> String? = { null },
+        /** One hop past [wotPubkeys] ([WebGate.loose]). */
+        loosePubkeys: Set<String> = emptySet(),
+        /** How far this feed reaches ([FeedReach]); only Underrated reads it today, as on iOS. */
+        reach: WebGate.Reach = WebGate.Reach.WEB,
+        /** This device's accounts: always inside the gate. */
+        ownPubkeys: Set<String> = emptySet(),
     ): List<FeedNote> {
+        val gateWeb = WebGate.Web(own = ownPubkeys, web = wotPubkeys, loose = loosePubkeys)
+        fun verdict(note: FeedNote): WebGate.Verdict = WebGate.judge(note.repostedBy ?: note.pubkey, gateWeb, reach)
         // Articles and Recipes: Following keeps to follows; Global follows
         // the same Web of Trust / Everyone rule as Global, failing closed.
         fun longFormAdmits(pubkey: String): Boolean =
@@ -144,8 +153,11 @@ object FeedFilterEngine {
                 // Posts, never replies, as the relay picked them.
                 FeedMode.CATCH_UP -> !note.isReply
                 // Underrated is only people this account doesn't follow (iOS
-                // filterFeedNotes; Logen 2026-11-06).
-                FeedMode.UNDERRATED -> !note.isReply && note.pubkey !in followedPubkeys
+                // filterFeedNotes; Logen 2026-11-06), in its web, or one hop
+                // out where its reach allows (rationed below). Fails closed:
+                // with no graph yet, nobody (LocalDvmFeeds says it's building).
+                FeedMode.UNDERRATED -> !note.isReply && note.pubkey !in followedPubkeys &&
+                    verdict(note).let { it == WebGate.Verdict.INSIDE || it == WebGate.Verdict.LOOSE }
                 FeedMode.MEDIA -> note.mediaURLs.isNotEmpty()
                 FeedMode.ARTICLES -> note.kind == LONG_FORM_KIND && longFormAdmits(note.pubkey)
                 FeedMode.RECIPES -> note.kind == LONG_FORM_KIND && RecipeTopics.matches(note.tags) &&
@@ -173,6 +185,9 @@ object FeedFilterEngine {
             filtered.sortedByDescending { it.createdAt }
         }
 
+        if (reach == WebGate.Reach.WEB_AND_LOOSE) {
+            filtered = WebGate.capLoose(filtered, ::verdict, author = { it.repostedBy ?: it.pubkey }, isReply = { it.isReply })
+        }
         return filtered
     }
 
