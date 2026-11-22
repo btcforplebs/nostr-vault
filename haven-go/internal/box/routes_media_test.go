@@ -136,10 +136,17 @@ func TestMediaCopyRoutes(t *testing.T) {
 	if f := readVaultJSON(t, api, mediaCopyRequestName); f["pubkey"] != other.pk {
 		t.Fatalf("waiting request changed: %v", f)
 	}
-	// One left over from a stopped engine may be replaced.
+	// While a job runs, an old waiting request is still waiting.
 	req := filepath.Join(api.Mover.Engine.VaultDir(), mediaCopyRequestName)
 	old := time.Now().Add(-2 * mediaCopyWaitStale)
 	os.Chtimes(req, old, old)
+	stateFile := filepath.Join(api.Mover.Engine.VaultDir(), mediaCopyStateName)
+	os.WriteFile(stateFile, []byte(`{"pubkey":"`+owner.pk+`","running":true}`), 0o600)
+	if st, _ := callAny(t, srv, owner, "POST", "/api/box/media/copy", body); st != http.StatusConflict {
+		t.Fatalf("replaced a request waiting behind a running job: %d", st)
+	}
+	// No job running: one left over from a stopped engine may be replaced.
+	os.Remove(stateFile)
 	if st, _ := callAny(t, srv, owner, "POST", "/api/box/media/copy", body); st != http.StatusAccepted {
 		t.Fatalf("copy: %d", st)
 	}

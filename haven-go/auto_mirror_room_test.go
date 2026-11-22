@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/nbd-wtf/go-nostr"
 )
 
 // Tron #2386: a download is capped while it is read, so a server that
@@ -94,7 +96,8 @@ func TestDownloadRoom(t *testing.T) {
 }
 
 // Tron #2386 low 1: a file already stored (another account's copy) that is
-// on this account's server list gets this account's record, with no download.
+// on this account's server list gets this account's record once the
+// account's own server served the same bytes. Nothing is written.
 func TestAutoMirrorClaimsStoredFile(t *testing.T) {
 	allowLoopback(t)
 	f := newFakeBlossom(t)
@@ -104,13 +107,38 @@ func TestAutoMirrorClaimsStoredFile(t *testing.T) {
 	v := &memVault{stored: map[string]string{shaOf(shared): b}}
 	d := v.deps(t, f, a)
 	res := runAutoMirror(context.Background(), d)
-	if !v.owners[a+shaOf(shared)] || res.Saved != 1 {
+	if !v.owners[a+shaOf(shared)] || res.Saved != 1 || v.stored[shaOf(shared)] != b {
 		t.Fatalf("no record added for a: %+v %v", res, v.owners)
 	}
-	if f.hitsOn("/"+shaOf(shared)) != 0 {
-		t.Fatal("a stored file was downloaded again")
+	if f.hitsOn("/"+shaOf(shared)) != 1 {
+		t.Fatalf("proof fetches: %d, want 1", f.hitsOn("/"+shaOf(shared)))
 	}
-	if res = runAutoMirror(context.Background(), d); res.Saved != 0 {
-		t.Fatalf("run 2 claimed again: %+v", res)
+	// Held now: no more fetches.
+	if res = runAutoMirror(context.Background(), d); res.Saved != 0 || f.hitsOn("/"+shaOf(shared)) != 1 {
+		t.Fatalf("run 2 fetched or claimed again: %+v", res)
+	}
+}
+
+// Tron #2386 re-read: naming another account's hash is not proof. B lists
+// A's hash from a server that serves other bytes, and posts an imeta x of
+// A's hash on a URL that serves other bytes: B gets no record either way.
+func TestAutoMirrorClaimNeedsTheBytes(t *testing.T) {
+	allowLoopback(t)
+	f := newFakeBlossom(t)
+	a, b := strings.Repeat("11", 32), strings.Repeat("22", 32)
+	private := []byte("A's private photo")
+	secret := shaOf(private)
+	f.blobs[secret] = []byte("not A's photo") // B's server lists A's hash, serves junk
+	f.named["/a.jpg"] = []byte("also not A's photo")
+	v := &memVault{stored: map[string]string{secret: a}}
+	v.notes = []*nostr.Event{{ID: "n1", PubKey: b, CreatedAt: 100,
+		Content: "look " + f.srv.URL + "/a.jpg",
+		Tags:    nostr.Tags{{"imeta", "url " + f.srv.URL + "/a.jpg", "x " + secret}}}}
+	res := runAutoMirror(context.Background(), v.deps(t, f, b))
+	if v.owners[b+secret] {
+		t.Fatalf("b got a record for a's file by naming its hash: %+v", res)
+	}
+	if res.Saved != 0 || res.Skipped == 0 {
+		t.Fatalf("run: %+v", res)
 	}
 }

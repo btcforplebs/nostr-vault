@@ -60,9 +60,29 @@ func storeAccountBlob(ctx context.Context, pubkey, file, sha, mimeType string) e
 	return err
 }
 
+// accountHoldsBlob: pubkey has a 24242 record for sha here.
+func accountHoldsBlob(pubkey, sha string) bool {
+	if blossomDB == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ch, err := blossomDB.QueryEvents(ctx, nostr.Filter{Authors: []string{pubkey}, Kinds: []int{24242}, Tags: nostr.TagMap{"x": []string{sha}}, Limit: 1})
+	if err != nil {
+		return false
+	}
+	held := false
+	for range ch {
+		held = true
+	}
+	return held
+}
+
 // claimAccountBlob: pubkey's record for a file another account already
-// stored here, so it is pubkey's file too (Tron #2386). The bytes are not
-// touched. added: false when pubkey already had the record.
+// stored here, so it is pubkey's file too. Call it only after pubkey proved
+// it has the bytes (proveAccountBlob hashed them from pubkey's own URL):
+// a record keeps the bytes past the other owner's delete (Tron #2386).
+// added: false when pubkey already had the record.
 func claimAccountBlob(ctx context.Context, pubkey, sha string) (bool, error) {
 	ownerBlobImportMu.Lock()
 	defer ownerBlobImportMu.Unlock()

@@ -104,8 +104,11 @@ func newJobID() string {
 	return hex.EncodeToString(b)
 }
 
-// mediaCopyWaitStale: a request the engine has not taken in this long is
-// left over (the engine was stopped), and another account may replace it.
+// mediaCopyWaitStale: a request the engine has not taken in this long, while
+// no job runs, is left over (the engine was stopped), and another account
+// may replace it. While a job runs the engine takes the next request only
+// when it ends, however long that is, so a waiting request is never stale
+// then (Tron #2386 re-read). A restarted engine clears a stuck "running".
 const mediaCopyWaitStale = time.Minute
 
 func queueMediaCopy(a *API, w http.ResponseWriter, req map[string]any) {
@@ -114,7 +117,11 @@ func queueMediaCopy(a *API, w http.ResponseWriter, req map[string]any) {
 	// One request file for the box: another account's waiting request is
 	// not replaced (Tron #2386); the caller's own is.
 	var waiting map[string]any
-	if fi, err := os.Stat(file); err == nil && time.Since(fi.ModTime()) < mediaCopyWaitStale && readJSONFile(file, &waiting) {
+	var running struct {
+		Running bool `json:"running"`
+	}
+	readJSONFile(mediaFile(a, mediaCopyStateName), &running)
+	if fi, err := os.Stat(file); err == nil && (running.Running || time.Since(fi.ModTime()) < mediaCopyWaitStale) && readJSONFile(file, &waiting) {
 		if pk, _ := waiting["pubkey"].(string); pk != req["pubkey"] {
 			mediaFilesMu.Unlock()
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "another account's check or copy is about to start; try again in a few seconds"})

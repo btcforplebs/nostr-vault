@@ -122,6 +122,11 @@ func (v *memVault) deps(t *testing.T, f *fakeBlossom, accounts ...string) autoMi
 			v.owners[pk+sha] = true
 			return true, nil
 		},
+		owns: func(pk, sha string) bool {
+			v.mu.Lock()
+			defer v.mu.Unlock()
+			return v.stored[sha] == pk || v.owners[pk+sha]
+		},
 		room:    func() int64 { return maxBlobBytes },
 		tempDir: dir,
 		links:   loadAutoMirrorLinks(filepath.Join(dir, "links.json")),
@@ -231,18 +236,20 @@ func TestAutoMirrorRun(t *testing.T) {
 	if v.stored[shaOf(listed)] != owner || v.stored[shaOf([]byte("beach, linked by name only"))] != other {
 		t.Fatalf("stored under the wrong account: %v", v.stored)
 	}
-	if f.hitsOn("/"+shaOf(held)) != 0 || f.hitsOn("/"+shaOf(held)+".jpg") != 0 {
-		t.Fatal("a stored file was downloaded")
+	// held is fetched once in all: other's proof (the fake lists it for
+	// other too); the owner, who holds it, fetches nothing.
+	if f.hitsOn("/"+shaOf(held))+f.hitsOn("/"+shaOf(held)+".jpg") != 1 || !v.owners[other+shaOf(held)] || v.stored[shaOf(held)] != owner {
+		t.Fatalf("held hits: list %d, other's link %d", f.hitsOn("/"+shaOf(held)), f.hitsOn("/"+shaOf(held)+".jpg"))
 	}
 	if f.sawAuth {
 		t.Fatal("a box run sent an Authorization header: it has nothing to sign with")
 	}
 	before := f.hitsOn("/pics/beach.jpg")
-	// The fake lists every file for every account, so run 2 claims for
-	// other the file run 1 was downloading for owner; it downloads nothing.
+	// The fake lists every file for every account, so run 2 proves for
+	// other the file run 1 was downloading for owner (one more fetch).
 	hits := f.hitsOn("/" + shaOf(listed))
 	res = runAutoMirror(context.Background(), d)
-	if res.Saved != 1 || !v.owners[other+shaOf(listed)] || f.hitsOn("/pics/beach.jpg") != before || f.hitsOn("/"+shaOf(listed)) != hits {
+	if res.Saved != 1 || !v.owners[other+shaOf(listed)] || f.hitsOn("/pics/beach.jpg") != before || f.hitsOn("/"+shaOf(listed)) != hits+1 {
 		t.Fatalf("run 2: %+v, beach hits %d", res, f.hitsOn("/pics/beach.jpg"))
 	}
 	if res = runAutoMirror(context.Background(), d); res.Saved != 0 {

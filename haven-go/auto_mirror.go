@@ -127,9 +127,12 @@ type autoMirrorDeps struct {
 	notes    func(ctx context.Context, pubkey string, until nostr.Timestamp) []*nostr.Event // newest first, kind 1
 	stored   func(sha string) bool
 	store    func(ctx context.Context, pubkey, file, sha, mimeType string) error
+	// owns: pubkey holds a record for sha.
+	owns func(pubkey, sha string) bool
 	// claim adds pubkey's record for a file already stored here (another
 	// account's copy), so the file counts as this account's too (Copy to
-	// servers offers only an account's own files). added: a new record.
+	// servers offers only an account's own files). Only after a prove job
+	// hashed the account's own copy. added: a new record.
 	claim func(ctx context.Context, pubkey, sha string) (added bool, err error)
 	// room: the most bytes one download may write (Tron #2386: the cap is
 	// enforced while reading, not checked after the file is on disk).
@@ -150,6 +153,10 @@ type autoMirrorJob struct {
 	url    string
 	sha    string // expected, "" when not known before the download
 	link   bool   // a note link: remember what it served
+	// prove: the file is stored here under another account; download it
+	// only to hash it (nothing written), and add pubkey's record if it is
+	// the file sha names.
+	prove bool
 }
 
 // runAutoMirror runs the two steps for every account under one 200 cap.
@@ -159,26 +166,12 @@ func runAutoMirror(ctx context.Context, d autoMirrorDeps) autoMirrorResult {
 	picked := map[string]bool{} // hashes queued this run, across accounts and steps
 	room := func() int { return autoMirrorMaxPerRun - len(jobs) }
 	unreachable := map[string]bool{}
-	var claimed int
-	tried := map[string]bool{} // pubkey+sha claims tried this run
-	// have: the file is stored here already, or queued this run. A stored
-	// file is claimed for pk (its record added, nothing downloaded), even
-	// when another account's copy is the one on disk.
-	have := func(pk, sha string) bool {
-		if !d.stored(sha) {
-			return picked[sha]
-		}
-		if tried[pk+sha] {
-			return true
-		}
-		tried[pk+sha] = true
-		if added, err := d.claim(ctx, pk, sha); err != nil {
-			d.log("auto-mirror: claim failed", "sha", sha, "err", err)
-		} else if added {
-			claimed++
-		}
-		return true
-	}
+	// have: pk already holds the file, or it is queued this run. A file
+	// stored here under another account is NOT had: pk must prove it has
+	// it (a prove job: download and hash, never written) before it gets a
+	// record (Tron #2386: a hash named in a list or imeta proves nothing,
+	// and a record keeps the bytes past the owner's delete).
+	have := func(pk, sha string) bool { return picked[sha] || d.owns(pk, sha) }
 
 	for _, pk := range d.accounts() {
 		if room() <= 0 {
@@ -205,7 +198,7 @@ func runAutoMirror(ctx context.Context, d autoMirrorDeps) autoMirrorResult {
 					break
 				}
 				picked[sha] = true
-				jobs = append(jobs, autoMirrorJob{pubkey: pk, url: server + "/" + sha, sha: sha})
+				jobs = append(jobs, autoMirrorJob{pubkey: pk, url: server + "/" + sha, sha: sha, prove: d.stored(sha)})
 			}
 		}
 		// 2. The media links in the account's own notes.
@@ -249,7 +242,7 @@ func runAutoMirror(ctx context.Context, d autoMirrorDeps) autoMirrorResult {
 					if sha != "" {
 						picked[sha] = true
 					}
-					jobs = append(jobs, autoMirrorJob{pubkey: pk, url: link, sha: sha, link: true})
+					jobs = append(jobs, autoMirrorJob{pubkey: pk, url: link, sha: sha, link: true, prove: sha != "" && d.stored(sha)})
 					if room() <= 0 {
 						res.CapReached = true
 						break pages
@@ -284,6 +277,9 @@ func runAutoMirror(ctx context.Context, d autoMirrorDeps) autoMirrorResult {
 		go func(j autoMirrorJob) {
 			defer func() { <-sem; wg.Done() }()
 			sha, err := fetchIntoVault(ctx, d, j)
+			if errors.Is(err, errAlreadyHeld) {
+				return
+			}
 			if err != nil {
 				skipped.Add(1)
 				d.log("auto-mirror: skipped", "url", j.url, "err", err)
@@ -296,7 +292,7 @@ func runAutoMirror(ctx context.Context, d autoMirrorDeps) autoMirrorResult {
 		}(j)
 	}
 	wg.Wait()
-	res.Saved = int(saved.Load()) + claimed
+	res.Saved = int(saved.Load())
 	res.Skipped = int(skipped.Load())
 	for h := range unreachable {
 		res.Unreachable = append(res.Unreachable, h)
@@ -338,6 +334,8 @@ func fetchBlobList(ctx context.Context, c *http.Client, server, pubkey string) (
 
 var errHashMismatch = errors.New("the file is not the one its hash names")
 
+var errAlreadyHeld = errors.New("the account already holds this file")
+
 var errNoRoom = errors.New("the file is too big for one blob, or for the room left on the vault's disk")
 
 // fetchIntoVault downloads one file to a temp file, checks it, and stores it
@@ -354,6 +352,9 @@ func fetchIntoVault(ctx context.Context, d autoMirrorDeps, j autoMirrorJob) (str
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	if j.prove {
+		return proveAccountBlob(ctx, d, j, resp)
 	}
 	limit := d.room()
 	if limit <= 0 || resp.ContentLength > limit {
@@ -397,6 +398,35 @@ func fetchIntoVault(ctx context.Context, d autoMirrorDeps, j autoMirrorJob) (str
 		return "", err
 	}
 	return sha, nil
+}
+
+// proveAccountBlob: the job's file is already stored here under another
+// account. Hash what the job's URL serves (capped, never written) and add
+// pubkey's record only when it is the file sha names: the same proof a
+// Blossom upload needs. Costs bandwidth, never disk.
+func proveAccountBlob(ctx context.Context, d autoMirrorDeps, j autoMirrorJob, resp *http.Response) (string, error) {
+	if resp.ContentLength > maxBlobBytes {
+		return "", errNoRoom
+	}
+	h := newSHA256()
+	n, err := io.Copy(h, io.LimitReader(resp.Body, maxBlobBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if n > maxBlobBytes {
+		return "", errNoRoom
+	}
+	if h.hex() != j.sha {
+		return "", errHashMismatch
+	}
+	added, err := d.claim(ctx, j.pubkey, j.sha)
+	if err != nil {
+		return "", err
+	}
+	if !added {
+		return "", errAlreadyHeld
+	}
+	return j.sha, nil
 }
 
 // accountNotes: one page of pubkey's kind 1 notes, newest first, until
@@ -451,6 +481,7 @@ func liveAutoMirrorDeps() autoMirrorDeps {
 		stored:   blobStoredHere,
 		store:    storeAccountBlob,
 		claim:    claimAccountBlob,
+		owns:     accountHoldsBlob,
 		room:     vaultRoom,
 		tempDir:  config.BlossomPath,
 		links:    loadAutoMirrorLinks(autoMirrorLinksFile),
