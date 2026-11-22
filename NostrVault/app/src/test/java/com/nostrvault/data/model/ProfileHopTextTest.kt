@@ -13,8 +13,8 @@ class ProfileHopTextTest {
     private fun line(path: TrustPath?, rank: TrustRankCopy.Person? = null, who: String = them) =
         ProfileHopText.line(who, me, path, rank) { names[it] ?: "?" }
 
-    private fun bridged(all: List<String>, hasMore: Boolean = all.size > TrustPath.SHOWN_BRIDGES) =
-        TrustPath(TrustPath.Reach.BRIDGED, all.take(TrustPath.SHOWN_BRIDGES), hasMore, all)
+    private fun bridged(all: List<String>, hasMore: Boolean = all.size > TrustPath.SHOWN_BRIDGES, exact: Boolean = true) =
+        TrustPath(TrustPath.Reach.BRIDGED, all.take(TrustPath.SHOWN_BRIDGES), hasMore, all, exact)
 
     @Test fun `a follow is 1 hop`() {
         assertEquals("1 hop · you follow them", line(TrustPath(TrustPath.Reach.FOLLOW, emptyList(), false), TrustRankCopy.Person(99.0, 1)))
@@ -29,23 +29,38 @@ class ProfileHopTextTest {
         assertEquals("2 hops · followed by Alice, Bob and 11 more", line(bridged(many)))
     }
 
-    @Test fun `relays stop early, so their count is not claimed`() {
+    @Test fun `relays give a floor, not a count, so no number`() {
+        // Several relays can each send six lists: ten found, more may exist.
+        val ten = listOf(alice, bob) + (10..17).map { "%064x".format(it) }
+        assertEquals("2 hops · followed by Alice, Bob and more", line(bridged(ten, hasMore = true, exact = false)))
+        assertEquals("2 hops · followed by Alice, Bob and more", line(bridged(listOf(alice, bob, carol), exact = false)))
+        assertEquals("2 hops · followed by Alice and Bob", line(bridged(listOf(alice, bob), exact = false)))
+        // The links file with exactly six: an exact count.
         val six = listOf(alice, bob, carol, dan, eve, pk('6'))
-        assertEquals("2 hops · followed by Alice, Bob and more", line(bridged(six, hasMore = true)))
+        assertEquals("2 hops · followed by Alice, Bob and 4 more", line(bridged(six)))
     }
 
     @Test fun `past two hops the Haven's ring, at any distance up to 6`() {
         for (hop in 3..6) {
-            assertEquals("$hop hops", line(TrustPath(TrustPath.Reach.WEB, emptyList(), false), TrustRankCopy.Person(50.0, hop)))
-            assertEquals("$hop hops", line(null, TrustRankCopy.Person(50.0, hop)))
-            assertEquals("$hop hops", line(TrustPath(TrustPath.Reach.OUTSIDE, emptyList(), false), TrustRankCopy.Person(50.0, hop)))
+            for (reach in listOf(TrustPath.Reach.WEB, TrustPath.Reach.OUTSIDE, TrustPath.Reach.UNKNOWN, null)) {
+                val path = reach?.let { TrustPath(it, emptyList(), false) }
+                assertEquals("$hop hops", line(path, TrustRankCopy.Person(50.0, hop)))
+            }
         }
     }
 
-    @Test fun `the web outranks the Haven for the near rings`() {
+    @Test fun `the near rings come from your web, never from a day-old file`() {
         // Followed since the Haven ranked: a follow, whatever the file says.
         assertEquals("1 hop · you follow them", line(TrustPath(TrustPath.Reach.FOLLOW, emptyList(), false), TrustRankCopy.Person(50.0, 3)))
         assertEquals("2 hops · followed by Alice", line(bridged(listOf(alice)), TrustRankCopy.Person(50.0, 4)))
+        // Unfollowed since: the file's ring 1 is never "you follow them".
+        for (reach in listOf(TrustPath.Reach.WEB, TrustPath.Reach.OUTSIDE, TrustPath.Reach.UNKNOWN, null)) {
+            assertNull("$reach", line(reach?.let { TrustPath(it, emptyList(), false) }, TrustRankCopy.Person(99.0, 1)))
+        }
+        // Ring 2 from the file, no names, only when the path can't say; outside your web, nothing.
+        assertEquals("2 hops", line(TrustPath(TrustPath.Reach.WEB, emptyList(), false), TrustRankCopy.Person(70.0, 2)))
+        assertEquals("2 hops", line(null, TrustRankCopy.Person(70.0, 2)))
+        assertNull(line(TrustPath(TrustPath.Reach.OUTSIDE, emptyList(), false), TrustRankCopy.Person(70.0, 2)))
     }
 
     @Test fun `no line for you, or for someone nobody can place`() {

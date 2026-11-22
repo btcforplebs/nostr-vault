@@ -19,8 +19,11 @@ object ProfileHopText {
     const val NAMED = 2
 
     /**
-     * The hop to show: 1 for a follow, 2 when someone you follow follows them,
-     * else the Haven's ring. Null for you, and for anyone neither knows.
+     * The hop to show. Rings 1 and 2 come from your follows and the Trust
+     * Path, which follow an unfollow at once; the Haven's copy can be a day
+     * old (Tron, #2419), so it only places people further out, and ring 2
+     * only when the path cannot say (no names then). Null for you, for
+     * someone the path finds outside your web, and for anyone neither knows.
      */
     fun hop(pubkey: String, me: String, path: TrustPath?, rank: TrustRankCopy.Person?): Int? {
         if (pubkey.equals(me, ignoreCase = true)) return null
@@ -28,33 +31,31 @@ object ProfileHopText {
             TrustPath.Reach.YOU -> null
             TrustPath.Reach.FOLLOW -> 1
             TrustPath.Reach.BRIDGED -> 2
-            else -> rank?.hop
+            TrustPath.Reach.OUTSIDE -> rank?.hop?.takeIf { it >= 3 }
+            TrustPath.Reach.WEB, TrustPath.Reach.UNKNOWN, null -> rank?.hop?.takeIf { it >= 2 }
         }
     }
 
     fun line(pubkey: String, me: String, path: TrustPath?, rank: TrustRankCopy.Person?, name: (String) -> String): String? {
         val hop = hop(pubkey, me, path, rank) ?: return null
-        val hops = if (hop == 1) "1 hop" else "$hop hops"
-        if (hop == 1) return "$hops · you follow them"
-        val followedBy = path?.takeIf { hop == 2 }?.let { followedBy(it, name) }
-        return if (followedBy == null) hops else "$hops · $followedBy"
+        if (hop == 1) return "1 hop · you follow them"
+        val followedBy = path?.takeIf { it.reach == TrustPath.Reach.BRIDGED }?.let { followedBy(it, name) }
+        return if (followedBy == null) "$hop hops" else "$hop hops · $followedBy"
     }
 
     /**
-     * "followed by Alice, Bob and 3 more". The count is exact when the path
-     * came from the relay's links file (every bridge). From relays the list
-     * stops once enough are found ([TrustPath.hasMore] past
-     * [TrustPath.LISTS_PER_FILTER]), so then it says "and more".
+     * "followed by Alice, Bob and 3 more". The number only when the path knows
+     * every bridge ([TrustPath.exact], the links file); from relays it says
+     * "and more", since their count is only a floor.
      */
     fun followedBy(path: TrustPath, name: (String) -> String): String? {
         val all = path.all.ifEmpty { path.bridges }
         if (all.isEmpty()) return null
         val names = all.take(NAMED).map(name)
         val rest = all.size - names.size
-        val capped = path.hasMore && all.size <= TrustPath.LISTS_PER_FILTER
         return "followed by " + when {
-            capped -> names.joinToString(", ") + " and more"
-            rest > 0 -> names.joinToString(", ") + " and $rest more"
+            rest > 0 && path.exact -> names.joinToString(", ") + " and $rest more"
+            rest > 0 || path.hasMore -> names.joinToString(", ") + " and more"
             else -> names.joinToString(" and ")
         }
     }

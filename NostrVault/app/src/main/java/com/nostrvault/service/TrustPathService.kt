@@ -107,7 +107,7 @@ class TrustPathService @Inject constructor(
         // anyone in your web: no relays to ask.
         if (center == me && author != me) {
             linkedBridges(author, me, follows.toSet())?.let {
-                return TrustPath.resolve(author, follows.toSet(), trustGraph, it)
+                return TrustPath.resolve(author, follows.toSet(), trustGraph, it, exact = true)
             }
         }
         // Someone you follow: no relays to ask. Their bridges only come from the links file above.

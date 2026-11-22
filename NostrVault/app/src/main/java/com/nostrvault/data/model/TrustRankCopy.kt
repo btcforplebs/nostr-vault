@@ -49,7 +49,8 @@ data class TrustRankCopy(
          */
         fun parse(text: String, account: String): TrustRankCopy? = runCatching {
             val root = json.parseToJsonElement(text) as? JsonObject ?: return null
-            fun prim(key: String) = root[key] as? JsonPrimitive
+            // Numbers, not numbers in quotes, as the engine reads them.
+            fun prim(key: String) = (root[key] as? JsonPrimitive)?.takeIf { !it.isString || key == "account" }
             if (prim("account")?.contentOrNull != account || prim("version")?.intOrNull != 2) return null
             val builtAt = prim("builtAt")?.longOrNull?.takeIf { it > 0 } ?: return null
             val maxHop = prim("maxHop")?.intOrNull?.takeIf { it in 1..CEILING_HOP } ?: return null

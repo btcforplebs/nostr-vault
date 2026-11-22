@@ -32,6 +32,9 @@ class TrustRankCopyTest {
             "not a pubkey" to file(rows = "[\"../x\",50,2]"),
             "a short row" to file(rows = "[\"${pk('b')}\",50]"),
             "a score as text" to file(rows = "[\"${pk('b')}\",\"50\",2]"),
+            "version as text" to file().replace("\"version\":2", "\"version\":\"2\""),
+            "maxHop as text" to file().replace("\"maxHop\":4", "\"maxHop\":\"4\""),
+            "builtAt as text" to file().replace("\"builtAt\":1795300000", "\"builtAt\":\"1795300000\""),
             "not JSON" to "nope",
         )) assertNull(why, TrustRankCopy.parse(text, me))
     }

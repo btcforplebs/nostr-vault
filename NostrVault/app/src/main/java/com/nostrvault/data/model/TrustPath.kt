@@ -72,6 +72,12 @@ data class TrustPath(
     val hasMore: Boolean,
     /** Every bridge known, sorted by key: the globe traces all of them. [bridges] is its first [SHOWN_BRIDGES]. */
     val all: List<String> = emptyList(),
+    /**
+     * [all] is every bridge there is: true only when it came from the relay's
+     * links file. From relays the search stops once a few are found, so the
+     * count is a floor, not a total.
+     */
+    val exact: Boolean = false,
 ) {
     enum class Reach {
         /** The author is you. */
@@ -131,12 +137,16 @@ data class TrustPath(
             return resolve(author, follows, emptySet(), emptyList())
         }
 
-        /** The path from bridges already known, e.g. from [TrustLinks], sorted by key. */
+        /**
+         * The path from bridges already known, e.g. from [TrustLinks], sorted
+         * by key. [exact]: [sorted] is every bridge (the links file).
+         */
         fun resolve(
             author: String,
             follows: Set<String>,
             trustGraph: Set<String>,
             sorted: List<String>,
+            exact: Boolean = false,
         ): TrustPath {
             val shown = sorted.take(SHOWN_BRIDGES)
             val reach = when {
@@ -146,7 +156,7 @@ data class TrustPath(
                 author in trustGraph -> Reach.WEB
                 else -> Reach.OUTSIDE
             }
-            return TrustPath(reach, shown, sorted.size > SHOWN_BRIDGES, sorted)
+            return TrustPath(reach, shown, sorted.size > SHOWN_BRIDGES, sorted, exact)
         }
 
         /**
