@@ -64,6 +64,8 @@ type Config struct {
 	BackupIntervalHours                  int                 `json:"backup_interval_hours"`
 	WotDepth                             int                 `json:"wot_depth"`
 	WotMinimumFollowers                  int                 `json:"wot_minimum_followers"`
+	AccountReach                         reachByAccount      `json:"-"`
+	AccountBlocks                        blocksByAccount     `json:"-"`
 	WotFetchTimeoutSeconds               int                 `json:"wot_fetch_timeout_seconds"`
 	WotRefreshInterval                   time.Duration       `json:"wot_refresh_interval"`
 	WotCachePath                         string              `json:"wot_cache_path"`
@@ -150,12 +152,14 @@ func loadConfig() Config {
 		BackupIntervalHours:                  getEnvInt("BACKUP_INTERVAL_HOURS", 24),
 		WotDepth:                             getEnvInt("WOT_DEPTH", defaultWotDepth),
 		WotMinimumFollowers:                  getEnvInt("WOT_MINIMUM_FOLLOWERS", 0),
+		AccountReach:                         loadAccountReach(getEnvString("ACCOUNT_REACH_FILE", "account_reach.json")),
 		WotFetchTimeoutSeconds:               getEnvInt("WOT_FETCH_TIMEOUT_SECONDS", 30),
 		WotRefreshInterval:                   getEnvDuration("WOT_REFRESH_INTERVAL", 24*time.Hour),
 		WotCachePath:                         getEnvString("WOT_CACHE_PATH", "wot_cache.json"),
 		WotCacheTTLMinutes:                   getEnvInt("WOT_CACHE_TTL_MINUTES", 4320),
 		WhitelistedPubKeys:                   getNpubsFromFile(getEnvString("WHITELISTED_NPUBS_FILE", "")),
 		BlacklistedPubKeys:                   getNpubsFromFile(getEnvString("BLACKLISTED_NPUBS_FILE", "")),
+		AccountBlocks:                        loadAccountBlocks(getEnvString("BLOCKS_BY_ACCOUNT_FILE", "blocks_by_account.json")),
 		PrivateReaderPubKeys:                 privateReadersFromFile(getEnvString("PRIVATE_READER_NPUBS_FILE", "")),
 		LogLevel:                             getEnvString("HAVEN_LOG_LEVEL", "INFO"),
 		BlastrRelays:                         getRelayListFromFile(getEnv("BLASTR_RELAYS_FILE")),
@@ -351,6 +355,11 @@ var blacklistOverride atomic.Pointer[map[string]struct{}]
 // blacklist checks should go through this rather than reading
 // config.BlacklistedPubKeys directly, so a live update actually takes effect.
 func isBlacklisted(pubkey string) bool {
+	// You cannot block your own accounts: the own-account check comes before
+	// any block list (Logen, 2026-11-22).
+	if isOwnKey(pubkey) {
+		return false
+	}
 	if m := blacklistOverride.Load(); m != nil {
 		_, ok := (*m)[pubkey]
 		return ok
@@ -377,6 +386,8 @@ func blacklistedPubkeys() []string {
 // next event processed, no relay restart required.
 func UpdateBlacklist(pubkeys map[string]struct{}) {
 	blacklistOverride.Store(&pubkeys)
+	// A blocked follow vouches for nobody (account_blocks.go).
+	retallyAccountWebs()
 }
 
 // getKindSet parses a comma-separated list of event kinds ("1,6,7,9735") into a

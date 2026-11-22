@@ -72,7 +72,7 @@ func startExternalWotRefresh(relayURL string) bool {
 				"User-Agent": []string{userAgent},
 			}),
 	)
-	model := wot.NewSimpleInMemory(p, owners, seeds, depth, minFollowers, timeout, cachePath, ttl)
+	model := newFirstRunWotModel(p, owners, seeds, depth, minFollowers, timeout, cachePath, ttl)
 	model.LocalFollowLists = func() []*nostr.Event { return followListsFrom(ctx, p, relayURL, ownerKeys) }
 	// The saved web is what this one replaces: newcomers are counted against it.
 	model.LoadFromCache()

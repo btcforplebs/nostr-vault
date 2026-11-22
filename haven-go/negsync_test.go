@@ -24,9 +24,26 @@ import (
 type stubWot struct {
 	allow   bool
 	members map[string]bool
+	// webs, when set, is a web per account (webs[account][pubkey]) for the
+	// per-account gates; Has is then anyone in any account's web.
+	webs map[string]map[string]bool
+}
+
+// HasFor is the per-account answer: the account's own web when webs is set,
+// else Has, like a model with no web per account.
+func (s stubWot) HasFor(ctx context.Context, owner, pubkey string) bool {
+	if s.webs == nil {
+		return s.Has(ctx, pubkey)
+	}
+	return s.webs[owner][pubkey]
 }
 
 func (s stubWot) Has(_ context.Context, pubkey string) bool {
+	for _, web := range s.webs {
+		if web[pubkey] {
+			return true
+		}
+	}
 	return s.allow || s.members[pubkey]
 }
 
@@ -284,7 +301,7 @@ func TestTempRejectsPrune(t *testing.T) {
 	var nilR *tempRejects
 	nilR.prune(now)
 	nilR.add(stale, now, hexid('9'))
-	nilR.reevaluate(func(string) bool { return true })
+	nilR.reevaluate(func(string, []string) bool { return true })
 	if evs := nilR.appendStubs(nil, nostr.Filter{}); len(evs) != 0 {
 		t.Fatal("nil tempRejects should yield no stubs")
 	}
@@ -301,7 +318,7 @@ func TestTempRejectsReevaluate(t *testing.T) {
 	r.add(hexid('a'), now, admitted)
 	r.add(hexid('b'), now, stillOut)
 
-	r.reevaluate(func(pk string) bool { return pk == admitted })
+	r.reevaluate(func(pk string, _ []string) bool { return pk == admitted })
 
 	if _, ok := r.m.Load(hexid('a')); ok {
 		t.Fatal("admitted author's stub not dropped")

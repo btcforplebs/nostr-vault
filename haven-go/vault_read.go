@@ -74,7 +74,7 @@ func vaultReadQueries() (outbox, inbox vaultQuery, closing func() bool, err erro
 func vaultQueriesFor(out, in DBBackend) (outbox, inbox vaultQuery, closing func() bool) {
 	closing = func() bool { return storeClosing(out) || storeClosing(in) }
 	outbox = hideBroughtQuery(hideBlacklistedQuery(searchableQuery(out)))
-	inbox = hideBroughtInboxQuery(hideBlacklistedQuery(searchableQuery(in)))
+	inbox = hideBroughtInboxQuery(scopeInboxQuery(hideBlacklistedQuery(searchableQuery(in))))
 	return outbox, inbox, closing
 }
 

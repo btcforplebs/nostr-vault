@@ -1,6 +1,6 @@
 // Settings › Feed › Reach (RESEARCH/NV_ONE_WOT_GATE.md 2b): per feed, how far past your web it reaches. "Your web" is
 // your follows and the people at least 10 of them follow; "+ a few one hop out" adds a ration of people fewer of
-// your follows follow (at most one a person, never replies; net/web-gate.js capHop3). Global on Everyone ignores it.
+// your follows follow (at most one a person, never replies; net/web-gate.js capLoose). Global on Everyone ignores it.
 import { useState } from "preact/hooks"
 import { REACH_FEEDS, loadReach, saveReach } from "../../net/feed-gate.js"
 import { Section } from "./Section.jsx"
