@@ -125,6 +125,7 @@ struct KeyIsYouStep: View {
                     .cornerRadius(8)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(WizardColors.borderSubtle, lineWidth: 1))
                     .privacySensitive()
+                    .keySnapshotCover()
                     .accessibilityLabel(shown ? "Secret key shown" : "Secret key hidden")
             }
         }
