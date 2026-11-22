@@ -6,7 +6,7 @@ import (
 )
 
 func init() {
-	handle("GET /api/box/status", func(a *API, w http.ResponseWriter, _ *http.Request, _ []byte) {
+	handle("GET /api/box/status", FirstAccount, func(a *API, w http.ResponseWriter, _ *http.Request, _ Caller, _ []byte) {
 		writeJSON(w, http.StatusOK, a.status())
 	})
 }

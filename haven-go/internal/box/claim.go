@@ -26,11 +26,8 @@ import (
 // claim the page is gone (box/owner is read on every start).
 
 // Wrong codes are capped per client (claimMaxFails a minute from one
-// address) and for the whole box (claimMaxFailsAll a minute), so a LAN
-// visitor can't guess the code, and one sending wrong codes can't lock the
-// owner out on another address. Past a cap, claims wait out the window.
-// At most claimMaxClients addresses are tracked; past that only the box-wide
-// cap counts for new ones.
+// address) and for the whole box (claimMaxFailsAll a minute) by a
+// failLimiter (ratelimit.go).
 const (
 	claimFailWindow  = time.Minute
 	claimMaxFails    = 5
@@ -45,10 +42,9 @@ type Claim struct {
 	Done      chan struct{}
 	Now       func() time.Time
 
-	mu       sync.Mutex
-	claimed  bool
-	fails    map[string][]time.Time // per client address
-	failsAll []time.Time
+	mu      sync.Mutex
+	claimed bool
+	limit   failLimiter
 }
 
 // NewClaim is a Claim for cfg (cfg.Claiming() must be true).
@@ -100,20 +96,16 @@ func (c *Claim) post(w http.ResponseWriter, r *http.Request) {
 	}
 	now := c.Now()
 	client := clientOf(r)
-	c.dropOldFails(now)
-	if len(c.fails[client]) >= claimMaxFails || len(c.failsAll) >= claimMaxFailsAll {
+	if c.limit.window == 0 {
+		c.limit = failLimiter{window: claimFailWindow, maxFails: claimMaxFails, maxAll: claimMaxFailsAll, maxClients: claimMaxClients}
+	}
+	if c.limit.blocked(client, now) {
 		w.Header().Set("Retry-After", "60")
 		c.page(w, http.StatusTooManyRequests, claimPage{Error: "Too many wrong codes. Wait a minute, then try again.", Npub: npubIn})
 		return
 	}
 	if !sameCode(codeIn, c.Code) {
-		c.failsAll = append(c.failsAll, now)
-		if c.fails == nil {
-			c.fails = map[string][]time.Time{}
-		}
-		if _, known := c.fails[client]; known || len(c.fails) < claimMaxClients {
-			c.fails[client] = append(c.fails[client], now)
-		}
+		c.limit.fail(client, now)
 		log.Printf("box: claim refused: wrong setup code")
 		c.page(w, http.StatusForbidden, claimPage{Error: "That setup code isn't right. Copy it again from your store's app page.", Npub: npubIn})
 		return
@@ -142,26 +134,6 @@ func (c *Claim) post(w http.ResponseWriter, r *http.Request) {
 	log.Printf("box: claimed by %s (%s)", npub, hexKey)
 	c.page(w, http.StatusOK, claimPage{Done: true, Npub: npub})
 	c.finish()
-}
-
-func (c *Claim) dropOldFails(now time.Time) {
-	recent := func(ts []time.Time) []time.Time {
-		keep := ts[:0]
-		for _, t := range ts {
-			if now.Sub(t) < claimFailWindow {
-				keep = append(keep, t)
-			}
-		}
-		return keep
-	}
-	c.failsAll = recent(c.failsAll)
-	for k, ts := range c.fails {
-		if ts = recent(ts); len(ts) == 0 {
-			delete(c.fails, k)
-		} else {
-			c.fails[k] = ts
-		}
-	}
 }
 
 // clientOf is the request's peer address without the port. Claim mode is

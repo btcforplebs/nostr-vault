@@ -13,6 +13,9 @@ struct MacFipsMeshSettingsView: View {
     @State private var copied = false
     /// The device Remove asked about, until it is confirmed or cancelled.
     @State private var removing: MeshDevice?
+    /// The device Rename is open for, and the name being typed.
+    @State private var renaming: MeshDevice?
+    @State private var newName = ""
 
     var body: some View {
         Form {
@@ -144,6 +147,15 @@ struct MacFipsMeshSettingsView: View {
                         }
                     }
                     Spacer()
+                    Button {
+                        newName = device.name
+                        renaming = device
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Rename")
+                    .accessibilityLabel("Rename \(device.displayName)")
                     Button(role: .destructive) {
                         removing = device
                     } label: {
@@ -179,6 +191,21 @@ struct MacFipsMeshSettingsView: View {
         } message: { _ in
             Text("It can no longer reach this Mac over the mesh. Anything already on it stays there.")
         }
+        // Rename, as on the iPhone's device page: blank goes back to the role.
+        .alert("Rename \(renaming?.displayName ?? "device")",
+               isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }),
+               presenting: renaming) { device in
+            TextField(device.role.label, text: $newName)
+            Button("Save") { rename(device, to: newName) }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func rename(_ device: MeshDevice, to name: String) {
+        var renamed = device
+        renamed.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        configService.config.meshDevices = MeshDevicesLogic.adding(renamed, to: configService.config.meshDevices)
+        configService.save()
     }
 
     private func remove(_ device: MeshDevice) {
@@ -190,9 +217,11 @@ struct MacFipsMeshSettingsView: View {
 
     // MARK: 4 Sync
 
+    @ViewBuilder
     private var syncSection: some View {
+        MeshSyncStatusSection(devices: configService.config.meshDevices.filter { $0.npub != mesh.ownNpub })
         Section {
-            Text("Your phones sync with this Mac. Check sync from Mesh on the phone.")
+            Text("Your phones also sync with this Mac. Check theirs from Mesh on the phone.")
                 .font(.appCaption)
                 .foregroundColor(.secondary)
             // The iPhone's twin is in FipsMeshShareSection (was a "Photos go to" picker).

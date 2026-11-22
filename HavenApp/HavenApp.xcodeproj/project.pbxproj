@@ -80,6 +80,7 @@
 		07E5463F34F1BFCF9586B535 /* NostrService+ListVersionSave.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81B027573F0AE2F3612CD925 /* NostrService+ListVersionSave.swift */; };
 		07F1C2CD04A0B5BE9D2C32E8 /* MeshDeleteTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66353FF82388024A6211F22C /* MeshDeleteTargets.swift */; };
 		08264D7FC961E256630D1F08 /* PublishTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A3EE75F17D363C0E2C9E44 /* PublishTargets.swift */; };
+		082ABA5ADE88105F900B999F /* MeshSyncStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CAC4F54E3221D53F705CAAC /* MeshSyncStatusRow.swift */; };
 		086F056B5209B2DBDFD9A3C7 /* libnvfips.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AE5C3CB89D22373BCC0664 /* libnvfips.a */; };
 		08C9F56AA4BB111B5D79DE34 /* DMTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1682A24F97C40C3570CB32C1 /* DMTrust.swift */; };
 		08D829326282C7FA1A602BF0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = C0E613F40504E1442770B4AB /* PrivacyInfo.xcprivacy */; };
@@ -575,6 +576,7 @@
 		3E29BA26158C9979FC763CE2 /* WebGate+Zaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13A1DB1083E3B5E7E5B06310 /* WebGate+Zaps.swift */; };
 		3E53AB37D8C661294466026D /* VertexReputation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B5E98764373253F27F8526F /* VertexReputation.swift */; };
 		3E87EEC2B0B45C4B4CAE2F25 /* MacVaultLockBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B617FFD5AD4CF201C13C67D /* MacVaultLockBanner.swift */; };
+		3EB30962C252CDEDFB0AF584 /* MeshSyncStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1386794E709BFA3E18B9CC /* MeshSyncStatus.swift */; };
 		3EBEC2F605993B37DDB345AB /* NoteRow+EngagementBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CED90605A0EC0CF574801DE /* NoteRow+EngagementBar.swift */; };
 		3F21BB94AF95CD331C1DD1EE /* BlossomService+LocalUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB509F2A30B9B45176A3489 /* BlossomService+LocalUpload.swift */; };
 		3F250B1A05771CA62C2D6227 /* NostrService+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A0902B97D14CA8823200AE /* NostrService+Search.swift */; };
@@ -612,6 +614,7 @@
 		42F21166D791BAE4B5A9D2D4 /* VaultToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FE41D591439EC1513D51DAF /* VaultToolbar.swift */; };
 		42FC369EBDA848E15C5EE891 /* FreshAccountKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D4A5E0A00149D7F14271708 /* FreshAccountKeys.swift */; };
 		4388397A9DBD8058A81F2624 /* NuclearUnfollowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B866A15C6CD404F5329727E0 /* NuclearUnfollowView.swift */; };
+		439D6A0BED544DC87BBC5744 /* MeshSyncStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1386794E709BFA3E18B9CC /* MeshSyncStatus.swift */; };
 		43A187E1D7C8CD0195296947 /* NostrService+MuteList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23082A59191D1E9993BAE72B /* NostrService+MuteList.swift */; };
 		43E02A6DB11E2B376C20CB18 /* GifGridLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056C6D389655475872FFE265 /* GifGridLayout.swift */; };
 		43E57289E37F9E02582EB8D9 /* LongFormPreviewSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99C0558BBF96A014CC6EEFFD /* LongFormPreviewSection.swift */; };
@@ -1179,6 +1182,7 @@
 		7FD9D8FB6010447F28657CEB /* WebSocketClient+LookupConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5A5080BEBFB65F83A8E757 /* WebSocketClient+LookupConnection.swift */; };
 		7FE48AE78C682880DD70123F /* PushNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75ED38A5B67740F711EB5C45 /* PushNotificationService.swift */; };
 		80279D6A57EA7D21982B4AA0 /* NostrService+MuteList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23082A59191D1E9993BAE72B /* NostrService+MuteList.swift */; };
+		808B2CF34AAA8E449B3B941F /* MeshSyncStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CAC4F54E3221D53F705CAAC /* MeshSyncStatusRow.swift */; };
 		80CD34C18669E6058254A790 /* InlinePlayerLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6EEA633D3639AB7EE2C3BFC /* InlinePlayerLayer.swift */; };
 		81092C0D01D5FA1232A9E3A8 /* LiveFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C29A25C6DBE37CB0202A7F /* LiveFeedService.swift */; };
 		81168E8CEF8F8FF779C822DC /* NIP46Service+Bridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C477D8592D4BF3D830EDEEE /* NIP46Service+Bridge.swift */; };
@@ -2805,6 +2809,7 @@
 		4BE879845BEF9A356B7CB5EB /* LiveChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChatService.swift; sourceTree = "<group>"; };
 		4C4C43890E8EB9A15FFAD39A /* MediaPrivacy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPrivacy.swift; sourceTree = "<group>"; };
 		4C6F73BF6DECD70643354714 /* FloatingArrowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingArrowController.swift; sourceTree = "<group>"; };
+		4CAC4F54E3221D53F705CAAC /* MeshSyncStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshSyncStatusRow.swift; sourceTree = "<group>"; };
 		4CE7BC31C983DC50BC5885B2 /* LocalRelaySearchSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalRelaySearchSession.swift; sourceTree = "<group>"; };
 		4D23AE1DBF82F4B0BE4C6DE8 /* RecentlyDeletedSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentlyDeletedSettingsView.swift; sourceTree = "<group>"; };
 		4D8F8AD8BA77B58854E62A04 /* HashNamedFileCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashNamedFileCheck.swift; sourceTree = "<group>"; };
@@ -3324,6 +3329,7 @@
 		AECCABC32A83B0C40919AAF8 /* YourDevicesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YourDevicesSection.swift; sourceTree = "<group>"; };
 		AECE3C16F322D12D0CC02FC1 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		AEFACBF119702896AC43B502 /* BookmarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkService.swift; sourceTree = "<group>"; };
+		AF1386794E709BFA3E18B9CC /* MeshSyncStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshSyncStatus.swift; sourceTree = "<group>"; };
 		AF228055650A32D74D622D04 /* FeedService+LocalDvmCompute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+LocalDvmCompute.swift"; sourceTree = "<group>"; };
 		B0600FF30DDEB5242A8FB1E0 /* NostrService+EventQueries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+EventQueries.swift"; sourceTree = "<group>"; };
 		B073EAAE5544A4F65885E897 /* CopySavingProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopySavingProgress.swift; sourceTree = "<group>"; };
@@ -4411,6 +4417,7 @@
 				1576DDD7998A44384715676C /* MacRelaySettingsView.swift */,
 				7BC93ACBD97D55524099AE93 /* MediaServersLeaveGuard.swift */,
 				E517737B5E573CFCD02EE444 /* MeshMediaServersSection.swift */,
+				4CAC4F54E3221D53F705CAAC /* MeshSyncStatusRow.swift */,
 				9B276A92BC9E7E7EEBF20724 /* PrivacySettingsView.swift */,
 				D0051B6D9E3354FCF3B5CEEA /* PublicOnWebSettingsView.swift */,
 				4D23AE1DBF82F4B0BE4C6DE8 /* RecentlyDeletedSettingsView.swift */,
@@ -4882,6 +4889,7 @@
 				79B35043B40E4BA32E85A0E1 /* MeshPairingWords.swift */,
 				C955166884F1CE9A5BA4B36E /* MeshSiteIngress.swift */,
 				8AC0483F9DFD12CDCE049B7B /* MeshSiteRetry.swift */,
+				AF1386794E709BFA3E18B9CC /* MeshSyncStatus.swift */,
 				CD94E113C1DDF3CF7D6351B2 /* MuteList.swift */,
 				E6123D97505D017C00A6C40C /* MyDevicesCheckGate.swift */,
 				9FEFD738FD3D4C13BCD7D2A6 /* MyDevicesStatus.swift */,
@@ -6450,6 +6458,8 @@
 				83F735BA7188232AFF312FA1 /* MeshSettingsSheet.swift in Sources */,
 				F282B7FBC6006502FCDBB76F /* MeshSiteIngress.swift in Sources */,
 				4154AB9BB343944BBCCF0E57 /* MeshSiteRetry.swift in Sources */,
+				439D6A0BED544DC87BBC5744 /* MeshSyncStatus.swift in Sources */,
+				082ABA5ADE88105F900B999F /* MeshSyncStatusRow.swift in Sources */,
 				E0F1E7C9450B284D7F6D2B66 /* MessagesPeekPanel.swift in Sources */,
 				821F08410D9293030E5DD4A0 /* MiniPlayerBar.swift in Sources */,
 				840DED3DB173B14993FF456A /* MirrorMediaStep.swift in Sources */,
@@ -7666,6 +7676,8 @@
 				A82507F9E1F2B2DB90D34610 /* MeshSettingsSheet.swift in Sources */,
 				445527EDBD91D297AA159AE1 /* MeshSiteIngress.swift in Sources */,
 				316A42CFB310571FFBEA0C2A /* MeshSiteRetry.swift in Sources */,
+				3EB30962C252CDEDFB0AF584 /* MeshSyncStatus.swift in Sources */,
+				808B2CF34AAA8E449B3B941F /* MeshSyncStatusRow.swift in Sources */,
 				AB57B140937B799529F4EB92 /* MiniPlayerBar.swift in Sources */,
 				E61584E6611641986C5662FC /* MirrorMediaStep.swift in Sources */,
 				CAFE76F6F401AE73CE8F0681 /* MirrorService.swift in Sources */,

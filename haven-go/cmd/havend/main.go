@@ -11,7 +11,9 @@
 // Environment:
 //
 //	NV_OWNER            owner npub (or hex), set by the installer. Unset: the
-//	                    npub in $NV_DATA_DIR/box/owner, which claim mode saves
+//	                    npub in $NV_DATA_DIR/box/owner, which claim mode saves.
+//	                    This is the box's first account; any others are in
+//	                    $NV_DATA_DIR/box/accounts.json (box/accounts.go)
 //	NV_SETUP_CODE       claim mode (no owner yet): only the setup page runs,
 //	                    and the npub sent with this code becomes the owner
 //	NV_UPDATE_VIA       startos or umbrel: the store updates the box, so POST
@@ -45,6 +47,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -111,14 +114,37 @@ func run(args []string) error {
 	}
 
 	vaultDir := box.LoadVaultDir(cfg.BoxDir(), cfg.DefaultVaultDir())
+	// The engine's copy of the paired devices (the set the apps pass in with
+	// SetMeshDevicesC): written before the engine starts, then kept in step
+	// with mesh-devices.json every 5 s (box/devices_engine.go).
+	engineDevices := &box.EngineDevices{
+		Mesh: mesh,
+		From: cfg.MeshDevicesFile,
+		To:   filepath.Join(cfg.BoxDir(), "engine-mesh-devices.json"),
+	}
+	if _, err := engineDevices.Sync(); err != nil {
+		log.Printf("box: engine devices: %v", err)
+	}
 	engine := &box.Engine{
-		Bin:     cfg.EngineBin,
-		Env:     func(dir string) []string { return box.EngineEnvList(cfg, dir, os.Getenv) },
+		Bin: cfg.EngineBin,
+		Env: func(dir string) []string {
+			return append(box.EngineEnvList(cfg, dir, os.Getenv), "HAVEN_MESH_DEVICES_FILE="+engineDevices.To)
+		},
 		Prepare: func(dir string) error { return box.WriteEngineFiles(cfg, dir) },
 	}
+	// box/accounts.json: when the added accounts change, restart the engine
+	// so it reads its two account lists again (box/accounts.go). A change
+	// made through the box API reloads at once; a hand edit within 5 s.
+	// Seed the baseline before the engine first reads the lists, so a change
+	// made while havend starts up still reloads it (Tron #2374).
+	accountsWatch := &box.AccountsWatch{Config: cfg, Engine: engine}
+	accountsWatch.Seed()
 	if err := engine.Start(ctx, vaultDir); err != nil {
 		return fmt.Errorf("starting the vault engine: %w", err)
 	}
+
+	accounts := box.NewAccountStore(cfg)
+	accounts.Changed = func() { accountsWatch.Check() }
 
 	api := &box.API{
 		Auth:       box.NewOwnerAuth(cfg.OwnerHex),
@@ -147,7 +173,9 @@ func run(args []string) error {
 			FreeOf:   func(p string) (uint64, error) { d, err := box.DiskOf(p); return d.Free, err },
 			Headroom: 256 << 20,
 		},
-		Updater: &box.Updater{Hook: cfg.UpdateHook, BoxDir: cfg.BoxDir(), Store: cfg.UpdateVia},
+		Updater:   &box.Updater{Hook: cfg.UpdateHook, BoxDir: cfg.BoxDir(), Store: cfg.UpdateVia},
+		Accounts:  accounts,
+		JoinCodes: box.NewJoinCodes(),
 	}
 	// The owner's 10063 decides which devices nv-mesh lets in: read it now
 	// and every 30 s, so an approval or a removal reaches the mesh by itself.
@@ -155,6 +183,8 @@ func run(args []string) error {
 	// when the vault has no list, or while theirs is newer than the vault's
 	// (box.RelayServerLists.Poll).
 	go api.Devices.Run(ctx, 30*time.Second)
+	go engineDevices.Run(ctx, 5*time.Second)
+	go accountsWatch.Run(ctx, 5*time.Second)
 
 	front := &box.Front{API: api, Engine: box.EngineProxy(cfg.EnginePort)}
 	if cfg.WebDir != "" {
