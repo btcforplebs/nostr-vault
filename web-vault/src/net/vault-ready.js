@@ -9,6 +9,7 @@ import { fetchProfiles, namesIn } from "./profiles.js"
 import { noteAuthors } from "./feeds.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./pool.js"
 import { ownPostRelays } from "./own-relays.js"
+import { markRan } from "./vault-history.js"
 
 /** The steps, in the order the screen lists them. */
 export const STEPS = [
@@ -100,6 +101,9 @@ export async function prepareVault({ vault, pubkey, local, early, log = () => {}
     ? setup({ vault, session: { pubkey }, account }).then(j => {
       say("notes", { state: "active", count: j?.stored ?? 0 })
       say("notes", { state: j?.status === "failed" ? "failed" : "done" })
+      // A complete setup import is an import: the dashboard's "Import notes" row says when it last ran, as Apple
+      // stamps any complete import, the wizard's included (RelayProcessManager.swift). Partial doesn't count.
+      if (j?.status === "done") markRan(pubkey, "notesImport")
       log("prepare", { step: "notes", setup: j?.status, reason: j?.reason })
     })
     : run("notes", syncOwn(vault, pubkey, writeRelays).then(n => say("notes", { state: "active", count: n })))
