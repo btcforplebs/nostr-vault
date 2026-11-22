@@ -27,7 +27,9 @@ struct YourDevicesSection: View {
     var body: some View {
         DashboardSection(title: "Your devices") {
             ForEach(devices) { device in
-                if device.role == .mac {
+                // A phone's Mac row opens its desktop sync page. On a Mac that
+                // page is this vault's own address, so another Mac is just a device.
+                if device.role == .mac && opensDesktopSync {
                     DashboardRowLink(icon: device.role.icon, title: device.displayName, detail: macDetail, state: dotState(device)) {
                         MacSyncSettingsPage().settingsPage("Desktop vault sync")
                     }
@@ -55,6 +57,14 @@ struct YourDevicesSection: View {
             PairDeviceView()
                 .environmentObject(configService)
         }
+    }
+
+    private var opensDesktopSync: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
     }
 
     /// The existing Mesh settings screen, as Settings › Mesh opens it.

@@ -28,7 +28,18 @@ final class VaultSection: ObservableObject {
 }
 
 private struct InVaultTabKey: EnvironmentKey { static let defaultValue = false }
+private struct VaultPageShowingKey: EnvironmentKey { static let defaultValue = true }
 extension EnvironmentValues {
+    /// False inside a Vault half that is built but hidden (the other half is
+    /// on screen, or the Mac's dashboard page covers the Vault). Its keyboard
+    /// shortcuts read it, so a hidden ⌘R/⌘F never answers. Shortcuts only:
+    /// `.disabled` would also disable every sheet the hidden half presents,
+    /// and the Vault Dashboard is one of them.
+    var vaultPageShowing: Bool {
+        get { self[VaultPageShowingKey.self] }
+        set { self[VaultPageShowingKey.self] = newValue }
+    }
+
     /// True inside the Vault tab, where Media is one of the relay's modes and
     /// the mode switch is the dropdown pill.
     var inVaultTab: Bool {
@@ -46,20 +57,27 @@ struct VaultTabView<Notes: View>: View {
     /// The gallery is built the first time Media shows, then kept. Until then
     /// a Vault visit doesn't pay for its thumbnails, rescan and mirroring.
     @State private var mediaBuilt = false
+    /// False while the Mac's dashboard page covers the whole Vault.
+    @Environment(\.vaultPageShowing) private var pageShowing
 
     private var notesShow: Bool { !section.showsMedia && !section.showsEmoji }
 
     var body: some View {
         ZStack {
+            // A hidden half's shortcuts stay quiet (`vaultPageShowing`): on
+            // the Mac both halves bind ⌘R (Media, Messages) and ⌘F. Not
+            // `.disabled`: that greys out the sheets the half presents.
             notes()
                 .opacity(notesShow ? 1 : 0)
                 .allowsHitTesting(notesShow)
                 .accessibilityHidden(!notesShow)
+                .environment(\.vaultPageShowing, pageShowing && notesShow)
             if mediaBuilt || section.showsMedia {
                 MediaTabView()
                     .opacity(section.showsMedia ? 1 : 0)
                     .allowsHitTesting(section.showsMedia)
                     .accessibilityHidden(!section.showsMedia)
+                    .environment(\.vaultPageShowing, pageShowing && section.showsMedia)
             }
             // Built only while shown: it holds no scroll worth keeping.
             if section.showsEmoji {

@@ -18,6 +18,8 @@ struct MediaGalleryView: View {
     /// The Duo: no floating Vault button on the Vault tab (`showsDashboardButton`).
     @Environment(\.dockInCameraStrip) private var dockInCameraStrip
     @Environment(\.inVaultTab) var inVaultTab
+    /// False while the Vault shows another page over the gallery.
+    @Environment(\.vaultPageShowing) var vaultPageShowing
     @StateObject var feedService = FeedService.shared
     @ObservedObject var blossomCache = BlossomMediaCache.shared
 
@@ -475,7 +477,7 @@ struct MediaGalleryView: View {
                     color: .havenPurple,
                     action: { refreshAll() }
                 )
-                .keyboardShortcut("r", modifiers: .command)
+                .keyboardShortcut(vaultPageShowing ? KeyboardShortcut("r", modifiers: .command) : nil)
 
                 // The Media Servers page from the gallery (the floating button
                 // is iOS-only).

@@ -14,6 +14,7 @@ struct VaultDashboardView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var statsService: StatsService
+    @Environment(\.vaultActivityBeside) private var activityBeside
     @ObservedObject private var mirrorService = MirrorService.shared
     @ObservedObject private var followingBackup = FollowingBackupService.shared
     @ObservedObject private var feedService = FeedService.shared
@@ -45,7 +46,7 @@ struct VaultDashboardView: View {
                 StillToBringInSection()
                 keepItFullSection
                 settingsSection
-                activitySection
+                if !activityBeside { activitySection }
                 advancedSection
             }
             .padding(.horizontal, 16)
@@ -170,22 +171,18 @@ struct VaultDashboardView: View {
                 statusMenu
             }
 
-            if let problemText {
-                Text(problemText)
-                    .font(.appSystem(size: 13))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button(action: fixRelay) {
-                    Text(runState == .paused ? "Start vault" : "Restart vault")
-                        .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(.onAccent)
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 44)
-                        .background(Color.havenPurple, in: RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
+            #if os(macOS)
+            // The Mac keeps its recovery banner: Force Restart, Clear Locks Only.
+            if runState == .needsFix {
+                MacVaultLockBanner()
+            } else if let problemText {
+                problemFix(problemText)
             }
+            #else
+            if let problemText {
+                problemFix(problemText)
+            }
+            #endif
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -199,6 +196,24 @@ struct VaultDashboardView: View {
         )
         .animation(Motion.toggle, value: problemText == nil)
         .tutorialAnchor(TutorialContent.relayStatus)
+    }
+
+    @ViewBuilder
+    private func problemFix(_ problemText: String) -> some View {
+        Text(problemText)
+            .font(.appSystem(size: 13))
+            .foregroundColor(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+        Button(action: fixRelay) {
+            Text(runState == .paused ? "Start vault" : "Restart vault")
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(.onAccent)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 44)
+                .background(Color.havenPurple, in: RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
     }
 
     /// The halo pulses through a value-scoped animation on the halo alone, so
@@ -507,6 +522,12 @@ struct VaultDashboardView: View {
                 }
                 .disabled(exporter.isBusy || !actionsEnabled)
             }
+            #if os(macOS)
+            if MacVaultImportProgress.isVisible(relayManager: relayManager, mirror: mirrorService) {
+                DashboardDivider()
+                MacVaultImportProgress()
+            }
+            #endif
             DashboardDivider()
             RestoreBackupRow()
             if !actionsEnabled || !exporter.statusMessage.isEmpty {
@@ -569,10 +590,13 @@ struct VaultDashboardView: View {
             SettingLink(icon: "server.rack", title: "Media Servers", value: "\(config.activeBlossomMirrors.count)") {
                 BlossomSettingsView().settingsPage("Media Servers")
             }
+            #if os(iOS)
+            // A phone's link to its desktop vault; on a Mac this vault is the desktop one.
             DashboardDivider()
             SettingLink(icon: "laptopcomputer", title: "Desktop vault sync", value: config.macRelayURL.isEmpty ? "Off" : "On") {
                 MacSyncSettingsPage().settingsPage("Desktop vault sync")
             }
+            #endif
             DashboardDivider()
             Toggle(isOn: Binding(
                 get: { configService.config.autoStartRelay },
@@ -603,6 +627,10 @@ struct VaultDashboardView: View {
                 RelayDetailsPage().settingsPage("Relay details")
             }
             // Mesh settings is in Your Devices on every platform (YourDevicesSection), its one home here.
+            #if os(macOS)
+            DashboardDivider()
+            MacVaultAdvancedRows()
+            #endif
         }
     }
 

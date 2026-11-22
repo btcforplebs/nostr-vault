@@ -297,14 +297,15 @@ struct MenuBarIconLabel: View {
 /// window had focus. ⌘, is the Settings scene's own App-menu item.
 struct MacAppCommands: Commands {
     private static let goItems: [(title: String, tab: MenuBarView.Tab, key: KeyEquivalent)] = [
-        // The rail's order (MacRail), so ⌘1–7 count down it.
+        // The rail's order (MacRail), so ⌘1–5 count down it; ⌘6 and ⌘7 are
+        // pages of the one Vault (MacVaultFold), on the keys they always had.
         ("Feed", .feed, "1"),
         ("Search", .search, "2"),
         ("Profile", .profile, "3"),
         ("Web of Trust", .wot, "4"),
         ("Vault", .notes, "5"),
-        ("Media", .media, "6"),
-        ("Relay", .relay, "7"),
+        ("Vault Media", .media, "6"),
+        (VaultDashboard.title, .relay, "7"),
     ]
 
     var body: some Commands {
