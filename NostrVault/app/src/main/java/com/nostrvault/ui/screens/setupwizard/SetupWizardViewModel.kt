@@ -60,7 +60,7 @@ import javax.inject.Inject
 internal const val IMPORT_TOUR_START_DATE = "2023-01-01"
 
 enum class WizardStep {
-    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, USE_NOSTR_KEY, REFERRER, NEW_TO_VAULT, RELAY_CHECK, IMPORT_TOUR,
+    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_SPARE, KEY_PASSWORD, PROFILE, USE_NOSTR_KEY, REFERRER, NEW_TO_VAULT, RELAY_CHECK, IMPORT_TOUR,
     ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, COMPLETE
 }
 
@@ -320,12 +320,13 @@ class SetupWizardViewModel @Inject constructor(
 
     /** Steps for "New to Nostr" mode (Create an account). Setup screens r3
      *  (Logen 2026-11-22), same as iOS #2410: profile, ("Who told you",
-     *  added by withReferrerStep), your key, the lock, then the feed. The key
+     *  added by withReferrerStep), this key is you, keep a spare, lock it
+     *  in, then the feed (key steps: iOS #2416). The key
      *  is made silently when the path is picked. No relay choice (the
      *  built-in relay), Welcome to Nostr cards, relay list (the recommended
      *  one is published; Settings > Relays changes it) or done screen. */
     private val newUserSteps = listOf(
-        WizardStep.WELCOME, WizardStep.PROFILE, WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD,
+        WizardStep.WELCOME, WizardStep.PROFILE, WizardStep.NOSTR_INTRO, WizardStep.KEY_SPARE, WizardStep.KEY_PASSWORD,
     )
 
     /** Steps for "I already use Nostr" (the first question's No): your key,

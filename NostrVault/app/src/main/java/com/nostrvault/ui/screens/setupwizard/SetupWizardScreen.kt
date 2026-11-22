@@ -23,7 +23,7 @@ import kotlinx.coroutines.flow.first
 
 /**
  * Setup wizard for first-run onboarding: two questions (PLANS/NV_FIRST_RUN_ENTRY_PLAN_2026_11_05.md).
- * New to Nostr (Create an account): profile → Who told you → your key → lock → feed (setup screens r3, iOS #2410).
+ * New to Nostr (Create an account): profile → Who told you → this key is you → keep a spare → lock it in → feed (setup screens r3, iOS #2410).
  * I already use Nostr: relay choice → your key → New to Nostr Vault? → Yes: relay check → import tour;
  *   No: copy from the other vault (two scans), then the same relay check → import tour.
  * Port of SetupWizardView.swift.
@@ -108,7 +108,8 @@ fun SetupWizardScreen(
                     // Drawn outside this scrolling column; see FrontDoor above.
                     WizardStep.WELCOME -> Unit
                     WizardStep.RELAY_CHOICE -> RelayChoiceStep(viewModel)
-                    WizardStep.NOSTR_INTRO -> NostrIntroStep(viewModel)
+                    WizardStep.NOSTR_INTRO -> KeyIsYouStep(viewModel)
+                    WizardStep.KEY_SPARE -> KeySpareStep(viewModel)
                     WizardStep.KEY_PASSWORD -> KeyPasswordStep(viewModel, onComplete)
                     WizardStep.USE_NOSTR_KEY -> UseNostrKeyStep(viewModel)
                     WizardStep.REFERRER -> ReferrerStep(viewModel)
