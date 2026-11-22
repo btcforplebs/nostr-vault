@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package main
 
 // The trust rank crawler (pkg/trustrank), run by the always-on Haven server
