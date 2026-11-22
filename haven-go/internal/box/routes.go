@@ -13,21 +13,37 @@ const (
 	// one that claimed it and runs it: update, move, restart, backup and
 	// restore, adding and removing accounts.
 	FirstAccount Level = iota
-	// SignedIn: any account that has signed in to this box. Nothing uses it
-	// yet: until the box holds several accounts (E8, E9) the NIP-98 check
-	// admits the first account only, and every route is FirstAccount.
+	// SignedIn: any account that has signed in to this box (the first
+	// account, or an added one that joined with a code: accounts_auth.go).
 	SignedIn
+	// Anyone: any valid NIP-98 signer, even a key the box does not hold or
+	// holds watch-only. Only for asking "does this box hold me" and for
+	// joining with a one-time code (routes_accounts.go); nothing else.
+	Anyone
 )
 
 // Caller is who asked: the account whose NIP-98 proof the request carried.
+// The zero value may use only Anyone routes.
 type Caller struct {
-	Pubkey string // hex
-	First  bool   // the box's first account
+	Pubkey   string // hex
+	First    bool   // the box's first account
+	SignedIn bool   // an added account that has signed in to the box
 }
+
+// member: the first account or a signed-in one; the only callers that get
+// past the box API's door to anything but Anyone routes.
+func (c Caller) member() bool { return c.First || c.SignedIn }
 
 // may: c may use a route of level l.
 func (c Caller) may(l Level) bool {
-	return c.First || l == SignedIn
+	switch l {
+	case Anyone:
+		return true
+	case SignedIn:
+		return c.member()
+	default:
+		return c.First
+	}
 }
 
 // routeFunc answers one checked box API route for caller c. body is the
@@ -51,9 +67,15 @@ func handle(path string, level Level, f routeFunc) {
 	boxRoutes[path] = route{level: level, serve: f}
 }
 
-// callerOf: who a request that passed the NIP-98 check came from. Today the
-// check admits the first account only (OwnerAuth), so the caller is always
-// it; when added accounts can sign in (E9) the check will name the signer.
-func (a *API) callerOf(*http.Request) Caller {
-	return Caller{Pubkey: strings.ToLower(a.Auth.OwnerHex), First: true}
+// callerOf: who signed a request that passed the NIP-98 check: the first
+// account, a signed-in added account, or (watch-only or unknown) nobody.
+func (a *API) callerOf(pubkey string) Caller {
+	pubkey = strings.ToLower(pubkey)
+	if pubkey == strings.ToLower(a.Auth.OwnerHex) {
+		return Caller{Pubkey: pubkey, First: true}
+	}
+	if a.Accounts != nil && a.Accounts.StateOf(pubkey) == StateSignedIn {
+		return Caller{Pubkey: pubkey, SignedIn: true}
+	}
+	return Caller{Pubkey: pubkey}
 }

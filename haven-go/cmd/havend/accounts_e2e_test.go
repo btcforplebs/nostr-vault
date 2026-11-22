@@ -123,10 +123,47 @@ func TestBoxAccountsEndToEnd(t *testing.T) {
 		}
 	}
 
+	// readPrivate: how many notes k gets back from a REQ at /private after
+	// AUTH. A refused REQ (CLOSED, or no answer) counts as none.
+	readPrivate := func(k key) int {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		r, err := nostr.RelayConnect(ctx, "ws://127.0.0.1:"+strconv.Itoa(port)+"/private")
+		if err != nil {
+			return 0
+		}
+		defer r.Close()
+		time.Sleep(500 * time.Millisecond)
+		if err := r.Auth(ctx, func(e *nostr.Event) error { return e.Sign(k.sk) }); err != nil {
+			return 0
+		}
+		evs, err := r.QuerySync(ctx, nostr.Filter{Kinds: []int{1}, Limit: 50})
+		if err != nil {
+			return 0
+		}
+		return len(evs)
+	}
+
 	mustPost("first account", owner)
 	mustPost("signed-in added account", signed)
 	mustRefuse("watch-only added account", watch)
 	mustRefuse("stranger", stranger)
+
+	// Reads (Tron #2375): the readers see the private notes; a watch-only
+	// account and a stranger get none. The owner's count is the control that
+	// this REQ can return notes at all.
+	if n := readPrivate(owner); n < 2 {
+		t.Fatalf("first account read %d private notes, want 2+", n)
+	}
+	if n := readPrivate(signed); n < 2 {
+		t.Fatalf("signed-in account read %d private notes, want 2+", n)
+	}
+	if n := readPrivate(watch); n != 0 {
+		t.Fatalf("watch-only added account read %d private notes, want 0", n)
+	}
+	if n := readPrivate(stranger); n != 0 {
+		t.Fatalf("stranger read %d private notes, want 0", n)
+	}
 
 	// Both lists are on disk, the readers list named and short.
 	var readers []string
@@ -170,4 +207,41 @@ func TestBoxAccountsEndToEnd(t *testing.T) {
 	engineUp()
 	mustRefuse("removed account", watch)
 	mustPost("first account after removals", owner)
+
+	// Through the box API: the first account makes a code, a new account
+	// joins with its own signature, and the engine reloads at once (no 5 s
+	// wait for the file check) so it reads the private side.
+	joiner := newKey(t)
+	mustRefuse("joiner before joining", joiner)
+	st, out := boxCall(t, base, owner, "POST", "/api/box/accounts/code", nil)
+	code, _ := out["code"].(string)
+	if st != 200 || code == "" {
+		t.Fatalf("code: %d %v", st, out)
+	}
+	jb, _ := json.Marshal(map[string]string{"code": code})
+	if st, out := boxCall(t, base, joiner, "POST", "/api/box/accounts/join", jb); st != 200 || out["state"] != "signedIn" {
+		t.Fatalf("join: %d %v", st, out)
+	}
+	deadline = time.Now().Add(30 * time.Second)
+	for {
+		lb, _ := os.ReadFile(logPath)
+		if strings.Contains(string(lb), "accounts changed (2 accounts, 2 private readers)") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the join never reloaded the engine")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	time.Sleep(500 * time.Millisecond)
+	engineUp()
+	mustPost("joined account", joiner)
+	// The same code again, by someone else: spent.
+	if st, _ := boxCall(t, base, stranger, "POST", "/api/box/accounts/join", jb); st != 403 {
+		t.Fatalf("code reused: %d, want 403", st)
+	}
+	// A joined account is no first account: box controls stay closed.
+	if st, _ := boxCall(t, base, joiner, "GET", "/api/box/status", nil); st != 403 {
+		t.Fatalf("joined account status: %d, want 403", st)
+	}
 }

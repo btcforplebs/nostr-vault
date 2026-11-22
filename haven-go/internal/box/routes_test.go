@@ -11,9 +11,15 @@ import (
 // routes_*.go file cannot drop or rename a route without this failing.
 func TestRoutesRegistered(t *testing.T) {
 	want := []string{
+		"GET /api/box/accounts",
+		"GET /api/box/accounts/me",
 		"GET /api/box/devices",
 		"GET /api/box/status",
 		"GET /api/box/storage",
+		"POST /api/box/accounts/add",
+		"POST /api/box/accounts/code",
+		"POST /api/box/accounts/join",
+		"POST /api/box/accounts/remove",
 		"POST /api/box/move",
 		"POST /api/box/update",
 	}
@@ -27,23 +33,32 @@ func TestRoutesRegistered(t *testing.T) {
 	}
 }
 
-// Every route is first-account only until the box holds several accounts
-// (One Vault addendum A.4, E7: no behaviour change).
-func TestRoutesAreFirstAccountOnly(t *testing.T) {
+// Every route is first-account only except the two that let an account
+// ask whether the box holds it and join with a code (E9). Opening any other
+// route to more callers must be a deliberate edit here.
+func TestRouteLevels(t *testing.T) {
+	anyone := map[string]bool{"GET /api/box/accounts/me": true, "POST /api/box/accounts/join": true}
 	for path, rt := range boxRoutes {
-		if rt.level != FirstAccount {
-			t.Errorf("%s: level %d, want FirstAccount", path, rt.level)
+		want := FirstAccount
+		if anyone[path] {
+			want = Anyone
+		}
+		if rt.level != want {
+			t.Errorf("%s: level %d, want %d", path, rt.level, want)
 		}
 	}
 }
 
 func TestCallerLevels(t *testing.T) {
-	first, other := Caller{Pubkey: "a", First: true}, Caller{Pubkey: "b"}
-	if !first.may(FirstAccount) || !first.may(SignedIn) {
+	first, other, outsider := Caller{Pubkey: "a", First: true}, Caller{Pubkey: "b", SignedIn: true}, Caller{Pubkey: "c"}
+	if !first.may(FirstAccount) || !first.may(SignedIn) || !first.may(Anyone) {
 		t.Fatal("the first account may use every route")
 	}
-	if other.may(FirstAccount) || !other.may(SignedIn) {
-		t.Fatal("an added account may use only signed-in routes")
+	if other.may(FirstAccount) || !other.may(SignedIn) || !other.may(Anyone) {
+		t.Fatal("a signed-in added account may use only signed-in and anyone routes")
+	}
+	if outsider.may(FirstAccount) || outsider.may(SignedIn) || !outsider.may(Anyone) {
+		t.Fatal("a key the box does not hold may use only anyone routes")
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"slices"
+	"sync"
 	"time"
 )
 
@@ -90,6 +91,7 @@ type AccountsWatch struct {
 	Config Config
 	Engine Reloader
 
+	mu   sync.Mutex // Run's ticks and AccountStore.Changed both call Check
 	last EngineLists
 	have bool
 }
@@ -102,6 +104,12 @@ type AccountsWatch struct {
 // (Tron #2374). A change between Seed and the engine's start costs one extra
 // reload, never a missed one.
 func (w *AccountsWatch) Seed() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.seed()
+}
+
+func (w *AccountsWatch) seed() {
 	w.last, w.have = ListsFor(w.Config.OwnerNpub, LoadAccounts(w.Config.AccountsFile())), true
 }
 
@@ -109,8 +117,10 @@ func (w *AccountsWatch) Seed() {
 // since Seed or the last Check. Without a Seed, the first Check only records
 // them. Reports whether it asked for a reload.
 func (w *AccountsWatch) Check() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if !w.have {
-		w.Seed()
+		w.seed()
 		return false
 	}
 	now := ListsFor(w.Config.OwnerNpub, LoadAccounts(w.Config.AccountsFile()))
