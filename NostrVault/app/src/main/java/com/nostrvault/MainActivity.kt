@@ -316,6 +316,9 @@ class MainActivity : FragmentActivity() {
                             com.nostrvault.tutorials.TutorialStage(account = { nostrService.activeHexPubkey })
                             // Accounts a later copy or catch-up brought over: asked, never added unasked.
                             com.nostrvault.ui.screens.CopyAccountsAskSheet(copyAccountsSync, enabled = config.hasCompletedSetup)
+                            // The account's key went into memory only: say so, never fall back to the config file.
+                            val ownerKeyNotSaved by configStore.ownerKeyNotSaved.collectAsState()
+                            com.nostrvault.ui.components.OwnerKeyNotSavedDialog(ownerKeyNotSaved)
                         }
                     }
                 }

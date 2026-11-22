@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.io.File
+import java.security.KeyStore
 
 /**
  * Encrypted credential storage -- port of CredentialStore.swift.
@@ -123,9 +124,25 @@ object CredentialStore {
         FreshStoreSwap(storeFile(context), deleteLive = { context.deleteSharedPreferences(PREFS_NAME) })
 
     private fun open(context: Context): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
+        // Read before the open: a failed create can leave a part-written file behind.
+        val nothingEncrypted = nothingEncryptedYet(context)
+        return openFreshKeyRetry(
+            nothingEncrypted = nothingEncrypted,
+            deleteMasterKey = {
+                KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                    .deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+                context.deleteSharedPreferences(PREFS_NAME)
+            },
+        ) { encryptedPrefs(context) }
+    }
+
+    private fun encryptedPrefs(context: Context): SharedPreferences {
+        val masterKey = withStrongBoxFallback { strongBox ->
+            MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .setRequestStrongBoxBacked(strongBox)
+                .build()
+        }
         return EncryptedSharedPreferences.create(
             context,
             PREFS_NAME,
@@ -133,6 +150,55 @@ object CredentialStore {
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
         )
+    }
+
+    /**
+     * Nothing on this phone is encrypted with the master key yet: no store
+     * file, and none of the copies [startFresh] keeps (`.pending-old`,
+     * `.unreadable-`), which need the same key to ever be read again.
+     */
+    private fun nothingEncryptedYet(context: Context): Boolean {
+        val dir = storeFile(context).parentFile ?: return false
+        if (!dir.exists()) return true
+        val files = dir.listFiles() ?: return false
+        return files.none { it.name.startsWith(PREFS_NAME) }
+    }
+
+    /**
+     * [open], and when that throws on a phone where [nothingEncrypted] (a
+     * StrongBox key that [MasterKey.Builder.build] made but the store can't
+     * use), the master key is deleted and [open] runs once more: the next key
+     * is made new, and [withStrongBoxFallback] can fall back to the keystore.
+     * The key is never deleted once anything was encrypted with it.
+     */
+    internal fun <T> openFreshKeyRetry(
+        nothingEncrypted: Boolean,
+        deleteMasterKey: () -> Unit,
+        open: () -> T,
+    ): T = try {
+        open()
+    } catch (e: Exception) {
+        if (!nothingEncrypted) throw e
+        Log.w(TAG, "a new store didn't open with its new master key; making the key again: ${e.message}")
+        deleteMasterKey()
+        strongBoxFailedOnce = true
+        open()
+    }
+
+    /** Set after a new StrongBox key couldn't be used: the retry asks for the keystore without it. */
+    @Volatile private var strongBoxFailedOnce = false
+
+    /**
+     * [build] with StrongBox asked for, and again without it when that throws
+     * (a phone that lists StrongBox but can't make the key there). Only a new
+     * master key lands in StrongBox: one already in the keystore is reused
+     * as it is, so existing installs keep their key and nothing migrates.
+     */
+    internal fun <T> withStrongBoxFallback(build: (strongBox: Boolean) -> T): T = try {
+        if (strongBoxFailedOnce) build(false) else build(true)
+    } catch (e: Exception) {
+        Log.w(TAG, "StrongBox master key failed, using the keystore without it: ${e.message}")
+        build(false)
     }
 
     /**
