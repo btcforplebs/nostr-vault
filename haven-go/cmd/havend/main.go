@@ -42,6 +42,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -60,6 +61,7 @@ var version = ""
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
+	log.SetOutput(io.MultiWriter(os.Stderr, box.BoxLog.Writer("box"))) // the box's log (GET /api/box/logs)
 	if err := run(os.Args[1:]); err != nil {
 		log.Fatalf("havend: %v", err)
 	}
