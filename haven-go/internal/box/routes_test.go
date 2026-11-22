@@ -13,7 +13,10 @@ func TestRoutesRegistered(t *testing.T) {
 	want := []string{
 		"GET /api/box/accounts",
 		"GET /api/box/accounts/me",
+		"GET /api/box/connections",
+		"GET /api/box/contents",
 		"GET /api/box/devices",
+		"GET /api/box/logs",
 		"GET /api/box/status",
 		"GET /api/box/storage",
 		"POST /api/box/accounts/add",
@@ -34,14 +37,18 @@ func TestRoutesRegistered(t *testing.T) {
 }
 
 // Every route is first-account only except the two that let an account
-// ask whether the box holds it and join with a code (E9). Opening any other
-// route to more callers must be a deliberate edit here.
+// ask whether the box holds it and join with a code (E9), and the read
+// routes any signed-in account may use (E4). Opening any other route to
+// more callers must be a deliberate edit here.
 func TestRouteLevels(t *testing.T) {
 	anyone := map[string]bool{"GET /api/box/accounts/me": true, "POST /api/box/accounts/join": true}
+	signedIn := map[string]bool{"GET /api/box/contents": true, "GET /api/box/connections": true}
 	for path, rt := range boxRoutes {
 		want := FirstAccount
 		if anyone[path] {
 			want = Anyone
+		} else if signedIn[path] {
+			want = SignedIn
 		}
 		if rt.level != want {
 			t.Errorf("%s: level %d, want %d", path, rt.level, want)
