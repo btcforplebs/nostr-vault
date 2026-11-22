@@ -69,7 +69,8 @@ import kotlinx.coroutines.withContext
     }
 
     /**
-     * Refused while the name holds a secret key: people paste their nsec into
+     * Next on Edit Profile; the name and photo are both optional. Refused
+     * while the name holds a secret key: people paste their nsec into
      * this box to sign in, and it would go out as the new account's name.
      */
     fun SetupWizardViewModel.advanceFromProfile() {
@@ -78,13 +79,6 @@ import kotlinx.coroutines.withContext
             return
         }
         _profileNameError.value = null
-        _step.value = stepAfter(WizardStep.PROFILE)
-    }
-
-    fun SetupWizardViewModel.skipProfile() {
-        _profileName.value = ""
-        _profileNameError.value = null
-        _profilePhotoJpeg.value = null
         _step.value = stepAfter(WizardStep.PROFILE)
     }
 
