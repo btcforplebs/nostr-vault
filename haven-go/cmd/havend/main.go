@@ -144,7 +144,6 @@ func run(args []string) error {
 	}
 
 	accounts := box.NewAccountStore(cfg)
-	accounts.Changed = func() { accountsWatch.Check() }
 
 	api := &box.API{
 		Auth:       box.NewOwnerAuth(cfg.OwnerHex),
@@ -185,6 +184,18 @@ func run(args []string) error {
 	// when the vault has no list, or while theirs is newer than the vault's
 	// (box.RelayServerLists.Poll).
 	go api.Devices.Run(ctx, 30*time.Second)
+	// An account added, removed or signed in changes who vouches for
+	// devices: re-read the lists and hand nv-mesh the result now, not at
+	// the next 30 s poll and 5 s sync (Tron #2376).
+	accounts.Changed = func() {
+		accountsWatch.Check()
+		go func() {
+			api.Devices.Refresh(ctx)
+			if _, err := engineDevices.Sync(); err != nil {
+				log.Printf("box: engine devices: %v", err)
+			}
+		}()
+	}
 	go engineDevices.Run(ctx, 5*time.Second)
 	go accountsWatch.Run(ctx, 5*time.Second)
 

@@ -111,7 +111,8 @@ type ServerListSource interface {
 //
 // Newest (the devices screen) asks them all at once. Poll (Devices.Run, every
 // 30 s) asks the vault alone, and the directory relays only every
-// DirectoryEvery, when the vault has no list, or while the last directory
+// DirectoryEvery, when the vault has no list (unless the directory had
+// none either last time it was asked), or while the last directory
 // answer was newer than the vault's (the vault isn't getting the owner's
 // lists, so the relays stay on every poll until it catches up). Dialling the
 // vault plus 4 directory relays every 30 s was 11,520 connects a day (Tidy's
@@ -129,6 +130,11 @@ type RelayServerLists struct {
 	mu      sync.Mutex
 	dirAt   map[string]time.Time // the last time the directory relays were asked
 	lagging map[string]bool      // their last answer was newer than the vault's
+	// dirEmpty: the vault and the directory both had no list the last time
+	// the directory was asked. Such an account (a signed-in one that never
+	// made a 10063) waits DirectoryEvery for the next ask, not 30 s
+	// (Tron #2376: L7's cost again per account otherwise).
+	dirEmpty map[string]bool
 }
 
 type foundList struct {
@@ -149,7 +155,7 @@ func (s *RelayServerLists) Poll(ctx context.Context, ownerHex string) (*nostr.Ev
 	if every == 0 {
 		every = 10 * time.Minute
 	}
-	due := len(s.Directory) > 0 && (vault == nil || s.lagging[ownerHex] || time.Since(s.dirAt[ownerHex]) >= every)
+	due := len(s.Directory) > 0 && ((vault == nil && !s.dirEmpty[ownerHex]) || s.lagging[ownerHex] || time.Since(s.dirAt[ownerHex]) >= every)
 	s.mu.Unlock()
 	if !due {
 		return s.settle(ownerHex, vault, nil, false)
@@ -164,10 +170,11 @@ func (s *RelayServerLists) settle(ownerHex string, vault, dir *nostr.Event, aske
 	if askedDir {
 		s.mu.Lock()
 		if s.dirAt == nil {
-			s.dirAt, s.lagging = map[string]time.Time{}, map[string]bool{}
+			s.dirAt, s.lagging, s.dirEmpty = map[string]time.Time{}, map[string]bool{}, map[string]bool{}
 		}
 		s.dirAt[ownerHex] = time.Now()
 		s.lagging[ownerHex] = dir != nil && (vault == nil || dir.CreatedAt > vault.CreatedAt)
+		s.dirEmpty[ownerHex] = dir == nil && vault == nil
 		s.mu.Unlock()
 	}
 	switch {

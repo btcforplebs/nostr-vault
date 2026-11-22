@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/nbd-wtf/go-nostr"
 )
@@ -95,5 +96,54 @@ func TestAccountStoreReadersAreFirstAndSignedIn(t *testing.T) {
 	SaveAccounts(s.Path, []Account{{Npub: npubOf(t, watch)}, {Npub: npubOf(t, signed), SignedIn: true}})
 	if got := s.Readers(); !slices.Equal(got, []string{owner.pk, signed.pk}) {
 		t.Fatalf("Readers = %v", got)
+	}
+}
+
+// Tron #2376: the first account has no list, a signed-in account approved
+// the box and its phone. Removing that account must empty the file at once,
+// though no list is left to write from.
+func TestRemovingTheOnlyVouchingAccountShutsItsDevicesOut(t *testing.T) {
+	owner, signed := newTestKey(t), newTestKey(t)
+	boxKey, phone := newTestKey(t), newTestKey(t)
+	src := perKeyLists{signed.pk: serverList(t, signed, nostr.Now(), npubOf(t, boxKey), npubOf(t, phone))}
+	file := filepath.Join(t.TempDir(), "mesh-devices.json")
+	counted := []string{owner.pk, signed.pk}
+	d := &Devices{OwnerHex: owner.pk, Accounts: func() []string { return counted }, Mesh: testMeshID(t, boxKey), Source: src, DevicesFile: file}
+
+	d.Refresh(context.Background())
+	if got := readDevicesFile(t, file); !slices.Equal(got, []string{npubOf(t, phone)}) {
+		t.Fatalf("before removal: %v", got)
+	}
+	counted = []string{owner.pk}
+	d.Refresh(context.Background())
+	if got := readDevicesFile(t, file); len(got) != 0 {
+		t.Fatalf("a removed account's phone is still let in: %v", got)
+	}
+	// Still no list at all: the next read leaves the (now empty) file alone.
+	d.Refresh(context.Background())
+	if got := readDevicesFile(t, file); len(got) != 0 {
+		t.Fatalf("after removal: %v", got)
+	}
+}
+
+// slowLists answers after delay, so asking N accounts in turn would take N
+// delays.
+type slowLists struct{ delay time.Duration }
+
+func (s slowLists) Newest(ctx context.Context, _ string) (*nostr.Event, string) {
+	time.Sleep(s.delay)
+	return nil, "none"
+}
+
+func TestDevicesAskEveryAccountAtOnce(t *testing.T) {
+	keys := []string{}
+	for i := 0; i < 5; i++ {
+		keys = append(keys, newTestKey(t).pk)
+	}
+	d := &Devices{OwnerHex: keys[0], Accounts: func() []string { return keys }, Mesh: testMeshID(t, newTestKey(t)), Source: slowLists{200 * time.Millisecond}}
+	start := time.Now()
+	d.Refresh(context.Background())
+	if took := time.Since(start); took > 600*time.Millisecond {
+		t.Fatalf("5 accounts took %v; want about one answer's time", took)
 	}
 }

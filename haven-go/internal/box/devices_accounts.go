@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/nbd-wtf/go-nostr"
 )
@@ -57,16 +58,23 @@ func (d *Devices) counted() []string {
 	return out
 }
 
-// read asks get for every counted account's newest list, keeps each one
-// that is newer than what is known, forgets accounts no longer counted,
-// and writes mesh-devices.json from what is known.
+// read asks get for every counted account's newest list (all at once, so
+// dead relays cost one timeout, not one per account), keeps each one that
+// is newer than what is known, forgets accounts no longer counted, and
+// writes mesh-devices.json from what is known.
 func (d *Devices) read(ctx context.Context, get func(context.Context, string) (*nostr.Event, string)) DevicesReport {
 	accounts := d.counted()
 	found := make([]foundList, len(accounts))
+	var wg sync.WaitGroup
 	for i, pk := range accounts {
-		ev, src := get(ctx, pk)
-		found[i] = foundList{ev, src}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ev, src := get(ctx, pk)
+			found[i] = foundList{ev, src}
+		}()
 	}
+	wg.Wait()
 
 	d.wmu.Lock()
 	defer d.wmu.Unlock()
@@ -85,14 +93,21 @@ func (d *Devices) read(ctx context.Context, get func(context.Context, string) (*
 		}
 		d.lists[pk] = f
 	}
+	dropped := false
 	for pk := range d.lists {
 		if !keep[pk] {
 			delete(d.lists, pk) // removed, or no longer signed in
+			dropped = true
 		}
 	}
 	npub, pubkey, _ := d.Mesh.Read()
 	r := buildAccountsReport(npub, pubkey, accounts, d.lists)
-	if d.DevicesFile != "" && len(d.lists) > 0 {
+	// With no list known the file is left as it was (an outage must not
+	// drop every device), unless this read just forgot an account: then the
+	// lists left, even none, are the whole truth, and the removed account's
+	// devices must go now. A restart would not catch it later, since lists
+	// starts empty (Tron #2376).
+	if d.DevicesFile != "" && (len(d.lists) > 0 || dropped) {
 		devices := MeshDevices(r)
 		changed, err := writeMeshDevices(d.DevicesFile, devices)
 		if err != nil {
