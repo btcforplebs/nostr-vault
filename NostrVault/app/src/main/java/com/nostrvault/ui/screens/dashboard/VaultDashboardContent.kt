@@ -113,7 +113,8 @@ internal fun VaultDashboardContent(
     var lookForOldLists by rememberSaveable { mutableStateOf(com.nostrvault.service.ListHistoryScan.DEFAULT_ON) }
     val importProgress by vaultViewModel.importProgress.collectAsState()
     val importStatus by vaultViewModel.importStatusMessage.collectAsState()
-    val importCompleted by vaultViewModel.importCompleted.collectAsState()
+    /** How the last import ended; it stays as the Import notes row's detail until the next run (gap H). */
+    val importOutcome by vaultViewModel.importOutcome.collectAsState()
     val exportingNotes by vaultViewModel.isExportingJsonl.collectAsState()
     val exportingMedia by vaultViewModel.isExportingMedia.collectAsState()
     val exportStatus by vaultViewModel.exportStatus.collectAsState()
@@ -130,13 +131,6 @@ internal fun VaultDashboardContent(
         }
     }
     LaunchedEffect(history, followSavedAt, macSync) { now = System.currentTimeMillis() }
-    // A finished import's result stays a moment, then the row goes back to its "last ran" line.
-    LaunchedEffect(importCompleted) {
-        if (importCompleted) {
-            delay(3_000)
-            vaultViewModel.dismissImport()
-        }
-    }
 
     val isExternal = cfg.useExternalRelay
     val running = relayStatus == RelayForegroundService.RelayStatus.RUNNING
@@ -314,8 +308,12 @@ internal fun VaultDashboardContent(
             DashRow(
                 icon = Icons.Filled.ArrowCircleDown,
                 title = "Import notes",
-                detail = if (isImporting || importCompleted) importStatus.ifEmpty { "Importing…" }
-                else VaultDashboardModel.importNotesDetail(cfg.importStartDate, history.notesImport, now),
+                detail = VaultDashboardModel.importNotesRowDetail(
+                    isImporting = isImporting,
+                    liveStatus = importStatus,
+                    lastOutcome = importOutcome?.summary,
+                    idleDetail = VaultDashboardModel.importNotesDetail(cfg.importStartDate, history.notesImport, now),
+                ),
                 state = RowState.INFO,
                 progress = if (isImporting) importProgress else null,
             ) {
