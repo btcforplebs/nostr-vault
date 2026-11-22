@@ -78,3 +78,39 @@ func TestCappedPassRetriedOnceADay(t *testing.T) {
 		t.Fatal("an uncapped state is always let through")
 	}
 }
+
+// A capped retry that was paused halfway goes on at once, not a day later
+// (Tron #2394 must-fix 2).
+func TestPausedCappedRetryResumes(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	capped := trustrank.State{Capped: true}
+	if cappedRetryDue("acct2", capped, now) {
+		t.Fatal("fresh capped state should be held")
+	}
+	for _, cut := range []trustrank.State{
+		{Capped: true, Hop: 2},
+		{Capped: true, Hop: 1, Last: "ab"},
+	} {
+		if _, due := trustRankDue(cut, now); !due {
+			t.Fatalf("%+v not due", cut)
+		}
+		if !cappedRetryDue("acct2", cut, now.Add(time.Minute)) {
+			t.Fatalf("cut capped pass %+v held for a day", cut)
+		}
+		if retryingCap(cut) {
+			t.Fatalf("cut pass %+v counted as a fresh retry", cut)
+		}
+	}
+	if !retryingCap(capped) {
+		t.Fatal("fresh capped state is a retry")
+	}
+}
+
+func TestCappedRetryNeedsHeadroom(t *testing.T) {
+	if hasHeadroom(trustRankCap) || hasHeadroom(trustRankCap-trustRankHeadroom+1) {
+		t.Fatal("a full store has no headroom")
+	}
+	if !hasHeadroom(trustRankCap - trustRankHeadroom) {
+		t.Fatal("headroom at the line")
+	}
+}

@@ -389,6 +389,21 @@ func (s *Store) Compact() error {
 	if s.dead*2 < s.listsLen {
 		return nil
 	}
+	return s.compactLocked()
+}
+
+// Reclaim compacts whenever any record was replaced, so a store at its cap
+// gets back every replaced byte before a retry.
+func (s *Store) Reclaim() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.dead == 0 {
+		return nil
+	}
+	return s.compactLocked()
+}
+
+func (s *Store) compactLocked() error {
 	tmpPath := filepath.Join(s.dir, "lists.tmp")
 	tmp, err := os.OpenFile(tmpPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {

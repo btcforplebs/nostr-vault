@@ -32,7 +32,7 @@ const (
 	trustRankRefresh  = 24 * time.Hour     // ask for changed lists once a day
 	trustRankFullPass = 7 * 24 * time.Hour // read everything again weekly
 	trustRankIdle     = 5 * time.Minute    // between checks when nothing is due
-	trustRankPoll     = 5 * time.Second    // while waiting to be allowed
+	trustRankPoll     = 30 * time.Second   // while waiting to be allowed
 	trustRankAfterJob = time.Minute        // stay out of the way after real work
 )
 
@@ -132,12 +132,6 @@ func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
 		return
 	}
 	dir := trustRankDir()
-	store, err := trustrank.OpenStore(filepath.Join(dir, "wot_deep"), trustRankCap)
-	if err != nil {
-		log.Printf("trust rank: list store: %v", err)
-		return
-	}
-	defer store.Close()
 	var lastBusy time.Time
 	mayRun := func() bool {
 		now := time.Now()
@@ -150,6 +144,9 @@ func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
 	fetch := &trustrank.RelayFetcher{Pool: pool, Relays: config.ImportSeedRelays}
 	for ctx.Err() == nil {
 		ran := false
+		// The store (and its key index) is open only while a pass runs, so
+		// it is not held in RAM through the gaps between passes.
+		var store *trustrank.Store
 		for _, account := range trustRankAccounts() {
 			if ctx.Err() != nil || !mayRun() {
 				break
@@ -157,6 +154,18 @@ func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
 			st := trustrank.LoadState(dir, account)
 			refresh, due := trustRankDue(st, time.Now())
 			if !due || !cappedRetryDue(account, st, time.Now()) {
+				continue
+			}
+			if store == nil {
+				s, err := trustrank.OpenStore(filepath.Join(dir, "wot_deep"), trustRankCap)
+				if err != nil {
+					log.Printf("trust rank: list store: %v", err)
+					break
+				}
+				store = s
+			}
+			if retryingCap(st) && !roomAfterReclaim(store) {
+				log.Printf("trust rank: %s… store still full after compacting (%d KB), last result kept", account[:8], store.Bytes()>>10)
 				continue
 			}
 			c := &trustrank.Crawler{
@@ -179,6 +188,9 @@ func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
 					account[:8], len(res.People()), time.Since(start).Round(time.Second), store.Lists(), store.Bytes()>>10)
 			}
 		}
+		if store != nil {
+			store.Close()
+		}
 		wait := trustRankIdle
 		if !ran && !mayRun() {
 			wait = trustRankPoll
@@ -189,6 +201,27 @@ func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
 		}
 	}
 }
+
+// cutPass: a pass stopped halfway (paused), resumed at its place.
+func cutPass(st trustrank.State) bool { return st.Hop > 1 || st.Last != "" }
+
+// retryingCap: the next pass is a fresh retry of one that hit the cap.
+func retryingCap(st trustrank.State) bool { return st.Capped && !cutPass(st) }
+
+// trustRankHeadroom: a capped retry starts only with this much free under
+// the cap; with less it would fetch from hop 1 and stop at the cap again.
+const trustRankHeadroom = trustRankCap / 20
+
+// roomAfterReclaim compacts away replaced lists, then says whether the
+// store has headroom for a retry.
+func roomAfterReclaim(store *trustrank.Store) bool {
+	if err := store.Reclaim(); err != nil {
+		log.Printf("trust rank: compact: %v", err)
+	}
+	return hasHeadroom(store.Bytes())
+}
+
+func hasHeadroom(bytes int64) bool { return bytes <= trustRankCap-trustRankHeadroom }
 
 // trustRankDue: whether account's pass is due now, and whether it is a
 // refresh (changed lists only) or a full pass. A pass cut halfway is always
@@ -212,6 +245,11 @@ func trustRankDue(st trustrank.State, now time.Time) (refresh, due bool) {
 var trustRankCapped sync.Map // account -> time.Time of the capped pass
 
 func cappedRetryDue(account string, st trustrank.State, now time.Time) bool {
+	if cutPass(st) {
+		// A capped retry that was paused goes on at its place, not a day
+		// later; the hold is only for starting a retry over.
+		return true
+	}
 	if !st.Capped {
 		trustRankCapped.Delete(account)
 		return true

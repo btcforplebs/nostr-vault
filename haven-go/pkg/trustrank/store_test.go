@@ -306,3 +306,30 @@ func TestStorePutListKindByKind(t *testing.T) {
 		t.Fatal("per-kind times must survive a reopen")
 	}
 }
+
+// Reclaim compacts below Compact's half-dead line, so a capped store gets
+// every replaced byte back before a retry (Tron #2394 should-fix 4).
+func TestStoreReclaimBelowHalfDead(t *testing.T) {
+	s := openT(t, t.TempDir(), 0)
+	for i := 0; i < 10; i++ {
+		s.Put(pk(i), 10, []string{pk(i + 1)}, nil)
+	}
+	s.Put(pk(0), 11, []string{pk(2)}, nil) // one dead record of eleven
+	before := s.Bytes()
+	if err := s.Compact(); err != nil || s.Bytes() != before {
+		t.Fatalf("Compact under half dead should do nothing: %v %d -> %d", err, before, s.Bytes())
+	}
+	if err := s.Reclaim(); err != nil {
+		t.Fatal(err)
+	}
+	if s.Bytes() >= before {
+		t.Fatalf("reclaim did not shrink: %d -> %d", before, s.Bytes())
+	}
+	if s.Lists() != 10 {
+		t.Fatalf("lists %d", s.Lists())
+	}
+	after := s.Bytes()
+	if err := s.Reclaim(); err != nil || s.Bytes() != after {
+		t.Fatal("reclaim with nothing dead must be a no-op")
+	}
+}

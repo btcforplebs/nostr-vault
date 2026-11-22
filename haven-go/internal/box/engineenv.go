@@ -168,6 +168,11 @@ func EngineEnvList(c Config, vaultDir string, getenv func(string) string) []stri
 			env[k] = v
 		}
 	}
+	// NV_TRUST_RANK=off turns the trust rank crawler off on this box
+	// (haven-go trust_rank_job.go trustRankWanted).
+	if v := getenv("NV_TRUST_RANK"); v != "" {
+		env["TRUST_RANK"] = v
+	}
 	// S3 backups, when the installer set them, pass through under the
 	// engine's own names.
 	if p := getenv("NV_BACKUP_PROVIDER"); p != "" {
