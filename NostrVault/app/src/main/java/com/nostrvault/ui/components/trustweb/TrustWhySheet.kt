@@ -79,8 +79,9 @@ internal fun TrustWhySheet(pubkey: String, me: String, copy: TrustRankCopy?, acc
             }
             Text(TrustWhyText.headline(why), color = accent, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             Text(TrustWhyText.place(why), color = PrimaryText, fontSize = 14.sp)
-            Text(TrustWhyText.followersTitle(why), color = SecondaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(top = 6.dp))
+            TrustWhyText.followersTitle(why)?.let {
+                Text(it, color = SecondaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+            }
             for (f in why.followers.take(TrustWhy.SHOWN)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     val profile = profiles[f.pubkey]

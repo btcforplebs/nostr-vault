@@ -43,6 +43,25 @@ class TrustWhyTest {
         assertEquals("No one you follow follows them", TrustWhyText.followersTitle(why))
     }
 
+    @Test fun `a relay floor of one is a floor too`() {
+        val why = TrustWhy.of(them, me, ranked, bridged(listOf(hi), exact = false))!!
+        assertEquals("At least 1 person you follow follows them", TrustWhyText.followersTitle(why))
+        assertEquals("1 person you follow follows them", TrustWhyText.followersTitle(TrustWhy.of(them, me, ranked, bridged(listOf(hi)))!!))
+    }
+
+    @Test fun `no one is said only when the path says outside`() {
+        // Still tracing: the file's ring 2 shows, the follower line waits.
+        assertEquals("Checking…", TrustWhyText.followersTitle(TrustWhy.of(them, me, ranked, null)!!))
+        // In the graph but no bridge seen, or no graph yet: no claim either way.
+        assertNull(TrustWhyText.followersTitle(TrustWhy.of(them, me, ranked, TrustPath(TrustPath.Reach.WEB, emptyList(), false))!!))
+        assertNull(TrustWhyText.followersTitle(TrustWhy.of(them, me, ranked, TrustPath(TrustPath.Reach.UNKNOWN, emptyList(), false))!!))
+        // A follow whose own follows aren't known.
+        val follow = copy(them to TrustRankCopy.Person(70.0, 1))
+        val why = TrustWhy.of(them, me, follow, TrustPath(TrustPath.Reach.FOLLOW, emptyList(), false))!!
+        assertEquals(1, why.hop)
+        assertNull(TrustWhyText.followersTitle(why))
+    }
+
     @Test fun `long lists are cut and counted`() {
         val many = (100 until 100 + TrustWhy.SHOWN + 3).map { "%064x".format(it) }
         val why = TrustWhy.of(them, me, ranked, bridged(many))!!
@@ -60,7 +79,7 @@ class TrustWhyTest {
 
     @Test fun `the sheet has no mute words`() {
         val why = TrustWhy.of(them, me, ranked, bridged(listOf(hi)))!!
-        val words = listOf(TrustWhyText.headline(why), TrustWhyText.place(why), TrustWhyText.followersTitle(why), TrustWhyText.HOW)
+        val words = listOfNotNull(TrustWhyText.headline(why), TrustWhyText.place(why), TrustWhyText.followersTitle(why), TrustWhyText.HOW)
         assertTrue(words.none { it.contains("mute", ignoreCase = true) })
     }
 }

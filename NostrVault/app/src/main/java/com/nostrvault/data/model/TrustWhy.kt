@@ -22,6 +22,8 @@ data class TrustWhy(
     val followers: List<Follower>,
     /** [followers] is everyone you follow who follows them (the links file). */
     val exact: Boolean,
+    /** What the live path found; null while it is still tracing. */
+    val reach: TrustPath.Reach?,
 ) {
     /** One of your follows who follows them; [score] null when your Haven's copy doesn't have them. */
     data class Follower(val pubkey: String, val score: Int?)
@@ -49,6 +51,7 @@ data class TrustWhy(
                 rankedAt = copy.builtAt,
                 followers = followers,
                 exact = path?.exact == true,
+                reach = path?.reach,
             )
         }
     }
@@ -64,11 +67,19 @@ object TrustWhyText {
         return "$hops from you · $bar"
     }
 
-    fun followersTitle(why: TrustWhy): String = when {
-        why.followers.isEmpty() -> "No one you follow follows them"
-        why.followers.size == 1 -> "1 person you follow follows them"
-        why.exact -> "${why.followers.size} people you follow follow them"
-        else -> "At least ${why.followers.size} people you follow follow them"
+    /**
+     * Null when the sheet can't say: in the graph with no bridge seen (WEB/UNKNOWN),
+     * or a follow whose own follows aren't known. "No one" only when the path says OUTSIDE.
+     */
+    fun followersTitle(why: TrustWhy): String? {
+        val n = why.followers.size
+        if (n == 0) return when (why.reach) {
+            null -> "Checking…"
+            TrustPath.Reach.OUTSIDE -> "No one you follow follows them"
+            else -> null
+        }
+        val who = if (n == 1) "person you follow follows" else "people you follow follow"
+        return if (why.exact) "$n $who them" else "At least $n $who them"
     }
 
     /** What the score is made of, in a sentence. */
