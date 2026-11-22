@@ -230,6 +230,18 @@ func TestEachAccountGetsItsOwnWeb(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Error("the pooled cache must stay")
 	}
+	// A public relay (level 0) builds nothing, and still clears them.
+	altPath := filepath.Join(filepath.Dir(path), accountCachePrefix+alt.pk+".json")
+	if _, err := os.Stat(altPath); err != nil {
+		t.Fatal("fixture: alt's file should exist")
+	}
+	NewSimpleInMemory(nil, owners(main), nil, 0, 0, 5, path, 60).Init(ctx)
+	if _, err := os.Stat(altPath); !os.IsNotExist(err) {
+		t.Error("level 0: a removed account's web file was left behind")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), accountCachePrefix+main.pk+".json")); err != nil {
+		t.Error("level 0: the remaining account's file must stay")
+	}
 }
 
 // An account can be at a higher level than the vault's single value. The

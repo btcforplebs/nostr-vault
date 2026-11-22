@@ -179,6 +179,6 @@ func (wt *SimpleInMemory) buildAccounts(ctx context.Context, started int64, owne
 		wt.saveAccountWeb(owner, web, links)
 	}
 	wt.webs.Store(&webs)
-	wt.removeOtherAccountFiles(webs)
+	wt.removeOtherAccountFiles(func(owner string) bool { return webs[owner] != nil })
 	slog.Info("🕸️ built a web per account", "accounts", len(webs))
 }
