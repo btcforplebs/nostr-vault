@@ -288,7 +288,8 @@ func (s *Store) Graph() (*Graph, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g := &Graph{index: make(map[string]int32, len(s.keys)), keys: make([]string, len(s.keys)),
-		follows: make([][]int32, len(s.keys)), mutes: make([][]int32, len(s.keys))}
+		follows: make([][]int32, len(s.keys)), mutes: make([][]int32, len(s.keys)),
+		listed: make(map[int32]bool, len(s.latest))}
 	for i, k := range s.keys {
 		pk := hex.EncodeToString(k[:])
 		g.keys[i] = pk
@@ -331,6 +332,7 @@ func (g *Graph) setIDs(r int32, follows, mutes []uint32) {
 		}
 	}
 	g.follows[r], g.mutes[r] = fs, ms
+	g.listed[r] = true
 }
 
 // Compact rewrites lists.bin with only the newest record per rater, when

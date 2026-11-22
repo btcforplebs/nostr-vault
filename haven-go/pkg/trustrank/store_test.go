@@ -245,3 +245,20 @@ func TestStoreCheckpointSyncsFirst(t *testing.T) {
 		t.Fatalf("checkpoint moved past a failed sync: %+v", got)
 	}
 }
+
+// The owner seen only inside someone else's list was never read, so Rank
+// must refuse it the same way it does for a Graph built with SetList.
+func TestStoreGraphOwnerListMustBeRead(t *testing.T) {
+	s := openT(t, t.TempDir(), 0)
+	s.Put(pk(1), 10, []string{pk(0)}, nil)
+	g, err := s.Graph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Rank(g, pk(0), nil, DefaultParams()); err == nil {
+		t.Fatal("owner without a stored list must not rank")
+	}
+	if _, err := Rank(g, pk(1), nil, DefaultParams()); err != nil {
+		t.Fatal(err)
+	}
+}
