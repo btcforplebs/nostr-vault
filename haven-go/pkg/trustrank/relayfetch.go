@@ -2,6 +2,7 @@ package trustrank
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
@@ -13,6 +14,30 @@ type RelayFetcher struct {
 	Pool    *nostr.SimplePool
 	Relays  []string
 	Timeout time.Duration // per relay (working: 8 s)
+
+	mu      sync.Mutex
+	benched map[string]time.Time // relay -> asked again after this
+}
+
+// benchFor: a relay that did not finish in time is skipped this long. One
+// that hangs (nos.lol on 2026-11-22: 15 s for an empty answer, past the
+// timeout, because the pool's dial ignores ctx) would otherwise cost every
+// list without a mute list its full wait.
+const benchFor = 10 * time.Minute
+
+func (f *RelayFetcher) usable(url string, now time.Time) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return now.After(f.benched[url])
+}
+
+func (f *RelayFetcher) bench(url string, now time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.benched == nil {
+		f.benched = map[string]time.Time{}
+	}
+	f.benched[url] = now.Add(benchFor)
 }
 
 // Fetch returns pubkey's newest kind 3 (follows) and kind 10000 (public
@@ -77,8 +102,30 @@ func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (be
 			ts := nostr.Timestamp(since)
 			filter.Since = &ts
 		}
+		if !f.usable(url, time.Now()) {
+			continue
+		}
 		rctx, cancel := context.WithTimeout(ctx, f.timeout())
-		for re := range f.Pool.FetchMany(rctx, []string{url}, filter) {
+		ch := f.Pool.FetchMany(rctx, []string{url}, filter)
+		for {
+			var re nostr.RelayEvent
+			var open bool
+			select {
+			case re, open = <-ch:
+			case <-rctx.Done():
+				// Out of time: stop waiting even if the pool has not let go
+				// of the channel yet, and skip this relay for a while.
+				if ctx.Err() == nil {
+					f.bench(url, time.Now())
+				}
+				go func() {
+					for range ch {
+					}
+				}()
+			}
+			if !open {
+				break
+			}
 			ev := re.Event
 			if ev == nil || ev.PubKey != pubkey {
 				continue
