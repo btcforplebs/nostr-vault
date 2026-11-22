@@ -101,6 +101,8 @@ internal fun ProfileHeader(
                 } else if (awaiting) {
                     Nip05Placeholder()
                 }
+                // How far they are from you, in true hops (discovery phase 4).
+                if (!isOwnProfile) ProfileHopLine(pubkey)
             }
         }
         PublicKeyWarning(pubkey)
