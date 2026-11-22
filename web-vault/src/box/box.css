@@ -1,5 +1,5 @@
-/* The box screens (BoxScreen.jsx): Settings' groups and rows, plus a value column, meters and the move form. */
-.box-screen .box-pad { padding: 10px 16px; margin: 0; }
+/* The box's sections in the Vault Dashboard (BoxFold.jsx): Settings' groups and rows, plus a value column, meters and the move form. */
+.box-screen .box-pad, .box-fold .box-pad { padding: 10px 16px; margin: 0; }
 .box-row { gap: 10px; }
 .box-row .settings-title { flex: 1 0 auto; display: flex; flex-direction: column; }
 .box-value { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #8e8e93); font-variant-numeric: tabular-nums; text-align: right; }
@@ -13,6 +13,3 @@
 .box-action[disabled] { opacity: 0.6; cursor: default; }
 .box-form { padding: 10px 16px; display: grid; gap: 10px; }
 .box-buttons { display: flex; gap: 8px; justify-content: flex-end; }
-/* The wide layout: beside the sidebar, as the relay screen (desktop.css .relay-host). */
-.desk-app .box-host { position: fixed; z-index: 4; top: 0; bottom: 0; right: 0; left: var(--side-w); overflow-y: auto; background: var(--bg); }
-.desk-app .box-host .screen { max-width: 760px; }

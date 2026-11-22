@@ -30,7 +30,8 @@ export function ActivitySection({ items, onViewAll }) {
 }
 
 /** The full activity, in the sheet in place of the dashboard (RelayActivityWindow). */
-export function ActivityWindow({ items, version = "" }) {
+/** `onFullLogs`: box mode, where Open full logs shows the box's own log (BoxLogView) instead of this browser's. */
+export function ActivityWindow({ items, version = "", onFullLogs }) {
   const [filter, setFilter] = useState("all")
   const [copied, setCopied] = useState(false)
   const h = health(items)
@@ -53,7 +54,7 @@ export function ActivityWindow({ items, version = "" }) {
         <button type="button" class="dash-button" disabled={!items.length} onClick={exportReport}>Export report</button>
       </div>
       <p class="muted small">Copies leave out keys, IDs, IP addresses and file paths.</p>
-      <a class="dash-link" href="#/settings/logs">Open full logs</a>
+      {onFullLogs ? <button type="button" class="dash-link" onClick={onFullLogs}>Open full logs</button> : <a class="dash-link" href="#/settings/logs">Open full logs</a>}
     </div>
   )
 }

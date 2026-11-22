@@ -1,4 +1,5 @@
-// The box screens (src/box/BoxScreen.jsx) over a mock box: every part shows, unknowns read "—", Move vault to… and
+// The Vault Dashboard in box mode (One Vault W1) over a mock box: the box's status card, the folded Box screen
+// sections (box/BoxFold.jsx), In your vault's numbers, Advanced and the box log; unknowns read "—", Move vault to… and
 // Update say what the box answered. Rendered through Vite's SSR loader into a small fake DOM. Nothing is sent anywhere.
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -38,7 +39,13 @@ globalThis.document = {
 globalThis.confirm = () => true
 const root = fileURLToPath(new URL("..", import.meta.url))
 const vite = await createServer({ root, configFile: false, logLevel: "silent", appType: "custom", server: { middlewareMode: true, hmr: false, ws: false }, oxc: { jsx: { runtime: "automatic", importSource: "preact" } } })
-const { BoxScreen } = await vite.ssrLoadModule("/src/box/BoxScreen.jsx")
+const { useBoxDashboard, boxStorage } = await vite.ssrLoadModule("/src/box/useBoxDashboard.js")
+const { BoxStatusDetails, BoxDevices, BoxStorage, BoxPublic, BoxUpdate } = await vite.ssrLoadModule("/src/box/BoxFold.jsx")
+const { BoxLogView } = await vite.ssrLoadModule("/src/box/BoxLogView.jsx")
+const { boxActivityItems, lineLevel } = await vite.ssrLoadModule("/src/box/box-activity.js")
+const { boxDashboardRedirect } = await vite.ssrLoadModule("/src/box/mode.js")
+const { StatusCard } = await vite.ssrLoadModule("/src/components/dashboard/StatusCard.jsx")
+const { AdvancedSection } = await vite.ssrLoadModule("/src/components/dashboard/AdvancedSection.jsx")
 const { boxApi } = await vite.ssrLoadModule("/src/box/api.js")
 const { mockBox } = await vite.ssrLoadModule("/src/box/mock.js")
 test.after(() => vite.close())
@@ -57,10 +64,28 @@ const fire = (n, name, extra = {}) => {
 const button = (el, label) => all(el).find(n => n.localName === "button" && n.textContent === label)
 
 
+// The dashboard's box-mode pieces, as VaultDashboard.jsx places them, without the browser vault's sections.
+function BoxDashboard({ api }) {
+  const box = useBoxDashboard({ signer }, { on: true, api })
+  const { usage, media } = boxStorage(box.data.contents)
+  return h("div", null,
+    h(StatusCard, { box: { status: box.data.status, connections: box.data.connections } }),
+    h(BoxStatusDetails, { box }), h(BoxDevices, { box }),
+    h("p", null, `usage ${usage ?? "?"} media ${media?.count ?? "?"}`),
+    h(BoxStorage, { box }), h(BoxPublic, { ctx: { signer }, box }),
+    h(AdvancedSection, { box: box.data.status?.value ?? null }, h(BoxUpdate, { box })),
+    h(BoxLogView, { state: box.data.logs }))
+}
+
+const mounted = new Set()
+// Unmounted after each test even when it failed, so the box poll's timer never keeps node running.
+test.afterEach(() => { for (const el of mounted) render(null, el); mounted.clear() })
+
 async function mount(fetchImpl = mockBox()) {
   const el = document.createElement("div")
-  render(h(BoxScreen, { ctx: { signer }, api: boxApi({ signer, base: "http://box.test/api/box", fetchImpl }) }), el)
-  for (let i = 0; i < 50 && /Asking the box/.test(el.textContent); i++) await tick(5)
+  mounted.add(el)
+  render(h(BoxDashboard, { api: boxApi({ signer, base: "http://box.test/api/box", fetchImpl }) }), el)
+  for (let i = 0; i < 50 && /Asking (the|your) box/.test(el.textContent); i++) await tick(5)
   return el
 }
 
@@ -68,6 +93,11 @@ test("status, storage, mesh, My Devices and Update all show from the box", async
   const el = await mount()
   const t = el.textContent
   for (const s of ["Status", "Storage", "Mesh", "My Devices", "Update"]) assert.ok(t.includes(s), s)
+  assert.match(t, /Your box is running/)
+  assert.match(t, /Up 3d 4h · version 1\.0\.0 · 2 connections/)
+  assert.ok(!/Closing the tab stops it/.test(t), "no browser-tab wording on a box")
+  assert.match(t, /usage 16600000000 media 4210/, "In your vault reads the box's split and media")
+  assert.match(t, /blossom: upload failed: disk full/, "the box's own log")
   assert.match(t, /for 3d 4h/)
   assert.match(t, /Version 1\.0\.0/)
   assert.match(t, /18\.4 GB of 512 GB/)
@@ -130,4 +160,42 @@ test("an update answered managed names the store, even when status had no update
   assert.match(el.textContent, /Update Nostr Vault from the Umbrel App Store\./)
   assert.ok(!/Updates are manual for now\. On the box/.test(el.textContent))
   render(null, el)
+})
+
+test("a box that doesn't answer says so on the card; a refused log says why and the rest still shows", async () => {
+  const box = mockBox()
+  const el = await mount(async (url, init) => url.endsWith("/status") ? new Response("{}", { status: 500 })
+    : url.includes("/logs") ? new Response("{}", { status: 403 }) : box(url, init))
+  assert.match(el.textContent, /Your box isn't answering/)
+  assert.match(el.textContent, /Only the box's owner can do this/)
+  assert.match(el.textContent, /usage 16600000000/)
+  render(null, el)
+})
+
+test("box log lines become activity items: problems and heads-ups by their words, keys and paths redacted", () => {
+  assert.equal(lineLevel("blossom: upload failed: disk full"), "problem")
+  assert.equal(lineLevel("import: retrying relay.example in 30s"), "headsUp")
+  assert.equal(lineLevel("box: engine started (pid 41)"), "good")
+  const [it] = boxActivityItems([{ seq: 1, at: 1700000000, source: "engine", text: `saved ${"ab".repeat(32)} to /data/vault/blossom` }])
+  assert.equal(it.at, 1700000000000)
+  assert.equal(it.text, "saved [id] to [path]")
+  assert.deepEqual(boxActivityItems(undefined), [])
+  // As a real box logs (seen live): Go's date prefix and the engine's colour codes come off, not into "[path]".
+  const [real] = boxActivityItems([{ seq: 2, at: 1, source: "engine", text: "2026/11/21 21:07:30 \u001b[32mINFO ✅ WoT initialized\u001b[0m" }])
+  assert.equal(real.text, "INFO ✅ WoT initialized")
+  assert.equal(boxActivityItems([{ seq: 3, at: 1, source: "engine", text: "\u001b[0m\t" }]).length, 0, "a colour-only line is left out")
+})
+
+test("on a box, #/relay and #/box open the Vault Dashboard; other addresses stay", () => {
+  for (const h of ["#/relay", "#/box", "#/relay?x=1", "#/box/"]) assert.equal(boxDashboardRedirect(h), "#/vault?sheet=dashboard", h)
+  for (const h of ["#/vault", "#/feed", "", "#/relayx", "#/settings/relays"]) assert.equal(boxDashboardRedirect(h), null, h)
+})
+
+test("Advanced in box mode: the box's uptime and version, and it runs on the box, not in this tab", () => {
+  const sec = AdvancedSection({ box: { uptime: 3 * 86400 + 4 * 3600, version: "1.0.0" } })
+  const lines = [sec.props.children].flat(3).filter(Boolean).flatMap(v => [v.props.children].flat(3)).filter(v => v?.props?.title).map(v => `${v.props.title}: ${v.props.value}`)
+  assert.deepEqual(lines, ["Running for: 3d 4h", "Version: 1.0.0", "Runs on: Your box"])
+  const unknown = AdvancedSection({ box: null })
+  const vals = [unknown.props.children].flat(3).filter(Boolean).flatMap(v => [v.props.children].flat(3)).filter(v => v?.props?.title).map(v => v.props.value)
+  assert.deepEqual(vals, ["—", "—", "Your box"], "unknown reads —")
 })
