@@ -72,7 +72,10 @@ fun RelayAccessSettingsScreen(
                 .padding(16.dp),
         ) {
             SectionLabel("Web of Trust")
-            StepperRow("Follow Distance", RelayAccessLimits.clampedFollowDistance(config.chatRelayWotDepth), RelayAccessLimits.FOLLOW_DISTANCE, 1, SettingsHelp.RELAY_WOT_DEPTH) {
+            StepperRow(
+                "Follow Distance", RelayAccessLimits.clampedFollowDistance(config.chatRelayWotDepth), RelayAccessLimits.FOLLOW_DISTANCE, 1,
+                SettingsHelp.RELAY_WOT_DEPTH, valueText = FollowDistanceWords.short(config.chatRelayWotDepth),
+            ) {
                 viewModel.setWotDepth(it)
             }
             StepperRow("Minimum Followers", config.chatRelayMinFollowers, 0..100, 1, SettingsHelp.RELAY_MIN_FOLLOWERS) {

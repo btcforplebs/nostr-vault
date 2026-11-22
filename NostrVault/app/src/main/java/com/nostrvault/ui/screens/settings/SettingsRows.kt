@@ -102,7 +102,8 @@ internal fun ToggleRow(
 
 /**
  * A stepper, as iOS: the label, the value (with its [unit], "/ min" say) in
- * secondary text, then − and +.
+ * secondary text, then − and +. [valueText] replaces the number where a
+ * level has words (Follow Distance).
  */
 @Composable
 internal fun StepperRow(
@@ -112,6 +113,7 @@ internal fun StepperRow(
     step: Int,
     help: SettingsHelp? = null,
     unit: String = "",
+    valueText: String? = null,
     onChange: (Int) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -120,7 +122,7 @@ internal fun StepperRow(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
     ) {
         RowLabel(label, help, modifier = Modifier.weight(1f))
-        Text("$value$unit", color = SecondaryText, fontSize = 15.sp)
+        Text(valueText ?: "$value$unit", color = SecondaryText, fontSize = 15.sp)
         IconButton(
             onClick = { onChange((value - step).coerceAtLeast(range.first)) },
             enabled = value > range.first,
