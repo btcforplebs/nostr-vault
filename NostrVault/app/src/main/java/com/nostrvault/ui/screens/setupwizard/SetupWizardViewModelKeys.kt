@@ -131,10 +131,16 @@ import kotlinx.coroutines.launch
         }
     }
 
-    /** Keys page → password page, once they've ticked that the nsec is saved. */
+    /** This key is you → keep a spare. */
     fun SetupWizardViewModel.advanceFromNostrIntro() {
         _error.value = null
         _step.value = stepAfter(WizardStep.NOSTR_INTRO)
+    }
+
+    /** Keep a spare → the lock, once they've ticked that the nsec is saved. */
+    fun SetupWizardViewModel.advanceFromKeySpare() {
+        _error.value = null
+        _step.value = stepAfter(WizardStep.KEY_SPARE)
     }
 
     /** Password page: encrypts the new key with it (NIP-49). It is the last

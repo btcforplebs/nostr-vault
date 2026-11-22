@@ -145,23 +145,27 @@ class SetupWizardRelayChoiceTest {
     }
 
     @Test
-    fun `new to nostr is profile, who told you, your key, lock, then the feed`() {
+    fun `new to nostr is profile, who told you, your key, spare, lock, then the feed`() {
         viewModel.setSetupPath(SetupPath.NEW_TO_NOSTR)
         assertEquals(
-            listOf(WizardStep.PROFILE, WizardStep.REFERRER, WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD),
+            listOf(WizardStep.PROFILE, WizardStep.REFERRER, WizardStep.NOSTR_INTRO, WizardStep.KEY_SPARE, WizardStep.KEY_PASSWORD),
             viewModel.activeSteps.drop(1),
         )
     }
 
     @Test
-    fun `profile, people, key and lock go forward and back in order`() {
+    fun `profile, people, key, spare and lock go forward and back in order`() {
         viewModel.choosePath(SetupPath.NEW_TO_NOSTR)
         viewModel.advanceFromProfile()
         assertEquals(WizardStep.REFERRER, viewModel.step.value)
         viewModel.advanceFromReferrer()
         assertEquals(WizardStep.NOSTR_INTRO, viewModel.step.value)
         viewModel.advanceFromNostrIntro()
+        assertEquals(WizardStep.KEY_SPARE, viewModel.step.value)
+        viewModel.advanceFromKeySpare()
         assertEquals(WizardStep.KEY_PASSWORD, viewModel.step.value)
+        viewModel.goBack()
+        assertEquals(WizardStep.KEY_SPARE, viewModel.step.value)
         viewModel.goBack()
         assertEquals(WizardStep.NOSTR_INTRO, viewModel.step.value)
         viewModel.goBack()
@@ -176,6 +180,7 @@ class SetupWizardRelayChoiceTest {
         viewModel.advanceFromProfile()
         viewModel.advanceFromReferrer()
         viewModel.advanceFromNostrIntro()
+        viewModel.advanceFromKeySpare()
         viewModel.setPassphrase("longenough")
         viewModel.setConfirmPassphrase("longenough")
         var finished = false

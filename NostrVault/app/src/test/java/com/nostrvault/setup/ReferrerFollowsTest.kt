@@ -79,9 +79,9 @@ class ReferrerFollowsTest {
     }
 
     @Test fun `the step follows the profile on Create an account`() {
-        val steps = listOf(WizardStep.WELCOME, WizardStep.PROFILE, WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD)
+        val steps = listOf(WizardStep.WELCOME, WizardStep.PROFILE, WizardStep.NOSTR_INTRO, WizardStep.KEY_SPARE, WizardStep.KEY_PASSWORD)
         assertEquals(
-            listOf(WizardStep.WELCOME, WizardStep.PROFILE, WizardStep.REFERRER, WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD),
+            listOf(WizardStep.WELCOME, WizardStep.PROFILE, WizardStep.REFERRER, WizardStep.NOSTR_INTRO, WizardStep.KEY_SPARE, WizardStep.KEY_PASSWORD),
             withReferrerStep(steps, SetupPath.NEW_TO_NOSTR),
         )
     }
