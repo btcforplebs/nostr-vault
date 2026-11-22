@@ -40,7 +40,7 @@ import com.nostrvault.ui.theme.*
  * the icon and subtitle step aside. Same as iOS (#399).
  */
 @Composable
-internal fun KeyPasswordStep(viewModel: SetupWizardViewModel) {
+internal fun KeyPasswordStep(viewModel: SetupWizardViewModel, onComplete: () -> Unit) {
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
     val passphrase by viewModel.passphrase.collectAsState()
@@ -112,7 +112,7 @@ internal fun KeyPasswordStep(viewModel: SetupWizardViewModel) {
             } else null,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = {
-                if (isPasswordValid && !isLoading) viewModel.advanceFromKeyPassword()
+                if (isPasswordValid && !isLoading) viewModel.advanceFromKeyPassword(onComplete)
             }),
             colors = wizardTextFieldColors(),
             modifier = Modifier
@@ -133,7 +133,7 @@ internal fun KeyPasswordStep(viewModel: SetupWizardViewModel) {
             text = "Continue",
             enabled = isPasswordValid,
             isLoading = isLoading,
-            onClick = viewModel::advanceFromKeyPassword,
+            onClick = { viewModel.advanceFromKeyPassword(onComplete) },
         )
         Spacer(Modifier.height(16.dp))
         Row(

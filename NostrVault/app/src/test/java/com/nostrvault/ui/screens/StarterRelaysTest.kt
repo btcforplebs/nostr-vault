@@ -2,11 +2,10 @@ package com.nostrvault.ui.screens
 
 import com.nostrvault.relay.HavenConfig
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Create an account's starter servers: this device's Read relays, the four read servers on a new install. */
+/** The relay list Create an account publishes: this device's Read relays, the four read servers on a new install. */
 class StarterRelaysTest {
 
     @Test
@@ -37,49 +36,5 @@ class StarterRelaysTest {
             StarterRelays.tags(listOf("wss://relay.btcforplebs.com", "wss://relay.damus.io")),
         )
         assertTrue(StarterRelays.tags(listOf("ws://127.0.0.1:4869")).isEmpty())
-    }
-
-    private val key = "a".repeat(64)
-    private val recommended = StarterRelays.from(HavenConfig.newInstall().activeFeedRelays)
-
-    @Test
-    fun `nothing confirmed publishes nothing`() {
-        assertNull(StarterRelays.finishTags(null, key))
-    }
-
-    @Test
-    fun `the confirmed list is what goes out`() {
-        val picks = StarterRelays.add(StarterRelays.remove(recommended, "wss://relay.damus.io"), "nos.lol")!!
-        val tags = StarterRelays.finishTags(StarterRelays.Confirmed(key, picks), key)!!
-        assertTrue(tags.any { it[1] == "wss://nos.lol" })
-        assertTrue(tags.none { it[1] == "wss://relay.damus.io" })
-        assertEquals(picks.size, tags.size)
-    }
-
-    @Test
-    fun `a list confirmed for another key does not count`() {
-        assertNull(StarterRelays.finishTags(StarterRelays.Confirmed("b".repeat(64), recommended), key))
-    }
-
-    @Test
-    fun `an address without a scheme becomes wss, ws and home servers are refused`() {
-        assertEquals("wss://nos.lol", StarterRelays.normalize("  nos.lol/ "))
-        assertEquals("wss://relay.example.com", StarterRelays.normalize("wss://relay.example.com"))
-        assertNull(StarterRelays.normalize("ws://relay.example.com"))
-        assertNull(StarterRelays.normalize("127.0.0.1:4869"))
-        assertNull(StarterRelays.normalize("not a relay"))
-        assertNull(StarterRelays.normalize(""))
-    }
-
-    @Test
-    fun `adding a server already on the list keeps it once`() {
-        val list = listOf("wss://relay.primal.net")
-        assertEquals(list, StarterRelays.add(list, "wss://Relay.Primal.net/"))
-        assertNull(StarterRelays.add(list, "ws://x.example"))
-    }
-
-    @Test
-    fun `remove matches the same server written differently`() {
-        assertEquals(emptyList<String>(), StarterRelays.remove(listOf("wss://relay.primal.net"), "wss://Relay.Primal.net/"))
     }
 }

@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.*
 
 // ══════════════════════════════════════════════════════════════════
-// Step: Nostr Intro (New to Nostr path)
+// Step: Your keys (New to Nostr path)
 // ══════════════════════════════════════════════════════════════════
 
 @Composable
@@ -49,65 +49,19 @@ internal fun NostrIntroStep(viewModel: SetupWizardViewModel) {
         return
     }
 
+    // Only seen if making the key failed when Create an account was picked.
+    // The "Welcome to Nostr" cards that used to come first were dropped
+    // (setup screens r3, Logen 2026-11-22, same as iOS #2410).
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        // Card 1: What is Nostr
-        WizardCard {
-            Text(
-                text = "Welcome to Nostr",
-                color = PrimaryText,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "Nostr is an open social protocol. You own your identity " +
-                    "through a cryptographic keypair -- no company controls your " +
-                    "account. Your posts are broadcast to relays and can be read " +
-                    "by anyone.",
-                color = SecondaryText,
-                fontSize = 15.sp,
-                lineHeight = 22.sp,
-                textAlign = TextAlign.Center,
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // Card 2: Why Nostr Vault is unique
-        WizardCard {
-            Text(
-                text = "Your Personal Archive",
-                color = PrimaryText,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "Nostr Vault runs a HAVEN relay right on your device. " +
-                    "Every note, message, and media file you interact with is " +
-                    "archived locally. Your data stays with you -- not on " +
-                    "someone else's server.",
-                color = SecondaryText,
-                fontSize = 15.sp,
-                lineHeight = 22.sp,
-                textAlign = TextAlign.Center,
-            )
-        }
-
-        Spacer(Modifier.height(20.dp))
-
         error?.let { errorText ->
             Text(errorText, color = Color(0xFFEF4444), fontSize = 13.sp)
             Spacer(Modifier.height(8.dp))
         }
 
         WizardPrimaryButton(
-            text = "Create My Account",
+            text = "Make My Key",
             enabled = !isLoading,
+            isLoading = isLoading,
             onClick = viewModel::generateNewUserKeys,
         )
     }

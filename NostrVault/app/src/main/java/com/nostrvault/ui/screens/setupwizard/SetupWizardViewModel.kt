@@ -60,7 +60,7 @@ import javax.inject.Inject
 internal const val IMPORT_TOUR_START_DATE = "2023-01-01"
 
 enum class WizardStep {
-    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, STARTER_RELAYS, USE_NOSTR_KEY, REFERRER, NEW_TO_VAULT, RELAY_CHECK, IMPORT_TOUR,
+    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, USE_NOSTR_KEY, REFERRER, NEW_TO_VAULT, RELAY_CHECK, IMPORT_TOUR,
     ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, COMPLETE
 }
 
@@ -207,11 +207,6 @@ class SetupWizardViewModel @Inject constructor(
     /** The pubkey New to Nostr generated this run. Only this key may be
      *  marked fresh or have a profile published for it at the end. */
     internal var generatedPkHex: String? = null
-    /** The starter step's list as edited; null shows the recommended servers. */
-    internal val _starterRelayDraft = MutableStateFlow<List<String>?>(null)
-    val starterRelayDraft = _starterRelayDraft.asStateFlow()
-    /** The list Continue or Use recommended confirmed ([StarterRelays.Confirmed]). */
-    internal var starterRelaysConfirmed: StarterRelays.Confirmed? = null
 
     /** Keys this run of setup stored that weren't on the device before, so a
      *  key left behind by Back and another choice can be removed again. */
@@ -323,13 +318,14 @@ class SetupWizardViewModel @Inject constructor(
         WizardStep.IMPORT_NOTES, WizardStep.COMPLETE,
     )
 
-    /** Steps for "New to Nostr" mode (the first question's Yes): keys,
-     *  password, profile, ("Who told you", added by withReferrerStep), the
-     *  servers its relay list will name, done. The Fill your feed guide
-     *  finds people after setup. */
+    /** Steps for "New to Nostr" mode (Create an account). Setup screens r3
+     *  (Logen 2026-11-22), same as iOS #2410: profile, ("Who told you",
+     *  added by withReferrerStep), your key, the lock, then the feed. The key
+     *  is made silently when the path is picked. No relay choice (the
+     *  built-in relay), Welcome to Nostr cards, relay list (the recommended
+     *  one is published; Settings > Relays changes it) or done screen. */
     private val newUserSteps = listOf(
-        WizardStep.WELCOME, WizardStep.RELAY_CHOICE,
-        WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.STARTER_RELAYS, WizardStep.COMPLETE,
+        WizardStep.WELCOME, WizardStep.PROFILE, WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD,
     )
 
     /** Steps for "I already use Nostr" (the first question's No): your key,
@@ -385,7 +381,7 @@ class SetupWizardViewModel @Inject constructor(
         if (idx > 0) _step.value = steps[idx - 1]
     }
 
-    /** The front door's three buttons. Every path goes on to the relay choice. */
+    /** The front door's buttons. Create an account goes to Edit Profile; the others to the relay choice. */
     fun choosePath(path: SetupPath) {
         // Every way in starts with no identity. A key made or pasted on an
         // earlier visit must not be shown again, or signed with, on this one.
@@ -394,8 +390,6 @@ class SetupWizardViewModel @Inject constructor(
         _generatedSkHex.value = null
         _generatedNpub.value = null
         generatedPkHex = null
-        starterRelaysConfirmed = null
-        _starterRelayDraft.value = null
         _passphrase.value = ""
         _confirmPassphrase.value = ""
         _useNostrInput.value = ""
@@ -404,6 +398,16 @@ class SetupWizardViewModel @Inject constructor(
         _error.value = null
         com.nostrvault.setup.ReferrerFollows.clear()
         _setupPath.value = path
-        _step.value = WizardStep.RELAY_CHOICE
+        if (path == SetupPath.NEW_TO_NOSTR) {
+            // No relay choice for a new account: the built-in relay. The key
+            // is made now, silently, so the people step can leave it out and
+            // the key step only has to show it.
+            _useExternalRelay.value = false
+            configStore.update { it.copy(useExternalRelay = false) }
+            generateNewUserKeys()
+            _step.value = WizardStep.PROFILE
+        } else {
+            _step.value = WizardStep.RELAY_CHOICE
+        }
     }
 }
