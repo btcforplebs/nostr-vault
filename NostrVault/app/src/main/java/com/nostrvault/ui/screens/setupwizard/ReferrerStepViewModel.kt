@@ -10,6 +10,7 @@ import com.nostrvault.ui.navigation.BridgeEntityDecoder
 import com.nostrvault.ui.navigation.ProfileWebLink
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,9 +20,10 @@ import javax.inject.Inject
 /**
  * Setup's "Who told you about Nostr Vault?" step: find the person from a
  * scanned QR code, a pasted npub or a `/p/` link, show their card, then
- * "<Name>'s people": their follows, closest to them first
- * ([ReferrerFollows.rank], the top 7 ticked), with topic chips that filter
- * the list (setup screens r3, iOS #2414).
+ * "<Name>'s people": their follows and followers, the people they interact
+ * with most first ([ReferrerFollows.rank]), in a scrolling list with topic
+ * chips that filter it (setup screens r3, iOS #2414). None start ticked: a
+ * row's Follow, or its preview's, picks someone (Logen 2026-11-22).
  * Nothing is signed here; [finish] leaves the picks in [ReferrerFollows] for
  * the end of setup.
  */
@@ -65,6 +67,13 @@ class ReferrerStepViewModel @Inject constructor(
 
     private var load: Job? = null
 
+    /** The person whose preview is open; null when none. */
+    private val _preview = MutableStateFlow<String?>(null)
+    val preview: StateFlow<String?> = _preview.asStateFlow()
+
+    fun openPreview(pubkey: String) { _preview.value = pubkey }
+    fun closePreview() { _preview.value = null }
+
     init {
         // Opened from someone's link before setup: start on their card.
         if (_input.value.isNotBlank()) find(ownHex = null)
@@ -96,12 +105,21 @@ class ReferrerStepViewModel @Inject constructor(
                 kotlinx.coroutines.delay(2_000)
             }
             val follows = list.orEmpty()
-            // Their first 150 follows' lists: who of their close circle (and
-            // of all of them) follow each one. With no answer, list order.
-            val lists = trustPathService.referralLists(follows)
+            // At once: who they interact with most (both ways), who follows
+            // them, and their first 150 follows' lists (who of their close
+            // circle, and of all of them, follow each one). With no answer,
+            // follows in list order, then followers.
+            val talks = async { trustPathService.referralTalks(pk) }
+            val followers = async { trustPathService.referralFollowers(pk) }
+            val lists = async { trustPathService.referralLists(follows) }
             // An existing key already follows some of them: never offered again.
             val mine = ownHex?.let { trustPathService.followList(it) }.orEmpty()
-            val picks = ReferrerFollows.rank(pk, follows, lists, skip = setOfNotNull(ownHex) + mine)
+            val picks = ReferrerFollows.rank(
+                pk, follows, lists.await(),
+                skip = setOfNotNull(ownHex) + mine,
+                talks = talks.await(),
+                followers = followers.await(),
+            )
             val keys = picks.map { it.pubkey }
             nostrService.fetchMissingProfiles(keys)
             _suggestions.value = picks
@@ -119,10 +137,10 @@ class ReferrerStepViewModel @Inject constructor(
         _topic.value = if (topic == _topic.value) null else topic
     }
 
-    /** The people listed: the top [ReferrerFollows.SUGGESTION_CAP], or everyone in the pool who used the picked topic. */
+    /** The people listed: the whole pool, or everyone in it who used the picked topic. */
     fun shown(picks: List<ReferrerFollows.Pick>, topics: List<ReferrerFollows.Topic>, topic: String?): List<ReferrerFollows.Pick> {
         val people = topic?.let { t -> topics.firstOrNull { it.topic == t }?.people }
-            ?: return picks.take(ReferrerFollows.SUGGESTION_CAP)
+            ?: return picks
         return picks.filter { it.pubkey in people }
     }
 

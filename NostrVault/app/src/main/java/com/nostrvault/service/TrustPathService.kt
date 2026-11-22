@@ -332,21 +332,63 @@ class TrustPathService @Inject constructor(
         val toMe = nostrService.queryRawEvents(
             listOf("""{"#p":["$me"],"kinds":[$kinds],"limit":$ENGAGEMENT_LIMIT}"""), inward)
         return withContext(Dispatchers.Default) {
-            fun interactions(events: List<kotlinx.serialization.json.JsonObject>) = events
-                .filter { VerifiedEvents.verify(it) }
-                .mapNotNull { e ->
-                    val pubkey = (e["pubkey"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
-                        ?: return@mapNotNull null
-                    val kind = (e["kind"] as? kotlinx.serialization.json.JsonPrimitive)?.intOrNull
-                        ?: return@mapNotNull null
-                    val tags = (e["tags"] as? kotlinx.serialization.json.JsonArray).orEmpty().map { tag ->
-                        (tag as? kotlinx.serialization.json.JsonArray).orEmpty()
-                            .mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull }
-                    }
-                    TrustMap.Interaction(pubkey, kind, tags)
-                }
             TrustMap.engagementScores(interactions(mine), interactions(toMe), me)
         }
+    }
+
+    /** Signed events as [TrustMap.Interaction]s; one that fails its signature is dropped. */
+    private fun interactions(events: List<kotlinx.serialization.json.JsonObject>) = events
+        .filter { VerifiedEvents.verify(it) }
+        .mapNotNull { e ->
+            val pubkey = (e["pubkey"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+                ?: return@mapNotNull null
+            val kind = (e["kind"] as? kotlinx.serialization.json.JsonPrimitive)?.intOrNull
+                ?: return@mapNotNull null
+            val tags = (e["tags"] as? kotlinx.serialization.json.JsonArray).orEmpty().map { tag ->
+                (tag as? kotlinx.serialization.json.JsonArray).orEmpty()
+                    .mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull }
+            }
+            TrustMap.Interaction(pubkey, kind, tags)
+        }
+
+    /**
+     * Setup's "Who told you" ranking: how much [referrer] and each person
+     * interact, the same score as [engagement] (replies, mentions, reposts,
+     * reactions and zaps, both ways, [com.nostrvault.setup.ReferrerFollows.talks]),
+     * read from the referral relays. Empty when no relay answered.
+     */
+    suspend fun referralTalks(referrer: String): Map<String, Int> {
+        val kinds = TrustMap.ENGAGEMENT_KINDS.joinToString(",")
+        val events = nostrService.queryRawEvents(
+            listOf(
+                """{"authors":["$referrer"],"kinds":[$kinds],"limit":$REFERRAL_TALK_LIMIT}""",
+                """{"#p":["$referrer"],"kinds":[$kinds],"limit":$REFERRAL_TALK_LIMIT}""",
+                """{"#P":["$referrer"],"kinds":[9735],"limit":$REFERRAL_TALK_LIMIT}""",
+            ),
+            REFERRAL_RELAYS,
+            WIDER_TIMEOUT_MS,
+        )
+        return withContext(Dispatchers.Default) {
+            // The same event from several relays counts once.
+            com.nostrvault.setup.ReferrerFollows.talks(
+                referrer,
+                interactions(events.distinctBy { (it["id"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull }),
+            )
+        }
+    }
+
+    /**
+     * Setup's "Who told you": who follows [referrer], from up to
+     * [com.nostrvault.setup.ReferrerFollows.FOLLOWERS_TO_READ] follow lists
+     * that tag them on the referral relays, newest first. Empty when none.
+     */
+    suspend fun referralFollowers(referrer: String): List<String> {
+        val filter = FollowListFilter(authors = null, tagged = listOf(referrer), limit = com.nostrvault.setup.ReferrerFollows.FOLLOWERS_TO_READ)
+        return query(listOf(filter), REFERRAL_RELAYS, WIDER_TIMEOUT_MS)
+            .filter { it.kind == 3 && it.pubkey != referrer && referrer in com.nostrvault.setup.ReferrerFollows.follows(it.tags) }
+            .sortedByDescending { it.createdAt }
+            .map { it.pubkey }
+            .distinct()
     }
 
     /** Signed follow lists from one relay. A list that fails its signature is dropped. */
@@ -396,6 +438,8 @@ class TrustPathService @Inject constructor(
         const val MAX_RELAYS = 3
         /** Under the phone relay's 1,000-event cap (Badger), so it is honoured. */
         const val ENGAGEMENT_LIMIT = 1000
+        /** Events per filter read to score who the referrer interacts with. */
+        const val REFERRAL_TALK_LIMIT = 500
         /** Authors per filter when mapping someone's wider web. */
         const val WIDER_CHUNK = 40
         const val WIDER_TIMEOUT_MS = 10_000L
