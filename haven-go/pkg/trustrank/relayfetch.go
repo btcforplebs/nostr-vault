@@ -124,7 +124,8 @@ func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (be
 			continue
 		}
 		rctx, cancel := context.WithTimeout(ctx, f.timeout())
-		if !f.dial(rctx, url) {
+		relay := f.dial(rctx, url)
+		if relay == nil {
 			// Could not connect in time (or at all): this relay said
 			// nothing, which is not the same as "no list".
 			if ctx.Err() == nil && rctx.Err() != nil {
@@ -133,48 +134,49 @@ func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (be
 			cancel()
 			continue
 		}
-		ch := f.Pool.FetchMany(rctx, []string{url}, filter)
-		timedOut := false
-		for {
-			var re nostr.RelayEvent
-			var open bool
+		// Only an EOSE is an answer. A CLOSED (rate-limited, auth-required),
+		// a failed write or a dropped socket ends the ask unanswered.
+		sub, serr := relay.Subscribe(rctx, nostr.Filters{filter})
+		eosed := false
+	read:
+		for serr == nil {
 			select {
-			case re, open = <-ch:
+			case ev, open := <-sub.Events:
+				if !open {
+					break read // the sub ended without an EOSE
+				}
+				if ev == nil || ev.PubKey != pubkey {
+					continue
+				}
+				i := -1
+				for j, k := range listKinds {
+					if ev.Kind == k && best[j] == nil || ev.Kind == k && ev.CreatedAt > best[j].CreatedAt {
+						i = j
+					}
+				}
+				if i < 0 || (since > 0 && int64(ev.CreatedAt) < since) {
+					continue
+				}
+				if ok, err := ev.CheckSignature(); !ok || err != nil {
+					continue
+				}
+				best[i] = ev
+			case <-sub.EndOfStoredEvents:
+				// Sent only after every stored event was handed over.
+				eosed = true
+				break read
+			case <-sub.ClosedReason:
+				break read
 			case <-rctx.Done():
-				// Out of time: stop waiting even if the pool has not let go
-				// of the channel yet, and skip this relay for a while.
-				timedOut = true
+				// Out of time: skip this relay for a while.
 				if ctx.Err() == nil {
 					f.bench(url, time.Now())
 				}
-				go func() {
-					for range ch {
-					}
-				}()
+				break read
 			}
-			if !open {
-				break
-			}
-			ev := re.Event
-			if ev == nil || ev.PubKey != pubkey {
-				continue
-			}
-			i := -1
-			for j, k := range listKinds {
-				if ev.Kind == k && best[j] == nil || ev.Kind == k && ev.CreatedAt > best[j].CreatedAt {
-					i = j
-				}
-			}
-			if i < 0 || (since > 0 && int64(ev.CreatedAt) < since) {
-				continue
-			}
-			if ok, err := ev.CheckSignature(); !ok || err != nil {
-				continue
-			}
-			best[i] = ev
 		}
-		cancel()
-		if !timedOut {
+		cancel() // ends the sub; its pending sends give up on its context
+		if eosed {
 			answered = true
 		}
 	}
@@ -189,17 +191,20 @@ func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (be
 
 // dial connects to url, giving up when ctx ends. The pool's own dial ignores
 // ctx (it waits up to 15 s), so it runs aside and is left to finish alone.
-func (f *RelayFetcher) dial(ctx context.Context, url string) bool {
-	done := make(chan bool, 1)
+func (f *RelayFetcher) dial(ctx context.Context, url string) *nostr.Relay {
+	done := make(chan *nostr.Relay, 1)
 	go func() {
-		_, err := f.Pool.EnsureRelay(url)
-		done <- err == nil
+		r, err := f.Pool.EnsureRelay(url)
+		if err != nil {
+			r = nil
+		}
+		done <- r
 	}()
 	select {
-	case ok := <-done:
-		return ok
+	case r := <-done:
+		return r
 	case <-ctx.Done():
-		return false
+		return nil
 	}
 }
 

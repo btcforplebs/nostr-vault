@@ -187,3 +187,33 @@ func TestRelayFetchAllBenchedIsAnErrorNotNoList(t *testing.T) {
 		}
 	}
 }
+
+// Tron's #2394 should-fix: a relay that refuses the ask (CLOSED
+// rate-limited) has not answered; with no other relay, Fetch is ErrNoRelay.
+// A relay that sends EOSE with nothing is a real "no list".
+func TestRelayFetchRefusalIsNotAnAnswer(t *testing.T) {
+	sk := nostr.GeneratePrivateKey()
+	author, _ := nostr.GetPublicKey(sk)
+	rl := khatru.NewRelay()
+	rl.RejectFilter = append(rl.RejectFilter, func(context.Context, nostr.Filter) (bool, string) {
+		return true, "rate-limited: slow down"
+	})
+	srv := httptest.NewServer(rl)
+	defer srv.Close()
+	refusing := "ws" + strings.TrimPrefix(srv.URL, "http")
+	f := &RelayFetcher{Pool: nostr.NewSimplePool(context.Background()),
+		Relays: []string{refusing}, Timeout: 2 * time.Second}
+	start := time.Now()
+	if _, found, err := f.Fetch(context.Background(), author, 0); found || !errors.Is(err, ErrNoRelay) {
+		t.Fatalf("refused ask: want ErrNoRelay, got found=%v err=%v", found, err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("a CLOSED must end the ask at once, took %s", d)
+	}
+
+	empty := listRelay(t)
+	f.Relays = []string{refusing, empty}
+	if _, found, err := f.Fetch(context.Background(), author, 0); found || err != nil {
+		t.Fatalf("EOSE with nothing is no list: got found=%v err=%v", found, err)
+	}
+}
