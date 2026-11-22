@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -36,13 +37,19 @@ type Store struct {
 type entry struct {
 	off       int64
 	size      int64
-	createdAt int64
+	createdAt int64     // the newer of at[0] and at[1]
+	at        [2]uint32 // follow list's time, mute list's time
 }
+
+func newest(at [2]uint32) int64 { return int64(max(at[0], at[1])) }
 
 // ErrFull: the store reached its cap. The crawl stops and keeps what it has.
 var ErrFull = errors.New("trustrank: list store is full")
 
-const recHeader = 4 + 8 + 4 + 4 // rater, createdAt, follows, mutes
+// rater, follow list's time (uint32), mute list's time (uint32), follows,
+// mutes. Each kind keeps its own time so a stale copy of one kind is never
+// stored under the other kind's newer time.
+const recHeader = 4 + 4 + 4 + 4 + 4
 
 // OpenStore opens (or makes) the store in dir. capBytes bounds keys.bin plus
 // lists.bin.
@@ -108,14 +115,14 @@ func (s *Store) loadLists() error {
 	// Checkpoint), so lists cut here are read again on the next pass.
 	var scratch []uint32
 	for {
-		rater, created, size, ok := readRecord(r, uint32(len(s.keys)), &scratch)
+		rater, at, size, ok := readRecord(r, uint32(len(s.keys)), &scratch)
 		if !ok {
 			break
 		}
 		if old, had := s.latest[rater]; had {
 			s.dead += old.size
 		}
-		s.latest[rater] = entry{off: off, size: size, createdAt: created}
+		s.latest[rater] = entry{off: off, size: size, createdAt: newest(at), at: at}
 		off += size
 	}
 	if off < st.Size() {
@@ -129,40 +136,40 @@ func (s *Store) loadLists() error {
 
 // readRecord reads one record. ids, when not nil, receives the follow then
 // mute numbers. ok is false at the end or at a damaged record.
-func readRecord(r io.Reader, nKeys uint32, ids *[]uint32) (rater uint32, created, size int64, ok bool) {
+func readRecord(r io.Reader, nKeys uint32, ids *[]uint32) (rater uint32, at [2]uint32, size int64, ok bool) {
 	var h [recHeader]byte
 	if _, err := io.ReadFull(r, h[:]); err != nil {
-		return 0, 0, 0, false
+		return 0, at, 0, false
 	}
 	rater = binary.LittleEndian.Uint32(h[0:])
-	created = int64(binary.LittleEndian.Uint64(h[4:]))
+	at = [2]uint32{binary.LittleEndian.Uint32(h[4:]), binary.LittleEndian.Uint32(h[8:])}
 	nf := binary.LittleEndian.Uint32(h[12:])
 	nm := binary.LittleEndian.Uint32(h[16:])
 	n := uint64(nf) + uint64(nm)
 	if rater >= nKeys || n > maxListLen*2 {
-		return 0, 0, 0, false
+		return 0, at, 0, false
 	}
 	body := make([]byte, n*4+4)
 	if _, err := io.ReadFull(r, body); err != nil {
-		return 0, 0, 0, false
+		return 0, at, 0, false
 	}
 	crc := crc32.NewIEEE()
 	crc.Write(h[:])
 	crc.Write(body[:n*4])
 	if crc.Sum32() != binary.LittleEndian.Uint32(body[n*4:]) {
-		return 0, 0, 0, false
+		return 0, at, 0, false
 	}
 	if ids != nil {
 		*ids = (*ids)[:0]
 		for i := uint64(0); i < n; i++ {
 			id := binary.LittleEndian.Uint32(body[i*4:])
 			if id >= nKeys {
-				return 0, 0, 0, false
+				return 0, at, 0, false
 			}
 			*ids = append(*ids, id)
 		}
 	}
-	return rater, created, int64(recHeader) + int64(len(body)), true
+	return rater, at, int64(recHeader) + int64(len(body)), true
 }
 
 // maxListLen: a list longer than this is skipped by the crawler, so one huge
@@ -186,12 +193,27 @@ func (s *Store) keyID(pk string) (uint32, int, error) {
 	return id, 32, nil
 }
 
-// Put stores rater's list as of createdAt. An older or equal list than the
-// one stored is ignored (returns false). Bad pubkeys in the list are skipped;
-// a bad rater is an error. A list over the size limit is refused.
+// Put stores rater's list as of createdAt (both kinds). An older or equal
+// list than the one stored is ignored (returns false). Bad pubkeys in the
+// list are skipped; a bad rater is an error. A list over the size limit is
+// refused.
 func (s *Store) Put(rater string, createdAt int64, follows, mutes []string) (bool, error) {
-	if len(follows) > maxListLen || len(mutes) > maxListLen {
+	return s.PutList(rater, List{FollowsAt: createdAt, MutesAt: createdAt, Follows: follows, Mutes: mutes})
+}
+
+// PutList stores rater's lists kind by kind: a kind is replaced only when its
+// time is newer than the stored one of that kind; otherwise the stored kind
+// is kept. Returns false when neither kind is newer.
+func (s *Store) PutList(rater string, l List) (bool, error) {
+	if len(l.Follows) > maxListLen || len(l.Mutes) > maxListLen {
 		return false, fmt.Errorf("trustrank: list over %d names", maxListLen)
+	}
+	var at [2]uint32
+	for i, t := range [2]int64{l.FollowsAt, l.MutesAt} {
+		if t < 0 || t > math.MaxUint32 {
+			return false, fmt.Errorf("trustrank: list time %d out of range", t)
+		}
+		at[i] = uint32(t)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -200,27 +222,51 @@ func (s *Store) Put(rater string, createdAt int64, follows, mutes []string) (boo
 	if err != nil {
 		return false, err
 	}
-	if old, ok := s.latest[r]; ok && old.createdAt >= createdAt {
-		return false, nil
+	take := [2]bool{true, true}
+	var kept [2][]uint32
+	if old, ok := s.latest[r]; ok {
+		take = [2]bool{at[0] > old.at[0], at[1] > old.at[1]}
+		if !take[0] && !take[1] {
+			return false, nil
+		}
+		var ids []uint32
+		sr := io.NewSectionReader(s.listsF, old.off, old.size)
+		var h [recHeader]byte
+		if _, err := sr.ReadAt(h[:], 0); err != nil {
+			return false, err
+		}
+		nf := binary.LittleEndian.Uint32(h[12:])
+		if _, _, _, ok := readRecord(sr, uint32(len(s.keys)), &ids); !ok {
+			return false, fmt.Errorf("trustrank: damaged list record at %d", old.off)
+		}
+		kept = [2][]uint32{ids[:nf], ids[nf:]}
+		for i := range take {
+			if !take[i] {
+				at[i] = old.at[i]
+			}
+		}
 	}
-	var ids []uint32
-	nf := 0
-	for i, list := range [][]string{follows, mutes} {
+	var parts [2][]uint32
+	for i, list := range [2][]string{l.Follows, l.Mutes} {
+		if !take[i] {
+			parts[i] = kept[i]
+			continue
+		}
 		for _, pk := range list {
 			id, added, err := s.keyID(pk)
 			if err != nil {
 				continue
 			}
 			newKeys += added
-			ids = append(ids, id)
-			if i == 0 {
-				nf++
-			}
+			parts[i] = append(parts[i], id)
 		}
 	}
+	ids := append(append([]uint32{}, parts[0]...), parts[1]...)
+	nf := len(parts[0])
 	rec := make([]byte, recHeader+len(ids)*4+4)
 	binary.LittleEndian.PutUint32(rec[0:], r)
-	binary.LittleEndian.PutUint64(rec[4:], uint64(createdAt))
+	binary.LittleEndian.PutUint32(rec[4:], at[0])
+	binary.LittleEndian.PutUint32(rec[8:], at[1])
 	binary.LittleEndian.PutUint32(rec[12:], uint32(nf))
 	binary.LittleEndian.PutUint32(rec[16:], uint32(len(ids)-nf))
 	for i, id := range ids {
@@ -249,7 +295,7 @@ func (s *Store) Put(rater string, createdAt int64, follows, mutes []string) (boo
 	if old, ok := s.latest[r]; ok {
 		s.dead += old.size
 	}
-	s.latest[r] = entry{off: s.listsLen, size: int64(len(rec)), createdAt: createdAt}
+	s.latest[r] = entry{off: s.listsLen, size: int64(len(rec)), createdAt: newest(at), at: at}
 	s.listsLen += int64(len(rec))
 	return true, nil
 }
@@ -363,7 +409,7 @@ func (s *Store) Compact() error {
 			os.Remove(tmpPath)
 			return err
 		}
-		latest[rater] = entry{off: off, size: e.size, createdAt: e.createdAt}
+		latest[rater] = entry{off: off, size: e.size, createdAt: e.createdAt, at: e.at}
 		off += e.size
 	}
 	if err := w.Flush(); err == nil {
