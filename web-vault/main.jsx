@@ -9,9 +9,8 @@ import { unlockLocal, wellFormed, DAMAGED } from "./src/signer/local.js"
 import { clearAuthUrl } from "./src/signer/nip46.js"
 import { painted } from "./src/components/KeyCard.jsx"
 import { startVault, forgetThisBrowser, onSignedOutElsewhere, preloadHaven, routeClient, deviceKey } from "./src/haven/vault.js"
-import { BOX } from "./src/box/mode.js"
+import { BOX, boxDashboardRedirect } from "./src/box/mode.js"
 import { startBoxVault } from "./src/box/box-vault.js"
-import { BoxScreen } from "./src/box/BoxScreen.jsx"
 import { readAccount, refreshAccount, fetchAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
 import { readKept, keep as keepNeverConnect } from "./src/net/never-connect.js"
@@ -58,6 +57,12 @@ import { isDashboardOpen } from "./src/net/dashboard-route.js"
 forgetOldSwitch()
 const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "bookmarks", "emoji", "settings", "accounts", "wallet", ...(BOX ? ["box"] : [])]
 // "#/thread/<id>" -> { route: "thread", arg: "<id>" }; "#/profile/<pubkey>" is someone else's profile.
+// One Vault W1: on a box, #/relay and #/box are the Vault Dashboard (src/box/mode.js boxDashboardRedirect).
+if (BOX && globalThis.location) {
+  const boxRedirect = () => { const to = boxDashboardRedirect(location.hash); if (to) location.replace(to) }
+  boxRedirect()
+  addEventListener("hashchange", boxRedirect)
+}
 const routeOf = () => {
   const [r, arg = ""] = location.hash.replace(/^#\/?/, "").split(/[?]/)[0].split("/")
   return ROUTES.includes(r) && ((r !== "thread" && r !== "dm") || /^[0-9a-f]{64}$/.test(arg)) && (r !== "profile" || !arg || /^[0-9a-f]{64}$/.test(arg)) ? { route: r, arg } : { route: "feed", arg: "" }
@@ -296,13 +301,13 @@ function App() {
     <div class={desk ? "app desk-app" : "app"}>
       <NotifyWatch ctx={ctx} />
       {desk ? <DesktopShell ctx={ctx} mode={mode} hash={location.hash} lastList={lastList} /> : <PhoneScreens ctx={ctx} route={route} arg={arg} other={other} />}
-      {/* A box has its own mesh and no in-page relay: its Box screen (src/box) instead of the browser relay's. */}
-      {BOX ? (route === "box" || route === "relay") && <div class="box-host"><BoxScreen ctx={ctx} /></div>
-        : <div class="relay-host" hidden={route !== "relay"}>{relayShown && <RelayScreen ctx={ctx} log={log} />}</div>}
+      {/* A box has its own mesh and no in-page relay: #/relay and #/box open the Vault Dashboard instead (boxRedirect). */}
+      {!BOX && <div class="relay-host" hidden={route !== "relay"}>{relayShown && <RelayScreen ctx={ctx} log={log} />}</div>}
       {!desk && (route === "feed" || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
       {!desk && <TabBar ctx={ctx} route={tabOf(route, other)} pubkey={session.pubkey} />}
       <FloatingPlayer />
-      {isDashboardOpen() && <VaultDashboard ctx={ctx} napplet={desk && DESK_NAPPLETS} />}
+      {/* On a box the dashboard is the box's (One Vault W1), which the Dashboard napplet doesn't show. */}
+      {isDashboardOpen() && <VaultDashboard ctx={ctx} napplet={desk && DESK_NAPPLETS && !BOX} />}
       <AuthPrompt />
       {tour && <WelcomeTour onDone={() => { markTourDone(session.pubkey); setTour(false) }} />}
       {!BOX && <NotifyAsk busy={tour} />}

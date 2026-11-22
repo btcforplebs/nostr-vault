@@ -1,6 +1,6 @@
 // Box › Public on the web: the switch (public-on-web.js). Off by default for a box with no web address; with one, it
 // shows whether your relay list names it now. A tap publishes your 10002 and then your 10050 (publishList: refused
-// with nothing changed if your relays don't answer or the list changed elsewhere). Shown only in box mode (BoxScreen).
+// with nothing changed if your relays don't answer or the list changed elsewhere). Shown only in box mode (the Vault Dashboard's Vault settings, BoxFold.jsx).
 import { useEffect, useState } from "preact/hooks"
 import { latestList, publishList } from "../net/list-edit.js"
 import { boxInbox, boxRelay, listed, setListed } from "./public-on-web.js"

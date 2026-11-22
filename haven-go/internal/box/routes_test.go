@@ -13,11 +13,15 @@ func TestRoutesRegistered(t *testing.T) {
 	want := []string{
 		"GET /api/box/accounts",
 		"GET /api/box/accounts/me",
+		"GET /api/box/connections",
+		"GET /api/box/contents",
 		"GET /api/box/devices",
+		"GET /api/box/logs",
 		"GET /api/box/media/auto-mirror",
 		"GET /api/box/media/copy",
 		"GET /api/box/status",
 		"GET /api/box/storage",
+		"GET /api/box/sync",
 		"POST /api/box/accounts/add",
 		"POST /api/box/accounts/code",
 		"POST /api/box/accounts/join",
@@ -26,6 +30,8 @@ func TestRoutesRegistered(t *testing.T) {
 		"POST /api/box/media/copy",
 		"POST /api/box/media/copy/check",
 		"POST /api/box/move",
+		"POST /api/box/sync/first",
+		"POST /api/box/sync/now",
 		"POST /api/box/update",
 		"PUT /api/box/media/auto-mirror",
 	}
@@ -40,12 +46,16 @@ func TestRoutesRegistered(t *testing.T) {
 }
 
 // Every route is first-account only except the two that let an account
-// ask whether the box holds it and join with a code (E9), and the media
-// routes any signed-in account uses for its own files (E6). Opening any other
-// route to more callers must be a deliberate edit here.
+// ask whether the box holds it and join with a code (E9), the read routes
+// any signed-in account may use (E4), the sync routes (E3: any signed-in
+// account may see a round runs and ask for one now; a first copy stays the
+// first account's, Tron #2385 M1), and the media routes any signed-in
+// account uses for its own files (E6). Opening any other route to more
+// callers must be a deliberate edit here.
 func TestRouteLevels(t *testing.T) {
 	anyone := map[string]bool{"GET /api/box/accounts/me": true, "POST /api/box/accounts/join": true}
-	signedIn := map[string]bool{
+	signedIn := map[string]bool{"GET /api/box/contents": true, "GET /api/box/connections": true,
+		"GET /api/box/sync": true, "POST /api/box/sync/now": true,
 		"GET /api/box/media/auto-mirror": true, "POST /api/box/media/auto-mirror/run": true,
 		"POST /api/box/media/copy/check": true, "POST /api/box/media/copy": true, "GET /api/box/media/copy": true,
 	}
@@ -53,6 +63,11 @@ func TestRouteLevels(t *testing.T) {
 		want := FirstAccount
 		if anyone[path] {
 			want = Anyone
+		} else if signedIn[path] {
+			want = SignedIn
+		}
+		if signedIn[path] {
+			want = SignedIn
 		}
 		if signedIn[path] {
 			want = SignedIn

@@ -39,6 +39,11 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if f.Web == nil || isEngineRequest(r) {
+		if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			// The proxy holds an upgraded connection until it closes:
+			// counted open for that long (GET /api/box/connections).
+			defer relayConns.track(relayRouteOf(r.URL.Path))()
+		}
 		f.Engine.ServeHTTP(w, r)
 		return
 	}

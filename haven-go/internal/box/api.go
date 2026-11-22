@@ -33,6 +33,9 @@ type API struct {
 	// join_code.go). Nil: the first account alone.
 	Accounts  *AccountStore
 	JoinCodes *JoinCodes
+	// Sync catches up from the owner's other vaults (sync.go). Nil: the sync
+	// routes answer 503.
+	Sync *Syncer
 }
 
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {

@@ -44,6 +44,9 @@ if [ "$(id -u)" = 0 ]; then
   # host uid can reach it. nv-mesh's, group havend's (setpriv --regid), 0750.
   mkdir -p /run/nv-mesh
   chown "$MESH_UID:$VAULT_UID" /run/nv-mesh && chmod 750 /run/nv-mesh
+  # The engine's control socket (haven-go copyv2_box.go): in /run too, havend's alone, 0700.
+  mkdir -p /run/nv-vault
+  chown "$VAULT_UID:$VAULT_UID" /run/nv-vault && chmod 700 /run/nv-vault
   ROOT=1
 else
   echo "supervise: not root, so havend and nv-mesh share uid $(id -u) and the mesh key isn't kept from havend" >&2
