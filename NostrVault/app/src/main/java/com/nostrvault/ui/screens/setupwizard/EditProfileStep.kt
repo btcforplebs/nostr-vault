@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 import com.nostrvault.ui.components.ProseKeyboardOptions
 
 @Composable
-internal fun ProfileStep(viewModel: SetupWizardViewModel) {
+internal fun EditProfileStep(viewModel: SetupWizardViewModel) {
     val name by viewModel.profileName.collectAsState()
     val nameError by viewModel.profileNameError.collectAsState()
     val photo by viewModel.profilePhotoJpeg.collectAsState()

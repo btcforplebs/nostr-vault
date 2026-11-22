@@ -115,7 +115,7 @@ fun SetupWizardScreen(
                     WizardStep.NEW_TO_VAULT -> NewToVaultStep(viewModel, onComplete)
                     WizardStep.RELAY_CHECK -> RelayCheckStep(viewModel)
                     WizardStep.IMPORT_TOUR -> ImportTourStep(viewModel, onComplete)
-                    WizardStep.PROFILE -> ProfileStep(viewModel)
+                    WizardStep.PROFILE -> EditProfileStep(viewModel)
                     WizardStep.ACCOUNT -> AccountStep(viewModel)
                     WizardStep.RELAYS -> RelayStep(viewModel)
                     WizardStep.IMPORT_NOTES -> ImportNotesStep(viewModel)
