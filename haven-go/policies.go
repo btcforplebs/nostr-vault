@@ -6,10 +6,10 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/barrydeen/haven/pkg/wot"
 	"github.com/fiatjaf/khatru"
 	"github.com/fiatjaf/khatru/policies"
 	"github.com/nbd-wtf/go-nostr"
@@ -148,7 +148,7 @@ func MustBeWhitelistedToQuery(ctx context.Context, _ nostr.Filter) (bool, string
 
 func MustBeInWotToQuery(ctx context.Context, _ nostr.Filter) (bool, string) {
 	authenticatedUser := khatru.GetAuthed(ctx)
-	if !wot.Has(ctx, authenticatedUser) {
+	if !inAnyAccountsWeb(ctx, authenticatedUser) {
 		slog.Debug("🚫 query rejected: user is not in the web of trust", "user", authenticatedUser)
 		return true, "restricted: you must be in the web of trust to query this relay"
 	}
@@ -192,19 +192,32 @@ func MustBePrivateReaderToPost(ctx context.Context, event *nostr.Event) (bool, s
 }
 
 func MustBeInWotToPost(ctx context.Context, event *nostr.Event) (bool, string) {
+	// Judged by the accounts the event tags, each by its own web
+	// (account_gate.go). An event that tags none of them is judged by any
+	// account's web, as before; the inbox then refuses it for the missing tag.
+	tagged := taggedAccounts(event)
+	inWeb := func(pubkey string) bool {
+		if len(tagged) == 0 {
+			return inAnyAccountsWeb(ctx, pubkey)
+		}
+		return slices.ContainsFunc(tagged, func(account string) bool { return inAccountsWeb(ctx, account, pubkey) })
+	}
 	// Event from a pubkey in the WoT can always be posted, even if the user is not authenticated
-	if wot.Has(ctx, event.PubKey) {
+	if inWeb(event.PubKey) {
 		return false, ""
 	}
 	// Anyone may reply to or quote the owner's own posts (see classifyInboxEvent).
-	if engagesOwnerPost(ctx, event) {
+	if len(tagged) == 0 && engagesOwnerPost(ctx, event) {
+		return false, ""
+	}
+	if len(admittingAccounts(ctx, tagged, event.PubKey, event)) > 0 {
 		return false, ""
 	}
 	authenticatedUser := khatru.GetAuthed(ctx)
 	if authenticatedUser == "" {
 		return true, "auth-required: you must be authenticated to post to this relay"
 	}
-	if !wot.Has(ctx, authenticatedUser) {
+	if !inWeb(authenticatedUser) {
 		slog.Debug("🚫 event rejected: user is not in web of trust", "event", event.ID, "pubkey", authenticatedUser)
 		return true, "you must be in the web of trust to post to this relay"
 	}

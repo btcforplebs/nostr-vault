@@ -324,7 +324,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 		// on a 24h ticker) gets that event re-offered and imported this round,
 		// instead of staying hidden behind a stub until process restart.
 		rejects.reevaluate(func(pk string) bool {
-			return !isBlacklisted(pk) && wot.Has(ctx, pk)
+			return !isBlacklisted(pk) && inAnyAccountsWeb(ctx, pk)
 		})
 		var fallback []string
 		if config.NegentropySyncEnabled {
@@ -742,8 +742,9 @@ type inboxClassification struct {
 	chat      bool         // store in the chat DB (gift wraps) instead of the inbox DB
 	notify    bool         // author isn't the tagged owner — warrants a notification
 	recipient string       // hex pubkey of the whitelisted account this event is tagged for (the first)
-	// recipients: every whitelisted account the event p-tags, in tag order,
-	// each once; recipients[0] == recipient. One reply tagging two of the
+	// recipients: every whitelisted account the event p-tags that lets its
+	// author in (account_gate.go), in tag order, each once;
+	// recipients[0] == recipient. One reply tagging two of the
 	// owner's accounts is one event for both (Logen 2026-11-05,
 	// RESEARCH/NV_LIVE_VAULT_MULTI_MENTION_ORDER_2026_11_05.md).
 	recipients []string
@@ -763,24 +764,20 @@ func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassificatio
 		slog.Debug("🚫discarding imported note from blacklisted pubkey", "pubkey", trustKey, "id", ev.ID)
 		return inboxClassification{reason: rejectBlacklist}
 	}
-	if !wot.Has(ctx, trustKey) && ev.Kind != nostr.KindGiftWrap {
-		// Anyone may reply to or quote the owner's own posts: a stranger
-		// answering you is news, where a stranger merely tagging you is the
-		// spam the WoT keeps out.
-		if !engagesOwnerPost(ctx, ev) {
+	// Each tagged account judges the author by its own web (account_gate.go):
+	// the event is kept for the accounts that let it in, and for nobody when
+	// none does. A gift wrap's author is a throwaway key, so it is kept for
+	// every account it tags.
+	recipients := taggedAccounts(ev)
+	if ev.Kind != nostr.KindGiftWrap {
+		if len(recipients) == 0 {
+			// Tags none of the accounts. As before, a stranger's is a web
+			// rejection (it can change), anyone else's is for good.
+			if !inAnyAccountsWeb(ctx, trustKey) && !engagesOwnerPost(ctx, ev) {
+				return inboxClassification{reason: rejectNotInWot}
+			}
+		} else if recipients = admittingAccounts(ctx, recipients, trustKey, ev); len(recipients) == 0 {
 			return inboxClassification{reason: rejectNotInWot}
-		}
-	}
-	var recipients []string
-	for tag := range ev.Tags.FindAll("p") {
-		if len(tag) < 2 {
-			continue
-		}
-		if _, ok := whitelist()[tag[1]]; !ok {
-			continue
-		}
-		if !slices.Contains(recipients, tag[1]) {
-			recipients = append(recipients, tag[1])
 		}
 	}
 	if len(recipients) == 0 {

@@ -353,6 +353,11 @@ var blacklistOverride atomic.Pointer[map[string]struct{}]
 // blacklist checks should go through this rather than reading
 // config.BlacklistedPubKeys directly, so a live update actually takes effect.
 func isBlacklisted(pubkey string) bool {
+	// You cannot block your own accounts: the own-account check comes before
+	// any block list (Logen, 2026-11-22).
+	if isOwnKey(pubkey) {
+		return false
+	}
 	if m := blacklistOverride.Load(); m != nil {
 		_, ok := (*m)[pubkey]
 		return ok

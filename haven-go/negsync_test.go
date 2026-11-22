@@ -24,9 +24,26 @@ import (
 type stubWot struct {
 	allow   bool
 	members map[string]bool
+	// webs, when set, is a web per account (webs[account][pubkey]) for the
+	// per-account gates; Has is then anyone in any account's web.
+	webs map[string]map[string]bool
+}
+
+// HasFor is the per-account answer: the account's own web when webs is set,
+// else Has, like a model with no web per account.
+func (s stubWot) HasFor(ctx context.Context, owner, pubkey string) bool {
+	if s.webs == nil {
+		return s.Has(ctx, pubkey)
+	}
+	return s.webs[owner][pubkey]
 }
 
 func (s stubWot) Has(_ context.Context, pubkey string) bool {
+	for _, web := range s.webs {
+		if web[pubkey] {
+			return true
+		}
+	}
 	return s.allow || s.members[pubkey]
 }
 
