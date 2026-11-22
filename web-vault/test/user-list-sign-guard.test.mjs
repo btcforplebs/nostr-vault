@@ -45,6 +45,7 @@ test("only these files sign anything", () => {
   // A new one could sign a list; review it, then add it here.
   assert.deepEqual(scan().signers, [
     "../web-relay/src/fips/owner-proof.js" /* relay page owner proof: kind 29242 only, exact template, no list kind */,
+    "src/box/api-media.js" /* Copy to servers on a box: kind 24242 upload auths only, exact template, checkSigned */,
     "src/box/api.js", "src/box/box-vault.js", "src/guest/guest.js",
     "src/napplet/shell-deps.js" /* napplets: policy.js signDecision runs first; no list kind (ACCOUNT_KINDS), no credential kind, for any napplet */,
     "src/net/actions.js", "src/net/blocks.js",
