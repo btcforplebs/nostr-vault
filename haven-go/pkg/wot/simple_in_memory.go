@@ -398,33 +398,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	filter := nostr.Filter{
-		Authors: slices.Collect(maps.Keys(wt.WhitelistedPubKeys)),
-		Kinds:   []int{nostr.KindFollowList},
-	}
-
-	slog.Info("🛜 fetching Nostr events to build WoT")
-
-	// The owners' lists wait for every relay: no quorum cut. Every other
-	// list hangs off them, and a first build has no saved web to fall back
-	// on if the one relay holding them was cut.
-	got := fetchListsFromEvery(timeoutCtx, wt.Pool, wt.SeedRelays, filter)
-	ownersWhole := got.whole()
-	eventsAnalysed.Add(got.received)
-	ownerLists := got.lists
-	if wt.LocalFollowLists != nil {
-		for _, ev := range wt.LocalFollowLists() {
-			if _, owner := wt.WhitelistedPubKeys[ev.PubKey]; !owner || ev.Kind != nostr.KindFollowList {
-				continue
-			}
-			if old, ok := ownerLists[ev.PubKey]; !ok || ev.CreatedAt > old.CreatedAt {
-				if !ok {
-					eventsAnalysed.Add(1)
-				}
-				ownerLists[ev.PubKey] = ev
-			}
-		}
-	}
+	ownerLists, ownersWhole := wt.fetchOwnerLists(timeoutCtx, &eventsAnalysed)
 	for _, ev := range ownerLists {
 		for contact := range ev.Tags.FindAll("p") {
 			if len(contact) > 1 {
