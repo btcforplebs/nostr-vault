@@ -68,7 +68,7 @@ internal fun KeySpareStep(viewModel: SetupWizardViewModel) {
         KeyCopyButton(nsec) { copied = it }
         Spacer(Modifier.height(14.dp))
         Text(
-            "Write your key down on paper and keep it somewhere safe. If you lose this phone, your backup is the only way back in.",
+            "Write your key down on paper and keep it somewhere safe. If you lose this device, your backup is the only way back in.",
             color = SecondaryText, fontSize = 15.sp, lineHeight = 21.sp, textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(10.dp))
