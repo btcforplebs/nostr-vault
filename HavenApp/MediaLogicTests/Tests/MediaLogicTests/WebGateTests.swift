@@ -12,7 +12,7 @@ final class WebGateTests: XCTestCase {
     private let stranger = String(repeating: "f", count: 64)
 
     private func web(blocked: Set<String> = [], mutes: MuteList = .empty) -> WebGate.Web {
-        WebGate.Web(own: [me, alt], whitelist: [], web: [friend, fof], hop3: [fringe],
+        WebGate.Web(own: [me, alt], whitelist: [], web: [friend, fof], loose: [fringe],
                     blocked: blocked, mutes: mutes)
     }
 
@@ -39,10 +39,10 @@ final class WebGateTests: XCTestCase {
         XCTAssertEqual(judge(fringe), .outside, "hop 3 only where the surface reaches it")
     }
 
-    func testHop3OnlyWithThatReach() {
-        XCTAssertEqual(judge(fringe, reach: .webAndHop3), .hop3)
-        XCTAssertEqual(judge(stranger, reach: .webAndHop3), .outside)
-        XCTAssertEqual(judge(friend, reach: .webAndHop3), .inside)
+    func testLooseOnlyWithThatReach() {
+        XCTAssertEqual(judge(fringe, reach: .webAndLoose), .loose)
+        XCTAssertEqual(judge(stranger, reach: .webAndLoose), .outside)
+        XCTAssertEqual(judge(friend, reach: .webAndLoose), .inside)
     }
 
     func testEveryoneLetsStrangersInButNotTheBlocked() {
@@ -124,27 +124,27 @@ final class WebGateTests: XCTestCase {
     func testNoGraphIsJustTheFollows() {
         let l = WebGate.layers(saved: [], follows: [friend], links: nil, depth: 3, scope: scope())
         XCTAssertEqual(l.web, [friend, me])
-        XCTAssertEqual(l.hop3, [])
+        XCTAssertEqual(l.loose, [])
     }
 
     func testUnconfirmedFollowsNeverFallBackToThePool() {
         let pooled: Set<String> = [friend, stranger, fof]
         let l = WebGate.layers(saved: pooled, follows: [friend], links: nil, depth: 3, scope: scope(false))
         XCTAssertEqual(l.web, [friend, me], "AccountWeb.web returns the pooled web here; the gate does not")
-        XCTAssertEqual(l.hop3, [])
+        XCTAssertEqual(l.loose, [])
     }
 
-    func testDepthTwoSavedWebIsHop3() {
+    func testDepthTwoSavedWebIsLoose() {
         let saved: Set<String> = [me, friend, stranger]
         let l = WebGate.layers(saved: saved, follows: [friend], links: nil, depth: 2, scope: scope())
         XCTAssertEqual(l.web, [friend, me])
-        XCTAssertEqual(l.hop3, [stranger], "another account's follow is one hop out, not inside")
+        XCTAssertEqual(l.loose, [stranger], "another account's follow is one hop out, not inside")
     }
 
     func testDepthThreeWithoutLinksIsTheFollows() {
         let l = WebGate.layers(saved: [friend, stranger], follows: [friend], links: nil, depth: 3, scope: scope())
         XCTAssertEqual(l.web, [friend, me])
-        XCTAssertEqual(l.hop3, [stranger])
+        XCTAssertEqual(l.loose, [stranger])
     }
 
     func testDepthThreeSplitsByMinFollowers() {
@@ -157,7 +157,7 @@ final class WebGateTests: XCTestCase {
         let l = WebGate.layers(saved: [friend, f2, fof, fringe, stranger], follows: [friend, f2], links: links,
                                depth: 3, scope: scope(bar: 2))
         XCTAssertEqual(l.web, [me, friend, f2, fof])
-        XCTAssertEqual(l.hop3, [fringe])
+        XCTAssertEqual(l.loose, [fringe])
         // Same web as AccountWeb.web where both are defined.
         let scopeKnown = scope(bar: 2)
         XCTAssertEqual(AccountWeb.web(saved: [friend, f2, fof, fringe, stranger], follows: [friend, f2],
@@ -170,7 +170,7 @@ final class WebGateTests: XCTestCase {
         let l = WebGate.layers(saved: [friend, fof, fringe], follows: [friend], links: links, depth: 3,
                                scope: scope(bar: 3))
         XCTAssertEqual(l.web, [me, friend, fof, fringe])
-        XCTAssertEqual(l.hop3, [])
+        XCTAssertEqual(l.loose, [])
     }
 
     func testWebBuildCarriesBlocksAndMutes() {
@@ -182,9 +182,9 @@ final class WebGateTests: XCTestCase {
         XCTAssertEqual(w.own, [me])
     }
 
-    func testHop3NeverOverlapsTheWeb() {
-        let w = WebGate.Web(own: [me], web: [friend], hop3: [friend, fringe])
-        XCTAssertEqual(w.hop3, [fringe])
+    func testLooseNeverOverlapsTheWeb() {
+        let w = WebGate.Web(own: [me], web: [friend], loose: [friend, fringe])
+        XCTAssertEqual(w.loose, [fringe])
     }
 
     // MARK: - Hop 3 ration
@@ -192,31 +192,31 @@ final class WebGateTests: XCTestCase {
     private struct Row { let author: String; let verdict: WebGate.Verdict; let reply: Bool }
 
     private func capped(_ rows: [Row]) -> [Row] {
-        WebGate.capHop3(rows, verdict: \.verdict, author: \.author, isReply: \.reply)
+        WebGate.capLoose(rows, verdict: \.verdict, author: \.author, isReply: \.reply)
     }
 
     func testCapKeepsOrderAndOtherRows() {
         let rows = [Row(author: "w1", verdict: .inside, reply: false),
-                    Row(author: "h1", verdict: .hop3, reply: false),
+                    Row(author: "h1", verdict: .loose, reply: false),
                     Row(author: "x", verdict: .outside, reply: false),
                     Row(author: "w2", verdict: .inside, reply: false)]
         XCTAssertEqual(capped(rows).map(\.author), ["w1", "h1", "x", "w2"])
     }
 
     func testCapOnePerAuthorAndNoReplies() {
-        let rows = [Row(author: "h1", verdict: .hop3, reply: false),
-                    Row(author: "H1", verdict: .hop3, reply: false),
-                    Row(author: "h2", verdict: .hop3, reply: true),
-                    Row(author: "h3", verdict: .hop3, reply: false)]
+        let rows = [Row(author: "h1", verdict: .loose, reply: false),
+                    Row(author: "H1", verdict: .loose, reply: false),
+                    Row(author: "h2", verdict: .loose, reply: true),
+                    Row(author: "h3", verdict: .loose, reply: false)]
         XCTAssertEqual(capped(rows).map(\.author), ["h1", "h3"])
     }
 
     func testCapIsAFifthWithAFloor() {
-        let hop3 = (0..<40).map { Row(author: "h\($0)", verdict: .hop3, reply: false) }
-        XCTAssertEqual(capped(hop3).count, WebGate.hop3Floor, "a list of only hop 3 still shows the floor")
+        let loose = (0..<40).map { Row(author: "h\($0)", verdict: .loose, reply: false) }
+        XCTAssertEqual(capped(loose).count, WebGate.looseFloor, "a list of only hop 3 still shows the floor")
         let inside = (0..<100).map { Row(author: "w\($0)", verdict: .inside, reply: false) }
-        let mixed = capped(inside + hop3)
-        XCTAssertEqual(mixed.filter { $0.verdict == .hop3 }.count, 20, "100 others / 5")
+        let mixed = capped(inside + loose)
+        XCTAssertEqual(mixed.filter { $0.verdict == .loose }.count, 20, "100 others / 5")
         XCTAssertEqual(mixed.filter { $0.verdict == .inside }.count, 100)
     }
 }

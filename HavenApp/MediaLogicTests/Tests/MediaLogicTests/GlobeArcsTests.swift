@@ -223,7 +223,7 @@ final class GlobeArcsTests: XCTestCase {
     /// plain stars, anyone further out flies only a zap, nothing is red.
     func testHopsOneAndTwoFlyAndFurtherOutOnlyZaps() {
         let follows: Set = [key(1), me]
-        let web = WebGate.Web(own: [me], web: [key(1), key(2)], hop3: [key(3)], blocked: [key(4)])
+        let web = WebGate.Web(own: [me], web: [key(1), key(2)], loose: [key(3)], blocked: [key(4)])
         func ring(_ author: String, zap: Bool = false, sort: GlobeArcs.Sort = .note, to targets: [String] = [],
                   show: GlobeArcs.Show = .init()) -> GlobeArcs.Ring? {
             let arrival = GlobeArcs.Arrival(id: key(900), author: author, targets: targets, zap: zap, sort: zap ? .zap : sort)

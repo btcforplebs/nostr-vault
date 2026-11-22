@@ -127,7 +127,7 @@ enum FeedFilterEngine {
                 // (Logen 2026-11-06), in its web, or one hop out where its
                 // reach allows (rationed below).
                 return !note.isReply && note.pubkey != ownPubkey && !followedPubkeys.contains(note.pubkey)
-                    && (v == .inside || v == .hop3)
+                    && (v == .inside || v == .loose)
             case .popular:
                 let isFollowed = followedPubkeys.contains(note.pubkey)
                 if popularFilter == .follows && !isFollowed { return false }
@@ -172,8 +172,8 @@ enum FeedFilterEngine {
             }
         }
 
-        if reach == .webAndHop3 {
-            filtered = WebGate.capHop3(filtered, verdict: verdict, author: { $0.repostedBy ?? $0.pubkey },
+        if reach == .webAndLoose {
+            filtered = WebGate.capLoose(filtered, verdict: verdict, author: { $0.repostedBy ?? $0.pubkey },
                                        isReply: \.isReply)
         }
         return filtered

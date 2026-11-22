@@ -25,7 +25,7 @@ final class ZapGateTests: XCTestCase {
     func testZapShow() {
         XCTAssertEqual(WebGate.zapShow(.inside), .whole)
         XCTAssertEqual(WebGate.zapShow(.outside), .amountOnly)
-        XCTAssertEqual(WebGate.zapShow(.hop3), .amountOnly)
+        XCTAssertEqual(WebGate.zapShow(.loose), .amountOnly)
         XCTAssertEqual(WebGate.zapShow(.blocked), .hidden)
     }
 

@@ -13,7 +13,7 @@ final class FeedGateTests: XCTestCase {
     private let myPost = String(repeating: "5", count: 64)
 
     private func gate(blocked: Set<String> = [], mutes: MuteList = .empty) -> WebGate.Web {
-        WebGate.Web(own: [me], web: [follow, webbie], hop3: [hop], blocked: blocked, mutes: mutes)
+        WebGate.Web(own: [me], web: [follow, webbie], loose: [hop], blocked: blocked, mutes: mutes)
     }
 
     private func note(_ id: String, by author: String, content: String = "gm", replyTo parent: String? = nil,
@@ -46,7 +46,7 @@ final class FeedGateTests: XCTestCase {
     func testStrangerMentionNeverReachesAnyFeedMode() {
         for mode in FeedMode.allCases where mode != .articles && mode != .polls {
             XCTAssertEqual(run([spam], mode), [], "\(mode) let a stranger's reply in")
-            XCTAssertEqual(run([spam], mode, reach: .webAndHop3), [], "\(mode) with hop 3")
+            XCTAssertEqual(run([spam], mode, reach: .webAndLoose), [], "\(mode) with hop 3")
         }
     }
 
@@ -87,9 +87,9 @@ final class FeedGateTests: XCTestCase {
 
     func testUnderratedReachesOneHopOutRationed() {
         let hops = (0..<30).map { note("h\($0)", by: String(repeating: "\($0 % 10)", count: 63) + "a", at: Double($0)) }
-        let hopGate = WebGate.Web(own: [me], web: [follow, webbie], hop3: Set(hops.map(\.pubkey)))
+        let hopGate = WebGate.Web(own: [me], web: [follow, webbie], loose: Set(hops.map(\.pubkey)))
         let shown = run(hops + [note("w", by: webbie), note("x", by: stranger)], .underrated,
-                        reach: .webAndHop3, gate: hopGate)
+                        reach: .webAndLoose, gate: hopGate)
         XCTAssertTrue(shown.contains("w"))
         XCTAssertFalse(shown.contains("x"), "outside stays out at any reach")
         XCTAssertEqual(shown.filter { $0.hasPrefix("h") }.count, 10, "one per author, the floor of 10")
@@ -102,7 +102,7 @@ final class FeedGateTests: XCTestCase {
     }
 
     func testFeedReachDefaultsAndSetting() {
-        XCTAssertEqual(FeedReach.reach(for: .underrated, settings: [:]), .webAndHop3)
+        XCTAssertEqual(FeedReach.reach(for: .underrated, settings: [:]), .webAndLoose)
         for mode in [FeedMode.discovery, .global, .popular, .media] {
             XCTAssertEqual(FeedReach.reach(for: mode, settings: [:]), .web)
         }
@@ -110,9 +110,9 @@ final class FeedGateTests: XCTestCase {
                        "Following has no reach setting")
         XCTAssertEqual(FeedReach.reach(for: .global, settings: ["Global": "everyone"]), .web,
                        "Everyone is the shield, never a stored reach")
-        let set = FeedReach.setting(.webAndHop3, for: .popular, in: [:])
-        XCTAssertEqual(FeedReach.reach(for: .popular, settings: set), .webAndHop3)
-        XCTAssertEqual(FeedReach.setting(.webAndHop3, for: .underrated, in: [:]), [:], "the default is stored as absent")
+        let set = FeedReach.setting(.webAndLoose, for: .popular, in: [:])
+        XCTAssertEqual(FeedReach.reach(for: .popular, settings: set), .webAndLoose)
+        XCTAssertEqual(FeedReach.setting(.webAndLoose, for: .underrated, in: [:]), [:], "the default is stored as absent")
     }
 
     /// The saved words are a format: a build that renames the cases must still
