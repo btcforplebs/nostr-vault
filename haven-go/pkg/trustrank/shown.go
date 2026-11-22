@@ -29,8 +29,10 @@ const DefaultViewBar = 55.0
 
 // Shown maps a rank score (0-100, as Score returns) to the shown 0-100 scale.
 // It keeps the order: a higher rank always shows higher or equal.
+// A NaN rank shows as 0, so it can never reach the file (json.Marshal
+// refuses NaN and the whole result write would be lost).
 func Shown(rank float64) float64 {
-	if rank <= 0 {
+	if rank <= 0 || math.IsNaN(rank) {
 		return 0
 	}
 	s := shownLow + shownPerDecade*(math.Log10(rank)-math.Log10(shownLowRank))
@@ -46,7 +48,20 @@ func RankFor(shown float64) float64 {
 	return math.Pow(10, math.Log10(shownLowRank)+(shown-shownLow)/shownPerDecade)
 }
 
-// PassesShown is Passes with the bar on the shown scale (the slider's value).
+// ShownRounded is Shown rounded to 0.1: the number written to the result
+// file. It is the one truth for the slider: the file's value and
+// PassesShown both use it, so a phone filtering on the file and a server
+// calling PassesShown agree on the person at the slider's edge.
+func ShownRounded(rank float64) float64 {
+	return math.Round(Shown(rank)*10) / 10
+}
+
+// PassesShown is Passes with the bar on the shown scale (the slider's value),
+// compared against ShownRounded, the same number the result file holds.
 func (r *Result) PassesShown(pk string, bar float64) bool {
-	return r.Passes(pk, RankFor(bar))
+	i, ok := r.g.index[pk]
+	if !ok || r.hop[i] < 0 || r.ownerMuted[i] {
+		return false
+	}
+	return r.hop[i] == 1 || ShownRounded(r.trust[i]*100) >= bar
 }

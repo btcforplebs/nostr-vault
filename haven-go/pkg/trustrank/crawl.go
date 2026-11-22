@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -238,7 +237,7 @@ func ResultPath(dir, account string) string {
 func writeResult(dir string, r *Result, now time.Time) error {
 	f := ResultFile{Account: r.Owner, BuiltAt: now.Unix(), Version: 2, Params: r.Params, MaxHop: r.Params.MaxHop, ViewBar: DefaultViewBar}
 	for _, p := range r.People() {
-		s := math.Round(Shown(p.Score)*10) / 10
+		s := ShownRounded(p.Score)
 		if s == 0 && p.Hop > 1 {
 			continue // nobody trusted vouches for them: not worth the bytes
 		}

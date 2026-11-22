@@ -75,3 +75,24 @@ func TestResultFileCarriesShownScores(t *testing.T) {
 		}
 	}
 }
+
+func TestShownNaNIsZero(t *testing.T) {
+	if s := Shown(math.NaN()); s != 0 {
+		t.Fatalf("Shown(NaN) = %v", s)
+	}
+	if _, err := json.Marshal(ShownRounded(math.NaN())); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPassesShownMatchesTheFileAtTheEdge(t *testing.T) {
+	r := mustRank(t, base(), "me", nil)
+	n, _, _ := r.Score("niche")
+	file := ShownRounded(n) // what a phone reads from the file
+	if !r.PassesShown("niche", file) {
+		t.Fatalf("file says %.1f but PassesShown(%.1f) is false", file, file)
+	}
+	if r.PassesShown("niche", file+0.1) {
+		t.Fatalf("file says %.1f but PassesShown(%.1f) is true", file, file+0.1)
+	}
+}
