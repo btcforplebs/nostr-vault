@@ -19,6 +19,7 @@ import { storageApi } from "./api-storage.js"
 import { devicesApi } from "./api-devices.js"
 import { updateApi } from "./api-update.js"
 import { contentsApi } from "./api-contents.js"
+import { jobsApi } from "./api-jobs.js"
 
 /** The NIP-98 Authorization header ("Nostr <base64 event>") for `method` `url`. `payload`: the object sent as the JSON
  *  body; its sha256 goes in the payload tag (nostr-tools hashes JSON.stringify(payload), the exact body sent). */
@@ -40,5 +41,5 @@ export function boxApi({ signer, base = boxApiBase(), fetchImpl = (...a) => fetc
     if (!res.ok) throw new Error(data?.message || data?.error || `The box answered ${res.status}`)
     return data ?? {}
   }
-  return { ...statusApi(call), ...storageApi(call), ...devicesApi(call), ...updateApi(call), ...contentsApi(call) }
+  return { ...statusApi(call), ...storageApi(call), ...devicesApi(call), ...updateApi(call), ...contentsApi(call), ...jobsApi(call) }
 }

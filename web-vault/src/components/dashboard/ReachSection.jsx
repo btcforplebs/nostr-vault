@@ -6,13 +6,15 @@ import { Row, Section } from "./parts.jsx"
 export const WEB_HOPS = 2
 export const blockedDetail = n => (n === 0 ? "Nobody blocked." : n === 1 ? "1 person blocked." : `${n} people blocked.`)
 
-export function ReachSection({ trusted = 0, blocked = 0 }) {
+/** `children`: the box's Rebuild now row in box mode (box/useBoxJobs.js useBoxTrust). */
+export function ReachSection({ trusted = 0, blocked = 0, children }) {
   return (
     <Section title="Who can reach you">
       <Row icon="crowd" href="#/wot"
         title={trusted ? `${trusted.toLocaleString()} people can reach your inbox` : "Trust list not built yet"}
         detail={`People within ${WEB_HOPS} hops of you. Everyone else is kept out.`} />
       <Row icon="hand" title="Blocked" detail={blockedDetail(blocked)} href="#/settings/blocked" />
+      {children}
     </Section>
   )
 }

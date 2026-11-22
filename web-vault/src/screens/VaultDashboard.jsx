@@ -40,6 +40,10 @@ import { useBoxDashboard, boxStorage } from "../box/useBoxDashboard.js"
 import { boxActivityItems } from "../box/box-activity.js"
 import { BoxLogView } from "../box/BoxLogView.jsx"
 import { BoxStatusDetails, BoxDevices, BoxStorage, BoxPublic, BoxUpdate } from "../box/BoxFold.jsx"
+import { useBoxJobs } from "../box/useBoxJobs.js"
+import { BoxStillToBringIn } from "../box/BoxStillToBringIn.jsx"
+import { BoxBackupSection } from "../box/BoxBackupSection.jsx"
+import { Row, RowButton } from "../components/dashboard/parts.jsx"
 import "../styles/dashboard.css"
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -144,6 +148,7 @@ export function VaultDashboard({ ctx, napplet = false, boxOptions }) {
   const { vault, session } = ctx
   const d = useVaultDashboard(ctx)
   const box = useBoxDashboard(ctx, boxOptions)
+  const bj = useBoxJobs(box, ctx) // the box's imports, trust, backups and restart (W4)
   const { counts, greetings, storage, followSavedAt, servers, jobs, history, historyRelays, setHistoryRelays, exportFile, mediaFile, importNotes, startedInMs, relayCount, syncing } = d
   const onBox = boxStorage(box?.data.contents)
   const media = box ? onBox.media : d.media
@@ -174,19 +179,25 @@ export function VaultDashboard({ ctx, napplet = false, boxOptions }) {
           : view === "activity" ? <ActivityWindow items={items} version={`${APP_VERSION}${APP_COMMIT ? ` · ${APP_COMMIT}` : ""}`} onFullLogs={box ? () => setView("logs") : undefined} />
           : view === "logs" && box ? <BoxLogView state={box.data.logs} />
           : view === "pair" ? <PairDevice key={pairMode} ctx={ctx} mode={pairMode} onMode={setPairMode} onClose={() => setView("dashboard")} /> : <>
-            <StatusCard syncing={syncing} box={box ? { status: box.data.status, connections: box.data.connections } : undefined} />
+            <StatusCard syncing={syncing} box={box ? { status: box.data.status, connections: box.data.connections, onRestart: bj?.first ? bj.restart : undefined } : undefined} />
             {box && <BoxStatusDetails box={box} />}
             {box ? <BoxDevices box={box} /> : <YourDevicesSection ctx={ctx} onPair={pair} />}
             <ListWipeBanner ctx={ctx} />
             <SafetySection method={session.method} followSavedAt={followSavedAt} backupAt={history.notesBackup} onBackup={exportFile} backupBusy={jobs.export} />
-            <ReachSection trusted={d.trusted} blocked={d.blocked} />
+            <ReachSection trusted={d.trusted} blocked={d.blocked}>
+              {bj && <Row icon="crowd" title="Rebuild who can reach you" detail={bj.trust.note || "Your box rebuilds its trust list now, instead of at the daily rebuild."}>
+                <RowButton title="Rebuild now" busy={bj.trust.rebuilding} onClick={bj.trust.rebuild} />
+              </Row>}
+            </ReachSection>
             <ContentsSection {...counts} usage={box ? onBox.usage : storage.usage} kept={storage.kept} media={media} onRetry={look} me={session.pubkey} greetings={greetings} box={!!box}>
               {box && <BoxStorage box={box} />}
             </ContentsSection>
-            {!vault.box && <StillToBringIn ctx={ctx} />}
+            {bj ? <BoxStillToBringIn imports={bj.imports} /> : !vault.box && <StillToBringIn ctx={ctx} />}
             <KeepFullSection startDate={IMPORT_START_DATE} history={history} importing={jobs.importing} mediaBusy={jobs.media} exportBusy={jobs.export}
               status={jobs.status} onImport={importNotes} onMedia={mediaFile} onExport={exportFile}
-              historyRelays={historyRelays} onHistoryRelays={setHistoryRelays} onSkip={d.skip} />
+              historyRelays={historyRelays} onHistoryRelays={setHistoryRelays} onSkip={d.skip}
+              {...(bj && { ...bj.keepFull, box: true, onHistoryRelays: undefined, onSkip: undefined })} />
+            {bj?.first && <BoxBackupSection api={bj.api} />}
             <SettingsSection relays={relayCount} mediaServers={servers} />
             {box && <BoxPublic ctx={ctx} box={box} />}
             <ActivitySection items={items} onViewAll={() => setView("activity")} />

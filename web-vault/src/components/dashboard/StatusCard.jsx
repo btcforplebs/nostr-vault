@@ -22,10 +22,12 @@ export function boxStatusLine(status, connections) {
     Number.isFinite(open) ? `${open} ${open === 1 ? "connection" : "connections"}` : null].filter(Boolean).join(" · ")
 }
 
-/** The box's card: `box` = { status, connections }, each { value } | { error } | undefined (still asking). */
+/** The box's card: `box` = { status, connections, onRestart? }, status and connections each { value } | { error } |
+ *  undefined (still asking). onRestart: the first account's Restart box (POST /api/box/restart), in the "…" menu. */
 function BoxStatusCard({ box }) {
-  const { status, connections } = box
+  const { status, connections, onRestart } = box
   const answering = !!status?.value, failed = !!status?.error
+  const [menu, setMenu] = useState(false)
   return (
     <div class="dash-status">
       <span class={`dash-dot ${answering ? "running" : failed ? "stopped" : ""}`} aria-hidden="true"><i /></span>
@@ -34,6 +36,12 @@ function BoxStatusCard({ box }) {
         {answering && <span class="dash-sub">{boxStatusLine(status, connections)}</span>}
         {failed && <span class="dash-sub">{status.error}</span>}
       </span>
+      {onRestart && <span class="dash-menu">
+        <button type="button" class="dash-more" aria-label="Box controls" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(m => !m)}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+        </button>
+        {menu && <div class="dash-menu-list" role="menu"><button role="menuitem" onClick={() => { setMenu(false); onRestart() }}>Restart box</button></div>}
+      </span>}
     </div>
   )
 }
