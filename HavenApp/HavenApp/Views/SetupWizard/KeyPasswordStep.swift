@@ -154,6 +154,8 @@ struct KeyPasswordStep: View {
         #if os(iOS)
         .textInputAutocapitalization(.never)
         #endif
+        // With Show on, the key password is plain text; keep it out of the switcher.
+        .keySnapshotCover()
     }
 
     private func validationMessage(_ text: String) -> some View {

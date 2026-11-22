@@ -14,6 +14,11 @@ struct KeySnapshotCover: ViewModifier {
         // the row's own background shows, in either colour scheme.
         content
             .opacity(covered ? 0 : 1)
+            // A key view can appear while the app is already inactive (a sheet
+            // right after Face ID): start covered then, not at the next notification.
+            .onAppear {
+                if UIApplication.shared.applicationState != .active { covered = true }
+            }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
                 apply(.willResignActive)
             }
