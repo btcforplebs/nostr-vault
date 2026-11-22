@@ -13,7 +13,11 @@ import (
 // production where it is always *SimpleInMemory.
 type stubModel struct {
 	delay time.Duration
+	// retallies counts RetallyAccounts calls: installing a model runs one.
+	retallies atomic.Int32
 }
+
+func (m *stubModel) RetallyAccounts() { m.retallies.Add(1) }
 
 func (*stubModel) Has(_ context.Context, _ string) bool { return true }
 

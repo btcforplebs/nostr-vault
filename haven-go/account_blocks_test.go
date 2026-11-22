@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -224,5 +225,79 @@ func TestAccountBlocksAreParsedPerAccount(t *testing.T) {
 	}
 	if got := loadAccountBlocks(t.TempDir() + "/absent.json"); got != nil {
 		t.Errorf("no file gave %v, want none", got)
+	}
+}
+
+// A zap receipt is signed by the wallet's server: a stored one from someone
+// the account blocked is hidden by its zapper, like a new one is refused.
+func TestStoredZapFromABlockedZapperIsHidden(t *testing.T) {
+	a, _, _ := blocksFixture(t)
+	zapperSK, serviceSK := nostr.GeneratePrivateKey(), nostr.GeneratePrivateKey()
+	zapper, _ := nostr.GetPublicKey(zapperSK)
+	receipt := zapPair(t, zapperSK, serviceSK, a, false)
+	other := gateNote('z', hexid('d'))
+	read := func() int {
+		return len(served(t, hideBlacklistedQuery, pFilter(a), receipt, other))
+	}
+	if read() != 2 {
+		t.Fatal("fixture: before the block the receipt is served")
+	}
+	UpdateAccountBlocks(blocksByAccount{a: {zapper: {}}})
+	if read() != 1 {
+		t.Error("A blocked the zapper, and the stored zap receipt was still served")
+	}
+}
+
+// The list of hidden people names each once, however many lists they are on,
+// and the "anything to hide?" check every read makes agrees with it.
+func TestHiddenAuthorsNamesEachOnce(t *testing.T) {
+	a, _, y := blocksFixture(t) // y is on A's list
+	t.Cleanup(func() { blacklistOverride.Store(nil) })
+	UpdateBlacklist(map[string]struct{}{y: {}, hexid('e'): {}})
+	scope := readScope(pFilter(a))
+	if got := hiddenAuthors(scope, nil); len(got) != 2 {
+		t.Errorf("hidden %v, want y and e once each", got)
+	}
+	if got := hiddenAuthors(scope, []string{y, y, hexid('f')}); len(got) != 1 || got[0] != y {
+		t.Errorf("hidden among the filter's authors: %v, want y once", got)
+	}
+	if !hidesAnyone(scope, nil) || hidesAnyone(scope, []string{hexid('f')}) {
+		t.Error("hidesAnyone: want true for the scope, false when the filter names only f")
+	}
+	UpdateBlacklist(map[string]struct{}{})
+	UpdateAccountBlocks(blocksByAccount{})
+	if hidesAnyone(scope, nil) || len(hiddenAuthors(scope, nil)) != 0 {
+		t.Error("nobody blocked, and the read still hides someone")
+	}
+}
+
+// No host names the per-account files yet: with none named, none is read,
+// so a stray file in the working directory cannot become settings.
+func TestAccountFilesAreOnlyReadWhenNamed(t *testing.T) {
+	t.Chdir(t.TempDir())
+	npub, _ := reachTestAccount(t)
+	for name, body := range map[string]string{
+		"account_reach.json":     `{"v":1,"accounts":{"` + npub + `":{"depth":1}}}`,
+		"blocks_by_account.json": `{"v":1,"accounts":{"` + npub + `":["` + npub + `"]}}`,
+	} {
+		if err := os.WriteFile(name, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Setenv registers the restore; Unsetenv is what makes the default apply.
+	for _, key := range []string{"ACCOUNT_REACH_FILE", "BLOCKS_BY_ACCOUNT_FILE"} {
+		t.Setenv(key, "")
+		os.Unsetenv(key)
+	}
+	saved := config
+	t.Cleanup(func() { config = saved; resetLiveAccounts() })
+	cfg := loadConfig()
+	if len(cfg.AccountReach) != 0 || cfg.AccountBlocks != nil {
+		t.Errorf("unnamed files were read: reach %v, blocks %v", cfg.AccountReach, cfg.AccountBlocks)
+	}
+	t.Setenv("ACCOUNT_REACH_FILE", "account_reach.json")
+	t.Setenv("BLOCKS_BY_ACCOUNT_FILE", "blocks_by_account.json")
+	if cfg = loadConfig(); len(cfg.AccountReach) != 1 || len(cfg.AccountBlocks) != 1 {
+		t.Errorf("named files were not read: reach %v, blocks %v", cfg.AccountReach, cfg.AccountBlocks)
 	}
 }

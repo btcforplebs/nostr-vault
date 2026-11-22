@@ -61,30 +61,70 @@ func servesAuthor(scope []string, pubkey string) bool {
 	return !isBlacklisted(pubkey) && !blockedByAll(scope, pubkey)
 }
 
-// hiddenAuthors is the people hidden from a read with this scope, narrowed
-// to filterAuthors when the filter names any.
-func hiddenAuthors(scope, filterAuthors []string) []string {
-	var out []string
-	consider := func(pk string) {
-		if !servesAuthor(scope, pk) && !slices.Contains(out, pk) {
-			out = append(out, pk)
+// servesEvent is servesAuthor for a stored event. A zap receipt is signed by
+// the wallet's server, so it is also judged by the person who sent the zap.
+func servesEvent(scope []string, ev *nostr.Event) bool {
+	if !servesAuthor(scope, ev.PubKey) {
+		return false
+	}
+	if ev.Kind == nostr.KindZap {
+		if zapper := inboxTrustKey(ev); zapper != ev.PubKey {
+			return servesAuthor(scope, zapper)
 		}
 	}
+	return true
+}
+
+// eachHidden calls yield for the people hidden from a read with this scope,
+// narrowed to filterAuthors when the filter names any, until yield returns
+// false. Someone on two lists can be yielded twice.
+func eachHidden(scope, filterAuthors []string, yield func(pk string) bool) {
 	if len(filterAuthors) > 0 {
 		for _, pk := range filterAuthors {
-			consider(pk)
+			if !servesAuthor(scope, pk) && !yield(pk) {
+				return
+			}
 		}
-		return out
+		return
 	}
 	for _, pk := range blacklistedPubkeys() {
-		consider(pk)
+		if !servesAuthor(scope, pk) && !yield(pk) {
+			return
+		}
 	}
 	// Everyone the scope's accounts all blocked is on the first one's list.
 	if len(scope) > 0 {
 		for pk := range accountBlocks()[scope[0]] {
-			consider(pk)
+			if !servesAuthor(scope, pk) && !yield(pk) {
+				return
+			}
 		}
 	}
+}
+
+// hidesAnyone reports whether a read with this scope hides anybody: the
+// cheap question every read asks first, which stops at the first one.
+func hidesAnyone(scope, filterAuthors []string) bool {
+	found := false
+	eachHidden(scope, filterAuthors, func(string) bool {
+		found = true
+		return false
+	})
+	return found
+}
+
+// hiddenAuthors is the people hidden from a read with this scope, each once,
+// narrowed to filterAuthors when the filter names any.
+func hiddenAuthors(scope, filterAuthors []string) []string {
+	var out []string
+	seen := make(map[string]struct{})
+	eachHidden(scope, filterAuthors, func(pk string) bool {
+		if _, dup := seen[pk]; !dup {
+			seen[pk] = struct{}{}
+			out = append(out, pk)
+		}
+		return true
+	})
 	return out
 }
 
@@ -97,14 +137,14 @@ func hideBlacklistedQuery(query func(context.Context, nostr.Filter) (chan *nostr
 			return ch, err
 		}
 		scope := readScope(filter)
-		if len(hiddenAuthors(scope, filter.Authors)) == 0 {
+		if !hidesAnyone(scope, filter.Authors) {
 			return ch, err
 		}
 		out := make(chan *nostr.Event)
 		go func() {
 			defer close(out)
 			for ev := range ch {
-				if !servesAuthor(scope, ev.PubKey) {
+				if !servesEvent(scope, ev) {
 					continue
 				}
 				select {
