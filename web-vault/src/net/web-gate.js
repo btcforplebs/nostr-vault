@@ -8,7 +8,7 @@
 //    thread). Your own accounts are never blocked as people; mutes on words, hashtags and threads still apply to them.
 // 2. inside: the signer is one of your accounts, a key the surface always shows, the whitelist, or your own web.
 // 3. inside again when the surface's reach is "everyone" (a Global feed with the shield on Everyone).
-// 4. hop3: reach is "webAndHop3" and the signer is one hop past your web.
+// 4. loose: reach is "webAndHop3" and the signer is one hop past your web.
 // 5. outside: everyone else.
 //
 // It fails closed: with none of the follows' lists back, the web is your follows and nothing is one hop out
@@ -18,7 +18,7 @@ import { replyRefs, repostInner } from "./thread.js"
 import { isReply as isReplyNote } from "./feed-filters.js"
 import { isPublicKeyAccount } from "./secret-key-leak.js"
 
-export const VERDICTS = Object.freeze({ inside: "inside", hop3: "hop3", outside: "outside", blocked: "blocked" })
+export const VERDICTS = Object.freeze({ inside: "inside", loose: "loose", outside: "outside", blocked: "blocked" })
 /** How far a surface reaches. Only a feed has a setting; every other surface is "web". */
 export const REACHES = Object.freeze(["web", "webAndHop3", "everyone"])
 
@@ -35,41 +35,41 @@ const followedBy = ev => ev?.ps ?? (ev?.tags ?? []).filter(t => t?.[0] === "p" &
 
 /**
  * The account's web and the hop past it, from its follows' contact lists (wot.js followLists: Map follow -> kind 3).
- * web: follows, own accounts, and anyone at least `minFollowers` of the follows follow. hop3: followed by at least one
+ * web: follows, own accounts, and anyone at least `minFollowers` of the follows follow. loose: followed by at least one
  * follow but fewer than the bar. Fails closed: no lists back is the follows alone, nothing one hop out.
- * A new account (fewer follows than the bar) gets the NEW_ACCOUNT_WEB_CAP most-followed as its web, the rest as hop3.
- * A `blocked` follow vouches for nobody (as wot.js buildWeb). -> { web: Set, hop3: Set }
+ * A new account (fewer follows than the bar) gets the NEW_ACCOUNT_WEB_CAP most-followed as its web, the rest as loose.
+ * A `blocked` follow vouches for nobody (as wot.js buildWeb). -> { web: Set, loose: Set }
  */
 export function webLayers({ follows = [], lists = new Map(), own = [], minFollowers = MIN_FOLLOWERS, blocked = [] } = {}) {
   const skip = lower(blocked)
   const followSet = new Set([...lower(follows)].filter(f => !skip.has(f)))
   const web = new Set([...followSet, ...lower(own)])
-  if (!lists?.size) return { web, hop3: new Set() }
+  if (!lists?.size) return { web, loose: new Set() }
   const counts = new Map()
   for (const f of followSet) {
     for (const pk of new Set(followedBy(lists.get(f)))) if (!web.has(pk)) counts.set(pk, (counts.get(pk) ?? 0) + 1)
   }
   const bar = Math.max(minFollowers, 1)
-  const hop3 = new Set()
+  const loose = new Set()
   if (followSet.size < bar) {
     const ranked = [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([pk]) => pk)
-    ranked.forEach((pk, i) => (i < NEW_ACCOUNT_WEB_CAP ? web : hop3).add(pk))
-    return { web, hop3 }
+    ranked.forEach((pk, i) => (i < NEW_ACCOUNT_WEB_CAP ? web : loose).add(pk))
+    return { web, loose }
   }
-  for (const [pk, n] of counts) (n >= bar ? web : hop3).add(pk)
-  return { web, hop3 }
+  for (const [pk, n] of counts) (n >= bar ? web : loose).add(pk)
+  return { web, loose }
 }
 
 /**
  * One account's web, built once and read for every note. `blocked`: the block list as blocks.js keeps it (a Set of
  * people carrying `words`, `hashtags` and `threads`, muteSet). Keys are lowercased.
  */
-export function gateWeb({ own = [], whitelist = [], web = [], hop3 = [], blocked = null } = {}) {
+export function gateWeb({ own = [], whitelist = [], web = [], loose = [], blocked = null } = {}) {
   const w = lower(web)
-  const h = lower(hop3)
+  const h = lower(loose)
   for (const pk of w) h.delete(pk)
   return {
-    own: lower(own), whitelist: lower(whitelist), web: w, hop3: h, blocked: lower(blocked),
+    own: lower(own), whitelist: lower(whitelist), web: w, loose: h, blocked: lower(blocked),
     words: blocked?.words ?? [], hashtags: blocked?.hashtags ?? new Set(), threads: blocked?.threads ?? new Set(),
   }
 }
@@ -146,7 +146,7 @@ export function isBlockedSubject(subject, web) {
 }
 
 /**
- * The verdict: "inside" | "hop3" | "outside" | "blocked". `reach`: "web" (every surface but a feed), "webAndHop3"
+ * The verdict: "inside" | "loose" | "outside" | "blocked". `reach`: "web" (every surface but a feed), "webAndHop3"
  * (a feed whose Reach setting says so) or "everyone" (a Global feed with the shield on Everyone). `always`: keys this
  * surface always shows (the note's author on its own thread, a stream's host in its chat).
  */
@@ -159,7 +159,7 @@ export function judge(subject, web, { reach = "web", always = [] } = {}) {
   if (isPublicKeyAccount(signer) && !web.own.has(signer) && !alwaysSet(always).has(signer)) return VERDICTS.outside
   if (web.own.has(signer) || web.whitelist.has(signer) || web.web.has(signer) || alwaysSet(always).has(signer)) return VERDICTS.inside
   if (reach === "everyone") return VERDICTS.inside
-  if (reach === "webAndHop3" && web.hop3.has(signer)) return VERDICTS.hop3
+  if (reach === "webAndHop3" && web.loose.has(signer)) return VERDICTS.loose
   return VERDICTS.outside
 }
 
@@ -171,24 +171,24 @@ export const judgeNote = (ev, web, { authorOf, reach, always } = {}) => judge(no
 
 // ---- Hop 3, rationed ----
 
-/** Most hop-3 rows one list shows: a fifth of its other rows, and never fewer than HOP3_FLOOR, so a feed made mostly
- *  of them (Underrated for an account with few follows) still shows a few (WebGate.capHop3). */
-export const HOP3_FLOOR = 10
-export const HOP3_SHARE = 5
+/** Most hop-3 rows one list shows: a fifth of its other rows, and never fewer than LOOSE_FLOOR, so a feed made mostly
+ *  of them (Underrated for an account with few follows) still shows a few (WebGate.capLoose). */
+export const LOOSE_FLOOR = 10
+export const LOOSE_SHARE = 5
 
 /**
  * `items` with the hop-3 rows rationed, order kept: top-level posts only (a hop-3 reply goes), one per author, and at
- * most max(HOP3_FLOOR, other rows / HOP3_SHARE). Rows past the ration are left out, not folded: they were not refused,
+ * most max(LOOSE_FLOOR, other rows / LOOSE_SHARE). Rows past the ration are left out, not folded: they were not refused,
  * only rationed. Other verdicts pass through untouched. `isReply` defaults to reading the item as a note event.
  */
-export function capHop3(items, { verdict, author, isReply = item => isReplyNote(item) }) {
+export function capLoose(items, { verdict, author, isReply = item => isReplyNote(item) }) {
   const verdicts = items.map(verdict)
-  const others = verdicts.filter(v => v !== VERDICTS.hop3).length
-  const cap = Math.max(HOP3_FLOOR, Math.floor(others / HOP3_SHARE))
+  const others = verdicts.filter(v => v !== VERDICTS.loose).length
+  const cap = Math.max(LOOSE_FLOOR, Math.floor(others / LOOSE_SHARE))
   const authors = new Set()
   let shown = 0
   return items.filter((item, i) => {
-    if (verdicts[i] !== VERDICTS.hop3) return true
+    if (verdicts[i] !== VERDICTS.loose) return true
     const who = String(author(item) ?? "").toLowerCase()
     if (shown >= cap || isReply(item) || authors.has(who)) return false
     authors.add(who)
