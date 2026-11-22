@@ -262,3 +262,59 @@ func TestDepthOuterBarDoesNotTouchTheSureRings(t *testing.T) {
 		t.Fatal("nobody in ring 3 is over the outer bar: no ring-3 list is read")
 	}
 }
+
+// New with the deeper walk, and pinned here on purpose (Tron, #2406): ring
+// 3's lists are now read, so ring 3's mutes count against people nearer in.
+// X is in ring 2. 200 ring-3 people, each vouched for by 60 ring-2 hubs,
+// mute X. With the walk held at ring 3 (as before the depth rule) nobody
+// reads those mutes and X stays over the view bar; with the real ceiling X
+// drops under it. Whether far mutes should reach this far in is Logen's
+// call; a change either way must change this test.
+func TestDepthFarMutesLowerANearScore(t *testing.T) {
+	x := pk(999)
+	build := func() *fakeNet {
+		n := &fakeNet{lists: map[string]List{}}
+		hubs := []string{x}
+		for i := 0; i < 60; i++ {
+			hubs = append(hubs, pk(1000+i))
+		}
+		var friends []string
+		for i := 0; i < 5; i++ {
+			friends = append(friends, pk(100+i))
+			n.lists[pk(100+i)] = list(hubs...)
+		}
+		n.lists[pk(0)] = list(friends...)
+		var ring3 []string
+		for i := 0; i < 200; i++ {
+			ring3 = append(ring3, pk(2000+i))
+			n.lists[pk(2000+i)] = List{FollowsAt: 1, MutesAt: 1, Mutes: []string{x}}
+		}
+		for _, h := range hubs[1:] {
+			n.lists[h] = list(ring3...)
+		}
+		return n
+	}
+	shown := func(ceiling int) (float64, *fakeNet) {
+		n := build()
+		c := deepCrawler(t, n, t.TempDir())
+		c.Params.MaxHop = ceiling
+		res, err := c.RunPass(context.Background(), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, hop, ok := res.Score(x)
+		if !ok || hop != 2 {
+			t.Fatalf("X must be in ring 2: hop %d ok %v", hop, ok)
+		}
+		return ShownRounded(s), n
+	}
+	before, n3 := shown(SureHop)
+	after, n6 := shown(CeilingHop)
+	if n3.called(pk(2000)) || !n6.called(pk(2000)) {
+		t.Fatal("ring 3's lists are read only by the deeper walk")
+	}
+	if !(before >= DefaultViewBar && after < DefaultViewBar) {
+		t.Fatalf("X shows %.1f with the walk held at ring 3 and %.1f with the deeper walk; want over and under %.0f",
+			before, after, DefaultViewBar)
+	}
+}
