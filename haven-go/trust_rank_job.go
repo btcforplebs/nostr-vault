@@ -130,10 +130,13 @@ func trustRankDir() string {
 // runTrustRank is the job: until ctx ends, for each account whose pass is
 // due, run it while allowed; a pause keeps the place for next time.
 func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
+	dir := trustRankDir()
+	// Every start, on every device: a phone drops the Haven's copy for an
+	// account that signed out while no Haven was in reach.
+	pruneTrustRank(dir)
 	if !trustRankWanted(runtime.GOOS, hostGetenv("TRUST_RANK")) {
 		return
 	}
-	dir := trustRankDir()
 	var lastBusy time.Time
 	mayRun := func() bool {
 		now := time.Now()
@@ -149,6 +152,7 @@ func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
 		// The store (and its key index) is open only while a pass runs, so
 		// it is not held in RAM through the gaps between passes.
 		var store *trustrank.Store
+		pruneTrustRank(dir) // an account signed out since the last round
 		for _, account := range trustRankAccounts() {
 			if ctx.Err() != nil || !mayRun() {
 				break

@@ -405,6 +405,10 @@ The app calls the engine when a linked device comes into reach. The engine then:
      the last good copy stays. The file is kept next to the WoT cache and its `builtAt` is its age.
    - A Mac or a box ranks for itself and never asks. Nothing is ever sent the other way: `PUT` is 404.
    - It never fails or delays the catch-up's mark: a 404 or a refused copy just leaves the device without one.
+   - The `204` is answered from the start of the Haven's file (account and builtAt), without reading the rows.
+   - When an account signs out, its copy is removed at the next catch-up or engine start; on a Mac or box its own
+     result and crawl checkpoint go at the next round. Only when the app's account file (`copy-accounts.json`) is
+     readable: without it nothing is removed. The shared list store stays.
 
 Before the notes, **accounts** (§3.4): B `GET /copy/v2/sync/accounts` and takes A's, then `PUT`s its own, which A
 takes the same way. Each side **offers** the other's list to its app (copy-accounts.json) only when the lists share an
