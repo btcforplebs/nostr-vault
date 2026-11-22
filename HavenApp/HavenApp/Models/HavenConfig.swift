@@ -148,6 +148,8 @@ struct HavenConfig: Codable, Equatable {
     var chatRelayWotRefreshHours: Int = 24
     var wotRefreshInterval: String = "24h"
     var chatRelayMinFollowers: Int = 3
+    /// Every other account's own Follow Distance (HavenConfig+AccountReach).
+    var reachPerAccount: [String: AccountReach] = [:]
     
     // Outbox Relay (Public)
     var outboxRelayName: String = "Nostr Vault Public"
@@ -356,6 +358,7 @@ struct HavenConfig: Codable, Equatable {
         case whitelistedNpubs, whitelistedNpubsFile
         case blacklistedNpubs, blacklistedNpubsFile
         case blockedNpubsPerAccount
+        case reachPerAccount
         case blockedNpubsLastSyncTimestamp
         case activeAccountNpub
         case accountCredentials
@@ -484,6 +487,7 @@ struct HavenConfig: Codable, Equatable {
         chatRelayWotRefreshHours = try container.decodeIfPresent(Int.self, forKey: .chatRelayWotRefreshHours) ?? defaults.chatRelayWotRefreshHours
         wotRefreshInterval = try container.decodeIfPresent(String.self, forKey: .wotRefreshInterval) ?? defaults.wotRefreshInterval
         chatRelayMinFollowers = try container.decodeIfPresent(Int.self, forKey: .chatRelayMinFollowers) ?? defaults.chatRelayMinFollowers
+        reachPerAccount = (try? container.decodeIfPresent([String: AccountReach].self, forKey: .reachPerAccount)) ?? defaults.reachPerAccount
         
         outboxRelayName = try container.decodeIfPresent(String.self, forKey: .outboxRelayName) ?? defaults.outboxRelayName
         outboxRelayDescription = try container.decodeIfPresent(String.self, forKey: .outboxRelayDescription) ?? defaults.outboxRelayDescription

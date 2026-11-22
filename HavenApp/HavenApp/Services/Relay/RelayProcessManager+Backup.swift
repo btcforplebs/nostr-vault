@@ -52,6 +52,7 @@ extension RelayProcessManager {
         }
         HavenConfig.writeVaultAccountFiles(whitelist: config.vaultWhitelistNpubs, readers: config.vaultPrivateReaderNpubs,
                                            whitelistFile: config.whitelistedNpubsFile, under: relayDataDir, encoder: encoder)
+        HavenConfig.writeAccountReachFile(config.relayAccountReach, under: relayDataDir)
         if let data = try? encoder.encode(config.allBlockedNpubsAcrossAccounts) {
             try? data.write(to: relayDataDir.appendingPathComponent(config.blacklistedNpubsFile))
         }

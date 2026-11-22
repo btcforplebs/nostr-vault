@@ -215,7 +215,7 @@ extension FeedService {
         let config = ConfigService.shared
         let owners = config.whitelistedHexPubkeys.union([config.ownerHexPubkeyCached, config.activeAccountHexPubkey])
         return AccountWebScope(owners: owners.subtracting([""]),
-                               minFollowers: config.config.chatRelayMinFollowers,
+                               minFollowers: config.config.reach(for: config.config.reachAccountNpub).minFollowers,
                                followsKnown: followsKnownForAccountWeb)
     }
 

@@ -21,6 +21,7 @@ extension HavenConfig {
         publishRelayListPerAccount.removeValue(forKey: npub)
         notificationPrefsPerAccount.removeValue(forKey: npub)
         blockedNpubsPerAccount.removeValue(forKey: npub)
+        reachPerAccount.removeValue(forKey: npub)
         blockedNpubsLastSyncTimestamp.removeValue(forKey: npub)
     }
 }

@@ -252,6 +252,8 @@ enum RelayConfiguration {
         let dmRelays: [String]
         let whitelistedNpubs: [String]
         let privateReaderNpubs: [String]
+        /// Every other account's own Follow Distance (account_reach.json).
+        let accountReach: [String: AccountReach]
     }
 
     static func launchInputs(config: HavenConfig, relayDataDir: URL) -> LaunchInputs {
@@ -269,7 +271,8 @@ enum RelayConfiguration {
             // Every account, watch-only included (vaultWhitelistNpubs).
             whitelistedNpubs: config.vaultWhitelistNpubs,
             // Accounts with a key or signer here (vaultPrivateReaderNpubs).
-            privateReaderNpubs: config.vaultPrivateReaderNpubs
+            privateReaderNpubs: config.vaultPrivateReaderNpubs,
+            accountReach: config.relayAccountReach
         )
     }
 
@@ -369,6 +372,8 @@ enum RelayConfiguration {
 
             // Blacklisted Npubs
             "BLACKLISTED_NPUBS_FILE": config.blacklistedNpubsFile,
+            // Each account's own Follow Distance; the relay has no default path for it.
+            "ACCOUNT_REACH_FILE": HavenConfig.accountReachFile,
 
             // Private Relay
             "PRIVATE_RELAY_NAME": config.privateRelayName,
