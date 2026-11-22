@@ -4,8 +4,9 @@ import SwiftUI
 
 /// The second key step (setup screens r3, Way 1b): the key with lines down
 /// to two spares, a paper card and a copy. Print a card is the big button,
-/// Copy the small one. Next waits for "I saved my secret key", which a
-/// finished print ticks for you; a copy doesn't (it may never be pasted).
+/// Copy the small one. Next waits for "I saved my secret key", which only
+/// the user ticks: a print job may not reach paper, and a copy clears from
+/// the clipboard after 60 s, so neither counts as a spare on its own.
 /// Save to Passwords is a follow-up (KeySpare).
 struct KeySpareStep: View {
     let npub: String
@@ -15,7 +16,6 @@ struct KeySpareStep: View {
 
     @State private var printed = false
     @State private var copied = false
-    @State private var copiedOnce = false
     @State private var savedKey = false
 
     var body: some View {
@@ -32,6 +32,14 @@ struct KeySpareStep: View {
             Text("Lose this phone and the spare is your only way back in.")
                 .font(.appSystem(size: 15))
                 .foregroundColor(WizardColors.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(copied
+                 ? "Copied. Paste it somewhere safe within a minute; then the clipboard clears."
+                 : "Print it on paper. Don't save it to Photos, Files or iCloud.")
+                .font(.appSystem(size: 13))
+                .foregroundColor(WizardColors.textMuted)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -58,7 +66,8 @@ struct KeySpareStep: View {
         .frame(maxWidth: .infinity, minHeight: 560)
     }
 
-    /// The key, wired down to the two spares; each tile turns green when done.
+    /// The key, wired down to the two spares. Only paper turns green: a copy
+    /// leaves the clipboard after 60 s, so it never shows as a finished spare.
     private var picture: some View {
         VStack(spacing: 0) {
             Image(systemName: "key.horizontal.fill")
@@ -68,12 +77,12 @@ struct KeySpareStep: View {
                 .frame(height: 52)
             HStack(spacing: 140) {
                 wire(done: printed)
-                wire(done: copiedOnce)
+                wire(done: false)
             }
             .frame(height: 30)
             HStack(spacing: 14) {
                 tile(icon: "printer.fill", label: "On paper", done: printed)
-                tile(icon: "doc.on.doc.fill", label: "Copied", done: copiedOnce)
+                tile(icon: "doc.on.doc.fill", label: "Copy", done: false)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -81,10 +90,7 @@ struct KeySpareStep: View {
     }
 
     private var spareSummary: String {
-        var parts: [String] = []
-        if printed { parts.append("printed") }
-        if copiedOnce { parts.append("copied") }
-        return parts.isEmpty ? "No spare yet" : "Spare " + parts.joined(separator: " and ")
+        printed ? "Spare printed" : "No spare yet"
     }
 
     private func wire(done: Bool) -> some View {
@@ -141,14 +147,13 @@ struct KeySpareStep: View {
     private func printCard() {
         KeySpare.printCard(name: name, npub: npub, nsec: nsec) { done in
             guard done else { return }
-            withAnimation(WizardAnimations.springGentle) { printed = true; savedKey = true }
+            withAnimation(WizardAnimations.springGentle) { printed = true }
         }
     }
 
     private func copy() {
         PlatformClipboard.copySecret(nsec)
-        copied = true
-        withAnimation(WizardAnimations.springGentle) { copiedOnce = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+        withAnimation(WizardAnimations.springGentle) { copied = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { copied = false }
     }
 }

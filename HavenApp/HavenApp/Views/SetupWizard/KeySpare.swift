@@ -12,7 +12,9 @@ import AppKit
 /// it is a follow-up if Logen OKs it (Tod 2026-11-22).
 enum KeySpare {
     /// Opens the system print panel with the paper card. The completion
-    /// says whether it was printed (or saved as PDF from the panel).
+    /// says whether the job was sent (on iOS: reached the printer, not that
+    /// paper came out). The panel's own Share/PDF buttons can still save the
+    /// card; the step's text asks for paper only.
     @MainActor
     static func printCard(name: String, npub: String, nsec: String, completion: @escaping (Bool) -> Void) {
         let renderer = ImageRenderer(content: PaperKeyCard(name: name, npub: npub, nsec: nsec))
@@ -25,9 +27,18 @@ enum KeySpare {
         let controller = UIPrintInteractionController.shared
         controller.printInfo = info
         controller.printingItem = image
-        controller.present(animated: true) { _, completed, _ in
+        let done: UIPrintInteractionController.CompletionHandler = { _, completed, _ in
             controller.printingItem = nil
             completion(completed)
+        }
+        // iPad shows the panel as a popover, which needs an anchor (Tron #2416).
+        if UIDevice.current.userInterfaceIdiom == .pad,
+           let window = UIApplication.shared.connectedScenes
+               .compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first {
+            let anchor = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 1, height: 1)
+            controller.present(from: anchor, in: window, animated: true, completionHandler: done)
+        } else {
+            controller.present(animated: true, completionHandler: done)
         }
         #elseif os(macOS)
         guard let image = renderer.nsImage else { return completion(false) }
