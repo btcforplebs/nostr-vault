@@ -99,7 +99,7 @@ struct KeyPasswordStep: View {
                     .font(.appSystem(size: 16))
                     .foregroundColor(WizardColors.accentPrimary)
                     .accessibilityHidden(true)
-                Text("Write this password down and keep it with your secret key.")
+                Text("Write this password down and keep it with your spare.")
                     .font(.appSystem(size: 13))
                     .foregroundColor(WizardColors.textSecondary)
                     .lineSpacing(2)
