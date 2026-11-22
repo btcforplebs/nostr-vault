@@ -45,4 +45,26 @@ enum SetupOwnerKey {
         guard let previous else { return false }
         return previous != next
     }
+
+    /// New to Nostr's key for this run of setup (stale spare, 2026-11-22).
+    /// Made once, the first time that way in is picked (or on the key step
+    /// when the engine failed then), and handed back every time after, even
+    /// after a detour through I use Nostr: that detour clears typed keys, not
+    /// this one. The person may already have copied it or written it down,
+    /// and a second key would leave that spare not matching. Only a new run
+    /// of setup (the wizard opened again) makes another.
+    struct MadeKey<Pair> {
+        private(set) var pair: Pair?
+
+        /// The key made earlier this run, else a new one from `make`.
+        mutating func take(orMake make: () -> Pair?) -> Pair? {
+            if pair == nil { pair = make() }
+            return pair
+        }
+
+        /// A key made elsewhere (the key step's Make My Key) when none was yet.
+        mutating func remember(_ made: Pair) {
+            if pair == nil { pair = made }
+        }
+    }
 }
