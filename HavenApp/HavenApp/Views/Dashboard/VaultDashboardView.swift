@@ -429,7 +429,7 @@ struct VaultDashboardView: View {
                 title: feedService.wotPubkeys.isEmpty
                     ? "Trust list not built yet"
                     : "\(feedService.wotPubkeys.count.formatted()) people can reach your inbox",
-                detail: FollowDistanceWords.reachDetail(config.chatRelayWotDepth),
+                detail: FollowDistanceWords.reachDetail(config.reach(for: config.reachAccountNpub).depth),
                 state: .info
             ) {
                 RelayAccessSettingsView().settingsPage("Who Can Reach You")
@@ -582,7 +582,7 @@ struct VaultDashboardView: View {
                 RelayMatrixView().settingsPage("Relays")
             }
             DashboardDivider()
-            SettingLink(icon: "person.badge.shield.checkmark", title: "Who Can Reach You", value: FollowDistanceWords.short(config.chatRelayWotDepth)) {
+            SettingLink(icon: "person.badge.shield.checkmark", title: "Who Can Reach You", value: FollowDistanceWords.short(config.reach(for: config.reachAccountNpub).depth)) {
                 RelayAccessSettingsView().settingsPage("Who Can Reach You")
             }
             DashboardDivider()
