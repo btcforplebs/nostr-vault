@@ -18,8 +18,10 @@ import javax.inject.Inject
 
 /**
  * Setup's "Who told you about Nostr Vault?" step: find the person from a
- * scanned QR code, a pasted npub or a `/p/` link, show their card, then up
- * to ten of the people they follow, most-followed first, all ticked.
+ * scanned QR code, a pasted npub or a `/p/` link, show their card, then
+ * "<Name>'s people": their follows, closest to them first
+ * ([ReferrerFollows.rank], the top 7 ticked), with topic chips that filter
+ * the list (setup screens r3, iOS #2414).
  * Nothing is signed here; [finish] leaves the picks in [ReferrerFollows] for
  * the end of setup.
  */
@@ -44,9 +46,17 @@ class ReferrerStepViewModel @Inject constructor(
     private val _referrer = MutableStateFlow<String?>(null)
     val referrer: StateFlow<String?> = _referrer.asStateFlow()
 
-    /** Up to ten of their follows, most-followed first; null while loading. */
-    private val _suggestions = MutableStateFlow<List<String>?>(null)
-    val suggestions: StateFlow<List<String>?> = _suggestions.asStateFlow()
+    /** Up to [ReferrerFollows.POOL] of their follows, closest first; null while loading. */
+    private val _suggestions = MutableStateFlow<List<ReferrerFollows.Pick>?>(null)
+    val suggestions: StateFlow<List<ReferrerFollows.Pick>?> = _suggestions.asStateFlow()
+
+    /** Hashtags the people offered share; empty when none do. */
+    private val _topics = MutableStateFlow<List<ReferrerFollows.Topic>>(emptyList())
+    val topics: StateFlow<List<ReferrerFollows.Topic>> = _topics.asStateFlow()
+
+    /** The topic chip picked; null shows the top ones. */
+    private val _topic = MutableStateFlow<String?>(null)
+    val topic: StateFlow<String?> = _topic.asStateFlow()
 
     private val _ticked = MutableStateFlow<Set<String>>(emptySet())
     val ticked: StateFlow<Set<String>> = _ticked.asStateFlow()
@@ -70,6 +80,8 @@ class ReferrerStepViewModel @Inject constructor(
         ReferrerFollows.prefill = null
         _referrer.value = pk
         _suggestions.value = null
+        _topics.value = emptyList()
+        _topic.value = null
         _ticked.value = emptySet()
         _phase.value = Phase.FOUND
         nostrService.fetchMissingProfiles(listOf(pk))
@@ -84,20 +96,41 @@ class ReferrerStepViewModel @Inject constructor(
                 kotlinx.coroutines.delay(2_000)
             }
             val follows = list.orEmpty()
-            // How many of their first 150 follows' lists name each one. With
-            // no answer, list order.
-            val vouches = ReferrerFollows.vouches(follows, trustPathService.referralLists(follows))
+            // Their first 150 follows' lists: who of their close circle (and
+            // of all of them) follow each one. With no answer, list order.
+            val lists = trustPathService.referralLists(follows)
             // An existing key already follows some of them: never offered again.
             val mine = ownHex?.let { trustPathService.followList(it) }.orEmpty()
-            val picks = ReferrerFollows.suggestions(pk, follows, vouches, skip = setOfNotNull(ownHex) + mine)
-            nostrService.fetchMissingProfiles(picks)
+            val picks = ReferrerFollows.rank(pk, follows, lists, skip = setOfNotNull(ownHex) + mine)
+            val keys = picks.map { it.pubkey }
+            nostrService.fetchMissingProfiles(keys)
             _suggestions.value = picks
-            _ticked.value = picks.toSet()
+            _ticked.value = keys.take(ReferrerFollows.PRE_TICKED).toSet()
+            // The chips come after the list is up: a slow relay only delays them.
+            _topics.value = ReferrerFollows.topics(trustPathService.referralTopicTags(keys), keys)
         }
     }
 
     /** "Follow <name>": on to the people they follow. */
     fun followReferrer() { _phase.value = Phase.SUGGEST }
+
+    /** A topic chip: shows only who used it; the same one again, or null, shows the top ones. */
+    fun pickTopic(topic: String?) {
+        _topic.value = if (topic == _topic.value) null else topic
+    }
+
+    /** The people listed: the top [ReferrerFollows.SUGGESTION_CAP], or everyone in the pool who used the picked topic. */
+    fun shown(picks: List<ReferrerFollows.Pick>, topics: List<ReferrerFollows.Topic>, topic: String?): List<ReferrerFollows.Pick> {
+        val people = topic?.let { t -> topics.firstOrNull { it.topic == t }?.people }
+            ?: return picks.take(ReferrerFollows.SUGGESTION_CAP)
+        return picks.filter { it.pubkey in people }
+    }
+
+    /** Ticked, in rank order, whether or not a topic hides them now. */
+    fun tickedInOrder(): List<String> {
+        val ticked = _ticked.value
+        return _suggestions.value.orEmpty().map { it.pubkey }.filter { it in ticked }
+    }
 
     fun toggle(pubkey: String) {
         _ticked.value = _ticked.value.let { if (pubkey in it) it - pubkey else it + pubkey }
@@ -113,8 +146,7 @@ class ReferrerStepViewModel @Inject constructor(
     /** Keeps the referrer and the ticked suggestions, in the order shown, for the end of setup. */
     fun finish() {
         val pk = _referrer.value ?: return ReferrerFollows.clear()
-        val ticked = _ticked.value
-        ReferrerFollows.choose(pk, _suggestions.value.orEmpty().filter { it in ticked })
+        ReferrerFollows.choose(pk, tickedInOrder())
     }
 
     /** Following them and none of their follows. */

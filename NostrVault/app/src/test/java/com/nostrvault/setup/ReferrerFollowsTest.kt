@@ -11,18 +11,54 @@ import org.junit.Test
 class ReferrerFollowsTest {
     @After fun reset() { ReferrerFollows.clear(); ReferrerFollows.prefill = null }
 
-    @Test fun `most-followed first, ties keep their list order, ten at most`() {
-        val follows = (1..15).map { "k$it" }
-        val vouches = mapOf("k9" to 7, "k3" to 7, "k12" to 2)
-        val picks = ReferrerFollows.suggestions("ref", follows, vouches)
-        assertEquals(10, picks.size)
-        assertEquals(listOf("k3", "k9", "k12", "k1", "k2", "k4"), picks.take(6))
+    private fun k(n: Int) = "%064x".format(n)
+    private fun keys(picks: List<ReferrerFollows.Pick>) = picks.map { it.pubkey }
+
+    @Test fun `with no mutuals the most-followed among the referrer's follows come first, ties in list order`() {
+        val follows = (1..4).map(::k)
+        // Nobody follows the referrer (k50) back: k4: 3; k3: 2; k1 and k2: 0.
+        val lists = mapOf(k(1) to listOf(k(4), k(3)), k(2) to listOf(k(4), k(3), k(2)), k(3) to listOf(k(4)), k(9) to listOf(k(1), k(1)))
+        val ranked = ReferrerFollows.rank(k(50), follows, lists)
+        assertEquals(listOf(k(4), k(3), k(1), k(2)), keys(ranked))
+        assertEquals(listOf(0, 0, 0, 0), ranked.map { it.close })
     }
 
-    @Test fun `vouches count the referrer's follows' lists only, never a self-follow`() {
-        val a = "a".repeat(64); val b = "b".repeat(64); val c = "c".repeat(64); val x = "e".repeat(64)
-        val lists = mapOf(a to listOf(a, b, c, c), b to listOf(c), x to listOf(b, b))
-        assertEquals(mapOf(b to 1, c to 2), ReferrerFollows.vouches(listOf(a, b, c), lists))
+    @Test fun `the referrer's close circle outranks fame`() {
+        val me = k(50)
+        val follows = (1..8).map(::k)
+        // k1, k2 follow the referrer back (close); k8 is followed by 4 who aren't.
+        val lists = mapOf(
+            k(1) to listOf(me, k(7)),
+            k(2) to listOf(me, k(7), k(1)),
+            k(3) to listOf(k(8)), k(4) to listOf(k(8)), k(5) to listOf(k(8)), k(6) to listOf(k(8)),
+        )
+        assertEquals(setOf(k(1), k(2)), ReferrerFollows.closeCircle(me, follows, lists))
+        val ranked = ReferrerFollows.rank(me, follows, lists)
+        assertEquals(listOf(k(7), k(1), k(8)), keys(ranked).take(3))
+        assertEquals(2, ranked.first().close)
+        assertEquals(0, ranked.first { it.pubkey == k(8) }.close)
+    }
+
+    @Test fun `topics are the shared hashtags of the people offered`() {
+        val notes = listOf(
+            k(1) to listOf(listOf("t", "Photography"), listOf("t", "bitcoin")),
+            k(1) to listOf(listOf("t", "photography")), // one person counts once
+            k(2) to listOf(listOf("t", "#photography"), listOf("t", "2026")),
+            k(3) to listOf(listOf("t", "bitcoin"), listOf("t", "x")), // too short
+            k(4) to listOf(listOf("t", "bitcoin")),
+            k(9) to listOf(listOf("t", "garden"), listOf("t", "garden")), // not offered
+            k(2) to listOf(listOf("t", "garden")), // one person only
+        )
+        val topics = ReferrerFollows.topics(notes, listOf(k(1), k(2), k(3), k(4)))
+        assertEquals(listOf("bitcoin", "photography"), topics.map { it.topic })
+        assertEquals(setOf(k(1), k(3), k(4)), topics.first().people)
+    }
+
+    @Test fun `skipped people are never offered and the pool is capped`() {
+        val ranked = ReferrerFollows.rank(k(99), (1..50).map(::k), emptyMap(), skip = setOf(k(1), k(3)))
+        assertEquals(ReferrerFollows.POOL, ranked.size)
+        assertEquals(k(2), ranked.first().pubkey)
+        assertFalse(k(1) in keys(ranked) || k(3) in keys(ranked))
     }
 
     @Test fun `a follow list is its p tags, hex only, once each`() {
@@ -32,8 +68,8 @@ class ReferrerFollowsTest {
     }
 
     @Test fun `never the referrer, you, or a repeat`() {
-        val picks = ReferrerFollows.suggestions("ref", listOf("ref", "me", "a", "a", "b"), mapOf("ref" to 99, "me" to 50), skip = setOf("me"))
-        assertEquals(listOf("a", "b"), picks)
+        val picks = ReferrerFollows.rank("ref", listOf("ref", "me", "a", "a", "b"), emptyMap(), skip = setOf("me"))
+        assertEquals(listOf("a", "b"), keys(picks))
     }
 
     @Test fun `picks are taken once, referrer first`() {

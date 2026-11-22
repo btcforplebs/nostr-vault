@@ -210,6 +210,29 @@ class TrustPathService @Inject constructor(
     }
 
     /**
+     * The people step's topic chips read: the last 30 days of notes (at most
+     * 500) and the public interest lists (kind 10015) of [authors], from the
+     * same relays as [referralLists]. Their `t` tags make the chips
+     * ([com.nostrvault.setup.ReferrerFollows.topics]); many people use no
+     * hashtags, so this is often empty. iOS `ReferralLookup.suggestions`.
+     */
+    suspend fun referralTopicTags(authors: List<String>): List<Pair<String, List<List<String>>>> {
+        if (authors.isEmpty()) return emptyList()
+        val keys = authors.distinct().joinToString(",") { "\"$it\"" }
+        val since = System.currentTimeMillis() / 1000 - 30 * 86_400
+        val filters = listOf(
+            """{"kinds":[1],"authors":[$keys],"since":$since,"limit":500}""",
+            """{"kinds":[10015],"authors":[$keys]}""",
+        )
+        val events = nostrService.queryRawEvents(filters, REFERRAL_RELAYS, WIDER_TIMEOUT_MS)
+        return withContext(Dispatchers.Default) {
+            events.filter { VerifiedEvents.verify(it) }.mapNotNull(ContactList::from)
+                .filter { it.kind == 1 || it.kind == 10015 }
+                .map { it.pubkey to it.tags }
+        }
+    }
+
+    /**
      * Where one person's follow list is asked for, all at once: the first
      * feed relays, the index relays, and the relays they publish to. The
      * feed relays alone missed lists the profile page found: by default
