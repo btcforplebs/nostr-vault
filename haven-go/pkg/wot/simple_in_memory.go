@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -103,6 +104,12 @@ type SimpleInMemory struct {
 	// account has none of its own: it then uses WotDepth and MinFollowers.
 	// Nil means no account has its own.
 	ReachFor func(owner string) (AccountReach, bool)
+
+	// BlockedBy reports whether the account owner has blocked pubkey. A
+	// blocked follow vouches for nobody in that account's web. Nil: no blocks.
+	BlockedBy func(owner, pubkey string) bool
+	// accountsMu serializes the writers of webs (a build and RetallyAccounts).
+	accountsMu sync.Mutex
 
 	// builtAt is when the graph in pubkeys started building (unix seconds),
 	// or the saved cache's time. A follow list newer than this is not in it.

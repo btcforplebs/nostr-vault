@@ -24,6 +24,10 @@ type accountWeb struct {
 	// follows follow each person who cleared its bar.
 	vouches map[string]int
 	builtAt int64
+	// muted is the follows the account had blocked when this web was
+	// tallied, sorted: they vouched for nobody. RetallyAccounts compares it
+	// with the blocks now.
+	muted []string
 }
 
 func (a *accountWeb) has(pubkey string) bool {

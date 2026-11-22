@@ -65,6 +65,7 @@ type Config struct {
 	WotDepth                             int                 `json:"wot_depth"`
 	WotMinimumFollowers                  int                 `json:"wot_minimum_followers"`
 	AccountReach                         reachByAccount      `json:"-"`
+	AccountBlocks                        blocksByAccount     `json:"-"`
 	WotFetchTimeoutSeconds               int                 `json:"wot_fetch_timeout_seconds"`
 	WotRefreshInterval                   time.Duration       `json:"wot_refresh_interval"`
 	WotCachePath                         string              `json:"wot_cache_path"`
@@ -158,6 +159,7 @@ func loadConfig() Config {
 		WotCacheTTLMinutes:                   getEnvInt("WOT_CACHE_TTL_MINUTES", 4320),
 		WhitelistedPubKeys:                   getNpubsFromFile(getEnvString("WHITELISTED_NPUBS_FILE", "")),
 		BlacklistedPubKeys:                   getNpubsFromFile(getEnvString("BLACKLISTED_NPUBS_FILE", "")),
+		AccountBlocks:                        loadAccountBlocks(getEnvString("BLOCKS_BY_ACCOUNT_FILE", "blocks_by_account.json")),
 		PrivateReaderPubKeys:                 privateReadersFromFile(getEnvString("PRIVATE_READER_NPUBS_FILE", "")),
 		LogLevel:                             getEnvString("HAVEN_LOG_LEVEL", "INFO"),
 		BlastrRelays:                         getRelayListFromFile(getEnv("BLASTR_RELAYS_FILE")),
@@ -384,6 +386,8 @@ func blacklistedPubkeys() []string {
 // next event processed, no relay restart required.
 func UpdateBlacklist(pubkeys map[string]struct{}) {
 	blacklistOverride.Store(&pubkeys)
+	// A blocked follow vouches for nobody (account_blocks.go).
+	retallyAccountWebs()
 }
 
 // getKindSet parses a comma-separated list of event kinds ("1,6,7,9735") into a

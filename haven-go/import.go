@@ -323,8 +323,8 @@ func subscribeInboxAndChat(ctx context.Context) {
 		// author admitted since their event was rejected (the WoT is recomputed
 		// on a 24h ticker) gets that event re-offered and imported this round,
 		// instead of staying hidden behind a stub until process restart.
-		rejects.reevaluate(func(pk string) bool {
-			return !isBlacklisted(pk) && inAnyAccountsWeb(ctx, pk)
+		rejects.reevaluate(func(pk string, accounts []string) bool {
+			return mayNowReach(ctx, pk, accounts)
 		})
 		var fallback []string
 		if config.NegentropySyncEnabled {
@@ -764,24 +764,11 @@ func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassificatio
 		slog.Debug("🚫discarding imported note from blacklisted pubkey", "pubkey", trustKey, "id", ev.ID)
 		return inboxClassification{reason: rejectBlacklist}
 	}
-	// Each tagged account judges the author by its own web (account_gate.go):
-	// the event is kept for the accounts that let it in, and for nobody when
-	// none does. A gift wrap's author is a throwaway key, so it is kept for
-	// every account it tags.
-	recipients := taggedAccounts(ev)
-	if ev.Kind != nostr.KindGiftWrap {
-		if len(recipients) == 0 {
-			// Tags none of the accounts. As before, a stranger's is a web
-			// rejection (it can change), anyone else's is for good.
-			if !inAnyAccountsWeb(ctx, trustKey) && !engagesOwnerPost(ctx, ev) {
-				return inboxClassification{reason: rejectNotInWot}
-			}
-		} else if recipients = admittingAccounts(ctx, recipients, trustKey, ev); len(recipients) == 0 {
-			return inboxClassification{reason: rejectNotInWot}
-		}
-	}
-	if len(recipients) == 0 {
-		return inboxClassification{reason: rejectNoWhitelistedPTag}
+	// Each tagged account judges the author by its own blocks and its own
+	// web: kept for the accounts that let it in (account_gate.go).
+	recipients, why := inboxRecipients(ctx, ev, trustKey)
+	if why != rejectNone {
+		return inboxClassification{reason: why}
 	}
 	return inboxClassification{
 		accept: true,

@@ -257,17 +257,23 @@ func (n *batchNotifier) flush(announce bool) {
 type rejectEntry struct {
 	ts     nostr.Timestamp // event created_at — vector key and prune bound
 	pubkey string          // author — re-checked against the WoT each round
+	// accounts: the vault's accounts the event tags. The recheck asks those
+	// accounts' webs, the ones that refused it; asking any account's web
+	// cleared the stub for an event its own accounts refuse again, and every
+	// round downloaded it once more. Empty: it tagged none (or a stub saved
+	// before this field), and any account's web is asked.
+	accounts []string
 }
 
 type tempRejects struct {
 	m sync.Map // event ID → rejectEntry
 }
 
-func (t *tempRejects) add(id string, ts nostr.Timestamp, pubkey string) {
+func (t *tempRejects) add(id string, ts nostr.Timestamp, pubkey string, accounts ...string) {
 	if t == nil {
 		return
 	}
-	t.m.Store(id, rejectEntry{ts: ts, pubkey: pubkey})
+	t.m.Store(id, rejectEntry{ts: ts, pubkey: pubkey, accounts: accounts})
 }
 
 // reevaluate drops the stub for any cached reject whose author now passes the
@@ -276,12 +282,12 @@ func (t *tempRejects) add(id string, ts nostr.Timestamp, pubkey string) {
 // with the live WoT/blacklist state. Without this a reply from an author who
 // entered the WoT after the reject stayed hidden until process restart — the
 // negentropy stub made it a permanent "have" that nothing ever re-fetched.
-func (t *tempRejects) reevaluate(admit func(pubkey string) bool) {
+func (t *tempRejects) reevaluate(admit func(pubkey string, accounts []string) bool) {
 	if t == nil {
 		return
 	}
 	t.m.Range(func(k, v any) bool {
-		if admit(v.(rejectEntry).pubkey) {
+		if e := v.(rejectEntry); admit(e.pubkey, e.accounts) {
 			t.m.Delete(k)
 		}
 		return true
@@ -390,7 +396,7 @@ func (s *inboxNegStore) Publish(ctx context.Context, ev nostr.Event) error {
 		// in memory for this process run so the negentropy vector lists it as a
 		// have and the remote stops re-offering it every round (the 100% CPU
 		// loop). reevaluate() drops it again if the author is later admitted.
-		s.rejects.add(ev.ID, ev.CreatedAt, inboxTrustKey(&ev))
+		s.rejects.add(ev.ID, ev.CreatedAt, inboxTrustKey(&ev), taggedAccounts(&ev)...)
 		return nil
 	}
 	dst := s.inbox

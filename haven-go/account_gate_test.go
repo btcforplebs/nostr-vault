@@ -69,9 +69,24 @@ func TestInboxJudgesEachTaggedAccountByItsOwnWeb(t *testing.T) {
 	if c = classifyInboxEvent(ctx, gateNote('7', x, nostr.Tag{"p", hexid('9')})); c.reason != rejectNoWhitelistedPTag {
 		t.Fatalf("x, no tag: %+v", c)
 	}
-	// The recheck of a remembered rejection asks about any account.
 	if !inAnyAccountsWeb(ctx, x) || inAnyAccountsWeb(ctx, stranger) {
 		t.Fatal("inAnyAccountsWeb: want x in (A's web) and the stranger out")
+	}
+	// The recheck of a remembered refusal asks the accounts the event tagged:
+	// x → B stays refused however often it is rechecked (A following x must
+	// not clear it, or every round downloads it again), x → A clears.
+	rejects := &tempRejects{}
+	rejects.add(hexid('1'), nostr.Now(), x, b)
+	rejects.add(hexid('2'), nostr.Now(), x, a)
+	rejects.add(hexid('3'), nostr.Now(), x) // tagged no account: any web
+	rejects.reevaluate(func(pk string, accounts []string) bool { return mayNowReach(ctx, pk, accounts) })
+	if _, ok := rejects.m.Load(hexid('1')); !ok {
+		t.Error("x → B: the stub was cleared because A follows x")
+	}
+	for _, id := range []string{hexid('2'), hexid('3')} {
+		if _, ok := rejects.m.Load(id); ok {
+			t.Error("a refusal its account now admits was not cleared")
+		}
 	}
 }
 

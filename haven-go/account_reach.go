@@ -98,6 +98,7 @@ func firstRunAccountReach(owner string) (wot.AccountReach, bool) {
 func newWotModel(pool *nostr.SimplePool, whitelistedPubKeys map[string]struct{}, seedRelays []string, wotDepth int, minFollowers int, wotFetchTimeout int, cachePath string, cacheTTLMinutes int) *wot.SimpleInMemory {
 	model := wot.NewSimpleInMemory(pool, whitelistedPubKeys, seedRelays, wotDepth, minFollowers, wotFetchTimeout, cachePath, cacheTTLMinutes)
 	model.ReachFor = accountReach
+	model.BlockedBy = blockedBy
 	return model
 }
 
