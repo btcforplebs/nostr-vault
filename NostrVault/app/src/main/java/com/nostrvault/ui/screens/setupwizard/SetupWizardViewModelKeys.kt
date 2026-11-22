@@ -131,13 +131,13 @@ import kotlinx.coroutines.launch
         }
     }
 
-    /** This key is you → keep a spare. */
+    /** This key is you → back up your key. */
     fun SetupWizardViewModel.advanceFromNostrIntro() {
         _error.value = null
         _step.value = stepAfter(WizardStep.NOSTR_INTRO)
     }
 
-    /** Keep a spare → the lock, once they've ticked that the nsec is saved. */
+    /** Back up your key → the lock, once they have ticked that the nsec is backed up. */
     fun SetupWizardViewModel.advanceFromKeySpare() {
         _error.value = null
         _step.value = stepAfter(WizardStep.KEY_SPARE)

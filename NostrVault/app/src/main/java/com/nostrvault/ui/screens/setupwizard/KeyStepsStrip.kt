@@ -23,10 +23,10 @@ import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.*
 
 /** The three key steps (setup screens r3). */
-internal enum class KeyStepPart(val label: String) { KEY("Your key"), SPARE("Spare"), LOCK("Lock") }
+internal enum class KeyStepPart(val label: String) { KEY("Your key"), BACKUP("Backup"), LOCK("Lock") }
 
 /**
- * The key steps' header: Your key · Spare · Lock. Each part turns green once
+ * The key steps' header: Your key · Backup · Lock. Each part turns green once
  * done; the current one is orange. Twin of iOS KeyStepsStrip (#2416).
  */
 @Composable
@@ -57,7 +57,7 @@ internal fun KeyStepsStrip(current: KeyStepPart) {
                 Icon(
                     imageVector = if (done) Icons.Default.CheckCircle else when (part) {
                         KeyStepPart.KEY -> Icons.Default.Key
-                        KeyStepPart.SPARE -> Icons.Default.ContentCopy
+                        KeyStepPart.BACKUP -> Icons.Default.ContentCopy
                         KeyStepPart.LOCK -> Icons.Default.Lock
                     },
                     contentDescription = null,
