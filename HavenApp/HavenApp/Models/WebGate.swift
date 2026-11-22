@@ -17,7 +17,7 @@ import Foundation
 /// 2b. **inside**: the whitelist or your own web.
 /// 3. **inside** again when the surface's reach is `everyone` (a Global feed
 ///    with the shield on Everyone).
-/// 4. **hop3**: reach is `webAndHop3` and the signer is one hop past your web.
+/// 4. **loose**: reach is `webAndLoose` and the signer is one hop past your web.
 /// 5. **outside**: everyone else.
 ///
 /// It fails closed: with no graph, the web is your follows and nothing is one
@@ -25,15 +25,18 @@ import Foundation
 /// never judges one account.
 enum WebGate {
     enum Verdict: String, Equatable, Sendable {
-        case inside, hop3, outside, blocked
+        case inside, loose, outside, blocked
     }
 
     /// How far a surface reaches. Only a feed has a setting; every other
     /// surface is `web`.
     enum Reach: String, Codable, CaseIterable, Sendable {
         case web
-        /// Your web plus a few one hop past it, rationed by `capHop3`.
-        case webAndHop3
+        /// Your web plus a few one hop past it, rationed by `capLoose`.
+        /// The raw value is the word saved in `HavenConfig.feedReach`: it
+        /// stays "webAndHop3" whatever the case is called, or every saved
+        /// Reach choice falls back to its default.
+        case webAndLoose = "webAndHop3"
         /// A Global-style feed with the shield on Everyone. Blocks still apply.
         case everyone
     }
@@ -49,17 +52,17 @@ enum WebGate {
         /// One hop past `web`: followed by some of the follows, fewer than the
         /// bar (depth 3), or in the relay's saved web but not this account's
         /// (depth 2). Empty with no graph.
-        var hop3: Set<String>
+        var loose: Set<String>
         /// Public blocks and the mute list's private people.
         var blocked: Set<String>
         var mutes: MuteList
 
-        init(own: Set<String>, whitelist: Set<String> = [], web: Set<String>, hop3: Set<String> = [],
+        init(own: Set<String>, whitelist: Set<String> = [], web: Set<String>, loose: Set<String> = [],
              blocked: Set<String> = [], mutes: MuteList = .empty) {
             self.own = WebGate.lowered(own)
             self.whitelist = WebGate.lowered(whitelist)
             self.web = WebGate.lowered(web)
-            self.hop3 = WebGate.lowered(hop3).subtracting(self.web)
+            self.loose = WebGate.lowered(loose).subtracting(self.web)
             self.blocked = WebGate.lowered(blocked.union(mutes.privatePubkeys))
             self.mutes = mutes
         }
@@ -72,7 +75,7 @@ enum WebGate {
                           scope: AccountWebScope, whitelist: Set<String> = [],
                           blocked: Set<String> = [], mutes: MuteList = .empty) -> Web {
             let layers = WebGate.layers(saved: saved, follows: follows, links: links, depth: depth, scope: scope)
-            return Web(own: scope.owners, whitelist: whitelist, web: layers.web, hop3: layers.hop3,
+            return Web(own: scope.owners, whitelist: whitelist, web: layers.web, loose: layers.loose,
                        blocked: blocked, mutes: mutes)
         }
     }
@@ -148,7 +151,7 @@ enum WebGate {
         if web.whitelist.contains(signer) || web.web.contains(signer) { return .inside }
         switch reach {
         case .everyone: return .inside
-        case .webAndHop3 where web.hop3.contains(signer): return .hop3
+        case .webAndLoose where web.loose.contains(signer): return .loose
         default: return .outside
         }
     }
@@ -178,26 +181,26 @@ enum WebGate {
     /// Most hop-3 rows one list shows: a fifth of its other rows, and never
     /// fewer than this, so a feed made mostly of them (Underrated on a
     /// phone, whose web is its follows) still shows a few.
-    static let hop3Floor = 10
-    static let hop3Share = 5
+    static let looseFloor = 10
+    static let looseShare = 5
 
     /// `items` with the hop-3 rows rationed, order kept: top-level posts only
     /// (a hop-3 reply goes), one per author, and at most
-    /// max(`hop3Floor`, other rows / `hop3Share`). Rows past the ration are
+    /// max(`looseFloor`, other rows / `looseShare`). Rows past the ration are
     /// left out, not folded: they were not refused, only rationed. Other
     /// verdicts pass through untouched; the caller has already folded or
     /// dropped them.
-    static func capHop3<T>(_ items: [T], verdict: (T) -> Verdict, author: (T) -> String,
+    static func capLoose<T>(_ items: [T], verdict: (T) -> Verdict, author: (T) -> String,
                            isReply: (T) -> Bool) -> [T] {
         let verdicts = items.map(verdict)
-        let others = verdicts.filter { $0 != .hop3 }.count
-        let cap = max(hop3Floor, others / hop3Share)
+        let others = verdicts.filter { $0 != .loose }.count
+        let cap = max(looseFloor, others / looseShare)
         var shown = 0
         var authors = Set<String>()
         var out: [T] = []
         out.reserveCapacity(items.count)
         for (item, v) in zip(items, verdicts) {
-            guard v == .hop3 else { out.append(item); continue }
+            guard v == .loose else { out.append(item); continue }
             guard shown < cap, !isReply(item), authors.insert(author(item).lowercased()).inserted else { continue }
             shown += 1
             out.append(item)
@@ -213,7 +216,7 @@ enum WebGate {
     /// or links file it cannot read is the follows, with the saved web as
     /// hop 3.
     static func layers(saved: Set<String>, follows: Set<String>, links: TrustLinksIndex?, depth: Int?,
-                       scope: AccountWebScope) -> (web: Set<String>, hop3: Set<String>) {
+                       scope: AccountWebScope) -> (web: Set<String>, loose: Set<String>) {
         var web = follows.union(scope.owners)
         guard !saved.isEmpty, scope.followsKnown else { return (web, []) }
         guard depth == 3, let links else { return (web, saved.subtracting(web)) }
@@ -225,11 +228,11 @@ enum WebGate {
             web.formUnion(ranked.prefix(AccountWeb.newAccountWebCap))
             return (web, Set(ranked.dropFirst(AccountWeb.newAccountWebCap)))
         }
-        var hop3 = Set<String>()
+        var loose = Set<String>()
         for (pubkey, counted) in counts {
-            if counted >= bar { web.insert(pubkey) } else { hop3.insert(pubkey) }
+            if counted >= bar { web.insert(pubkey) } else { loose.insert(pubkey) }
         }
-        return (web, hop3)
+        return (web, loose)
     }
 
     fileprivate static func lowered(_ keys: Set<String>) -> Set<String> {

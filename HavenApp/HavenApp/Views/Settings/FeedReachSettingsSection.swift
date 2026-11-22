@@ -12,7 +12,7 @@ struct FeedReachSettingsSection: View {
         Section {
             ForEach(FeedReach.modes, id: \.self) { mode in
                 Picker(selection: binding(for: mode)) {
-                    ForEach([WebGate.Reach.web, .webAndHop3], id: \.self) { reach in
+                    ForEach([WebGate.Reach.web, .webAndLoose], id: \.self) { reach in
                         Text(FeedReach.label(reach)).tag(reach)
                     }
                 } label: {

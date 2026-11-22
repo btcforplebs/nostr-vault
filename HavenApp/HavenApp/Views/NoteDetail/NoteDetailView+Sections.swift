@@ -179,7 +179,7 @@ extension NoteDetailView {
         let always = replyAlwaysShown
         let judged = otherResponses.map { ($0, WebGate.judge(.feed($0), in: gate, always: always)) }
         let split = (inside: judged.filter { $0.1 == .inside }.map(\.0),
-                     outside: judged.filter { $0.1 == .outside || $0.1 == .hop3 }.map(\.0))
+                     outside: judged.filter { $0.1 == .outside || $0.1 == .loose }.map(\.0))
         // With the fold rows switched off, quotes from outside your web are
         // only in the Vault's Outside list.
         let folds = configService.config.showsOutsideUnderPosts
