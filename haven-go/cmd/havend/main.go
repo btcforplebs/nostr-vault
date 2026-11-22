@@ -11,7 +11,9 @@
 // Environment:
 //
 //	NV_OWNER            owner npub (or hex), set by the installer. Unset: the
-//	                    npub in $NV_DATA_DIR/box/owner, which claim mode saves
+//	                    npub in $NV_DATA_DIR/box/owner, which claim mode saves.
+//	                    This is the box's first account; any others are in
+//	                    $NV_DATA_DIR/box/accounts.json (box/accounts.go)
 //	NV_SETUP_CODE       claim mode (no owner yet): only the setup page runs,
 //	                    and the npub sent with this code becomes the owner
 //	NV_UPDATE_VIA       startos or umbrel: the store updates the box, so POST
@@ -130,6 +132,10 @@ func run(args []string) error {
 		},
 		Prepare: func(dir string) error { return box.WriteEngineFiles(cfg, dir) },
 	}
+	// Seed the accounts baseline before the engine first reads the lists, so
+	// a change made while havend starts up still reloads it (Tron #2374).
+	accountsWatch := &box.AccountsWatch{Config: cfg, Engine: engine}
+	accountsWatch.Seed()
 	if err := engine.Start(ctx, vaultDir); err != nil {
 		return fmt.Errorf("starting the vault engine: %w", err)
 	}
@@ -170,6 +176,9 @@ func run(args []string) error {
 	// (box.RelayServerLists.Poll).
 	go api.Devices.Run(ctx, 30*time.Second)
 	go engineDevices.Run(ctx, 5*time.Second)
+	// box/accounts.json: when the added accounts change, restart the engine
+	// so it reads its two account lists again (box/accounts.go).
+	go accountsWatch.Run(ctx, 5*time.Second)
 
 	front := &box.Front{API: api, Engine: box.EngineProxy(cfg.EnginePort)}
 	if cfg.WebDir != "" {
