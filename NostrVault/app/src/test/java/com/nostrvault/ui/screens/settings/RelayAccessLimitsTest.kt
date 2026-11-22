@@ -1,5 +1,7 @@
 package com.nostrvault.ui.screens.settings
 
+import com.nostrvault.relay.HavenConfig
+import com.nostrvault.relay.RelayConfiguration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -21,6 +23,19 @@ class RelayAccessLimitsTest {
     fun followDistanceStopsWhereTheRelayStops() {
         assertEquals(relayMaxWotLevel(), RelayAccessLimits.FOLLOW_DISTANCE.last)
         assertEquals(1, RelayAccessLimits.FOLLOW_DISTANCE.first)
+    }
+
+    /**
+     * The relay runs level 0 as a public relay. A stored 0 (or anything out of
+     * range) must reach it as the level the screen shows, never raw.
+     */
+    @Test
+    fun relayNeverGetsALevelTheScreenCannotShow() {
+        for ((stored, sent) in listOf(0 to "1", -1 to "1", 1 to "1", 2 to "2", 3 to "3", 5 to "3")) {
+            val env = RelayConfiguration.generateEnvDictionary(HavenConfig(chatRelayWotDepth = stored), File("/tmp/x"))
+            assertEquals("stored $stored", sent, env["WOT_DEPTH"])
+            assertEquals("stored $stored", sent, env["CHAT_RELAY_WOT_DEPTH"])
+        }
     }
 
     @Test

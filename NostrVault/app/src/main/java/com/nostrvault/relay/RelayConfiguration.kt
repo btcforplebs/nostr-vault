@@ -3,6 +3,7 @@ package com.nostrvault.relay
 import android.util.Log
 import com.nostrvault.fips.FipsBridge
 import com.nostrvault.fips.FipsIngress
+import com.nostrvault.ui.screens.settings.RelayAccessLimits
 import java.io.File
 
 /**
@@ -102,10 +103,13 @@ object RelayConfiguration {
             "CHAT_RELAY_NPUB" to config.ownerNpub,
             "CHAT_RELAY_DESCRIPTION" to config.chatRelayDescription,
             "CHAT_RELAY_ICON" to config.chatRelayIcon,
-            "CHAT_RELAY_WOT_DEPTH" to config.chatRelayWotDepth.toString(),
+            "CHAT_RELAY_WOT_DEPTH" to RelayAccessLimits.clampedFollowDistance(config.chatRelayWotDepth).toString(),
             "CHAT_RELAY_WOT_REFRESH_INTERVAL_HOURS" to config.chatRelayWotRefreshHours.toString(),
             "WOT_REFRESH_INTERVAL" to config.wotRefreshInterval,
-            "WOT_DEPTH" to config.chatRelayWotDepth.toString(),
+            // Clamped to what the screen can show. The relay runs level 0 as a
+            // public relay, so a stored 0 must never reach it while Who Can
+            // Reach You reads "Only you".
+            "WOT_DEPTH" to RelayAccessLimits.clampedFollowDistance(config.chatRelayWotDepth).toString(),
             "WOT_MINIMUM_FOLLOWERS" to config.chatRelayMinFollowers.toString(),
             "CHAT_RELAY_MINIMUM_FOLLOWERS" to config.chatRelayMinFollowers.toString(),
             "CHAT_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL" to "50",
