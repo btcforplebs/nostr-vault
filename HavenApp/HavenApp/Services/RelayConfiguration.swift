@@ -389,10 +389,13 @@ enum RelayConfiguration {
             "CHAT_RELAY_NPUB": config.ownerNpub,
             "CHAT_RELAY_DESCRIPTION": config.chatRelayDescription,
             "CHAT_RELAY_ICON": config.chatRelayIcon,
-            "CHAT_RELAY_WOT_DEPTH": String(config.chatRelayWotDepth),
+            "CHAT_RELAY_WOT_DEPTH": String(RelayAccessLimits.clampedFollowDistance(config.chatRelayWotDepth)),
             "CHAT_RELAY_WOT_REFRESH_INTERVAL_HOURS": String(config.chatRelayWotRefreshHours),
             "WOT_REFRESH_INTERVAL": config.wotRefreshInterval,
-            "WOT_DEPTH": String(config.chatRelayWotDepth),
+            // Clamped to what the screen can show. The relay runs level 0 as a
+            // public relay, so a stored 0 must never reach it while Who Can
+            // Reach You reads "Only you".
+            "WOT_DEPTH": String(RelayAccessLimits.clampedFollowDistance(config.chatRelayWotDepth)),
             "WOT_MINIMUM_FOLLOWERS": String(config.chatRelayMinFollowers),
             "CHAT_RELAY_MINIMUM_FOLLOWERS": String(config.chatRelayMinFollowers),
             "CHAT_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL": "50",
