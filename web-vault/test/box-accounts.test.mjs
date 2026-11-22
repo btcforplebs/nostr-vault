@@ -15,6 +15,7 @@ const root = fileURLToPath(new URL("..", import.meta.url))
 const vite = await createServer({ root, configFile: false, logLevel: "silent", appType: "custom", server: { middlewareMode: true, hmr: false, ws: false }, oxc: { jsx: { runtime: "automatic", importSource: "preact" } } })
 const { AccountsSection } = await vite.ssrLoadModule("/src/box/sections/AccountsSection.jsx")
 const { accountsApi } = await vite.ssrLoadModule("/src/box/api-accounts.js")
+const { boxAccountCheck } = await vite.ssrLoadModule("/src/box/box-vault.js")
 test.after(() => vite.close())
 
 const key = () => { const sk = generateSecretKey(); return { hex: getPublicKey(sk), signer: { signEvent: async t => finalizeEvent(t, sk) } } }
@@ -70,6 +71,24 @@ test("an account that isn't the first sees nothing, not an error", async () => {
   assert.equal(box.log[0].status, 403)
   assert.equal(el.textContent, "")
   render(null, el)
+})
+
+test("with the page's check: only the first account is asked to sign for the list (Tron L1)", async () => {
+  const box = fakeAccountsBox({ owner: first.hex })
+  box.added.set(npubEncode(other.hex), { state: "signedIn", added: 1 })
+  for (const [who, shown] of [[other, false], [first, true]]) {
+    const api = accountsApi({ signer: who.signer, base: "http://box.test/api/box", fetchImpl: box.fetchImpl })
+    const account = boxAccountCheck({ api })
+    const el = document.createElement("div")
+    render(h(AccountsSection, { ctx: { signer: who.signer }, api, account }), el)
+    await tick(20)
+    assert.equal(box.log.filter(l => l.name === "accounts").length, 0, "nothing signed before the box says who this is")
+    await account.check(); await tick(40)
+    const lists = box.log.filter(l => l.name === "accounts" && l.who === who.hex)
+    assert.equal(lists.length, shown ? 1 : 0, shown ? "the first account gets its list" : "another account is never asked to sign for it")
+    assert.equal(/Accounts on this box/.test(el.textContent), shown)
+    render(null, el)
+  }
 })
 
 test("a box that can't answer says why", async () => {
