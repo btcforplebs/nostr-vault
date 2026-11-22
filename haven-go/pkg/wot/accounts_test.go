@@ -426,3 +426,34 @@ func TestABlockedFollowVouchesForNobody(t *testing.T) {
 		t.Error("a was unblocked while the relay was down, and onlyA did not come back at start")
 	}
 }
+
+// A block change that lands while a model is being built reaches the model
+// installed before it. Installing the new one counts its webs again.
+func TestInstallingAModelCountsAgainForBlocksChangedMeanwhile(t *testing.T) {
+	main, a, onlyA := newTestKey(t), newTestKey(t), newTestKey(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	path := filepath.Join(t.TempDir(), "wot_cache.json")
+	blocked := false
+	wt := NewSimpleInMemory(nostr.NewSimplePool(ctx), owners(main),
+		[]string{seedRelay(t, main.followList(t, a), a.followList(t, onlyA))}, 3, 1, 5, path, 60)
+	wt.BlockedBy = func(_, pubkey string) bool { return blocked && pubkey == a.pk }
+	wt.Refresh(ctx)
+	if !wt.HasFor(ctx, main.pk, onlyA.pk) {
+		t.Fatal("fixture: a vouches for onlyA")
+	}
+	blocked = true // the change no retally was run for
+	retallyInstalled(wt)
+	if wt.HasFor(ctx, main.pk, onlyA.pk) {
+		t.Error("main blocked a while the model was not installed, and a still vouches")
+	}
+
+	// Both ways of installing a model run it. (This package's tests may
+	// only install stubModel: the instance holds one type.)
+	stub := &stubModel{}
+	MarkReady(NewCycle(), stub)
+	Initialize(ctx, stub, NewCycle())
+	if n := stub.retallies.Load(); n != 2 {
+		t.Errorf("MarkReady and Initialize counted again %d times, want once each", n)
+	}
+}
