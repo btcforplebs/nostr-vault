@@ -69,7 +69,12 @@ func crawler(t *testing.T, n *fakeNet, dir string) *Crawler {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	return &Crawler{Store: s, Dir: dir, Owner: pk(0), Fetch: n, Params: DefaultParams(), Bar: 0,
+	// These tests are about the walk's mechanics (bar, checkpoint, resume),
+	// so the ceiling is SureHop and the depth rule is never asked.
+	// depth_test.go runs the rule with the real ceiling.
+	p := DefaultParams()
+	p.MaxHop = SureHop
+	return &Crawler{Store: s, Dir: dir, Owner: pk(0), Fetch: n, Params: p, Bar: 0,
 		Wait: func(context.Context) bool { return true }}
 }
 

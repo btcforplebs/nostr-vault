@@ -46,15 +46,18 @@ func base() *Graph {
 func TestHopIsTrueFollowDistance(t *testing.T) {
 	g := base()
 	g.SetList("popular", []string{"far"}, nil)
-	g.SetList("far", []string{"tooFar"}, nil)
+	g.SetList("far", []string{"h4"}, nil)
+	g.SetList("h4", []string{"h5"}, nil)
+	g.SetList("h5", []string{"h6"}, nil)
+	g.SetList("h6", []string{"tooFar"}, nil)
 	r := mustRank(t, g, "me", nil)
-	for pk, want := range map[string]int{"f0": 1, "popular": 2, "far": 3} {
+	for pk, want := range map[string]int{"f0": 1, "popular": 2, "far": 3, "h4": 4, "h6": 6} {
 		if _, hop, ok := r.Score(pk); !ok || hop != want {
 			t.Errorf("%s: hop %d ok %v, want %d", pk, hop, ok, want)
 		}
 	}
 	if _, _, ok := r.Score("tooFar"); ok {
-		t.Error("hop 4 must be left out of the map")
+		t.Error("hop 7 must be left out of the map")
 	}
 }
 
