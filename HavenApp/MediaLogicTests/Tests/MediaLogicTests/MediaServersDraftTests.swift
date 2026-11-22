@@ -138,7 +138,15 @@ final class MediaServersDraftTests: XCTestCase {
         let src = try source("HavenApp/Views/Settings/BlossomSettingsView.swift")
         XCTAssertEqual(count("publishServerList(", in: src), 1)
         let save = try body(of: "private func save() {", in: src)
-        XCTAssertTrue(save.contains("NostrService.shared.publishServerList(meshAdd: plan.meshAdd, meshRemove: plan.meshRemove)"))
+        XCTAssertTrue(save.contains("publish(plan)"))
+        // Save's publish and its Try again share one call, which reports back.
+        let publish = try body(of: "private func publish(_ plan: MediaServersDraft.SavePlan) {", in: src)
+        XCTAssertTrue(publish.contains("NostrService.shared.publishServerList(meshAdd: plan.meshAdd, meshRemove: plan.meshRemove) { outcome in"))
+        XCTAssertTrue(publish.contains("publishOutcome = outcome"))
+        // No public server left: refused before anything is stored.
+        let check = try XCTUnwrap(save.range(of: "leavesNoPublicServer")).lowerBound
+        let store = try XCTUnwrap(save.range(of: "configService.config.blossomMirrors = plan.mirrors")).lowerBound
+        XCTAssertLessThan(check, store)
         XCTAssertEqual(count("blossomMirrors = ", in: src), 1, "typed servers are stored only by Save")
         XCTAssertFalse(src.contains("blossomMirrors.append("))
         XCTAssertFalse(src.contains("blossomMirrors.removeAll("))

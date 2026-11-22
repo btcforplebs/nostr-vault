@@ -229,8 +229,12 @@ extension NostrService {
     /// old web device's https entry becomes `to`, in its place, so this
     /// device is the one the list names. Not managed by this device: a later
     /// publish here keeps it, as another device's entry.
+    ///
+    /// `onResult`: what the publish did (Settings › Media Servers shows it
+    /// under Save). Not called when the account changed during the lookup.
     func publishServerList(fipsDetectedNpub: String? = nil, meshAdd: [String] = [], meshRemove: [String] = [],
-                           webMove: (fromHost: String, to: String)? = nil) {
+                           webMove: (fromHost: String, to: String)? = nil,
+                           onResult: (@MainActor (ServerListPublishOutcome) -> Void)? = nil) {
         let servers = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub) + meshAdd
         let owner = activeHexPubkey
         // Merge into the newest list, never replace it (one rule for every
@@ -279,11 +283,13 @@ extension NostrService {
                 #if DEBUG
                 print("NostrService: Kind 10063: no relay list of the account's own; not published")
                 #endif
+                onResult?(.noRelayList)
                 return
             case .unknown:
                 #if DEBUG
                 print("NostrService: Kind 10063: list not known (\(lookup.answered)/\(lookup.asked) relays answered); not published")
                 #endif
+                onResult?(.listNotKnown(answered: lookup.answered, asked: lookup.asked))
                 return
             }
             guard var merged = HomeVaultLogic.mergeServerList(
@@ -297,6 +303,7 @@ extension NostrService {
                 #if DEBUG
                 print("NostrService: No usable Blossom server, skipping Kind 10063 publish")
                 #endif
+                onResult?(.noPublicServer)
                 return
             }
             if let webMove {
@@ -306,6 +313,7 @@ extension NostrService {
             // mode republishes on every app switch; readers already hold this).
             if merged == existing {
                 UserDefaults.standard.set(managed, forKey: managedKey)
+                onResult?(.unchanged)
                 return
             }
             let tags = merged.map { ["server", $0] }
@@ -322,10 +330,12 @@ extension NostrService {
                 #if DEBUG
                 print("NostrService: Published Kind 10063 server list with \(tags.count) servers")
                 #endif
+                onResult?(.published)
             } else {
                 #if DEBUG
                 print("NostrService: Failed to sign Kind 10063 server list")
                 #endif
+                onResult?(.signFailed)
             }
         }
     }

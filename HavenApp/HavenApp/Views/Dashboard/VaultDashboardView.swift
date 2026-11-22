@@ -461,9 +461,13 @@ struct VaultDashboardView: View {
             DashboardRow(
                 icon: "arrow.down.circle.fill",
                 title: "Import notes",
-                detail: relayManager.isImporting
-                    ? relayManager.importStatusMessage
-                    : "Since \(importStartText). " + (VaultHistory.lastNotesImport.map { "Last ran \(relative($0))." } ?? "Never ran."),
+                detail: ImportRowDetail.text(
+                    isImporting: relayManager.isImporting,
+                    liveStatus: relayManager.importStatusMessage,
+                    outcome: relayManager.importOutcome,
+                    startFailed: relayManager.importStartFailed,
+                    couldNotStartLine: ImportStartGate.couldNotStart,
+                    idle: "Since \(importStartText). " + (VaultHistory.lastNotesImport.map { "Last ran \(relative($0))." } ?? "Never ran.")),
                 state: .info,
                 progress: relayManager.isImporting ? relayManager.importProgress : nil
             ) {

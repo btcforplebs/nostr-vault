@@ -126,7 +126,7 @@ extension BlossomService {
         // A group at a time: download, then save with at most one signature.
         for start in stride(from: 0, to: total, by: groupSize) {
             let group = Array(sortedHashes[start..<min(start + groupSize, total)])
-            let fetched = await autoMirrorFetch(group) { hash in await self.fetchFromMirrors(sha256: hash) }
+            let fetched = await autoMirrorFetch(group) { hash in await self.fetchFromMirrors(sha256: hash, autoMirror: true) }
             let files = fetched.map(\.1)
             let result = await autoMirrorStore(files, plan: plan, dates: uploadedDates)
             files.forEach { try? FileManager.default.removeItem(at: $0.url) }
@@ -213,7 +213,12 @@ extension BlossomService {
         // remember each link saved, so a run stopped part way resumes here.
         for start in stride(from: 0, to: total, by: groupSize) {
             let group = Array(urlsToMirror[start..<min(start + groupSize, total)])
-            let fetched = await autoMirrorFetch(group) { url in await self.fetchFromURL(url) }
+            // The bytes must be the file the link or its note names (rule 1, as the box checks).
+            let expected = group.map { ($0, AutoMirrorGuard.expectedHash(for: $0, imeta: knownHashes)) }
+            let want = Dictionary(expected.map { ($0.0.absoluteString, $0.1) }, uniquingKeysWith: { first, _ in first })
+            let fetched = await autoMirrorFetch(group) { url in
+                await self.fetchFromURL(url, expectedSHA256: want[url.absoluteString] ?? nil, autoMirror: true)
+            }
             var dates: [String: Date] = [:]
             for (url, file) in fetched { dates[file.sha256.lowercased()] = noteDates[url.absoluteString] }
             let result = await autoMirrorStore(fetched.map(\.1), plan: plan, dates: dates)
