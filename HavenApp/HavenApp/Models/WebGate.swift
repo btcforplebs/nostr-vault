@@ -14,7 +14,8 @@ import Foundation
 ///    always shows.
 /// 2a. **outside** (or inside on reach `everyone`): the signer's secret key
 ///    is public (`PublicKeyRegistry`), whatever the web or whitelist says.
-/// 2b. **inside**: the whitelist or your own web.
+/// 2b. **inside**: the whitelist or your own web, or (Underrated and
+///    Discovery only) ranked over the Discovery reach bar.
 /// 3. **inside** again when the surface's reach is `everyone` (a Global feed
 ///    with the shield on Everyone).
 /// 4. **loose**: reach is `webAndLoose` and the signer is one hop past your web.
@@ -56,6 +57,10 @@ enum WebGate {
         /// Public blocks and the mute list's private people.
         var blocked: Set<String>
         var mutes: MuteList
+        /// People the desktop Vault ranked over the Discovery reach bar
+        /// (`DiscoveryReach.admitted`, lowercase hex). Set only for the
+        /// feeds the slider widens; judged as the web is.
+        var ranked: Set<String> = []
 
         init(own: Set<String>, whitelist: Set<String> = [], web: Set<String>, loose: Set<String> = [],
              blocked: Set<String> = [], mutes: MuteList = .empty) {
@@ -148,7 +153,9 @@ enum WebGate {
         // PublicKeyRegistry) is no longer the person you trusted: outside your
         // web and past hop 3, as a stranger is.
         if PublicKeyRegistry.shared.isPublic(signer) { return reach == .everyone ? .inside : .outside }
-        if web.whitelist.contains(signer) || web.web.contains(signer) { return .inside }
+        if web.whitelist.contains(signer) || web.web.contains(signer) || web.ranked.contains(signer) {
+            return .inside
+        }
         switch reach {
         case .everyone: return .inside
         case .webAndLoose where web.loose.contains(signer): return .loose

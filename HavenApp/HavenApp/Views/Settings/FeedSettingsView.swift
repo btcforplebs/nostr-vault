@@ -32,6 +32,7 @@ struct FeedSettingsView: View {
             }
 
             FeedReachSettingsSection()
+            DiscoveryReachSettingsSection()
 
             Section {
                 #if os(iOS)

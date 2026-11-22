@@ -84,7 +84,7 @@ extension FeedService {
             articlesGlobal: articlesFeedMode == .global,
             pollsGlobal: pollsFeedMode == .global,
             pollStatus: pollStatusFilter,
-            gate: gate,
+            gate: DiscoveryReachStore.shared.gate(gate, for: feedMode),
             reach: currentReach,
             showReposts: config.showReposts,
             showReplies: config.showReplies,
