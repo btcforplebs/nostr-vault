@@ -298,10 +298,10 @@ struct SetupWizardView: View {
                 }
             )
         case 11:
-            NewProfileStep(
+            EditProfileStep(
                 name: $profileName,
                 photoJPEG: $profilePhotoJPEG,
-                onContinue: {
+                onNext: {
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
                         currentStep = 15
