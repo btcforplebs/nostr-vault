@@ -45,6 +45,14 @@ interface ReferrerFollowEntryPoint {
  */
 internal fun SetupWizardViewModel.followReferrerPicks(accountHex: String) {
     val picks = ReferrerFollows.take()
+    // The inviter (first of the picks) gets a new account's first feed card,
+    // with Wave back (InviterWelcome, iOS #2417). Only the key made in this run.
+    if (_setupPath.value == SetupPath.NEW_TO_NOSTR && accountHex.equals(generatedPkHex, ignoreCase = true)) {
+        com.nostrvault.setup.InviterWelcome.save(
+            appContext,
+            com.nostrvault.setup.InviterWelcome.start(accountHex, picks.firstOrNull(), System.currentTimeMillis()),
+        )
+    }
     if (picks.isEmpty() || setupModeNow() == "browse") return
     val services = EntryPointAccessors.fromApplication(appContext, ReferrerFollowEntryPoint::class.java)
     val name = services.nostrService().profiles.value[picks.first()]?.bestName ?: "them"
