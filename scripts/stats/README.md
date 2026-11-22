@@ -50,7 +50,8 @@ node --test scripts/stats/test/                 # tests
 Needs Node 22 or later (built-in WebSocket and fetch, no npm install). A run takes about 20 minutes.
 
 **The daily job** is `stats-job.sh`, run by launchd (`com.nostrvault.stats`, every 15 min) on prod-mini from a copy at
-`~/.buzz/REPOS/nv-stats-job/stats-job.sh`. Before each daily scan it fetches master, runs these tests on master's
+`~/.buzz/REPOS/nv-stats-job/stats-job.sh`. It scans once per UTC day, at the first tick after 00:00 UTC (7 PM US
+Eastern in winter; a failed scan retries every 3 hours that day; `scan.day` records the day done). Before each daily scan it fetches master, runs these tests on master's
 `scripts/stats` (plus `website/stats`, which the page test imports) in a staging dir and swaps it in only if they pass;
 a failed fetch or test keeps the last good copy and says why in `stats.log`. It installs a changed `stats-job.sh`
 the same way, so merging to master is enough: no hand copy. `stats-job.sh --refresh-only` does just that step.
