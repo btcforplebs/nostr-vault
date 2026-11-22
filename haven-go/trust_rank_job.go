@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	trustRankBar      = 15.0               // Tod's pick until Strayhorn sends weights
+	trustRankBar      = 15.0               // rank score (shown ~88) whose lists are read; the view bar is separate (trustrank.DefaultViewBar)
 	trustRankPace     = time.Second        // one list a second
 	trustRankCap      = 500 << 20          // list store cap on a server
 	trustRankRefresh  = 24 * time.Hour     // ask for changed lists once a day
