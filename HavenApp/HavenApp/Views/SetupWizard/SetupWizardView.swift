@@ -287,7 +287,7 @@ struct SetupWizardView: View {
                 }
             )
         case 18:
-            KeySpareStep(npub: npub, nsec: nsec, name: profileName) {
+            KeySpareStep(nsec: nsec) {
                 direction = .forward
                 withAnimation(WizardAnimations.springEnter) {
                     currentStep = 10
