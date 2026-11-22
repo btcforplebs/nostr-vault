@@ -17,7 +17,7 @@ import com.nostrvault.util.PublicKeyRegistry
  * 4. [Verdict.INSIDE] anywhere when the reach is [Reach.EVERYONE];
  * 5. [Verdict.LOOSE] when the reach is [Reach.WEB_AND_LOOSE] and it is one
  *    hop past your web, or always for a ranked distant connection
- *    ([Web.rankedLoose], rationed while [DiscoveryReach.CAP_DISTANT]);
+ *    ([Web.rankedLoose], always rationed);
  * 6. [Verdict.OUTSIDE] otherwise.
  *
  * What is not: iOS judges blocks and the mute list inside the gate too
@@ -59,7 +59,7 @@ object WebGate {
         loose: Set<String> = emptySet(),
         /** Ranked over the Discovery reach bar, judged as the web is ([DiscoveryReach]). Lowercase hex. */
         val ranked: Set<String> = emptySet(),
-        /** Ranked over the bar but rationed as [Verdict.LOOSE] whatever the reach ([DiscoveryReach.CAP_DISTANT]). */
+        /** Ranked over the bar but rationed as [Verdict.LOOSE] whatever the reach ([WebGate.capLoose]). */
         val rankedLoose: Set<String> = emptySet(),
     ) {
         /** Every account on this device, the one being judged for included. */

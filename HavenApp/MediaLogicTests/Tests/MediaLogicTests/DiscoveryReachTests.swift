@@ -38,11 +38,11 @@ final class DiscoveryReachTests: XCTestCase {
 
     func testTheBarLetsInEveryoneTwoOrMoreHopsOutAtOrOverIt() throws {
         let copy = try makeCopy()
-        XCTAssertEqual(DiscoveryReach.admitted(copy, bar: 55), [pk("c"), pk("e")],
+        XCTAssertEqual(DiscoveryReach.admitted(copy, bar: 55), .init(circle: [pk("c")], distant: [pk("e")]),
                        "follows are already your web; d and f are under the bar")
-        XCTAssertEqual(DiscoveryReach.admitted(copy, bar: 50), [pk("c"), pk("d"), pk("e")], "at the bar counts")
-        XCTAssertEqual(DiscoveryReach.admitted(copy, bar: 45), [pk("c"), pk("d"), pk("e"), pk("f")])
-        XCTAssertEqual(DiscoveryReach.admitted(copy, bar: 100), [])
+        XCTAssertEqual(DiscoveryReach.admitted(copy, bar: 50).all, [pk("c"), pk("d"), pk("e")], "at the bar counts")
+        XCTAssertEqual(DiscoveryReach.admitted(copy, bar: 45), .init(circle: [pk("c"), pk("d")], distant: [pk("e"), pk("f")]))
+        XCTAssertTrue(DiscoveryReach.admitted(copy, bar: 100).isEmpty)
     }
 
     func testTheCountSplitsYourCircleFromDistantConnections() throws {
@@ -73,6 +73,27 @@ final class DiscoveryReachTests: XCTestCase {
         XCTAssertEqual(WebGate.judge(subject, in: gate(ranked: [pk("e")])), .inside)
         XCTAssertEqual(WebGate.judge(WebGate.Subject(signer: pk("E")), in: gate(ranked: [pk("e")])), .inside,
                        "the signer is lowercased; the file's keys already are")
+    }
+
+    func testADistantConnectionIsLooseWhateverTheReach() {
+        var web = gate(ranked: [pk("c")])
+        web.rankedLoose = [pk("e")]
+        XCTAssertEqual(WebGate.judge(WebGate.Subject(signer: pk("c")), in: web), .inside)
+        XCTAssertEqual(WebGate.judge(WebGate.Subject(signer: pk("e")), in: web), .loose)
+        XCTAssertEqual(WebGate.judge(WebGate.Subject(signer: pk("E")), in: web, reach: .webAndLoose), .loose)
+        XCTAssertEqual(WebGate.judge(WebGate.Subject(signer: pk("f")), in: web), .outside)
+    }
+
+    func testDistantConnectionsAreCappedOneEachAndAFifth() {
+        var web = gate(ranked: [])
+        web.rankedLoose = Set((0..<30).map { "d\($0)" })
+        // 50 rows from your web, then 30 distant authors with 2 posts each.
+        let rows = (0..<50).map { (pk("b"), $0) } + (0..<60).map { ("d\($0 / 2)", $0) }
+        let shown = WebGate.capLoose(rows, verdict: { WebGate.judge(WebGate.Subject(signer: $0.0), in: web) },
+                                     author: { $0.0 }, isReply: { _ in false })
+        let distant = shown.filter { $0.0.hasPrefix("d") }.map(\.0)
+        XCTAssertEqual(distant.count, 10, "a fifth of 50, floor 10")
+        XCTAssertEqual(Set(distant).count, distant.count, "one post each")
     }
 
     func testBlocksStillWinOverTheRank() {

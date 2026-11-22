@@ -18,7 +18,7 @@ final class DiscoveryReachStore: ObservableObject {
 
     @Published private(set) var copy: TrustRankCopy?
     /// Empty with no copy.
-    private(set) var admitted: Set<String> = []
+    private(set) var admitted: DiscoveryReach.Admitted = .none
 
     private var subscriptions: Set<AnyCancellable> = []
     private var load: Task<Void, Never>?
@@ -55,11 +55,13 @@ final class DiscoveryReachStore: ObservableObject {
     func refresh() { reload(ConfigService.shared.activeAccountHexPubkey) }
 
     /// The gate a feed in `mode` judges with: `gate` plus the admitted
-    /// people for Underrated and Discovery, `gate` alone for every other.
+    /// people for Underrated and Discovery (your circle inside, distant
+    /// connections rationed as loose), `gate` alone for every other.
     func gate(_ gate: WebGate.Web, for mode: FeedMode) -> WebGate.Web {
         guard DiscoveryReach.modes.contains(mode), !admitted.isEmpty else { return gate }
         var widened = gate
-        widened.ranked = admitted
+        widened.ranked = admitted.circle
+        widened.rankedLoose = admitted.distant
         return widened
     }
 
@@ -85,7 +87,7 @@ final class DiscoveryReachStore: ObservableObject {
     }
 
     private func apply(saved: Double?) {
-        let next = copy.map { DiscoveryReach.admitted($0, bar: DiscoveryReach.bar(saved: saved, copy: $0)) } ?? []
+        let next = copy.map { DiscoveryReach.admitted($0, bar: DiscoveryReach.bar(saved: saved, copy: $0)) } ?? .none
         guard next != admitted else { return }
         admitted = next
         FeedService.shared.recomputeFilteredNotes()

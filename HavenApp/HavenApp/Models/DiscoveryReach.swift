@@ -29,12 +29,26 @@ enum DiscoveryReach {
         min(copy.floor.rounded(.up), 100)...100
     }
 
-    /// Who the bar lets in past your follows: everyone two or more hops out
-    /// scored at or over `bar`. Keys are lowercase hex (the file's own).
-    static func admitted(_ copy: TrustRankCopy, bar: Double) -> Set<String> {
-        var out = Set<String>()
+    /// Who the bar lets in past your follows, split by ring. Keys are
+    /// lowercase hex (the file's own).
+    struct Admitted: Equatable {
+        /// Two hops out: judged as your web is.
+        var circle: Set<String> = []
+        /// Three hops out and further: always rationed as loose, at most one
+        /// post each and a fifth of the list (`WebGate.capLoose`, Logen
+        /// 2026-11-22).
+        var distant: Set<String> = []
+
+        static let none = Admitted()
+        var isEmpty: Bool { circle.isEmpty && distant.isEmpty }
+        var all: Set<String> { circle.union(distant) }
+    }
+
+    /// Everyone two or more hops out scored at or over `bar`.
+    static func admitted(_ copy: TrustRankCopy, bar: Double) -> Admitted {
+        var out = Admitted()
         for (pubkey, person) in copy.people where person.hop >= 2 && person.score >= bar {
-            out.insert(pubkey)
+            if person.hop <= circleHops { out.circle.insert(pubkey) } else { out.distant.insert(pubkey) }
         }
         return out
     }

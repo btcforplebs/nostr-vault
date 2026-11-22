@@ -18,7 +18,9 @@ import Foundation
 ///    Discovery only) ranked over the Discovery reach bar.
 /// 3. **inside** again when the surface's reach is `everyone` (a Global feed
 ///    with the shield on Everyone).
-/// 4. **loose**: reach is `webAndLoose` and the signer is one hop past your web.
+/// 4. **loose**: reach is `webAndLoose` and the signer is one hop past your
+///    web, or (any reach) a distant connection ranked over the Discovery
+///    reach bar (`Web.rankedLoose`), so it is always rationed.
 /// 5. **outside**: everyone else.
 ///
 /// It fails closed: with no graph, the web is your follows and nothing is one
@@ -57,10 +59,14 @@ enum WebGate {
         /// Public blocks and the mute list's private people.
         var blocked: Set<String>
         var mutes: MuteList
-        /// People the desktop Vault ranked over the Discovery reach bar
+        /// Your circle (hop 2) the desktop Vault ranked over the Discovery reach bar
         /// (`DiscoveryReach.admitted`, lowercase hex). Set only for the
         /// feeds the slider widens; judged as the web is.
         var ranked: Set<String> = []
+        /// Distant connections (hop 3+) ranked over the bar: rationed as
+        /// `.loose` whatever the reach (Logen 2026-11-22). Android
+        /// `Web.rankedLoose`.
+        var rankedLoose: Set<String> = []
 
         init(own: Set<String>, whitelist: Set<String> = [], web: Set<String>, loose: Set<String> = [],
              blocked: Set<String> = [], mutes: MuteList = .empty) {
@@ -159,7 +165,7 @@ enum WebGate {
         switch reach {
         case .everyone: return .inside
         case .webAndLoose where web.loose.contains(signer): return .loose
-        default: return .outside
+        default: return web.rankedLoose.contains(signer) ? .loose : .outside
         }
     }
 
