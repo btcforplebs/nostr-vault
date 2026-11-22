@@ -1,9 +1,10 @@
 import SwiftUI
 
-// MARK: - Step 10: Protect Your Key (New to Nostr path)
+// MARK: - Step 10: Lock it in (New to Nostr path)
 
-/// The password that encrypts the new nsec (NIP-49). Its own page so the
-/// fields sit above the keyboard without scrolling.
+/// The last key step (setup screens r3, Way 1c): the password that encrypts
+/// the new nsec (NIP-49), under the VaultMark with the key in its keyhole.
+/// Its own page so the fields sit above the keyboard without scrolling.
 struct KeyPasswordStep: View {
     @Binding var nsecPassword: String
     let onContinue: () -> Void
@@ -23,19 +24,18 @@ struct KeyPasswordStep: View {
         VStack(spacing: 20) {
             Spacer().frame(height: isTyping ? 4 : 20)
 
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 if !isTyping {
-                    Image(systemName: "lock.shield.fill")
-                        .font(.appSystem(size: 40))
-                        .foregroundStyle(WizardColors.accentGradient)
-                        .accessibilityHidden(true)
+                    KeyStepsStrip(current: .lock)
+                    vaultMark
                         .transition(.opacity)
                 }
-                Text("Protect Your Key")
-                    .font(.appSystem(size: 24, weight: .bold))
+                Text("Lock it in")
+                    .font(.appSystem(size: 28, weight: .bold))
                     .foregroundColor(WizardColors.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
                 if !isTyping {
-                    Text("This password locks the secret key you just saved. It stays on this device only and is never sent to us or any server. We cannot recover or reset it. If you forget it, the secret key you saved is your only way back in.")
+                    Text("A password locks your key in the vault on this device. It never leaves it, and we can't reset it.")
                         .font(.appSystem(size: 15))
                         .foregroundColor(WizardColors.textSecondary)
                         .multilineTextAlignment(.center)
@@ -92,7 +92,7 @@ struct KeyPasswordStep: View {
 
             // Above the warning so it stays above the keyboard while typing;
             // the warning was already read before a field took focus.
-            WizardPrimaryButton(title: "Continue", action: validateAndContinue, disabled: !isPasswordValid)
+            WizardPrimaryButton(title: "Lock", action: validateAndContinue, disabled: !isPasswordValid)
 
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.shield")
@@ -118,6 +118,24 @@ struct KeyPasswordStep: View {
             Spacer()
         }
         .animation(WizardAnimations.springGentle, value: isTyping)
+    }
+
+    /// The VaultMark arch with the key sitting in its glowing keyhole.
+    private var vaultMark: some View {
+        ZStack(alignment: .bottom) {
+            Image("VaultMark")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 92, height: 92)
+                .clipShape(RoundedRectangle(cornerRadius: 92 * 0.2237, style: .continuous))
+            Image(systemName: "key.horizontal.fill")
+                .font(.appSystem(size: 22, weight: .bold))
+                .foregroundStyle(WizardColors.accentGradient)
+                .shadow(color: WizardColors.accentGlow, radius: 8)
+                .offset(y: 6)
+        }
+        .padding(.vertical, 4)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder

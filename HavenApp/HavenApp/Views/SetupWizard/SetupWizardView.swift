@@ -121,7 +121,8 @@ struct SetupWizardView: View {
         // Setup screens r3 (Logen 2026-11-22): profile, people, key, lock,
         // then the feed. No Welcome to Nostr cards, relay list (Settings >
         // Relays) or done screen; the Mac keeps done for its menu-bar hint.
-        case .newToNostr: return isIOSDevice ? [11, 15, 9, 10] : [11, 15, 9, 10, 8]
+        // Key steps: this key is you (9), keep a spare (18), lock it in (10).
+        case .newToNostr: return isIOSDevice ? [11, 15, 9, 18, 10] : [11, 15, 9, 18, 10, 8]
         // People who already use Nostr: "New to Nostr Vault?" comes before the relay import.
         case .browse: return NewToVaultQuestion.steps(path: .browse, isIOS: isIOSDevice)
         case .full: return NewToVaultQuestion.steps(path: .full, isIOS: isIOSDevice)
@@ -273,16 +274,25 @@ struct SetupWizardView: View {
         case 8:
             CompleteStep(isBrowseMode: setupPath == .browse, isNewUser: setupPath == .newToNostr, onLaunch: { saveAndComplete() })
         case 9:
-            NostrIntroStep(
+            KeyIsYouStep(
                 npub: $npub,
                 nsec: $nsec,
-                onContinue: {
+                name: profileName,
+                photoJPEG: profilePhotoJPEG,
+                onNext: {
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
-                        currentStep = 10
+                        currentStep = 18
                     }
                 }
             )
+        case 18:
+            KeySpareStep(npub: npub, nsec: nsec, name: profileName) {
+                direction = .forward
+                withAnimation(WizardAnimations.springEnter) {
+                    currentStep = 10
+                }
+            }
         case 10:
             KeyPasswordStep(
                 nsecPassword: $nsecPassword,
@@ -429,8 +439,10 @@ struct SetupWizardView: View {
                 currentStep = 11 // People (new to Nostr only): back to Edit Profile
             } else if currentStep == 9 {
                 currentStep = 15 // Your key: back to people
+            } else if currentStep == 18 {
+                currentStep = 9 // Spare: back to your key
             } else if currentStep == 10 {
-                currentStep = 9 // Password: back to your keys
+                currentStep = 18 // Lock: back to the spare
             } else if currentStep == 8 {
                 if setupPath == .newToNostr {
                     currentStep = 10 // New to Nostr (Mac): back to the lock

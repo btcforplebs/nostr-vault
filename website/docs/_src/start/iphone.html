@@ -7,8 +7,8 @@
   "description": "Install Nostr Vault on an iPhone or iPad, create a Nostr account or bring the one you have, and find your way around.",
   "checked": "Nostr Vault 3.2.3 for iOS",
   "labels": {
-    "ios": ["Create an account", "Bring an account", "What's inside?", "Your Keys",
-            "I saved my secret key", "Protect Your Key", "Edit Profile", "Next", "Let's fill it", "Not now", "Who are you on Nostr?", "Read-only", "You can post", "Encrypted key · you can post",
+    "ios": ["Create an account", "Bring an account", "What's inside?", "This key is you", "Show", "Keep a spare", "Print a card", "Copy it instead",
+            "I saved my secret key", "Lock it in", "Lock", "Edit Profile", "Next", "Let's fill it", "Not now", "Who are you on Nostr?", "Read-only", "You can post", "Encrypted key · you can post",
             "Signer link · you can post", "Who told you about Nostr Vault?", "Scan their profile code", "Not them? Try another", "Skip, nobody told me", "Use a signer app", "Sign in with Clave", "Scan a QR code", "Continue",
             "New to Nostr Vault?", "Yes, bring my notes from my relays", "Copy from my other vault", "Lost your other device? We'll bring your notes from relays", "Ready to import", "Change import relays",
             "Checking your relays", "Start import", "Skip", "Bringing your notes home", "Keep it running in the background", "Jump in",
@@ -45,13 +45,14 @@
         <span class="ui">Next</span>. Both are optional, and you can change them any time. Your key is made for you in
         the background, and nothing is posted until setup ends.</li>
     <li><strong>Who told you about Nostr Vault?</strong> See <a href="#who-told-you">below</a>.</li>
-    <li><strong>Your Keys.</strong> Two keys replace a username and password. The <strong>public key</strong> is your
-        name on Nostr; share it freely. The <strong>secret key</strong> is your password; anyone who has it can post as
-        you. Tap <span class="ui">Copy</span> next to the secret key and save it in your password manager. Nobody can
-        recover it for you. Tick <span class="ui">I saved my secret key</span>, then <span class="ui">Continue</span>.</li>
-    <li><strong>Protect Your Key.</strong> Choose a password of at least 8 characters. This password locks the secret key you just saved.
-        It stays on this device only and is never sent to us or any server. We cannot recover or reset it. If you forget it, the secret key you saved is your only way back in. Write it down and keep it with your secret key.
-        <span class="ui">Continue</span> takes you straight to your feed.</li>
+    <li><strong>This key is you.</strong> Your secret key is your account: anyone who has it can post as you, and
+        nobody can recover it for you. Tap <span class="ui">Show</span> to see it, then <span class="ui">Next</span>.</li>
+    <li><strong>Keep a spare.</strong> Tap <span class="ui">Print a card</span> to print your key on paper, with a QR
+        code you can scan back in, or tap <span class="ui">Copy it instead</span> and paste it into your password
+        manager. Tick <span class="ui">I saved my secret key</span>, then <span class="ui">Next</span>.</li>
+    <li><strong>Lock it in.</strong> Choose a password of at least 8 characters. It locks your key in the vault on this
+        device, never leaves it, and can't be reset by us. If you forget it, your spare is your only way back in.
+        Write it down and keep it with your spare. <span class="ui">Lock</span> takes you straight to your feed.</li>
     <li><strong>Fill your feed.</strong> Nostr starts empty: no algorithm picks for you. Tap
         <span class="ui">Let's fill it</span>, pick a few topics, and follow people whose posts you like. Five follows
         build your web of trust, which fills your feed and filters out spam. <span class="ui">Not now</span> skips
@@ -59,8 +60,8 @@
 </ol>
 <div class="shots">
     <figure><img src="/docs/img/ios/profile.webp" alt="Edit Profile" width="900" height="1957" loading="lazy"><figcaption>Edit Profile</figcaption></figure>
-    <figure><img src="/docs/img/ios/your-keys.webp" alt="Your Keys (secret key hidden here)" width="900" height="1957" loading="lazy"><figcaption>Your Keys (secret key hidden here)</figcaption></figure>
-    <figure><img src="/docs/img/ios/protect-key.webp" alt="Protect Your Key" width="900" height="1957" loading="lazy"><figcaption>Protect Your Key</figcaption></figure>
+    <figure><img src="/docs/img/ios/your-keys.webp" alt="This key is you" width="900" height="1957" loading="lazy"><figcaption>This key is you</figcaption></figure>
+    <figure><img src="/docs/img/ios/protect-key.webp" alt="Lock it in" width="900" height="1957" loading="lazy"><figcaption>Lock it in</figcaption></figure>
     <figure><img src="/docs/img/ios/feed-first.webp" alt="Fill your feed" width="900" height="1957" loading="lazy"><figcaption>Fill your feed</figcaption></figure>
 </div>
 
