@@ -141,7 +141,7 @@ final class MediaSettingsTrimTests: XCTestCase {
         XCTAssertFalse(page.contains("Mirror Now"), "Import media is on the dashboard")
         XCTAssertFalse(page.contains("runMirror("))
         XCTAssertTrue(page.contains("configService.config.autoMirrorMedia"), "Auto-Mirror stays for now")
-        let rows = try source("HavenApp/Views/Dashboard/MediaServersPage.swift")
+        let rows = try source("HavenApp/Views/Dashboard/MediaServersModel.swift")
         XCTAssertFalse(rows.contains("struct MediaServersPage: View"), "no second page")
         XCTAssertTrue(rows.contains("title: \"Copy to servers\""))
     }
@@ -156,21 +156,22 @@ final class MediaSettingsTrimTests: XCTestCase {
         }
     }
 
-    /// Import media, clear cache, back up media: one button each, per
-    /// platform's dashboard (iPhone/iPad Vault dashboard, Mac relay dashboard).
+    /// Import media, clear cache, back up media: one button each, on the one
+    /// Vault Dashboard iPhone, iPad and Mac share since the one-Vault fold
+    /// (bc0c5d320 deleted the Mac relay console, DashboardView).
     func testEachMediaActionHasOneButton() throws {
         // Buttons live in views; Auto-Mirror and moving-in run it from services.
         let sources = try appSources().filter { $0.path.contains("/Views/") }
         let mirrorRuns = sources.filter { $0.text.contains("runMirror(configService:") }.map(\.path)
         XCTAssertEqual(mirrorRuns.map { URL(fileURLWithPath: $0).lastPathComponent }.sorted(),
-                       ["DashboardView.swift", "VaultDashboardView.swift"], "Import media")
+                       ["VaultDashboardView.swift"], "Import media")
         let exports = sources.filter { $0.text.contains("exporter.export(.media") }.map { URL(fileURLWithPath: $0.path).lastPathComponent }
-        XCTAssertEqual(exports.sorted(), ["DashboardView.swift", "VaultDashboardView.swift"], "Back up media")
+        XCTAssertEqual(exports.sorted(), ["VaultDashboardView.swift"], "Back up media")
         let backup = try source("HavenApp/Views/Settings/BackupSettingsView.swift")
         XCTAssertFalse(backup.contains("Export Media"))
         XCTAssertFalse(backup.contains("exportBlossom"))
         XCTAssertTrue(backup.contains("Import Media"), "restoring a media zip has no other home")
         let clears = sources.filter { $0.text.contains("MediaCacheService.shared.clearCache()") }.map { URL(fileURLWithPath: $0.path).lastPathComponent }
-        XCTAssertEqual(clears.sorted(), ["DashboardBreakdowns.swift", "VaultContentsSection.swift"], "Clear cache")
+        XCTAssertEqual(clears.sorted(), ["VaultContentsSection.swift"], "Clear cache")
     }
 }
