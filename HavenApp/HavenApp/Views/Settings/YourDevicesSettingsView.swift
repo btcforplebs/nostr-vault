@@ -155,7 +155,7 @@ struct YourDevicesSettingsView: View {
             } footer: {
                 Text(Self.connectFooter + " Rename or remove a device under Mesh, below.")
             }
-            MeshSyncStatusSection(devices: devices)
+            // No sync status on the Mac: it stays silent about sync (Logen, 3.3.0).
         }
         .warmFormBackground()
         .groupedFormStyleCompat()

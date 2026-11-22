@@ -217,11 +217,10 @@ struct MacFipsMeshSettingsView: View {
 
     // MARK: 4 Sync
 
-    @ViewBuilder
+    // No sync status here: the Mac stays silent about sync (Logen, 3.3.0).
     private var syncSection: some View {
-        MeshSyncStatusSection(devices: configService.config.meshDevices.filter { $0.npub != mesh.ownNpub })
         Section {
-            Text("Your phones also sync with this Mac. Check theirs from Mesh on the phone.")
+            Text("Your phones sync with this Mac. Check sync from Mesh on the phone.")
                 .font(.appCaption)
                 .foregroundColor(.secondary)
             // The iPhone's twin is in FipsMeshShareSection (was a "Photos go to" picker).
