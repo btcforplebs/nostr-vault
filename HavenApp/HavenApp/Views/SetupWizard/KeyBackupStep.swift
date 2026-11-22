@@ -15,6 +15,7 @@ struct KeyBackupStep: View {
 
     @State private var shown = false
     @State private var copied = false
+    @State private var copyToken = UUID()
     @State private var savedKey = false
 
     var body: some View {
@@ -159,8 +160,11 @@ struct KeyBackupStep: View {
 
     private func copy() {
         PlatformClipboard.copySecret(nsec)
+        let token = UUID()
+        copyToken = token
         withAnimation(WizardAnimations.springGentle) { copied = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + PlatformClipboard.secretLifetime) {
+            guard copyToken == token else { return }  // a later tap restarted the 60 s
             withAnimation(WizardAnimations.springGentle) { copied = false }
         }
     }
