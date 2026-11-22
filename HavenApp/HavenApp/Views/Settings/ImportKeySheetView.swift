@@ -147,7 +147,7 @@ struct ImportKeySheetView: View {
         do {
             if npub == configService.config.ownerNpub {
                 try configService.config.setEncryptedNsec(nsec: nsec, password: importPassword)
-                _ = NIP49Service.storePasswordInKeychain(importPassword)
+                configService.storeOwnerPassword(importPassword)
                 configService.save()
             } else {
                 try configService.setCredential(nsec: nsec, password: importPassword, forNpub: npub)

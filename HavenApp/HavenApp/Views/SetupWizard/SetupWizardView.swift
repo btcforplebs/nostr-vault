@@ -545,7 +545,7 @@ struct SetupWizardView: View {
             do {
                 configService.config.ownerNcryptsec = try NIP49Service.encrypt(nsec: nsec, password: nsecPassword)
                 configService.config.ownerNsec = ""
-                _ = NIP49Service.storePasswordInKeychain(nsecPassword)
+                configService.storeOwnerPassword(nsecPassword)
             } catch {
                 setupError = "Failed to encrypt private key: \(error.localizedDescription)"
                 showSetupError = true

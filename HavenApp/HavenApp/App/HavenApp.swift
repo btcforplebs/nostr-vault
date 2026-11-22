@@ -42,6 +42,7 @@ struct HavenApp: App {
                     // The view inside will handle closing itself
                 }
             }
+            .ownerKeyNotSavedAlert()
             .environmentObject(configService)
             .environmentObject(relayManager)
             .environmentObject(nostrService)
@@ -69,6 +70,8 @@ struct HavenApp: App {
                 .onAppear { PushNotificationService.shared.askWhenIn() }
                 // Accounts a later copy or catch-up brought over: asked, never added unasked.
                 .copyAccountsAsk(enabled: configService.config.hasCompletedSetup)
+                // The keychain refused the owner's key (ConfigService+PlainOwnerKey).
+                .ownerKeyNotSavedAlert()
                 .environmentObject(configService)
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)

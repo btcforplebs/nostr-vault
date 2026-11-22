@@ -62,6 +62,8 @@ struct ContentView: View {
         .softTopScrollEdge()
         // Accounts a later copy or catch-up brought over: asked, never added unasked.
         .copyAccountsAsk(enabled: configService.config.hasCompletedSetup)
+        // The keychain refused the owner's key (ConfigService+PlainOwnerKey).
+        .ownerKeyNotSavedAlert()
         .onAppear {
             DMService.shared.startListening()
             // Auto-connect NIP-46 remote signer if configured
