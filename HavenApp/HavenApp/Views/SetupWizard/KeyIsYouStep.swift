@@ -11,6 +11,8 @@ struct KeyIsYouStep: View {
     @Binding var nsec: String
     let name: String
     let photoJPEG: Data?
+    /// Make My Key's key, so the wizard keeps it for the rest of the run.
+    let onMade: ((npub: String, nsec: String)) -> Void
     let onNext: () -> Void
 
     @State private var shown = false
@@ -141,5 +143,6 @@ struct KeyIsYouStep: View {
         error = nil
         npub = pair.npub
         nsec = pair.nsec
+        onMade(pair)
     }
 }

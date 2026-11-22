@@ -69,6 +69,9 @@ struct SetupWizardView: View {
     @State private var signingMode = "local"
     @State private var bunkerURI = ""
     @State private var bunkerConnected = false
+    /// New to Nostr's key, kept for the whole run so going back and forth
+    /// at the front door never swaps it (SetupOwnerKey.MadeKey).
+    @State private var madeKey = SetupOwnerKey.MadeKey<(npub: String, nsec: String)>()
 
     // Relay state
     @State private var relayURL = ""
@@ -279,6 +282,7 @@ struct SetupWizardView: View {
                 nsec: $nsec,
                 name: profileName,
                 photoJPEG: profilePhotoJPEG,
+                onMade: { madeKey.remember($0) },
                 onNext: {
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
@@ -385,9 +389,10 @@ struct SetupWizardView: View {
             }
         }
         // The new key is made now, silently: the people step leaves it out
-        // and the key step only shows it. The same way again keeps it (it may
-        // already be written down).
-        if path == .newToNostr, nsec.isEmpty, let pair = NewKeyPair.generate() {
+        // and the key step only shows it. Coming back to this way, even via
+        // I use Nostr, hands back the same key: it may already be written
+        // down or copied as the spare.
+        if path == .newToNostr, let pair = madeKey.take(orMake: NewKeyPair.generate) {
             npub = pair.npub
             nsec = pair.nsec
         }

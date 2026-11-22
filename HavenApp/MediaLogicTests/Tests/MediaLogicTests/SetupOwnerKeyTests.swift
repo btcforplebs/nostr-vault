@@ -37,4 +37,38 @@ final class SetupOwnerKeyTests: XCTestCase {
         XCTAssertFalse(SetupOwnerKey.resetsTypedKeys(from: Way.newToNostr, to: .newToNostr))
         XCTAssertFalse(SetupOwnerKey.resetsTypedKeys(from: nil, to: Way.newToNostr))
     }
+
+    /// Stale spare (2026-11-22): New to Nostr (key A, spare copied) → Back
+    /// → I use Nostr → Back → New to Nostr must show key A again, not a new
+    /// key B that the copied spare doesn't match.
+    func testNewToNostrKeyOutlivesADetour() {
+        var made = SetupOwnerKey.MadeKey<String>()
+        var minted = 0
+        let make: () -> String? = { minted += 1; return "key\(minted)" }
+
+        XCTAssertEqual(made.take(orMake: make), "key1")
+        // The detour through I use Nostr resets typed keys...
+        XCTAssertTrue(SetupOwnerKey.resetsTypedKeys(from: Way.newToNostr, to: .useNostr))
+        // ...but coming back hands back the same made key.
+        XCTAssertEqual(made.take(orMake: make), "key1")
+        XCTAssertEqual(minted, 1)
+    }
+
+    /// The engine failed at the front door: the key step's Make My Key key
+    /// is kept for the run, and never replaces one already made.
+    func testMadeKeyRetriesAfterFailureAndRemembersOnce() {
+        var made = SetupOwnerKey.MadeKey<String>()
+        XCTAssertNil(made.take(orMake: { nil }))
+        made.remember("fromKeyStep")
+        made.remember("other")
+        XCTAssertEqual(made.take(orMake: { "new" }), "fromKeyStep")
+    }
+
+    /// A new run of setup (the wizard opened again) starts with no key.
+    func testNewRunMakesANewKey() {
+        var first = SetupOwnerKey.MadeKey<String>()
+        var second = SetupOwnerKey.MadeKey<String>()
+        XCTAssertEqual(first.take(orMake: { "a" }), "a")
+        XCTAssertEqual(second.take(orMake: { "b" }), "b")
+    }
 }
