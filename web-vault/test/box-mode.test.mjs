@@ -73,8 +73,13 @@ test("a box that refuses the AUTH (not its owner) fails the read; nothing hangs"
 test("startBoxVault: the vault's shape, one socket per route, stop closes them", async () => {
   const { Socket, sockets } = fakeRelay()
   const routeClient = (haven, route) => ({ route, conn: haven.conn(`ui${route}`, { route }) })
-  const v = startBoxVault({ signer, routeClient, deviceKey: () => device, Socket, loc })
+  const asked = []
+  const fetchImpl = async url => { asked.push(url); return new Response(JSON.stringify({ npub: "", state: "first" }), { status: 200 }) }
+  const v = startBoxVault({ signer, routeClient, deviceKey: () => device, Socket, loc, fetchImpl })
+  await new Promise(r => setTimeout(r, 20)) // the NIP-98 header is signed first
+  assert.deepEqual(asked, ["http://box.lan:8080/api/box/accounts/me"], "asks the box once whether it holds this account")
   assert.equal(v.box, true)
+  assert.equal(v.account.state, "first")
   assert.deepEqual([v.outbox.route, v.feed.route, v.inbox.route, v.lists.route], ["/", "/feed", "/inbox", "/lists"])
   assert.deepEqual(sockets.map(s => s.url), ["ws://box.lan:8080/", "ws://box.lan:8080/feed", "ws://box.lan:8080/inbox", "ws://box.lan:8080/lists"])
   let closed = 0

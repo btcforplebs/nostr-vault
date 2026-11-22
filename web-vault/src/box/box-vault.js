@@ -4,7 +4,8 @@
 // NIP-42: routeClient answers AUTH with this browser's device key, which the box doesn't know. The box trusts its
 // owner (NV_OWNER), so each AUTH is signed again by the signed-in user's signer for this socket's URL, and the box's
 // OK is handed back under the id the HavenClient is waiting on.
-import { boxRelayUrl } from "./mode.js"
+import { boxRelayUrl, boxApiBase } from "./mode.js"
+import { accountsApi } from "./api-accounts.js"
 import { checkSigned } from "../net/sync.js"
 import { loadSession } from "../session.js"
 
@@ -62,8 +63,9 @@ function boxLinks({ signer, pubkey, Socket = globalThis.WebSocket, loc = globalT
         const msg = JSON.parse(text)
         if (msg[0] === "OK" && link.renamed.has(msg[1])) {
           const id = link.renamed.get(msg[1]); link.renamed.delete(msg[1]); text = JSON.stringify(["OK", id, ...msg.slice(2)])
-          // The box took the login: this socket is worth keeping. It refused it (this account isn't the box's owner):
-          // asking the signer again won't change that, so it isn't asked again either.
+          // The box took the login: this socket is worth keeping. It refused it: asking the signer again won't change
+          // that, so it isn't asked again either. Whether the box holds this account at all is not guessed from here
+          // (its relay takes any valid login and refuses later, on the private reads): boxAccountCheck asks the box.
           if (msg[2] === true) link.loggedIn = true
           else login.declined = true
         } else if (SUB_IN.has(msg[0]) && typeof msg[1] === "string") {
@@ -168,12 +170,46 @@ export function boxHaven({ signer, Socket, loc, pubkey } = {}) {
   }
 }
 
-/** startVault for box mode -> { haven, owners: null, outbox, feed, inbox, lists, loadMs, startMs }. `routeClient` from
- *  haven/vault.js, passed in so this file doesn't load haven.wasm's loader. */
-export function startBoxVault({ signer, routeClient, deviceKey, Socket, loc }) {
+/**
+ * Does this box hold the signed-in account, and how (One Vault W7)? `state`: "first" | "signedIn" | "watchOnly" |
+ * "none"; undefined until the box answers, null when it couldn't say (`error`). Asked with GET /api/box/accounts/me,
+ * signed by the account itself, so the box answers for whoever really signs. Joining (JoinBox.jsx) is a code plus the
+ * account's own signature on the join request: the code proves the first account let it in, the signature that it
+ * holds the key. `api`: an accountsApi.
+ */
+export function boxAccountCheck({ api }) {
+  const subs = new Set()
+  const now = { state: undefined, error: null }
+  const set = patch => { Object.assign(now, patch); for (const f of [...subs]) f({ ...now }) }
+  return {
+    get state() { return now.state },
+    get error() { return now.error },
+    check: () => api.me().then(r => set({ state: r.state ?? null, error: null }), e => set({ state: null, error: String(e?.message ?? e) })),
+    /** Join with the first account's code; the box's own words on a wrong code or too many tries. */
+    async join(code, name = "") {
+      const r = await api.join(code, name)
+      set({ state: r.state ?? "signedIn", error: null })
+      return r
+    },
+    subscribe(f) { subs.add(f); return () => subs.delete(f) },
+  }
+}
+
+// The page's check: one vault, one signed-in account per page (switching accounts reloads). Settings' This Box row
+// (BoxLink.jsx) reads it, so an account the box doesn't hold is told so instead of meeting a silently empty Vault.
+let current = null
+/** The running box vault's boxAccountCheck, or null before startBoxVault (or off a box). */
+export const boxAccount = () => current
+
+/** startVault for box mode -> { haven, owners: null, account, outbox, feed, inbox, lists, loadMs, startMs }.
+ *  `routeClient` from haven/vault.js, passed in so this file doesn't load haven.wasm's loader. `account`: the
+ *  boxAccountCheck, asked once now. `fetchImpl`: fetch (a mock in tests). */
+export function startBoxVault({ signer, routeClient, deviceKey, Socket, loc = globalThis.location, fetchImpl }) {
   const t0 = Date.now()
   const haven = boxHaven({ signer, Socket, loc })
   const sk = deviceKey()
   const open = route => routeClient(haven, route, sk)
-  return { haven, owners: null, box: true, outbox: open("/"), feed: open("/feed"), inbox: open("/inbox"), lists: open("/lists"), loadMs: 0, startMs: Date.now() - t0 }
+  const account = current = boxAccountCheck({ api: accountsApi({ signer, base: boxApiBase(loc), ...(fetchImpl && { fetchImpl }) }) })
+  account.check()
+  return { haven, owners: null, box: true, account, outbox: open("/"), feed: open("/feed"), inbox: open("/inbox"), lists: open("/lists"), loadMs: 0, startMs: Date.now() - t0 }
 }
