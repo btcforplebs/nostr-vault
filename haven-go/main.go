@@ -169,6 +169,8 @@ func main() {
 	if err := startBoxControlFromEnv(mainCtx, runsafe.Go); err != nil {
 		log.Printf("🚫 box control not open: %v", err)
 	}
+	// And the jobs the box asks for: imports, trust, block list (box_jobs.go).
+	startBoxJobs(mainCtx, runsafe.Go)
 
 	addr := net.JoinHostPort(config.RelayBindAddress, strconv.Itoa(config.RelayPort))
 
