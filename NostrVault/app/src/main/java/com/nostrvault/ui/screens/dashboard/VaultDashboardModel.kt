@@ -176,6 +176,18 @@ internal object VaultDashboardModel {
         "Since ${importStartText(importStartDate)}. " +
             (lastImportMs?.let { "Last ran ${relative(it, nowMs)}." } ?: "Never ran.")
 
+    /**
+     * The Import notes row's detail (gap H, twin of web KeepFullSection and Apple #2444): the live status while an
+     * import runs, then how the last one ended (complete, partial, failed or cancelled) until the next run, and the
+     * "last ran" line only when none ended in this session.
+     */
+    fun importNotesRowDetail(isImporting: Boolean, liveStatus: String, lastOutcome: String?, idleDetail: String): String =
+        when {
+            isImporting -> liveStatus.ifEmpty { "Importing…" }
+            !lastOutcome.isNullOrEmpty() -> lastOutcome
+            else -> idleDetail
+        }
+
     fun importMediaDetail(lastImportMs: Long?, nowMs: Long): String =
         lastImportMs?.let { "Last ran ${relative(it, nowMs)}." } ?: "Copies the media in your notes here."
 }
