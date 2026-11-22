@@ -62,3 +62,10 @@ r=/run/nv-mesh
 [ -L "$r" ] && die "$r is a symlink"
 mkdir -p "$r"
 chown -h "$mesh:$(id -g nvvault)" "$r" && chmod 750 "$r"
+
+# /run/nv-vault: the engine's control socket (haven-go copyv2_box.go), how the vault starts copies and catch-ups.
+# The vault's alone, 0700, off the data dir like dial.sock.
+r=/run/nv-vault
+[ -L "$r" ] && die "$r is a symlink"
+mkdir -p "$r"
+chown -h "$vault:$vault" "$r" && chmod 700 "$r"
