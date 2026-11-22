@@ -34,6 +34,9 @@ type accountCache struct {
 	Follows      []string        `json:"follows,omitempty"`
 	Pubkeys      map[string]bool `json:"pubkeys"`
 	Vouches      map[string]int  `json:"vouches,omitempty"`
+	// Muted: the follows the account had blocked at this tally (they vouch
+	// for nobody), so a start can tell whether the blocks changed since.
+	Muted []string `json:"muted_follows,omitempty"`
 }
 
 // storedAccountWeb is the part of the file a start reads back: Pubkeys is
@@ -45,6 +48,7 @@ type storedAccountWeb struct {
 	Timestamp    int64          `json:"timestamp"`
 	Follows      []string       `json:"follows"`
 	Vouches      map[string]int `json:"vouches"`
+	Muted        []string       `json:"muted_follows"`
 }
 
 func (wt *SimpleInMemory) accountFilePath(prefix, owner string) string {
@@ -80,6 +84,7 @@ func (wt *SimpleInMemory) saveAccountWeb(owner string, web *accountWeb, links ma
 		Follows:      web.follows,
 		Pubkeys:      make(map[string]bool, len(wt.WhitelistedPubKeys)+len(web.follows)+len(web.vouches)),
 		Vouches:      web.vouches,
+		Muted:        web.muted,
 	}
 	for pk := range wt.WhitelistedPubKeys {
 		cache.Pubkeys[pk] = true
@@ -139,10 +144,12 @@ func (wt *SimpleInMemory) loadAccountWebs() {
 			continue
 		}
 		slices.Sort(stored.Follows)
-		webs[owner] = &accountWeb{reach: reach, follows: stored.Follows, vouches: stored.Vouches, builtAt: stored.Timestamp}
+		webs[owner] = &accountWeb{reach: reach, follows: stored.Follows, vouches: stored.Vouches, builtAt: stored.Timestamp, muted: stored.Muted}
 	}
 	if len(webs) > 0 {
 		wt.webs.Store(&webs)
+		// The blocks may have changed while the relay was down.
+		wt.RetallyAccounts()
 	}
 }
 

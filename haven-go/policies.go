@@ -200,7 +200,7 @@ func MustBeInWotToPost(ctx context.Context, event *nostr.Event) (bool, string) {
 		if len(tagged) == 0 {
 			return inAnyAccountsWeb(ctx, pubkey)
 		}
-		return slices.ContainsFunc(tagged, func(account string) bool { return inAccountsWeb(ctx, account, pubkey) })
+		return slices.ContainsFunc(tagged, func(account string) bool { return reachesAccount(ctx, account, pubkey) })
 	}
 	// Event from a pubkey in the WoT can always be posted, even if the user is not authenticated
 	if inWeb(event.PubKey) {

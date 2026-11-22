@@ -11,34 +11,37 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 )
 
-// buildAccountWeb builds one account's web from its own follow list (nil when
-// it has none) and, at level 3, its follows' lists. It counts the way the
+// buildAccountWeb builds one account's web from its own follows (sorted,
+// each once) and, at level 3, its follows' lists. It counts the way the
 // pooled build does, but only this account's follows vouch: someone is in at
 // level 3 when at least MinFollowers of them follow that person, and an
 // account following fewer people than its bar gets newAccountWeb's widening.
 //
+// A follow the account has blocked (muted, nil for none) vouches for nobody:
+// it stays one of the follows, and its list is not counted.
+//
 // links is the level-3 "which of my follows follow them" for the links file,
 // as sorted indexes into the web's follows; nil below level 3.
-func buildAccountWeb(reach AccountReach, owners map[string]struct{}, ownList *nostr.Event, lists map[string]followList, builtAt int64) (web *accountWeb, links map[string][]int) {
+func buildAccountWeb(reach AccountReach, owners map[string]struct{}, follows []string, lists map[string]followList, builtAt int64, muted func(pubkey string) bool) (web *accountWeb, links map[string][]int) {
 	web = &accountWeb{reach: reach, builtAt: builtAt}
 	if reach.Depth < 2 {
 		return web, nil
 	}
-	counts := make(map[string]int)
-	if ownList != nil {
-		for contact := range ownList.Tags.FindAll("p") {
-			if len(contact) > 1 {
-				counts[contact[1]]++
-			}
-		}
-	}
-	web.follows = slices.Sorted(maps.Keys(counts))
+	web.follows = follows
 	if reach.Depth < 3 {
 		return web, nil
+	}
+	counts := make(map[string]int, len(follows))
+	for _, pk := range follows {
+		counts[pk]++
 	}
 
 	links = make(map[string][]int)
 	for from, pk := range web.follows {
+		if muted != nil && muted(pk) {
+			web.muted = append(web.muted, pk)
+			continue
+		}
 		l, ok := lists[pk]
 		if !ok {
 			continue
@@ -172,13 +175,89 @@ func (wt *SimpleInMemory) buildAccounts(ctx context.Context, started int64, owne
 		}
 	}
 
+	wt.accountsMu.Lock()
 	webs := make(accountWebs, len(reaches))
 	for owner, reach := range reaches {
-		web, links := buildAccountWeb(reach, wt.WhitelistedPubKeys, ownerLists[owner], lists, started)
+		web, links := buildAccountWeb(reach, wt.WhitelistedPubKeys, followsOf(ownerLists[owner]), lists, started, wt.mutedBy(owner))
 		webs[owner] = web
 		wt.saveAccountWeb(owner, web, links)
 	}
 	wt.webs.Store(&webs)
+	wt.accountsMu.Unlock()
 	wt.removeOtherAccountFiles(func(owner string) bool { return webs[owner] != nil })
 	slog.Info("🕸️ built a web per account", "accounts", len(webs))
+}
+
+// followsOf is the people a follow list names, sorted, each once; nil for no
+// list.
+func followsOf(list *nostr.Event) []string {
+	if list == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	for contact := range list.Tags.FindAll("p") {
+		if len(contact) > 1 {
+			seen[contact[1]] = struct{}{}
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
+}
+
+// mutedBy is owner's side of BlockedBy for buildAccountWeb; nil when the
+// host gave no blocks.
+func (wt *SimpleInMemory) mutedBy(owner string) func(pubkey string) bool {
+	if wt.BlockedBy == nil {
+		return nil
+	}
+	return func(pubkey string) bool { return wt.BlockedBy(owner, pubkey) }
+}
+
+// RetallyAccounts counts again, from the stored lists and with no network,
+// the web of every level-3 account whose blocked follows are not the ones
+// its web was tallied with: blocking a follow takes away the people only
+// that follow vouched for, and unblocking brings them back. The host calls
+// it when an account's blocks change.
+func (wt *SimpleInMemory) RetallyAccounts() {
+	if wt.BlockedBy == nil {
+		return
+	}
+	wt.accountsMu.Lock()
+	defer wt.accountsMu.Unlock()
+	current := wt.webs.Load()
+	if current == nil {
+		return
+	}
+	var lists map[string]followList
+	next := maps.Clone(*current)
+	changed := false
+	for owner, web := range *current {
+		if web.reach.Depth < 3 {
+			continue
+		}
+		var muted []string
+		for _, pk := range web.follows {
+			if wt.BlockedBy(owner, pk) {
+				muted = append(muted, pk)
+			}
+		}
+		if slices.Equal(muted, web.muted) {
+			continue
+		}
+		if lists == nil {
+			stored, _, _, ok := wt.loadLists()
+			if !ok {
+				// Nothing to count from; the next rebuild tallies with the blocks.
+				return
+			}
+			lists = stored
+		}
+		retallied, links := buildAccountWeb(web.reach, wt.WhitelistedPubKeys, web.follows, lists, web.builtAt, wt.mutedBy(owner))
+		next[owner] = retallied
+		wt.saveAccountWeb(owner, retallied, links)
+		changed = true
+	}
+	if changed {
+		wt.webs.Store(&next)
+		slog.Info("🕸️ counted the account webs again after a block change")
+	}
 }

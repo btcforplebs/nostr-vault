@@ -761,8 +761,7 @@ func initRelays(ctx context.Context) error {
 		return nil
 	})
 	// Queries (plain and NIP-50 search) and counts; see search.go.
-	enableSearch(inboxRelay, inboxDB)
-	hideBroughtOnInbox(inboxRelay)
+	wireInboxReads(inboxRelay, inboxDB)
 	// The mesh door serves /inbox too (mesh_door_relays.go): gift wraps in, no reads, mesh caps.
 	wireMeshReadCaps(inboxRelay)
 	inboxRelay.DeleteEvent = append(inboxRelay.DeleteEvent, inboxDB.DeleteEvent)

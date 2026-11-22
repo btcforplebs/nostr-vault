@@ -364,3 +364,65 @@ func TestHasForWithoutAccountWebs(t *testing.T) {
 		t.Error("level 0 lets everyone in")
 	}
 }
+
+// A follow the account has blocked vouches for nobody. Blocking one takes
+// away the people only that follow brought in, with no network; unblocking
+// brings them back; and a start notices blocks that changed while it was down.
+func TestABlockedFollowVouchesForNobody(t *testing.T) {
+	main, alt := newTestKey(t), newTestKey(t)
+	a, b, x, onlyA := newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t)
+	relay := newLiveRelay(t,
+		main.followList(t, a, b),
+		alt.followList(t, a, b),
+		a.followList(t, x, onlyA),
+		b.followList(t, x),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	path := filepath.Join(t.TempDir(), "wot_cache.json")
+	blocked := map[string]bool{} // main's blocks only
+	blockedBy := func(owner, pubkey string) bool { return owner == main.pk && blocked[pubkey] }
+	wt := NewSimpleInMemory(nostr.NewSimplePool(ctx), owners(main, alt), urls(relay), 3, 1, 5, path, 60)
+	wt.BlockedBy = blockedBy
+	wt.Refresh(ctx)
+	if !wt.HasFor(ctx, main.pk, onlyA.pk) || !wt.HasFor(ctx, main.pk, x.pk) {
+		t.Fatal("fixture: with no blocks main's web holds x and onlyA")
+	}
+
+	blocked[a.pk] = true
+	relay.forget()
+	wt.RetallyAccounts()
+	if len(relay.asked()) != 0 {
+		t.Error("the re-tally asked a relay; it must count from the stored lists")
+	}
+	if wt.HasFor(ctx, main.pk, onlyA.pk) {
+		t.Error("main blocked a, and a still vouches for onlyA")
+	}
+	if !wt.HasFor(ctx, main.pk, x.pk) || !wt.HasFor(ctx, main.pk, a.pk) {
+		t.Error("x (b vouches) and the follow a itself must stay in main's web")
+	}
+	if !wt.HasFor(ctx, alt.pk, onlyA.pk) {
+		t.Error("main's block changed alt's web")
+	}
+	file, links, _ := readAccountWeb(t, path, main.pk)
+	if file.Pubkeys[onlyA.pk] || len(file.Muted) != 1 || len(links[onlyA.pk]) != 0 {
+		t.Errorf("main's files still carry a's vouch: muted %v", file.Muted)
+	}
+
+	// A rebuild from the network tallies with the block too.
+	wt.Refresh(ctx)
+	if wt.HasFor(ctx, main.pk, onlyA.pk) || !wt.HasFor(ctx, main.pk, x.pk) {
+		t.Error("a full rebuild forgot the block")
+	}
+
+	// Unblocked while the relay was down: the next start counts again.
+	delete(blocked, a.pk)
+	again := NewSimpleInMemory(nostr.NewSimplePool(ctx), owners(main, alt), nil, 3, 1, 5, path, 60)
+	again.BlockedBy = blockedBy
+	if ok, _ := again.LoadFromCache(); !ok {
+		t.Fatal("cache did not load")
+	}
+	if !again.HasFor(ctx, main.pk, onlyA.pk) {
+		t.Error("a was unblocked while the relay was down, and onlyA did not come back at start")
+	}
+}

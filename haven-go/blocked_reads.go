@@ -17,26 +17,56 @@ package main
 
 import (
 	"context"
+	"maps"
+	"slices"
 
 	"github.com/fiatjaf/eventstore"
 	"github.com/nbd-wtf/go-nostr"
 )
 
-// servesAuthor reports whether events by pubkey may be served. Your own
-// accounts are always served, even if one appears on the blacklist.
-func servesAuthor(pubkey string) bool {
+// A read is scoped to the accounts it names: the vault's own accounts in the
+// filter's #p (an inbox read) or authors (an outbox read). With none named,
+// every account. Someone is hidden from a read only when every account in
+// its scope has blocked them, so what only account A blocked is not hidden
+// from B's read; with one account this is that account's list. A read that
+// names several accounts, or none, is narrowed further by each app's own
+// per-account filter.
+
+// readScope is the vault's own accounts filter names, or all of them.
+func readScope(filter nostr.Filter) []string {
+	own := whitelist()
+	var scope []string
+	add := func(keys []string) {
+		for _, pk := range keys {
+			if _, ok := own[pk]; ok && !slices.Contains(scope, pk) {
+				scope = append(scope, pk)
+			}
+		}
+	}
+	add(filter.Tags["p"])
+	add(filter.Authors)
+	if len(scope) > 0 {
+		return scope
+	}
+	return slices.Collect(maps.Keys(own))
+}
+
+// servesAuthor reports whether events by pubkey may be served to a read with
+// this scope. Your own accounts are always served, even if one appears on a
+// block list.
+func servesAuthor(scope []string, pubkey string) bool {
 	if _, own := whitelist()[pubkey]; own {
 		return true
 	}
-	return !isBlacklisted(pubkey)
+	return !isBlacklisted(pubkey) && !blockedByAll(scope, pubkey)
 }
 
-// hiddenAuthors is the blacklist minus your own accounts, narrowed to
-// filterAuthors when the filter names any.
-func hiddenAuthors(filterAuthors []string) []string {
+// hiddenAuthors is the people hidden from a read with this scope, narrowed
+// to filterAuthors when the filter names any.
+func hiddenAuthors(scope, filterAuthors []string) []string {
 	var out []string
 	consider := func(pk string) {
-		if !servesAuthor(pk) {
+		if !servesAuthor(scope, pk) && !slices.Contains(out, pk) {
 			out = append(out, pk)
 		}
 	}
@@ -49,6 +79,12 @@ func hiddenAuthors(filterAuthors []string) []string {
 	for _, pk := range blacklistedPubkeys() {
 		consider(pk)
 	}
+	// Everyone the scope's accounts all blocked is on the first one's list.
+	if len(scope) > 0 {
+		for pk := range accountBlocks()[scope[0]] {
+			consider(pk)
+		}
+	}
 	return out
 }
 
@@ -57,14 +93,18 @@ func hiddenAuthors(filterAuthors []string) []string {
 func hideBlacklistedQuery(query func(context.Context, nostr.Filter) (chan *nostr.Event, error)) func(context.Context, nostr.Filter) (chan *nostr.Event, error) {
 	return func(ctx context.Context, filter nostr.Filter) (chan *nostr.Event, error) {
 		ch, err := query(ctx, filter)
-		if err != nil || ch == nil || eventstore.IsNegentropySession(ctx) || len(hiddenAuthors(filter.Authors)) == 0 {
+		if err != nil || ch == nil || eventstore.IsNegentropySession(ctx) {
+			return ch, err
+		}
+		scope := readScope(filter)
+		if len(hiddenAuthors(scope, filter.Authors)) == 0 {
 			return ch, err
 		}
 		out := make(chan *nostr.Event)
 		go func() {
 			defer close(out)
 			for ev := range ch {
-				if !servesAuthor(ev.PubKey) {
+				if !servesAuthor(scope, ev.PubKey) {
 					continue
 				}
 				select {
@@ -89,7 +129,7 @@ func hideBlacklistedCount(count func(context.Context, nostr.Filter) (int64, erro
 		if err != nil || eventstore.IsNegentropySession(ctx) {
 			return n, err
 		}
-		hidden := hiddenAuthors(filter.Authors)
+		hidden := hiddenAuthors(readScope(filter), filter.Authors)
 		if len(hidden) == 0 {
 			return n, nil
 		}

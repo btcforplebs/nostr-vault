@@ -281,7 +281,7 @@ func followersSnapshot(ctx context.Context, owner string) (followers.Snapshot, b
 	}
 	// Judged by owner's own web, not the vault's.
 	snap := l.Snapshot(owner, func(pk string) bool { return inAccountsWeb(ctx, owner, pk) })
-	return snap.Without(isBlacklisted), true
+	return snap.Without(func(pk string) bool { return blockedBy(owner, pk) }), true
 }
 
 // followerSweepFilter asks for the kind-3 lists of authors published since
