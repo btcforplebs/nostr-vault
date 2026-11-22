@@ -248,6 +248,30 @@ func TestStoredZapFromABlockedZapperIsHidden(t *testing.T) {
 	}
 }
 
+// The same receipt asked for by the wallet server's key: the read names an
+// author nobody blocked, and the blocked zapper's zap is still hidden.
+func TestZapReadByTheWalletKeyStillHidesABlockedZapper(t *testing.T) {
+	a, _, _ := blocksFixture(t)
+	zapperSK, serviceSK := nostr.GeneratePrivateKey(), nostr.GeneratePrivateKey()
+	zapper, _ := nostr.GetPublicKey(zapperSK)
+	service, _ := nostr.GetPublicKey(serviceSK)
+	receipt := zapPair(t, zapperSK, serviceSK, a, false)
+	UpdateAccountBlocks(blocksByAccount{a: {zapper: {}}})
+	for name, f := range map[string]nostr.Filter{
+		"wallet as author":            {Authors: []string{service}, Tags: nostr.TagMap{"p": {a}}},
+		"wallet as author, kind 9735": {Authors: []string{service}, Kinds: []int{nostr.KindZap}, Tags: nostr.TagMap{"p": {a}}},
+	} {
+		if got := served(t, hideBlacklistedQuery, f, receipt); got != "" {
+			t.Errorf("%s: the blocked zapper's receipt was served", name)
+		}
+	}
+	// A read that cannot match a zap receipt still takes the cheap way out.
+	notes := nostr.Filter{Authors: []string{service}, Kinds: []int{nostr.KindTextNote}, Tags: nostr.TagMap{"p": {a}}}
+	if readHidesAnyone(readScope(notes), notes) {
+		t.Error("a kind 1 read naming only the wallet hides nobody, want the early return")
+	}
+}
+
 // The list of hidden people names each once, however many lists they are on,
 // and the "anything to hide?" check every read makes agrees with it.
 func TestHiddenAuthorsNamesEachOnce(t *testing.T) {
