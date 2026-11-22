@@ -8,7 +8,7 @@ import SwiftUI
 /// printed: Logen 2026-11-22 dropped printing from every key flow (a print
 /// panel can save the key as a PDF or image). Next waits for "I saved my
 /// secret key", which only the user ticks.
-struct KeySpareStep: View {
+struct KeyBackupStep: View {
     let nsec: String
     let onNext: () -> Void
 

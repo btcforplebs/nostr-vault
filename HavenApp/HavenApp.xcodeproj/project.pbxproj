@@ -531,7 +531,7 @@
 		372DC81DD5E2474177F0AE1B /* ThreadEngagementQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86B6DE9563AEAC1E8BF203EA /* ThreadEngagementQuery.swift */; };
 		3744333FCDE99AEC5B1D2B0B /* MeshDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2967E3C73285483C276E373D /* MeshDiagnostics.swift */; };
 		37D16CFE232E4B8997174675 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 915DF9A0796218139DE0703E /* Assets.xcassets */; };
-		37D1D434CAAFAFA166366C5D /* KeySpareStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91C1BABB9DEA1ECAA24544C2 /* KeySpareStep.swift */; };
+		37D1D434CAAFAFA166366C5D /* KeyBackupStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91C1BABB9DEA1ECAA24544C2 /* KeyBackupStep.swift */; };
 		37DA9D9A22EFC9A037902B79 /* SetupStoredOwnerKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 442E3717FC3F71EB86FDEB6B /* SetupStoredOwnerKey.swift */; };
 		3854C69EF48C912BFB7753C0 /* SearchView+EmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4168C64C489FA112F2FA740A /* SearchView+EmptyState.swift */; };
 		3877DB61986138E75C58F99E /* ImportNotesStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71AB0175468D57FB7435B690 /* ImportNotesStep.swift */; };
@@ -2383,7 +2383,7 @@
 		F9F000D1E0842D216B967884 /* RelayProcessManager+BlossomTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A7F917E54752EF9BA14E7B2 /* RelayProcessManager+BlossomTransfer.swift */; };
 		F9F88CC794DCE937CF91DCD5 /* NWCService+Call.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC7DCEB33F7289E0020D079 /* NWCService+Call.swift */; };
 		FA16E8CD76DE672449A9143A /* ProfileShareLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49A6C4FCCA4B883C7014E92F /* ProfileShareLink.swift */; };
-		FA36777BC14F39530809FEF9 /* KeySpareStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91C1BABB9DEA1ECAA24544C2 /* KeySpareStep.swift */; };
+		FA36777BC14F39530809FEF9 /* KeyBackupStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91C1BABB9DEA1ECAA24544C2 /* KeyBackupStep.swift */; };
 		FA707DCC1E83124978483119 /* NostrService+Profiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD2777B6DB059131373523E /* NostrService+Profiles.swift */; };
 		FA82CB413FB87E4C93835C7B /* LeaveNostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EC8D4A0D7C68FF72B9CCF4D /* LeaveNostrService.swift */; };
 		FA85C3B0A6B2562BB1B27D75 /* MusicPlayerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4305ED0FAA1EFC4C5F3CFE00 /* MusicPlayerService.swift */; };
@@ -3183,7 +3183,7 @@
 		9186DB5FDE59FC6B87C6C3F8 /* FirstAnswer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstAnswer.swift; sourceTree = "<group>"; };
 		918CED92E3B0E0AEAC5CE1AA /* FeedService+PopularFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+PopularFeed.swift"; sourceTree = "<group>"; };
 		91A236C874DC2ACEF2B73EF2 /* RelayMatrixView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayMatrixView.swift; sourceTree = "<group>"; };
-		91C1BABB9DEA1ECAA24544C2 /* KeySpareStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeySpareStep.swift; sourceTree = "<group>"; };
+		91C1BABB9DEA1ECAA24544C2 /* KeyBackupStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyBackupStep.swift; sourceTree = "<group>"; };
 		91CE4EF614B57F02C652177F /* GlobalSearchLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSearchLogic.swift; sourceTree = "<group>"; };
 		92C46E8F1322A7D41B684A36 /* ComposerDraftsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerDraftsSheet.swift; sourceTree = "<group>"; };
 		92E2111DB061D2145C10FEC5 /* NWCBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NWCBackupService.swift; sourceTree = "<group>"; };
@@ -4599,7 +4599,7 @@
 				7CA03816123BAFD2424954F9 /* ImportTourStep.swift */,
 				064D70B103B26A1BA82DA6E2 /* KeyIsYouStep.swift */,
 				B49340F07334186EE08FB327 /* KeyPasswordStep.swift */,
-				91C1BABB9DEA1ECAA24544C2 /* KeySpareStep.swift */,
+				91C1BABB9DEA1ECAA24544C2 /* KeyBackupStep.swift */,
 				92EACD2F9FE85BFD35893DFB /* KeyStepsStrip.swift */,
 				30F99815B3480ACD67F45648 /* MirrorMediaStep.swift */,
 				E24A0DC4906F9AE38D430125 /* NewKeyPair.swift */,
@@ -6314,7 +6314,7 @@
 				14AEBCF2AFEC15F67E1FF9B8 /* KeyPasswordStep.swift in Sources */,
 				B670BF7A0FF2447EE1A836AE /* KeySnapshotCover.swift in Sources */,
 				33175E1EE38C3E0ACA2C57A8 /* KeySnapshotShield.swift in Sources */,
-				37D1D434CAAFAFA166366C5D /* KeySpareStep.swift in Sources */,
+				37D1D434CAAFAFA166366C5D /* KeyBackupStep.swift in Sources */,
 				C7987202E579648F586763EF /* KeyStepsStrip.swift in Sources */,
 				BE9AE08E7FC80EA8A259583D /* KioskCapPause.swift in Sources */,
 				89603671680AE49EB1036296 /* KioskDailyBudget.swift in Sources */,
@@ -7545,7 +7545,7 @@
 				EB768E6AF0FC0E50D4DC8894 /* KeyPasswordStep.swift in Sources */,
 				DD1B0334CA3AB31558AE9B15 /* KeySnapshotCover.swift in Sources */,
 				0EA813D83B484D86A6EF7031 /* KeySnapshotShield.swift in Sources */,
-				FA36777BC14F39530809FEF9 /* KeySpareStep.swift in Sources */,
+				FA36777BC14F39530809FEF9 /* KeyBackupStep.swift in Sources */,
 				FFB6AB9DB03EF093C9585F42 /* KeyStepsStrip.swift in Sources */,
 				6EACDE1A659F03977F85E76B /* KioskCapPause.swift in Sources */,
 				7E358EC657C6EAA1BDEE1220 /* KioskDailyBudget.swift in Sources */,

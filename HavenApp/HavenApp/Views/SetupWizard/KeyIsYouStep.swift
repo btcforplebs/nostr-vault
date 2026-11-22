@@ -5,7 +5,7 @@ import SwiftUI
 /// The first key step (setup screens r3, Way 1a): your photo and name, "=",
 /// and the key. The key was made when Create an account was picked
 /// (NewKeyPair); the secret stays hidden until Show. Keeping a spare is the
-/// next step (KeySpareStep), the password the one after (KeyPasswordStep).
+/// next step (KeyBackupStep), the password the one after (KeyPasswordStep).
 struct KeyIsYouStep: View {
     @Binding var npub: String
     @Binding var nsec: String

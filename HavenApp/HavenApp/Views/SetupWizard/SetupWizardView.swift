@@ -287,7 +287,7 @@ struct SetupWizardView: View {
                 }
             )
         case 18:
-            KeySpareStep(nsec: nsec) {
+            KeyBackupStep(nsec: nsec) {
                 direction = .forward
                 withAnimation(WizardAnimations.springEnter) {
                     currentStep = 10
