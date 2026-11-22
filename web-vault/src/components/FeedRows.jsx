@@ -12,6 +12,7 @@ import { FeedThreadCard } from "./FeedThreadCard.jsx"
 import { hasKindBody } from "./FeedKinds.jsx"
 import { buildThreads } from "../net/feed-layout.js"
 import { fetchNotes } from "../net/notifications.js"
+import { fetchFromParentRelays } from "../net/parent-hints.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { replyRefs } from "../net/thread.js"
 
@@ -34,7 +35,7 @@ function Threads({ notes, keepFeedOrder, fetchRoots, memoryOnly, openId, setOpen
   useEffect(() => {
     if (!missing.length || !fetchRoots) return
     let live = true
-    fetchRoots(missing).then(found => {
+    fetchRoots(missing, notes).then(found => {
       if (!live) return
       setFetched(prev => {
         const next = new Map(prev)
@@ -59,7 +60,7 @@ export const forgetRoots = () => roots.clear() // tests
  * read relays; the roots are written nowhere. Their authors are often not followed, so their names are fetched too:
  * `save: false` keeps those in memory (Global, Popular).
  */
-export const rootFetcher = (vault, relays, { save = true, names = fetchProfiles, now = Date.now } = {}) => async ids => {
+export const rootFetcher = (vault, relays, { save = true, names = fetchProfiles, now = Date.now, parentRelays = fetchFromParentRelays } = {}) => async (ids, notes = []) => {
   const t = now()
   const found = new Map(), ask = []
   for (const id of new Set(ids)) {
@@ -72,6 +73,9 @@ export const rootFetcher = (vault, relays, { save = true, names = fetchProfiles,
   try { for (const ev of await vault.feed.query({ ids: ask })) local.set(ev.id, ev) } catch {}
   const rest = ask.filter(id => !local.has(id))
   const got = new Map([...local, ...(rest.length ? await fetchNotes(vault, rest, relays) : [])])
+  // Still missing: the replies' e-tag hints and the roots' authors' relays (Android's rule).
+  const gone = rest.filter(id => !got.has(id))
+  if (gone.length && notes.length) for (const [id, ev] of await parentRelays({ vault, events: notes, ids: gone, relays }).catch(() => new Map())) got.set(id, ev)
   for (const id of ask) {
     const ev = got.get(id) ?? null
     roots.set(id, { ev, at: t })

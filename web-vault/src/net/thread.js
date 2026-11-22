@@ -2,6 +2,7 @@
 // Haven, and buildThread() turns them into a tree from the NIP-10 `e` tags.
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, uniq } from "./pool.js"
+import { fetchFromParentRelays } from "./parent-hints.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const ROUNDS = 3 // reply-to-reply hops to chase when a deep reply only tags its parent (old positional tags)
@@ -251,6 +252,14 @@ export async function syncThread(vault, id, relays, { maxWait = 6000, settle = S
   if (rootId !== id) {
     steps.push(ask({ ids: [rootId] }, { onevent: put, enough: evs => evs.some(e => e.id === rootId) }).settled)
     steps.push(ask({ kinds: [1], "#e": [rootId], limit: 500 }, { onevent: replies }).settled)
+  }
+  // The root not on the user's relays: ask the e-tag hint and its author's relays too (Android's rule).
+  if (rootId !== id && note) {
+    steps[1] = steps[1].then(async evs => {
+      if (evs.some(e => e.id === rootId)) return
+      const got = await fetchFromParentRelays({ vault, events: [note], ids: [rootId], relays: urls }).catch(() => new Map())
+      for (const ev of got.values()) put(ev)
+    })
   }
   await Promise.all(steps)
 
