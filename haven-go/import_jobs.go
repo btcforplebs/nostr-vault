@@ -125,6 +125,10 @@ type jobRunner struct {
 	done         chan struct{}
 	resuming     map[string]bool
 	afterRunHook func(name string) // tests
+	// runs counts spawned run goroutines until their last defer, so tests
+	// can wait out a whole chain (running clears before afterRunHook and
+	// autoStartWider read r).
+	runs sync.WaitGroup
 }
 
 var importJobsRunner jobRunner
@@ -286,7 +290,9 @@ func (r *jobRunner) run(ctx context.Context, spawn func(string, func()), name st
 		logJob(j)
 	})
 
+	r.runs.Add(1)
 	spawn("importJob."+name, func() {
+		defer r.runs.Done()
 		defer close(done)
 		defer cancel()
 		res := jobResult{cursor: st.Cursor, unread: []jobRange{}}

@@ -70,14 +70,13 @@ func jobsSetup(t *testing.T, days int, relays ...string) (testKey, DBBackend) {
 	return owner, db
 }
 
-// waitIdle waits out a chain of runs (setup starts wider_network by itself).
+// waitIdle waits out a chain of runs (setup starts wider_network by itself)
+// until every run goroutine has returned: running clears before the
+// goroutine's tail reads the runner, so current() == "" is too early for
+// jobsSetup's cleanup to reset it. wider_network's Add happens inside
+// setup's goroutine, before setup's Done.
 func waitIdle() {
-	for {
-		importJobsRunner.wait()
-		if importJobsRunner.current() == "" {
-			return
-		}
-	}
+	importJobsRunner.runs.Wait()
 }
 
 // goSpawn stands in for a relay cycle's spawn.
