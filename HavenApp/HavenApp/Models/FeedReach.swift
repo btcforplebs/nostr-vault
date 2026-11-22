@@ -2,7 +2,7 @@ import Foundation
 
 /// Settings › Feeds › Reach: how far each feed reaches (Logen 2026-11-18).
 /// "Your web" (`WebGate.Reach.web`) or "Your web + a few one hop out"
-/// (`.webAndHop3`, rationed by `WebGate.capHop3`). Underrated reaches one hop
+/// (`.webAndLoose`, rationed by `WebGate.capLoose`). Underrated reaches one hop
 /// out by default; every other feed keeps to your web. Following and Catch Up
 /// are your follows by definition and have no setting.
 enum FeedReach {
@@ -10,7 +10,7 @@ enum FeedReach {
     static let modes: [FeedMode] = [.discovery, .global, .popular, .underrated, .media]
 
     static func defaultReach(for mode: FeedMode) -> WebGate.Reach {
-        mode == .underrated ? .webAndHop3 : .web
+        mode == .underrated ? .webAndLoose : .web
     }
 
     /// `settings` maps a mode's raw value to a reach's raw value; anything
@@ -33,7 +33,7 @@ enum FeedReach {
     static func label(_ reach: WebGate.Reach) -> String {
         switch reach {
         case .web: return "Your web"
-        case .webAndHop3: return "Your web + a few one hop out"
+        case .webAndLoose: return "Your web + a few one hop out"
         case .everyone: return "Everyone"
         }
     }

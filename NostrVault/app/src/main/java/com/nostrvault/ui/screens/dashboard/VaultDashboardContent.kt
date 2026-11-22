@@ -60,6 +60,7 @@ import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.tutorials.TutorialContent
 import com.nostrvault.tutorials.tutorialAnchor
 import com.nostrvault.ui.navigation.Screen
+import com.nostrvault.ui.screens.settings.FollowDistanceWords
 import com.nostrvault.ui.screens.dashboard.VaultDashboardModel.RunState
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
@@ -290,7 +291,7 @@ internal fun VaultDashboardContent(
             DashRowLink(
                 icon = NostrVaultIcons.People,
                 title = VaultDashboardModel.trustTitle(wot.size),
-                detail = VaultDashboardModel.trustDetail(cfg.chatRelayWotDepth),
+                detail = FollowDistanceWords.reachDetail(cfg.chatRelayWotDepth),
                 state = RowState.INFO,
                 onClick = { onOpenScreen(Screen.RelayAccessSettings) },
             )
@@ -405,7 +406,7 @@ internal fun VaultDashboardContent(
                 onOpenScreen(Screen.Relays)
             }
             DashDivider()
-            SettingLink(Icons.Filled.VerifiedUser, "Who Can Reach You", VaultDashboardModel.hops(cfg.chatRelayWotDepth)) {
+            SettingLink(Icons.Filled.VerifiedUser, "Who Can Reach You", FollowDistanceWords.short(cfg.chatRelayWotDepth)) {
                 onOpenScreen(Screen.RelayAccessSettings)
             }
             DashDivider()

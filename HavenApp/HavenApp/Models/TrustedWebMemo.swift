@@ -59,11 +59,11 @@ final class TrustedWebMemo: @unchecked Sendable {
     }
 
     private var lastLayers: (saved: Set<String>, follows: [String], scope: AccountWebScope, generation: Int,
-                             layers: (web: Set<String>, hop3: Set<String>))?
+                             layers: (web: Set<String>, loose: Set<String>))?
 
     /// The one gate's web and the hop past it (`WebGate.layers`), from the
     /// same graph, links and depth, remembered like `web`.
-    func layers(saved: Set<String>, follows: [String], scope: AccountWebScope) -> (web: Set<String>, hop3: Set<String>) {
+    func layers(saved: Set<String>, follows: [String], scope: AccountWebScope) -> (web: Set<String>, loose: Set<String>) {
         lock.lock(); defer { lock.unlock() }
         if let lastLayers, lastLayers.saved == saved, lastLayers.follows == follows, lastLayers.scope == scope,
            lastLayers.generation == generation {
@@ -88,7 +88,7 @@ final class TrustedWebMemo: @unchecked Sendable {
            lastGate.mutes == mutes {
             return lastGate.gate
         }
-        let gate = WebGate.Web(own: scope.owners, whitelist: whitelist, web: layers.web, hop3: layers.hop3,
+        let gate = WebGate.Web(own: scope.owners, whitelist: whitelist, web: layers.web, loose: layers.loose,
                                blocked: blocked, mutes: mutes)
         lastGate = (saved, follows, scope, generation, whitelist, blocked, mutes, gate)
         return gate

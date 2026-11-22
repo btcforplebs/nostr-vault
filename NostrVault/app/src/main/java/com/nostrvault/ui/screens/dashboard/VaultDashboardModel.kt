@@ -128,12 +128,8 @@ internal object VaultDashboardModel {
     fun lastMade(lastMs: Long?, nowMs: Long): String =
         lastMs?.let { "Last made ${relative(it, nowMs)}." } ?: "Never made."
 
-    fun hops(depth: Int): String = if (depth == 1) "1 hop" else "$depth hops"
-
     fun trustTitle(count: Int): String =
         if (count <= 0) "Trust list not built yet" else "${"%,d".format(Locale.US, count)} people can reach your inbox"
-
-    fun trustDetail(depth: Int): String = "People within ${hops(depth)} of you. Everyone else is kept out."
 
     fun blockedDetail(count: Int): String = when (count) {
         0 -> "Nobody blocked."

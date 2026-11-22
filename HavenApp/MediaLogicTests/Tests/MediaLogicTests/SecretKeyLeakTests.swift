@@ -183,7 +183,7 @@ final class SecretKeyLeakTests: XCTestCase {
         let secret = throwawaySecret()
         let exposed = fakeDerive(secret)!
         let me = String(repeating: "a", count: 64)
-        let web = WebGate.Web(own: [me], whitelist: [exposed], web: [exposed], hop3: [])
+        let web = WebGate.Web(own: [me], whitelist: [exposed], web: [exposed], loose: [])
         XCTAssertEqual(WebGate.judge(.init(signer: exposed), in: web), .inside)
 
         let pubs = SecretKeyLeak.derivedPubkeys(in: "name: \(nsec(secret))", derive: fakeDerive)
@@ -192,7 +192,7 @@ final class SecretKeyLeakTests: XCTestCase {
         XCTAssertTrue(PublicKeyRegistry.shared.isPublic(exposed.uppercased()))
 
         XCTAssertEqual(WebGate.judge(.init(signer: exposed), in: web), .outside)
-        XCTAssertEqual(WebGate.judge(.init(signer: exposed), in: web, reach: .webAndHop3), .outside)
+        XCTAssertEqual(WebGate.judge(.init(signer: exposed), in: web, reach: .webAndLoose), .outside)
         XCTAssertEqual(WebGate.judge(.init(signer: exposed), in: web, reach: .everyone), .inside,
                        "Everyone shows strangers, so it shows this one too")
         let blocked = WebGate.Web(own: [me], web: [exposed], blocked: [exposed])

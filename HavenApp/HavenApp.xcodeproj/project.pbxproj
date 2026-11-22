@@ -1287,6 +1287,7 @@
 		8BC5B9894BDA0FF1C4C30284 /* ListBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3654B7BC5E734E0DC3B701E6 /* ListBackupService.swift */; };
 		8BCB35219E198FB55A5B9186 /* NVWidgetLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC382C7EF657BEBE0775C5A9 /* NVWidgetLogic.swift */; };
 		8BCE165B756B95023138B820 /* ListVersionWording.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0006A2B10762A75E950F4478 /* ListVersionWording.swift */; };
+		8BCFB7A25679C782E36A14E4 /* FollowDistanceWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49FC48ED34DF70C295C3DD1C /* FollowDistanceWords.swift */; };
 		8BDF1857A949D5DF277197DE /* ReelsFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98C1C315AD9DCB214071B65 /* ReelsFeedView.swift */; };
 		8C353599FEBE2E147C2A8EEE /* Confident.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4B5A4A8F28D8FA1A5E59F7EC /* Confident.mp3 */; };
 		8C3BD71D4EE345968FB81D1E /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC33568A91E5B5B737A03D1F /* FeedService.swift */; };
@@ -1824,6 +1825,7 @@
 		C5040D31F0EF39592A437F47 /* HomeVaultSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ADB1854DDD7D68150AD6CA7 /* HomeVaultSection.swift */; };
 		C51C53A0E944C1C825E56108 /* CStringArguments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16D3572447C348FFE5B9A499 /* CStringArguments.swift */; };
 		C52AE981C2478076B7B807FF /* NVLiveNowLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DF96DD396424A23F4A524CE /* NVLiveNowLogic.swift */; };
+		C52E22364B0075B8C0509A19 /* FollowDistanceWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49FC48ED34DF70C295C3DD1C /* FollowDistanceWords.swift */; };
 		C5352175A47EC61C4030CC20 /* NVTileFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A671FC7A2A4BFABC2FF9F8DD /* NVTileFetcher.swift */; };
 		C5363E6B50201CB7802A45E1 /* MediaPostShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8AA58D6F5990BE4F751953 /* MediaPostShareHandler.swift */; };
 		C54DF6BF136979DE14656BEE /* PopularRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0C028D1E2DC57C43CED675 /* PopularRanking.swift */; };
@@ -2776,6 +2778,7 @@
 		49B848AAC08254AED757D954 /* UnlikePill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlikePill.swift; sourceTree = "<group>"; };
 		49BC980E7F628F8AB17AA216 /* RelayFrame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayFrame.swift; sourceTree = "<group>"; };
 		49F43AE6D03159B7716D9F71 /* LogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogStore.swift; sourceTree = "<group>"; };
+		49FC48ED34DF70C295C3DD1C /* FollowDistanceWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowDistanceWords.swift; sourceTree = "<group>"; };
 		4A557F0804214239CCFEDDD8 /* GifPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GifPickerSheet.swift; sourceTree = "<group>"; };
 		4A6A21B92242B4E25D313103 /* SearchView+Recommendations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SearchView+Recommendations.swift"; sourceTree = "<group>"; };
 		4AB6A6872532B023E705FC6C /* RelayListEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayListEditor.swift; sourceTree = "<group>"; };
@@ -4769,6 +4772,7 @@
 				C8B5671ABD01B4F4929AE5BB /* FileNote.swift */,
 				093D54B83D57F902ED44E397 /* FillYourFeedGuide.swift */,
 				0C48773D215B6C7086533AEF /* FipsURL.swift */,
+				49FC48ED34DF70C295C3DD1C /* FollowDistanceWords.swift */,
 				C7DEF7BD10034E4F4D917073 /* FollowerSnapshot.swift */,
 				BFE4FF1BF35D7CF7BEF59AD4 /* FollowingSnapshot.swift */,
 				D27AC592B3A258559EAF7732 /* FollowListLogic.swift */,
@@ -6123,6 +6127,7 @@
 				60DBDA8C3680E9974E7386D8 /* FirstAnswer.swift in Sources */,
 				20909F66629BEC603D2806A0 /* FloatingArrowController.swift in Sources */,
 				F1717200BED8A301E9C95904 /* FloatingButtonRow.swift in Sources */,
+				C52E22364B0075B8C0509A19 /* FollowDistanceWords.swift in Sources */,
 				C48109A117C642C10E628398 /* FollowListLogic.swift in Sources */,
 				F92E912DC9EBF56167EF289E /* FollowListView.swift in Sources */,
 				01BF75E899D8D7E974F5796C /* FollowNotificationBanner.swift in Sources */,
@@ -7335,6 +7340,7 @@
 				04B3AFF096D2F4B385C11037 /* FirstAnswer.swift in Sources */,
 				CA413CD72E9FB270DDA60F7D /* FloatingArrowController.swift in Sources */,
 				B2945DA33D91B6F720F44B90 /* FloatingButtonRow.swift in Sources */,
+				8BCFB7A25679C782E36A14E4 /* FollowDistanceWords.swift in Sources */,
 				EE5DFB36A8769509D2517FBD /* FollowListLogic.swift in Sources */,
 				F49E32FCADAF1E2E1573892F /* FollowListView.swift in Sources */,
 				B2F24DD85032BA530BD637F8 /* FollowNotificationBanner.swift in Sources */,

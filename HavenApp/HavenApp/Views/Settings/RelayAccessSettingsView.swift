@@ -15,7 +15,7 @@ struct RelayAccessSettingsView: View {
                     HStack {
                         Text("Follow Distance").settingInfo(.relayWotDepth)
                         Spacer()
-                        Text("\(configService.config.chatRelayWotDepth)")
+                        Text(FollowDistanceWords.short(configService.config.chatRelayWotDepth))
                             .foregroundColor(.secondary)
                             .monospacedDigit()
                     }
