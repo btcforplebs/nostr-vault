@@ -1,8 +1,9 @@
 import Foundation
 
 /// The network half of setup's "Who told you about Nostr Vault?" step: the
-/// person's profile and follow list, the lists of the people they follow (to
-/// rank them, `ReferralSuggestions`), and the profiles of the ones offered.
+/// person's profile and follow list, their followers, their recent activity
+/// and the lists of the people they follow (to rank them,
+/// `ReferralSuggestions`), and the profiles of the ones offered.
 /// Reads public profile relays directly: setup runs before the device's relay.
 @MainActor
 enum ReferralLookup {
@@ -34,28 +35,65 @@ enum ReferralLookup {
     }
 
     /// What the people step offers: up to `ReferralSuggestions.pool` of the
-    /// referrer's follows, closest to the referrer first, and topic chips
-    /// from their recent notes.
+    /// referrer's follows and followers, the ones they interact with most
+    /// first, and topic chips from their recent notes.
     struct Suggestions {
         let picks: [ReferralSuggestions.Pick]
         let topics: [(topic: String, people: Set<String>)]
     }
 
-    /// `person`'s follows ranked by their close circle (`ReferralSuggestions`),
-    /// with profiles and recent hashtags fetched. `exclude`: you and the
-    /// people you already follow.
+    /// `person`'s follows and followers ranked by interactions
+    /// (`ReferralSuggestions`), with profiles and recent hashtags fetched.
+    /// `exclude`: you and the people you already follow.
     static func suggestions(for person: Person, exclude: Set<String>) async -> Suggestions {
+        let referrer = person.pubkey
         let readers = Array(person.follows.prefix(ReferralSuggestions.listsToRead))
+        let nostr = NostrService.shared
+        // Side by side: the follows' lists (close circle), the lists that
+        // name the referrer (followers), the referrer's own recent notes,
+        // reposts, reactions and the zaps they sent, and what tags them.
+        async let followLists: [NostrEvent] = readers.isEmpty ? [] : nostr.fetchEvents(
+            filter: ["kinds": [3], "authors": readers], from: listRelays, timeout: 8)
+        async let followerLists = nostr.fetchEvents(
+            filter: ["kinds": [3], "#p": [referrer], "limit": ReferralSuggestions.followersToRead],
+            from: listRelays, timeout: 8)
+        async let own = nostr.fetchEvents(
+            filter: ["kinds": [1, 6, 7, 16], "authors": [referrer], "limit": ReferralSuggestions.activityToRead],
+            from: relays, timeout: 8)
+        async let tagging = nostr.fetchEvents(
+            filter: ["kinds": [1, 6, 7, 16, 9735], "#p": [referrer], "limit": ReferralSuggestions.activityToRead],
+            from: relays, timeout: 8)
+        async let zapsSent = nostr.fetchEvents(
+            filter: ["kinds": [9735], "#P": [referrer], "limit": ReferralSuggestions.activityToRead],
+            from: relays, timeout: 8)
+        let (listEvents, followerEvents, ownEvents, taggingEvents, sentEvents) =
+            await (followLists, followerLists, own, tagging, zapsSent)
+
         var lists: [String: [String]] = [:]
-        if !readers.isEmpty {
-            let events = await NostrService.shared.fetchEvents(
-                filter: ["kinds": [3], "authors": readers], from: listRelays, timeout: 8)
-            for event in events.sorted(by: { $0.created_at < $1.created_at }) where event.kind == 3 {
-                lists[event.pubkey] = ReferralSuggestions.follows(inContactListTags: event.tags) // newest wins
-            }
+        for event in listEvents.sorted(by: { $0.created_at < $1.created_at }) where event.kind == 3 {
+            lists[event.pubkey] = ReferralSuggestions.follows(inContactListTags: event.tags) // newest wins
         }
-        let picks = ReferralSuggestions.rank(referrer: person.pubkey, referrerFollows: person.follows, lists: lists,
-                                             exclude: exclude.union([person.pubkey]))
+        // A relay can send lists that don't name the referrer; keep only the
+        // ones whose newest list still does.
+        var newest: [String: NostrEvent] = [:]
+        for event in followerEvents where event.kind == 3 {
+            if let had = newest[event.pubkey], had.created_at >= event.created_at { continue }
+            newest[event.pubkey] = event
+        }
+        let followers = newest.values
+            .filter { ReferralSuggestions.follows(inContactListTags: $0.tags).contains(referrer) }
+            .sorted { $0.created_at > $1.created_at }
+            .map { $0.pubkey.lowercased() }
+        // One copy of each event: the relays overlap.
+        var seenIDs = Set<String>()
+        let activity = (ownEvents + taggingEvents + sentEvents)
+            .filter { seenIDs.insert($0.id).inserted }
+            .map { (author: $0.pubkey, kind: $0.kind, tags: $0.tags) }
+        let interactions = ReferralSuggestions.interactions(referrer: referrer, activity: activity)
+
+        let picks = ReferralSuggestions.rank(referrer: referrer, referrerFollows: person.follows,
+                                             followers: followers, interactions: interactions,
+                                             lists: lists, exclude: exclude.union([referrer]))
         guard !picks.isEmpty else { return Suggestions(picks: [], topics: []) }
         let keys = picks.map(\.pubkey)
         // Profiles, the last month of notes and their public interest lists
