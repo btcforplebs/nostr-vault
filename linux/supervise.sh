@@ -40,6 +40,10 @@ if [ "$(id -u)" = 0 ]; then
   chown "$VAULT_UID:$VAULT_UID" "$NV_DATA_DIR" && chmod 711 "$NV_DATA_DIR"
   mkdir -p "$NV_DATA_DIR/mesh"
   chown "$MESH_UID:$MESH_UID" "$NV_DATA_DIR/mesh" && chmod 755 "$NV_DATA_DIR/mesh"
+  # nv-mesh's dial.sock (linux/mesh/src/dial.rs): in the container's own /run, never on the /data bind mount, so no
+  # host uid can reach it. nv-mesh's, group havend's (setpriv --regid), 0750.
+  mkdir -p /run/nv-mesh
+  chown "$MESH_UID:$VAULT_UID" /run/nv-mesh && chmod 750 /run/nv-mesh
   ROOT=1
 else
   echo "supervise: not root, so havend and nv-mesh share uid $(id -u) and the mesh key isn't kept from havend" >&2

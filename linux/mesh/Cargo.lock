@@ -2246,9 +2246,11 @@ dependencies = [
 name = "nv-mesh"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "fips-mesh",
  "fips-v2-android",
  "libc",
+ "nostr",
  "serde_json",
  "tokio",
  "tracing",

@@ -41,7 +41,8 @@ RestrictNamespaces=yes
 LockPersonality=yes
 SystemCallArchitectures=native
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
-ReadWritePaths=-/var/lib/nostr-vault/mesh
+# /run/nv-mesh (made by prepare): dial.sock, which the vault uses to dial out.
+ReadWritePaths=-/var/lib/nostr-vault/mesh -/run/nv-mesh
 
 [Install]
 WantedBy=multi-user.target

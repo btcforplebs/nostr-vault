@@ -54,3 +54,11 @@ else
   die "$m belongs to uid $cur, not the mesh; something replaced the mesh's folder (the vault stays stopped)"
 fi
 chmod 755 "$m"
+
+# /run/nv-mesh: where nv-mesh serves dial.sock (linux/mesh/src/dial.rs), the box dialing out. nv-mesh's, group the
+# vault's, 0750: only the vault and the mesh can reach the socket. Never on the data dir. /run is root's, so nothing
+# else can have planted it, but a link is still refused.
+r=/run/nv-mesh
+[ -L "$r" ] && die "$r is a symlink"
+mkdir -p "$r"
+chown -h "$mesh:$(id -g nvvault)" "$r" && chmod 750 "$r"
