@@ -1,9 +1,15 @@
 import Foundation
 import Combine
+#if canImport(UIKit)
+import UIKit
+#else
+import AppKit
+#endif
 
 /// The active account's rank copy and who the Discovery reach bar lets in
-/// (`DiscoveryReach`). Read again when the account or the bar changes, and
-/// when Settings › Feeds opens (the mesh catch-up rewrites the file); the
+/// (`DiscoveryReach`). Read again when the account or the bar changes, when
+/// the app comes back to the front and when Settings › Feeds opens (the mesh
+/// catch-up rewrites the file while the app is away); the
 /// feed recomputes whenever the admitted set changes. Android twin:
 /// `service/DiscoveryReachStore.kt`.
 @MainActor
@@ -28,6 +34,15 @@ final class DiscoveryReachStore: ObservableObject {
             .removeDuplicates()
             .dropFirst()
             .sink { [weak self] saved in self?.apply(saved: saved) }
+            .store(in: &subscriptions)
+        #if canImport(UIKit)
+        let foreground = UIApplication.willEnterForegroundNotification
+        #else
+        let foreground = NSApplication.didBecomeActiveNotification
+        #endif
+        NotificationCenter.default.publisher(for: foreground)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refresh() }
             .store(in: &subscriptions)
     }
 
