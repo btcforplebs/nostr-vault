@@ -124,22 +124,21 @@ func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (be
 			continue
 		}
 		rctx, cancel := context.WithTimeout(ctx, f.timeout())
-		relay := f.dial(rctx, url)
-		if relay == nil {
-			// Could not connect in time (or at all): this relay said
-			// nothing, which is not the same as "no list".
+		sub, ok := f.ask(rctx, url, filter)
+		if !ok {
+			// Could not connect or send the REQ in time (or at all): this
+			// relay said nothing, which is not the same as "no list".
 			if ctx.Err() == nil && rctx.Err() != nil {
 				f.bench(url, time.Now())
 			}
 			cancel()
 			continue
 		}
-		// Only an EOSE is an answer. A CLOSED (rate-limited, auth-required),
-		// a failed write or a dropped socket ends the ask unanswered.
-		sub, serr := relay.Subscribe(rctx, nostr.Filters{filter})
+		// Only an EOSE is an answer. A CLOSED (rate-limited, auth-required)
+		// or a dropped socket ends the ask unanswered.
 		eosed := false
 	read:
-		for serr == nil {
+		for {
 			select {
 			case ev, open := <-sub.Events:
 				if !open {
@@ -189,22 +188,26 @@ func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (be
 	return best, nil
 }
 
-// dial connects to url, giving up when ctx ends. The pool's own dial ignores
-// ctx (it waits up to 15 s), so it runs aside and is left to finish alone.
-func (f *RelayFetcher) dial(ctx context.Context, url string) *nostr.Relay {
-	done := make(chan *nostr.Relay, 1)
+// ask connects to url and sends the REQ, giving up when ctx ends. Neither
+// the pool's dial (up to 15 s) nor the REQ write (it waits behind pings on a
+// dead socket) watches ctx, so both run aside; a sub made after ctx ended
+// ends by itself, since it lives on ctx.
+func (f *RelayFetcher) ask(ctx context.Context, url string, filter nostr.Filter) (*nostr.Subscription, bool) {
+	done := make(chan *nostr.Subscription, 1)
 	go func() {
-		r, err := f.Pool.EnsureRelay(url)
-		if err != nil {
-			r = nil
+		var sub *nostr.Subscription
+		if r, err := f.Pool.EnsureRelay(url); err == nil {
+			if s, err := r.Subscribe(ctx, nostr.Filters{filter}); err == nil {
+				sub = s
+			}
 		}
-		done <- r
+		done <- sub
 	}()
 	select {
-	case r := <-done:
-		return r
+	case sub := <-done:
+		return sub, sub != nil
 	case <-ctx.Done():
-		return nil
+		return nil, false
 	}
 }
 
