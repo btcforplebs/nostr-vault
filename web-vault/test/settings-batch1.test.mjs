@@ -23,7 +23,7 @@ test("Minimum Followers: default is the gate's bar, clamped 0-100, and it moves 
   // 12 follows; X is followed by 3 of them. Bar 10: X is hop 3. Bar 3: X is in the web.
   const follows = Array.from({ length: 12 }, (_, i) => hex(i + 1)), X = hex(999)
   const lists = new Map(follows.map((f, i) => [f, { tags: i < 3 ? [["p", X]] : [] }]))
-  assert.ok(webLayers({ follows, lists, minFollowers: MIN_FOLLOWERS }).hop3.has(X))
+  assert.ok(webLayers({ follows, lists, minFollowers: MIN_FOLLOWERS }).loose.has(X))
   assert.ok(webLayers({ follows, lists, minFollowers: 3 }).web.has(X))
 })
 

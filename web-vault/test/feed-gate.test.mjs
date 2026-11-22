@@ -11,7 +11,7 @@ const ME = pk(1), F = pk(2), NEAR = pk(3), STRANGER = pk(4), BAD = pk(5)
 let seq = 100
 const note = (pubkey, tags = []) => ({ id: pk(seq++), kind: 1, pubkey, created_at: seq, content: "x", tags })
 const store = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) } }
-const web = gateWeb({ own: [ME], web: [F], hop3: [NEAR], blocked: muteSet([BAD]) })
+const web = gateWeb({ own: [ME], web: [F], loose: [NEAR], blocked: muteSet([BAD]) })
 
 test("defaults: every web feed reaches your web but Underrated, one step out by design; a choice is kept per feed", () => {
   const s = store()

@@ -47,7 +47,7 @@ export function useGateWeb(ctx, blocked) {
   return useMemo(() => gateWeb({
     own: ownKeys(me),
     web: layers?.web ?? follows,
-    hop3: layers?.hop3 ?? [],
+    loose: layers?.loose ?? [],
     blocked,
   }), [me, layers, blocked, key])
 }
