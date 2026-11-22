@@ -4,7 +4,7 @@ import SwiftUI
 /// (setup screens r3, step 5; InviterWelcome): the inviter, "invited you",
 /// Wave back (a one-tap public note that mentions them, so they see you
 /// made it) and Message. The Vault chip says the key steps are done: setup
-/// asks for the key, spare and lock before the feed. Shown for a day, until
+/// asks for the key, backup and lock before the feed. Shown for a day, until
 /// waved at or closed.
 struct InviterWelcomeCard: View {
     let inviter: String
@@ -80,7 +80,7 @@ struct InviterWelcomeCard: View {
         .task { await loadProfileIfNeeded() }
     }
 
-    /// Key, spare and lock: all three are done before setup lets you in.
+    /// Key, backup and lock: all three are done before setup lets you in.
     private var vaultChip: some View {
         HStack(spacing: 4) {
             Image(systemName: "checkmark.seal.fill").font(.appSystem(size: 11, weight: .bold))
@@ -91,7 +91,7 @@ struct InviterWelcomeCard: View {
         .frame(minHeight: 26)
         .background(Capsule().fill(Color.havenOnline.opacity(0.12)))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Vault: key, spare and lock done")
+        .accessibilityLabel("Vault: key, backup and lock done")
     }
 
     private var name: String {

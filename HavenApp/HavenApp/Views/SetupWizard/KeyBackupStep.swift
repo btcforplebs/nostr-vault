@@ -1,33 +1,35 @@
 import SwiftUI
 
-// MARK: - Step 18: Keep a spare (New to Nostr path)
+// MARK: - Step 18: Back up your key (New to Nostr path)
 
-/// The second key step (setup screens r3, Way 1b): the key with lines down
-/// to two spares, written on paper by hand or copied. Show reveals the key
-/// to write down; Copy puts it on the clipboard for 60 s. Nothing is
-/// printed: Logen 2026-11-22 dropped printing from every key flow (a print
-/// panel can save the key as a PDF or image). Next waits for "I saved my
-/// secret key", which only the user ticks.
-struct KeySpareStep: View {
+/// The second key step (setup screens r3, Way 1b; renamed from "Keep a
+/// spare", Logen 2026-11-22): the key with lines down to two backups, on
+/// paper or copied. Both tiles are buttons: On paper reveals the key to write
+/// down, Copy puts it on the clipboard for 60 s. On the 12 mini the old Copy was a small link under Next, below the
+/// fold, while the Copy tile looked tappable but wasn't. Nothing is printed
+/// (Logen 2026-11-22). Next waits for "I backed up my key", which only the
+/// user ticks.
+struct KeyBackupStep: View {
     let nsec: String
     let onNext: () -> Void
 
     @State private var shown = false
     @State private var copied = false
+    @State private var copyToken = UUID()
     @State private var savedKey = false
 
     var body: some View {
-        VStack(spacing: 22) {
-            KeyStepsStrip(current: .spare).padding(.top, 8)
+        VStack(spacing: 16) {
+            KeyStepsStrip(current: .backup).padding(.top, 8)
 
-            Text("Keep a spare")
+            Text("Back up your key")
                 .font(.appSystem(size: 28, weight: .bold))
                 .foregroundColor(WizardColors.textPrimary)
                 .accessibilityAddTraits(.isHeader)
 
             picture
 
-            Text("Lose this phone and the spare is your only way back in.")
+            Text("Write your key down on paper and keep it somewhere safe. If you lose this device, your backup is the only way back in.")
                 .font(.appSystem(size: 15))
                 .foregroundColor(WizardColors.textSecondary)
                 .multilineTextAlignment(.center)
@@ -37,7 +39,7 @@ struct KeySpareStep: View {
 
             Text(copied
                  ? "Copied. Paste it somewhere safe within a minute; then the clipboard clears."
-                 : "Write it down on paper. Don't save it to Photos, Files or iCloud.")
+                 : "Don't save it to Photos, Files or iCloud.")
                 .font(.appSystem(size: 13))
                 .foregroundColor(WizardColors.textMuted)
                 .multilineTextAlignment(.center)
@@ -47,17 +49,14 @@ struct KeySpareStep: View {
 
             Spacer(minLength: 8)
 
-            VStack(spacing: 10) {
-                WizardPrimaryButton(title: "Next", action: onNext, disabled: !savedKey)
-                smallLink(copied ? "Copied" : "Copy my key", action: copy)
-            }
-            .padding(.bottom, 8)
+            WizardPrimaryButton(title: "Next", action: onNext, disabled: !savedKey)
+                .padding(.bottom, 8)
         }
         .frame(maxWidth: .infinity, minHeight: 560)
     }
 
-    /// The key, wired down to the two spares. Neither turns green: the app
-    /// can't see paper, and a copy leaves the clipboard after 60 s.
+    /// The key, wired down to the two backups. Paper never turns green (the
+    /// app can't see paper); Copy shows Copied while the clipboard holds it.
     private var picture: some View {
         VStack(spacing: 0) {
             Image(systemName: "key.horizontal.fill")
@@ -65,18 +64,24 @@ struct KeySpareStep: View {
                 .foregroundStyle(WizardColors.accentGradient)
                 .shadow(color: WizardColors.accentGlow, radius: 12)
                 .frame(height: 52)
+                .accessibilityHidden(true)
             HStack(spacing: 140) {
                 wire(done: false)
                 wire(done: false)
             }
             .frame(height: 30)
+            .accessibilityHidden(true)
             HStack(spacing: 14) {
-                tile(icon: "pencil.line", label: "On paper", done: false)
-                tile(icon: "doc.on.doc.fill", label: "Copy", done: false)
+                tile(icon: "pencil.line", label: "On paper", done: false) {
+                    withAnimation(WizardAnimations.springGentle) { shown = true }
+                }
+                .accessibilityLabel("On paper: show the key to write it down")
+                tile(icon: "doc.on.doc.fill", label: copied ? "Copied" : "Copy my key", done: copied) {
+                    copy()
+                }
+                .accessibilityLabel(copied ? "Secret key copied" : "Copy secret key")
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Keep a spare on paper or copy it")
     }
 
     /// The key, hidden until Show, to write down by hand.
@@ -112,20 +117,25 @@ struct KeySpareStep: View {
             .frame(width: 2)
     }
 
-    private func tile(icon: String, label: String, done: Bool) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: done ? "checkmark.circle.fill" : icon)
-                .font(.appSystem(size: 26))
-                .foregroundColor(done ? WizardColors.success : WizardColors.accentPrimary)
-            Text(label)
-                .font(.appSystem(size: 14, weight: .semibold))
-                .foregroundColor(WizardColors.textPrimary)
+    private func tile(icon: String, label: String, done: Bool,
+                      action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: done ? "checkmark.circle.fill" : icon)
+                    .font(.appSystem(size: 26))
+                    .foregroundColor(done ? WizardColors.success : WizardColors.accentPrimary)
+                Text(label)
+                    .font(.appSystem(size: 14, weight: .semibold))
+                    .foregroundColor(WizardColors.textPrimary)
+            }
+            .frame(width: 128, height: 92)
+            .background(WizardColors.bgCard)
+            .cornerRadius(16)
+            .overlay(RoundedRectangle(cornerRadius: 16)
+                .stroke(done ? WizardColors.success.opacity(0.6) : WizardColors.borderActive, lineWidth: done ? 2 : 1))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
         }
-        .frame(width: 128, height: 92)
-        .background(WizardColors.bgCard)
-        .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16)
-            .stroke(done ? WizardColors.success.opacity(0.6) : WizardColors.borderSubtle, lineWidth: done ? 2 : 1))
+        .buttonStyle(.plain)
     }
 
     private var savedCheck: some View {
@@ -134,7 +144,7 @@ struct KeySpareStep: View {
                 Image(systemName: savedKey ? "checkmark.square.fill" : "square")
                     .font(.appSystem(size: 20))
                     .foregroundColor(savedKey ? WizardColors.accentPrimary : WizardColors.textMuted)
-                Text("I saved my secret key")
+                Text("I backed up my key")
                     .font(.appSystem(size: 15, weight: .medium))
                     .foregroundColor(WizardColors.textPrimary)
             }
@@ -142,23 +152,20 @@ struct KeySpareStep: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("I saved my secret key")
+        .accessibilityLabel("I backed up my key")
         .accessibilityValue(savedKey ? "Checked" : "Not checked")
-    }
-
-    private func smallLink(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .buttonStyle(.plain)
-            .font(.appSystem(size: 15, weight: .medium))
-            .foregroundColor(WizardColors.accentPrimary)
-            .frame(minHeight: 44)
     }
 
     // MARK: Actions
 
     private func copy() {
         PlatformClipboard.copySecret(nsec)
+        let token = UUID()
+        copyToken = token
         withAnimation(WizardAnimations.springGentle) { copied = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { copied = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + PlatformClipboard.secretLifetime) {
+            guard copyToken == token else { return }  // a later tap restarted the 60 s
+            withAnimation(WizardAnimations.springGentle) { copied = false }
+        }
     }
 }
