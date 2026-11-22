@@ -64,6 +64,7 @@ type Config struct {
 	BackupIntervalHours                  int                 `json:"backup_interval_hours"`
 	WotDepth                             int                 `json:"wot_depth"`
 	WotMinimumFollowers                  int                 `json:"wot_minimum_followers"`
+	AccountReach                         reachByAccount      `json:"-"`
 	WotFetchTimeoutSeconds               int                 `json:"wot_fetch_timeout_seconds"`
 	WotRefreshInterval                   time.Duration       `json:"wot_refresh_interval"`
 	WotCachePath                         string              `json:"wot_cache_path"`
@@ -150,6 +151,7 @@ func loadConfig() Config {
 		BackupIntervalHours:                  getEnvInt("BACKUP_INTERVAL_HOURS", 24),
 		WotDepth:                             getEnvInt("WOT_DEPTH", defaultWotDepth),
 		WotMinimumFollowers:                  getEnvInt("WOT_MINIMUM_FOLLOWERS", 0),
+		AccountReach:                         loadAccountReach(getEnvString("ACCOUNT_REACH_FILE", "account_reach.json")),
 		WotFetchTimeoutSeconds:               getEnvInt("WOT_FETCH_TIMEOUT_SECONDS", 30),
 		WotRefreshInterval:                   getEnvDuration("WOT_REFRESH_INTERVAL", 24*time.Hour),
 		WotCachePath:                         getEnvString("WOT_CACHE_PATH", "wot_cache.json"),

@@ -141,7 +141,7 @@ func runImport(ctx context.Context) {
 		log.Println("🚫 failed to init import DBs:", err)
 		return
 	}
-	wotModel := wot.NewSimpleInMemory(
+	wotModel := newWotModel(
 		pool,
 		whitelist(),
 		importRelays(),
