@@ -23,9 +23,36 @@ extension NoteDetailView {
         var relayURLs: [URL] = [configService.config.nostrURL].compactMap { URL(string: $0) }
         let externalStrs = configService.config.readRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
+        // The e-tag hint and the parent author's write relays, as Android
+        // does: a parent that lives only on its author's relay never loaded.
+        let known = relayURLs.map(\.absoluteString)
+        let outbox = { (pk: String) in NostrService.shared.outboxRelays[pk] }
+        relayURLs.append(contentsOf: ParentLookupRelays.extraRelays(
+            tags: note.tags, replyToPubkey: note.replyToPubkey, known: known, outbox: outbox
+        ).compactMap { URL(string: $0) })
 
         let subId = "thread-\(UUID().uuidString.prefix(8))"
+        askRelays(relayURLs, ids: ancestorIds, subId: subId)
 
+        // Authors whose relay list we don't have yet: fetch it, then ask
+        // their relays once more if the parents still haven't come.
+        let unknown = ParentLookupRelays.authors(tags: note.tags, replyToPubkey: note.replyToPubkey)
+            .filter { NostrService.shared.outboxRelays[$0] == nil }
+        guard !unknown.isEmpty else { return }
+        feedService.requestRelayLists(for: Set(unknown))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            guard ancestorIds.contains(where: { id in !self.parentNotes.contains { $0.id == id } }) else { return }
+            let later = ParentLookupRelays.extraRelays(
+                tags: self.note.tags, replyToPubkey: self.note.replyToPubkey,
+                known: relayURLs.map(\.absoluteString), outbox: outbox
+            ).compactMap { URL(string: $0) }
+            guard !later.isEmpty else { return }
+            self.isLoadingParents = true
+            self.askRelays(later, ids: ancestorIds, subId: subId)
+        }
+    }
+
+    private func askRelays(_ relayURLs: [URL], ids ancestorIds: [String], subId: String) {
         for url in relayURLs {
             let client = WebSocketClient()
             client.isTemporary = true
