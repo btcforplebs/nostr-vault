@@ -3,7 +3,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { gateFeed, feedReach, loadReach, saveReach, REACH_FEEDS } from "../src/net/feed-gate.js"
-import { gateWeb } from "../src/net/web-gate.js"
+import { gateWeb, REACHES } from "../src/net/web-gate.js"
 import { muteSet } from "../src/net/blocks.js"
 
 const pk = n => n.toString(16).padStart(64, "0")
@@ -56,4 +56,17 @@ test("gateFeed: a reply to a blocked person's note in the same list is blocked",
   const answer = note(F, [["e", theirs.id, "", "reply"]])
   assert.deepEqual(gateFeed([theirs, answer], web).shown, [])
   assert.deepEqual(gateFeed(null, web), { shown: null, outside: [] })
+})
+
+// The saved words are a format (iPhone/Mac twin: FeedGateTests.testSavedReachWordsNeverChange): renaming the code must
+// still read what an older build wrote to this browser, and write what an older build reads.
+test("saved reach words never change: the key, the words, and a round trip through raw storage", () => {
+  assert.deepEqual([...REACHES], ["web", "webAndHop3", "everyone"])
+  const s = store()
+  s.setItem("nv-feed-reach", JSON.stringify({ popular: "webAndHop3", underrated: "web" }))
+  assert.equal(loadReach("popular", s), "webAndHop3", "a Popular feed saved one hop out by an older build still reads one hop out")
+  assert.equal(loadReach("underrated", s), "web")
+  const fresh = store()
+  saveReach("popular", loadReach("underrated", fresh), fresh)
+  assert.equal(fresh.getItem("nv-feed-reach"), JSON.stringify({ popular: "webAndHop3" }), "and is written the way an older build reads it")
 })
