@@ -502,8 +502,8 @@ func initRelays(ctx context.Context) error {
 	if !chatRelayLimits.AllowComplexFilters {
 		chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.NoComplexFilters)
 	}
-	chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.MustAuth, MustBeInWotToQuery)
-	chatRelay.RejectCountFilter = append(chatRelay.RejectCountFilter, policies.MustAuth, MustBeInWotToQuery)
+	chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.MustAuth, MustBeInWotToQuery, MustReadOnlyOwnChat)
+	chatRelay.RejectCountFilter = append(chatRelay.RejectCountFilter, policies.MustAuth, MustBeInWotToQuery, MustReadOnlyOwnChat)
 
 	chatRelay.RejectEvent = append(chatRelay.RejectEvent,
 		policies.PreventTimestampsInTheFuture(maxFutureSkew),
