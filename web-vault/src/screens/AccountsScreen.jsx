@@ -1,7 +1,8 @@
 // Accounts (iOS Settings › Accounts); the backup is Settings › Backup & Restore (components/BackupCard.jsx). Each account on this browser has its own relay
 // stores; one is active at a time, and switching reloads into the other. Accounts sign with an extension or a bunker,
 // or with a key made in this browser (kept locked with its password); only those draw Reveal Key (components/RevealKey.jsx).
-// There is no key import here (the iPhone has one).
+// There is no key import here (the iPhone has one). In box mode the box's first account also sees the accounts the box
+// holds (box/sections/AccountsSection.jsx).
 import { useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { loadAccounts, rememberAccount } from "../session.js"
@@ -11,6 +12,8 @@ import { Avatar } from "../components/Avatar.jsx"
 import { RevealKey } from "../components/RevealKey.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { SignInOptions, accountName, methodLabel } from "./SignInScreen.jsx"
+import { BOX } from "../box/mode.js"
+import { AccountsSection } from "../box/sections/AccountsSection.jsx"
 import "../styles/accounts.css"
 
 // "Tap" on a touch screen (as on the iPhone), "Click" with a mouse or trackpad.
@@ -51,6 +54,7 @@ export function AccountsScreen({ ctx }) {
             <button onClick={() => setAdding(false)}>Cancel</button>
           </section>
         : <button class="add-account-button" onClick={() => { setAdding(true); setNote("") }}>+ Add Account</button>}
+      {BOX && <AccountsSection ctx={ctx} />}
       <section class="card">
         <h3>Backup</h3>
         <p class="muted small">Your notes backup, the same .zip as the iPhone's, is in Settings › Backup &amp; Restore.</p>
