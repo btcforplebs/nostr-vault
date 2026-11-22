@@ -34,11 +34,14 @@ type Params struct {
 	// Stop after this many rounds whatever the change.
 	MaxRounds int
 	// People further than this many follow hops from the owner are left out.
+	// For the crawler this is the ceiling; the depth rule (depth.go) may
+	// stop the walk nearer, and a result's Params hold the ring it reached.
 	MaxHop int
 }
 
 // DefaultParams are the working weights from the 2026-11-20 measurement
-// (RESEARCH/NV_WOT_TRUST_RANK_2026_11_20.md), stopping at hop 3.
+// (RESEARCH/NV_WOT_TRUST_RANK_2026_11_20.md), out to hop 6 at most
+// (Logen 2026-11-22).
 func DefaultParams() Params {
 	return Params{
 		FollowConfidence:      0.03,
@@ -48,7 +51,7 @@ func DefaultParams() Params {
 		Rigor:                 0.5,
 		Epsilon:               1e-5,
 		MaxRounds:             100,
-		MaxHop:                3,
+		MaxHop:                CeilingHop,
 	}
 }
 

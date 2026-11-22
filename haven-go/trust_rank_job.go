@@ -6,7 +6,8 @@ package main
 // only (Logen 2026-11-21): havend on a box or Pi, the standalone relay, and
 // the Mac app while "Run in background" is on and its window is closed.
 // Phones never run it. It reads public follow and mute lists one at a time,
-// ranks each own account's network out to hop 3, and writes
+// ranks each own account's network as far out as the depth rule walks (hop
+// 6 at most, pkg/trustrank/depth.go), and writes
 // wot_rank_<account>.json next to the WoT cache. It signs nothing and
 // publishes nothing; the file never leaves this machine in this step.
 
@@ -171,7 +172,8 @@ func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
 			}
 			c := &trustrank.Crawler{
 				Store: store, Dir: dir, Owner: account, Fetch: fetch,
-				Params: trustrank.DefaultParams(), ParamsVersion: 1, Bar: trustRankBar,
+				Params: trustrank.DefaultParams(), ParamsVersion: 2, Bar: trustRankBar,
+				OuterBar:    trustrank.DefaultViewBar,
 				OwnerBlocks: func() []string { return ownerPublicMutes(account) },
 				Wait:        func(context.Context) bool { return mayRun() },
 				Pace:        trustRankPace,

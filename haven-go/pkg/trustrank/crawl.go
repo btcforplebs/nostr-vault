@@ -40,8 +40,12 @@ type Crawler struct {
 	// ParamsVersion goes in the checkpoint; a change drops the checkpoint's
 	// place and starts the pass again at hop 1 (lists are read again).
 	ParamsVersion int
-	// Bar (0-100): only people at or over it have their own list read.
+	// Bar (0-100, a rank score): in rings 1 and 2, only people at or over
+	// it have their own list read.
 	Bar float64
+	// OuterBar (0-100, the shown scale): the same for people past ring 2,
+	// and the bar the depth rule counts a ring's people against (depth.go).
+	OuterBar float64
 	// OwnerBlocks returns the owner's public and private mutes and blocks.
 	OwnerBlocks func() []string
 	// Wait blocks until the crawl may go on (window closed, no copy or
@@ -83,12 +87,16 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 	}
 	// Hop 1 reads the owner's own list; hop h reads the lists of the people
 	// at distance h-1 who pass the bar. Ranking out to MaxHop needs lists
-	// out to MaxHop-1.
+	// out to MaxHop-1. Past SureHop the depth rule (depth.go) says whether
+	// a hop is read at all; the first one it turns down ends the walk.
 	full := false
 	for ; st.Hop <= c.Params.MaxHop && !full; st.Hop, st.Next, st.Last = st.Hop+1, 0, "" {
-		readers, err := c.readers(st.Hop)
+		readers, walk, err := c.readers(st.Hop, st.Last != "")
 		if err != nil {
 			return nil, err
+		}
+		if !walk {
+			break
 		}
 		// The reader list is built again on resume, and lists read earlier
 		// in this hop can change it (a mute moves a score across the bar),
@@ -151,7 +159,9 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 		}
 		c.Store.Sync()
 	}
-	res, err := c.rank()
+	// st.Hop is one past the last hop read (or the hop turned down), so the
+	// furthest ring this pass found is st.Hop-1.
+	res, err := c.rankTo(st.Hop - 1)
 	if err != nil {
 		return nil, err
 	}
@@ -179,39 +189,31 @@ func (c *Crawler) now() time.Time {
 	return time.Now()
 }
 
-func (c *Crawler) rank() (*Result, error) {
-	g, err := c.Store.Graph()
-	if err != nil {
-		return nil, err
-	}
-	var blocks []string
-	if c.OwnerBlocks != nil {
-		blocks = c.OwnerBlocks()
-	}
-	return Rank(g, c.Owner, blocks, c.Params)
-}
-
 // readers is who has their list read at hop h, in a fixed order so the
-// checkpoint's place means the same thing after a restart.
-func (c *Crawler) readers(h int) ([]string, error) {
+// checkpoint's place means the same thing after a restart. walk is false
+// when the depth rule says hop h is not read (resumed: see Crawler.walks).
+func (c *Crawler) readers(h int, resumed bool) (out []string, walk bool, err error) {
 	if h == 1 {
-		return []string{c.Owner}, nil
+		return []string{c.Owner}, true, nil
 	}
 	if _, stored := c.Store.CreatedAt(c.Owner); !stored {
-		return nil, nil // no owner list: nobody to walk out to
+		return nil, true, nil // no owner list: nobody to walk out to
 	}
-	res, err := c.rank()
+	// Only the people in ring h-1 are looked at, so the rank stops there.
+	res, err := c.rankTo(h - 1)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	var out []string
+	if !c.walks(res, h, resumed) {
+		return nil, false, nil
+	}
 	for _, p := range res.People() {
-		if p.Hop == h-1 && res.Passes(p.Pubkey, c.Bar) {
+		if p.Hop == h-1 && c.reads(res, p) {
 			out = append(out, p.Pubkey)
 		}
 	}
 	sort.Strings(out)
-	return out, nil
+	return out, true, nil
 }
 
 // ResultFile is wot_rank_<account>.json: what the phones read. Never
