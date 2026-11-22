@@ -325,6 +325,31 @@ func TestAccountWebsSurviveAnEmptyFetch(t *testing.T) {
 	}
 }
 
+// An account added while the relay runs was in no build: the pooled web
+// holds only the other accounts' people, and must not let them through to it.
+func TestAccountAddedLiveGetsNobodyFromThePooledWeb(t *testing.T) {
+	main, added, a := newTestKey(t), newTestKey(t), newTestKey(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	path := filepath.Join(t.TempDir(), "wot_cache.json")
+	for _, withWebs := range []bool{true, false} {
+		wt := NewSimpleInMemory(nostr.NewSimplePool(ctx), owners(main), []string{seedRelay(t, main.followList(t, a))}, 2, 0, 5, path, 60)
+		wt.Refresh(ctx)
+		if !withWebs {
+			wt.webs.Store(nil) // a pooled graph only, as on the first start after the update
+		}
+		if !wt.Has(ctx, a.pk) || !wt.HasFor(ctx, main.pk, a.pk) {
+			t.Fatal("fixture: main follows a")
+		}
+		if wt.HasFor(ctx, added.pk, a.pk) {
+			t.Errorf("webs built %v: main's follow reached an account added since the build", withWebs)
+		}
+		if !wt.HasFor(ctx, added.pk, main.pk) {
+			t.Errorf("webs built %v: your own account must still reach the added one", withWebs)
+		}
+	}
+}
+
 // Before any web per account exists (first start after the update), HasFor
 // is the pooled answer, and the level-0 public relay lets everyone in.
 func TestHasForWithoutAccountWebs(t *testing.T) {

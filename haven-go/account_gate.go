@@ -11,8 +11,14 @@ import (
 
 // Every gate asks "may this person reach this account", never "is this
 // person in the vault's web": each account's web comes from its own follows
-// at its own Follow Distance (pkg/wot HasFor), and one account's follows get
-// nobody through to another.
+// at its own Follow Distance (pkg/wot HasFor).
+//
+// What that decides today: whether an event is kept at all (at least one
+// tagged account must let it in), and which accounts it is notified and
+// listed for (recipients). It does not yet decide what a read returns: an
+// event kept for account A that also tags B is stored once in the shared
+// inbox, and a `#p` read for B still returns it. The per-account filter on
+// inbox reads comes with the per-account blocks (scoped reads, step E3).
 
 // taggedAccounts is the vault's own accounts ev p-tags, in tag order, each
 // once.
