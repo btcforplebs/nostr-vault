@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Vault Dashboard › Keep it full, Mac only: the detail the Mac relay
 /// console's Import Progress and Media Import sections showed beyond the
-/// phone rows' bar and status line (DashboardView+ImportSections): the import
+/// phone rows' bar and status line (the old DashboardView+ImportSections, gone since A3): the import
 /// percentage, the media copy's live log, and Dismiss once the copy is done.
 /// Shown only while one of them has something to show.
 struct MacVaultImportProgress: View {

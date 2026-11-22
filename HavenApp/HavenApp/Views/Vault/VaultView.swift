@@ -628,15 +628,10 @@ struct VaultView: View {
         }
     }
 
-    /// The Vault tab's dashboard is the Vault Dashboard; the relay-only
-    /// layout (macOS keeps notes and media apart) is the relay dashboard.
-    @ViewBuilder
+    /// The Vault Dashboard, the one dashboard on every platform since the
+    /// Mac's relay console went (3.3.0 one Vault).
     var relayDashboardContent: some View {
-        if vaultTabHostsMedia {
-            VaultDashboardView()
-        } else {
-            DashboardView()
-        }
+        VaultDashboardView()
     }
 }
 
