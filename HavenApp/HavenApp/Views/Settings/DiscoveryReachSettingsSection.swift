@@ -42,7 +42,7 @@ struct DiscoveryReachSettingsSection: View {
             Text("Discovery Reach")
         } footer: {
             if let copy = store.copy {
-                Text("Underrated and Discovery also show people your desktop Vault ranked at this score or higher. Lower lets more in. Ranked \(Date(timeIntervalSince1970: TimeInterval(copy.builtAt)).formatted(.relative(presentation: .named))).")
+                Text("Underrated and Discover also show people your desktop Vault ranked at this score or higher. Lower lets more in. Ranked \(Date(timeIntervalSince1970: TimeInterval(copy.builtAt)).formatted(.relative(presentation: .named))).")
             }
         }
         .onAppear { store.refresh() }
