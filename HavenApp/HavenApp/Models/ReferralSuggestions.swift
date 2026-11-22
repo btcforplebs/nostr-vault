@@ -1,34 +1,105 @@
 import Foundation
 
-/// Setup's "Who told you about Nostr Vault?" step offers some of the people
-/// that person follows. This is how they are picked. Android's twin
+/// Setup's "Who told you about Nostr Vault?" step offers people around the
+/// person who told you. This is how they are picked. Android's twin
 /// (ReferralSuggestions.kt) still ranks by the overall count until its lane.
 ///
-/// Ranked by the referrer's **close circle**, not by fame (setup screens r3,
-/// Logen 2026-11-22): the close circle is the referrer's mutuals, their
-/// follows whose own list follows the referrer back. A follow comes first
-/// when more of that circle follow them too. Ties go to the one more of all
-/// the referrer's follows follow, then to the referrer's list order. With no
-/// mutual found, the close count is 0 for everyone and the overall count
-/// decides, as before.
+/// Ranked by **who the referrer interacts with most** (Logen 2026-11-22: the
+/// close-circle list still read as the most-followed accounts): replies,
+/// mentions, reposts, reactions and zaps, both ways, from their recent
+/// activity (`interactions`). Offered from the referrer's follows **and**
+/// followers. Ties go to the close circle (mutuals of the referrer, setup
+/// screens r3), then to how many of the referrer's follows follow them, then
+/// to people who follow each other with the referrer, then to list order.
 enum ReferralSuggestions {
-    /// How many people are offered with no topic picked.
-    static let limit = 10
-    /// How many are ranked and kept, so a topic chip still has people to show.
-    static let pool = 30
-    /// How many of the top ones start ticked.
-    static let preTicked = 7
+    /// How many are ranked and listed (a scrolling list), so a topic chip
+    /// still has people to show.
+    static let pool = 60
     /// How many of the referrer's follows have their own lists read to count
     /// with: the first ones in the referrer's list. A list can be tens of KB,
     /// so this is what keeps the step cheap on a phone's data.
     static let listsToRead = 150
+    /// How many of the referrer's followers are read (their kind 3 names the
+    /// referrer). Newest lists first; same data cost as `listsToRead`.
+    static let followersToRead = 150
+    /// How many of the referrer's recent events (and events tagging them) are
+    /// read to count interactions.
+    static let activityToRead = 500
     /// At most this many topic chips.
     static let topicLimit = 6
+
+    /// How a person is tied to the referrer by their follow lists.
+    enum Relation: Equatable {
+        /// The referrer follows them.
+        case follows
+        /// They follow the referrer.
+        case follower
+        /// Both.
+        case mutual
+    }
 
     struct Pick: Equatable {
         let pubkey: String
         /// How many of the referrer's close circle follow them.
         let close: Int
+        /// The weighted count of interactions with the referrer (`weight`).
+        var interactions: Int = 0
+        var relation: Relation = .follows
+    }
+
+    /// An event read to count interactions: its author, kind and tags.
+    typealias Activity = (author: String, kind: Int, tags: [[String]])
+
+    /// What one interaction is worth, by kind: a zap, a reply or mention, a
+    /// repost, a reaction. Each event counts once per person it tags.
+    static func weight(kind: Int) -> Int {
+        switch kind {
+        case 9735: return 4
+        case 1: return 3
+        case 6, 16: return 2
+        case 7: return 1
+        default: return 0
+        }
+    }
+
+    /// Who the referrer interacts with, both ways, weighted (`weight`):
+    /// - the referrer's own notes, reposts and reactions: everyone they tag;
+    /// - others' notes, reposts and reactions that tag the referrer: their author;
+    /// - zap receipts: the other side, when the referrer sent (`P`, or the
+    ///   zap request's pubkey) or got (`p`) the zap.
+    static func interactions(referrer: String, activity: [Activity]) -> [String: Int] {
+        let referrer = referrer.lowercased()
+        var score: [String: Int] = [:]
+        func add(_ key: String, _ w: Int) {
+            let key = key.lowercased()
+            guard key != referrer, key.count == 64, key.allSatisfy(\.isHexDigit) else { return }
+            score[key, default: 0] += w
+        }
+        for event in activity {
+            let w = weight(kind: event.kind)
+            guard w > 0 else { continue }
+            let tagged = Set(event.tags.compactMap { $0.count >= 2 && $0[0] == "p" ? $0[1].lowercased() : nil })
+            if event.kind == 9735 {
+                guard let sender = zapSender(event.tags)?.lowercased() else { continue }
+                if sender == referrer { tagged.forEach { add($0, w) } }
+                else if tagged.contains(referrer) { add(sender, w) }
+            } else if event.author.lowercased() == referrer {
+                tagged.forEach { add($0, w) }
+            } else if tagged.contains(referrer) {
+                add(event.author, w)
+            }
+        }
+        return score
+    }
+
+    /// The zap's sender: the receipt's `P` tag, else the pubkey of the zap
+    /// request in its `description`.
+    static func zapSender(_ tags: [[String]]) -> String? {
+        if let p = tags.first(where: { $0.count >= 2 && $0[0] == "P" })?[1] { return p }
+        guard let json = tags.first(where: { $0.count >= 2 && $0[0] == "description" })?[1],
+              let data = json.data(using: .utf8),
+              let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return request["pubkey"] as? String
     }
 
     /// The p-tagged pubkeys of a kind 3, lowercased, each once, in order.
@@ -49,14 +120,23 @@ enum ReferralSuggestions {
         return Set(referrerFollows.filter { lists[$0]?.contains(referrer) == true })
     }
 
-    /// Up to `pool` of `referrerFollows`, closest to the referrer first.
+    /// Up to `pool` of the referrer's follows and followers, the ones they
+    /// interact with most first.
     /// - lists: the follow lists read, by author (only lists by the referrer's
     ///   own follows count; anyone else's are ignored).
+    /// - followers: people whose follow list names the referrer.
+    /// - interactions: `interactions(referrer:activity:)`.
     /// - exclude: never offered (you, the referrer, people you already follow).
-    static func rank(referrer: String, referrerFollows: [String], lists: [String: [String]],
+    static func rank(referrer: String, referrerFollows: [String], followers: [String] = [],
+                     interactions: [String: Int] = [:], lists: [String: [String]],
                      exclude: Set<String>, limit: Int = pool) -> [Pick] {
-        let candidates = referrerFollows.filter { !exclude.contains($0) }
+        let referrer = referrer.lowercased()
         let following = Set(referrerFollows)
+        let followedBy = Set(followers)
+        var seen = Set<String>()
+        let candidates = (referrerFollows + followers).filter {
+            $0 != referrer && !exclude.contains($0) && seen.insert($0).inserted
+        }
         let close = closeCircle(referrer: referrer, referrerFollows: referrerFollows, lists: lists)
         var all: [String: Int] = [:], near: [String: Int] = [:]
         for (author, follows) in lists where following.contains(author) {
@@ -66,16 +146,28 @@ enum ReferralSuggestions {
                 if isClose { near[key, default: 0] += 1 }
             }
         }
-        let order = Dictionary(referrerFollows.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        let order = Dictionary(candidates.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        // Mutual: the referrer follows them, and they follow the referrer by
+        // the followers read or by their own list read for the close circle.
+        func both(_ key: String) -> Bool {
+            following.contains(key) && (followedBy.contains(key) || close.contains(key))
+        }
         return candidates
             .sorted { a, b in
+                let ia = interactions[a, default: 0], ib = interactions[b, default: 0]
+                if ia != ib { return ia > ib }
                 let na = near[a, default: 0], nb = near[b, default: 0]
                 if na != nb { return na > nb }
                 let ca = all[a, default: 0], cb = all[b, default: 0]
-                return ca != cb ? ca > cb : order[a, default: .max] < order[b, default: .max]
+                if ca != cb { return ca > cb }
+                if both(a) != both(b) { return both(a) }
+                return order[a, default: .max] < order[b, default: .max]
             }
             .prefix(limit)
-            .map { Pick(pubkey: $0, close: near[$0, default: 0]) }
+            .map { key in
+                Pick(pubkey: key, close: near[key, default: 0], interactions: interactions[key, default: 0],
+                     relation: both(key) ? .mutual : (following.contains(key) ? .follows : .follower))
+            }
     }
 
     /// Topic chips for the people offered: the hashtags (`t` tags) the most

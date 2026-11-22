@@ -60,11 +60,39 @@ final class ReferralSuggestionsTests: XCTestCase {
     }
 
     func testExcludedNeverOfferedAndCappedAtThePool() {
-        let follows = (1...50).map(k)
+        let follows = (1...80).map(k)
         let ranked = ReferralSuggestions.rank(referrer: k(99), referrerFollows: follows, lists: [:], exclude: [k(1), k(3)])
         XCTAssertEqual(ranked.count, ReferralSuggestions.pool)
         XCTAssertEqual(ranked.first?.pubkey, k(2))
         XCTAssertFalse(keys(ranked).contains(k(1)) || keys(ranked).contains(k(3)))
+    }
+
+    func testInteractionsBothWaysWeightedAndZapsBySender() {
+        let me = k(50)
+        let zapRequest = "{\"pubkey\":\"\(me)\",\"kind\":9734}"
+        let activity: [ReferralSuggestions.Activity] = [
+            (me, 1, [["p", k(1)], ["p", k(1)], ["p", k(2)]]),   // my reply: k1 +3 once, k2 +3
+            (me, 7, [["p", k(1)]]),                             // my reaction: k1 +1
+            (k(3), 1, [["p", me]]),                             // k3 replies to me: +3
+            (k(4), 7, [["p", k(9)]]),                           // not about me: ignored
+            (k(77), 9735, [["p", k(5)], ["description", zapRequest]]), // I zapped k5: +4
+            (k(77), 9735, [["p", me], ["P", k(6)]]),            // k6 zapped me: +4
+            (me, 3, [["p", k(8)]]),                             // a follow list is not an interaction
+        ]
+        let score = ReferralSuggestions.interactions(referrer: me, activity: activity)
+        XCTAssertEqual(score, [k(1): 4, k(2): 3, k(3): 3, k(5): 4, k(6): 4])
+    }
+
+    func testInteractionsOutrankFameAndFollowersAreOffered() {
+        let me = k(50)
+        let follows = [k(1), k(2), k(3)]
+        let lists = [k(1): [k(2)], k(3): [k(2)]]          // k2 is the "famous" one
+        let ranked = ReferralSuggestions.rank(referrer: me, referrerFollows: follows,
+                                              followers: [k(3), k(4), me], interactions: [k(4): 3, k(1): 1],
+                                              lists: lists, exclude: [])
+        XCTAssertEqual(keys(ranked), [k(4), k(1), k(2), k(3)])
+        XCTAssertEqual(ranked.map(\.relation), [.follower, .follows, .follows, .mutual])
+        XCTAssertEqual(ranked.first?.interactions, 3)
     }
 
     func testBatchFollowAddsOnlyNewPeopleInOneEdit() {
