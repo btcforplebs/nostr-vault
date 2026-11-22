@@ -30,6 +30,12 @@
 //	NV_MESH_STATUS_FILE mesh status JSON, default $NV_DATA_DIR/mesh/status.json
 //	NV_MESH_DEVICES     owner's devices for nv-mesh, default $NV_DATA_DIR/mesh-devices.json
 //	NV_MESH_DOOR_PORT   the engine's loopback mesh door, default NV_PORT+1
+//	NV_MESH_RUN_DIR     nv-mesh's runtime dir, default /run/nv-mesh: its
+//	                    dial.sock lets the box catch up from the owner's
+//	                    other vaults (box/sync.go)
+//	NV_BOX_RUN_DIR      havend's runtime dir, default /run/nv-vault (root
+//	                    makes it): the engine's control socket; without it,
+//	                    box/run under the data dir
 //	NV_DIRECTORY_RELAYS comma list, where to look for the owner's 10063
 //	NV_BACKUP_PROVIDER  "s3" to turn on backups, with NV_S3_* settings
 //
@@ -42,6 +48,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -60,6 +67,7 @@ var version = ""
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
+	log.SetOutput(io.MultiWriter(os.Stderr, box.BoxLog.Writer("box"))) // the box's log (GET /api/box/logs)
 	if err := run(os.Args[1:]); err != nil {
 		log.Fatalf("havend: %v", err)
 	}
@@ -125,10 +133,17 @@ func run(args []string) error {
 	if _, err := engineDevices.Sync(); err != nil {
 		log.Printf("box: engine devices: %v", err)
 	}
+	// The engine's control socket: havend starts first copies and
+	// catch-ups through it (box/sync.go, haven-go copyv2_box.go).
+	if err := box.PrepareControlDir(&cfg); err != nil {
+		return fmt.Errorf("engine control dir: %w", err)
+	}
 	engine := &box.Engine{
 		Bin: cfg.EngineBin,
 		Env: func(dir string) []string {
-			return append(box.EngineEnvList(cfg, dir, os.Getenv), "HAVEN_MESH_DEVICES_FILE="+engineDevices.To)
+			return append(box.EngineEnvList(cfg, dir, os.Getenv),
+				"HAVEN_MESH_DEVICES_FILE="+engineDevices.To,
+				"HAVEN_BOX_CONTROL_SOCK="+cfg.EngineControlSocket())
 		},
 		Prepare: func(dir string) error { return box.WriteEngineFiles(cfg, dir) },
 	}
@@ -178,6 +193,13 @@ func run(args []string) error {
 		Updater:   &box.Updater{Hook: cfg.UpdateHook, BoxDir: cfg.BoxDir(), Store: cfg.UpdateVia},
 		Accounts:  accounts,
 		JoinCodes: box.NewJoinCodes(),
+		// The box catches up from the owner's other vaults through nv-mesh,
+		// every 15 minutes and on Sync now; a first copy when asked.
+		Sync: &box.Syncer{
+			Devices: engineDevices.Paired,
+			Dial:    box.MeshDial{Socket: filepath.Join(cfg.MeshRunDir, "dial.sock")},
+			Engine:  box.EngineCopy{Socket: cfg.EngineControlSocket()},
+		},
 	}
 	// The owner's 10063 decides which devices nv-mesh lets in: read it now
 	// and every 30 s, so an approval or a removal reaches the mesh by itself.
@@ -198,6 +220,7 @@ func run(args []string) error {
 		}()
 	}
 	go engineDevices.Run(ctx, 5*time.Second)
+	go api.Sync.Run(ctx)
 	go accountsWatch.Run(ctx, 5*time.Second)
 
 	front := &box.Front{API: api, Engine: box.EngineProxy(cfg.EnginePort)}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"os"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -104,8 +103,8 @@ func (e *Engine) spawn(gen int) error {
 	cmd := exec.Command(e.Bin)
 	cmd.Dir = e.vaultDir
 	cmd.Env = e.Env(e.vaultDir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// Still to havend's own output, and into the box's log (routes_logs.go).
+	cmd.Stdout, cmd.Stderr = engineOutputs()
 	if err := cmd.Start(); err != nil {
 		return err
 	}

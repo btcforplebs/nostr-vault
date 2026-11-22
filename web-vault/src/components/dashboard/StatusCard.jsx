@@ -1,6 +1,8 @@
 // The dashboard's status card (VaultDashboardView statusCard). In a browser the vault runs while the page does, so
 // it is running (or still building who can reach you) whenever this card shows; its "…" menu has Restart, which
 // reloads the page. No address (the browser's relay has no socket) and no Start or Stop: closing the tab stops it.
+// In box mode (`box`) the card is the box's: running while it answers, its uptime, version and open connections,
+// and no Restart until the box has a restart route (E5); reloading this page would not restart the box.
 import { useEffect, useRef, useState } from "preact/hooks"
 
 /** Why there is no Start or Stop here (parity #30), on the card itself. */
@@ -13,7 +15,34 @@ export function uptimeLine(start, now = Date.now()) {
   return `Up ${d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`}`
 }
 
-export function StatusCard({ syncing = false, start = performance.timeOrigin, reload = () => location.reload() }) {
+/** "Up 3d 4h · version 1.0.0 · 2 connections" from the box's status and connections answers ({ value } | { error }). */
+export function boxStatusLine(status, connections) {
+  const s = status?.value, open = connections?.value?.open
+  return [Number.isFinite(s?.uptime) ? uptimeLine(0, s.uptime * 1000) : null, s?.version ? `version ${s.version}` : null,
+    Number.isFinite(open) ? `${open} ${open === 1 ? "connection" : "connections"}` : null].filter(Boolean).join(" · ")
+}
+
+/** The box's card: `box` = { status, connections }, each { value } | { error } | undefined (still asking). */
+function BoxStatusCard({ box }) {
+  const { status, connections } = box
+  const answering = !!status?.value, failed = !!status?.error
+  return (
+    <div class="dash-status">
+      <span class={`dash-dot ${answering ? "running" : failed ? "stopped" : ""}`} aria-hidden="true"><i /></span>
+      <span class="dash-text">
+        <span class="dash-status-title">{answering ? "Your box is running" : failed ? "Your box isn't answering" : "Asking your box…"}</span>
+        {answering && <span class="dash-sub">{boxStatusLine(status, connections)}</span>}
+        {failed && <span class="dash-sub">{status.error}</span>}
+      </span>
+    </div>
+  )
+}
+
+export function StatusCard({ box, ...props }) {
+  return box ? <BoxStatusCard box={box} /> : <BrowserStatusCard {...props} />
+}
+
+function BrowserStatusCard({ syncing = false, start = performance.timeOrigin, reload = () => location.reload() }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t) }, [])
   const [menu, setMenu] = useState(false)

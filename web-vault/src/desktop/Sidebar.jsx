@@ -4,6 +4,7 @@
 // by default, each an icon with its name under it (BottomTabBar's vertical sidebar), plus whatever the user pinned
 // and in the user's order (rail/rail-favs.js, edited in rail/RailEdit.jsx, synced with Your space's layout). At the
 // foot Settings, Learn, Docs and the vault's status dot. desktop.css lays it out.
+import { BOX } from "../box/mode.js"
 import { useEffect, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
@@ -161,16 +162,17 @@ function RelayFoot({ rail }) {
     addEventListener("online", net); addEventListener("offline", net)
     return () => { removeEventListener("online", net); removeEventListener("offline", net) }
   }, [])
-  const state = online ? "Running" : "Running · offline"
+  // On a box the vault is the box: the page reloading doesn't restart it, so there is no Restart here (One Vault W1).
+  const state = BOX ? (online ? "Your box" : "Your box · offline") : online ? "Running" : "Running · offline"
   return (
     <div class="side-foot">
       <a class="side-relay" href="#/relay" title={rail ? `Vault: ${state}` : "Vault Dashboard"} aria-label={`Vault ${state}`}>
         <span class={online ? "dot on" : "dot booting"} />
         <span class="side-label">{state}</span>
       </a>
-      <div class="side-label side-relay-row">
+      {!BOX && <div class="side-label side-relay-row">
         <button type="button" class="small side-restart" title="Reload the page, which restarts your vault" onClick={() => location.reload()}>Restart</button>
-      </div>
+      </div>}
     </div>
   )
 }

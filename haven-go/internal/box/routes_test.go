@@ -13,19 +13,36 @@ func TestRoutesRegistered(t *testing.T) {
 	want := []string{
 		"GET /api/box/accounts",
 		"GET /api/box/accounts/me",
+		"GET /api/box/backups",
+		"GET /api/box/blocklist",
+		"GET /api/box/connections",
+		"GET /api/box/contents",
 		"GET /api/box/devices",
+		"GET /api/box/imports",
+		"GET /api/box/logs",
 		"GET /api/box/media/auto-mirror",
 		"GET /api/box/media/copy",
 		"GET /api/box/status",
 		"GET /api/box/storage",
+		"GET /api/box/sync",
+		"GET /api/box/trust",
 		"POST /api/box/accounts/add",
 		"POST /api/box/accounts/code",
 		"POST /api/box/accounts/join",
 		"POST /api/box/accounts/remove",
+		"POST /api/box/backups/now",
+		"POST /api/box/backups/restore",
+		"POST /api/box/blocklist",
+		"POST /api/box/imports/cancel",
+		"POST /api/box/imports/run",
 		"POST /api/box/media/auto-mirror/run",
 		"POST /api/box/media/copy",
 		"POST /api/box/media/copy/check",
 		"POST /api/box/move",
+		"POST /api/box/restart",
+		"POST /api/box/sync/first",
+		"POST /api/box/sync/now",
+		"POST /api/box/trust/refresh",
 		"POST /api/box/update",
 		"PUT /api/box/media/auto-mirror",
 	}
@@ -40,12 +57,18 @@ func TestRoutesRegistered(t *testing.T) {
 }
 
 // Every route is first-account only except the two that let an account
-// ask whether the box holds it and join with a code (E9), and the media
-// routes any signed-in account uses for its own files (E6). Opening any other
-// route to more callers must be a deliberate edit here.
+// ask whether the box holds it and join with a code (E9), the read routes
+// any signed-in account may use (E4), the sync routes (E3: any signed-in
+// account may see a round runs and ask for one now; a first copy stays the
+// first account's, Tron #2385 M1), and the media routes any signed-in
+// account uses for its own files (E6). Opening any other route to more
+// callers must be a deliberate edit here.
 func TestRouteLevels(t *testing.T) {
 	anyone := map[string]bool{"GET /api/box/accounts/me": true, "POST /api/box/accounts/join": true}
-	signedIn := map[string]bool{
+	signedIn := map[string]bool{"GET /api/box/contents": true, "GET /api/box/connections": true,
+		"GET /api/box/sync": true, "POST /api/box/sync/now": true,
+		"GET /api/box/imports": true, "POST /api/box/imports/run": true, "POST /api/box/imports/cancel": true,
+		"GET /api/box/trust": true, "POST /api/box/trust/refresh": true, "GET /api/box/blocklist": true,
 		"GET /api/box/media/auto-mirror": true, "POST /api/box/media/auto-mirror/run": true,
 		"POST /api/box/media/copy/check": true, "POST /api/box/media/copy": true, "GET /api/box/media/copy": true,
 	}
@@ -53,8 +76,7 @@ func TestRouteLevels(t *testing.T) {
 		want := FirstAccount
 		if anyone[path] {
 			want = Anyone
-		}
-		if signedIn[path] {
+		} else if signedIn[path] {
 			want = SignedIn
 		}
 		if rt.level != want {

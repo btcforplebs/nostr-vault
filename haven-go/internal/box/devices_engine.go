@@ -72,6 +72,22 @@ func (e *EngineDevices) Build() (engineDevicesInput, error) {
 	return in, nil
 }
 
+// Paired is the paired devices' npubs, the same set nv-mesh dials
+// (Syncer.Devices).
+func (e *EngineDevices) Paired() ([]string, error) {
+	in, err := e.Build()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(in.Devices))
+	for _, d := range in.Devices {
+		if _, npub, err := ParseOwner(d.Npub); err == nil {
+			out = append(out, npub)
+		}
+	}
+	return out, nil
+}
+
 // Sync writes the engine's file when the set changed. On an error (an
 // unreadable mesh-devices.json) the engine's file is left as it was.
 func (e *EngineDevices) Sync() (changed bool, err error) {
