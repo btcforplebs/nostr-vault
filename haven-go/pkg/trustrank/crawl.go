@@ -39,7 +39,8 @@ type Fetcher interface {
 }
 
 // refreshFloor: a refresh's REQs ask for nothing older than a day before
-// the last finished pass. Asking each person since their own stored list
+// the last finished pass started (State.DoneStart: a pass paused for days
+// still read its first people at its start). Asking each person since their own stored list
 // (often years old) would read nearly every list again; anything newer than
 // the stored list but older than the floor was there at the last pass, so
 // it was read then. Missed only: a list backdated by over a day, or a person
@@ -96,10 +97,17 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 		// New weights, no checkpoint, or a checkpoint of the other kind of
 		// pass: start this pass at hop 1.
 		st = State{Account: c.Owner, ParamsVersion: c.ParamsVersion, Hop: 1, Refresh: refresh,
-			FullAt: st.FullAt, RefreshAt: st.RefreshAt}
+			FullAt: st.FullAt, RefreshAt: st.RefreshAt, DoneStart: st.DoneStart}
+	}
+	if st.PassStart == 0 {
+		st.PassStart = c.now().Unix()
 	}
 	var floor int64
-	if last := max(st.FullAt, st.RefreshAt); refresh && last > 0 {
+	last := st.DoneStart
+	if last == 0 {
+		last = max(st.FullAt, st.RefreshAt) // a checkpoint from before DoneStart
+	}
+	if refresh && last > 0 {
 		floor = max(1, last-int64(refreshFloor/time.Second))
 	}
 	// pause keeps the place: lists on disk first, then the checkpoint.
@@ -203,10 +211,11 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 	switch {
 	case full:
 	case refresh:
-		st.RefreshAt = c.now().Unix()
+		st.RefreshAt, st.DoneStart = c.now().Unix(), st.PassStart
 	default:
-		st.FullAt = c.now().Unix()
+		st.FullAt, st.DoneStart = c.now().Unix(), st.PassStart
 	}
+	st.PassStart = 0
 	c.Store.Compact()
 	return res, c.Store.Checkpoint(c.Dir, st)
 }

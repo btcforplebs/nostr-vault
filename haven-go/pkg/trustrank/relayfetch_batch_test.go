@@ -225,3 +225,64 @@ func TestRelayFetchChargesTheBudget(t *testing.T) {
 		t.Fatalf("a ~700 B list at 400 B/s must hold the next ask back, took %s", d)
 	}
 }
+
+// A relay that keeps sending, each event well inside the timeout but the
+// whole answer past it, is still an answer (the timeout counts from the
+// last event). One that goes quiet times out, is benched and halves the
+// next batch.
+func TestRelayFetchIdleTimeoutAndShrink(t *testing.T) {
+	ps := people(4)
+	var evs []nostr.Event
+	for i, p := range ps {
+		evs = append(evs, signedList(t, p.sk, 3, int64(1000+i), pk(1)))
+	}
+	slow := func(gap time.Duration, stopAfter int) string {
+		rl := khatru.NewRelay()
+		rl.QueryEvents = append(rl.QueryEvents, func(ctx context.Context, f nostr.Filter) (chan *nostr.Event, error) {
+			ch := make(chan *nostr.Event)
+			go func() {
+				defer close(ch)
+				sent := 0
+				for i := range evs {
+					if !f.Matches(&evs[i]) {
+						continue
+					}
+					if sent == stopAfter {
+						<-ctx.Done() // goes quiet, no EOSE
+						return
+					}
+					select {
+					case <-time.After(gap):
+					case <-ctx.Done():
+						return
+					}
+					ch <- &evs[i]
+					sent++
+				}
+			}()
+			return ch, nil
+		})
+		srv := httptest.NewServer(rl)
+		t.Cleanup(srv.Close)
+		return "ws" + strings.TrimPrefix(srv.URL, "http")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	// 4 events 250 ms apart: 1 s in all, timeout 400 ms.
+	f := &RelayFetcher{Pool: nostr.NewSimplePool(ctx), Relays: []string{slow(250*time.Millisecond, -1)}, Timeout: 400 * time.Millisecond}
+	got, err := f.Fetch(ctx, asksFor(ps), 0)
+	if err != nil || len(got) != len(ps) {
+		t.Fatalf("a relay still sending must not time out: %d lists, %v", len(got), err)
+	}
+
+	// Sends one, then nothing.
+	g := &RelayFetcher{Pool: nostr.NewSimplePool(ctx), Relays: []string{slow(0, 1)}, Timeout: 400 * time.Millisecond}
+	before := g.Batch(false)
+	if _, err := g.Fetch(ctx, asksFor(ps), 0); err != ErrNoRelay {
+		t.Fatalf("a quiet relay must time out: %v", err)
+	}
+	if after := g.Batch(false); after != before/2 {
+		t.Fatalf("batch after a timeout: %d, want %d", after, before/2)
+	}
+}

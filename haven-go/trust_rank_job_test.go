@@ -128,3 +128,11 @@ func TestTrustRankRelaysSkipsHosts(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+// A list of only skipped relays is used as it is, so the rank still builds.
+func TestTrustRankRelaysOnlySkippedKeepsList(t *testing.T) {
+	in := []string{"wss://relay.damus.io", "wss://nos.lol"}
+	if got := trustRankRelays(in); !slices.Equal(got, in) {
+		t.Fatalf("got %v", got)
+	}
+}

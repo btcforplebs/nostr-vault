@@ -131,7 +131,9 @@ func ownerPublicMutes(account string) []string {
 // cost a dial timeout every bench period.
 var trustRankSkippedHosts = []string{"relay.damus.io", "nos.lol", "nostr.mom"}
 
-// trustRankRelays: the relays the crawl asks, in order.
+// trustRankRelays: the relays the crawl asks, in order. When every relay in
+// the list is a skipped one, the list is used as it is: a slow crawl beats
+// no rank at all.
 func trustRankRelays(relays []string) []string {
 	out := make([]string, 0, len(relays))
 	for _, r := range relays {
@@ -140,6 +142,10 @@ func trustRankRelays(relays []string) []string {
 			continue
 		}
 		out = append(out, r)
+	}
+	if len(out) == 0 && len(relays) > 0 {
+		log.Printf("trust rank: only skipped relays in the list (%v), asking them anyway", relays)
+		return relays
 	}
 	return out
 }

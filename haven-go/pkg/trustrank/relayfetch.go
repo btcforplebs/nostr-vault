@@ -107,8 +107,12 @@ func (f *RelayFetcher) Fetch(ctx context.Context, asks []Ask, floor int64) (map[
 			return nil, err
 		}
 		start := time.Now()
-		got, eosed := f.askOne(ctx, url, filters, since, best)
+		got, eosed, timedOut := f.askOne(ctx, url, filters, since, best)
 		f.spend(url, start, got)
+		if timedOut {
+			// Maybe the batch was too big for this link: halve the next one.
+			f.shrink(floor > 0)
+		}
 		if eosed {
 			if !answered {
 				bytes, sized = got, true
@@ -189,31 +193,45 @@ func batchFilters(asks []Ask, best map[string]*[2]*nostr.Event, floor int64, mut
 	return out, asksMutes
 }
 
+// maxAskFor caps one relay's whole answer, however steadily it trickles in:
+// this many idle timeouts.
+const maxAskFor = 8
+
 // askOne sends filters to url and keeps each asked person's newest list per
 // kind in best. bytes is about what the relay sent; eosed is whether it
 // answered (only an EOSE is an answer: a CLOSED, rate-limited or
-// auth-required, or a dropped socket ends the ask unanswered).
-func (f *RelayFetcher) askOne(ctx context.Context, url string, filters nostr.Filters, since map[string]int64, best map[string]*[2]*nostr.Event) (bytes int64, eosed bool) {
-	rctx, cancel := context.WithTimeout(ctx, f.timeout())
+// auth-required, or a dropped socket ends the ask unanswered). timedOut: it
+// went quiet for the timeout (or ran past maxAskFor of them).
+//
+// The timeout counts from the last event, not from the REQ: a batch is
+// sized to about 1 MB, which a slow link can take longer than the timeout
+// to carry while the relay is still sending.
+func (f *RelayFetcher) askOne(ctx context.Context, url string, filters nostr.Filters, since map[string]int64, best map[string]*[2]*nostr.Event) (bytes int64, eosed, timedOut bool) {
+	idle := f.timeout()
+	rctx, cancel := context.WithTimeout(ctx, maxAskFor*idle)
 	defer cancel() // ends the sub; its pending sends give up on its context
+	quiet := time.AfterFunc(idle, cancel)
+	defer quiet.Stop()
 	sub, ok := f.ask(rctx, url, filters)
 	if !ok {
 		// Could not connect or send the REQ in time (or at all): this relay
 		// said nothing, which is not the same as "no list".
 		if ctx.Err() == nil && rctx.Err() != nil {
 			f.bench(url, time.Now())
+			return 0, false, true
 		}
-		return 0, false
+		return 0, false, false
 	}
 	for {
 		select {
 		case ev, open := <-sub.Events:
 			if !open {
-				return bytes, false // the sub ended without an EOSE
+				return bytes, false, false // the sub ended without an EOSE
 			}
 			if ev == nil {
 				continue
 			}
+			quiet.Reset(idle)
 			bytes += eventBytes(ev)
 			s, asked := since[ev.PubKey]
 			if !asked || (s > 0 && int64(ev.CreatedAt) < s) {
@@ -239,15 +257,16 @@ func (f *RelayFetcher) askOne(ctx context.Context, url string, filters nostr.Fil
 			b[i] = ev
 		case <-sub.EndOfStoredEvents:
 			// Sent only after every stored event was handed over.
-			return bytes, true
+			return bytes, true, false
 		case <-sub.ClosedReason:
-			return bytes, false
+			return bytes, false, false
 		case <-rctx.Done():
 			// Out of time: skip this relay for a while.
 			if ctx.Err() == nil {
 				f.bench(url, time.Now())
+				return bytes, false, true
 			}
-			return bytes, false
+			return bytes, false, false
 		}
 	}
 }

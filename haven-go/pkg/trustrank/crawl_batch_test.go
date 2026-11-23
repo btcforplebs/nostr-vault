@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 // In batches: a pause between batches resumes after the last batch read;
@@ -62,7 +63,7 @@ func TestCrawlRefreshFloor(t *testing.T) {
 			t.Fatalf("full pass floor %v", n.floors)
 		}
 	}
-	full := LoadState(c.Dir, pk(0)).FullAt
+	full := LoadState(c.Dir, pk(0)).DoneStart
 	n.floors = nil
 	if _, err := c.RunPass(context.Background(), true); err != nil {
 		t.Fatal(err)
@@ -84,7 +85,7 @@ func TestCrawlParamsVersionChangeRestartsBatchedPass(t *testing.T) {
 	if _, err := c.RunPass(context.Background(), false); err != nil {
 		t.Fatal(err)
 	}
-	full := LoadState(dir, pk(0)).FullAt
+	full, start := LoadState(dir, pk(0)).FullAt, LoadState(dir, pk(0)).DoneStart
 	allowed := 2
 	c.Wait = func(context.Context) bool { allowed--; return allowed >= 0 }
 	if _, err := c.RunPass(context.Background(), true); err != ErrStopped {
@@ -103,7 +104,44 @@ func TestCrawlParamsVersionChangeRestartsBatchedPass(t *testing.T) {
 		t.Fatalf("new weights must start at hop 1: %v", n.calls)
 	}
 	st := LoadState(dir, pk(0))
-	if st.ParamsVersion != 2 || st.FullAt != full || n.floors[0] != full-86400 {
+	if st.ParamsVersion != 2 || st.FullAt != full || n.floors[0] != start-86400 {
 		t.Fatalf("state %+v floors %v", st, n.floors)
+	}
+}
+
+// A full pass that pauses for days: the next refresh's floor is a day before
+// the pass started, not before it finished, so someone read on day 0 who
+// changes their list on day 1 is still asked for it.
+func TestCrawlRefreshFloorFromPassStart(t *testing.T) {
+	n := net()
+	n.batch = 3
+	dir := t.TempDir()
+	c := crawler(t, n, dir)
+	day0 := time.Unix(1_800_000_000, 0)
+	now := day0
+	c.Now = func() time.Time { return now }
+	allowed := 2 // owner, then the first 3 friends on day 0
+	c.Wait = func(context.Context) bool { allowed--; return allowed >= 0 }
+	if _, err := c.RunPass(context.Background(), false); err != ErrStopped {
+		t.Fatalf("want ErrStopped, got %v", err)
+	}
+	if st := LoadState(dir, pk(0)); st.PassStart != day0.Unix() {
+		t.Fatalf("pass start not kept in the checkpoint: %+v", st)
+	}
+	now = day0.Add(3 * 24 * time.Hour)
+	c.Wait = func(context.Context) bool { return true }
+	if _, err := c.RunPass(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	st := LoadState(dir, pk(0))
+	if st.DoneStart != day0.Unix() || st.FullAt != now.Unix() || st.PassStart != 0 {
+		t.Fatalf("state %+v", st)
+	}
+	n.floors = nil
+	if _, err := c.RunPass(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if want := day0.Unix() - 86400; len(n.floors) == 0 || n.floors[0] != want {
+		t.Fatalf("refresh floor %v, want %d (a day before the pass started)", n.floors, want)
 	}
 }

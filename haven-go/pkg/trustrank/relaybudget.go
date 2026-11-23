@@ -100,6 +100,19 @@ func (f *RelayFetcher) learn(refresh bool, bytes int64, asked int) {
 	f.perList[m] = 0.7*f.perList[m] + 0.3*per
 }
 
+// shrink halves the next Batch: a relay that timed out may have been asked
+// for more than the link carries in time. A later answer's learn grows it
+// back toward what replies really cost.
+func (f *RelayFetcher) shrink(refresh bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m := mode(refresh)
+	if f.perList[m] <= 0 {
+		f.perList[m] = firstPerList[m]
+	}
+	f.perList[m] = min(2*f.perList[m], float64(f.budget()))
+}
+
 func mode(refresh bool) int {
 	if refresh {
 		return 1
