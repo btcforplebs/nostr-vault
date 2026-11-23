@@ -25,7 +25,10 @@ import kotlinx.serialization.json.*
         val shown = LocalDvmFeeds.shownCount(all.size, dvmRevealed, LocalDvmFeeds.pageSize(_feedMode.value))
         _filteredNotes.value = if (shown < all.size) all.take(shown) else all
 
-        _filteredMediaNotes.value = feedFilterEngine.filterMediaNotes(
+        // Following media for nobody shows nothing. The note list outlives a
+        // scope switch, so Global's media would otherwise stay on the grid.
+        val followingNobody = _mediaFeedMode.value == MediaFeedMode.FOLLOWING && _followedPubkeys.value.isEmpty()
+        _filteredMediaNotes.value = if (followingNobody) emptyList() else feedFilterEngine.filterMediaNotes(
             notes = _notes.value,
             blocked = blockedPubkeys,
             wotPubkeys = myWeb(),
