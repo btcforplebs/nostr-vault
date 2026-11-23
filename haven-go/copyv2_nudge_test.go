@@ -37,7 +37,6 @@ func nudgeAs(s *copyServer, auth string) int {
 	return rec.Code
 }
 
-
 // The first copy's done line must parse like every other COPY line: the
 // apps refused one with an empty part and source, so a phone never knew
 // its first copy finished and never caught up (LogePhone, 2026-11-23).
