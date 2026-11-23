@@ -7,6 +7,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.DiscoveryReach
+import com.nostrvault.data.model.DistantPostAuthors
 import com.nostrvault.data.model.TrustRankCopy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,10 @@ class DiscoveryReachStore @Inject constructor(
 
     /** Empty with no copy. Read by the feed filter on any thread. */
     @Volatile var admitted: DiscoveryReach.Admitted = DiscoveryReach.Admitted.NONE
+        private set
+
+    /** The admitted distant people Discover asks the local feed store for ([DistantPostAuthors]), empty with no copy. */
+    @Volatile var localDistantAuthors: List<String> = emptyList()
         private set
 
     private var load: Job? = null
@@ -94,6 +99,7 @@ class DiscoveryReachStore @Inject constructor(
         val next = _copy.value?.let { DiscoveryReach.admitted(it, DiscoveryReach.bar(saved, it)) } ?: DiscoveryReach.Admitted.NONE
         if (next == admitted) return
         admitted = next
+        localDistantAuthors = DistantPostAuthors.pick(next.distant, _copy.value)
         feedService.get().recomputeFilteredNotes()
     }
 }

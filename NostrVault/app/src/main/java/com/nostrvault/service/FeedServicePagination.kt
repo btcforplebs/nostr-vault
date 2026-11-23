@@ -87,7 +87,8 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
                         append(",\"limit\":100}")
                     }
 
-                    client.send("[\"REQ\",\"$subId\",$filter]")
+                    val filters = listOfNotNull(filter, distantPostsFilter(filter, relayUrl))
+                    client.send("[\"REQ\",\"$subId\",${filters.joinToString(",")}]")
                 }
 
                 // The follows' own relays, each asked only for the follows it
