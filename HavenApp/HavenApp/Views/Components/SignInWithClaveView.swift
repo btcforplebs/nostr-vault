@@ -28,11 +28,13 @@ struct SignInWithClaveView: View {
         case connecting
     }
 
-    /// Where the signer is: this phone (open Clave) or another device (QR).
-    private enum Target: Equatable {
-        case thisDevice
-        case otherDevice
-    }
+    private typealias Target = NostrConnectTarget
+
+    #if os(iOS)
+    private static let canOpenSignerHere = true
+    #else
+    private static let canOpenSignerHere = false
+    #endif
 
     @State private var phase: Phase = .idle
     #if os(iOS)
@@ -71,17 +73,17 @@ struct SignInWithClaveView: View {
                 #endif
 
             case .waiting:
-                if target == .otherDevice, let request {
+                if target.showsCode, let request {
                     NostrConnectQRCard(uri: request.uri)
                 }
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(target == .otherDevice ? Self.qrWaitingText : Self.waitingText)
+                    Text(target.showsCode ? Self.qrWaitingText : Self.waitingText)
                         .font(.appCaption)
                         .foregroundColor(.secondary)
                 }
                 HStack {
-                    if target == .thisDevice {
+                    if !target.showsCode {
                         Button("Open Clave again") { openClave() }
                     } else {
                         Button("Copy link") { copyRequest() }
@@ -94,7 +96,7 @@ struct SignInWithClaveView: View {
             case .connecting:
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(target == .otherDevice ? "Connecting to your signer…" : "Connecting to Clave…")
+                    Text(target.showsCode ? "Connecting to your signer…" : "Connecting to Clave…")
                         .font(.appCaption)
                         .foregroundColor(.secondary)
                 }
@@ -125,17 +127,14 @@ struct SignInWithClaveView: View {
 
     // MARK: - Flow
 
-    private func start(_ target: Target) {
+    private func start(_ requested: Target) {
         errorMessage = nil
-        #if os(iOS)
-        // Only Clave on THIS phone can send us back; a signer on another
-        // device must not be told to open nostrvault:// there.
-        let includeCallback = target == .thisDevice
-        #else
-        let includeCallback = false
-        #endif
+        // The Mac can't open Clave itself, so whichever button asked, it shows
+        // the code (Tron, #2478 review: the idle button passed .thisDevice and
+        // the Mac lost its QR).
+        let target = Target.resolve(requested, canOpenSignerHere: Self.canOpenSignerHere)
         self.target = target
-        guard let request = NIP46Service.shared.makeNostrConnectRequest(includeCallback: includeCallback) else {
+        guard let request = NIP46Service.shared.makeNostrConnectRequest(includeCallback: target.includesCallback) else {
             errorMessage = String(localized: "Couldn't create a sign-in request. Try again.")
             return
         }
@@ -149,19 +148,24 @@ struct SignInWithClaveView: View {
     }
 
     private func wait(for request: NIP46Service.NostrConnectRequest) async {
+        // A cancelled-then-restarted wait must not touch the new one's state.
+        func isCurrent() -> Bool { self.request?.uri == request.uri }
         do {
             let signerPubkey = try await NIP46Service.shared.awaitNostrConnect(request)
+            guard isCurrent() else { return }
             phase = .connecting
             try await onPaired(request, signerPubkey)
             phase = .idle
         } catch is CancellationError {
-            phase = .idle
+            if isCurrent() { phase = .idle }
         } catch NIP46Error.timeout {
-            errorMessage = target == .otherDevice
+            guard isCurrent() else { return }
+            errorMessage = target.showsCode
                 ? String(localized: "The signer didn't answer. Try again.")
                 : String(localized: "Clave didn't answer. Tap to try again.")
             phase = .idle
         } catch {
+            guard isCurrent() else { return }
             errorMessage = error.localizedDescription
             phase = .idle
         }

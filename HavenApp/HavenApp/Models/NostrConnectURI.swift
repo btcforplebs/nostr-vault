@@ -28,3 +28,23 @@ enum NostrConnectURI {
         return components.string?.replacingOccurrences(of: "+", with: "%2B")
     }
 }
+
+/// Where the signer is: this device (hand off to Clave, which sends us back)
+/// or another device (show a code to scan). Pure so the per-platform rule is
+/// tested: a device that can't open the signer itself (the Mac) always shows
+/// the code, whichever button asked.
+enum NostrConnectTarget: Equatable {
+    case thisDevice
+    case otherDevice
+
+    static func resolve(_ requested: NostrConnectTarget, canOpenSignerHere: Bool) -> NostrConnectTarget {
+        canOpenSignerHere ? requested : .otherDevice
+    }
+
+    /// Only the same-device hand-off may carry `callback=`: a signer on
+    /// another device must not be told to open nostrvault:// there.
+    var includesCallback: Bool { self == .thisDevice }
+
+    /// The QR (and "Copy link") is drawn exactly when the signer is elsewhere.
+    var showsCode: Bool { self == .otherDevice }
+}

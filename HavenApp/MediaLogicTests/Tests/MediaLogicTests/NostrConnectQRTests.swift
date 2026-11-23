@@ -52,4 +52,25 @@ final class NostrConnectQRTests: XCTestCase {
         let decoded = detector.features(in: padded).compactMap { ($0 as? CIQRCodeFeature)?.messageString }
         XCTAssertEqual(decoded, [uri])
     }
+
+    /// The Mac can't open Clave, so it shows the code whichever button asked
+    /// (Tron, #2478: the idle button passed .thisDevice and the Mac lost its QR).
+    func testMacAlwaysShowsTheCode() {
+        for requested in [NostrConnectTarget.thisDevice, .otherDevice] {
+            let t = NostrConnectTarget.resolve(requested, canOpenSignerHere: false)
+            XCTAssertEqual(t, .otherDevice)
+            XCTAssertTrue(t.showsCode)
+            XCTAssertFalse(t.includesCallback)
+        }
+    }
+
+    func testPhoneKeepsWhatWasAsked() {
+        let here = NostrConnectTarget.resolve(.thisDevice, canOpenSignerHere: true)
+        XCTAssertEqual(here, .thisDevice)
+        XCTAssertTrue(here.includesCallback)
+        XCTAssertFalse(here.showsCode)
+        let other = NostrConnectTarget.resolve(.otherDevice, canOpenSignerHere: true)
+        XCTAssertTrue(other.showsCode)
+        XCTAssertFalse(other.includesCallback)
+    }
 }
