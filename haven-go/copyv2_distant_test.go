@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,13 @@ func writeDistantResult(t *testing.T, dir string, f trustrank.ResultFile) {
 
 func distantGet(t *testing.T, url, query, bearer string) (int, []byte) {
 	t.Helper()
+	code, body, _ := distantGetTag(t, url, query, bearer)
+	return code, body
+}
+
+// distantGetTag also returns the answer's round tag header.
+func distantGetTag(t *testing.T, url, query, bearer string) (int, []byte, string) {
+	t.Helper()
 	req, _ := http.NewRequest(http.MethodGet, url+"/copy/v2/sync/distant"+query, nil)
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
@@ -76,7 +84,7 @@ func distantGet(t *testing.T, url, query, bearer string) (int, []byte) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, body
+	return resp.StatusCode, body, resp.Header.Get(copyDistantRoundHdr)
 }
 
 func distantContents(t *testing.T, body []byte) []string {
@@ -206,5 +214,91 @@ func TestDistantAuthorsCachedByBuiltAt(t *testing.T) {
 		People: [][3]any{{d.far3.pk, 70.0, 3}, {d.far4.pk, 60.0, 4}}})
 	if got := distantAuthors(d.aDir, d.owner.pk); len(got) != 1 || got[0] != d.far4.pk {
 		t.Fatalf("muted far3 still picked: %v", got)
+	}
+}
+
+// A note the Haven fetches hours after it was written still reaches the
+// device (Tron's #2451 must-fix): the device asks by the Haven's round,
+// not by time. Nothing new: 204. A round that stored notes, or a new pick,
+// changes the answer, and the whole window comes again.
+func TestCopyDistantLateFetchedNoteStillTravels(t *testing.T) {
+	d := newDistantSetup(t)
+	token := copyPeerToken("npub1peer")
+	q := "?account=" + d.owner.pk
+	code, _, tag := distantGetTag(t, d.url, q, token)
+	if code != http.StatusOK || tag == "" || tag == "0" {
+		t.Fatalf("first answer %d tag %q", code, tag)
+	}
+	if code, body, _ := distantGetTag(t, d.url, q+"&round="+tag, token); code != http.StatusNoContent || len(body) != 0 {
+		t.Fatalf("nothing changed: %d %q", code, body)
+	}
+	// The job runs late: it stores a note written three hours ago.
+	late := d.far3.sign(t, nostr.Event{Kind: 1, Content: "late", CreatedAt: nostr.Timestamp(time.Now().Add(-3 * time.Hour).Unix())})
+	saveEv(t, feedDB, late)
+	distantRoundStored(d.owner.pk)
+	code, body, tag2 := distantGetTag(t, d.url, q+"&round="+tag, token)
+	if code != http.StatusOK || tag2 == tag {
+		t.Fatalf("after a round: %d tag %q (was %q)", code, tag2, tag)
+	}
+	if got := strings.Join(distantContents(t, body), ","); !strings.Contains(got, "late") {
+		t.Fatalf("the late note was not handed out: %q", got)
+	}
+	// A new pass on the Haven changes the pick, so the tag.
+	writeDistantResult(t, d.aDir, trustrank.ResultFile{Account: d.owner.pk, BuiltAt: 200, Version: 2, MaxHop: 4,
+		People: [][3]any{{d.far3.pk, 70.0, 3}}})
+	if code, _, tag3 := distantGetTag(t, d.url, q+"&round="+tag2, token); code != http.StatusOK || tag3 == tag2 {
+		t.Fatalf("after a new pass: %d tag %q", code, tag3)
+	}
+}
+
+// The device records the answer's tag only after a whole answer, sends it
+// next time, and keeps it on a 204.
+func TestCopyDistantDeviceMarksTheRound(t *testing.T) {
+	d := newDistantSetup(t)
+	f, err := trustrank.ReadResult(d.aDir, d.owner.pk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeDistantResult(t, d.bDir, f)
+	c := newCopyClient("npub1peer", d.url)
+	c.token = copyPeerToken("npub1peer")
+	mark := func() int64 {
+		copySyncMu.Lock()
+		defer copySyncMu.Unlock()
+		return loadCopySync()[copyPeerKey(c.peer+copyDistantMark+d.owner.pk)]
+	}
+	c.syncDistant(context.Background())
+	first := mark()
+	_, _, tag := distantGetTag(t, d.url, "?account="+d.owner.pk, copyPeerToken("npub1peer"))
+	if first == 0 || strconv.FormatInt(first, 10) != tag {
+		t.Fatalf("mark %d, Haven's tag %q", first, tag)
+	}
+	c.syncDistant(context.Background())
+	if mark() != first {
+		t.Fatal("a 204 moved the mark")
+	}
+	distantRoundStored(d.owner.pk)
+	c.syncDistant(context.Background())
+	if m := mark(); m == first || m == 0 {
+		t.Fatalf("a new round left the mark at %d", m)
+	}
+}
+
+// The job asks before each account, like the crawler: once an import or
+// copy starts mid-round, no further account is fetched and the job waits
+// the short poll.
+func TestDistantPostsRoundStopsWhenWorkStarts(t *testing.T) {
+	d := newDistantSetup(t)
+	other := newTestKey(t)
+	writeDistantResult(t, d.aDir, trustrank.ResultFile{Account: other.pk, BuiltAt: 100, Version: 2, MaxHop: 4,
+		People: [][3]any{{d.far4.pk, 60.0, 3}}})
+	asks, fetched := 0, 0
+	mayRun := func() bool { asks++; return asks == 1 }
+	fetch := func([]string) int { fetched++; return 0 }
+	if distantPostsRound(context.Background(), d.aDir, []string{d.owner.pk, other.pk}, mayRun, fetch) {
+		t.Fatal("a stopped round read as finished")
+	}
+	if fetched != 1 || asks != 2 {
+		t.Fatalf("fetched %d accounts, asked %d times", fetched, asks)
 	}
 }

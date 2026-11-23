@@ -65,9 +65,10 @@ func distantAuthors(dir, account string) []string {
 	return out
 }
 
-// distantSince: the start of the feed window. Every round asks for the
-// whole window: on Logen's map that is about 400 notes, under 1 MB, so a
-// watermark would save little and lose posts when relays are down.
+// distantSince: the start of the feed window. Every round, and every
+// changed answer to a device, covers the whole window: on Logen's map that
+// is about 250 notes, under 300 KB, so a watermark would save little and
+// lose posts fetched late or while relays were down.
 func distantSince(now time.Time) int64 {
 	return now.Add(-time.Duration(config.FeedSyncWindowDays) * 24 * time.Hour).Unix()
 }
@@ -113,23 +114,20 @@ func runDistantPosts(ctx context.Context, pool *nostr.SimplePool, cshared bool) 
 	}
 	dir := trustRankDir()
 	var lastBusy time.Time
-	for ctx.Err() == nil {
+	mayRun := func() bool {
 		now := time.Now()
 		busy := realWorkRunning()
 		if busy {
 			lastBusy = now
 		}
+		return trustRankMayRun(cshared, trustRankHost.Load(), busy, lastBusy, now)
+	}
+	fetch := func(authors []string) int {
+		return fetchDistantPosts(ctx, pool, authors, distantSince(time.Now()))
+	}
+	for ctx.Err() == nil {
 		wait := distantPostsEvery
-		if trustRankMayRun(cshared, trustRankHost.Load(), busy, lastBusy, now) {
-			for _, account := range trustRankAccounts() {
-				authors := distantAuthors(dir, account)
-				if len(authors) == 0 || ctx.Err() != nil {
-					continue
-				}
-				kept := fetchDistantPosts(ctx, pool, authors, distantSince(time.Now()))
-				slog.Info("distant posts fetched", "account", account[:8], "people", len(authors), "new", kept)
-			}
-		} else {
+		if !distantPostsRound(ctx, dir, trustRankAccounts(), mayRun, fetch) {
 			wait = trustRankPoll
 		}
 		select {
@@ -138,4 +136,29 @@ func runDistantPosts(ctx context.Context, pool *nostr.SimplePool, cshared bool) 
 		case <-time.After(wait):
 		}
 	}
+}
+
+// distantPostsRound fetches each account's distant posts, asking mayRun
+// before each one like the crawler does: an import or copy that starts
+// mid-round stops it there. false: stopped (or not allowed at all), so the
+// job tries again after trustRankPoll.
+func distantPostsRound(ctx context.Context, dir string, accounts []string, mayRun func() bool, fetch func([]string) int) bool {
+	for _, account := range accounts {
+		if ctx.Err() != nil {
+			return true
+		}
+		authors := distantAuthors(dir, account)
+		if len(authors) == 0 {
+			continue
+		}
+		if !mayRun() {
+			return false
+		}
+		kept := fetch(authors)
+		if kept > 0 {
+			distantRoundStored(account)
+		}
+		slog.Info("distant posts fetched", "account", account[:8], "people", len(authors), "new", kept)
+	}
+	return true
 }

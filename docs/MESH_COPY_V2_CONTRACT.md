@@ -415,16 +415,20 @@ The app calls the engine when a linked device comes into reach. The engine then:
    each account's top 500 **distant connections** (ring 3 and out, highest score first, ties by pubkey, the
    account's public mutes left out: `trustrank.Distant`) from its seed relays into its feed store
    (`haven-go/distant_posts_job.go`). A device that does not rank asks for each signed-in account:
-   `GET /copy/v2/sync/distant?account=<64 hex>&since=<unix>` (Bearer, the same copy token; nothing is signed).
-   - `200`: JSONL of the feed store's notes by that account's distant connections at or after `since` (never
-     before the feed window), kind 5 first, then newest first, at most 2,000 notes and 8 MB. An empty body is
-     a Haven with nobody distant. `404`: the Haven does not rank that account, has no result yet, or is an
+   `GET /copy/v2/sync/distant?account=<64 hex>&round=<tag>` (Bearer, the same copy token; nothing is signed).
+   - `round` is the tag of B's last whole answer (left out the first time). The tag changes when a round stores
+     new notes for that account, when A's result for it changes, and when A restarts. `204`: the tag is current,
+     nothing to send.
+   - `200`: the current tag in `X-Distant-Round`, then JSONL of the feed store's notes by that account's distant
+     connections in the feed window, kind 5 first, then newest first, at most 2,000 notes and 8 MB (about 250
+     notes, 267 KB on Logen's map). An empty body is a Haven with nobody distant. `404`: the Haven does not rank that account, has no result yet, or is an
      engine from before this.
    - B makes the same pick of 500 from its own rank copy (which step 5 just brought up to date) and keeps a
      line only when its author is on that list, its kind is a feed kind or 5, and it passes the restore's checks
      (id, signature, NIP-09). Kept notes go to B's feed store, where the age prune removes them like any other.
-   - B's `since` is its last whole answer from that Haven for that account, less two hours; a 404, a cut or
-     over-long body is not recorded. It never fails or delays the catch-up's mark.
+   - B asks by A's round, not by time: the job may fetch a note hours after it was written (it waits while the
+     window is open or an import runs), so a time mark would skip it. B records the tag only after a whole
+     answer; a 404, a cut or over-long body is not recorded. It never fails or delays the catch-up's mark.
 
 Before the notes, **accounts** (§3.4): B `GET /copy/v2/sync/accounts` and takes A's, then `PUT`s its own, which A
 takes the same way. Each side **offers** the other's list to its app (copy-accounts.json) only when the lists share an

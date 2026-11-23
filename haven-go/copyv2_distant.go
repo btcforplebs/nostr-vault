@@ -15,30 +15,67 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
 	"io"
 	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/fiatjaf/eventstore"
 	"github.com/nbd-wtf/go-nostr"
+
+	"github.com/barrydeen/haven/pkg/trustrank"
 )
 
 const (
 	copyDistantMaxEvents = 2000
 	copyDistantMaxBytes  = 8 << 20
-	// copyDistantOverlap: a catch-up asks from two hours before the last
-	// one, so notes the Haven fetched a round late still come over.
-	copyDistantOverlap = 2 * time.Hour
-	copyDistantMark    = "#distant:"
+	copyDistantMark      = "#distant:"
+	copyDistantRoundHdr  = "X-Distant-Round"
 )
 
-// serveSyncDistant is GET /copy/v2/sync/distant?account=<hex>&since=<unix>,
-// behind the device's bearer: JSONL of the feed store's notes by account's
-// distant connections at or after since, kind 5 first, then newest first.
-// 404: not an account this Haven ranks, or no result yet.
+// distantRounds: when the job last stored new notes for each account, in
+// memory. A note's created_at says nothing about when the Haven fetched
+// it (the job may run hours late), so the device asks by this, not by
+// time. After a restart every account reads as distantBoot: each device
+// takes the whole window once.
+var (
+	distantRoundsMu sync.Mutex
+	distantRounds   = map[string]int64{}
+	distantBoot     = time.Now().UnixNano()
+)
+
+// distantRoundStored records that a round stored new notes for account.
+func distantRoundStored(account string) {
+	distantRoundsMu.Lock()
+	distantRounds[account] = max(time.Now().UnixNano(), distantRounds[account]+1)
+	distantRoundsMu.Unlock()
+}
+
+// distantRoundTag: what the answer for account is now. It changes when a
+// round stores new notes, when the pick changes (builtAt) and after a
+// restart. Never 0, which the device uses for "none yet".
+func distantRoundTag(account string, builtAt int64) int64 {
+	distantRoundsMu.Lock()
+	round, ok := distantRounds[account]
+	distantRoundsMu.Unlock()
+	if !ok {
+		round = distantBoot
+	}
+	h := fnv.New64a()
+	fmt.Fprintf(h, "%d|%d", round, builtAt)
+	return max(int64(h.Sum64()>>1), 1)
+}
+
+// serveSyncDistant is GET /copy/v2/sync/distant?account=<hex>&round=<tag>,
+// behind the device's bearer. 204 when round is the answer's current tag;
+// else 200, the tag in X-Distant-Round, and JSONL of the feed store's
+// notes by account's distant connections in the feed window, kind 5 first,
+// then newest first. 404: not an account this Haven ranks, or no result yet.
 func (s *copyServer) serveSyncDistant(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet || feedDB == nil {
 		http.NotFound(w, r)
@@ -50,14 +87,27 @@ func (s *copyServer) serveSyncDistant(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	authors := distantAuthors(trustRankDir(), account)
+	dir := trustRankDir()
+	built, err := trustrank.ResultBuiltAt(dir, account)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	authors := distantAuthors(dir, account)
 	if authors == nil {
 		http.NotFound(w, r)
 		return
 	}
-	since, _ := strconv.ParseInt(q.Get("since"), 10, 64)
-	since = max(since, distantSince(time.Now()))
+	// Read the tag before the store: a round that ends after this changes
+	// the tag, so the device asks again.
+	tag := distantRoundTag(account, built)
+	if round, _ := strconv.ParseInt(q.Get("round"), 10, 64); round == tag {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	since := distantSince(time.Now())
 	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set(copyDistantRoundHdr, strconv.FormatInt(tag, 10))
 	if len(authors) == 0 {
 		w.WriteHeader(http.StatusOK)
 		return
@@ -115,12 +165,7 @@ func (c *copyClient) syncDistant(ctx context.Context) int {
 		copySyncMu.Lock()
 		last := loadCopySync()[copyPeerKey(mark)]
 		copySyncMu.Unlock()
-		started := time.Now()
-		since := int64(0)
-		if last > 0 {
-			since = last - int64(copyDistantOverlap/time.Second)
-		}
-		n, ok := c.fetchDistant(ctx, account, since, authors)
+		n, tag, ok := c.fetchDistant(ctx, account, last, authors)
 		got += n
 		if !ok {
 			if ctx.Err() != nil {
@@ -128,7 +173,9 @@ func (c *copyClient) syncDistant(ctx context.Context) int {
 			}
 			continue
 		}
-		markCopySynced(mark, started.Unix())
+		if tag != 0 && tag != last {
+			markCopySynced(mark, tag)
+		}
 		if n > 0 {
 			slog.Info("distant posts kept", "account", account[:8], "new", n)
 		}
@@ -136,22 +183,33 @@ func (c *copyClient) syncDistant(ctx context.Context) int {
 	return got
 }
 
-// fetchDistant reads one account's JSONL from A. ok: the whole answer was
-// read (a 404 is not ok, so the next round asks again from the start).
-func (c *copyClient) fetchDistant(ctx context.Context, account string, since int64, authors []string) (int, bool) {
-	resp, err := c.do(ctx, http.MethodGet, "/copy/v2/sync/distant?account="+account+"&since="+strconv.FormatInt(since, 10), nil, nil)
+// fetchDistant reads one account's JSONL from A, sending the tag of the
+// last whole answer (0: none). tag is the new answer's tag; a 204 (nothing
+// changed) is ok with tag 0. ok: the whole answer was read (a 404 or a cut
+// body is not ok, so the next catch-up asks again).
+func (c *copyClient) fetchDistant(ctx context.Context, account string, last int64, authors []string) (got int, tag int64, ok bool) {
+	path := "/copy/v2/sync/distant?account=" + account
+	if last != 0 {
+		path += "&round=" + strconv.FormatInt(last, 10)
+	}
+	resp, err := c.do(ctx, http.MethodGet, path, nil, nil)
 	if err != nil {
-		return 0, false
+		return 0, 0, false
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return 0, false
+	if resp.StatusCode == http.StatusNoContent {
+		return 0, 0, true
 	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, 0, false
+	}
+	tag, _ = strconv.ParseInt(resp.Header.Get(copyDistantRoundHdr), 10, 64)
 	allowed := make(map[string]bool, len(authors))
 	for _, pk := range authors {
 		allowed[pk] = true
 	}
-	return keepDistantLines(ctx, io.LimitReader(resp.Body, copyDistantMaxBytes+1), allowed)
+	got, ok = keepDistantLines(ctx, io.LimitReader(resp.Body, copyDistantMaxBytes+1), allowed)
+	return got, tag, ok
 }
 
 // keepDistantLines stores each line that is a feed note by an allowed
