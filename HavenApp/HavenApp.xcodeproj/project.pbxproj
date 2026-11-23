@@ -556,6 +556,7 @@
 		3928AEF4B734F2C937F094C1 /* WalletLightningTab+Send.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2BF745D14693B6002AF8275 /* WalletLightningTab+Send.swift */; };
 		3996B86DA73FF6627521206D /* BlossomService+OwnerImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E96162F29A4D24806FDDE07 /* BlossomService+OwnerImport.swift */; };
 		39D77023FAFDDDFE24D50B9A /* ProfilePicturePrefetchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68544CD2DF847509E3D23681 /* ProfilePicturePrefetchService.swift */; };
+		39E622D9DEF3286C4EB3D5C5 /* MeshCopyV2Service+Background.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CCA9CE78BE9C4A184CF1FEB /* MeshCopyV2Service+Background.swift */; };
 		3A09511D6FBF57B51898CE91 /* NewPostsFold.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CB1418A113C8C037133410C /* NewPostsFold.swift */; };
 		3A7D92BF155F02083495ABA6 /* FipsMeshService+TemporaryShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA8107297F2EF3EFCB08AEC /* FipsMeshService+TemporaryShare.swift */; };
 		3A942403FE036CEE30A317C9 /* VaultSessionCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C421342CE309F6D5E901538 /* VaultSessionCore.swift */; };
@@ -2278,6 +2279,7 @@
 		EC05976F014D8D0EA368495B /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CCBF9ECF9001937FA713A9 /* ShareSheet.swift */; };
 		EC13B7C36B4880936A026AEF /* MeshMediaRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B39AC9891DC2150ED3792D /* MeshMediaRouter.swift */; };
 		EC69E7FB15A8D973C111A810 /* NVSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A385719722D447ECB47AA2D8 /* NVSharedStore.swift */; };
+		EC856F48D76F9525619CCF4F /* MeshCopyV2Service+Background.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CCA9CE78BE9C4A184CF1FEB /* MeshCopyV2Service+Background.swift */; };
 		EC8E67328965FB384FEAB184 /* RelayCounters.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBEB2E914629F6633A39F2DD /* RelayCounters.swift */; };
 		EC907339E02BF6357A5CFC2D /* ArticleInlineBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E1BD51ACE15691E3AB709B /* ArticleInlineBody.swift */; };
 		EC9B93457FB387AC0A53E7DE /* RestoreBackupRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C2FB3DC49856C08EED41BF /* RestoreBackupRow.swift */; };
@@ -2668,6 +2670,7 @@
 		1C477D8592D4BF3D830EDEEE /* NIP46Service+Bridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NIP46Service+Bridge.swift"; sourceTree = "<group>"; };
 		1C7B0FCECC367D25BBB73718 /* FeedLayoutMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedLayoutMode.swift; sourceTree = "<group>"; };
 		1CB98087C9AF3879EFB4C5B3 /* ImportRowDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportRowDetail.swift; sourceTree = "<group>"; };
+		1CCA9CE78BE9C4A184CF1FEB /* MeshCopyV2Service+Background.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeshCopyV2Service+Background.swift"; sourceTree = "<group>"; };
 		1CDBA172AE28824F02A10662 /* ZapReceiptWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapReceiptWatcher.swift; sourceTree = "<group>"; };
 		1D167E2A8A59209914A2B120 /* DMInboxLoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMInboxLoadingView.swift; sourceTree = "<group>"; };
 		1D1A35E8F156B18C3269D943 /* HavenApp_iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenApp_iOS.swift; sourceTree = "<group>"; };
@@ -4390,6 +4393,7 @@
 				37DCCD11C9E97C032F2BD1FA /* CopySettingsSync.swift */,
 				7AF18504D84D1E58D74B502E /* ImportJobsService.swift */,
 				0B9E478F433669EF4773A33E /* MeshCopyV2Service.swift */,
+				1CCA9CE78BE9C4A184CF1FEB /* MeshCopyV2Service+Background.swift */,
 				97020BD72A959C0373440242 /* MeshDeviceSetSync.swift */,
 				F4A5DC549BFA6F7B3C2581E3 /* MeshRankNudgeSender.swift */,
 				DBEB2E914629F6633A39F2DD /* RelayCounters.swift */,
@@ -6592,6 +6596,7 @@
 				87115DD7372EA9CF7317ADD3 /* MenuBarView+TabBar.swift in Sources */,
 				E50C4B4F8787584FC7E29EA2 /* MenuBarView.swift in Sources */,
 				FC6A272974B2E720146B57AE /* MeshCopyV2.swift in Sources */,
+				39E622D9DEF3286C4EB3D5C5 /* MeshCopyV2Service+Background.swift in Sources */,
 				BDEFA725BE9DA615863EC0B0 /* MeshCopyV2Service.swift in Sources */,
 				C6F9DC7A718F1CEA23A5CA18 /* MeshDeleteTargets.swift in Sources */,
 				0C8B06F13F0B62F4FEC2309D /* MeshDeviceSetSync.swift in Sources */,
@@ -7843,6 +7848,7 @@
 				55657F564136D2FA6CF59EFD /* MenuBarView+TabBar.swift in Sources */,
 				D3ED7A3CC129E99735F99CB6 /* MenuBarView.swift in Sources */,
 				77EF823FB3FAEC4AF1A29BA7 /* MeshCopyV2.swift in Sources */,
+				EC856F48D76F9525619CCF4F /* MeshCopyV2Service+Background.swift in Sources */,
 				02CE0ED0297D5285BF75D076 /* MeshCopyV2Service.swift in Sources */,
 				07F1C2CD04A0B5BE9D2C32E8 /* MeshDeleteTargets.swift in Sources */,
 				140F3D5A76813B47967BA63B /* MeshDeviceSetSync.swift in Sources */,

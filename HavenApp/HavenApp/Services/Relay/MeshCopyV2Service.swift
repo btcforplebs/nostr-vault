@@ -33,8 +33,17 @@ final class MeshCopyV2Service: ObservableObject {
     }
     /// The peer the running copy (or catch-up) is with.
     private var current: String? {
-        didSet { syncState.running = current }
+        didSet {
+            syncState.running = current
+            #if os(iOS)
+            holdBackgroundTime(current != nil)
+            #endif
+        }
     }
+    #if os(iOS)
+    /// Background time while a copy or catch-up runs (MeshCopyV2Service+Background).
+    var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    #endif
     /// Sync now's queue is being worked through (it awaits the dial).
     private var draining = false
     private var watchers: Set<AnyCancellable> = []
@@ -223,10 +232,9 @@ final class MeshCopyV2Service: ObservableObject {
             Self.log(.noMeshLink(seconds: 0), peer: peer)
             return
         }
-        if catchUp(peer: peer, base: base) == .started {
-            current = peer
-            record.copied[peer] = Self.now
-        }
+        // Stamped by the done line (Record.finished), not here: a run cut
+        // short is due again at the next reconnect.
+        if catchUp(peer: peer, base: base) == .started { current = peer }
     }
 
     /// Hands one catch-up to the engine. No signed start: the engine holds
@@ -273,7 +281,6 @@ final class MeshCopyV2Service: ObservableObject {
             syncState.queued.removeFirst()
             if code == .started {
                 current = peer
-                record.copied[peer] = Self.now
                 syncState.failed[peer] = nil
             } else {
                 if base == nil { Self.log(.noMeshLink(seconds: 0), peer: peer) }

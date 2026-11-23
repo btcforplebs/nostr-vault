@@ -60,10 +60,11 @@ class MeshCopyStarterSyncNowTest {
         assertEquals(listOf(box), engine.syncs)
         assertEquals(box, s.sync.value.running)
         assertEquals(listOf(mac), s.sync.value.queued)
-        assertEquals(now, s.sync.value.lastAt[box])
+        assertEquals("stamped when it ends, not when it starts", now - 120, s.sync.value.lastAt[box])
         now += 30
         s.onLogLine(done)
         runCurrent()
+        assertEquals(now, store.r.copied[box])
         assertEquals(listOf(box, mac), engine.syncs)
         assertEquals(mac, s.sync.value.running)
         assertEquals(emptyList<String>(), s.sync.value.queued)

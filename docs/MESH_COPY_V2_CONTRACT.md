@@ -458,6 +458,14 @@ Before the notes, **accounts** (§3.4): B `GET /copy/v2/sync/accounts` and takes
 takes the same way. Each side **offers** the other's list to its app (copy-accounts.json) only when the lists share an
 account; neither adds an account by itself, and neither removes one.
 
+The **trust rank** (step 5) is fetched right after the accounts and the device set, before the notes: a phone that
+leaves the app cuts the link, and a cut run still leaves it ranked (LogePhone, 2026-11-23).
+
+A catch-up ends with one §3.3 line, `COPY stage=done part=- … source=mesh` or `COPY stage=failed part=- … source=mesh
+error=<code>` (#2480). The apps stamp the catch-up time from it, never at the start, so a cut run stays due. A catch-up
+that fails with `unreachable` or `cancelled` stays due; any other failure is stamped, so it waits the usual 15 min. A
+catch-up's line never changes another device's pending first copy.
+
 This is an id-list diff, not NIP-77. The engine has no owner key to answer NIP-42 for `/private` and `/chat`, so it
 uses the copy token on the own-device port instead.
 

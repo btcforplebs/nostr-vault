@@ -865,9 +865,7 @@ func startCopySync(ctx context.Context, spawn func(string, func()), peer, base s
 	return copyRuns.begin(ctx, spawn, "copyv2.sync", func(cctx context.Context) {
 		c := newCopyClient(peer, base)
 		c.notesOnly = notesOnly
-		if _, err := c.sync(cctx); err != nil {
-			slog.Warn("copy catch-up stopped", "error", copyErrorCode(err))
-		}
+		c.endLine(c.sync(cctx))
 	})
 }
 
