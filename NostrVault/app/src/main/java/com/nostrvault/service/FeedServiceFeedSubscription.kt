@@ -358,8 +358,15 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
     /**
      * [resume] false asks as wide as before even when the list is this feed's:
      * a changed author set needs the new authors' older notes too.
+     * [withDeletes] false leaves the owner's deletion REQ alone: a re-send
+     * that only changes the authors has nothing new to ask it.
      */
-    internal fun FeedService.sendPrimaryFeedSubscription(relayUrl: String, subId: String, resume: Boolean = true) {
+    internal fun FeedService.sendPrimaryFeedSubscription(
+        relayUrl: String,
+        subId: String,
+        resume: Boolean = true,
+        withDeletes: Boolean = true,
+    ) {
         // Reels, Live, Marketplace, Music and Hashtags run their own queries.
         // The feed connections stay up for mentions, but the note timeline
         // idles underneath rather than streaming a list nobody sees.
@@ -431,7 +438,7 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         // Your own deletion requests (kind 5), so a post deleted on another
         // device leaves this one too. Its own subId: the primary's EOSE is
         // matched exactly, so this one never triggers the auxiliary REQs.
-        if (ownerHex.isNotEmpty()) {
+        if (withDeletes && ownerHex.isNotEmpty()) {
             client.send("[\"REQ\",\"del-$subId\",${deleteRequestsFilter(ownerHex)}]")
         }
     }
