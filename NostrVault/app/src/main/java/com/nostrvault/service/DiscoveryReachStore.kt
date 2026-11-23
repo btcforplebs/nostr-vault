@@ -97,11 +97,14 @@ class DiscoveryReachStore @Inject constructor(
 
     private fun apply(saved: Double?) {
         val next = _copy.value?.let { DiscoveryReach.admitted(it, DiscoveryReach.bar(saved, it)) } ?: DiscoveryReach.Admitted.NONE
-        val feed = feedService.get()
         if (next != admitted) {
             admitted = next
-            feed.recomputeFilteredNotes()
+            feedService.get().recomputeFilteredNotes()
         }
+        // Nobody before and nobody now: nothing to send. This also runs while
+        // FeedService is still building this store, which must not ask it back.
+        if (next.distant.isEmpty() && localDistantAuthors.isEmpty()) return
+        val feed = feedService.get()
         val authors = DistantPostAuthors.pick(next.distant, _copy.value, feed.blockedHexForActiveAccount())
         if (authors == localDistantAuthors) return
         localDistantAuthors = authors
