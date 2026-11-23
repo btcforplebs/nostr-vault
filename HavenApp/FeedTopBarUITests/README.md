@@ -48,3 +48,12 @@ build with `TEST_RUNNER_MAC_APP_BUNDLE_ID`.
 xcodebuild test -project FeedTopBarUITests.xcodeproj -scheme UITMac \
   -destination 'platform=macOS' -derivedDataPath /tmp/feed-uit-mac-dd
 ```
+
+## Sign-in QR (iPhone)
+
+`SignInQRTests` (scheme `UIT`) needs a FRESH install: it taps "Bring an
+account", "Use a signer app" and "Show a code for another device", and checks
+the nostrconnect:// QR is on screen while the app stays in front (no jump to
+Clave), then that Cancel goes back. Nothing is signed or posted. Run it alone
+with `-only-testing:UIT/SignInQRTests`; `TEST_RUNNER_SIGNIN_SHOTS=<dir>` saves
+a screenshot.

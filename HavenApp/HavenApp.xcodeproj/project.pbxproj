@@ -865,6 +865,7 @@
 		58D6FB018CF1CB34DF28DA90 /* ZapPending.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06657D09FD1DD91D9D5087A6 /* ZapPending.swift */; };
 		590715EB1D21B171CEA7210D /* NewKeyPair.swift in Sources */ = {isa = PBXBuildFile; fileRef = E24A0DC4906F9AE38D430125 /* NewKeyPair.swift */; };
 		590F1A984A5CE7E1E4413E50 /* VaultStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3948FD4D07D86EBFBDEEBF7 /* VaultStatus.swift */; };
+		594F4BE1E3D3B20755C3889C /* NostrConnectQRCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C09AE517F848E1046E20CCD /* NostrConnectQRCard.swift */; };
 		5959493ACAC5D0FC9D4EFE76 /* FeedView+EmptyStates.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C196064FDD02127CFA047C /* FeedView+EmptyStates.swift */; };
 		59965C511D2D8F2DCDA83D3C /* BitcoinSweepDisclaimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A56934F313BFA876DC49BA /* BitcoinSweepDisclaimerView.swift */; };
 		5A18F0E563ACEBF4039D462E /* NVShareIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69FCE89FDCC4D758B3B2AE81 /* NVShareIntent.swift */; };
@@ -2341,6 +2342,7 @@
 		F282B7FBC6006502FCDBB76F /* MeshSiteIngress.swift in Sources */ = {isa = PBXBuildFile; fileRef = C955166884F1CE9A5BA4B36E /* MeshSiteIngress.swift */; };
 		F287853E144CD0FA91C4CAAB /* DMService+GiftWrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BC759260F54CE352A66B934 /* DMService+GiftWrap.swift */; };
 		F2AB762E037796F0C4C10CD9 /* HavenConfig+ProtocolSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A82D2DA5E47C4D49ACEDBF0F /* HavenConfig+ProtocolSelection.swift */; };
+		F2ACE26D0D9F635172FBA819 /* NostrConnectQRCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C09AE517F848E1046E20CCD /* NostrConnectQRCard.swift */; };
 		F2B1CB1AE61AD755080C64EA /* BlossomURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0A686E5FF7B46AC8AB9776 /* BlossomURI.swift */; };
 		F2C3C239F26DA40FA64E52CE /* TrustMapHaze.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D2B4820E350399E40C1C674 /* TrustMapHaze.swift */; };
 		F2EAAC73D285A80C7E3ABBE4 /* LiveNoteCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD9D44519AE3AFB7DF22C301 /* LiveNoteCleanup.swift */; };
@@ -2871,6 +2873,7 @@
 		4B18E40719FE3CAA3BFDDB0F /* LiveNoteCleanup+Lookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LiveNoteCleanup+Lookup.swift"; sourceTree = "<group>"; };
 		4B5A4A8F28D8FA1A5E59F7EC /* Confident.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = Confident.mp3; sourceTree = "<group>"; };
 		4BE879845BEF9A356B7CB5EB /* LiveChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChatService.swift; sourceTree = "<group>"; };
+		4C09AE517F848E1046E20CCD /* NostrConnectQRCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrConnectQRCard.swift; sourceTree = "<group>"; };
 		4C4C43890E8EB9A15FFAD39A /* MediaPrivacy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPrivacy.swift; sourceTree = "<group>"; };
 		4C6F73BF6DECD70643354714 /* FloatingArrowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingArrowController.swift; sourceTree = "<group>"; };
 		4CAC4F54E3221D53F705CAAC /* MeshSyncStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshSyncStatusRow.swift; sourceTree = "<group>"; };
@@ -5180,6 +5183,7 @@
 				5B779245F219AC33231205A4 /* MirrorStatusSheet.swift */,
 				AA14EC3D2D24B98A94F93B56 /* ModeButton.swift */,
 				78169D4B165DB968EC93FBC8 /* NewsDot.swift */,
+				4C09AE517F848E1046E20CCD /* NostrConnectQRCard.swift */,
 				4493729F7433BDFA267BF611 /* NoteTranslateButton.swift */,
 				FB0E9EC6033EC8D3F3C783BC /* OpenInWebButton.swift */,
 				F9645D3ABB2CED8999E6D389 /* Pills */,
@@ -6678,6 +6682,7 @@
 				DDA2AEDD9A5128AAF9B41263 /* NewsDot.swift in Sources */,
 				193C334FD581A1B218B2FFD7 /* NostrBuildGifService.swift in Sources */,
 				76DD6E196F5657BCE55DAC73 /* NostrConnectQR.swift in Sources */,
+				F2ACE26D0D9F635172FBA819 /* NostrConnectQRCard.swift in Sources */,
 				DD31975C97CDB6BD5948FAEA /* NostrConnectURI.swift in Sources */,
 				0187825E75EB359DC64021CB /* NostrContentFormatter.swift in Sources */,
 				CDCA7BD2C08A31E082391BD4 /* NostrEvent.swift in Sources */,
@@ -7909,6 +7914,7 @@
 				971602015BEA863AC30DE815 /* NewsDot.swift in Sources */,
 				7A9B2685E614251A85B23B4F /* NostrBuildGifService.swift in Sources */,
 				90A91961D41204162A8408E8 /* NostrConnectQR.swift in Sources */,
+				594F4BE1E3D3B20755C3889C /* NostrConnectQRCard.swift in Sources */,
 				43F5BBA3D55EA6EF5D4E4CBB /* NostrConnectURI.swift in Sources */,
 				E0D882CB85829D6B7D8940E5 /* NostrContentFormatter.swift in Sources */,
 				14ABF30BD7FF762D64D8EE9A /* NostrEvent.swift in Sources */,
