@@ -109,8 +109,10 @@ func (f *RelayFetcher) Fetch(ctx context.Context, asks []Ask, floor int64) (map[
 		start := time.Now()
 		got, eosed, timedOut := f.askOne(ctx, url, filters, since, best)
 		f.spend(url, start, got)
-		if timedOut {
-			// Maybe the batch was too big for this link: halve the next one.
+		if timedOut && got > 0 {
+			// It was sending, so maybe the batch was too big for this link:
+			// halve the next one. A dead relay (no bytes) says nothing about
+			// batch size.
 			f.shrink(floor > 0)
 		}
 		if eosed {
@@ -226,7 +228,13 @@ func (f *RelayFetcher) askOne(ctx context.Context, url string, filters nostr.Fil
 		select {
 		case ev, open := <-sub.Events:
 			if !open {
-				return bytes, false, false // the sub ended without an EOSE
+				// The sub ended without an EOSE. When our own timer ended it
+				// (go-nostr closes Events right after), that is a timeout.
+				if rctx.Err() != nil && ctx.Err() == nil {
+					f.bench(url, time.Now())
+					return bytes, false, true
+				}
+				return bytes, false, false
 			}
 			if ev == nil {
 				continue

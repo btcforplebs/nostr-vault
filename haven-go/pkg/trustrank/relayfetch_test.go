@@ -151,9 +151,13 @@ func TestRelayFetchBenchesAHangingRelay(t *testing.T) {
 	f := &RelayFetcher{Pool: nostr.NewSimplePool(context.Background()),
 		Relays: []string{good, "ws" + strings.TrimPrefix(hang.URL, "http")}, Timeout: 300 * time.Millisecond}
 
+	before := f.Batch(false)
 	start := time.Now()
 	if _, found, _ := fetchOne(f, context.Background(), author, 0); !found {
 		t.Fatal("the working relay's list must be found")
+	}
+	if f.Batch(false) < before {
+		t.Fatalf("a relay that sent nothing must not shrink the batch: %d, was %d", f.Batch(false), before)
 	}
 	if d := time.Since(start); d > 2*time.Second {
 		t.Fatalf("a hanging relay must cost at most its timeout, took %s", d)
