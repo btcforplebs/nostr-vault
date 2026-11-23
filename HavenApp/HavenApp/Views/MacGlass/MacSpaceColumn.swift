@@ -31,6 +31,9 @@ struct MacSpaceColumn: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 12) {
                     liveVault
+                    MacSpacePanel(title: "Trust ranking", systemImage: "point.3.filled.connected.trianglepath.dotted") {
+                        MacVaultStatusCard(configService: configService)
+                    }
                     devices
                     web
                 }
