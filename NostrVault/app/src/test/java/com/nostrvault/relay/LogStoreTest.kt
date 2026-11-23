@@ -21,7 +21,7 @@ class LogStoreTest {
     fun `boot status follows the last boot line`() {
         val store = LogStore()
         store.applyLines(listOf("Haven is booting up"))
-        assertEquals("Booting Haven...", store.bootStatusMessage.value)
+        assertEquals("Starting your vault...", store.bootStatusMessage.value)
         store.applyLines(listOf("listening at 127.0.0.1:3355"))
         assertEquals("", store.bootStatusMessage.value)
     }

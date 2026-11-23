@@ -663,7 +663,7 @@ export async function publishKind(vault, signer, pubkey, kind, content, writeRel
   const template = { kind, created_at: now(), tags: appendClientTag(tags, kind), content }
   const event = checkSigned(await signer.signEvent(template), template, pubkey)
   const local = await vault.outbox.event(event)
-  if (!local.ok) throw new Error(`Haven refused the ${kind === 1 ? "note" : "post"}: ${local.message}`)
+  if (!local.ok) throw new Error(`Your vault refused the ${kind === 1 ? "note" : "post"}: ${local.message}`)
   const { network, local: own } = publishRelays(writeRelays)
   const urls = [...network, ...own]
   const results = await Promise.allSettled(pool.publish(urls, event))

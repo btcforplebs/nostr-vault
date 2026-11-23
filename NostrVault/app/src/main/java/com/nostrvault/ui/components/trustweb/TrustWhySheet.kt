@@ -73,8 +73,8 @@ internal fun TrustWhySheet(pubkey: String, me: String, copy: TrustRankCopy?, acc
             Text("Why ${name(pubkey)}?", color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (why == null) {
-                // The path can place them outside your web after all (an unfollow since the Haven ranked).
-                Text(if (path == null) "Checking…" else "Your Haven's score for them is out of date.", color = SecondaryText, fontSize = 14.sp)
+                // The path can place them outside your web after all (an unfollow since the desktop Vault ranked).
+                Text(if (path == null) "Checking…" else "Your desktop Vault's score for them is out of date.", color = SecondaryText, fontSize = 14.sp)
                 return@Column
             }
             Text(TrustWhyText.headline(why), color = accent, fontSize = 28.sp, fontWeight = FontWeight.Bold)
@@ -94,7 +94,7 @@ internal fun TrustWhySheet(pubkey: String, me: String, copy: TrustRankCopy?, acc
             TrustWhyText.more(why)?.let { Text(it, color = SecondaryText, fontSize = 13.sp) }
             Text(TrustWhyText.HOW, color = TertiaryText, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
             val now = System.currentTimeMillis() / 1000
-            Text("Ranked by your Haven ${RelativeTime.abbreviated(why.rankedAt, now)}", color = TertiaryText, fontSize = 12.sp)
+            Text("Ranked by your desktop Vault ${RelativeTime.abbreviated(why.rankedAt, now)}", color = TertiaryText, fontSize = 12.sp)
         }
     }
 }

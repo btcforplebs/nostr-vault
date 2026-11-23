@@ -327,7 +327,7 @@ enum RelayLogParser {
                 batch.bootStatusMessage = "Subscribing to \(topic.trimmingCharacters(in: .punctuationCharacters))..."
             }
         } else if RelayLogBytes.contains(lowerLine, "is booting up") {
-            batch.bootStatusMessage = "Booting Haven..."
+            batch.bootStatusMessage = "Starting your vault..."
         } else if RelayLogBytes.contains(lowerLine, "starting deeper web of trust") {
             batch.bootStatusMessage = "Analyzing trust graph..."
         } else if RelayLogBytes.contains(lowerLine, "starting") {

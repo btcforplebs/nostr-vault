@@ -202,7 +202,7 @@ fun HavenRelaySettingsScreen(
                 value = urlInput,
                 onValueChange = viewModel::setUrlInput,
                 placeholder = { Text("wss://relay.yourdomain.com") },
-                label = { Text("Haven Relay URL") },
+                label = { Text("Desktop Vault URL") },
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = colors.primary,
@@ -217,7 +217,7 @@ fun HavenRelaySettingsScreen(
             Spacer(Modifier.height(8.dp))
 
             Text(
-                text = "Your Mac, Linux, or cloud-hosted Haven relay. When set, the app syncs your notes from this relay so posts made on other devices appear here.",
+                text = "Your desktop Vault on a Mac or Linux, or a cloud-hosted relay. When set, the app syncs your notes from this relay so posts made on other devices appear here.",
                 color = SecondaryText,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
