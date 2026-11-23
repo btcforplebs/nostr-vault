@@ -763,13 +763,22 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 		slog.Warn("copy: left out, the first catch-up compares everything", "files", leftOut, "stores", notes.unreadable)
 	}
 
+	// The copy finished either way: its own mark, which a left-out file
+	// does not clear, so the apps keep catching up with this peer
+	// (copyHolds, copyv2_nudge.go).
+	markCopySynced(c.peer+copyDoneMark, time.Now().Unix())
+
 	if c.relays != nil {
 		c.line(copyLine{Stage: "relays", Source: "relays"})
 		c.relays()
 	}
 	// This Mac's domain to A and A's here, once the copy is in (pairing).
 	c.syncDevice(ctx)
-	done := copyLine{Stage: "done", Items: [2]int64{int64(stats.notes + stats.messages + stats.files), int64(stats.notes + stats.messages + stats.files)}}
+	// Part and source as every other line has them: the apps' parsers (and
+	// parseCopyLine) refuse a line without, and a first copy whose done line
+	// is refused never becomes a device the app catches up with (LogePhone,
+	// 2026-11-23: no catch-up, so no trust rank copy).
+	done := copyLine{Stage: "done", Part: "-", Source: "mesh", Items: [2]int64{int64(stats.notes + stats.messages + stats.files), int64(stats.notes + stats.messages + stats.files)}}
 	if settings == "refused" || m.Settings == "refused" {
 		done.Error = "settings_refused"
 	}

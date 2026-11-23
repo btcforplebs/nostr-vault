@@ -147,6 +147,7 @@
 		0EAF6627E32030E008F31576 /* DeleteAccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B21ED9CDC3721B689FC21229 /* DeleteAccountView.swift */; };
 		0EB571A6D00090B3DB44D60B /* LandscapeAllowance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0614BB693E3974CDBD73DA /* LandscapeAllowance.swift */; };
 		0EC410FD4C4FE34861C8312F /* CaretFollower.swift in Sources */ = {isa = PBXBuildFile; fileRef = D39BB3DA1D948E689E12C3E3 /* CaretFollower.swift */; };
+		0EE85BD235AE62523B0D6FD1 /* MeshRankNudgeSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A5DC549BFA6F7B3C2581E3 /* MeshRankNudgeSender.swift */; };
 		0EF705E31D1489A229DDDB04 /* ComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 703A1EC22788CD262F92002E /* ComposeView.swift */; };
 		0F053596A138BC4A744FED73 /* MirrorStatusSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B779245F219AC33231205A4 /* MirrorStatusSheet.swift */; };
 		0F34F2704DB3FF98CDC75663 /* CustomEmojiImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA728904A7FCC83C21D5998 /* CustomEmojiImage.swift */; };
@@ -224,6 +225,7 @@
 		163AECF42CED6FE792B7F98A /* DMRequestsButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB9E79782AB55A41F57E213 /* DMRequestsButton.swift */; };
 		16678A90FEA5415640E1579E /* HavenConfig+RemoveAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99105F1FC72B553D0CF0A134 /* HavenConfig+RemoveAccount.swift */; };
 		16744C56474825E90E50200A /* GlobeHops.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AED9F5C683DD139EDE3D72F /* GlobeHops.swift */; };
+		16E3C0D79D95FCBBB9419C29 /* MeshRankNudgeSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A5DC549BFA6F7B3C2581E3 /* MeshRankNudgeSender.swift */; };
 		16F6670579A7DABAC4B5BDBE /* BlossomMediaPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5551CB8D9EB065329DD2781D /* BlossomMediaPickerSheet.swift */; };
 		171570EA44F88842FE8EFCE7 /* FeedPrefetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 542A95E69E3D84F5C583100C /* FeedPrefetcher.swift */; };
 		1790AE2C685C35F4DE2198A5 /* MacRelaySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1576DDD7998A44384715676C /* MacRelaySettingsView.swift */; };
@@ -668,6 +670,7 @@
 		4672FF7145096D1FF96848F9 /* Theming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93ED6BB091A4EBC9250A7858 /* Theming.swift */; };
 		467ED3E63792E632395EA43A /* MediaNoteMatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78947C68D9C77DF8F43687BF /* MediaNoteMatch.swift */; };
 		4698DB63020E0F7F06082C13 /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75FAB177AF921AAA9A805C44 /* EmojiCatalog.swift */; };
+		46C36AD274075BB852705BE1 /* MeshRankNudge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A05658CDDFF463F712B4F53 /* MeshRankNudge.swift */; };
 		46C3A1A6669348AA9081F88C /* FeedHoldPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA19CF4BA8AA51AF4C023B04 /* FeedHoldPicker.swift */; };
 		46FAED418B5B740B3B248B0B /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40B2EEC207C674DD88ABB935 /* SearchView.swift */; };
 		47022670C671E34CF02622FB /* LocalDvmEndOfListFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF60D0A1EBFCF99E26035328 /* LocalDvmEndOfListFooter.swift */; };
@@ -2115,6 +2118,7 @@
 		DC9A0FA4F0780BAE878C7E23 /* PagerNeighbors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 264737BC8AA75A18D2E77AF1 /* PagerNeighbors.swift */; };
 		DCBA54C084A1E420260053AF /* TrustWebView+WOTTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A7E86F4A80054401A68579 /* TrustWebView+WOTTabBar.swift */; };
 		DCCBD1B6AD1E5D73AE0FB902 /* ProfileRefreshPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9F1F07AA851FF576668FCB /* ProfileRefreshPlan.swift */; };
+		DCE58FC11C500F1923827B52 /* MeshRankNudge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A05658CDDFF463F712B4F53 /* MeshRankNudge.swift */; };
 		DCE772251391A5A6446A595C /* DivineComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8274D5B92BF5C6640FBDBD5F /* DivineComposeView.swift */; };
 		DCE92FA06A85B91E73DAE070 /* ReferralProfilePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C14BBE3D7CB0D610AF059D0 /* ReferralProfilePreview.swift */; };
 		DCE9E17677F4ED12996F22AC /* NWCService+Call.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC7DCEB33F7289E0020D079 /* NWCService+Call.swift */; };
@@ -2715,6 +2719,7 @@
 		2967E3C73285483C276E373D /* MeshDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshDiagnostics.swift; sourceTree = "<group>"; };
 		29767A3AEABFBE965362EE96 /* ShareActionList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareActionList.swift; sourceTree = "<group>"; };
 		299FAAEDC2A8F8F9CEBC02E1 /* AppTypeScale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTypeScale.swift; sourceTree = "<group>"; };
+		2A05658CDDFF463F712B4F53 /* MeshRankNudge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshRankNudge.swift; sourceTree = "<group>"; };
 		2AE1D7311E28498D6292689A /* LiveVaultPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveVaultPanel.swift; sourceTree = "<group>"; };
 		2B14053AFA5E916B43335BEE /* LNURLService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LNURLService.swift; sourceTree = "<group>"; };
 		2BD25DDE253AAF97D88D66D1 /* NostrService+VaultDirectRead.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+VaultDirectRead.swift"; sourceTree = "<group>"; };
@@ -3730,6 +3735,7 @@
 		F3F496906984D6ECD30AED13 /* ComposeTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeTextView.swift; sourceTree = "<group>"; };
 		F45EAC47FAD37FE1E1C42AC0 /* RelayCheckProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayCheckProbe.swift; sourceTree = "<group>"; };
 		F461D9255F75109239BEE9D1 /* PairScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairScanView.swift; sourceTree = "<group>"; };
+		F4A5DC549BFA6F7B3C2581E3 /* MeshRankNudgeSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshRankNudgeSender.swift; sourceTree = "<group>"; };
 		F4DFF0F3B08146C008FD0857 /* HomeVaultLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeVaultLogic.swift; sourceTree = "<group>"; };
 		F5274A812424C7D0CF407E92 /* ComposeView+RelayMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ComposeView+RelayMedia.swift"; sourceTree = "<group>"; };
 		F58012CD7192B288A68542B7 /* ProfileSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSection.swift; sourceTree = "<group>"; };
@@ -4376,6 +4382,7 @@
 				7AF18504D84D1E58D74B502E /* ImportJobsService.swift */,
 				0B9E478F433669EF4773A33E /* MeshCopyV2Service.swift */,
 				97020BD72A959C0373440242 /* MeshDeviceSetSync.swift */,
+				F4A5DC549BFA6F7B3C2581E3 /* MeshRankNudgeSender.swift */,
 				DBEB2E914629F6633A39F2DD /* RelayCounters.swift */,
 				A847A4A1309C29C8E4E27F93 /* RelayLogPump.swift */,
 				614245993910AB626DBE345C /* RelayProcessManager+Backup.swift */,
@@ -4996,6 +5003,7 @@
 				0F0E74199E8E25A07F27928B /* MeshPairingConfirmWindow.swift */,
 				F7567E9537DDD4C41851540B /* MeshPairingSession.swift */,
 				79B35043B40E4BA32E85A0E1 /* MeshPairingWords.swift */,
+				2A05658CDDFF463F712B4F53 /* MeshRankNudge.swift */,
 				C955166884F1CE9A5BA4B36E /* MeshSiteIngress.swift */,
 				8AC0483F9DFD12CDCE049B7B /* MeshSiteRetry.swift */,
 				AF1386794E709BFA3E18B9CC /* MeshSyncStatus.swift */,
@@ -6592,6 +6600,8 @@
 				4D7A192E427244EA1BD91C6A /* MeshPairingSession.swift in Sources */,
 				633A064A70E81762D9CBE2AB /* MeshPairingWords.swift in Sources */,
 				B62B5AA48745585EDBCA0CFF /* MeshQRCode.swift in Sources */,
+				46C36AD274075BB852705BE1 /* MeshRankNudge.swift in Sources */,
+				16E3C0D79D95FCBBB9419C29 /* MeshRankNudgeSender.swift in Sources */,
 				83F735BA7188232AFF312FA1 /* MeshSettingsSheet.swift in Sources */,
 				F282B7FBC6006502FCDBB76F /* MeshSiteIngress.swift in Sources */,
 				4154AB9BB343944BBCCF0E57 /* MeshSiteRetry.swift in Sources */,
@@ -7838,6 +7848,8 @@
 				0BD570F6D40A73E8ADCC7524 /* MeshPairingSession.swift in Sources */,
 				2BDDBF0C57B4BB488711F0E5 /* MeshPairingWords.swift in Sources */,
 				68B6097E7D0D0D915F2C9FAF /* MeshQRCode.swift in Sources */,
+				DCE58FC11C500F1923827B52 /* MeshRankNudge.swift in Sources */,
+				0EE85BD235AE62523B0D6FD1 /* MeshRankNudgeSender.swift in Sources */,
 				A82507F9E1F2B2DB90D34610 /* MeshSettingsSheet.swift in Sources */,
 				445527EDBD91D297AA159AE1 /* MeshSiteIngress.swift in Sources */,
 				316A42CFB310571FFBEA0C2A /* MeshSiteRetry.swift in Sources */,

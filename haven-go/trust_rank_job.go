@@ -224,6 +224,8 @@ func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
 				ran = true
 				log.Printf("trust rank: %s… ranked %d people in %s (%d lists, %d KB stored; KB sent by relay so far: %v)",
 					account[:8], len(res.People()), time.Since(start).Round(time.Second), store.Lists(), store.Bytes()>>10, sentKB(fetch.Sent()))
+				// The app nudges the own devices that copy from here (copyv2_nudge.go).
+				log.Printf("%s account=%s", copyRankBuiltMarker, account[:8])
 			}
 		}
 		if store != nil {

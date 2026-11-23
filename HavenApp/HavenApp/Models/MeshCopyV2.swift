@@ -323,6 +323,16 @@ enum MeshCopyV2 {
             return now - since >= MeshCopyV2.unreachableRetryFor ? .gaveUp : .after(MeshCopyV2.unreachableRetryEvery)
         }
 
+        /// Devices the engine copied from (CopyHeldPeersC) that this record
+        /// lost: a first copy whose done line the app could not read (before
+        /// 2026-11-23) never landed in `copied`, so the device was never
+        /// caught up with. They come back due now.
+        mutating func adopt(_ held: [String]) {
+            for peer in held where copied[peer] == nil && pending?.peer != peer {
+                copied[peer] = 0
+            }
+        }
+
         /// The linked devices due a catch-up now: copied before, not the one
         /// a copy is still pending with, and not in the last `syncEvery`.
         func syncDue(now: Int) -> [String] {

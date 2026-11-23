@@ -113,6 +113,7 @@ extern int RunImportJobC(char* name);
 extern int StartCopyFromC(char* peer, char* base, char* startAuth);
 extern int CopySyncC(char* peer, char* base);
 extern int CopySyncNotesOnlyC(char* peer, char* base);
+extern char* CopyHeldPeersC(void);
 extern int SetMeshDevicesC(char* devices);
 extern int CancelImportJobC(char* name);
 extern char* GetNotifyLogC(void);
@@ -679,6 +680,12 @@ Java_com_nostrvault_relay_HavenBridge_copySyncNotesOnly(JNIEnv *env, jobject thi
     REL_CSTR(env, base, cBase);
     REL_CSTR(env, peer, cPeer);
     return rc;
+}
+
+// The paired devices this one copied from, JSON npubs (haven-go copyv2_nudge.go).
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_copyHeldPeers(JNIEnv *env, jobject thiz) {
+    return goStringToJstring(env, CopyHeldPeersC());
 }
 
 // The last import's IMPORT_RESULT line (haven-go import_result.go).
