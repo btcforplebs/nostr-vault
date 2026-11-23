@@ -763,6 +763,11 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 		slog.Warn("copy: left out, the first catch-up compares everything", "files", leftOut, "stores", notes.unreadable)
 	}
 
+	// The copy finished either way: its own mark, which a left-out file
+	// does not clear, so the apps keep catching up with this peer
+	// (copyHolds, copyv2_nudge.go).
+	markCopySynced(c.peer+copyDoneMark, time.Now().Unix())
+
 	if c.relays != nil {
 		c.line(copyLine{Stage: "relays", Source: "relays"})
 		c.relays()

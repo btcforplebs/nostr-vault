@@ -35,6 +35,10 @@ const (
 	// copyNudgeMarker: a paired device this one copies from has a new
 	// result (`RANK_READY peer=<npub>`). The app catches up with it.
 	copyNudgeMarker = "RANK_READY"
+	// copyDoneMark: copy_sync.json's key suffix for "a first copy from this
+	// peer finished", kept even when it left files out (the main mark is
+	// cleared then, so the first catch-up compares everything).
+	copyDoneMark = "#done"
 	// copyNudgeEvery: at most one RANK_READY line per peer this often.
 	copyNudgeEvery = time.Minute
 )
@@ -88,7 +92,8 @@ func (s *copyServer) nudge(w http.ResponseWriter, r *http.Request) {
 }
 
 // copyHolds: whether this device copied from the mesh key peer (hex): it
-// holds a copy token from it and a first copy or catch-up finished. Returns
+// holds a copy token from it and a first copy finished (copyDoneMark), or a
+// catch-up did (the main mark, the only one older copies left). Returns
 // the npub the app names it by.
 func copyHolds(peer string) (string, bool) {
 	npub, err := nip19.EncodePublicKey(peer)
@@ -103,7 +108,7 @@ func copyHolds(peer string) (string, bool) {
 	copySyncMu.Unlock()
 	for _, name := range []string{npub, peer} {
 		key := copyPeerKey(name)
-		if tokens[key] != "" && marks[key] > 0 {
+		if tokens[key] != "" && (marks[key] > 0 || marks[copyPeerKey(name+copyDoneMark)] > 0) {
 			return npub, true
 		}
 	}

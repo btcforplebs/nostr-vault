@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -110,9 +112,13 @@ func TestCopyNudgeOnlyFromAPairedDeviceThisOneCopiedFrom(t *testing.T) {
 }
 
 func TestCopyHeldPeersNamesOnlyCopiedPairedDevices(t *testing.T) {
-	owner, self, mac, pad, gone := newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t)
+	owner, self, mac, pad, gone, box := newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t)
 	openCopyVault(t, owner.pk)
-	pairMeshDevices(t, self, mac, pad)
+	pairMeshDevices(t, self, mac, pad, box)
+	// The box: a finished first copy that left a file out, so only its done
+	// mark is set (Tron #2476).
+	saveCopyPeerToken(meshNpub(box.pk), strings.Repeat("12", 32))
+	markCopySynced(meshNpub(box.pk)+copyDoneMark, time.Now().Unix())
 	// The Mac: token and a finished first copy. The iPad: a token only (a
 	// copy still under way). gone: copied from, but no longer paired.
 	saveCopyPeerToken(meshNpub(mac.pk), strings.Repeat("ab", 32))
@@ -121,8 +127,10 @@ func TestCopyHeldPeersNamesOnlyCopiedPairedDevices(t *testing.T) {
 	saveCopyPeerToken(meshNpub(gone.pk), strings.Repeat("ef", 32))
 	markCopySynced(meshNpub(gone.pk), time.Now().Unix())
 	got := copyHeldPeers()
-	if len(got) != 1 || got[0] != meshNpub(mac.pk) {
-		t.Fatalf("held peers %v, want only the Mac", got)
+	want := []string{meshNpub(mac.pk), meshNpub(box.pk)}
+	sort.Strings(want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("held peers %v, want the Mac and the box", got)
 	}
 }
 

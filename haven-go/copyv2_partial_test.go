@@ -187,6 +187,11 @@ func TestCopyLeftOutFileLeavesTheCatchUpWindowOpen(t *testing.T) {
 	if loadCopySync()[copyPeerKey("npub1peer")] != 0 {
 		t.Fatal("a copy missing a file marked the peer synced: the catch-up would never ask for it")
 	}
+	// But the copy did finish: the apps must still catch up with this peer
+	// (copyHolds, Tron #2476).
+	if loadCopySync()[copyPeerKey("npub1peer"+copyDoneMark)] == 0 {
+		t.Fatal("a done copy that left a file out has no done mark: the apps would never catch up with it")
+	}
 }
 
 // fakeFilesA answers the catch-up's file list in pages of pageSize, newest
