@@ -143,7 +143,8 @@ extension FeedService {
             guard !key.hasPrefix("page-"), client.connectionState == .connected else { continue }
             // nil-author relays (inbox/global/popular) never drift on follows.
             guard let desired = desiredPrimaryAuthors(forRelayKey: key) else { continue }
-            if let current = subscribedAuthorsByRelay[key], Set(current) == Set(desired) {
+            if let current = subscribedAuthorsByRelay[key], Set(current) == Set(desired),
+               subscribedDistantByRelay[key] ?? [] == desiredDistantAuthors(forRelayKey: key) {
                 continue   // already in sync
             }
             sendPrimaryFeedSubscription(client: client, label: key)

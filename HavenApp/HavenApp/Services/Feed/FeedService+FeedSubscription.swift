@@ -326,10 +326,12 @@ extension FeedService {
             req.append(contentsOf: Self.trustScopedFilters(filter, trust: globalTrustSet()) as [Any])
         } else {
             req.append(filter)
+            if let distant = distantPostsFilter(filter, label: label) { req.append(distant) }
         }
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
+            subscribedDistantByRelay[label] = desiredDistantAuthors(forRelayKey: label)
             // Record the author set we just subscribed with so reconcile can detect
             // drift. Inbox/global/popular carry no author filter → record [].
             if isInbox {
@@ -452,7 +454,8 @@ extension FeedService {
         filter["until"] = until
         let subId = feedSubId(for: label)
 
-        let req = ["REQ", subId, filter] as [Any]
+        var req = ["REQ", subId, filter] as [Any]
+        if let distant = distantPostsFilter(filter, label: label) { req.append(distant) }
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
