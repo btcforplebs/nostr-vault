@@ -159,7 +159,7 @@ class DesktopVaultStatusViewModel @Inject constructor(
     fun bar(): Double? = configStore.config.value.discoveryBar?.takeIf { it in 0.0..100.0 }?.let { Math.round(it).toDouble() }
 
     fun namedDevices(): Map<String, String> =
-        devices.value.mapNotNull { d -> HavenBridge.decodeNpub(d.npub)?.lowercase()?.let { it to d.title } }.toMap()
+        devices.value.mapNotNull { d -> HavenBridge.decodeNpub(d.npub)?.lowercase()?.let { it to d.name } }.toMap()
 
     fun selfHex(): String? = mesh.status.value.npub?.let { HavenBridge.decodeNpub(it) }
 

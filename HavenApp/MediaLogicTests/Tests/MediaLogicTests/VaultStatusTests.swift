@@ -45,7 +45,7 @@ final class VaultStatusTests: XCTestCase {
         {"version":1,"at":10000,"state":"idle","accounts":[{"account":"\(me)","running":false,"finishedAt":2800,
         "result":{"builtAt":2800,"people":78855,"maxHop":5,"rings":[1,2],"distantByShown":\(buckets([54: 5, 55: 3, 80: 2])),"viewBar":55},
         "distantAtBar":5,"distantFetchAt":9280,"distantFetchPeople":500,"distantFetchNew":34,
-        "handoffs":[{"device":"\(String(repeating: "b", count: 64))","role":"phone","tookAt":6400,"builtAt":2800,"checkedAt":9900},
+        "handoffs":[{"device":"\(String(repeating: "b", count: 64))","role":"phone","name":"12 mini","tookAt":6400,"builtAt":2800,"checkedAt":9900},
         {"device":"\(String(repeating: "c", count: 64))","checkedAt":9900}]}]}
         """)
         let now = Date(timeIntervalSince1970: 10000)
@@ -58,6 +58,8 @@ final class VaultStatusTests: XCTestCase {
         XCTAssertEqual(VaultStatusText.distant(a, bar: 81), "0 distant connections at your bar (81)")
         XCTAssertEqual(VaultStatusText.distantFetch(a, now: now), "Distant posts fetched 12 min ago · 34 new from 500 people")
         XCTAssertEqual(VaultStatusText.handoff(a.handoffs[0], now: now), "Took it 1 h ago")
+        XCTAssertEqual(a.handoffs[0].name, "12 mini")
+        XCTAssertNil(a.handoffs[1].name)
         XCTAssertEqual(VaultStatusText.handoff(a.handoffs[1], now: now), "Hasn't taken the ranking yet")
     }
 

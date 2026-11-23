@@ -11,10 +11,14 @@ enum DesktopVaultPick {
         return synced.max { (lastSync[$0.npub] ?? 0) < (lastSync[$1.npub] ?? 0) } ?? desktops.first
     }
 
-    /// A hand-off row's name: "This device", the My Devices name, or the role.
+    /// A hand-off row's name: the device's own name (the desktop's My
+    /// Devices, else this device's), "This device" for an unnamed self, and
+    /// its type only when it has no name anywhere.
     static func handoffName(_ h: VaultStatus.Handoff, devices: [MeshDevice], selfHex: String?) -> String {
+        if let name = h.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
+        let local = devices.first { npubHex($0.npub) == h.device }?.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let local, !local.isEmpty { return local }
         if let selfHex, h.device == selfHex.lowercased() { return "This device" }
-        if let named = devices.first(where: { npubHex($0.npub) == h.device }) { return named.displayName }
         return h.role.flatMap { MeshDeviceRole(rawValue: $0)?.label } ?? "A paired device"
     }
 

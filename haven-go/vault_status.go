@@ -72,8 +72,11 @@ type vaultAccountStatus struct {
 // vaultHandoff: TookAt is the last time the device was sent the ranking
 // (BuiltAt is the result it got); CheckedAt the last time it asked at all.
 type vaultHandoff struct {
-	Device    string `json:"device"` // mesh key, hex
-	Role      string `json:"role,omitempty"`
+	Device string `json:"device"` // mesh key, hex
+	Role   string `json:"role,omitempty"`
+	// Name: what the owner called it in My Devices on this desktop; "" when
+	// it has none (the screens then show its type).
+	Name      string `json:"name,omitempty"`
 	TookAt    int64  `json:"tookAt,omitempty"`
 	BuiltAt   int64  `json:"builtAt,omitempty"`
 	CheckedAt int64  `json:"checkedAt"`
@@ -295,21 +298,24 @@ func readVaultStatus() vaultStatus {
 	return buildVaultStatus(trustRankDir(), trustRankAccounts(), time.Now(),
 		trustRankWanted(runtime.GOOS, hostGetenv("TRUST_RANK")),
 		vaultPausedWhy(vaultStatusCshared, trustRankHost.Load(), realWorkRunning()),
-		meshDevices.pairedRoles())
+		meshDevices.pairedInfo())
 }
 
-// pairedRoles: the paired devices now, hex -> role.
-func (m *meshDeviceSet) pairedRoles() map[string]string {
+// pairedDevice: a paired device's role and My Devices name.
+type pairedDevice struct{ Role, Name string }
+
+// pairedInfo: the paired devices now, hex -> role and name.
+func (m *meshDeviceSet) pairedInfo() map[string]pairedDevice {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make(map[string]string, len(m.devices))
+	out := make(map[string]pairedDevice, len(m.devices))
 	for hex, role := range m.devices {
-		out[hex] = role
+		out[hex] = pairedDevice{Role: role, Name: m.names[hex]}
 	}
 	return out
 }
 
-func buildVaultStatus(dir string, accounts []string, now time.Time, wanted bool, why string, paired map[string]string) vaultStatus {
+func buildVaultStatus(dir string, accounts []string, now time.Time, wanted bool, why string, paired map[string]pairedDevice) vaultStatus {
 	out := vaultStatus{Version: 1, At: now.Unix(), State: "idle", Accounts: []vaultAccountStatus{}}
 	vaultLive.Lock()
 	live := vaultLive.vaultPass
@@ -346,11 +352,11 @@ func buildVaultStatus(dir string, accounts []string, now time.Time, wanted bool,
 			a.DistantFetchAt, a.DistantFetchPeople, a.DistantFetchNew = d.At, d.People, d.New
 		}
 		for device, h := range marks.Handoffs[account] {
-			role, ok := paired[device]
+			p, ok := paired[device]
 			if !ok {
 				continue // unpaired since: not one of this owner's devices now
 			}
-			h.Role = role
+			h.Role, h.Name = p.Role, p.Name
 			a.Handoffs = append(a.Handoffs, h)
 		}
 		sort.Slice(a.Handoffs, func(i, j int) bool { return a.Handoffs[i].Device < a.Handoffs[j].Device })

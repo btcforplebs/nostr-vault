@@ -25,6 +25,12 @@ final class DesktopVaultPickTests: XCTestCase {
         XCTAssertEqual(DesktopVaultPick.handoffName(h, devices: [], selfHex: hex.uppercased()), "This device")
         XCTAssertEqual(DesktopVaultPick.handoffName(h, devices: [device(npub ?? "", .phone, "Logen's iPad")], selfHex: nil), "Logen's iPad")
         XCTAssertEqual(DesktopVaultPick.handoffName(h, devices: [], selfHex: nil), "Phone")
+        var named = h
+        named.name = " LogePhone "
+        XCTAssertEqual(DesktopVaultPick.handoffName(named, devices: [device(npub ?? "", .phone, "Logen's iPad")], selfHex: hex),
+                       "LogePhone", "the desktop's name wins, even for this device")
+        XCTAssertEqual(DesktopVaultPick.handoffName(h, devices: [device(npub ?? "", .phone, "  ")], selfHex: nil), "Phone",
+                       "a blank name falls back to the type")
         var unknown = h
         unknown.role = nil
         XCTAssertEqual(DesktopVaultPick.handoffName(unknown, devices: [], selfHex: nil), "A paired device")

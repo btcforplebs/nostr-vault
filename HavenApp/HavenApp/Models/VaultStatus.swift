@@ -54,6 +54,8 @@ struct VaultStatus: Decodable, Equatable {
         /// The device's mesh key, hex.
         var device: String
         var role: String?
+        /// The name the desktop's My Devices gives it; nil when it has none.
+        var name: String?
         var tookAt: Int64?
         var builtAt: Int64?
         var checkedAt: Int64

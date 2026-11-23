@@ -65,6 +65,8 @@ data class VaultStatus(
         /** The device's mesh key, hex. */
         val device: String,
         val role: String? = null,
+        /** The name the desktop's My Devices gives it; null when it has none. */
+        val name: String? = null,
         val tookAt: Long? = null,
         val builtAt: Long? = null,
         val checkedAt: Long = 0,
@@ -162,11 +164,15 @@ object DesktopVaultPick {
     fun <D> desktop(desktops: List<D>, npubOf: (D) -> String, lastSync: Map<String, Long>): D? =
         desktops.filter { (lastSync[npubOf(it)] ?: 0) > 0 }.maxByOrNull { lastSync[npubOf(it)] ?: 0 } ?: desktops.firstOrNull()
 
-    /** A hand-off row's name: "This device", the My Devices name, or the role. */
-    fun handoffName(h: VaultStatus.Handoff, named: Map<String, String>, selfHex: String?, roleLabel: (String) -> String?): String = when {
-        selfHex != null && h.device == selfHex.lowercase() -> "This device"
-        named[h.device] != null -> named.getValue(h.device)
-        else -> h.role?.let(roleLabel) ?: "A paired device"
+    /**
+     * A hand-off row's name: the device's own name (the desktop's My Devices, else this phone's [named], hex -> name),
+     * "This device" for an unnamed self, and its type only when it has no name anywhere.
+     */
+    fun handoffName(h: VaultStatus.Handoff, named: Map<String, String>, selfHex: String?, roleLabel: (String) -> String?): String {
+        h.name?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        named[h.device]?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        if (selfHex != null && h.device == selfHex.lowercase()) return "This device"
+        return h.role?.let(roleLabel) ?: "A paired device"
     }
 
     fun updated(fetchedAt: Long, nowS: Long): String = "Updated ${VaultStatusText.ago(fetchedAt, nowS)}"
