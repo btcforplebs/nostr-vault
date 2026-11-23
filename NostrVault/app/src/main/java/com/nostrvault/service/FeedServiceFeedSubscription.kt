@@ -407,7 +407,7 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
             val trust = globalTrustSet()
             globalTrustScopedFilters(primaryFeedKinds(), filter, trust, resumeSince ?: trustedSince(trust))
         } else {
-            listOf(filter)
+            listOfNotNull(filter, distantPostsFilter(filter, relayUrl))
         }
 
         if (BuildConfig.DEBUG) Log.d(TAG, "sendPrimaryFeedSubscription: $relayUrl subId=$subId followedPubkeys=${_followedPubkeys.value.size}")
