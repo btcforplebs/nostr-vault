@@ -39,6 +39,9 @@ struct VaultDashboardView: View {
             VStack(alignment: .leading, spacing: 24) {
                 statusCard
                 YourDevicesSection(macDetail: macSyncDetail)
+                #if os(iOS)
+                DesktopVaultStatusCard(framed: true)
+                #endif
                 ListWipeBanner()
                 safetySection
                 reachSection
