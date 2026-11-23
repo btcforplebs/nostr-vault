@@ -3,6 +3,7 @@
 package main
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -114,5 +115,16 @@ func TestCappedRetryNeedsHeadroom(t *testing.T) {
 	}
 	if !hasHeadroom(trustRankCap - trustRankHeadroom) {
 		t.Fatal("headroom at the line")
+	}
+}
+
+// damus, nos.lol and nostr.mom never take part in the crawl, whatever the
+// owner's relay list says; the rest keep their order.
+func TestTrustRankRelaysSkipsHosts(t *testing.T) {
+	got := trustRankRelays([]string{"wss://relay.primal.net", "wss://nos.lol/", "wss://Relay.Damus.io",
+		"wss://relay.btcforplebs.com", "wss://nostr.mom", "wss://nostr-pub.wellorder.net"})
+	want := []string{"wss://relay.primal.net", "wss://relay.btcforplebs.com", "wss://nostr-pub.wellorder.net"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v", got)
 	}
 }

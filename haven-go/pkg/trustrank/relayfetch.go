@@ -9,21 +9,37 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 )
 
-// RelayFetcher reads lists from relays one at a time: the next relay is asked
-// only for a kind (follows or mutes) that no relay so far had.
+// RelayFetcher reads many people's lists per REQ from relays one at a time:
+// the first relay is asked for everyone in the batch, and each next relay
+// only for the people (and kinds) still missing. Each relay's bytes are
+// budgeted (relaybudget.go).
 type RelayFetcher struct {
 	Pool    *nostr.SimplePool
 	Relays  []string
 	Timeout time.Duration // per relay (working: 8 s)
+	// Budget is the bytes one relay may send per minute (0: DefaultBudget).
+	Budget int64
 
 	mu      sync.Mutex
 	benched map[string]time.Time // relay -> asked again after this
+	next    map[string]time.Time // relay -> asked again no sooner (budget)
+	sent    map[string]int64     // relay -> bytes received
+	perList [2]float64           // bytes per asked person: [full, refresh]
 }
+
+// MaxBatch is the most people asked for in one REQ. 100 people x 2 kinds is
+// 200 events, under strfry's 500 cap.
+const MaxBatch = 100
+
+// muteRelays: a mute list (kind 10000) is asked for on this many answering
+// relays at most. Most people have none, so asking every relay for it costs
+// a REQ per relay per batch and rarely finds one.
+const muteRelays = 2
 
 // benchFor: a relay that did not finish in time is skipped this long. One
 // that hangs (nos.lol on 2026-11-22 took 15 s, the pool's dial cap, so most
-// likely a connect that never finished) would otherwise cost every list
-// without a mute list its full wait.
+// likely a connect that never finished) would otherwise cost every batch
+// its full wait.
 const benchFor = 10 * time.Minute
 
 func (f *RelayFetcher) usable(url string, now time.Time) bool {
@@ -44,7 +60,7 @@ func (f *RelayFetcher) allBenched(now time.Time) bool {
 }
 
 // ErrNoRelay: no relay connected and answered in time, so "no list" is not
-// known. The crawler pauses on it instead of passing the person by.
+// known. The crawler pauses on it instead of passing the people by.
 var ErrNoRelay = errors.New("trustrank: no relay answered")
 
 func (f *RelayFetcher) bench(url string, now time.Time) {
@@ -56,148 +72,196 @@ func (f *RelayFetcher) bench(url string, now time.Time) {
 	f.benched[url] = now.Add(benchFor)
 }
 
-// Fetch returns pubkey's newest kind 3 (follows) and kind 10000 (public
-// mutes), signature-checked and authored by pubkey. With since, it first asks
-// only for lists newer than that; if one changed it reads both in full, and
-// keeps the newer of each kind from the two reads, so a stale relay that
-// answers the full read first cannot hide the change.
-func (f *RelayFetcher) Fetch(ctx context.Context, pubkey string, since int64) (List, bool, error) {
-	var fresh [2]*nostr.Event
-	if since > 0 {
-		var err error
-		fresh, err = f.once(ctx, pubkey, since)
-		if err != nil || (fresh[0] == nil && fresh[1] == nil) {
-			return List{}, false, err
-		}
-	}
-	got, err := f.once(ctx, pubkey, 0)
-	if err != nil {
-		return List{}, false, err
-	}
-	for i := range got {
-		if newer(fresh[i], got[i]) {
-			got[i] = fresh[i]
-		}
-	}
-	b3, b10000 := got[0], got[1]
-	if b3 == nil && b10000 == nil {
-		return List{}, false, nil
-	}
-	var l List
-	if b3 != nil {
-		l.FollowsAt, l.Follows = int64(b3.CreatedAt), pTags(b3)
-	}
-	if b10000 != nil {
-		l.MutesAt, l.Mutes = int64(b10000.CreatedAt), pTags(b10000)
-	}
-	return l, true, nil
-}
-
 var listKinds = [2]int{3, 10000}
 
 func newer(a, b *nostr.Event) bool { return a != nil && (b == nil || a.CreatedAt > b.CreatedAt) }
 
-// once asks one relay at a time, and the next only for the kinds still
-// missing. best[0] is kind 3, best[1] kind 10000.
-func (f *RelayFetcher) once(ctx context.Context, pubkey string, since int64) (best [2]*nostr.Event, err error) {
+// Fetch returns the newest kind 3 (follows) and kind 10000 (public mutes) of
+// each asked person, signature-checked and authored by them; a person no
+// relay had a list for is left out. An Ask with Since gets only lists at or
+// after it (a kind with nothing new keeps its stored copy: Store.PutList
+// goes kind by kind). floor (refresh only, else 0) raises every REQ's since
+// to at least it; the per-person Since is still applied to each event.
+func (f *RelayFetcher) Fetch(ctx context.Context, asks []Ask, floor int64) (map[string]List, error) {
+	since := make(map[string]int64, len(asks))
+	for _, a := range asks {
+		since[a.Pubkey] = a.Since
+	}
+	best := make(map[string]*[2]*nostr.Event, len(asks))
 	ignoreBench := f.allBenched(time.Now())
-	answered := false
+	answered, muteAsks := false, 0
+	var bytes int64 // from the relay asked for everyone, to size the next batch
+	sized := false
 	for _, url := range f.Relays {
 		if ctx.Err() != nil {
-			return best, ctx.Err()
+			return nil, ctx.Err()
 		}
-		var kinds []int
-		for i, k := range listKinds {
-			if best[i] == nil {
-				kinds = append(kinds, k)
-			}
-		}
-		if len(kinds) == 0 {
+		filters, asksMutes := batchFilters(asks, best, floor, muteAsks < muteRelays)
+		if len(filters) == 0 {
 			break
-		}
-		filter := nostr.Filter{Authors: []string{pubkey}, Kinds: kinds}
-		if since > 0 {
-			ts := nostr.Timestamp(since)
-			filter.Since = &ts
 		}
 		if !ignoreBench && !f.usable(url, time.Now()) {
 			continue
 		}
-		rctx, cancel := context.WithTimeout(ctx, f.timeout())
-		sub, ok := f.ask(rctx, url, filter)
-		if !ok {
-			// Could not connect or send the REQ in time (or at all): this
-			// relay said nothing, which is not the same as "no list".
-			if ctx.Err() == nil && rctx.Err() != nil {
-				f.bench(url, time.Now())
-			}
-			cancel()
-			continue
+		if err := f.waitBudget(ctx, url); err != nil {
+			return nil, err
 		}
-		// Only an EOSE is an answer. A CLOSED (rate-limited, auth-required)
-		// or a dropped socket ends the ask unanswered.
-		eosed := false
-	read:
-		for {
-			select {
-			case ev, open := <-sub.Events:
-				if !open {
-					break read // the sub ended without an EOSE
-				}
-				if ev == nil || ev.PubKey != pubkey {
-					continue
-				}
-				i := -1
-				for j, k := range listKinds {
-					if ev.Kind == k && best[j] == nil || ev.Kind == k && ev.CreatedAt > best[j].CreatedAt {
-						i = j
-					}
-				}
-				if i < 0 || (since > 0 && int64(ev.CreatedAt) < since) {
-					continue
-				}
-				if ok, err := ev.CheckSignature(); !ok || err != nil {
-					continue
-				}
-				best[i] = ev
-			case <-sub.EndOfStoredEvents:
-				// Sent only after every stored event was handed over.
-				eosed = true
-				break read
-			case <-sub.ClosedReason:
-				break read
-			case <-rctx.Done():
-				// Out of time: skip this relay for a while.
-				if ctx.Err() == nil {
-					f.bench(url, time.Now())
-				}
-				break read
-			}
-		}
-		cancel() // ends the sub; its pending sends give up on its context
+		start := time.Now()
+		got, eosed := f.askOne(ctx, url, filters, since, best)
+		f.spend(url, start, got)
 		if eosed {
+			if !answered {
+				bytes, sized = got, true
+			}
 			answered = true
+			if asksMutes {
+				muteAsks++
+			}
 		}
 	}
 	if ctx.Err() != nil {
-		return best, ctx.Err()
+		return nil, ctx.Err()
 	}
 	if !answered {
-		return best, ErrNoRelay
+		return nil, ErrNoRelay
 	}
-	return best, nil
+	if sized {
+		f.learn(floor > 0, bytes, len(asks))
+	}
+	out := make(map[string]List, len(best))
+	for pk, b := range best {
+		var l List
+		if b[0] != nil {
+			l.FollowsAt, l.Follows = int64(b[0].CreatedAt), pTags(b[0])
+		}
+		if b[1] != nil {
+			l.MutesAt, l.Mutes = int64(b[1].CreatedAt), pTags(b[1])
+		}
+		if b[0] != nil || b[1] != nil {
+			out[pk] = l
+		}
+	}
+	return out, nil
+}
+
+// batchFilters builds one relay's REQ: the people still missing a kind,
+// grouped by which kinds they miss and whether they carry a since. Kind
+// 10000 is left out once mutes is false. asksMutes: a filter asks for it.
+func batchFilters(asks []Ask, best map[string]*[2]*nostr.Event, floor int64, mutes bool) (out nostr.Filters, asksMutes bool) {
+	type key struct {
+		need   [2]bool
+		sinced bool
+	}
+	groups := map[key]*nostr.Filter{}
+	var order []key
+	for _, a := range asks {
+		b := best[a.Pubkey]
+		need := [2]bool{b == nil || b[0] == nil, mutes && (b == nil || b[1] == nil)}
+		if !need[0] && !need[1] {
+			continue
+		}
+		since := a.Since // 0: nothing stored, so a full read even in a refresh
+		if since > 0 {
+			since = max(since, floor)
+		}
+		k := key{need, since > 0}
+		g := groups[k]
+		if g == nil {
+			g = &nostr.Filter{}
+			for i, kind := range listKinds {
+				if need[i] {
+					g.Kinds = append(g.Kinds, kind)
+				}
+			}
+			groups[k] = g
+			order = append(order, k)
+		}
+		g.Authors = append(g.Authors, a.Pubkey)
+		if k.sinced && (g.Since == nil || nostr.Timestamp(since) < *g.Since) {
+			ts := nostr.Timestamp(since)
+			g.Since = &ts
+		}
+		asksMutes = asksMutes || need[1]
+	}
+	for _, k := range order {
+		out = append(out, *groups[k])
+	}
+	return out, asksMutes
+}
+
+// askOne sends filters to url and keeps each asked person's newest list per
+// kind in best. bytes is about what the relay sent; eosed is whether it
+// answered (only an EOSE is an answer: a CLOSED, rate-limited or
+// auth-required, or a dropped socket ends the ask unanswered).
+func (f *RelayFetcher) askOne(ctx context.Context, url string, filters nostr.Filters, since map[string]int64, best map[string]*[2]*nostr.Event) (bytes int64, eosed bool) {
+	rctx, cancel := context.WithTimeout(ctx, f.timeout())
+	defer cancel() // ends the sub; its pending sends give up on its context
+	sub, ok := f.ask(rctx, url, filters)
+	if !ok {
+		// Could not connect or send the REQ in time (or at all): this relay
+		// said nothing, which is not the same as "no list".
+		if ctx.Err() == nil && rctx.Err() != nil {
+			f.bench(url, time.Now())
+		}
+		return 0, false
+	}
+	for {
+		select {
+		case ev, open := <-sub.Events:
+			if !open {
+				return bytes, false // the sub ended without an EOSE
+			}
+			if ev == nil {
+				continue
+			}
+			bytes += eventBytes(ev)
+			s, asked := since[ev.PubKey]
+			if !asked || (s > 0 && int64(ev.CreatedAt) < s) {
+				continue
+			}
+			i := -1
+			for j, k := range listKinds {
+				if ev.Kind == k {
+					i = j
+				}
+			}
+			b := best[ev.PubKey]
+			if i < 0 || (b != nil && !newer(ev, b[i])) {
+				continue
+			}
+			if ok, err := ev.CheckSignature(); !ok || err != nil {
+				continue
+			}
+			if b == nil {
+				b = &[2]*nostr.Event{}
+				best[ev.PubKey] = b
+			}
+			b[i] = ev
+		case <-sub.EndOfStoredEvents:
+			// Sent only after every stored event was handed over.
+			return bytes, true
+		case <-sub.ClosedReason:
+			return bytes, false
+		case <-rctx.Done():
+			// Out of time: skip this relay for a while.
+			if ctx.Err() == nil {
+				f.bench(url, time.Now())
+			}
+			return bytes, false
+		}
+	}
 }
 
 // ask connects to url and sends the REQ, giving up when ctx ends. Neither
 // the pool's dial (up to 15 s) nor the REQ write (it waits behind pings on a
 // dead socket) watches ctx, so both run aside; a sub made after ctx ended
 // ends by itself, since it lives on ctx.
-func (f *RelayFetcher) ask(ctx context.Context, url string, filter nostr.Filter) (*nostr.Subscription, bool) {
+func (f *RelayFetcher) ask(ctx context.Context, url string, filters nostr.Filters) (*nostr.Subscription, bool) {
 	done := make(chan *nostr.Subscription, 1)
 	go func() {
 		var sub *nostr.Subscription
 		if r, err := f.Pool.EnsureRelay(url); err == nil {
-			if s, err := r.Subscribe(ctx, nostr.Filters{filter}); err == nil {
+			if s, err := r.Subscribe(ctx, filters); err == nil {
 				sub = s
 			}
 		}

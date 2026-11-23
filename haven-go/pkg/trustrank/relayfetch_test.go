@@ -58,26 +58,32 @@ func TestRelayFetchStaleFirstRelayDoesNotHideNewerLists(t *testing.T) {
 	defer cancel()
 	f := &RelayFetcher{Pool: nostr.NewSimplePool(ctx), Relays: []string{stale, fresh}, Timeout: 3 * time.Second}
 
-	// Refresh: stored at 200, so since 201. The kind 3 @300 changed.
-	l, found, err := f.Fetch(ctx, author, 201)
-	if err != nil || !found || l.FollowsAt != 300 || l.MutesAt != 200 || len(l.Follows) != 1 || l.Follows[0] != pk(2) {
+	// Refresh: stored at 200, so since 201. The kind 3 @300 changed; the
+	// mutes @200 did not, so they are not read again (the stored copy stays:
+	// Store.PutList goes kind by kind, see the next test).
+	l, found, err := fetchOne(f, ctx, author, 201)
+	if err != nil || !found || l.FollowsAt != 300 || l.MutesAt != 0 || len(l.Follows) != 1 || l.Follows[0] != pk(2) {
 		t.Fatalf("refresh: err %v found %v %+v", err, found, l)
-	}
-	if len(l.Mutes) != 1 || l.Mutes[0] != pk(3) {
-		t.Fatalf("refresh lost the mutes: %+v", l)
 	}
 
 	// Full read, nothing stored: follows from the stale relay (the next is
 	// asked only for what is missing), mutes from the next.
-	l, found, err = f.Fetch(ctx, author, 0)
+	l, found, err = fetchOne(f, ctx, author, 0)
 	if err != nil || !found || len(l.Mutes) != 1 || l.Mutes[0] != pk(3) || l.FollowsAt != 100 || l.MutesAt != 200 {
 		t.Fatalf("full read: err %v found %v %+v", err, found, l)
 	}
 
 	// Nothing newer than 301: not found.
-	if _, found, err = f.Fetch(ctx, author, 301); err != nil || found {
+	if _, found, err = fetchOne(f, ctx, author, 301); err != nil || found {
 		t.Fatalf("since 301: err %v found %v", err, found)
 	}
+}
+
+// fetchOne asks for one person, as the crawler did before batching.
+func fetchOne(f *RelayFetcher, ctx context.Context, author string, since int64) (List, bool, error) {
+	got, err := f.Fetch(ctx, []Ask{{Pubkey: author, Since: since}}, 0)
+	l, found := got[author]
+	return l, found, err
 }
 
 // storedList reads rater's lists back from the store.
@@ -146,14 +152,14 @@ func TestRelayFetchBenchesAHangingRelay(t *testing.T) {
 		Relays: []string{good, "ws" + strings.TrimPrefix(hang.URL, "http")}, Timeout: 300 * time.Millisecond}
 
 	start := time.Now()
-	if _, found, _ := f.Fetch(context.Background(), author, 0); !found {
+	if _, found, _ := fetchOne(f, context.Background(), author, 0); !found {
 		t.Fatal("the working relay's list must be found")
 	}
 	if d := time.Since(start); d > 2*time.Second {
 		t.Fatalf("a hanging relay must cost at most its timeout, took %s", d)
 	}
 	start = time.Now()
-	f.Fetch(context.Background(), author, 0)
+	fetchOne(f, context.Background(), author, 0)
 	if d := time.Since(start); d > 250*time.Millisecond {
 		t.Fatalf("the benched relay must be skipped, took %s", d)
 	}
@@ -169,7 +175,7 @@ func TestRelayFetchAllBenchedIsAnErrorNotNoList(t *testing.T) {
 	f := &RelayFetcher{Pool: nostr.NewSimplePool(context.Background()),
 		Relays: []string{good}, Timeout: 2 * time.Second}
 	f.bench(good, time.Now()) // benched, but answering fine
-	if _, found, err := f.Fetch(context.Background(), author, 0); err != nil || !found {
+	if _, found, err := fetchOne(f, context.Background(), author, 0); err != nil || !found {
 		t.Fatalf("all benched: must ask anyway and find the list, got found=%v err=%v", found, err)
 	}
 
@@ -181,7 +187,7 @@ func TestRelayFetchAllBenchedIsAnErrorNotNoList(t *testing.T) {
 	f = &RelayFetcher{Pool: nostr.NewSimplePool(context.Background()),
 		Relays: []string{dead, "ws://127.0.0.1:1"}, Timeout: 300 * time.Millisecond}
 	for i := 0; i < 2; i++ { // first: both time out or fail; second: both benched
-		_, found, err := f.Fetch(context.Background(), author, 0)
+		_, found, err := fetchOne(f, context.Background(), author, 0)
 		if found || !errors.Is(err, ErrNoRelay) {
 			t.Fatalf("round %d: no relay answered, want ErrNoRelay, got found=%v err=%v", i, found, err)
 		}
@@ -204,7 +210,7 @@ func TestRelayFetchRefusalIsNotAnAnswer(t *testing.T) {
 	f := &RelayFetcher{Pool: nostr.NewSimplePool(context.Background()),
 		Relays: []string{refusing}, Timeout: 2 * time.Second}
 	start := time.Now()
-	if _, found, err := f.Fetch(context.Background(), author, 0); found || !errors.Is(err, ErrNoRelay) {
+	if _, found, err := fetchOne(f, context.Background(), author, 0); found || !errors.Is(err, ErrNoRelay) {
 		t.Fatalf("refused ask: want ErrNoRelay, got found=%v err=%v", found, err)
 	}
 	if d := time.Since(start); d > time.Second {
@@ -213,7 +219,7 @@ func TestRelayFetchRefusalIsNotAnAnswer(t *testing.T) {
 
 	empty := listRelay(t)
 	f.Relays = []string{refusing, empty}
-	if _, found, err := f.Fetch(context.Background(), author, 0); found || err != nil {
+	if _, found, err := fetchOne(f, context.Background(), author, 0); found || err != nil {
 		t.Fatalf("EOSE with nothing is no list: got found=%v err=%v", found, err)
 	}
 }

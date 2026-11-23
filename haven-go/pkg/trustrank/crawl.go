@@ -23,13 +23,31 @@ type List struct {
 // Newest is the newer of the two lists' times.
 func (l List) Newest() int64 { return max(l.FollowsAt, l.MutesAt) }
 
-// Fetcher reads one person's lists. found is false when no relay had them.
-type Fetcher interface {
-	Fetch(ctx context.Context, pubkey string, since int64) (l List, found bool, err error)
+// Ask is one person in a batch. Since (0: nothing stored) asks only for
+// lists at or after it.
+type Ask struct {
+	Pubkey string
+	Since  int64
 }
 
+// Fetcher reads a batch of people's lists. The map holds only the people a
+// relay had a list for; an error means "not known", never "no list".
+type Fetcher interface {
+	Fetch(ctx context.Context, asks []Ask, floor int64) (map[string]List, error)
+	// Batch is how many people to ask for next (refresh: a refresh pass).
+	Batch(refresh bool) int
+}
+
+// refreshFloor: a refresh's REQs ask for nothing older than a day before
+// the last finished pass. Asking each person since their own stored list
+// (often years old) would read nearly every list again; anything newer than
+// the stored list but older than the floor was there at the last pass, so
+// it was read then. Missed only: a list backdated by over a day, or a person
+// who was not a reader last pass. The weekly full pass reads those.
+const refreshFloor = 24 * time.Hour
+
 // Crawler walks out from one owner, reading only the lists of people who
-// already pass the bar, one list at a time, and ranks what it has read.
+// already pass the bar, a batch at a time, and ranks what it has read.
 // It signs nothing and publishes nothing.
 type Crawler struct {
 	Store  *Store
@@ -51,7 +69,7 @@ type Crawler struct {
 	// Wait blocks until the crawl may go on (window closed, no copy or
 	// import running). False stops the run.
 	Wait func(ctx context.Context) bool
-	// Pace is the pause after each list (working: 1 s).
+	// Pace is the pause after each batch (working: 1 s).
 	Pace time.Duration
 	// Now is the clock (tests).
 	Now func() time.Time
@@ -80,6 +98,10 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 		st = State{Account: c.Owner, ParamsVersion: c.ParamsVersion, Hop: 1, Refresh: refresh,
 			FullAt: st.FullAt, RefreshAt: st.RefreshAt}
 	}
+	var floor int64
+	if last := max(st.FullAt, st.RefreshAt); refresh && last > 0 {
+		floor = max(1, last-int64(refreshFloor/time.Second))
+	}
 	// pause keeps the place: lists on disk first, then the checkpoint.
 	pause := func() (*Result, error) {
 		c.Store.Checkpoint(c.Dir, st)
@@ -106,53 +128,60 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 		if st.Next < len(readers) && readers[st.Next] == st.Last && st.Last != "" {
 			st.Next++
 		}
-		lastSave := c.now()
-		for ; st.Next < len(readers); st.Next++ {
+		lastSave, savedAt := c.now(), st.Next
+		for st.Next < len(readers) {
 			if !c.Wait(ctx) || ctx.Err() != nil {
 				return pause()
 			}
-			pk := readers[st.Next]
-			// A full pass reads every list again (a resumed one starts at
-			// the checkpoint's place); a refresh asks only for newer ones.
-			have, stored := c.Store.CreatedAt(pk)
-			since := int64(0)
-			if stored && refresh {
-				since = have + 1
+			batch := readers[st.Next:min(len(readers), st.Next+max(1, c.Fetch.Batch(refresh)))]
+			asks := make([]Ask, len(batch))
+			for i, pk := range batch {
+				// A full pass reads every list again (a resumed one starts
+				// at the checkpoint's place); a refresh asks only for newer.
+				asks[i].Pubkey = pk
+				if have, stored := c.Store.CreatedAt(pk); stored && refresh {
+					asks[i].Since = have + 1
+				}
 			}
-			l, found, err := c.Fetch.Fetch(ctx, pk, since)
+			got, err := c.Fetch.Fetch(ctx, asks, floor)
 			if err != nil {
 				// No answer (no relay reached, or ctx ended) is not "no
-				// list": keep the place and stop, so the person is asked
-				// again on the next run instead of passed by.
+				// list": keep the place (before this batch) and stop, so
+				// these people are asked again on the next run.
 				c.Store.Checkpoint(c.Dir, st)
 				if ctx.Err() != nil {
 					return nil, ErrStopped
 				}
-				return nil, fmt.Errorf("trustrank: list of %s…: %w", pk[:8], err)
+				return nil, fmt.Errorf("trustrank: lists from %s…: %w", batch[0][:8], err)
 			}
-			if found {
-				limit := c.now().Add(maxSkew).Unix()
-				l.FollowsAt, l.MutesAt = min(l.FollowsAt, limit), min(l.MutesAt, limit)
-				// Kind by kind: a stale copy of one kind never replaces a
-				// newer stored one, even when the other kind is new.
-				_, err = c.Store.PutList(pk, l)
+			for _, pk := range batch {
+				if l, found := got[pk]; found {
+					limit := c.now().Add(maxSkew).Unix()
+					l.FollowsAt, l.MutesAt = min(l.FollowsAt, limit), min(l.MutesAt, limit)
+					// Kind by kind: a stale copy of one kind never replaces
+					// a newer stored one, even when the other kind is new.
+					if _, err := c.Store.PutList(pk, l); errors.Is(err, ErrFull) {
+						full = true // keep what we have and rank it
+						break
+					}
+				}
+				st.Last = pk
+				st.Next++
 			}
-			if errors.Is(err, ErrFull) {
-				full = true // keep what we have and rank it
+			if full {
 				break
 			}
-			st.Last = pk
 			if c.Progress != nil {
-				c.Progress(st.Hop, st.Next+1, len(readers))
+				c.Progress(st.Hop, st.Next, len(readers))
 			}
-			if (st.Next+1)%checkpointEvery == 0 || c.now().Sub(lastSave) > 30*time.Second {
+			if st.Next-savedAt >= checkpointEvery || c.now().Sub(lastSave) > 30*time.Second {
 				c.Store.Checkpoint(c.Dir, st)
-				lastSave = c.now()
+				lastSave, savedAt = c.now(), st.Next
 			}
 			if c.Pace > 0 {
 				select {
 				case <-ctx.Done():
-					return pause() // this list is read; the place is st.Last
+					return pause() // this batch is read; the place is st.Last
 				case <-time.After(c.Pace):
 				}
 			}

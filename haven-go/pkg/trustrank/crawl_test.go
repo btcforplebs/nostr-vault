@@ -11,26 +11,37 @@ import (
 )
 
 type fakeNet struct {
-	mu    sync.Mutex
-	lists map[string]List
-	calls []string
-	since map[string]int64
+	mu      sync.Mutex
+	lists   map[string]List
+	calls   []string
+	since   map[string]int64
+	batch   int     // people per Fetch (0: 1)
+	batches []int   // size of each Fetch
+	floors  []int64 // floor of each Fetch
 }
 
-func (f *fakeNet) Fetch(_ context.Context, pk string, since int64) (List, bool, error) {
+func (f *fakeNet) Fetch(_ context.Context, asks []Ask, floor int64) (map[string]List, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.calls = append(f.calls, pk)
 	if f.since == nil {
 		f.since = map[string]int64{}
 	}
-	f.since[pk] = since
-	l, ok := f.lists[pk]
-	if !ok || (since > 0 && l.Newest() < since) {
-		return List{}, false, nil
+	f.batches = append(f.batches, len(asks))
+	f.floors = append(f.floors, floor)
+	out := map[string]List{}
+	for _, a := range asks {
+		f.calls = append(f.calls, a.Pubkey)
+		f.since[a.Pubkey] = a.Since
+		l, ok := f.lists[a.Pubkey]
+		if !ok || (a.Since > 0 && l.Newest() < a.Since) {
+			continue
+		}
+		out[a.Pubkey] = l
 	}
-	return l, true, nil
+	return out, nil
 }
+
+func (f *fakeNet) Batch(bool) int { return max(1, f.batch) }
 
 func (f *fakeNet) called(pk string) bool {
 	for _, c := range f.calls {
@@ -303,17 +314,19 @@ type downNet struct {
 	n int
 }
 
-func (d *downNet) Fetch(ctx context.Context, pk string, since int64) (List, bool, error) {
+func (d *downNet) Fetch(ctx context.Context, asks []Ask, floor int64) (map[string]List, error) {
 	d.mu.Lock()
 	down := len(d.calls) >= d.n
+	if down {
+		for _, a := range asks {
+			d.calls = append(d.calls, a.Pubkey)
+		}
+	}
 	d.mu.Unlock()
 	if down {
-		d.fakeNet.mu.Lock()
-		d.calls = append(d.calls, pk)
-		d.fakeNet.mu.Unlock()
-		return List{}, false, ErrNoRelay
+		return nil, ErrNoRelay
 	}
-	return d.fakeNet.Fetch(ctx, pk, since)
+	return d.fakeNet.Fetch(ctx, asks, floor)
 }
 
 // Tron's #2394 must-fix: a fetch error is not "no list". The crawl stops at
