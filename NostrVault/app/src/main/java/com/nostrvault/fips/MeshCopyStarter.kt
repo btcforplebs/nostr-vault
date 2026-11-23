@@ -258,10 +258,8 @@ class MeshCopyStarter internal constructor(
             adoptHeld()
             val peer = record.syncDue(nowS()).firstOrNull() ?: return
             val (base, prefix) = link(peer)?.let(MeshCopyV2::splitLink) ?: return
-            if (engine.copySync(peer, base + prefix, filesToo()) == MeshCopyV2.RUN_STARTED) {
-                current = peer
-                synchronized(this) { record = record.copy(copied = record.copied + (peer to nowS())) }
-            }
+            // Stamped by the done line ([MeshCopyV2.Record.finished]), not here: a run cut short is due again.
+            if (engine.copySync(peer, base + prefix, filesToo()) == MeshCopyV2.RUN_STARTED) current = peer
         } finally {
             lock.unlock()
         }
@@ -326,7 +324,6 @@ class MeshCopyStarter internal constructor(
             _sync.update { it.copy(queued = it.queued - peer) }
             if (code == MeshCopyV2.RUN_STARTED) {
                 current = peer
-                synchronized(this) { record = record.copy(copied = record.copied + (peer to nowS())) }
                 _sync.update { it.copy(failed = it.failed - peer) }
             } else {
                 _sync.update { it.copy(failed = it.failed + (peer to if (split == null) "unreachable" else "not_started")) }
