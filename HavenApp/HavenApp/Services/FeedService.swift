@@ -306,6 +306,9 @@ class FeedService: ObservableObject {
     /// when the authoritative follow set changes we compare against this and only
     /// re-issue the REQ where it has actually drifted.
     var subscribedAuthorsByRelay: [String: [String]] = [:]
+    /// The distant authors the live primary REQ's second filter carried, per
+    /// relay key (`desiredDistantAuthors`); absent means none.
+    var subscribedDistantByRelay: [String: [String]] = [:]
     /// Re-entrancy guard — `reconcileFeedSubscriptions()` can be reached from a
     /// Combine sink, a Task continuation, and a view `onAppear` in the same runloop turn.
     var isReconciling = false

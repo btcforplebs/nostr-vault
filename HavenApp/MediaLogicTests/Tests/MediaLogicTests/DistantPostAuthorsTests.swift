@@ -39,6 +39,13 @@ final class DistantPostAuthorsTests: XCTestCase {
         let pick = DistantPostAuthors.pick(distant, copy: copy)
         XCTAssertEqual(pick.count, DistantPostAuthors.max)
         XCTAssertEqual(copy.people[pick[0]]?.score, 89)
+        // Mutes go before the cut, as the engine's do: the muted top people
+        // leave room for the ones the Vault fetches in their place.
+        let muted = Set(pick.prefix(7))
+        let unmuted = DistantPostAuthors.pick(distant, copy: copy, muted: muted)
+        XCTAssertEqual(unmuted.count, DistantPostAuthors.max)
+        XCTAssertTrue(muted.isDisjoint(with: unmuted))
+        XCTAssertEqual(Array(unmuted.prefix(DistantPostAuthors.max - 7)), Array(pick.dropFirst(7)))
     }
 
     func testTheLocalFilterKeepsTheRequestAndSwapsTheAuthors() {

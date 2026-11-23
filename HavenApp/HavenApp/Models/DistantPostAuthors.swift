@@ -12,11 +12,14 @@ enum DistantPostAuthors {
     /// for people whose posts never reach the phone.
     static let max = 500
 
-    /// `distant` (who the bar admits three hops out and further) ordered by
-    /// score in `copy`, highest first, ties by key, at most `max`.
-    static func pick(_ distant: Set<String>, copy: TrustRankCopy?) -> [String] {
+    /// `distant` (who the bar admits three hops out and further) less
+    /// `muted`, ordered by score in `copy`, highest first, ties by key, at
+    /// most `max`. Mutes go before the cut, as the engine's do, so a muted
+    /// person never takes the place of one the Vault fetches for.
+    static func pick(_ distant: Set<String>, copy: TrustRankCopy?, muted: Set<String> = []) -> [String] {
         guard let copy, !distant.isEmpty else { return [] }
-        let ranked = distant.compactMap { pk in copy.people[pk].map { (pk, $0.score) } }
+        let asked = distant.subtracting(muted)
+        let ranked = asked.compactMap { pk in copy.people[pk].map { (pk, $0.score) } }
             .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }
         return ranked.prefix(max).map(\.0)
     }

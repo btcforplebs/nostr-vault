@@ -331,6 +331,7 @@ extension FeedService {
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
+            subscribedDistantByRelay[label] = desiredDistantAuthors(forRelayKey: label)
             // Record the author set we just subscribed with so reconcile can detect
             // drift. Inbox/global/popular carry no author filter → record [].
             if isInbox {
