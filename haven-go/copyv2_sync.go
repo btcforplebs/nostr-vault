@@ -176,7 +176,9 @@ func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what stri
 	case what == "device":
 		s.serveSyncDevice(w, r, tokenHash)
 	case what == "trust":
-		s.serveSyncTrust(w, r)
+		s.serveSyncTrust(w, r, tokenHash)
+	case what == "status":
+		s.serveSyncStatus(w, r)
 	case what == "distant":
 		s.serveSyncDistant(w, r)
 	case what == "settings" && r.Method == http.MethodGet:

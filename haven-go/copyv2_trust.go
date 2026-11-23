@@ -31,7 +31,7 @@ const copyTrustMaxSize = 64 << 20
 // serveSyncTrust is GET /copy/v2/sync/trust?account=<hex>&since=<builtAt>,
 // behind the device's bearer. 404: not an account this Haven ranks, or no
 // result yet. 204: the device's copy (since) is as new as this one.
-func (s *copyServer) serveSyncTrust(w http.ResponseWriter, r *http.Request) {
+func (s *copyServer) serveSyncTrust(w http.ResponseWriter, r *http.Request, tokenHash string) {
 	if r.Method != http.MethodGet {
 		http.NotFound(w, r)
 		return
@@ -51,6 +51,7 @@ func (s *copyServer) serveSyncTrust(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if since, _ := strconv.ParseInt(q.Get("since"), 10, 64); since >= built {
+		vaultHandoffAsked(account, s.tokenDevice(tokenHash), 0)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -63,6 +64,7 @@ func (s *copyServer) serveSyncTrust(w http.ResponseWriter, r *http.Request) {
 	if f.Floor < trustrank.HandoffFloor {
 		f = f.Handoff(trustrank.HandoffFloor)
 	}
+	vaultHandoffAsked(account, s.tokenDevice(tokenHash), f.BuiltAt)
 	copyJSON(w, http.StatusOK, f)
 }
 

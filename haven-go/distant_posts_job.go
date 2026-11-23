@@ -155,6 +155,7 @@ func distantPostsRound(ctx context.Context, dir string, accounts []string, mayRu
 			return false
 		}
 		kept := fetch(authors)
+		vaultDistantFetched(account, len(authors), kept)
 		if kept > 0 {
 			distantRoundStored(account)
 		}
