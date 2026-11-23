@@ -158,3 +158,73 @@ func TestVaultStatusOverTheMesh(t *testing.T) {
 		t.Fatalf("an unpaired device's hand-off is still listed: %+v", a)
 	}
 }
+
+// A 204 check is written at most hourly; a 200 hand-off is always written.
+func TestVaultHandoffCheckThrottle(t *testing.T) {
+	dir := t.TempDir()
+	prevDir, prevNow := vaultMarksDir, vaultNow
+	now := time.Unix(1_000_000, 0)
+	vaultMarksDir, vaultNow = func() string { return dir }, func() time.Time { return now }
+	t.Cleanup(func() { vaultMarksDir, vaultNow = prevDir, prevNow })
+	acct, dev := trustHex(9), trustHex(7)
+	checked := func() vaultHandoff { return loadVaultMarks().Handoffs[acct][dev] }
+
+	vaultHandoffAsked(acct, dev, 0)
+	if h := checked(); h.CheckedAt != now.Unix() || h.TookAt != 0 {
+		t.Fatalf("first check: %+v", h)
+	}
+	first := now.Unix()
+	now = now.Add(59 * time.Minute)
+	vaultHandoffAsked(acct, dev, 0)
+	if h := checked(); h.CheckedAt != first {
+		t.Fatalf("a check within the hour was written: %+v", h)
+	}
+	now = now.Add(2 * time.Minute)
+	vaultHandoffAsked(acct, dev, 0)
+	if h := checked(); h.CheckedAt != now.Unix() {
+		t.Fatalf("a check after the hour was not written: %+v", h)
+	}
+	now = now.Add(time.Minute)
+	vaultHandoffAsked(acct, dev, 500)
+	if h := checked(); h.TookAt != now.Unix() || h.BuiltAt != 500 || h.CheckedAt != now.Unix() {
+		t.Fatalf("a hand-off within the hour was not written: %+v", h)
+	}
+	vaultHandoffAsked(acct, "", 500)
+	if n := len(loadVaultMarks().Handoffs[acct]); n != 1 {
+		t.Fatalf("a request with no device was recorded: %d", n)
+	}
+}
+
+// Signed-out accounts' and unpaired devices' marks leave the disk.
+func TestVaultMarksPruned(t *testing.T) {
+	dir := t.TempDir()
+	prev := vaultMarksDir
+	vaultMarksDir = func() string { return dir }
+	t.Cleanup(func() { vaultMarksDir = prev })
+	x, l := newTestKey(t), newTestKey(t)
+	openCopyVault(t, x.pk)
+	signOutL := twoAccounts(t, x, l)
+	keep, gone, devA, devB := x.pk, l.pk, trustHex(7), trustHex(8)
+	vaultDistantFetched(keep, 10, 1)
+	vaultDistantFetched(gone, 10, 1)
+	vaultHandoffAsked(keep, devA, 100)
+	vaultHandoffAsked(keep, devB, 100)
+	vaultHandoffAsked(gone, devA, 100)
+	pruneTrustRank(dir)
+	if len(loadVaultMarks().Distant) != 2 {
+		t.Fatal("marks went while both accounts are signed in")
+	}
+	signOutL()
+	pruneTrustRank(dir) // the real prune (each round, each catch-up)
+	m := loadVaultMarks()
+	if _, ok := m.Distant[gone]; ok || len(m.Distant) != 1 {
+		t.Fatalf("a signed-out account's distant mark stayed: %+v", m.Distant)
+	}
+	if _, ok := m.Handoffs[gone]; ok || len(m.Handoffs[keep]) != 2 {
+		t.Fatalf("hand-offs after prune: %+v", m.Handoffs)
+	}
+	onMeshDeviceUnpaired(devA) // the real unpair hook (copyv2_server.go)
+	if h := loadVaultMarks().Handoffs[keep]; len(h) != 1 || h[devB].Device != devB {
+		t.Fatalf("an unpaired device's hand-off stayed: %+v", h)
+	}
+}

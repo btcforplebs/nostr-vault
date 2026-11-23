@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -156,18 +157,63 @@ func saveVaultMarks(m vaultMarks) {
 	}
 }
 
-func updateVaultMarks(change func(*vaultMarks)) {
+func updateVaultMarks(change func(*vaultMarks) bool) {
 	vaultMarksMu.Lock()
 	defer vaultMarksMu.Unlock()
 	m := loadVaultMarks()
-	change(&m)
-	saveVaultMarks(m)
+	if change(&m) {
+		saveVaultMarks(m)
+	}
+}
+
+// vaultNow is the marks' clock (tests).
+var vaultNow = time.Now
+
+// pruneVaultMarks drops the marks of accounts that signed out of this
+// device (pruneTrustRank, which runs it only when the account list is sure).
+func pruneVaultMarks(keep []string) {
+	kept := map[string]bool{}
+	for _, a := range keep {
+		kept[a] = true
+	}
+	updateVaultMarks(func(m *vaultMarks) bool {
+		changed := false
+		for a := range m.Distant {
+			if !kept[a] {
+				delete(m.Distant, a)
+				changed = true
+			}
+		}
+		for a := range m.Handoffs {
+			if !kept[a] {
+				delete(m.Handoffs, a)
+				changed = true
+			}
+		}
+		return changed
+	})
+}
+
+// vaultForgetDevice drops an unpaired device's hand-off marks.
+func vaultForgetDevice(device string) {
+	device = strings.ToLower(device)
+	updateVaultMarks(func(m *vaultMarks) bool {
+		changed := false
+		for _, per := range m.Handoffs {
+			if _, ok := per[device]; ok {
+				delete(per, device)
+				changed = true
+			}
+		}
+		return changed
+	})
 }
 
 // vaultDistantFetched: a distant posts round fetched for account.
 func vaultDistantFetched(account string, people, kept int) {
-	updateVaultMarks(func(m *vaultMarks) {
-		m.Distant[account] = vaultDistantMark{At: time.Now().Unix(), People: people, New: kept}
+	updateVaultMarks(func(m *vaultMarks) bool {
+		m.Distant[account] = vaultDistantMark{At: vaultNow().Unix(), People: people, New: kept}
+		return true
 	})
 }
 
@@ -178,7 +224,7 @@ func vaultHandoffAsked(account, device string, builtAt int64) {
 	if device == "" {
 		return
 	}
-	now := time.Now().Unix()
+	now := vaultNow().Unix()
 	vaultMarksMu.Lock()
 	defer vaultMarksMu.Unlock()
 	m := loadVaultMarks()

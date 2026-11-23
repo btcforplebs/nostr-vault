@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -64,8 +65,12 @@ func (s *copyServer) serveSyncTrust(w http.ResponseWriter, r *http.Request, toke
 	if f.Floor < trustrank.HandoffFloor {
 		f = f.Handoff(trustrank.HandoffFloor)
 	}
-	vaultHandoffAsked(account, s.tokenDevice(tokenHash), f.BuiltAt)
-	copyJSON(w, http.StatusOK, f)
+	// The hand-off is recorded only once the whole body went out.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if json.NewEncoder(w).Encode(f) == nil {
+		vaultHandoffAsked(account, s.tokenDevice(tokenHash), f.BuiltAt)
+	}
 }
 
 // trustRankTakesCopy: whether this device keeps a Haven's result. One that
@@ -145,4 +150,5 @@ func pruneTrustRank(dir string) {
 	for _, a := range trustrank.PruneAccounts(dir, keep) {
 		slog.Info("trust rank: signed-out account's result removed", "account", a[:8])
 	}
+	pruneVaultMarks(keep)
 }

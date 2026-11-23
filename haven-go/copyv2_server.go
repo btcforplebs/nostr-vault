@@ -77,7 +77,7 @@ var copyV2 = &copyServer{jobs: map[string]*copyJob{}, seen: map[string]time.Time
 
 // Unpair on A: a device that leaves the paired set loses its tokens at once.
 func init() {
-	onMeshDeviceUnpaired = func(hex string) { copyV2.revoke(hex) }
+	onMeshDeviceUnpaired = func(hex string) { copyV2.revoke(hex); vaultForgetDevice(hex) }
 	meshDeviceOverLoopback = func(r *http.Request) bool { return !copyThroughTunnel(r) && copyFromLoopback(r) }
 }
 
