@@ -41,14 +41,16 @@ export function NostrConnectSignIn({ pool, onSignedIn, disabled, primary, onBusy
       </>
     )
   }
+  // On a phone the signer app is on the same screen: opening it is the way in, so that button leads and the code is
+  // smaller, for scanning from another device. A desktop leads with the code.
+  const phone = onPhone()
   return (
     <div class="card nostrconnect-signin">
-      <p class="nostrconnect-title">Scan with your signer app</p>
-      <div class="pair-code"><QrCode text={req.uri} label="Nostr Connect code for your signer app" size={280} /></div>
-      <p class="muted small" aria-live="polite">{state === "finishing" ? "Approved. Signing in…" : "Scan it with Amber (or Clave, nsec.app) on your phone and approve Nostr Vault. This page signs in by itself."}</p>
+      <p class="nostrconnect-title">{phone ? "Sign in with your signer app" : "Scan with your signer app"}</p>
+      {phone && <a class="button primary" href={req.uri}>Open in signer app</a>}
+      <div class="pair-code"><QrCode text={req.uri} label="Nostr Connect code for your signer app" size={phone ? 180 : 240} ecc="L" /></div>
+      <p class="muted small" aria-live="polite">{state === "finishing" ? "Approved. Signing in…" : phone ? "Or scan this code from another device. Approve Nostr Vault in the app and come back: this page signs in by itself." : "Scan it with Amber (or Clave, nsec.app) on your phone and approve Nostr Vault. This page signs in by itself."}</p>
       <div class="row">
-        {/* On a phone, where the signer app is, the link opens it (Amber registers nostrconnect://); a desktop scans. */}
-        {onPhone() && <a class="button primary" href={req.uri}>Open in signer app</a>}
         <button type="button" onClick={copy}>{copied ? "Copied!" : "Copy link"}</button>
         <button type="button" onClick={cancel} disabled={state === "finishing"}>Cancel</button>
       </div>

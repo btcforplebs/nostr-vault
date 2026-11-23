@@ -9,6 +9,7 @@ import { ReadOnlySignIn } from "../components/ReadOnlySignIn.jsx"
 import { LockedKeySignIn } from "../components/LockedKeySignIn.jsx"
 import { NostrConnectSignIn } from "../components/NostrConnectSignIn.jsx"
 import { GetExtension } from "../components/GetExtension.jsx"
+import { GoButton } from "../components/GoButton.jsx"
 import { signerFor } from "../signer/index.js"
 import { checkExtensionAccount } from "../signer/accounts.js"
 import { loadAccounts } from "../session.js"
@@ -41,7 +42,7 @@ export function SignInScreen({ onSignedIn, onCreate }) {
       <img src="./icon.svg" alt="" class="signin-logo" />
       {/* The iPhone's UseNostrKeyStep heading. */}
       <h1>Who are you on Nostr?</h1>
-      <p class="muted">Sign in with your signer app (scan a code with Amber), a browser extension or a bunker link: your secret key stays with it. Or just look, read-only.</p>
+      <p class="muted">Your secret key stays in your signer app.</p>
       {cameForPost() && <p class="signin-for-post">Sign in to reply, like or zap the post you opened. Just looking works too.</p>}
       {saved.length > 0 && <div class="saved-accounts">
         {saved.map(a => <SavedAccount key={a.pubkey} account={a} busy={busy === a.pubkey} disabled={!!busy} onClick={resume(a)} />)}
@@ -89,27 +90,39 @@ export function SignInOptions({ onSignedIn }) {
     try { await onSignedIn(await fn()) } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy("") }
   }
 
+  // Two groups: signing in (signer app, bunker link, extension; the rarer ways folded under "More ways"), then a
+  // divider and just looking, read-only. Each text box carries its own arrow button, so no greyed-out row waits under it.
   return (
     <>
-      {hasExt && <button class="primary" disabled={!!busy} onClick={run("ext", extensionSignIn)} aria-busy={busy === "ext" || undefined}>{busy === "ext" ? "Waiting for the extension…" : "Sign in with extension"}</button>}
-      {/* One QR path for a signer app on the phone (Amber, Clave, nsec.app): the way in on a desktop with no extension. */}
-      <NostrConnectSignIn pool={pool} disabled={!!busy && busy !== "qr"} primary={hasExt === false} onSignedIn={onSignedIn} onBusy={b => setBusy(b ? "qr" : "")} />
-      <form class="bunker-signin" onSubmit={e => { e.preventDefault(); if (bunker.trim() && !busy) run("bunker", () => bunkerSignIn(bunker, pool))() }}>
-        <label class="field">
-          <span>Or paste a bunker link (bunker://…) or name@domain</span>
-          <input value={bunker} onInput={e => setBunker(e.currentTarget.value)} onPaste={e => { const t = e.clipboardData?.getData("text"); if (t) { e.preventDefault(); setBunker(cleanBunkerInput(t)) } }} placeholder="bunker://… or name@domain" autocapitalize="off" autocorrect="off" spellcheck={false} />
-        </label>
-        <button type="submit" disabled={!!busy || !bunker.trim()} aria-busy={busy === "bunker" || undefined}>
-          {busy === "bunker" ? "Approve the connection in your signer…" : "Connect bunker"}
-        </button>
-      </form>
-      {/* No extension here: offered after the QR code and the bunker link, which need none. */}
-      {hasExt === false && !showHelp && <button onClick={() => setShowHelp(true)}>Sign in with extension</button>}
-      {hasExt === false && showHelp && <GetExtension disabled={!!busy} onFound={() => { setHasExt(true); run("ext", extensionSignIn)() }} />}
-      <LockedKeySignIn disabled={!!busy} onSignedIn={onSignedIn} />
+      <div class="signin-group">
+        {hasExt && <button class="primary" disabled={!!busy} onClick={run("ext", extensionSignIn)} aria-busy={busy === "ext" || undefined}>{busy === "ext" ? "Waiting for the extension…" : "Sign in with extension"}</button>}
+        {/* One QR path for a signer app on the phone (Amber, Clave, nsec.app): the way in on a desktop with no extension. */}
+        <NostrConnectSignIn pool={pool} disabled={!!busy && busy !== "qr"} primary={hasExt === false} onSignedIn={onSignedIn} onBusy={b => setBusy(b ? "qr" : "")} />
+        <form class="bunker-signin" onSubmit={e => { e.preventDefault(); if (bunker.trim() && !busy) run("bunker", () => bunkerSignIn(bunker, pool))() }}>
+          <label class="field">
+            <span>Or paste a bunker link</span>
+            <span class="field-inline">
+              <input value={bunker} onInput={e => setBunker(e.currentTarget.value)} onPaste={e => { const t = e.clipboardData?.getData("text"); if (t) { e.preventDefault(); setBunker(cleanBunkerInput(t)) } }} placeholder="bunker://… or name@domain" autocapitalize="off" autocorrect="off" spellcheck={false} />
+              <GoButton label="Connect bunker" disabled={!!busy || !bunker.trim()} busy={busy === "bunker"} />
+            </span>
+          </label>
+          {busy === "bunker" && <p class="muted small field-status" aria-live="polite">Approve the connection in your signer…</p>}
+        </form>
+        <details class="signin-more" open={showHelp || undefined}>
+          <summary>More ways to sign in</summary>
+          <div class="signin-more-body">
+            {/* No extension here: offered after the QR code and the bunker link, which need none. */}
+            {hasExt === false && !showHelp && <button onClick={() => setShowHelp(true)}>Sign in with extension</button>}
+            {hasExt === false && showHelp && <GetExtension disabled={!!busy} onFound={() => { setHasExt(true); run("ext", extensionSignIn)() }} />}
+            <LockedKeySignIn disabled={!!busy} onSignedIn={onSignedIn} />
+          </div>
+        </details>
+      </div>
+      <div class="signin-or" role="separator"><span>or just look around</span></div>
       <ReadOnlySignIn disabled={!!busy} onSignedIn={onSignedIn} />
       <AuthPrompt />
       {err && <p class="error">{err}</p>}
     </>
   )
 }
+

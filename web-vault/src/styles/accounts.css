@@ -46,6 +46,27 @@ button.danger { color: var(--danger); }
 .nostrconnect-signin p { margin: 0; }
 .nostrconnect-signin .nostrconnect-title { font: var(--t-headline); }
 .card.nostrconnect-signin .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
-.card.nostrconnect-signin .row a.button { grid-column: 1 / -1; justify-content: center; }
+.card.nostrconnect-signin > a.button { justify-content: center; }
 .bunker-signin { display: grid; gap: 10px; }
 .nostrconnect-signin .pair-code { display: flex; justify-content: center; padding: 6px 0; }
+/* Sign-in layout (SignInScreen.jsx SignInOptions): the sign-in group, "More ways" folded, a divider, then just looking. */
+.signin-group { display: grid; gap: 14px; }
+/* A text box with its arrow button inside the right end (components/GoButton.jsx). */
+.field-inline { position: relative; display: block; }
+.field .field-inline input { width: 100%; box-sizing: border-box; padding-right: 52px; text-overflow: ellipsis; }
+.signin .field-inline button.field-go, .field-inline button.field-go { position: absolute; top: 6px; right: 6px; bottom: 6px; width: 36px; min-height: 0; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 999px; background: var(--accent-grad); color: var(--on-accent); }
+.field-inline button.field-go:disabled { background: transparent; color: var(--text-3); }
+.field-inline button.field-go[aria-busy="true"]::before { margin-right: 0; }
+.field-status { margin: -6px 0 0; text-align: left; }
+.signin-more { text-align: left; }
+.signin-more > summary { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; cursor: pointer; list-style: none;
+  font: var(--t-foot); font-weight: 600; color: var(--text-2); border-radius: 999px; }
+.signin-more > summary::-webkit-details-marker { display: none; }
+.signin-more > summary::after { content: ""; width: 7px; height: 7px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: translateY(-2px) rotate(45deg); transition: transform var(--press); }
+.signin-more[open] > summary::after { transform: translateY(2px) rotate(-135deg); }
+.signin-more > summary:hover { color: var(--text); }
+.signin-more-body { display: grid; gap: 10px; padding-top: 8px; }
+.signin-more .locked-key-signin { display: grid; gap: 10px; }
+.signin-or { display: flex; align-items: center; gap: 12px; margin: 6px 0 0; font: var(--t-foot); color: var(--text-3); }
+.signin-or::before, .signin-or::after { content: ""; flex: 1; height: 1px; background: var(--hair); }

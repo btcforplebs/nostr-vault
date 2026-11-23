@@ -1,8 +1,9 @@
 // A QR code drawn as one SVG path from the encoded modules; no HTML is built from the text.
 import { encode } from "uqr"
 
-export function QrCode({ text, label, size = 200 }) {
-  const { data, size: n } = encode(text, { ecc: "M", border: 2 })
+/** `ecc`: error correction; "L" draws fewer, bigger modules for a long link a phone camera must read across a desk. */
+export function QrCode({ text, label, size = 200, ecc = "M" }) {
+  const { data, size: n } = encode(text, { ecc, border: 2 })
   let d = ""
   data.forEach((row, y) => row.forEach((on, x) => { if (on) d += `M${x} ${y}h1v1h-1z` }))
   return (
