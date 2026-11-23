@@ -144,5 +144,5 @@ test("restore refuses when the newest list isn't the one the change was shown ag
 test("restore reports a vault that refuses the restored list", async t => {
   const cur = list([1], 100), ctx = ctxWith([], { ok: false, message: "blocked: nope" }), s = memStore()
   t.mock.method(pool, "publish", urls => urls.map(() => Promise.resolve("")))
-  await assert.rejects(restoreList({ ctx, old: list([1, 2], 5), shown: cur, store: s, ask: async () => ({ events: [cur], answered: true }) }), /Haven refused the follow list: blocked: nope/)
+  await assert.rejects(restoreList({ ctx, old: list([1, 2], 5), shown: cur, store: s, ask: async () => ({ events: [cur], answered: true }) }), /your vault refused the follow list: blocked: nope/)
 })

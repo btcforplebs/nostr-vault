@@ -89,7 +89,7 @@ enum TrustWhyText {
 
     /// What the score is made of, in a sentence.
     static let how =
-        "Your Haven scores people from the follows of people you trust: a follow from someone with a high score "
+        "Your desktop Vault scores people from the follows of people you trust: a follow from someone with a high score "
         + "counts for more, and trust fades with each hop. The score is yours alone and never published."
 
     static func more(_ why: TrustWhy) -> String? {

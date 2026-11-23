@@ -375,7 +375,7 @@ export async function setBlock(ctx, target, { block = true, isPrivate = false, a
   const relays = results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason), local: i >= network.length }))
   if (!relays.some(r => r.ok && !r.local)) throw new Error(`No relay took it (0 of ${network.length}), so nothing changed. Try again.`)
   const stored = await ctx.vault.outbox.event(event)
-  if (!stored.ok && !/^duplicate:/.test(stored.message)) throw new Error(`Sent, but Haven refused the block list: ${stored.message}`)
+  if (!stored.ok && !/^duplicate:/.test(stored.message)) throw new Error(`Sent, but your vault refused the block list: ${stored.message}`)
   if (state.pubkey === me) await apply(me, event, ctx.signer.crypto ? { decrypt: c => (isNip04(c) ? ctx.signer.crypto.decrypt04(me, c) : ctx.signer.crypto.decrypt(me, c)) } : null)
   return { event, relays }
 }

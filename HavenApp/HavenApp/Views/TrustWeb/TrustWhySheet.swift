@@ -53,8 +53,8 @@ struct TrustWhySheet: View {
                 if let why {
                     details(why)
                 } else {
-                    // The path can place them outside your web after all (an unfollow since the Haven ranked).
-                    Text(trust.path == nil ? "Checking…" : "Your Haven's score for them is out of date.")
+                    // The path can place them outside your web after all (an unfollow since the desktop Vault ranked).
+                    Text(trust.path == nil ? "Checking…" : "Your desktop Vault's score for them is out of date.")
                         .font(.appSystem(size: 14))
                         .foregroundColor(.secondary)
                 }
@@ -107,7 +107,7 @@ struct TrustWhySheet: View {
             .foregroundColor(.secondary.opacity(0.75))
             .fixedSize(horizontal: false, vertical: true)
             .padding(.top, 8)
-        Text("Ranked by your Haven \(Self.ago(why.rankedAt))")
+        Text("Ranked by your desktop Vault \(Self.ago(why.rankedAt))")
             .font(.appSystem(size: 12))
             .foregroundColor(.secondary.opacity(0.75))
     }

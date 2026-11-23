@@ -255,7 +255,7 @@ export function startSearch(text, { vault, me, relays = SEARCH_RELAYS, onUpdate,
       vault.feed.query([{ kinds: [1], search: text, limit: HAVEN_NOTE_LIMIT }, { kinds: [0], search: text, limit: HAVEN_PEOPLE_LIMIT }]).catch(() => []),
       me ? vault.outbox.query({ kinds: [1], authors: [me], search: text, limit: 100 }).catch(() => []) : [],
     ]).then(([feed, own]) => { for (const ev of [...own, ...feed]) take(haven, ev); settle(haven, false) })
-  } else settle(haven, true, "Haven not open")
+  } else settle(haven, true, "Vault not open")
 
   for (const url of relays) {
     const id = `relay:${url}`

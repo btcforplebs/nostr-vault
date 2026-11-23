@@ -129,7 +129,7 @@ class VaultActivityViewModel @Inject constructor(
     logStore: com.nostrvault.relay.LogStore,
 ) : ViewModel() {
 
-    /** The relay's own boot step while it starts ("Booting Haven..."), as iOS shows it. */
+    /** The relay's own boot step while it starts ("Starting your vault..."), as iOS shows it. */
     val relayBootStatus: StateFlow<String> = logStore.bootStatusMessage
 
 

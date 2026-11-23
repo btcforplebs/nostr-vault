@@ -119,6 +119,6 @@ export async function restoreList({ ctx, old, shown, store, ask }) {
   const out = results.map((r, i) => ({ url: network[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason) }))
   if (!out.some(r => r.ok)) throw new Error(`No relay took it (0 of ${network.length}), so nothing changed.`)
   const stored = await ctx.vault.outbox.event(event)
-  if (!stored.ok && !/^duplicate:/.test(stored.message)) throw new Error(`Sent, but Haven refused the follow list: ${stored.message}`)
+  if (!stored.ok && !/^duplicate:/.test(stored.message)) throw new Error(`Sent, but your vault refused the follow list: ${stored.message}`)
   return { event, relays: out }
 }

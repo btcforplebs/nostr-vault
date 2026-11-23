@@ -100,6 +100,6 @@ test("Haven refusing the article stops it before any relay", async t => {
   let sent = 0
   t.mock.method(pool, "publish", urls => { sent++; return urls.map(() => Promise.resolve("")) })
   const vault = { outbox: { event: async () => ({ ok: false, message: "blocked" }) } }
-  await assert.rejects(publishKind(vault, { signEvent: async tpl => finalizeEvent(tpl, sk) }, getPublicKey(sk), LONG_FORM_KIND, "b", ["wss://w.example"], [["d", "x"]]), /Haven refused the post: blocked/)
+  await assert.rejects(publishKind(vault, { signEvent: async tpl => finalizeEvent(tpl, sk) }, getPublicKey(sk), LONG_FORM_KIND, "b", ["wss://w.example"], [["d", "x"]]), /Your vault refused the post: blocked/)
   assert.equal(sent, 0)
 })
