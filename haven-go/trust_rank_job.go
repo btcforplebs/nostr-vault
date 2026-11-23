@@ -274,4 +274,5 @@ func cappedRetryDue(account string, st trustrank.State, now time.Time) bool {
 func spawnWotJobs(ctx context.Context, pool *nostr.SimplePool, spawn func(string, func())) {
 	spawn("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(ctx, config.WotRefreshInterval) })
 	spawn("trustRank", func() { runTrustRank(ctx, pool, true) })
+	spawn("distantPosts", func() { runDistantPosts(ctx, pool, true) })
 }

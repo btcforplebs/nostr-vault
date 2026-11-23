@@ -410,6 +410,22 @@ The app calls the engine when a linked device comes into reach. The engine then:
      result and crawl checkpoint go at the next round. Only when the app's account file (`copy-accounts.json`) is
      readable: without it nothing is removed. The shared list store stays.
 
+6. **Distant posts** (`haven-go/copyv2_distant.go`, after 5). A Haven that ranks fetches, every 30 minutes and
+   only while the crawler may run, the feed notes (feed kinds plus kind 5, the last `FEED_SYNC_WINDOW_DAYS`) of
+   each account's top 500 **distant connections** (ring 3 and out, highest score first, ties by pubkey, the
+   account's public mutes left out: `trustrank.Distant`) from its seed relays into its feed store
+   (`haven-go/distant_posts_job.go`). A device that does not rank asks for each signed-in account:
+   `GET /copy/v2/sync/distant?account=<64 hex>&since=<unix>` (Bearer, the same copy token; nothing is signed).
+   - `200`: JSONL of the feed store's notes by that account's distant connections at or after `since` (never
+     before the feed window), kind 5 first, then newest first, at most 2,000 notes and 8 MB. An empty body is
+     a Haven with nobody distant. `404`: the Haven does not rank that account, has no result yet, or is an
+     engine from before this.
+   - B makes the same pick of 500 from its own rank copy (which step 5 just brought up to date) and keeps a
+     line only when its author is on that list, its kind is a feed kind or 5, and it passes the restore's checks
+     (id, signature, NIP-09). Kept notes go to B's feed store, where the age prune removes them like any other.
+   - B's `since` is its last whole answer from that Haven for that account, less two hours; a 404, a cut or
+     over-long body is not recorded. It never fails or delays the catch-up's mark.
+
 Before the notes, **accounts** (§3.4): B `GET /copy/v2/sync/accounts` and takes A's, then `PUT`s its own, which A
 takes the same way. Each side **offers** the other's list to its app (copy-accounts.json) only when the lists share an
 account; neither adds an account by itself, and neither removes one.
