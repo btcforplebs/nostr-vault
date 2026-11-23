@@ -212,9 +212,9 @@ private fun NostrConnectQr(content: String, modifier: Modifier = Modifier) {
             modifier = modifier
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color.White)
-                .padding(12.dp),
+                .padding(NOSTR_CONNECT_QR_BORDER_DP.dp),
         ) {
-            Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Sign-in QR code", modifier = Modifier.size(220.dp))
+            Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Sign-in QR code", modifier = Modifier.size(NOSTR_CONNECT_QR_DP.dp))
         }
     }
 }

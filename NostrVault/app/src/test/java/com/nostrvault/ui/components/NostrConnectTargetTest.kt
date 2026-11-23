@@ -36,4 +36,30 @@ class NostrConnectTargetTest {
         val text = QRCodeReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(w, h, px)))).text
         assertEquals(uri, text)
     }
+
+    /** Quiet zone as drawn: the matrix's own white edge, scaled to the
+     *  on-screen size, plus the card's white border, in modules. The QR spec
+     *  asks for 4 (Tron, #2477). Short requests are the tight case: fewer,
+     *  bigger modules make the fixed dp border fewer modules wide. The finder
+     *  pattern's top edge is a dark run exactly 7 modules wide. */
+    @Test
+    fun quietZoneIsAtLeastFourModulesOnScreen() {
+        val relaySets = listOf(
+            listOf("wss://a.io"),
+            listOf("wss://relay.powr.build"),
+            listOf("wss://relay.powr.build", "wss://relay.damus.io"),
+            listOf("wss://relay.powr.build", "wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"),
+        )
+        for (relays in relaySets) for (extra in 0..40 step 4) {
+            val uri = NIP46Service.nostrConnectUri("c".repeat(64), "0123456789abcdef0123456789abcdef", relays) + "x".repeat(extra)
+            val m = requireNotNull(nostrConnectQrMatrix(uri))
+            val top = (0 until m.height).first { y -> (0 until m.width).any { m[it, y] } }
+            val left = (0 until m.width).first { m[it, top] }
+            val run = (left until m.width).takeWhile { m[it, top] }.count()
+            val dpPerPx = NOSTR_CONNECT_QR_DP.toDouble() / m.width
+            val moduleDp = run / 7.0 * dpPerPx
+            val quietModules = (minOf(left, top) * dpPerPx + NOSTR_CONNECT_QR_BORDER_DP) / moduleDp
+            assertTrue("quiet zone %.2f modules for a %d-char request".format(quietModules, uri.length), quietModules >= 4.0)
+        }
+    }
 }
