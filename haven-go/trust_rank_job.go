@@ -14,8 +14,10 @@ package main
 import (
 	"context"
 	"log"
+	"net/url"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,7 +31,7 @@ import (
 
 const (
 	trustRankBar      = 15.0               // rank score (shown ~88) whose lists are read; the view bar is separate (trustrank.DefaultViewBar)
-	trustRankPace     = time.Second        // one list a second
+	trustRankPace     = time.Second        // at most one batch a second; bytes are budgeted per relay (trustrank.DefaultBudget)
 	trustRankCap      = 500 << 20          // list store cap on a server
 	trustRankRefresh  = 24 * time.Hour     // ask for changed lists once a day
 	trustRankFullPass = 7 * 24 * time.Hour // read everything again weekly
@@ -122,6 +124,32 @@ func ownerPublicMutes(account string) []string {
 	return out
 }
 
+// trustRankSkippedHosts never take part in the crawl, even when they are in
+// the owner's relay list (Logen 2026-11-23). damus: its 1 MB/min per-IP read
+// budget is shared with the owner's phones on the same home IP. nos.lol and
+// nostr.mom: one server, unreachable from the home IP since 2026-10, so each
+// cost a dial timeout every bench period.
+var trustRankSkippedHosts = []string{"relay.damus.io", "nos.lol", "nostr.mom"}
+
+// trustRankRelays: the relays the crawl asks, in order. When every relay in
+// the list is a skipped one, the list is used as it is: a slow crawl beats
+// no rank at all.
+func trustRankRelays(relays []string) []string {
+	out := make([]string, 0, len(relays))
+	for _, r := range relays {
+		u, err := url.Parse(nostr.NormalizeURL(r))
+		if err != nil || slices.ContainsFunc(trustRankSkippedHosts, func(h string) bool { return strings.EqualFold(u.Hostname(), h) }) {
+			continue
+		}
+		out = append(out, r)
+	}
+	if len(out) == 0 && len(relays) > 0 {
+		log.Printf("trust rank: only skipped relays in the list (%v), asking them anyway", relays)
+		return relays
+	}
+	return out
+}
+
 // trustRankDir: next to wot_cache.json.
 func trustRankDir() string {
 	return filepath.Dir(config.WotCachePath)
@@ -146,7 +174,7 @@ func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
 		}
 		return trustRankMayRun(cshared, trustRankHost.Load(), busy, lastBusy, now)
 	}
-	fetch := &trustrank.RelayFetcher{Pool: pool, Relays: config.ImportSeedRelays}
+	fetch := &trustrank.RelayFetcher{Pool: pool, Relays: trustRankRelays(config.ImportSeedRelays)}
 	for ctx.Err() == nil {
 		ran := false
 		// The store (and its key index) is open only while a pass runs, so
@@ -194,8 +222,8 @@ func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
 				log.Printf("trust rank: %s…: %v", account[:8], err)
 			default:
 				ran = true
-				log.Printf("trust rank: %s… ranked %d people in %s (%d lists, %d KB stored)",
-					account[:8], len(res.People()), time.Since(start).Round(time.Second), store.Lists(), store.Bytes()>>10)
+				log.Printf("trust rank: %s… ranked %d people in %s (%d lists, %d KB stored; KB sent by relay so far: %v)",
+					account[:8], len(res.People()), time.Since(start).Round(time.Second), store.Lists(), store.Bytes()>>10, sentKB(fetch.Sent()))
 			}
 		}
 		if store != nil {
@@ -210,6 +238,14 @@ func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
 		case <-time.After(wait):
 		}
 	}
+}
+
+func sentKB(sent map[string]int64) map[string]int64 {
+	out := make(map[string]int64, len(sent))
+	for url, b := range sent {
+		out[url] = b >> 10
+	}
+	return out
 }
 
 // cutPass: a pass stopped halfway (paused), resumed at its place.

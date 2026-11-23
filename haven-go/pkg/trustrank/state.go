@@ -30,6 +30,12 @@ type State struct {
 	// Unix seconds: last finished full pass, last daily refresh.
 	FullAt    int64 `json:"fullAt,omitempty"`
 	RefreshAt int64 `json:"refreshAt,omitempty"`
+	// Unix seconds: when the pass in progress started reading (kept through
+	// a pause or restart), and when the last finished pass started. A
+	// refresh asks for lists from DoneStart less a day: a pass can run for
+	// days, and someone read early in it may have changed their list since.
+	PassStart int64 `json:"passStart,omitempty"`
+	DoneStart int64 `json:"doneStart,omitempty"`
 }
 
 // validAccount: an account is a 64-character hex pubkey, so it can never
