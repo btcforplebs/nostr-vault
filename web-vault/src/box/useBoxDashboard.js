@@ -6,7 +6,7 @@ import { BOX } from "./mode.js"
 import { boxApi } from "./api.js"
 import { syncApi } from "./api-sync.js"
 
-export const BOX_PARTS = ["status", "storage", "devices", "contents", "connections", "logs"]
+export const BOX_PARTS = ["status", "storage", "devices", "contents", "connections", "logs", "vaultStatus"]
 const POLL_MS = 30_000
 
 /** `on`: box mode (tests pass true); `api`: a boxApi (tests and the harness pass one over a mock).
@@ -22,7 +22,7 @@ export function useBoxDashboard(ctx, { on = BOX, api: given, sync: givenSync } =
     if (!api) return
     look()
     // Status, connections and the log move on their own; the rest is asked again by Try again or after a move.
-    const t = setInterval(() => { for (const p of ["status", "connections", "logs"]) load(p) }, POLL_MS)
+    const t = setInterval(() => { for (const p of ["status", "connections", "logs", "vaultStatus"]) load(p) }, POLL_MS)
     return () => clearInterval(t)
   }, [api])
   return api ? { api, sync, data, load, look } : null

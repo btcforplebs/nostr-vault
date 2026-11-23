@@ -40,7 +40,7 @@ globalThis.confirm = () => true
 const root = fileURLToPath(new URL("..", import.meta.url))
 const vite = await createServer({ root, configFile: false, logLevel: "silent", appType: "custom", server: { middlewareMode: true, hmr: false, ws: false }, oxc: { jsx: { runtime: "automatic", importSource: "preact" } } })
 const { useBoxDashboard, boxStorage } = await vite.ssrLoadModule("/src/box/useBoxDashboard.js")
-const { BoxStatusDetails, BoxDevices, BoxStorage, BoxPublic, BoxUpdate } = await vite.ssrLoadModule("/src/box/BoxFold.jsx")
+const { BoxStatusDetails, BoxTrustRanking, BoxDevices, BoxStorage, BoxPublic, BoxUpdate } = await vite.ssrLoadModule("/src/box/BoxFold.jsx")
 const { BoxLogView } = await vite.ssrLoadModule("/src/box/BoxLogView.jsx")
 const { boxActivityItems, lineLevel } = await vite.ssrLoadModule("/src/box/box-activity.js")
 const { boxDashboardRedirect } = await vite.ssrLoadModule("/src/box/mode.js")
@@ -70,7 +70,7 @@ function BoxDashboard({ api }) {
   const { usage, media } = boxStorage(box.data.contents)
   return h("div", null,
     h(StatusCard, { box: { status: box.data.status, connections: box.data.connections } }),
-    h(BoxStatusDetails, { box }), h(BoxDevices, { box }),
+    h(BoxStatusDetails, { box }), h(BoxTrustRanking, { box }), h(BoxDevices, { box }),
     h("p", null, `usage ${usage ?? "?"} media ${media?.count ?? "?"}`),
     h(BoxStorage, { box }), h(BoxPublic, { ctx: { signer }, box }),
     h(AdvancedSection, { box: box.data.status?.value ?? null }, h(BoxUpdate, { box })),
@@ -100,6 +100,14 @@ test("status, storage, mesh, My Devices and Update all show from the box", async
   assert.match(t, /blossom: upload failed: disk full/, "the box's own log")
   assert.match(t, /for 3d 4h/)
   assert.match(t, /Version 1\.0\.0/)
+  // The box's trust ranking (GET vault-status), with each device by its own name, else its type.
+  assert.match(t, /Trust ranking/)
+  assert.match(t, /Ranking your web/)
+  assert.match(t, /Ring 3 · 411 of 1,980 lists · 37 read this run/)
+  assert.match(t, /30,640 people ranked/)
+  assert.match(t, /1,840 distant connections at your bar \(55\)/)
+  assert.match(t, /LogePhone/)
+  assert.match(t, /Took it 3 h ago/)
   assert.match(t, /18\.4 GB of 512 GB/)
   assert.match(t, /\/data/)
   assert.match(t, /Connected/)

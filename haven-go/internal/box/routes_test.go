@@ -26,6 +26,7 @@ func TestRoutesRegistered(t *testing.T) {
 		"GET /api/box/storage",
 		"GET /api/box/sync",
 		"GET /api/box/trust",
+		"GET /api/box/vault-status",
 		"POST /api/box/accounts/add",
 		"POST /api/box/accounts/code",
 		"POST /api/box/accounts/join",
@@ -67,7 +68,7 @@ func TestRouteLevels(t *testing.T) {
 	anyone := map[string]bool{"GET /api/box/accounts/me": true, "POST /api/box/accounts/join": true}
 	signedIn := map[string]bool{"GET /api/box/contents": true, "GET /api/box/connections": true,
 		"GET /api/box/sync": true, "POST /api/box/sync/now": true,
-		"GET /api/box/imports": true, "POST /api/box/imports/run": true, "POST /api/box/imports/cancel": true,
+		"GET /api/box/vault-status": true, "GET /api/box/imports": true, "POST /api/box/imports/run": true, "POST /api/box/imports/cancel": true,
 		"GET /api/box/trust": true, "POST /api/box/trust/refresh": true, "GET /api/box/blocklist": true,
 		"GET /api/box/media/auto-mirror": true, "POST /api/box/media/auto-mirror/run": true,
 		"POST /api/box/media/copy/check": true, "POST /api/box/media/copy": true, "GET /api/box/media/copy": true,

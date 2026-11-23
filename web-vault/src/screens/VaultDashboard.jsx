@@ -39,7 +39,7 @@ import { closeDashboard } from "../net/dashboard-route.js"
 import { useBoxDashboard, boxStorage } from "../box/useBoxDashboard.js"
 import { boxActivityItems } from "../box/box-activity.js"
 import { BoxLogView } from "../box/BoxLogView.jsx"
-import { BoxStatusDetails, BoxDevices, BoxStorage, BoxPublic, BoxUpdate } from "../box/BoxFold.jsx"
+import { BoxStatusDetails, BoxTrustRanking, BoxDevices, BoxStorage, BoxPublic, BoxUpdate } from "../box/BoxFold.jsx"
 import "../styles/dashboard.css"
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -176,6 +176,7 @@ export function VaultDashboard({ ctx, napplet = false, boxOptions }) {
           : view === "pair" ? <PairDevice key={pairMode} ctx={ctx} mode={pairMode} onMode={setPairMode} onClose={() => setView("dashboard")} /> : <>
             <StatusCard syncing={syncing} box={box ? { status: box.data.status, connections: box.data.connections } : undefined} />
             {box && <BoxStatusDetails box={box} />}
+            {box && <BoxTrustRanking box={box} />}
             {box ? <BoxDevices box={box} /> : <YourDevicesSection ctx={ctx} onPair={pair} />}
             <ListWipeBanner ctx={ctx} />
             <SafetySection method={session.method} followSavedAt={followSavedAt} backupAt={history.notesBackup} onBackup={exportFile} backupBusy={jobs.export} />

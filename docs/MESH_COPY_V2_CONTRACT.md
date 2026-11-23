@@ -450,6 +450,9 @@ The app calls the engine when a linked device comes into reach. The engine then:
    - B asks with `VaultStatusFromC(peer, base)` (`haven-go/copyv2_status_client.go`): `{status}` or `{error}` with
      `not_paired` (no copy token for that peer yet), `auth_refused`, `not_found` (an engine from before this),
      `bad_answer` or `unreachable`. The app keeps the last good answer and when it came, to say how old it is.
+   - On a Linux box the same answer also goes to `vault_status.json` in the vault folder every 15 s
+     (`haven-go/vault_status_file.go`); havend serves it to signed-in accounts as `GET /api/box/vault-status`
+     (`{status, writtenAt}`) for the box dashboard's Trust ranking card. Not over the mesh.
 
 Before the notes, **accounts** (§3.4): B `GET /copy/v2/sync/accounts` and takes A's, then `PUT`s its own, which A
 takes the same way. Each side **offers** the other's list to its app (copy-accounts.json) only when the lists share an

@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -265,5 +267,25 @@ func TestVaultStatusFetchedByAPairedDevice(t *testing.T) {
 	}
 	if json.Unmarshal(vaultStatusFromJSON(ctx, "npub1peer", url), &got) != nil || got.Error != "auth_refused" {
 		t.Fatalf("app JSON error: %+v", got)
+	}
+}
+
+// The box's file: the same answer as the read, written whole.
+func TestVaultStatusFileIsTheRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), vaultStatusFileName)
+	st := vaultStatus{Version: 1, At: 5, State: "paused", PausedWhy: "busy", Accounts: []vaultAccountStatus{{Account: trustHex(1), Handoffs: []vaultHandoff{}}}}
+	if err := writeVaultStatusFile(path, st); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back vaultStatus
+	if json.Unmarshal(raw, &back) != nil || back.State != "paused" || back.PausedWhy != "busy" || len(back.Accounts) != 1 {
+		t.Fatalf("file: %s", raw)
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Fatal("the temp file stayed")
 	}
 }
