@@ -66,7 +66,8 @@ enum GlobeOuterRings {
         let dx = min(r * 0.5, Double(size.width) / 2 - inset)
         guard dx > 0, r > dx else { return nil }
         let y = Double(mid.y) - (r * r - dx * dx).squareRoot() - 3
-        guard y > 40 else { return nil }
+        // Clear of the status bar and the WOT tab's top bar.
+        guard y > 120 else { return nil }
         return CGPoint(x: Double(mid.x) + dx, y: y)
     }
 }
