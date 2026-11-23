@@ -97,9 +97,17 @@ class DiscoveryReachStore @Inject constructor(
 
     private fun apply(saved: Double?) {
         val next = _copy.value?.let { DiscoveryReach.admitted(it, DiscoveryReach.bar(saved, it)) } ?: DiscoveryReach.Admitted.NONE
-        if (next == admitted) return
-        admitted = next
-        localDistantAuthors = DistantPostAuthors.pick(next.distant, _copy.value)
-        feedService.get().recomputeFilteredNotes()
+        val feed = feedService.get()
+        if (next != admitted) {
+            admitted = next
+            feed.recomputeFilteredNotes()
+        }
+        val authors = DistantPostAuthors.pick(next.distant, _copy.value, feed.blockedHexForActiveAccount())
+        if (authors == localDistantAuthors) return
+        localDistantAuthors = authors
+        // The live request to the local store carries the old list until it is
+        // sent again: a moved bar, a re-read file, or a copy that loaded after
+        // Discover's first request went out.
+        feed.resendDistantPostsRequest()
     }
 }

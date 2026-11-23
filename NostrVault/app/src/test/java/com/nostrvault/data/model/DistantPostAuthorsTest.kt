@@ -20,18 +20,25 @@ class DistantPostAuthorsTest {
             .joinToString(",") { "[\"${pk(it.first)}\",${it.second},${it.third}]" }
         val copy = copy(rows)
         val admitted = DiscoveryReach.admitted(copy, 55.0)
-        assertEquals("score order, ties by key; hop 1-2 never", listOf(pk('e'), pk('0'), pk('f'), pk('d')), DistantPostAuthors.pick(admitted.distant, copy))
-        assertEquals("the bar decides who is asked for", listOf(pk('e')), DistantPostAuthors.pick(DiscoveryReach.admitted(copy, 75.0).distant, copy))
-        assertEquals(emptyList<String>(), DistantPostAuthors.pick(admitted.distant, null))
+        assertEquals("score order, ties by key; hop 1-2 never", listOf(pk('e'), pk('0'), pk('f'), pk('d')), DistantPostAuthors.pick(admitted.distant, copy, emptySet()))
+        assertEquals("the bar decides who is asked for", listOf(pk('e')), DistantPostAuthors.pick(DiscoveryReach.admitted(copy, 75.0).distant, copy, emptySet()))
+        assertEquals(emptyList<String>(), DistantPostAuthors.pick(admitted.distant, null, emptySet()))
     }
 
     @Test fun `the pick stops at what the Vault fetches`() {
         val keys = (1..DistantPostAuthors.MAX + 20).map { "%064x".format(it) }
         val rows = keys.mapIndexed { i, k -> "[\"$k\",${50 + i % 40},3]" }.joinToString(",")
         val copy = copy(rows)
-        val pick = DistantPostAuthors.pick(keys.toSet(), copy)
+        val pick = DistantPostAuthors.pick(keys.toSet(), copy, emptySet())
         assertEquals(DistantPostAuthors.MAX, pick.size)
         assertEquals(89.0, copy.people[pick[0]]!!.score, 0.0)
+        // Mutes go before the cut, as the engine's do: the muted top people
+        // leave room for the ones the Vault fetches in their place.
+        val muted = pick.take(7).toSet()
+        val unmuted = DistantPostAuthors.pick(keys.toSet(), copy, muted)
+        assertEquals(DistantPostAuthors.MAX, unmuted.size)
+        assertEquals(emptySet<String>(), muted intersect unmuted.toSet())
+        assertEquals(pick.drop(7), unmuted.take(DistantPostAuthors.MAX - 7))
     }
 
     @Test fun `the local filter keeps the request and swaps the authors`() {

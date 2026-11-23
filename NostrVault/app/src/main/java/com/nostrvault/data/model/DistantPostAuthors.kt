@@ -15,10 +15,14 @@ object DistantPostAuthors {
 
     private val AUTHORS = Regex("\"authors\":\\[[^\\]]*\\]")
 
-    /** [distant] ordered by score in [copy], highest first, ties by key, at most [MAX]. */
-    fun pick(distant: Set<String>, copy: TrustRankCopy?): List<String> {
+    /**
+     * [distant] less [muted], ordered by score in [copy], highest first, ties
+     * by key, at most [MAX]. Mutes go before the cut, as the engine's do, so a
+     * muted person never takes the place of one the Vault fetches for.
+     */
+    fun pick(distant: Set<String>, copy: TrustRankCopy?, muted: Set<String>): List<String> {
         if (copy == null || distant.isEmpty()) return emptyList()
-        return distant.mapNotNull { pk -> copy.people[pk]?.let { pk to it.score } }
+        return distant.mapNotNull { pk -> if (pk in muted) null else copy.people[pk]?.let { pk to it.score } }
             .sortedWith(compareByDescending<Pair<String, Double>> { it.second }.thenBy { it.first })
             .take(MAX)
             .map { it.first }
