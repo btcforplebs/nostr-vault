@@ -554,7 +554,7 @@ func TestCopyFromAToBEndToEndWithResume(t *testing.T) {
 	if raw, err := os.ReadFile(copySettingsFile); err != nil || !strings.Contains(string(raw), "wot_depth") {
 		t.Fatal("A's settings were not left for B's app")
 	}
-	if !strings.Contains(logs.String(), "COPY stage=done") {
+	if _, ok := parseCopyLine(lastLineWith(logs.String(), "COPY stage=done")); !ok {
 		t.Fatalf("no COPY done line:\n%s", logs.String())
 	}
 	if _, err := os.Stat(filepath.Join(aWD, copyCacheDir)); err == nil {

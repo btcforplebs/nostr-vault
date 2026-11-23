@@ -183,34 +183,10 @@ func copyIsHex(s string, n int) bool {
 // addresses). 401 for no, bad, stale or replayed proof; 403 for a good proof
 // by a key that is neither. Returns the device the token is bound to.
 func (s *copyServer) checkStart(r *http.Request) (int, string, string) {
-	header, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Nostr ")
-	if !ok {
-		return http.StatusUnauthorized, "missing Authorization: Nostr header", ""
-	}
-	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(header))
-	if err != nil {
-		return http.StatusUnauthorized, "authorization is not base64", ""
-	}
-	var ev nostr.Event
-	if err := json.Unmarshal(raw, &ev); err != nil || ev.Kind != copyAuthKind {
-		return http.StatusUnauthorized, "authorization is not a kind 27235 event", ""
-	}
 	now := s.now()
-	if at := ev.CreatedAt.Time(); at.Before(now.Add(-copyAuthWindow)) || at.After(now.Add(copyAuthWindow)) {
-		return http.StatusUnauthorized, "authorization is outside the 60 s window", ""
-	}
-	if !ev.CheckID() {
-		return http.StatusUnauthorized, "authorization id does not match its content", ""
-	}
-	if ok, err := ev.CheckSignature(); err != nil || !ok {
-		return http.StatusUnauthorized, "authorization signature is invalid", ""
-	}
-	if !strings.EqualFold(tagValueOf(ev.Tags, "method"), http.MethodPost) {
-		return http.StatusUnauthorized, "authorization is not for POST", ""
-	}
-	u, err := url.Parse(tagValueOf(ev.Tags, "u"))
-	if err != nil || !u.IsAbs() || u.Path != "/copy/v2/start" || u.RawQuery != "" {
-		return http.StatusUnauthorized, "authorization is not for /copy/v2/start", ""
+	ev, code, why := copySignedPost(r, "/copy/v2/start", now)
+	if code != 0 {
+		return code, why, ""
 	}
 	var device string
 	switch {
@@ -237,16 +213,61 @@ func (s *copyServer) checkStart(r *http.Request) (int, string, string) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for id, t := range s.seen {
-		if now.Sub(t) > 2*copyAuthWindow {
-			delete(s.seen, id)
-		}
-	}
-	if _, dup := s.seen[ev.ID]; dup {
+	if !s.spendAuth(ev.ID, now) {
 		return http.StatusUnauthorized, "authorization was already used", ""
 	}
-	s.seen[ev.ID] = now
 	return 0, "", device
+}
+
+// copySignedPost reads a kind 27235 POST proof for path (the start and the
+// rank nudge): base64 JSON in Authorization: Nostr, inside the 60 s window,
+// a good id and signature, method POST and u naming path. Who signed it is
+// the caller's to check.
+func copySignedPost(r *http.Request, path string, now time.Time) (*nostr.Event, int, string) {
+	header, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Nostr ")
+	if !ok {
+		return nil, http.StatusUnauthorized, "missing Authorization: Nostr header"
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(header))
+	if err != nil {
+		return nil, http.StatusUnauthorized, "authorization is not base64"
+	}
+	var ev nostr.Event
+	if err := json.Unmarshal(raw, &ev); err != nil || ev.Kind != copyAuthKind {
+		return nil, http.StatusUnauthorized, "authorization is not a kind 27235 event"
+	}
+	if at := ev.CreatedAt.Time(); at.Before(now.Add(-copyAuthWindow)) || at.After(now.Add(copyAuthWindow)) {
+		return nil, http.StatusUnauthorized, "authorization is outside the 60 s window"
+	}
+	if !ev.CheckID() {
+		return nil, http.StatusUnauthorized, "authorization id does not match its content"
+	}
+	if ok, err := ev.CheckSignature(); err != nil || !ok {
+		return nil, http.StatusUnauthorized, "authorization signature is invalid"
+	}
+	if !strings.EqualFold(tagValueOf(ev.Tags, "method"), http.MethodPost) {
+		return nil, http.StatusUnauthorized, "authorization is not for POST"
+	}
+	u, err := url.Parse(tagValueOf(ev.Tags, "u"))
+	if err != nil || !u.IsAbs() || u.Path != path || u.RawQuery != "" {
+		return nil, http.StatusUnauthorized, "authorization is not for " + path
+	}
+	return &ev, 0, ""
+}
+
+// spendAuth records a proof's id as used (call with s.mu held); false when
+// it already was.
+func (s *copyServer) spendAuth(id string, now time.Time) bool {
+	for old, t := range s.seen {
+		if now.Sub(t) > 2*copyAuthWindow {
+			delete(s.seen, old)
+		}
+	}
+	if _, dup := s.seen[id]; dup {
+		return false
+	}
+	s.seen[id] = now
+	return true
 }
 
 func tagValueOf(tags nostr.Tags, name string) string {
@@ -377,6 +398,8 @@ func (s *copyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case rest == "start" && r.Method == http.MethodPost:
 		s.start(w, r)
+	case rest == "nudge" && r.Method == http.MethodPost:
+		s.nudge(w, r) // copyv2_nudge.go
 	case strings.HasPrefix(rest, "sync/"):
 		s.serveSync(w, r, strings.TrimPrefix(rest, "sync/"))
 	default:

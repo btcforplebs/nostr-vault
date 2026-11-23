@@ -769,7 +769,11 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 	}
 	// This Mac's domain to A and A's here, once the copy is in (pairing).
 	c.syncDevice(ctx)
-	done := copyLine{Stage: "done", Items: [2]int64{int64(stats.notes + stats.messages + stats.files), int64(stats.notes + stats.messages + stats.files)}}
+	// Part and source as every other line has them: the apps' parsers (and
+	// parseCopyLine) refuse a line without, and a first copy whose done line
+	// is refused never becomes a device the app catches up with (LogePhone,
+	// 2026-11-23: no catch-up, so no trust rank copy).
+	done := copyLine{Stage: "done", Part: "-", Source: "mesh", Items: [2]int64{int64(stats.notes + stats.messages + stats.files), int64(stats.notes + stats.messages + stats.files)}}
 	if settings == "refused" || m.Settings == "refused" {
 		done.Error = "settings_refused"
 	}
