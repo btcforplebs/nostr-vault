@@ -32,6 +32,7 @@ struct MyDevicesPanel: View {
                     Text("Checking the mesh…").font(.appSystem(size: 12)).foregroundColor(.secondary)
                 }
             }
+            DesktopVaultStatusCard().padding(.top, 4)
             // The same two-scan pairing as the Vault dashboard and Mesh.
             Button { showPairing = true } label: {
                 Label("Add a device", systemImage: "plus.circle.fill")

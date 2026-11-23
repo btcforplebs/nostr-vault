@@ -324,7 +324,7 @@ final class MeshCopyV2Service: ObservableObject {
 
     /// The loopback base this device's mesh gives the peer's own-device
     /// port. Never log it: the path holds the ingress token.
-    private static func base(_ peer: String) async -> String? {
+    static func base(_ peer: String) async -> String? {
         #if os(iOS)
         return await FipsMeshService.shared.ingressURL(meshNpub: peer)?.absoluteString
         #else

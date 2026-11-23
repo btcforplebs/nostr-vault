@@ -228,3 +228,37 @@ func TestVaultMarksPruned(t *testing.T) {
 		t.Fatalf("an unpaired device's hand-off stayed: %+v", h)
 	}
 }
+
+// The phone's side: with the copy token it reads the status; without one,
+// or with a token A no longer takes, it gets an error code and nothing else.
+func TestVaultStatusFetchedByAPairedDevice(t *testing.T) {
+	owner, aDir, _, s, url := trustPair(t, 100)
+	prev := vaultMarksDir
+	vaultMarksDir = func() string { return aDir }
+	t.Cleanup(func() { vaultMarksDir = prev })
+	ctx := context.Background()
+	if _, err := newCopyClient("npub1peer", url).sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st, err := fetchVaultStatus(ctx, "npub1peer", url)
+	if err != nil || len(st.Accounts) != 1 || st.Accounts[0].Account != owner.pk || st.Accounts[0].Result == nil {
+		t.Fatalf("status: %+v %v", st, err)
+	}
+	var got struct {
+		Status *vaultStatus `json:"status"`
+		Error  string       `json:"error"`
+	}
+	if json.Unmarshal(vaultStatusFromJSON(ctx, "npub1peer", url), &got) != nil || got.Status == nil || got.Error != "" {
+		t.Fatalf("app JSON: %+v", got)
+	}
+	if _, err := fetchVaultStatus(ctx, "npub1other", url); copyErrorCode(err) != "not_paired" {
+		t.Fatalf("no token: %v", err)
+	}
+	s.dropDevice(s.tokens[0].Device)
+	if _, err := fetchVaultStatus(ctx, "npub1peer", url); copyErrorCode(err) != "auth_refused" {
+		t.Fatalf("a dropped token: %v", err)
+	}
+	if json.Unmarshal(vaultStatusFromJSON(ctx, "npub1peer", url), &got) != nil || got.Error != "auth_refused" {
+		t.Fatalf("app JSON error: %+v", got)
+	}
+}
