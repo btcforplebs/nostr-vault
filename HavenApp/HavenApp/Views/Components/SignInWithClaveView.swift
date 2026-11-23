@@ -1,5 +1,4 @@
 import SwiftUI
-import CoreImage
 #if os(iOS)
 import UIKit
 #else
@@ -46,7 +45,7 @@ struct SignInWithClaveView: View {
 
             case .waiting:
                 #if os(macOS)
-                if let request, let image = Self.qrImage(for: request.uri) {
+                if let request, let image = NostrConnectQR.cgImage(for: request.uri) {
                     Image(decorative: image, scale: 1)
                         .interpolation(.none)
                         .resizable()
@@ -162,14 +161,4 @@ struct SignInWithClaveView: View {
         NSPasteboard.general.setString(request.uri, forType: .string)
     }
     #endif
-
-    private static func qrImage(for string: String) -> CGImage? {
-        guard let data = string.data(using: .utf8),
-              let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
-        filter.setValue(data, forKey: "inputMessage")
-        filter.setValue("M", forKey: "inputCorrectionLevel")
-        guard let output = filter.outputImage else { return nil }
-        let scaled = output.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
-        return CIContext().createCGImage(scaled, from: scaled.extent)
-    }
 }

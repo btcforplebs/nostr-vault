@@ -43,25 +43,8 @@ extension NIP46Service {
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { return nil }
         let secret = bytes.map { String(format: "%02x", $0) }.joined()
 
-        var components = URLComponents()
-        components.scheme = "nostrconnect"
-        components.host = clientPK
-        var items = Self.nostrConnectRelays.map { URLQueryItem(name: "relay", value: $0) }
-        items += [
-            URLQueryItem(name: "secret", value: secret),
-            URLQueryItem(name: "perms", value: "sign_event,nip04_encrypt,nip04_decrypt,nip44_encrypt,nip44_decrypt"),
-            URLQueryItem(name: "name", value: "Nostr Vault"),
-            URLQueryItem(name: "url", value: "https://nostrvault.app"),
-            URLQueryItem(name: "image", value: "https://nostrvault.app/assets/haven_icon.png"),
-        ]
-        if includeCallback {
-            items.append(URLQueryItem(name: "callback", value: Self.nostrConnectCallback))
-        }
-        components.queryItems = items
-        // URLComponents leaves ":" and "/" in query values as-is; signers
-        // (Clave's parser included) read them fine, but encode "+" which some
-        // decoders turn into a space.
-        guard let uri = components.string?.replacingOccurrences(of: "+", with: "%2B") else { return nil }
+        guard let uri = NostrConnectURI.build(clientPubkey: clientPK, secret: secret, relays: Self.nostrConnectRelays,
+                                              callback: includeCallback ? Self.nostrConnectCallback : nil) else { return nil }
         return NostrConnectRequest(uri: uri, clientSecretKey: clientSK, clientPubkey: clientPK,
                                    secret: secret, relays: Self.nostrConnectRelays,
                                    startedAt: Int(Date().timeIntervalSince1970) - 5)
