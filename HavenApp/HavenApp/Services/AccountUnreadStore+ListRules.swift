@@ -13,7 +13,7 @@ extension AccountUnread.ListRules {
         let feed = FeedService.shared
         let active = config.activeAccountHexPubkey.lowercased()
         let openWeb = feed.trustedPubkeys(for: active)  // loads the saved graph if not yet
-        let pooledWeb = feed.wotPubkeys
+        let pooledWeb = feed.pooledWotPubkeys()
         func trusted(for recipient: String) -> Set<String> {
             AccountWeb.trusted(forRecipient: recipient, active: active, open: { openWeb }, pooled: pooledWeb)
         }

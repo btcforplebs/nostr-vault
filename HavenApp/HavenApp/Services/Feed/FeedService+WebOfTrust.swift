@@ -3,6 +3,15 @@ import Combine
 import SwiftUI
 
 extension FeedService {
+    /// The open account's own `wot_cache_<hex>.json`, or the pooled
+    /// `wot_cache.json` while that is missing or built at another level or
+    /// bar than the account has now (`WotFiles.feedCacheURL`).
+    var feedWotCacheURL: URL {
+        let config = ConfigService.shared.config
+        return WotFiles.feedCacheURL(in: ConfigService.shared.relayDataDir, owner: ConfigService.shared.activeAccountHexPubkey,
+                                     reach: config.reach(for: config.reachAccountNpub))
+    }
+
     /// Loads WOT pubkeys from the relay's cached `wot_cache.json` file.
     /// The relay computes this graph (owner -> follows -> follows-of-follows,
     /// filtered by minimum follower count) and persists it to disk.
@@ -10,7 +19,7 @@ extension FeedService {
     /// file the account web counts from is several MB, so it is parsed off
     /// the main thread (`loadWotLinksInBackground`).
     func loadWotPubkeys() {
-        let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
+        let cacheURL = feedWotCacheURL
         wotCacheStamp = (cacheURL.path, WotFiles.stamp(cacheURL: cacheURL))
         // No links yet (the first read): parse them here, so the first paint
         // of the Vault list, which only re-filters on events, gets the
@@ -35,15 +44,13 @@ extension FeedService {
     /// thread. Opening the WoT tab read it on the main thread and hung it for
     /// about 1.2 s (Tom's perf sweep 11-01 #2).
     func loadWotPubkeysInBackgroundIfChanged() async {
-        let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
-        let modified = WotFiles.stamp(cacheURL: cacheURL)
-        if let stamp = wotCacheStamp, stamp.path == cacheURL.path, stamp.modified == modified { return }
+        guard WotFiles.needsRead(loaded: wotCacheStamp, cacheURL: feedWotCacheURL) else { return }
         await loadWotPubkeysInBackground()
     }
 
     /// `loadWotPubkeys()` with the file read and parsed off the main thread.
     func loadWotPubkeysInBackground() async {
-        let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
+        let cacheURL = feedWotCacheURL
         let owner = ConfigService.shared.activeAccountHexPubkey
         let modified = WotFiles.stamp(cacheURL: cacheURL)
         let linksModified = WotFiles.modified(WotFiles.linksURL(beside: cacheURL))
@@ -129,11 +136,7 @@ extension FeedService {
 
     /// `loadWotPubkeys()`, unless neither file changed since the last read.
     private func loadWotPubkeysIfChanged() {
-        let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
-        if let stamp = wotCacheStamp, stamp.path == cacheURL.path,
-           stamp.modified == WotFiles.stamp(cacheURL: cacheURL) {
-            return
-        }
+        guard WotFiles.needsRead(loaded: wotCacheStamp, cacheURL: feedWotCacheURL) else { return }
         loadWotPubkeys()
     }
 
@@ -152,7 +155,7 @@ extension FeedService {
     /// cache after that read, the load starts a fresh watch for them.
     private func startWotFilesWatch() {
         wotRebuildWatchTimer?.invalidate()
-        let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
+        let cacheURL = feedWotCacheURL
         let watch = WotRebuildWatch(startedAt: Date(), stampAtStart: WotFiles.stamp(cacheURL: cacheURL))
         wotRebuildWatchTimer = Timer.scheduledTimer(withTimeInterval: WotRebuildWatch.interval, repeats: true) { [weak self] timer in
             Task { @MainActor [weak self] in
@@ -184,8 +187,26 @@ extension FeedService {
     /// switcher badge and the Vault's other-account rows judge by this.
     func trustedPubkeys(for recipientHex: String) -> Set<String> {
         if wotPubkeys.isEmpty { loadWotPubkeysIfChanged() }
-        return AccountWeb.trusted(forRecipient: recipientHex, active: ConfigService.shared.activeAccountHexPubkey,
-                                  open: { feedTrustedPubkeys }, pooled: wotPubkeys)
+        let active = ConfigService.shared.activeAccountHexPubkey
+        if recipientHex.isEmpty || recipientHex.lowercased() == active.lowercased() { return feedTrustedPubkeys }
+        return pooledWotPubkeys()
+    }
+
+    /// The relay's pooled web, which judges this device's other accounts. The
+    /// same set as `wotPubkeys` while the feed reads the pooled file; once it
+    /// reads the open account's own file, the pooled one is read here, again
+    /// only when it changes.
+    func pooledWotPubkeys() -> Set<String> {
+        guard WotFiles.isAccountCache(feedWotCacheURL) else { return wotPubkeys }
+        let url = ConfigService.shared.relayDataDir.appendingPathComponent(WotFiles.pooledCacheName)
+        let modified = WotFiles.modified(url)
+        if let memo = pooledWotMemo, memo.modified == modified { return memo.pubkeys }
+        let owner = ConfigService.shared.activeAccountHexPubkey
+        // Unreadable: keep the last pooled web, or nobody (fails closed).
+        let pubkeys = FeedFilterEngine.readWotCache(from: url, ownerHex: owner, readLinks: false)?.pubkeys
+            ?? pooledWotMemo?.pubkeys ?? []
+        pooledWotMemo = (modified, pubkeys)
+        return pubkeys
     }
 
     /// The one rule every feed with a Global button follows (Global, Media,

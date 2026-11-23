@@ -216,6 +216,9 @@ class FeedService: ObservableObject {
     /// new one. Re-reading on every call re-filtered the whole feed each time
     /// and froze the app on an account with an empty graph.
     var wotCacheStamp: (path: String, modified: Date?)?
+    /// The pooled `wot_cache.json` last read for other accounts, while the
+    /// feed reads the open account's own file (`pooledWotPubkeys()`).
+    var pooledWotMemo: (modified: Date?, pubkeys: Set<String>)?
     /// The wot_links.json date last parsed into the account web, and a count
     /// so a slower, older parse can't land over a newer one.
     var wotLinksStamp: Date?
