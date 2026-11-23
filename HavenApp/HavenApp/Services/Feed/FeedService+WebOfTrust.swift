@@ -4,9 +4,12 @@ import SwiftUI
 
 extension FeedService {
     /// The open account's own `wot_cache_<hex>.json`, or the pooled
-    /// `wot_cache.json` while that is missing (`WotFiles.feedCacheURL`).
+    /// `wot_cache.json` while that is missing or built at another level or
+    /// bar than the account has now (`WotFiles.feedCacheURL`).
     var feedWotCacheURL: URL {
-        WotFiles.feedCacheURL(in: ConfigService.shared.relayDataDir, owner: ConfigService.shared.activeAccountHexPubkey)
+        let config = ConfigService.shared.config
+        return WotFiles.feedCacheURL(in: ConfigService.shared.relayDataDir, owner: ConfigService.shared.activeAccountHexPubkey,
+                                     reach: config.reach(for: config.reachAccountNpub))
     }
 
     /// Loads WOT pubkeys from the relay's cached `wot_cache.json` file.
@@ -41,9 +44,7 @@ extension FeedService {
     /// thread. Opening the WoT tab read it on the main thread and hung it for
     /// about 1.2 s (Tom's perf sweep 11-01 #2).
     func loadWotPubkeysInBackgroundIfChanged() async {
-        let cacheURL = feedWotCacheURL
-        let modified = WotFiles.stamp(cacheURL: cacheURL)
-        if let stamp = wotCacheStamp, stamp.path == cacheURL.path, stamp.modified == modified { return }
+        guard WotFiles.needsRead(loaded: wotCacheStamp, cacheURL: feedWotCacheURL) else { return }
         await loadWotPubkeysInBackground()
     }
 
@@ -135,11 +136,7 @@ extension FeedService {
 
     /// `loadWotPubkeys()`, unless neither file changed since the last read.
     private func loadWotPubkeysIfChanged() {
-        let cacheURL = feedWotCacheURL
-        if let stamp = wotCacheStamp, stamp.path == cacheURL.path,
-           stamp.modified == WotFiles.stamp(cacheURL: cacheURL) {
-            return
-        }
+        guard WotFiles.needsRead(loaded: wotCacheStamp, cacheURL: feedWotCacheURL) else { return }
         loadWotPubkeys()
     }
 

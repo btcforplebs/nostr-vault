@@ -121,15 +121,51 @@ enum WotFiles {
     /// pkg/wot/account_cache.go, same shape as the pooled file), built at its
     /// own Follow Distance and bar. The pooled `wot_cache.json` only while the
     /// account's file is missing (an older relay, or before its first build).
+    /// With `reach`, the account's file counts only when it was built at that
+    /// level and bar, as the relay's `loadAccountWebs` rules: after a Follow
+    /// Distance change the relay gates from the pooled web until its rebuild
+    /// lands, and the feed follows it (Tron 2472 low 2).
     /// Android twin: `WotFeedFiles.forAccount`.
-    static func feedCacheURL(in dir: URL, owner: String) -> URL {
+    static func feedCacheURL(in dir: URL, owner: String, reach: AccountReach? = nil) -> URL {
         let hex = owner.lowercased()
         if hex.count == 64, hex.allSatisfy(\.isHexDigit) {
             let own = dir.appendingPathComponent(accountCachePrefix + hex + ".json")
             var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: own.path, isDirectory: &isDir), !isDir.boolValue { return own }
+            if FileManager.default.fileExists(atPath: own.path, isDirectory: &isDir), !isDir.boolValue,
+               reach.map({ builtAt($0, cacheURL: own) }) ?? true {
+                return own
+            }
         }
         return dir.appendingPathComponent(pooledCacheName)
+    }
+
+    /// The level and bar written in an account's file.
+    struct BuiltReach: Decodable, Equatable {
+        var depth: Int?
+        var minFollowers: Int?
+        enum CodingKeys: String, CodingKey { case depth, minFollowers = "min_followers" }
+    }
+
+    /// The account's file was built at `reach`, held to what the relay runs
+    /// (haven-go `reachOf`: level 1-3, bar 0 or more). A field the file
+    /// leaves out is not held against it; an unreadable file is (pooled).
+    static func builtAt(_ reach: AccountReach, cacheURL: URL) -> Bool {
+        guard let built = builtReach(cacheURL) else { return false }
+        if let depth = built.depth, depth != min(max(reach.depth, 1), 3) { return false }
+        if let bar = built.minFollowers, bar != max(reach.minFollowers, 0) { return false }
+        return true
+    }
+
+    /// The file is several MB: parsed once per write, not per stamp check.
+    private static let builtMemo = BuiltReachMemo()
+
+    static func builtReach(_ cacheURL: URL) -> BuiltReach? {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: cacheURL.path)
+        guard let modified = attrs?[.modificationDate] as? Date else { return nil }
+        let size = (attrs?[.size] as? NSNumber)?.int64Value ?? -1
+        return builtMemo.value(path: cacheURL.path, modified: modified, size: size) {
+            (try? Data(contentsOf: cacheURL)).flatMap { try? JSONDecoder().decode(BuiltReach.self, from: $0) }
+        }
     }
 
     /// The cache was the open account's own, not the pooled one.
@@ -148,12 +184,38 @@ enum WotFiles {
         return max(cache, modified(linksURL(beside: cacheURL)) ?? cache)
     }
 
+    /// The web in memory (`loaded`: the file it came from and that file's
+    /// stamp then) is not the one `cacheURL` holds now: another file (an
+    /// account switch, or the account's own file appearing or falling back)
+    /// or a newer write.
+    static func needsRead(loaded: (path: String, modified: Date?)?, cacheURL: URL) -> Bool {
+        guard let loaded else { return true }
+        return loaded.path != cacheURL.path || loaded.modified != stamp(cacheURL: cacheURL)
+    }
+
     /// The links on disk belong to the cache on disk: written at or after it.
     /// Below depth 3 there are no links to wait for.
     static func linksCurrent(cacheURL: URL, depth: Int?) -> Bool {
         guard (depth ?? 0) >= 3 else { return true }
         guard let cache = modified(cacheURL), let links = modified(linksURL(beside: cacheURL)) else { return false }
         return links >= cache
+    }
+}
+
+/// One entry: the last account file read, keyed by its path, date and size.
+final class BuiltReachMemo: @unchecked Sendable {
+    private let lock = NSLock()
+    private var key: (path: String, modified: Date, size: Int64)?
+    private var value: WotFiles.BuiltReach?
+
+    func value(path: String, modified: Date, size: Int64, read: () -> WotFiles.BuiltReach?) -> WotFiles.BuiltReach? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let key, key.path == path, key.modified == modified, key.size == size { return value }
+        let fresh = read()
+        key = fresh == nil ? nil : (path, modified, size)
+        value = fresh
+        return fresh
     }
 }
 

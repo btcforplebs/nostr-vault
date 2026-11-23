@@ -6,6 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /** The feed reads the open account's wot_cache_<hex>.json, the pooled file only while it is missing. */
 class WotFeedFilesTest {
@@ -67,5 +68,60 @@ class WotFeedFilesTest {
         assertEquals(setOf(me, other), parsed?.pubkeys)
         assertEquals(3, parsed?.depth)
         assertEquals(mapOf(other to 4), parsed?.vouches)
+    }
+
+    // Tron 2472 low 2: the account's file counts only at its own level and bar.
+
+    private fun built(depth: Int, bar: Int) =
+        WotCacheFile.parse("""{"version":5,"depth":$depth,"min_followers":$bar,"pubkeys":{"$me":true,"$other":true}}""", me)!!
+
+    @Test fun `the account file reads its level and bar`() {
+        val parsed = built(3, 2)
+        assertEquals(3, parsed.depth)
+        assertEquals(2, parsed.minFollowers)
+    }
+
+    @Test fun `built at the account's own level and bar counts`() {
+        assertTrue(WotFeedFiles.builtAt(built(3, 2), com.nostrvault.relay.AccountReach(3, 2)))
+    }
+
+    @Test fun `another level or bar falls back to pooled`() {
+        assertFalse("another level", WotFeedFiles.builtAt(built(3, 2), com.nostrvault.relay.AccountReach(2, 2)))
+        assertFalse("another bar", WotFeedFiles.builtAt(built(3, 2), com.nostrvault.relay.AccountReach(3, 5)))
+    }
+
+    @Test fun `the level is held to the relay's range`() {
+        assertTrue(WotFeedFiles.builtAt(built(1, 0), com.nostrvault.relay.AccountReach(0, -1)))
+    }
+
+    @Test fun `a pooled file without a bar is not held against it`() {
+        val pooled = WotCacheFile.parse("""{"pubkeys":{"$me":true,"$other":true}}""", me)!!
+        assertTrue(WotFeedFiles.builtAt(pooled, com.nostrvault.relay.AccountReach(3, 9)))
+    }
+
+    // Tron 2472 low 3: the pooled file is parsed again only when rewritten.
+
+    @Test fun `the pooled memo parses once per write`() {
+        val file = tmp.newFile("wot_cache.json")
+        file.writeText("""{"pubkeys":{"$me":true,"$other":true}}""")
+        val memo = PooledWotMemo()
+        val first = memo.read(file, me)
+        assertEquals(setOf(me, other), first?.pubkeys)
+        memo.read(file, me)
+        assertEquals("same file: no second parse", 1, memo.reads)
+        file.writeText("""{"pubkeys":{"$me":true,"$other":true,"${"c".repeat(64)}":true}}""")
+        file.setLastModified(file.lastModified() + 5_000)
+        assertEquals(3, memo.read(file, me)?.pubkeys?.size)
+        assertEquals("a rewrite is parsed", 2, memo.reads)
+    }
+
+    @Test fun `the pooled memo does not keep an unreadable read`() {
+        val file = tmp.newFile("wot_cache.json")
+        file.writeText("{not json")
+        val memo = PooledWotMemo()
+        assertEquals(null, memo.read(file, me))
+        memo.read(file, me)
+        assertEquals("an unreadable file is tried again", 2, memo.reads)
+        assertEquals(null, memo.read(File(tmp.root, "missing.json"), me))
     }
 }

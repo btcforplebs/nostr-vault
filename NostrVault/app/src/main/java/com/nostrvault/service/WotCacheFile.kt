@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -24,7 +25,13 @@ object WotCacheFile {
      * [pubkeys] as [FeedFilterEngine.parseWotCache] rules them (empty when the
      * graph names only the owner); [vouches] null when the cache predates them.
      */
-    data class Parsed(val pubkeys: Set<String>, val vouches: Map<String, Int>?, val depth: Int? = null)
+    data class Parsed(
+        val pubkeys: Set<String>,
+        val vouches: Map<String, Int>?,
+        val depth: Int? = null,
+        /** The Min Followers bar it was built at (an account's own file; absent on older pooled files). */
+        val minFollowers: Int? = null,
+    )
 
     @Serializable
     private class Shape(
@@ -32,6 +39,7 @@ object WotCacheFile {
         val vouches: Map<String, Double>? = null,
         /** Follow Distance the graph was built at (0 or absent on older relays). */
         val depth: Int? = null,
+        @SerialName("min_followers") val minFollowers: Int? = null,
     )
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -44,7 +52,7 @@ object WotCacheFile {
             '{' -> {
                 val shape = json.decodeFromStream(Shape.serializer(), stream)
                 shape.pubkeys?.let { keys ->
-                    Parsed(usable(keys.keys, ownerHex), shape.vouches?.mapValues { it.value.toInt() }, shape.depth?.takeIf { it > 0 })
+                    Parsed(usable(keys.keys, ownerHex), shape.vouches?.mapValues { it.value.toInt() }, shape.depth?.takeIf { it > 0 }, shape.minFollowers)
                 }
             }
             // Tolerate a bare array too, in case an older relay ever wrote one.

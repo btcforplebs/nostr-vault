@@ -490,6 +490,7 @@ class FeedService @Inject constructor(
     internal val _wotLoosePubkeys = MutableStateFlow<Set<String>>(emptySet())
     /** The relay's web as saved, every device account pooled ([trustedPubkeysFor] another account). */
     internal val _pooledWotPubkeys = MutableStateFlow<Set<String>>(emptySet())
+    internal val pooledWotMemo = PooledWotMemo()
     /** One [loadWotPubkeys] run at a time; a call during a run asks for one more after it. */
     internal val wotLoadGate = RerunGate()
     /**

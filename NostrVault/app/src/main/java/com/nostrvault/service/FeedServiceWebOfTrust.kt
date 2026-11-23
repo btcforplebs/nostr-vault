@@ -79,17 +79,24 @@ import com.nostrvault.relay.reachFor
                     val owner = nostrService.activeHexPubkey
                     val pooledFile = File(dir, WOT_CACHE_FILE)
                     // Other accounts are still judged by the pooled web (trustedPubkeysFor).
-                    val pooled = if (pooledFile.exists()) pooledFile.inputStream().use { WotCacheFile.read(it, owner) } else null
-                    // The feed reads the open account's own web; the pooled one only while that is missing.
-                    val files = WotFeedFiles.forAccount(dir, owner)
-                    val parsed = if (files.perAccount) files.cache.inputStream().use { WotCacheFile.read(it, owner) } else pooled
+                    // Parsed again only when it was rewritten (pooledWotMemo).
+                    val pooled = pooledWotMemo.read(pooledFile, owner)
+                    // The feed reads the open account's own web; the pooled one only while that is
+                    // missing, or built at another level or bar than the account has now.
+                    val reach = config.reachFor(config.reachAccountNpub)
+                    var files = WotFeedFiles.forAccount(dir, owner)
+                    var parsed = if (files.perAccount) files.cache.inputStream().use { WotCacheFile.read(it, owner) } else pooled
+                    if (files.perAccount && parsed != null && !WotFeedFiles.builtAt(parsed, reach)) {
+                        files = WotFeedFiles.pooled(dir)
+                        parsed = pooled
+                    }
                     if (parsed == null) {
                         if (files.cache.exists()) Log.w(TAG, "WoT cache unreadable: ${files.cache}")
                         return@launch
                     }
                     // The pooled web is every device account's; keep the open account's part.
                     // Its own file is already that, and narrowing it again changes nothing.
-                    val minFollowers = config.reachFor(config.reachAccountNpub).minFollowers
+                    val minFollowers = reach.minFollowers
                     val loaded = accountWeb(parsed.pubkeys, files.links, parsed.depth, minFollowers)
                     val loose = accountLoose(parsed.pubkeys, loaded, files.links, parsed.depth, minFollowers)
                     val vouches = parsed.vouches

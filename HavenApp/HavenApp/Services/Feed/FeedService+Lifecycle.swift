@@ -120,6 +120,13 @@ extension FeedService {
             didRestoreCachedFeed = restored
         }
 
+        // The web in memory is the previous account's own file
+        // (wot_cache_<hex>.json); snapshots don't carry it, and only a
+        // Global-like top-up reloads it. Its path changes, so this re-reads
+        // (Tron 2472 must-fix 1: Following-mode switch kept A's web for B's
+        // Vault rows, alerts and DM requests).
+        Task { [weak self] in await self?.loadWotPubkeysInBackgroundIfChanged() }
+
         // 5. Kick off relay traffic.
         dvmRevealed = 0
         if feedMode.isLocalDvm {
