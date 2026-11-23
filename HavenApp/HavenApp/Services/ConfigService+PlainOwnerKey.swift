@@ -6,14 +6,37 @@ import Foundation
 /// key is saved on this device at all, for OwnerKeyNotSavedAlert.
 extension ConfigService {
     /// At load, after config.json is read: fills in a key the file left out
-    /// from the keychain.
+    /// from the keychain, if it is this owner's. Another account's (left by
+    /// an earlier install) is deleted.
     func attachPlainOwnerKey() {
-        let stored = CredentialStore.get(account: PlainOwnerKeyAtRest.account)
-        let loaded = PlainOwnerKeyAtRest.loaded(fromFile: config.ownerNsec, stored: stored)
+        let account = PlainOwnerKeyAtRest.account
+        let stored = CredentialStore.get(account: account)
+        let npub = config.ownerNpub
+        let loaded = PlainOwnerKeyAtRest.loaded(fromFile: config.ownerNsec, stored: stored) { key in
+            Self.plainOwnerKeyOwnership(key, npub: npub)
+        }
+        if loaded.deleteStored {
+            _ = CredentialStore.delete(account: account)
+            RelayProcessManager.shared.addLog("Removed a keychain owner key that belongs to another account", level: "WARNING")
+        }
         plainOwnerKey = loaded.state
         // Until the next save decides, config.json keeps what it holds now.
         plainOwnerKeyOnDisk = loaded.state.inFile
         if config.ownerNsec != loaded.key { config.ownerNsec = loaded.key }
+    }
+
+    /// Whether `key` (nsec or hex) is `npub`'s. Only a proven mismatch is
+    /// `.other`, as in SetupStoredOwnerKey.
+    static func plainOwnerKeyOwnership(_ key: String, npub: String) -> PlainOwnerKeyAtRest.Ownership {
+        let plain = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let hexKey = NpubValidation.hexSecretKey(fromNsec: plain)
+                ?? (plain.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil ? plain : nil),
+              let expected = NpubValidation.hexPubkey(fromNpub: npub.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let pk = withCStrings([hexKey], { p in GetPublicKeyC(p[0]) }) else { return .unreadable }
+        defer { free(pk) }
+        let derived = String(cString: pk)
+        guard !derived.isEmpty else { return .unreadable }
+        return derived.lowercased() == expected.lowercased() ? .matches : .other
     }
 
     /// Before config.json is written: stores the key in the keychain and

@@ -37,14 +37,38 @@ struct PlainOwnerKeyAtRest {
         let notSaved: Bool
     }
 
+    /// Whether a keychain key is this config's owner's.
+    enum Ownership {
+        case matches
+        /// Proven to be another account's key.
+        case other
+        /// The key or the owner's npub can't be read; nothing is proven.
+        case unreadable
+    }
+
     /// At load: `fromFile` is config.json's `ownerNsec`, `stored` the
     /// keychain's. Returns the key to keep in memory. A key in the file wins
     /// (an older build wrote it after the keychain copy), and the next save
     /// stores it.
-    static func loaded(fromFile: String, stored: String?) -> (state: PlainOwnerKeyAtRest, key: String) {
+    ///
+    /// Keychain items outlive deleting the app, so `stored` can be an earlier
+    /// install's key. It is used only when `owner` proves it is this owner's.
+    /// `deleteStored` is true only for a proven mismatch; an unreadable one is
+    /// left alone but not used.
+    static func loaded(fromFile: String, stored: String?, owner: (String) -> Ownership)
+        -> (state: PlainOwnerKeyAtRest, key: String, deleteStored: Bool) {
         let file = clean(fromFile)
-        let state = PlainOwnerKeyAtRest(inFile: file, inKeychain: stored ?? "")
-        return (state, file.isEmpty ? state.inKeychain : file)
+        var held = clean(stored ?? "")
+        var deleteStored = false
+        if file.isEmpty, !held.isEmpty {
+            switch owner(held) {
+            case .matches: break
+            case .other: deleteStored = true; held = ""
+            case .unreadable: held = ""
+            }
+        }
+        let state = PlainOwnerKeyAtRest(inFile: file, inKeychain: held)
+        return (state, file.isEmpty ? state.inKeychain : file, deleteStored)
     }
 
     /// Before config.json is written. `store` must write the key and read it
