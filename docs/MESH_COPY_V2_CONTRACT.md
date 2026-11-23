@@ -430,6 +430,24 @@ The app calls the engine when a linked device comes into reach. The engine then:
      window is open or an import runs), so a time mark would skip it. B records the tag only after a whole
      answer; a 404, a cut or over-long body is not recorded. It never fails or delays the catch-up's mark.
 
+7. **Desktop Vault status** (`haven-go/copyv2_status.go`, `haven-go/vault_status.go`). Not part of the
+   catch-up: a device asks when it shows "Your desktop Vault" in Your Space. `GET /copy/v2/sync/status` (Bearer,
+   the same copy token: a paired device's mesh key, never the account key; nothing is signed). Other methods are
+   404.
+   - `200`: `{version: 1, at, state, pausedWhy?, accounts: […]}`. `state` is `running`, `paused` (`pausedWhy`:
+     `app` = the Mac window is open or Run in background is off; `busy` = an import or copy is running or ran in
+     the last minute), `idle`, or `off` (this engine never ranks). Each account (only those this Haven ranks):
+     `{account, running, ring?, ringDone?, ringTotal?, listsRead?, refresh?, cut?, finishedAt, fullAt?,
+     refreshAt?, capped?, result?: {builtAt, people, maxHop, rings: [n per ring], distantByShown: [101 counts],
+     viewBar}, distantAtBar, distantFetchAt?, distantFetchPeople?, distantFetchNew?, handoffs: [{device, role,
+     tookAt?, builtAt?, checkedAt}]}`. Times are Unix seconds.
+   - `distantByShown[s]` counts ring-3-and-out people whose score rounds down to `s`, so a device can count the
+     distant connections at its own slider bar; `distantAtBar` is that count at `viewBar`.
+   - `handoffs` lists only devices paired now. `tookAt` is when A last sent that device a rank copy (step 5,
+     `200`); `checkedAt` when it last asked at all (written at most hourly for a `204`). A keeps these and the
+     last distant fetch in `vault_status_marks.json` next to the WoT cache.
+   - It carries no pubkeys of other people, no scores per person and no notes.
+
 Before the notes, **accounts** (§3.4): B `GET /copy/v2/sync/accounts` and takes A's, then `PUT`s its own, which A
 takes the same way. Each side **offers** the other's list to its app (copy-accounts.json) only when the lists share an
 account; neither adds an account by itself, and neither removes one.

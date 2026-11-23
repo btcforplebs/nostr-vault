@@ -181,9 +181,12 @@ func runTrustRank(ctx context.Context, pool *nostr.SimplePool, cshared bool) {
 				OwnerBlocks: func() []string { return ownerPublicMutes(account) },
 				Wait:        func(context.Context) bool { return mayRun() },
 				Pace:        trustRankPace,
+				Progress:    vaultPassProgress,
 			}
 			start := time.Now()
+			vaultPassBegin(account, refresh)
 			res, err := c.RunPass(ctx, refresh)
+			vaultPassEnd()
 			switch {
 			case err == trustrank.ErrStopped:
 				log.Printf("trust rank: paused for %s…, place kept", account[:8])
