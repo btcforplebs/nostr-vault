@@ -128,6 +128,15 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         else -> false
     }
 
+    /**
+     * Media's Following for an account that follows nobody. The filter builder
+     * omits an empty `authors`, so a REQ here would ask for everyone's media:
+     * send none, as Following sends none (iOS asks nothing either).
+     */
+    internal fun FeedService.mediaFollowsNobody(): Boolean =
+        _feedMode.value == FeedMode.MEDIA && _mediaFeedMode.value == MediaFeedMode.FOLLOWING &&
+            _followedPubkeys.value.isEmpty()
+
     /** Cancel a feed client's collectors and disconnect it. */
     internal fun FeedService.teardownFeedClient(relayUrl: String) {
         feedClientJobs.remove(relayUrl)?.forEach { it.cancel() }
@@ -354,11 +363,17 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         // Reels, Live, Marketplace, Music and Hashtags run their own queries.
         // The feed connections stay up for mentions, but the note timeline
         // idles underneath rather than streaming a list nobody sees.
-        if (_feedMode.value in OWN_SERVICE_MODES) {
+        val followsNobody = mediaFollowsNobody()
+        if (_feedMode.value in OWN_SERVICE_MODES || followsNobody) {
             // No REQ means no EOSE, which is what sends the follows'
             // reactions and zaps subscriptions: send them now instead.
             if (feedClients[relayUrl] != null && relayUrl !in outboxPlan && auxSubsSent.add(relayUrl)) {
                 sendAuxiliarySubscriptions(relayUrl)
+            }
+            // Nothing was asked, so nothing is loading: the empty state shows.
+            if (followsNobody) {
+                _isLoadingFeed.value = false
+                _isSyncing.value = false
             }
             return
         }
