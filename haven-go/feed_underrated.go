@@ -43,9 +43,11 @@ const (
 	underratedMaxPerAuthor   = 2
 	underratedBridgeBoost    = 1.5
 	underratedPostCountLimit = 200
-	// Posts assumed for an author the local stores know nothing about (not
-	// a follow, so not in feedDB): no "posts less" boost for an unknown, or
-	// a stranger posting a thousand times a day would count as one post.
+	// Posts assumed for an author the local stores know nothing about
+	// (neither a follow nor a distant connection whose posts the Haven
+	// fetched, distant_posts_job.go, so not in feedDB): no "posts less"
+	// boost for an unknown, or a stranger posting a thousand times a day
+	// would count as one post.
 	underratedUnknownPosts = 8
 
 	// How far back Underrated looks: two days (Popular looks back one). The

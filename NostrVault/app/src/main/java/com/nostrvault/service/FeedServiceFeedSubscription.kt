@@ -398,7 +398,9 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         // Global under the Web of Trust asks twice, once naming trusted authors
         // and once open. Asked open only, a new account's small web matched
         // almost nothing in a page of strangers and Global rendered blank
-        // (iOS #824). Not the local relay: it holds your own vault.
+        // (iOS #824). Not the local relay: it holds your own vault and the
+        // posts the Haven fetched from your distant connections (hop 3+),
+        // people your web already picked.
         val filters = if (_feedMode.value == FeedMode.GLOBAL &&
             relayUrl != configStore.config.value.localRelayURL("feed")
         ) {

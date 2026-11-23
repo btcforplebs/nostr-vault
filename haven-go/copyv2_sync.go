@@ -177,6 +177,8 @@ func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what stri
 		s.serveSyncDevice(w, r, tokenHash)
 	case what == "trust":
 		s.serveSyncTrust(w, r)
+	case what == "distant":
+		s.serveSyncDistant(w, r)
 	case what == "settings" && r.Method == http.MethodGet:
 		raw, err := os.ReadFile(copySettingsFile)
 		if err != nil || copySettingsRefusal(raw, time.Now()) != "" {
@@ -536,7 +538,8 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 		}
 	}
 	res.Settings, _ = c.syncSettings(ctx)
-	c.syncTrust(ctx) // the Haven's trust rank result, own devices only (copyv2_trust.go)
+	c.syncTrust(ctx)   // the Haven's trust rank result, own devices only (copyv2_trust.go)
+	c.syncDistant(ctx) // its distant connections' posts, after the rank copy (copyv2_distant.go)
 	// Marked only when every listed page was read: otherwise the next round
 	// would start a week before now and never list the older notes and
 	// files again.
