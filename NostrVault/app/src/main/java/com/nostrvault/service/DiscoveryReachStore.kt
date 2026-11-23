@@ -57,6 +57,12 @@ class DiscoveryReachStore @Inject constructor(
         scope.launch {
             configStore.config.map { it.discoveryBar }.distinctUntilChanged().drop(1).collect { apply(it) }
         }
+        // A block or unblock changes who the local request asks for at once,
+        // not at the next bar move or file read.
+        scope.launch {
+            configStore.config.map { it.blockedForActiveAccount() }.distinctUntilChanged().drop(1)
+                .collect { apply(configStore.config.value.discoveryBar) }
+        }
         // The process lifecycle only takes observers on the main thread.
         Handler(Looper.getMainLooper()).post {
             ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
