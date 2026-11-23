@@ -1,7 +1,7 @@
 // Receive, as on the iPhone (WalletLightningTab receiveCard, lightningAddressCard): your lightning address to copy,
 // and an invoice from the connected wallet for an amount, shown as a QR code with Copy. Receiving spends nothing.
 import { useState } from "preact/hooks"
-import { encode } from "uqr"
+import { QrCode } from "../components/QrCode.jsx"
 import { makeInvoice } from "../net/wallet.js"
 import { invoiceMsat } from "../net/zaps.js"
 import { useProfile } from "../components/useProfile.js"
@@ -49,17 +49,7 @@ function Invoice({ invoice }) {
   )
 }
 
-/** A QR code drawn as one SVG path from the encoded modules; no HTML is built from the text. */
-export function QrCode({ text, label, size = 200 }) {
-  const { data, size: n } = encode(text, { ecc: "M", border: 2 })
-  let d = ""
-  data.forEach((row, y) => row.forEach((on, x) => { if (on) d += `M${x} ${y}h1v1h-1z` }))
-  return (
-    <svg role="img" aria-label={label} viewBox={`0 0 ${n} ${n}`} width={size} height={size} shape-rendering="crispEdges" style="background: #fff; border-radius: 8px">
-      <path d={d} fill="#000" />
-    </svg>
-  )
-}
+export { QrCode } // components/QrCode.jsx; still exported here for the screens that import it from this file
 
 function CopyButton({ text, label, wide }) {
   const [copied, setCopied] = useState(false)
