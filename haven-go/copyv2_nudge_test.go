@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -112,9 +114,9 @@ func TestCopyNudgeOnlyFromAPairedDeviceThisOneCopiedFrom(t *testing.T) {
 }
 
 func TestCopyHeldPeersNamesOnlyCopiedPairedDevices(t *testing.T) {
-	owner, self, mac, pad, gone, box := newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t)
+	owner, self, mac, pad, gone, box, moto := newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t)
 	openCopyVault(t, owner.pk)
-	pairMeshDevices(t, self, mac, pad, box)
+	pairMeshDevices(t, self, mac, pad, box, moto)
 	// The box: a finished first copy that left a file out, so only its done
 	// mark is set (Tron #2476).
 	saveCopyPeerToken(meshNpub(box.pk), strings.Repeat("12", 32))
@@ -124,13 +126,19 @@ func TestCopyHeldPeersNamesOnlyCopiedPairedDevices(t *testing.T) {
 	saveCopyPeerToken(meshNpub(mac.pk), strings.Repeat("ab", 32))
 	markCopySynced(meshNpub(mac.pk), time.Now().Unix())
 	saveCopyPeerToken(meshNpub(pad.pk), strings.Repeat("cd", 32))
+	if err := os.MkdirAll(filepath.Join(copyInDir, copyPeerKey(meshNpub(pad.pk))), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// The Moto: a first copy from before the done mark that left files out:
+	// a token, no mark, and its copy folder gone.
+	saveCopyPeerToken(meshNpub(moto.pk), strings.Repeat("34", 32))
 	saveCopyPeerToken(meshNpub(gone.pk), strings.Repeat("ef", 32))
 	markCopySynced(meshNpub(gone.pk), time.Now().Unix())
 	got := copyHeldPeers()
-	want := []string{meshNpub(mac.pk), meshNpub(box.pk)}
+	want := []string{meshNpub(mac.pk), meshNpub(box.pk), meshNpub(moto.pk)}
 	sort.Strings(want)
 	if !slices.Equal(got, want) {
-		t.Fatalf("held peers %v, want the Mac and the box", got)
+		t.Fatalf("held peers %v, want the Mac, the box and the Moto", got)
 	}
 }
 

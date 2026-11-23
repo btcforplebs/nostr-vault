@@ -18,8 +18,11 @@ package main
 // thinking no copy had finished, so it never caught up with that device.
 
 import (
+	"errors"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -93,7 +96,7 @@ func (s *copyServer) nudge(w http.ResponseWriter, r *http.Request) {
 
 // copyHolds: whether this device copied from the mesh key peer (hex): it
 // holds a copy token from it and a first copy finished (copyDoneMark), or a
-// catch-up did (the main mark, the only one older copies left). Returns
+// catch-up did (the main mark), or its copy folder is gone. Returns
 // the npub the app names it by.
 func copyHolds(peer string) (string, bool) {
 	npub, err := nip19.EncodePublicKey(peer)
@@ -108,7 +111,17 @@ func copyHolds(peer string) (string, bool) {
 	copySyncMu.Unlock()
 	for _, name := range []string{npub, peer} {
 		key := copyPeerKey(name)
-		if tokens[key] != "" && (marks[key] > 0 || marks[copyPeerKey(name+copyDoneMark)] > 0) {
+		if tokens[key] == "" {
+			continue
+		}
+		if marks[key] > 0 || marks[copyPeerKey(name+copyDoneMark)] > 0 {
+			return npub, true
+		}
+		// A first copy from before the done mark that left files out has
+		// neither mark. run() makes the copy folder before it asks for the
+		// token and removes it only once the copy is in, so a token with no
+		// folder is a finished copy (Tron, #2476).
+		if _, err := os.Stat(filepath.Join(copyInDir, key)); errors.Is(err, os.ErrNotExist) {
 			return npub, true
 		}
 	}
