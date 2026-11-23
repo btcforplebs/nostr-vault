@@ -83,6 +83,9 @@ object RelayConfiguration {
 
             // Blacklisted Npubs
             "BLACKLISTED_NPUBS_FILE" to config.blacklistedNpubsFile,
+            // Each account's own Follow Distance; the relay has no default path for it.
+            // writeRelayListFiles points it at the file by absolute path.
+            "ACCOUNT_REACH_FILE" to AccountReach.FILE_NAME,
 
             // Private Relay
             "PRIVATE_RELAY_NAME" to config.privateRelayName,
@@ -308,6 +311,8 @@ object RelayConfiguration {
         val dmRelays: List<String>,
         /** The vault's own keys besides the owner ([VaultWhitelist]): a key or signer added or removed restarts the relay. */
         val whitelist: List<String> = emptyList(),
+        /** Every other account's own Follow Distance (account_reach.json, [relayAccountReach]): a change restarts the relay. */
+        val accountReach: Map<String, AccountReach> = emptyMap(),
     )
 
     /** Name of the DM relay list file the relay reads (DM_RELAYS_FILE). */
@@ -334,6 +339,7 @@ object RelayConfiguration {
             blastrRelays = blastrRelays(config, macMeshRelay),
             dmRelays = config.dmRelays,
             whitelist = VaultWhitelist.npubs(config),
+            accountReach = config.relayAccountReach,
         )
     }
 
@@ -446,6 +452,10 @@ object RelayConfiguration {
         // The vault's own keys besides the owner, rebuilt from the rule at every start (VaultWhitelist): stale
         // entries and watch-only accounts never survive a launch.
         write("WHITELISTED_NPUBS_FILE", WHITELIST_FILE_NAME, inputs.whitelist)
+        // Written at every start, with no entries too, so a stale file never outlives its accounts.
+        val reachFile = File(relayDataDir, AccountReach.FILE_NAME)
+        reachFile.writeText(AccountReach.fileJson(inputs.accountReach))
+        HavenBridge.setEnv("ACCOUNT_REACH_FILE", reachFile.absolutePath)
     }
 
     /** A JSON array of plain strings (npubs, relay URLs), as the relay reads it. */
