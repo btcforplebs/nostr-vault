@@ -18,8 +18,9 @@ import com.nostrvault.relay.reachFor
         wotCacheObserver = object : FileObserver(relayDataDir, CLOSE_WRITE or MOVED_TO) {
             override fun onEvent(event: Int, path: String?) {
                 // The links file is swapped in just after the cache: the open
-                // account's web is counted from it (AccountWeb).
-                if (path == WOT_CACHE_FILE || path == AccountWeb.LINKS_FILE) loadWotPubkeys()
+                // account's web is counted from it (AccountWeb). Its own pair
+                // (wot_cache_<hex>.json) counts too (WotFeedFiles).
+                if (WotFeedFiles.isFeedFile(path, nostrService.activeHexPubkey)) loadWotPubkeys()
             }
         }.also { it.startWatching() }
     }
@@ -73,41 +74,46 @@ import com.nostrvault.relay.reachFor
             try {
                 val config = configStore.config.value
                 config.relayDataDir?.let { watchWotCache(it) }
-                val wotCachePath = config.relayDataDir?.let { "$it/$WOT_CACHE_FILE" }
-                if (wotCachePath != null) {
-                    val file = File(wotCachePath)
-                    if (file.exists()) {
-                        // One streaming read for the graph and its vouches.
-                        val parsed = file.inputStream().use { WotCacheFile.read(it, nostrService.activeHexPubkey) }
-                        if (parsed == null) {
-                            Log.w(TAG, "WoT cache unreadable: $wotCachePath")
-                            return@launch
-                        }
-                        // The relay's web is every device account's pooled; keep the open account's part.
-                        val loaded = accountWeb(parsed.pubkeys, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.reachFor(config.reachAccountNpub).minFollowers)
-                        val loose = accountLoose(parsed.pubkeys, loaded, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.reachFor(config.reachAccountNpub).minFollowers)
-                        val vouches = parsed.vouches
-                        if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
-                        withContext(Dispatchers.Main.immediate) {
-                            _pooledWotPubkeys.value = parsed.pubkeys
-                            _wotCacheRead.value = true
-                            // Before the graph: its collectors read the vouches straight away.
-                            _wotVouches.value = vouches
-                            val looseChanged = loose != _wotLoosePubkeys.value
-                            _wotLoosePubkeys.value = loose
-                            if (loaded != _wotPubkeys.value) {
-                                val reask = graphArrivalReasksGlobal(
-                                    _wotPubkeys.value, loaded, _feedMode.value,
-                                    configStore.config.value.globalShowsEveryone,
-                                )
-                                _wotPubkeys.value = loaded
-                                // Global is filtered against this set; notes
-                                // already on screen have to be re-judged.
-                                recomputeFilteredNotes()
-                                if (reask) resubscribePrimaryToConnected()
-                            } else if (looseChanged) {
-                                recomputeFilteredNotes()
-                            }
+                val dir = config.relayDataDir?.let { File(it) }
+                if (dir != null) {
+                    val owner = nostrService.activeHexPubkey
+                    val pooledFile = File(dir, WOT_CACHE_FILE)
+                    // Other accounts are still judged by the pooled web (trustedPubkeysFor).
+                    val pooled = if (pooledFile.exists()) pooledFile.inputStream().use { WotCacheFile.read(it, owner) } else null
+                    // The feed reads the open account's own web; the pooled one only while that is missing.
+                    val files = WotFeedFiles.forAccount(dir, owner)
+                    val parsed = if (files.perAccount) files.cache.inputStream().use { WotCacheFile.read(it, owner) } else pooled
+                    if (parsed == null) {
+                        if (files.cache.exists()) Log.w(TAG, "WoT cache unreadable: ${files.cache}")
+                        return@launch
+                    }
+                    // The pooled web is every device account's; keep the open account's part.
+                    // Its own file is already that, and narrowing it again changes nothing.
+                    val minFollowers = config.reachFor(config.reachAccountNpub).minFollowers
+                    val loaded = accountWeb(parsed.pubkeys, files.links, parsed.depth, minFollowers)
+                    val loose = accountLoose(parsed.pubkeys, loaded, files.links, parsed.depth, minFollowers)
+                    val vouches = parsed.vouches
+                    if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys (${if (files.perAccount) "account" else "pooled"})")
+                    withContext(Dispatchers.Main.immediate) {
+                        // An unreadable pooled file keeps the last one; never the open account's own web.
+                        (pooled ?: parsed.takeUnless { files.perAccount })?.let { _pooledWotPubkeys.value = it.pubkeys }
+                        _wotCacheRead.value = true
+                        // Before the graph: its collectors read the vouches straight away.
+                        _wotVouches.value = vouches
+                        val looseChanged = loose != _wotLoosePubkeys.value
+                        _wotLoosePubkeys.value = loose
+                        if (loaded != _wotPubkeys.value) {
+                            val reask = graphArrivalReasksGlobal(
+                                _wotPubkeys.value, loaded, _feedMode.value,
+                                configStore.config.value.globalShowsEveryone,
+                            )
+                            _wotPubkeys.value = loaded
+                            // Global is filtered against this set; notes
+                            // already on screen have to be re-judged.
+                            recomputeFilteredNotes()
+                            if (reask) resubscribePrimaryToConnected()
+                        } else if (looseChanged) {
+                            recomputeFilteredNotes()
                         }
                     }
                 }

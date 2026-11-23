@@ -100,8 +100,41 @@ enum AccountWeb {
 /// links, or none. Keying reloads to the cache alone pinned that until the
 /// next rebuild, about a day.
 enum WotFiles {
+    static let pooledCacheName = "wot_cache.json"
+    static let accountCachePrefix = "wot_cache_"
+    static let accountLinksPrefix = "wot_links_"
+
+    /// The links written with `cacheURL`: `wot_links_<hex>.json` beside an
+    /// account's own `wot_cache_<hex>.json`, `wot_links.json` beside the pooled one.
     static func linksURL(beside cacheURL: URL) -> URL {
-        cacheURL.deletingLastPathComponent().appendingPathComponent(TrustLinks.fileName)
+        let dir = cacheURL.deletingLastPathComponent()
+        let name = cacheURL.lastPathComponent
+        if name.hasPrefix(accountCachePrefix), name.hasSuffix(".json") {
+            let hex = name.dropFirst(accountCachePrefix.count).dropLast(".json".count)
+            return dir.appendingPathComponent(accountLinksPrefix + hex + ".json")
+        }
+        return dir.appendingPathComponent(TrustLinks.fileName)
+    }
+
+    /// The cache the feed reads for `owner`, the open account: the relay's
+    /// web of that account alone (`wot_cache_<hex>.json`, haven-go
+    /// pkg/wot/account_cache.go, same shape as the pooled file), built at its
+    /// own Follow Distance and bar. The pooled `wot_cache.json` only while the
+    /// account's file is missing (an older relay, or before its first build).
+    /// Android twin: `WotFeedFiles.forAccount`.
+    static func feedCacheURL(in dir: URL, owner: String) -> URL {
+        let hex = owner.lowercased()
+        if hex.count == 64, hex.allSatisfy(\.isHexDigit) {
+            let own = dir.appendingPathComponent(accountCachePrefix + hex + ".json")
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: own.path, isDirectory: &isDir), !isDir.boolValue { return own }
+        }
+        return dir.appendingPathComponent(pooledCacheName)
+    }
+
+    /// The cache was the open account's own, not the pooled one.
+    static func isAccountCache(_ cacheURL: URL) -> Bool {
+        cacheURL.lastPathComponent.hasPrefix(accountCachePrefix)
     }
 
     static func modified(_ url: URL) -> Date? {
