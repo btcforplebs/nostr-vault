@@ -132,6 +132,8 @@ internal fun TrustGlobe(
     keepsDrifting: Boolean = false,
     /** Pictures still missing for people the globe shows. */
     onNeedProfiles: (List<String>) -> Unit = {},
+    /** Your own globe on the WOT tab: the rings past your circle ([GlobeOuterRings]). */
+    showsOuterRings: Boolean = false,
 ) {
     val phone = LocalConfiguration.current.smallestScreenWidthDp < 600
     // Kept on the WOT tab, so coming back finds the globe as it was left.
@@ -305,7 +307,11 @@ internal fun TrustGlobe(
                 )
             },
     ) {
-        Canvas(Modifier.fillMaxSize()) { scene.drawBack(this, accent) }
+        val outer = if (showsOuterRings) rememberTrustMapOuter() else null
+        Canvas(Modifier.fillMaxSize()) {
+            outer?.let { GlobeOuterRings.draw(this, it, scene.camera.zoom, phone, textMeasurer) }
+            scene.drawBack(this, accent)
+        }
         // The threads' glow in its own blurred layer, as iOS (API 31+; a lite
         // phone and older Android get soft strokes). Only while threads show.
         if (scene.threaded) {
