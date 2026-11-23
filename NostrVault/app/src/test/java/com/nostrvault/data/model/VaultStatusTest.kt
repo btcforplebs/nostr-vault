@@ -64,6 +64,12 @@ class VaultStatusTest {
         assertEquals("Logen's Moto", DesktopVaultPick.handoffName(a.handoffs[0], mapOf(b to "Logen's Moto"), null, roles))
         assertEquals("Phone", DesktopVaultPick.handoffName(a.handoffs[0], emptyMap(), null, roles))
         assertEquals("A paired device", DesktopVaultPick.handoffName(a.handoffs[1], emptyMap(), null, roles))
+        assertEquals("Phone", DesktopVaultPick.handoffName(a.handoffs[0], mapOf(b to "  "), null, roles))
+        val named = a.handoffs[0].copy(name = " LogePhone ")
+        assertEquals("LogePhone", DesktopVaultPick.handoffName(named, mapOf(b to "Logen's Moto"), b, roles))
+        assertEquals("12 mini", VaultStatus.decode(
+            """{"version":1,"at":1,"state":"idle","accounts":[{"account":"$me","handoffs":[{"device":"$b","name":"12 mini","checkedAt":1}]}]}""",
+        )!!.accounts[0].handoffs[0].name)
     }
 
     @Test fun offAgoAndTheEngineAnswer() {

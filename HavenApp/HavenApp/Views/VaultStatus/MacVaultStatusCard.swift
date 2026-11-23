@@ -82,10 +82,10 @@ struct MacVaultStatusCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(a.handoffs, id: \.device) { h in
                     HStack(spacing: 6) {
-                        Image(systemName: "iphone")
+                        Image(systemName: h.role.flatMap { MeshDeviceRole(rawValue: $0)?.icon } ?? "iphone")
                             .font(.appSystem(size: 10))
                             .foregroundColor(.secondary)
-                        Text(name(of: h, in: devices))
+                        Text(DesktopVaultPick.handoffName(h, devices: devices, selfHex: nil))
                             .font(.appSystem(size: 11, weight: .medium))
                             .foregroundColor(.primary)
                             .lineLimit(1)
@@ -98,11 +98,6 @@ struct MacVaultStatusCard: View {
             }
             .padding(.top, 2)
         }
-    }
-
-    private func name(of h: VaultStatus.Handoff, in devices: [MeshDevice]) -> String {
-        devices.first { MeshPairing.npubHex($0.npub) == h.device }?.displayName
-            ?? (h.role.flatMap { MeshDeviceRole(rawValue: $0)?.label } ?? "A paired device")
     }
 
     private func small(_ text: String) -> some View {

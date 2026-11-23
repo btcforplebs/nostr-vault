@@ -119,12 +119,17 @@ func TestVaultStatusOverTheMesh(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := copyPeerToken("npub1peer")
+	// The Mac app hands over My Devices with names (MeshKeyAuth.deviceSet).
+	if err := meshDevices.set(`{"self":"` + meshDevices.selfKey() + `","devices":[{"npub":"` + device + `","role":"phone","name":" LogePhone "}]}`); err != nil {
+		t.Fatal(err)
+	}
 	resp, st := statusGet(t, url, token)
 	if resp.StatusCode != http.StatusOK || len(st.Accounts) != 1 || st.Accounts[0].Account != owner.pk {
 		t.Fatalf("status: %d %+v", resp.StatusCode, st)
 	}
 	hs := st.Accounts[0].Handoffs
-	if len(hs) != 1 || hs[0].Device != device || hs[0].BuiltAt != 100 || hs[0].TookAt == 0 || hs[0].CheckedAt == 0 {
+	if len(hs) != 1 || hs[0].Device != device || hs[0].BuiltAt != 100 || hs[0].TookAt == 0 || hs[0].CheckedAt == 0 ||
+		hs[0].Name != "LogePhone" || hs[0].Role != "phone" {
 		t.Fatalf("hand-offs: %+v", hs)
 	}
 	if st.Accounts[0].Result == nil || st.Accounts[0].Result.People != 5 {

@@ -37,6 +37,9 @@ type meshDeviceSet struct {
 	mu      sync.RWMutex
 	self    string
 	devices map[string]string // hex -> role
+	// names: hex -> the name the owner gave it in My Devices ("" for none),
+	// shown only in the desktop Vault status (vault_status.go).
+	names map[string]string
 	// seen: device 24242 ids already used -> expiration (unix), for one use each.
 	seen map[string]int64
 	now  func() time.Time
@@ -78,6 +81,7 @@ type meshDevicesInput struct {
 	Devices []struct {
 		Npub string `json:"npub"`
 		Role string `json:"role"`
+		Name string `json:"name,omitempty"`
 	} `json:"devices"`
 }
 
@@ -92,7 +96,7 @@ func (m *meshDeviceSet) set(raw string) error {
 	if self == "" && len(in.Devices) > 0 {
 		return errors.New("mesh devices: self is not a mesh npub")
 	}
-	next := map[string]string{}
+	next, names := map[string]string{}, map[string]string{}
 	for _, d := range in.Devices {
 		hex := meshKeyHex(d.Npub)
 		if hex == "" {
@@ -102,6 +106,9 @@ func (m *meshDeviceSet) set(raw string) error {
 			continue // this vault is never its own paired device
 		}
 		next[hex] = d.Role
+		if name := strings.TrimSpace(d.Name); name != "" {
+			names[hex] = name
+		}
 	}
 	m.mu.Lock()
 	var gone []string
@@ -110,7 +117,7 @@ func (m *meshDeviceSet) set(raw string) error {
 			gone = append(gone, hex)
 		}
 	}
-	m.self, m.devices = self, next
+	m.self, m.devices, m.names = self, next, names
 	m.mu.Unlock()
 	for _, hex := range gone {
 		if onMeshDeviceUnpaired != nil {

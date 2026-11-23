@@ -52,7 +52,9 @@ enum MeshKeyAuth {
     }
 
     /// The JSON for SetMeshDevicesC: this device's mesh npub and My Devices
-    /// without it, each once, roles kept. Nil when this device has no mesh
+    /// without it, each once, roles kept, with the name the owner gave each
+    /// (left out when none; the desktop Vault status shows it to the owner's
+    /// devices, haven-go vault_status.go). Nil when this device has no mesh
     /// key yet: the engine then keeps the set it has (none at first, which
     /// accepts no device).
     static func deviceSet(selfNpub: String?, devices: [MeshDevice]) -> String? {
@@ -61,7 +63,10 @@ enum MeshKeyAuth {
         var seen = Set<String>()
         var list: [[String: String]] = []
         for device in devices where device.npub != own && seen.insert(device.npub).inserted {
-            list.append(["npub": device.npub, "role": device.role.rawValue])
+            var entry = ["npub": device.npub, "role": device.role.rawValue]
+            let name = device.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty { entry["name"] = name }
+            list.append(entry)
         }
         let body: [String: Any] = ["self": own, "devices": list]
         guard let data = try? JSONSerialization.data(withJSONObject: body, options: .sortedKeys) else { return nil }

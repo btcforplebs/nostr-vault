@@ -62,7 +62,8 @@ final class MeshKeyAuthTests: XCTestCase {
         let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
         XCTAssertEqual(obj["self"] as? String, "npub1self")
         let list = try XCTUnwrap(obj["devices"] as? [[String: String]])
-        XCTAssertEqual(list, [["npub": "npub1phone", "role": "phone"], ["npub": "npub1box", "role": "homeVault"]])
+        XCTAssertEqual(list, [["npub": "npub1phone", "role": "phone", "name": "Phone"], ["npub": "npub1box", "role": "homeVault"]],
+                       "named devices carry their name; an unnamed one leaves it out")
     }
 
     func testNoDevicesGivesAnEmptySetNotNil() throws {
