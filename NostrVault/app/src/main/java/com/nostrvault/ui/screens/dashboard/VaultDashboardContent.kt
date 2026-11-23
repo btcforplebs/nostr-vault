@@ -228,6 +228,9 @@ internal fun VaultDashboardContent(
             onOpenMesh = { onOpenScreen(Screen.MeshSettings) },
         )
 
+        // ── Your desktop Vault (its trust ranking, over the mesh) ──
+        DesktopVaultStatusCard()
+
         // ── Is it safe? ────────────────────────────────────────
         val backupAt = history.notesBackup
         DashSection(

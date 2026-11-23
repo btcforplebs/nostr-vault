@@ -227,6 +227,13 @@ class MeshCopyStarter internal constructor(
     }
 
     /** The relay came up or the app came back: the pending copy resumes, else a copied device that is due gets a catch-up. */
+    /**
+     * The base to read [peer]'s desktop Vault status through (VaultStatusBridge), or null when it can't be dialed.
+     * Only after setup: opening a peer's link closes a setup seed's.
+     */
+    fun statusBase(peer: String): String? =
+        if (!setupDone()) null else link(peer)?.let(MeshCopyV2::splitLink)?.let { (base, prefix) -> base + prefix }
+
     fun reconnect() {
         scope.launch(Dispatchers.IO) { reconnectNow() }
     }
