@@ -288,11 +288,11 @@ extension FeedService {
         // that no live primary sub exists so `resubscribePrimaryIfNeeded()` re-sends
         // the moment the follow set / extended network arrives.
         if !isInbox && isFollowingLike && followedPubkeys.isEmpty {
-            subscribedAuthorsByRelay[label] = nil
+            subscribedFeeds.forget(label)
             return
         }
         if !isInbox && feedMode == .discovery && extendedNetworkPubkeys.isEmpty {
-            subscribedAuthorsByRelay[label] = nil
+            subscribedFeeds.forget(label)
             return
         }
 
@@ -331,18 +331,19 @@ extension FeedService {
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
-            subscribedDistantByRelay[label] = desiredDistantAuthors(forRelayKey: label)
             // Record the author set we just subscribed with so reconcile can detect
             // drift. Inbox/global/popular carry no author filter → record [].
+            let authors: [String]
             if isInbox {
-                subscribedAuthorsByRelay[label] = []
+                authors = []
             } else if isFollowingLike {
-                subscribedAuthorsByRelay[label] = followAuthors(forRelayKey: label)
+                authors = followAuthors(forRelayKey: label)
             } else if feedMode == .discovery {
-                subscribedAuthorsByRelay[label] = extendedNetworkPubkeys
+                authors = extendedNetworkPubkeys
             } else {
-                subscribedAuthorsByRelay[label] = []
+                authors = []
             }
+            subscribedFeeds.record(label, authors: authors, distant: desiredDistantAuthors(forRelayKey: label))
         }
     }
 

@@ -87,7 +87,7 @@ extension FeedService {
         // clear the previous account's author-set bookkeeping explicitly here —
         // otherwise a reconcile could see a "matching" stale set and skip the
         // resubscribe the new account needs.
-        subscribedAuthorsByRelay.removeAll()
+        subscribedFeeds.forgetAll()
         // The removeAll() above just orphaned every surviving feed client's sink
         // (see subscribedClientKeys) — clear so subscribeToAllRelays() knows to
         // re-establish them instead of silently dropping this account's events.
@@ -428,7 +428,7 @@ extension FeedService {
             relayStateSinks.removeValue(forKey: key)
             relayStates.removeValue(forKey: Self.relayStateKey(key))
         }
-        subscribedAuthorsByRelay.removeAll()
+        subscribedFeeds.forgetAll()
         subscribedClientKeys.removeAll()
         contactRetryScheduled = false
     }
@@ -479,7 +479,7 @@ extension FeedService {
         relayStates.removeAll()
         // No live subscriptions remain — drop the author-set bookkeeping so a
         // later reconcile doesn't think a relay is still subscribed.
-        subscribedAuthorsByRelay.removeAll()
+        subscribedFeeds.forgetAll()
         subscribedClientKeys.removeAll()
         contactRetryScheduled = false
     }
