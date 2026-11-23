@@ -59,6 +59,20 @@ extension HavenConfig {
         publishedAt > (localUpdatedAt ?? 0)
     }
 
+    /// How often the Mac looks up the owner's published relay list again
+    /// after the launch lookup, so a list edited on another device arrives
+    /// within about an hour without a relaunch (Logen 2026-11-23).
+    static let relayListRecheckInterval: TimeInterval = 60 * 60
+
+    /// Whether the published relay list is due another lookup: never looked
+    /// up, or the last lookup was `relayListRecheckInterval` or more ago. A
+    /// clock that went backwards counts as due rather than waiting it out.
+    static func relayListRecheckDue(lastCheck: Date?, now: Date = Date()) -> Bool {
+        guard let lastCheck else { return true }
+        let elapsed = now.timeIntervalSince(lastCheck)
+        return elapsed < 0 || elapsed >= relayListRecheckInterval
+    }
+
     /// Makes the owner's published relay list (kind 10002, parsed into its
     /// read and write relays) this device's, when `adoptsRelayList` says so.
     /// Relays no one else can reach, known-dead ones and blocked ones (by
