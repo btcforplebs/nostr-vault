@@ -302,3 +302,25 @@ func TestDistantPostsRoundStopsWhenWorkStarts(t *testing.T) {
 		t.Fatalf("fetched %d accounts, asked %d times", fetched, asks)
 	}
 }
+
+// The job itself moves the tag (Tron's #2451 re-check): a round that stores
+// notes makes a device holding the old tag get the window again; a round
+// that stores nothing leaves it at 204.
+func TestDistantPostsRoundMovesTheTag(t *testing.T) {
+	d := newDistantSetup(t)
+	token := copyPeerToken("npub1peer")
+	q := "?account=" + d.owner.pk
+	_, _, tag := distantGetTag(t, d.url, q, token)
+	run := func(kept int) {
+		distantPostsRound(context.Background(), d.aDir, []string{d.owner.pk},
+			func() bool { return true }, func([]string) int { return kept })
+	}
+	run(0)
+	if code, _, _ := distantGetTag(t, d.url, q+"&round="+tag, token); code != http.StatusNoContent {
+		t.Fatalf("a round that stored nothing changed the answer: %d", code)
+	}
+	run(1)
+	if code, _, tag2 := distantGetTag(t, d.url, q+"&round="+tag, token); code != http.StatusOK || tag2 == tag {
+		t.Fatalf("a round that stored a note left the tag: %d %q", code, tag2)
+	}
+}
