@@ -3,7 +3,7 @@ package com.nostrvault.ui.screens.feed
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateMap
@@ -60,8 +60,6 @@ internal fun FeedNoteList(
     onReply: ((String) -> Unit)?,
     onQuote: ((String) -> Unit)?,
     onCompose: () -> Unit,
-    /** Message on the new account's inviter welcome card (InviterWelcomeSlot). */
-    onMessage: (String) -> Unit = {},
 ) {
     val feedThreads by feedThreadsState
     val unavailableNoteIds by unavailableNoteIdsState
@@ -105,9 +103,7 @@ internal fun FeedNoteList(
         if (isThreaded) {
             // A card with replies under it is a different shape from a lone post,
             // so a recycled slot is only reused for its own shape.
-            itemsIndexed(feedThreads, key = { _, it -> it.rootId }, contentType = { _, it -> if (it.entries.size > 1) "thread" else "single" }) { index, thread ->
-                // A new account's inviter, first: inside the first row so row indexes don't move.
-                if (index == 0) InviterWelcomeSlot(onMessage)
+            items(feedThreads, key = { it.rootId }, contentType = { if (it.entries.size > 1) "thread" else "single" }) { thread ->
                 FeedThreadCard(
                     thread = thread,
                     profileFor = { pubkey -> allProfiles[pubkey] },
@@ -159,8 +155,7 @@ internal fun FeedNoteList(
                 )
             }
         } else {
-        itemsIndexed(items = notes, key = { _, it -> it.id }, contentType = { _, it -> feedRowContentType(it) }) { index, note ->
-            if (index == 0) InviterWelcomeSlot(onMessage)
+        items(items = notes, key = { it.id }, contentType = { feedRowContentType(it) }) { note ->
             FeedFullNoteRow(
                 note = note,
                 viewModel = viewModel,
