@@ -45,6 +45,9 @@ struct TrustGlobeCanvas: View {
     var keepsDrifting = false
     /// Names under the faces; off on the WOT tab.
     var showsNames = true
+    /// Your own globe on the WOT tab: the rings past your circle
+    /// (`GlobeOuterRings`).
+    var showsOuterRings = false
 
     /// The globe shows about this many times `TrustMap`'s face counts: more
     /// pictures overall, not quite double (Logen, 10/14).
@@ -58,6 +61,7 @@ struct TrustGlobeCanvas: View {
 
     @StateObject private var scene = GlobeScene()
     @StateObject private var arrivals = GlobeArrivalStream()
+    @ObservedObject private var outer = TrustMapOuterWatch.shared
     #if DEBUG
     @State private var probe = GlobeStormProbe()
     #endif
@@ -114,6 +118,10 @@ struct TrustGlobeCanvas: View {
                 Canvas { context, size in
                     let now = timeline.date.timeIntervalSinceReferenceDate
                     scene.ink = day ? .day : .night
+                    if showsOuterRings {
+                        GlobeOuterRings.draw(outer.outer, in: &context, size: size, zoom: scene.camera.zoom,
+                                             phone: GlobeScene.isPhone, ink: scene.ink)
+                    }
                     #if DEBUG
                     probe.frame(at: now, lines: { scene.arcsInFlight }) {
                         scene.tick(now: now)
@@ -189,6 +197,7 @@ struct TrustGlobeCanvas: View {
             if clockAllowed { scene.arrive(arrival) }
         }
         .onChange(of: filterLit) { _, lit in scene.filter(lit) }
+        .onChange(of: outer.outer) { _, _ in if showsOuterRings { scene.wake() } }
         .onChange(of: focus) { _, key in
             if let key { scene.turn(to: key) }
             scene.trace(to: key, through: focusBridges)

@@ -9,6 +9,12 @@ struct DiscoveryReachSettingsSection: View {
     /// The bar while the slider is held; saved when it is let go, so the
     /// feed is rebuilt once, not on every step.
     @State private var dragging: Double?
+    @AppStorage(TrustMapOuter.inviteHiddenKey) private var inviteHidden = false
+    #if os(macOS)
+    private let isDesktop = true
+    #else
+    private let isDesktop = false
+    #endif
 
     var body: some View {
         Section {
@@ -37,6 +43,14 @@ struct DiscoveryReachSettingsSection: View {
                 Text("Scores come from Nostr Vault on your desktop. Once it has ranked your network, this device gets the scores from it.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+            }
+            if !TrustMapOuter.desktopPaired(configService.config.meshDevices, isDesktop: isDesktop) {
+                Text(TrustMapOuter.pairLine)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                if inviteHidden {
+                    Button("Show the invite on the globe") { inviteHidden = false }
+                }
             }
         } header: {
             Text("Discovery Reach")
