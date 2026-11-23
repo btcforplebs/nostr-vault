@@ -30,6 +30,7 @@ export function mockBox({ now = () => Date.now(), store } = {}) {
       split: { database: 2.1 * GB, media: 14.2 * GB, other: 0.3 * GB },
       media: { count: 4210, size: 14.2 * GB, buckets: { image: { count: 3900, size: 6.1 * GB }, video: { count: 260, size: 7.9 * GB }, audio: { count: 40, size: 0.2 * GB }, other: { count: 10, size: 0.001 * GB } } },
     })
+    if (method === "GET" && name === "vault-status") return answer(200, { writtenAt: Math.floor(now() / 1000) - 10, status: mockVaultStatus(Math.floor(now() / 1000)) })
     if (method === "GET" && name === "connections") return answer(200, { open: 2, byRoute: { "/": 1, "/private": 1 } })
     if (method === "GET" && name.startsWith("logs")) return answer(200, { last: 3, lines: [
       { seq: 1, at: Math.floor(now() / 1000) - 600, source: "box", text: "box: engine started (pid 41) in /data" },
@@ -47,3 +48,15 @@ export function mockBox({ now = () => Date.now(), store } = {}) {
     return answer(404, { error: "not found" })
   }
 }
+
+/** A box mid-way through a trust ranking pass, for the Trust ranking card. Made-up numbers. */
+export const mockVaultStatus = t => ({
+  version: 1, at: t, state: "running", accounts: [{
+    account: "a".repeat(64), running: true, ring: 3, ringDone: 411, ringTotal: 1980, listsRead: 37,
+    finishedAt: t - 12 * 3600, result: { builtAt: t - 12 * 3600, people: 30640, maxHop: 5, viewBar: 55,
+      distantByShown: Array.from({ length: 101 }, (_, s) => (s >= 55 ? 40 : 10)) },
+    distantAtBar: 1840, distantFetchAt: t - 14 * 60, distantFetchPeople: 500, distantFetchNew: 34,
+    handoffs: [{ device: "b".repeat(64), role: "phone", name: "LogePhone", tookAt: t - 3 * 3600, checkedAt: t - 600 },
+      { device: "c".repeat(64), role: "phone", tookAt: t - 26 * 3600, checkedAt: t - 900 }],
+  }],
+})

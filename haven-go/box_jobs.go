@@ -176,6 +176,8 @@ func startBoxJobs(ctx context.Context, spawn func(string, func())) {
 		progress:  wot.CurrentProgress,
 	}
 	b.loadState()
+	// And what the trust ranking is doing, for the box's dashboard (vault_status_file.go).
+	startVaultStatusFile(ctx, spawn)
 	spawn("boxJobs", func() {
 		t := time.NewTicker(boxJobsEvery)
 		defer t.Stop()
