@@ -275,6 +275,9 @@ object MeshCopyV2 {
     const val UNREACHABLE_RETRY_EVERY_S = 15L
     const val UNREACHABLE_RETRY_FOR_S = 5 * 60L
 
+    /** A catch-up stopped by a lost link or a stop: due again at once. */
+    val CUT_SHORT = setOf("unreachable", "cancelled")
+
     /** What B does next about a copy it can't reach. */
     sealed interface Retry {
         /** Nothing to retry: no copy pending, or it isn't unreachable. */
@@ -308,6 +311,13 @@ object MeshCopyV2 {
         /** A finished `COPY` line from [peer], applied. */
         fun finished(l: Line, peer: String, now: Long): Record {
             if (l.stage != "done" && l.stage != "failed") return this
+            // A catch-up's line (the engine prints one since #2480) leaves another device's pending first copy alone.
+            // A catch-up that fails for good is stamped too, so it waits [SYNC_EVERY_S] instead of running at every
+            // open; a cut one (unreachable, cancelled) stays due. Twin of Apple's `Record.finished`.
+            if (pending?.peer != peer) {
+                val stamp = l.stage == "done" || (peer in copied && l.error !in CUT_SHORT)
+                return if (stamp) copy(copied = copied + (peer to now)) else this
+            }
             if (l.stage == "done") return Record(null, copied + (peer to now))
             val since = if (l.error == "unreachable" && pending?.peer == peer) unreachableSince ?: now else null
             return when (action(l.error)) {

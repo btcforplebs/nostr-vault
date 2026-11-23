@@ -32,6 +32,8 @@ extension FipsMeshService {
     /// The app is back on screen. Runs before kiosk mode or sharing-while-open
     /// is brought back, so a kept engine is found running and reused.
     func appReturned() {
+        // Read before it is ended: still live means iOS never froze the app.
+        let heldTime = keepWarmTask != .invalid
         endKeepWarmTask(trip: keepWarmTrip)
         switch awayClock.returned(at: Date()) {
         case .none:
@@ -40,8 +42,11 @@ extension FipsMeshService {
             if kioskActive || clientActive { print("FipsMesh: back on screen, mesh kept running") }
         case .restartIfUp:
             guard kioskActive || clientActive else { return }
-            // Kept past the grace for a copy that is still running: not frozen.
-            if MeshCopyV2Service.shared.isCopyActive {
+            // Kept past the grace for a copy that is still running, with its
+            // background time still live: not frozen. Once the time ran out
+            // the app may have been frozen, so the engine starts fresh (Tron,
+            // #2480).
+            if heldTime, MeshCopyV2Service.shared.isCopyActive {
                 print("FipsMesh: back on screen, mesh kept for a running copy")
                 return
             }

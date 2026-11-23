@@ -184,4 +184,35 @@ final class MeshCopyV2UnreachableRetryTests: XCTestCase {
         XCTAssertEqual(MeshCopyV2.unreachableLine(.after(15), name: "Mac"), "Can't reach Mac yet. Trying again…")
         XCTAssertTrue(MeshCopyV2.unreachableLine(.gaveUp, name: "")?.hasPrefix("Couldn't reach your other device.") == true)
     }
+
+    // A catch-up's end line (the engine prints one since #2480, this shape).
+    func testCatchUpDoneLeavesAnotherDevicesPendingCopy() throws {
+        var r = pending()
+        r.unreachableSince = 5
+        r.copied = ["npub1mac": 1]
+        r.finished(try line("COPY stage=done part=- bytes=0/0 items=3/3 source=mesh"), peer: "npub1mac", now: 100)
+        XCTAssertEqual(r.pending?.peer, peer)
+        XCTAssertEqual(r.unreachableSince, 5)
+        XCTAssertEqual(r.copied, ["npub1mac": 100])
+    }
+
+    func testCatchUpFailedLeavesAnotherDevicesPendingCopy() throws {
+        var r = pending()
+        r.copied = ["npub1mac": 1]
+        r.finished(try line("COPY stage=failed part=- bytes=0/0 items=0/0 source=mesh error=not_owner"), peer: "npub1mac", now: 100)
+        XCTAssertEqual(r.pending?.peer, peer)
+    }
+
+    func testCatchUpFailingForGoodIsStampedOneCutShortStaysDue() throws {
+        var r = MeshCopyV2.Record()
+        r.copied = [peer: 1]
+        var refused = r
+        refused.finished(try line("COPY stage=failed part=- bytes=0/0 items=0/0 source=mesh error=not_owner"), peer: peer, now: 100)
+        XCTAssertEqual(refused.copied, [peer: 100])
+        for code in MeshCopyV2.Record.cutShort {
+            var cut = r
+            cut.finished(try line("COPY stage=failed part=- bytes=0/0 items=0/0 source=mesh error=\(code)"), peer: peer, now: 100)
+            XCTAssertEqual(cut.copied, [peer: 1], code)
+        }
+    }
 }
