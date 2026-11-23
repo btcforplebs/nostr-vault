@@ -12,6 +12,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.DiscoveryReach
+import com.nostrvault.data.model.TrustMapOuter
+import com.nostrvault.ui.components.HavenInviteSetting
 import com.nostrvault.service.DiscoveryReachStore
 import com.nostrvault.ui.theme.*
 import dagger.hilt.EntryPoint
@@ -89,6 +91,21 @@ fun DiscoveryReachSettingsSection() {
                 color = SecondaryText,
                 fontSize = 13.sp,
             )
+        }
+    }
+    // No desktop Vault paired: say what pairing one brings, and bring the globe's invite back once it was put away.
+    if (!TrustMapOuter.desktopPaired(config.fipsMesh.devices.map { it.role })) {
+        val inviteHidden by HavenInviteSetting.hidden(context).collectAsState()
+        Text(
+            text = TrustMapOuter.PAIR_LINE,
+            color = TertiaryText,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(start = 4.dp, top = 6.dp),
+        )
+        if (inviteHidden == true) {
+            TextButton(onClick = { HavenInviteSetting.setHidden(context, false) }) {
+                Text("Show the invite on the globe", color = LocalNostrVaultColors.current.primary, fontSize = 13.sp)
+            }
         }
     }
     copy?.let {
