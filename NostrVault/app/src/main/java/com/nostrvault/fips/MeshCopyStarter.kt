@@ -81,6 +81,8 @@ class MeshCopyStarter internal constructor(
         fun startCopyFrom(peer: String, base: String, startAuth: String): Int
         /** CopySyncC: one catch-up with [peer]; CopySyncNotesOnlyC when not [filesToo]. */
         fun copySync(peer: String, base: String, filesToo: Boolean): Int
+        /** CopyHeldPeersC: the paired devices the engine copied from ([MeshCopyV2.Record.adopt]). */
+        fun heldPeers(): List<String> = emptyList()
     }
 
     interface RecordStore {
@@ -128,6 +130,7 @@ class MeshCopyStarter internal constructor(
 
     /** A relay log line: a `COPY` line becomes [progress] (and is returned); a finished one updates the record. */
     fun onLogLine(raw: String): MeshCopyV2.Line? {
+        MeshRankNudge.readyPeer(raw)?.let { rankReady(it); return null }
         if (!raw.contains("COPY ")) return null
         val l = MeshCopyV2.parseLine(raw) ?: return null
         if (l.stage == "done" || l.stage == "failed") {
@@ -252,7 +255,8 @@ class MeshCopyStarter internal constructor(
             }
             // A catch-up opens the link for its peer, which would close a setup seed's: none until setup is done.
             if (!setupDone()) return
-            val peer = r.syncDue(nowS()).firstOrNull() ?: return
+            adoptHeld()
+            val peer = record.syncDue(nowS()).firstOrNull() ?: return
             val (base, prefix) = link(peer)?.let(MeshCopyV2::splitLink) ?: return
             if (engine.copySync(peer, base + prefix, filesToo()) == MeshCopyV2.RUN_STARTED) {
                 current = peer
@@ -260,6 +264,37 @@ class MeshCopyStarter internal constructor(
             }
         } finally {
             lock.unlock()
+        }
+    }
+
+    /** Devices the engine copied from that the record lost come back ([MeshCopyV2.Record.adopt]). */
+    private fun adoptHeld() {
+        val held = engine.heldPeers()
+        if (held.isNotEmpty()) synchronized(this) { record = record.adopt(held) }
+    }
+
+    /**
+     * A device this one copies from has a new trust rank (`RANK_READY`, [MeshRankNudge]): catch up with it now, due
+     * or not. While another copy runs it stays queued for that one's end.
+     */
+    fun rankReady(peer: String) {
+        scope.launch(io) {
+            if (!setupDone()) return@launch
+            adoptHeld()
+            val known = synchronized(this@MeshCopyStarter) { peer in record.copied && peer != record.pending?.peer }
+            if (!known) return@launch
+            _sync.update { s -> s.copy(queued = (s.queued + peer).distinct().filter { it != s.running }) }
+            syncQueued()
+        }
+    }
+
+    /** Every [MeshRankNudge.RECHECK_EVERY_S] while the app runs: the usual check, so a missed nudge waits an hour at most. */
+    fun startHourlyCheck() {
+        scope.launch(io) {
+            while (true) {
+                delay(MeshRankNudge.RECHECK_EVERY_S * 1000)
+                reconnectNow()
+            }
         }
     }
 
@@ -336,6 +371,8 @@ class MeshCopyStarter internal constructor(
         override fun startCopyFrom(peer: String, base: String, startAuth: String): Int = call { HavenBridge.startCopyFrom(peer, base, startAuth) }
         override fun copySync(peer: String, base: String, filesToo: Boolean): Int =
             call { if (filesToo) HavenBridge.copySync(peer, base) else HavenBridge.copySyncNotesOnly(peer, base) }
+        override fun heldPeers(): List<String> =
+            if (!HavenBridge.isLoaded) emptyList() else MeshRankNudge.parseHeld(runCatching { HavenBridge.copyHeldPeers() }.getOrNull())
         private fun call(f: () -> Int): Int =
             if (!HavenBridge.isLoaded) MeshCopyV2.RUN_RELAY_NOT_RUNNING else runCatching(f).getOrDefault(MeshCopyV2.RUN_RELAY_NOT_RUNNING)
     }

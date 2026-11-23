@@ -332,6 +332,15 @@ object MeshCopyV2 {
             return if (now - since >= UNREACHABLE_RETRY_FOR_S) Retry.GaveUp else Retry.After(UNREACHABLE_RETRY_EVERY_S)
         }
 
+        /**
+         * Devices the engine copied from ([MeshCopyStarter.Engine.heldPeers]) that this record lost: a first copy whose
+         * done line the app could not read (before 2026-11-23) never landed in [copied]. They come back due now.
+         */
+        fun adopt(held: List<String>): Record {
+            val lost = held.filter { it !in copied && it != pending?.peer }
+            return if (lost.isEmpty()) this else copy(copied = copied + lost.associateWith { 0L })
+        }
+
         /** The linked devices due a catch-up: copied before, not the one a copy is pending with, not in [SYNC_EVERY_S]. */
         fun syncDue(now: Long): List<String> =
             copied.filter { (peer, last) -> peer != pending?.peer && now - last >= SYNC_EVERY_S }.keys.sorted()
