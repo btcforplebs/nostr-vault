@@ -31,7 +31,9 @@ extension ConfigService {
         let plain = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let hexKey = NpubValidation.hexSecretKey(fromNsec: plain)
                 ?? (plain.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil ? plain : nil),
-              let expected = NpubValidation.hexPubkey(fromNpub: npub.trimmingCharacters(in: .whitespacesAndNewlines)),
+              // The same clean-up init gives ownerNpub, which runs after attach.
+              let expected = NpubValidation.hexPubkey(fromNpub: npub.trimmingCharacters(in: .whitespacesAndNewlines)
+                  .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }),
               let pk = withCStrings([hexKey], { p in GetPublicKeyC(p[0]) }) else { return .unreadable }
         defer { free(pk) }
         let derived = String(cString: pk)
