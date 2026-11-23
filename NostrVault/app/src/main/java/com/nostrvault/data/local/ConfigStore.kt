@@ -619,6 +619,7 @@ class ConfigStore @Inject constructor(
                 accountBunkerConfigs = cfg.accountBunkerConfigs - npub,
                 accountSigningModes = cfg.accountSigningModes - npub,
                 publishRelayListPerAccount = cfg.publishRelayListPerAccount - npub,
+                reachPerAccount = cfg.reachPerAccount - npub,
                 activeAccountNpub = if (cfg.activeAccountNpub == npub) null else cfg.activeAccountNpub,
             )
         }

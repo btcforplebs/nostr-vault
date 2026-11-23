@@ -35,6 +35,7 @@ object ExternalWotRebuild {
             blastrRelays = RelayConfiguration.blastrRelays(config, RelayConfiguration.macMeshRelay),
             dmRelays = config.dmRelays,
             whitelist = VaultWhitelist.npubs(config),
+            accountReach = config.relayAccountReach,
         )
         for ((key, value) in inputs.env) HavenBridge.setEnv(key, value)
         RelayConfiguration.writeRelayListFiles(config, inputs, relayDataDir)

@@ -10,6 +10,8 @@ import android.util.Log
 import com.nostrvault.BuildConfig
 import com.nostrvault.service.FeedService.Companion.TAG
 import java.io.File
+import com.nostrvault.relay.reachAccountNpub
+import com.nostrvault.relay.reachFor
 
     internal fun FeedService.watchWotCache(relayDataDir: String) {
         if (wotCacheObserver != null) return
@@ -82,8 +84,8 @@ import java.io.File
                             return@launch
                         }
                         // The relay's web is every device account's pooled; keep the open account's part.
-                        val loaded = accountWeb(parsed.pubkeys, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.chatRelayMinFollowers)
-                        val loose = accountLoose(parsed.pubkeys, loaded, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.chatRelayMinFollowers)
+                        val loaded = accountWeb(parsed.pubkeys, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.reachFor(config.reachAccountNpub).minFollowers)
+                        val loose = accountLoose(parsed.pubkeys, loaded, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.reachFor(config.reachAccountNpub).minFollowers)
                         val vouches = parsed.vouches
                         if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {

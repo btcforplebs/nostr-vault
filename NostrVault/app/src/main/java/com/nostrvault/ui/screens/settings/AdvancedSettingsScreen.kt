@@ -27,6 +27,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
+import com.nostrvault.relay.reachAccountNpub
+import com.nostrvault.relay.reachFor
+import com.nostrvault.relay.withReach
 
 @HiltViewModel
 class AdvancedSettingsViewModel @Inject constructor(
@@ -54,8 +57,9 @@ class AdvancedSettingsViewModel @Inject constructor(
     fun setDisableMediaCache(v: Boolean) = save { it.copy(disableMediaCache = v) }
     fun setPrefetch(v: Boolean) = save { it.copy(prefetchAvatars = v) }
     fun setCacheTTL(v: Int) = save { it.copy(cacheTTLDays = v) }
-    fun setWotDepth(v: Int) = save { it.copy(chatRelayWotDepth = RelayAccessLimits.clampedFollowDistance(v)) }
-    fun setWotMinFollowers(v: Int) = save { it.copy(chatRelayMinFollowers = v.coerceIn(0, 100)) }
+    /** Follow Distance of the account you are on; the others keep theirs (AccountReach.kt). */
+    fun setWotDepth(v: Int) = save { it.withReach(it.reachFor(it.reachAccountNpub).copy(depth = v), it.reachAccountNpub) }
+    fun setWotMinFollowers(v: Int) = save { it.withReach(it.reachFor(it.reachAccountNpub).copy(minFollowers = v), it.reachAccountNpub) }
     fun setWotRefresh(v: String) = save { it.copy(wotRefreshInterval = v) }
     fun setAutoStartRelay(v: Boolean) = save { it.copy(autoStartRelay = v) }
     fun setUseLocalBlossomCache(v: Boolean) = save { it.copy(useLocalBlossomCache = v) }

@@ -66,6 +66,8 @@ data class HavenConfig(
     val chatRelayWotDepth: Int = 3,
     val chatRelayWotRefreshHours: Int = 24,
     val chatRelayMinFollowers: Int = 3,
+    /** Every other account's own Follow Distance, keyed by npub ([AccountReach], AccountReach.kt). */
+    val reachPerAccount: Map<String, AccountReach> = emptyMap(),
     val wotRefreshInterval: String = "24h",
 
     // Outbox Relay
