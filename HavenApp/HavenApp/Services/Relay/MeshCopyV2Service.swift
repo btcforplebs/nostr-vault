@@ -40,6 +40,8 @@ final class MeshCopyV2Service: ObservableObject {
     private var watchers: Set<AnyCancellable> = []
     /// The next try at an unreachable copy, while one is waiting.
     private var retryTask: Task<Void, Never>?
+    /// The hourly check while the app is open (MeshRankNudge.recheckEvery).
+    private var recheckTask: Task<Void, Never>?
 
     private static var now: Int { Int(Date().timeIntervalSince1970) }
 
@@ -89,6 +91,36 @@ final class MeshCopyV2Service: ObservableObject {
         #endif
         CopySettingsSync.shared.startWatching()
         CopyAccountsSync.shared.startWatching()
+        // A Mac's new trust rank arrives on its nudge (rankReady); this
+        // catches a missed one, and any catch-up, within the hour.
+        recheckTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(MeshRankNudge.recheckEvery * 1_000_000_000))
+                self?.reconnect()
+            }
+        }
+    }
+
+    /// A device this one copies from has a new trust rank (`RANK_READY`):
+    /// catch up with it now, due or not. While another copy runs it stays
+    /// queued for that one's end.
+    func rankReady(_ peers: [String]) {
+        guard RelayProcessManager.shared.isRunning else { return }
+        adoptHeldPeers()
+        let known = peers.filter { record.copied[$0] != nil && record.pending?.peer != $0 }
+        guard !known.isEmpty else { return }
+        syncState.queued = MeshSyncStatus.queued(syncState.queued, adding: known, running: current)
+        Task { await syncQueued() }
+    }
+
+    /// Devices the engine copied from that the record lost come back
+    /// (Record.adopt).
+    private func adoptHeldPeers() {
+        guard let raw = CopyHeldPeersC() else { return }
+        defer { free(raw) }
+        guard let data = String(cString: raw).data(using: .utf8),
+              let held = try? JSONDecoder().decode([String].self, from: data) else { return }
+        record.adopt(held)
     }
 
     // MARK: Start
@@ -177,6 +209,7 @@ final class MeshCopyV2Service: ObservableObject {
             Task { await syncQueued() }
             return
         }
+        adoptHeldPeers()
         guard let peer = record.syncDue(now: Self.now).first else { return }
         Task { await sync(peer: peer) }
     }

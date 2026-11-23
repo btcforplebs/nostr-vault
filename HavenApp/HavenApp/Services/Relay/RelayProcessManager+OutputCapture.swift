@@ -162,6 +162,14 @@ extension RelayProcessManager {
         if !batch.copyLines.isEmpty {
             MeshCopyV2Service.shared.handle(batch.copyLines)
         }
+        if !batch.rankReadyPeers.isEmpty {
+            MeshCopyV2Service.shared.rankReady(batch.rankReadyPeers)
+        }
+        #if os(macOS)
+        if batch.rankBuilt {
+            MeshRankNudgeSender.shared.rankBuilt()
+        }
+        #endif
 
         // A start that didn't happen: back to stopped at once, so the
         // controls come back instead of waiting out the boot watchdog.
