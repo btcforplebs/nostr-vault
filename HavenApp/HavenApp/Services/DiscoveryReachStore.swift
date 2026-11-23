@@ -19,6 +19,9 @@ final class DiscoveryReachStore: ObservableObject {
     @Published private(set) var copy: TrustRankCopy?
     /// Empty with no copy.
     private(set) var admitted: DiscoveryReach.Admitted = .none
+    /// The admitted distant people Discover asks the local feed store for
+    /// (`DistantPostAuthors`), empty with no copy.
+    private(set) var localDistantAuthors: [String] = []
 
     private var subscriptions: Set<AnyCancellable> = []
     private var load: Task<Void, Never>?
@@ -90,6 +93,7 @@ final class DiscoveryReachStore: ObservableObject {
         let next = copy.map { DiscoveryReach.admitted($0, bar: DiscoveryReach.bar(saved: saved, copy: $0)) } ?? .none
         guard next != admitted else { return }
         admitted = next
+        localDistantAuthors = DistantPostAuthors.pick(next.distant, copy: copy)
         FeedService.shared.recomputeFilteredNotes()
     }
 }

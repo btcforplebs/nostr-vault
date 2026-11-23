@@ -714,6 +714,7 @@
 		4CCBAF41414F27FB9E09F585 /* LabelPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBDF2964207ECC2BFAE27EBA /* LabelPublisher.swift */; };
 		4CF4478492AEA2D3085CD501 /* PendingActionFlush.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A501241428C9A79D3FB81AD /* PendingActionFlush.swift */; };
 		4CF7AFF6BEB31CF89D9EA563 /* GlobeBoltPainter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FDBFD96B130AC27F03D79C2 /* GlobeBoltPainter.swift */; };
+		4D0FF93E5099B7ED5C2B0D21 /* FeedService+DistantPosts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8579AD3ABF04C23E5E781931 /* FeedService+DistantPosts.swift */; };
 		4D2619B698F0203202D133B6 /* HighlightRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DEF13C08E09135E0133D49F /* HighlightRow.swift */; };
 		4D2773F7B8CC6073B57CC153 /* GlobeStorm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E33934D682D87D02C55AFF1 /* GlobeStorm.swift */; };
 		4D3432B398C464F3FF5BAB5C /* NoteTranslateButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4493729F7433BDFA267BF611 /* NoteTranslateButton.swift */; };
@@ -886,6 +887,7 @@
 		5EB02C0F138D66BF3D5E4715 /* RelayCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 215B39AD61BD36B556EF716A /* RelayCounter.swift */; };
 		5EBD31FC940582B640D55D5E /* MeshDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2967E3C73285483C276E373D /* MeshDiagnostics.swift */; };
 		5EDCC67A0CC774D4D80BB99E /* FipsMeshLinkRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EADBC80221586A37AA61328F /* FipsMeshLinkRow.swift */; };
+		5EEA98528FCB18F4D5D60B4C /* FeedService+DistantPosts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8579AD3ABF04C23E5E781931 /* FeedService+DistantPosts.swift */; };
 		5F0DDACCA092FF1405C66A11 /* EmojiSetBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA838F6714983E9410C458B7 /* EmojiSetBrowser.swift */; };
 		5F172222B930A59ECAC79406 /* ListVersionWording.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0006A2B10762A75E950F4478 /* ListVersionWording.swift */; };
 		5F6BAF3252F65489ACD6773F /* ImportTourStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3912DD3B5132A5A7C5402A0 /* ImportTourStage.swift */; };
@@ -1067,6 +1069,7 @@
 		72C7296B99E974D23EE05ECB /* ProfileMetadataMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E77ED4BBAC80594F90F2E40 /* ProfileMetadataMerge.swift */; };
 		72CD4E84E5ECC2F15E446436 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CCBF9ECF9001937FA713A9 /* ShareSheet.swift */; };
 		72EA2C8FEED5BD112DF6E461 /* AdvancedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3B509A58DD49AE937F1A6F /* AdvancedSettingsView.swift */; };
+		72F1A09DC1BA48EA2A411726 /* DistantPostAuthors.swift in Sources */ = {isa = PBXBuildFile; fileRef = B50CD0095C16CF1DF59F2D57 /* DistantPostAuthors.swift */; };
 		73087E8E5197B1DCA77FB5DE /* ShareActionList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29767A3AEABFBE965362EE96 /* ShareActionList.swift */; };
 		73336EC96D2D9392A2825DD0 /* ProfileContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E9FD98954DE731EAA50FFEB /* ProfileContent.swift */; };
 		734590DDC74F5F7DB7A12EFD /* DMTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1682A24F97C40C3570CB32C1 /* DMTrust.swift */; };
@@ -2163,6 +2166,7 @@
 		E3B5AD952BB758EC71579187 /* MeshPairingConfirmWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F0E74199E8E25A07F27928B /* MeshPairingConfirmWindow.swift */; };
 		E3D6E6B3B28AF2245050EC56 /* MediaServersLeaveGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BC93ACBD97D55524099AE93 /* MediaServersLeaveGuard.swift */; };
 		E3E261106E739296E6F290C4 /* ContactManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4EFE6422E6E0A896809308 /* ContactManager.swift */; };
+		E3F6BE8ECE1D00E9B291FCF3 /* DistantPostAuthors.swift in Sources */ = {isa = PBXBuildFile; fileRef = B50CD0095C16CF1DF59F2D57 /* DistantPostAuthors.swift */; };
 		E405ECA10E10787620830F3F /* NVShareAction+Display.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11DACF33881364138C48F3B4 /* NVShareAction+Display.swift */; };
 		E449E2E084666AD88A404F90 /* RailPinsColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 667070BF7CD9F4EA19D897B6 /* RailPinsColumn.swift */; };
 		E4604A92F5669743FB7A6C3B /* WebRoleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 936CEE94651C4BE03EAC1D9C /* WebRoleService.swift */; };
@@ -3125,6 +3129,7 @@
 		8467D80FB6D0127F0F02C82C /* iPhoneTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPhoneTabView.swift; sourceTree = "<group>"; };
 		848045286D78E78658D43BE3 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		8532ED615B4236C01B42ACEB /* PinFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinFeedView.swift; sourceTree = "<group>"; };
+		8579AD3ABF04C23E5E781931 /* FeedService+DistantPosts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+DistantPosts.swift"; sourceTree = "<group>"; };
 		85C517E5AC5352632A7A05A8 /* MeshSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshSettingsSheet.swift; sourceTree = "<group>"; };
 		85CDE1B1557CB20FEE6060AD /* MacVaultDashboardPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacVaultDashboardPage.swift; sourceTree = "<group>"; };
 		86280F518C19B6E049A10780 /* LockedDMPhotoTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockedDMPhotoTile.swift; sourceTree = "<group>"; };
@@ -3394,6 +3399,7 @@
 		B4901D3001ED79FFAF378060 /* LiveStarsSwitches.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveStarsSwitches.swift; sourceTree = "<group>"; };
 		B49340F07334186EE08FB327 /* KeyPasswordStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyPasswordStep.swift; sourceTree = "<group>"; };
 		B49E31E5B1EE6704092B3348 /* NVOnThisDaySnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVOnThisDaySnapshot.swift; sourceTree = "<group>"; };
+		B50CD0095C16CF1DF59F2D57 /* DistantPostAuthors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DistantPostAuthors.swift; sourceTree = "<group>"; };
 		B57F2BA06072B2B23E26A0A8 /* FeedService+FollowMany.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+FollowMany.swift"; sourceTree = "<group>"; };
 		B589B40DCA89EA8C175FEF32 /* EmojiPaletteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPaletteStore.swift; sourceTree = "<group>"; };
 		B5A945B5727F35AAE72E9985 /* TrustWebSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustWebSheet.swift; sourceTree = "<group>"; };
@@ -4567,6 +4573,7 @@
 				5E2BDF8247BFB3BB8C959870 /* FeedService+Background.swift */,
 				8DE98382E71250C66C461CB5 /* FeedService+ContactList.swift */,
 				80146D638D2E00F6CDCFB382 /* FeedService+DeletedNotes.swift */,
+				8579AD3ABF04C23E5E781931 /* FeedService+DistantPosts.swift */,
 				90EE1AC599A9743E3EFC73CC /* FeedService+ExtendedNetwork.swift */,
 				8D193D037DA97BC9EE07026C /* FeedService+FeedSubscription.swift */,
 				98B5891BCE3FFE978646D7D4 /* FeedService+Filtering.swift */,
@@ -4801,6 +4808,7 @@
 				27616D34DDA23BBA036583B8 /* DeletedNotesStore.swift */,
 				6F46900B31B7943F8CBF7892 /* DeletedPost.swift */,
 				5AAD34A0C735A84D73CA7791 /* DiscoveryReach.swift */,
+				B50CD0095C16CF1DF59F2D57 /* DistantPostAuthors.swift */,
 				7E6789CBBC2267F5DDAD6560 /* DM */,
 				155D5690C7C6EF350165A21F /* DMAttachment.swift */,
 				D49413971796142180D204C0 /* DMCatchUp.swift */,
@@ -6079,6 +6087,7 @@
 				1A0A552944F26FAECD8A310F /* DiscoveryReach.swift in Sources */,
 				9C52CB6508506751B3DB838C /* DiscoveryReachSettingsSection.swift in Sources */,
 				20DABC50536DA3C64EC8C339 /* DiscoveryReachStore.swift in Sources */,
+				E3F6BE8ECE1D00E9B291FCF3 /* DistantPostAuthors.swift in Sources */,
 				04A3F321E28FCCB4CC224283 /* DivineComposeView.swift in Sources */,
 				9DE20CBAB1CAEB1EBD083BCA /* DockClearance.swift in Sources */,
 				56306706B175F8D4376071C5 /* DockHoldMenu.swift in Sources */,
@@ -6147,6 +6156,7 @@
 				AD71A7CC6D83F5135072186B /* FeedService+Background.swift in Sources */,
 				F24CED919745CBAFB616D7DD /* FeedService+ContactList.swift in Sources */,
 				DD02AC3B36CFEB2BD3CC3447 /* FeedService+DeletedNotes.swift in Sources */,
+				5EEA98528FCB18F4D5D60B4C /* FeedService+DistantPosts.swift in Sources */,
 				CD730E06FFDED680951AF275 /* FeedService+ExtendedNetwork.swift in Sources */,
 				D8ECF7A788BE7549276AF043 /* FeedService+FeedSubscription.swift in Sources */,
 				8AE182DAE871C34C92F2DECE /* FeedService+Filtering.swift in Sources */,
@@ -7316,6 +7326,7 @@
 				6CE6C3BFA8551124EF9E3A4B /* DiscoveryReach.swift in Sources */,
 				037510538669995072180E68 /* DiscoveryReachSettingsSection.swift in Sources */,
 				27687C09499FE0C1B34CAEFC /* DiscoveryReachStore.swift in Sources */,
+				72F1A09DC1BA48EA2A411726 /* DistantPostAuthors.swift in Sources */,
 				DCE772251391A5A6446A595C /* DivineComposeView.swift in Sources */,
 				33DC6E222AE0280108199AAA /* DockClearance.swift in Sources */,
 				BF5F617A740BAB43FADD3BAD /* DockInset.swift in Sources */,
@@ -7381,6 +7392,7 @@
 				BB8FD70A82D7F4BDA6027244 /* FeedService+Background.swift in Sources */,
 				500F0C4287E67F5563CC48D3 /* FeedService+ContactList.swift in Sources */,
 				F0FDE2B37884AA6B6C008AA3 /* FeedService+DeletedNotes.swift in Sources */,
+				4D0FF93E5099B7ED5C2B0D21 /* FeedService+DistantPosts.swift in Sources */,
 				FC89992AA8E72FD8BD38EE85 /* FeedService+ExtendedNetwork.swift in Sources */,
 				583AA09A62B650E722BCE759 /* FeedService+FeedSubscription.swift in Sources */,
 				65D02542D0D20BDD4AC2E3B9 /* FeedService+Filtering.swift in Sources */,

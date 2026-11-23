@@ -326,6 +326,7 @@ extension FeedService {
             req.append(contentsOf: Self.trustScopedFilters(filter, trust: globalTrustSet()) as [Any])
         } else {
             req.append(filter)
+            if let distant = distantPostsFilter(filter, label: label) { req.append(distant) }
         }
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
@@ -452,7 +453,8 @@ extension FeedService {
         filter["until"] = until
         let subId = feedSubId(for: label)
 
-        let req = ["REQ", subId, filter] as [Any]
+        var req = ["REQ", subId, filter] as [Any]
+        if let distant = distantPostsFilter(filter, label: label) { req.append(distant) }
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
