@@ -1,1 +1,0 @@
-../../../HavenApp/Models/InviterWelcome.swift

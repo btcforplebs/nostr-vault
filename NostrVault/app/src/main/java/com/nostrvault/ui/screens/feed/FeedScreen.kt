@@ -662,7 +662,6 @@ fun FeedScreen(
                     onReply = onReply,
                     onQuote = onQuote,
                     onCompose = onCompose,
-                    onMessage = { pk -> onMessageUser(pk, "") },
                 )
             }
         }
