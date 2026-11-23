@@ -299,16 +299,12 @@ class FeedService: ObservableObject {
     /// pass the old feed's notes or EOSEs into the new one.
     var feedSubGeneration = 0
 
-    /// The author set the live primary REQ was last sent with, per relay key.
-    /// `nil`/absent for a relay key means no live primary subscription exists
-    /// there (e.g. we skipped sending because the follow set was empty). This is
-    /// the bookkeeping that makes `reconcileFeedSubscriptions()` a true reconcile:
-    /// when the authoritative follow set changes we compare against this and only
-    /// re-issue the REQ where it has actually drifted.
-    var subscribedAuthorsByRelay: [String: [String]] = [:]
-    /// The distant authors the live primary REQ's second filter carried, per
-    /// relay key (`desiredDistantAuthors`); absent means none.
-    var subscribedDistantByRelay: [String: [String]] = [:]
+    /// The author set and distant list the live primary REQ was last sent
+    /// with, per relay key. This is the bookkeeping that makes
+    /// `reconcileFeedSubscriptions()` a true reconcile: when the authoritative
+    /// follow set changes we compare against this and only re-issue the REQ
+    /// where it has actually drifted.
+    var subscribedFeeds = FeedSubscriptionLedger()
     /// Re-entrancy guard — `reconcileFeedSubscriptions()` can be reached from a
     /// Combine sink, a Task continuation, and a view `onAppear` in the same runloop turn.
     var isReconciling = false
