@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -271,12 +272,12 @@ func isSecondHandConn(ctx context.Context) bool {
 }
 
 // ownDeviceWriteURL is url marked as second-hand (`?pulled=1`) when it is
-// another of the owner's devices' relay (the Mac relay, MAC_RELAY_URL), so
-// what this vault sends there is stored and not blasted again. Any other
-// relay is dialled as it is.
+// another of the owner's devices' relay (a desktop Vault, DESKTOP_VAULT_URLS
+// or MAC_RELAY_URL), so what this vault sends there is stored and not blasted
+// again. Any other relay is dialled as it is.
 func ownDeviceWriteURL(raw string) string {
-	base := macRelayBase(config.MacRelayURL)
-	if base == "" {
+	bases := config.DesktopVaultURLs
+	if len(bases) == 0 {
 		return raw
 	}
 	u, err := url.Parse(raw)
@@ -286,7 +287,7 @@ func ownDeviceWriteURL(raw string) string {
 	q := u.Query()
 	plain := *u
 	plain.RawQuery = ""
-	if strings.TrimRight(plain.String(), "/") != base {
+	if !slices.Contains(bases, strings.TrimRight(plain.String(), "/")) {
 		return raw
 	}
 	if q.Get(pulledInjectionParam) == "1" {

@@ -58,7 +58,7 @@ type Config struct {
 	ImportTaggedNotesFetchTimeoutSeconds int                 `json:"import_tagged_fetch_timeout_seconds"`
 	ImportSeedRelays                     []string            `json:"import_seed_relays"`
 	DmRelays                             []string            `json:"dm_relays"`
-	MacRelayURL                          string              `json:"mac_relay_url"`
+	DesktopVaultURLs                     []string            `json:"desktop_vault_urls"`
 	WebDomainProof                       string              `json:"-"` // Mac app only: own https host signed with the mesh key, told to own devices over the mesh (copyv2_device.go)
 	BackupProvider                       string              `json:"backup_provider"`
 	BackupIntervalHours                  int                 `json:"backup_interval_hours"`
@@ -146,7 +146,7 @@ func loadConfig() Config {
 		ImportTaggedNotesFetchTimeoutSeconds: getEnvInt("IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS", 120),
 		ImportSeedRelays:                     getRelayListFromFile(getEnv("IMPORT_SEED_RELAYS_FILE")),
 		DmRelays:                             getRelayListFromFile(getEnvString("DM_RELAYS_FILE", "")),
-		MacRelayURL:                          getEnvString("MAC_RELAY_URL", ""),
+		DesktopVaultURLs:                     desktopVaultURLList(getEnvString("MAC_RELAY_URL", ""), getEnvString("DESKTOP_VAULT_URLS", "")),
 		WebDomainProof:                       getEnvString("WEB_DOMAIN_PROOF", ""),
 		BackupProvider:                       getEnvString("BACKUP_PROVIDER", "none"),
 		BackupIntervalHours:                  getEnvInt("BACKUP_INTERVAL_HOURS", 24),
@@ -189,11 +189,13 @@ func loadConfig() Config {
 		}
 	}
 
-	// The Mac relay's outbox is a seed relay for everything that reads them
-	// (import, WoT seeding, tally, catch-up), as the app's relay file used to
-	// make it. Its /inbox is added by the catch-up alone (subscribeInboxAndChat).
-	if base := macRelayBase(cfg.MacRelayURL); base != "" && !slices.Contains(cfg.ImportSeedRelays, base) {
-		cfg.ImportSeedRelays = append(cfg.ImportSeedRelays, base)
+	// Every desktop Vault's outbox is a seed relay for everything that reads
+	// them (import, WoT seeding, tally, catch-up), as the app's relay file used
+	// to make it. Their /inbox is added by the catch-up alone (inboxRelays).
+	for _, base := range cfg.DesktopVaultURLs {
+		if !slices.Contains(cfg.ImportSeedRelays, base) {
+			cfg.ImportSeedRelays = append(cfg.ImportSeedRelays, base)
+		}
 	}
 
 	// Clamp the catch-up interval regardless of which host app passed it in:

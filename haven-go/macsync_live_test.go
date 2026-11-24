@@ -31,7 +31,7 @@ func TestLiveMacBackfill(t *testing.T) {
 	defer cancel()
 
 	setupSyncConfig(owner)
-	config.MacRelayURL = url
+	config.DesktopVaultURLs = []string{url}
 	fs = afero.NewMemMapFs()
 	pool = nostr.NewSimplePool(ctx)
 	// Accept every author: this measures the copy, not the WoT.

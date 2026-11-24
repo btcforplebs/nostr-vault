@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/barrydeen/haven/internal/negsync"
 	"github.com/fiatjaf/eventstore"
@@ -18,29 +20,52 @@ import (
 	"github.com/spf13/afero"
 )
 
-// ─── Mac relay: the always-on Haven a phone can pull from ───────────────────
+// ─── Desktop Vaults: the always-on Havens a phone can pull from ─────────────
 //
-// MAC_RELAY_URL names another Haven instance (normally the owner's Mac) that
-// runs 24/7. Its outbox (the base URL) is a seed relay (loadConfig) and its
-// inbox (base + "/inbox") an inbox-only relay (subscribeInboxAndChat), so the
-// regular catch-up rounds cover it like any other relay. On top of that, the
-// first time a given Mac URL is seen, its entire history is copied once
-// (macBackfiller) — the rolling catch-up window only reaches back
-// SyncWindowDays.
+// DESKTOP_VAULT_URLS lists other Haven instances (the owner's Macs or boxes)
+// that run 24/7, in the order the app shows them; MAC_RELAY_URL, the one-slot
+// setting the apps still pass, is read as the first item of that list. Each
+// outbox (the base URL) is a seed relay (loadConfig) and each inbox
+// (base + "/inbox") an inbox-only relay (inboxRelays), so the regular catch-up
+// rounds cover them like any other relay. On top of that, the first time a
+// given Vault URL is seen, its entire history is copied once (macBackfiller):
+// the rolling catch-up window only reaches back SyncWindowDays.
 
-// macRelayBase normalizes a MAC_RELAY_URL value to the Mac's outbox URL.
+// macRelayBase normalizes a Vault URL value to the Vault's outbox URL.
 func macRelayBase(raw string) string {
 	return strings.TrimRight(strings.TrimSpace(raw), "/")
 }
 
-// macRelayURLs returns the Mac relay's outbox and inbox URLs, or two empty
-// strings when no Mac relay is configured.
-func macRelayURLs() (base, inbox string) {
-	base = macRelayBase(config.MacRelayURL)
-	if base == "" {
-		return "", ""
+// desktopVaultURLList builds the Vault list from the one-slot MAC_RELAY_URL
+// value and the DESKTOP_VAULT_URLS value (comma, space or newline separated),
+// in that order: normalized, blanks dropped, repeats kept once.
+func desktopVaultURLList(slot, list string) []string {
+	var out []string
+	add := func(raw string) {
+		if base := macRelayBase(raw); base != "" && !slices.Contains(out, base) {
+			out = append(out, base)
+		}
 	}
-	return base, base + "/inbox"
+	add(slot)
+	for _, raw := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+		add(raw)
+	}
+	return out
+}
+
+// desktopVault is one listed Vault: its outbox URL and its inbox URL.
+type desktopVault struct {
+	base, inbox string
+}
+
+// desktopVaults returns every configured Vault in list order, or nothing when
+// none is configured.
+func desktopVaults() []desktopVault {
+	out := make([]desktopVault, 0, len(config.DesktopVaultURLs))
+	for _, base := range config.DesktopVaultURLs {
+		out = append(out, desktopVault{base: base, inbox: base + "/inbox"})
+	}
+	return out
 }
 
 // macSyncStatus is persisted after every backfill so the app can show it and
@@ -58,27 +83,68 @@ type macSyncStatus struct {
 	FinishedAt int64  `json:"finished_at,omitempty"`
 }
 
+// macSyncStatusPath is the one status file the apps read today. It holds the
+// first listed Vault's status; every Vault, the first included, also has its
+// own file (macSyncStatusFile).
 const macSyncStatusPath = "mac_sync_status.json"
+
+// macSyncStatusFile names a Vault's own status file after its URL without the
+// scheme, with every character outside letters, digits, dots and dashes
+// replaced by "_": "mac_sync_status-mac.example.com.json",
+// "mac_sync_status-192.168.4.20_3355.json". The app derives it the same way.
+// Two URLs that differ only in replaced characters share a file; the file's
+// mac_url tells them apart (needsCopy).
+func macSyncStatusFile(base string) string {
+	name := base
+	if i := strings.Index(name, "://"); i >= 0 {
+		name = name[i+3:]
+	}
+	name = strings.Map(func(r rune) rune {
+		if r == '.' || r == '-' || (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			return r
+		}
+		return '_'
+	}, name)
+	return "mac_sync_status-" + name + ".json"
+}
 
 // macHeartbeat is how often a running copy refreshes UpdatedAt. The app treats
 // "running" with a heartbeat older than a few of these as a copy that died.
 const macHeartbeat = 20 * time.Second
 
-func loadMacSyncStatus() macSyncStatus {
+// loadMacSyncStatus reads a Vault's own status file. Without one it falls back
+// to the shared file when that names the same Vault, so a phone updated from
+// the one-slot build does not copy its Mac's whole history again.
+func loadMacSyncStatus(base string) macSyncStatus {
 	var st macSyncStatus
+	if data, err := afero.ReadFile(fs, macSyncStatusFile(base)); err == nil {
+		_ = json.Unmarshal(data, &st)
+		return st
+	}
 	if data, err := afero.ReadFile(fs, macSyncStatusPath); err == nil {
 		_ = json.Unmarshal(data, &st)
+		if st.MacURL == base {
+			return st
+		}
 	}
-	return st
+	return macSyncStatus{}
 }
 
+// saveMacSyncStatus writes the Vault's own file, and the shared file too when
+// the Vault is the first listed one.
 func saveMacSyncStatus(st macSyncStatus) {
 	data, err := json.Marshal(st)
 	if err != nil {
 		return
 	}
-	if err := afero.WriteFile(fs, macSyncStatusPath, data, 0o644); err != nil {
-		slog.Warn("could not write mac sync status", "err", err)
+	paths := []string{macSyncStatusFile(st.MacURL)}
+	if vs := desktopVaults(); len(vs) > 0 && vs[0].base == st.MacURL {
+		paths = append(paths, macSyncStatusPath)
+	}
+	for _, p := range paths {
+		if err := afero.WriteFile(fs, p, data, 0o644); err != nil {
+			slog.Warn("could not write mac sync status", "path", p, "err", err)
+		}
 	}
 }
 
@@ -170,36 +236,51 @@ func (b *macBackfiller) slices() [][2]*nostr.Timestamp {
 	return out
 }
 
-// runIfNeeded copies the Mac's full history once per Mac URL. A finished copy
-// is not repeated; an incomplete or failed one is retried on the next launch.
-// force re-runs it regardless (the app's "Check sync with Mac"). Never runs
-// twice at once.
+// runIfNeeded copies every listed Vault's full history once per Vault URL,
+// in list order, one Vault at a time. A finished copy is not repeated; an
+// incomplete or failed one is retried on the next launch. force re-runs them
+// all regardless (the app's "Check sync with Mac"). Never runs twice at once.
+// It reports whether any copy ran.
 func (b *macBackfiller) runIfNeeded(ctx context.Context, force bool) bool {
-	base, inbox := macRelayURLs()
-	if base == "" {
+	vaults := desktopVaults()
+	if len(vaults) == 0 {
 		return false
 	}
 	if !b.running.CompareAndSwap(false, true) {
 		return false
 	}
 	defer b.running.Store(false)
-	prev := loadMacSyncStatus()
-	if !force && prev.MacURL == base && prev.State == "done" {
+	ran := false
+	for _, v := range vaults {
+		if !force && !b.needsCopy(loadMacSyncStatus(v.base), v.base) {
+			continue
+		}
+		st := b.run(ctx, v.base, v.inbox)
+		ran = true
+		if ctx.Err() != nil {
+			return true // relay stopping mid-copy: the heartbeat goes stale, retry next launch
+		}
+		saveMacSyncStatus(st)
+	}
+	return ran
+}
+
+// needsCopy says whether a Vault with the saved status prev is copied again.
+func (b *macBackfiller) needsCopy(prev macSyncStatus, base string) bool {
+	if prev.MacURL != base {
+		return true
+	}
+	if prev.State == "done" {
 		return false
 	}
 	// A copy that finished cleanly but left a few events the phone won't take
 	// (seen on real phones: one 600 KB, 7,000-entry follow list from a stranger)
 	// would otherwise re-run the whole copy on every launch. Retry those once a
 	// day; a copy that hit errors still retries on every launch.
-	if !force && prev.MacURL == base && prev.State == "incomplete" && prev.Error == "" &&
+	if prev.State == "incomplete" && prev.Error == "" &&
 		b.now().Sub(time.Unix(prev.FinishedAt, 0)) < 24*time.Hour {
 		return false
 	}
-	st := b.run(ctx, base, inbox)
-	if ctx.Err() != nil {
-		return true // relay stopping mid-copy: the heartbeat goes stale, retry next launch
-	}
-	saveMacSyncStatus(st)
 	return true
 }
 
