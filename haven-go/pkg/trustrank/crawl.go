@@ -110,17 +110,14 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 	if refresh && last > 0 {
 		floor = max(1, last-int64(refreshFloor/time.Second))
 	}
-	// pause keeps the place: lists on disk first, then the checkpoint.
-	pause := func() (*Result, error) {
-		c.Store.Checkpoint(c.Dir, st)
-		return nil, ErrStopped
-	}
 	// Hop 1 reads the owner's own list; hop h reads the lists of the people
 	// at distance h-1 who pass the bar. Ranking out to MaxHop needs lists
 	// out to MaxHop-1. Past SureHop the depth rule (depth.go) says whether
 	// a hop is read at all; the first one it turns down ends the walk.
+	// A checkpoint inside the globe step (st.Globe set) resumes there: the
+	// feed walk is done.
 	full := false
-	for ; st.Hop <= c.Params.MaxHop && !full; st.Hop, st.Next, st.Last = st.Hop+1, 0, "" {
+	for ; st.Globe == 0 && st.Hop <= c.Params.MaxHop && !full; st.Hop, st.Next, st.Last = st.Hop+1, 0, "" {
 		readers, walk, err := c.readers(st.Hop, st.Last != "")
 		if err != nil {
 			return nil, err
@@ -136,65 +133,26 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 		if st.Next < len(readers) && readers[st.Next] == st.Last && st.Last != "" {
 			st.Next++
 		}
-		lastSave, savedAt := c.now(), st.Next
-		for st.Next < len(readers) {
-			if !c.Wait(ctx) || ctx.Err() != nil {
-				return pause()
-			}
-			batch := readers[st.Next:min(len(readers), st.Next+max(1, c.Fetch.Batch(refresh)))]
-			asks := make([]Ask, len(batch))
-			for i, pk := range batch {
-				// A full pass reads every list again (a resumed one starts
-				// at the checkpoint's place); a refresh asks only for newer.
-				asks[i].Pubkey = pk
-				if have, stored := c.Store.CreatedAt(pk); stored && refresh {
-					asks[i].Since = have + 1
-				}
-			}
-			got, err := c.Fetch.Fetch(ctx, asks, floor)
-			if err != nil {
-				// No answer (no relay reached, or ctx ended) is not "no
-				// list": keep the place (before this batch) and stop, so
-				// these people are asked again on the next run.
-				c.Store.Checkpoint(c.Dir, st)
-				if ctx.Err() != nil {
-					return nil, ErrStopped
-				}
-				return nil, fmt.Errorf("trustrank: lists from %s…: %w", batch[0][:8], err)
-			}
-			for _, pk := range batch {
-				if l, found := got[pk]; found {
-					limit := c.now().Add(maxSkew).Unix()
-					l.FollowsAt, l.MutesAt = min(l.FollowsAt, limit), min(l.MutesAt, limit)
-					// Kind by kind: a stale copy of one kind never replaces
-					// a newer stored one, even when the other kind is new.
-					if _, err := c.Store.PutList(pk, l); errors.Is(err, ErrFull) {
-						full = true // keep what we have and rank it
-						break
-					}
-				}
-				st.Last = pk
-				st.Next++
-			}
-			if full {
-				break
-			}
-			if c.Progress != nil {
-				c.Progress(st.Hop, st.Next, len(readers))
-			}
-			if st.Next-savedAt >= checkpointEvery || c.now().Sub(lastSave) > 30*time.Second {
-				c.Store.Checkpoint(c.Dir, st)
-				lastSave, savedAt = c.now(), st.Next
-			}
-			if c.Pace > 0 {
-				select {
-				case <-ctx.Done():
-					return pause() // this batch is read; the place is st.Last
-				case <-time.After(c.Pace):
-				}
-			}
+		var err2 error
+		if full, err2 = c.readLists(ctx, &st, st.Hop, readers, refresh, false, floor); err2 != nil {
+			return nil, err2
 		}
 		c.Store.Sync()
+	}
+	// The globe step (globewalk.go) reads on for the globe only. A full
+	// store skips it; one that fills during it keeps what it read and is
+	// capped like a feed walk that filled (Tron, #2489), so the capped
+	// retry compacts before the next pass.
+	if !full {
+		gfull, err := c.walkGlobe(ctx, &st, refresh, floor)
+		if err != nil {
+			return nil, err
+		}
+		full = gfull
+	}
+	globe, err := c.globeRows()
+	if err != nil {
+		return nil, err
 	}
 	// st.Hop is one past the last hop read (or the hop turned down), so the
 	// furthest ring this pass found is st.Hop-1.
@@ -202,10 +160,10 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := writeResult(c.Dir, res, c.now()); err != nil {
+	if err := writeResult(c.Dir, res, globe, c.now()); err != nil {
 		return nil, err
 	}
-	st.Hop, st.Next, st.Last, st.Refresh = 1, 0, "", false
+	st.Hop, st.Next, st.Last, st.Refresh, st.Globe = 1, 0, "", false, 0
 	// A pass cut short by a full store is ranked but not counted as done.
 	st.Capped = full
 	switch {
@@ -218,6 +176,102 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 	st.PassStart = 0
 	c.Store.Compact()
 	return res, c.Store.Checkpoint(c.Dir, st)
+}
+
+// readLists reads readers' lists from st.Next on, a batch at a time,
+// keeping st's place (Next, Last) and the checkpoint. hop is what Progress
+// hears. globe: the lists are read for the globe only and are marked so
+// before they are stored (store_globe.go); the owner's feed read drops
+// the owner's mark.
+// full: the store reached its cap. ErrStopped: Wait said no or ctx ended,
+// with the place saved.
+func (c *Crawler) readLists(ctx context.Context, st *State, hop int, readers []string, refresh, globe bool, floor int64) (full bool, err error) {
+	// pause keeps the place: lists on disk first, then the checkpoint.
+	pause := func() error {
+		c.Store.Checkpoint(c.Dir, *st)
+		return ErrStopped
+	}
+	lastSave, savedAt := c.now(), st.Next
+	for st.Next < len(readers) {
+		if !c.Wait(ctx) || ctx.Err() != nil {
+			return false, pause()
+		}
+		batch := readers[st.Next:min(len(readers), st.Next+max(1, c.Fetch.Batch(refresh)))]
+		asks := make([]Ask, len(batch))
+		var fresh []string // not stored yet
+		for i, pk := range batch {
+			// A full pass reads every list again (a resumed one starts
+			// at the checkpoint's place); a refresh asks only for newer.
+			asks[i].Pubkey = pk
+			have, stored := c.Store.CreatedAt(pk)
+			if stored && refresh {
+				asks[i].Since = have + 1
+			}
+			if !stored {
+				fresh = append(fresh, pk)
+			}
+		}
+		// Only a list not stored yet is marked (Tron, #2489): a stored one
+		// already counts in the feed (an earlier, deeper feed pass of this
+		// account, or the shared store), so marking it would move feed
+		// scores, and marking the owner's own list would leave the feed
+		// with no owner. A list marked earlier stays marked.
+		if globe && len(fresh) > 0 {
+			if err := c.Store.MarkGlobe(c.Owner, fresh); err != nil {
+				c.Store.Checkpoint(c.Dir, *st)
+				return false, err
+			}
+		}
+		got, err := c.Fetch.Fetch(ctx, asks, floor)
+		if err != nil {
+			// No answer (no relay reached, or ctx ended) is not "no
+			// list": keep the place (before this batch) and stop, so
+			// these people are asked again on the next run.
+			c.Store.Checkpoint(c.Dir, *st)
+			if ctx.Err() != nil {
+				return false, ErrStopped
+			}
+			return false, fmt.Errorf("trustrank: lists from %s…: %w", batch[0][:8], err)
+		}
+		from := st.Next
+		for _, pk := range batch {
+			if l, found := got[pk]; found {
+				limit := c.now().Add(maxSkew).Unix()
+				l.FollowsAt, l.MutesAt = min(l.FollowsAt, limit), min(l.MutesAt, limit)
+				// Kind by kind: a stale copy of one kind never replaces
+				// a newer stored one, even when the other kind is new.
+				if _, err := c.Store.PutList(pk, l); errors.Is(err, ErrFull) {
+					full = true // keep what we have and rank it
+					break
+				}
+			}
+			st.Last = pk
+			st.Next++
+		}
+		if !globe {
+			// Read by the feed walk now: these lists count in the feed. A
+			// failed write leaves the mark, the safe side (left out).
+			c.Store.UnmarkGlobe(c.Owner, readers[from:st.Next])
+		}
+		if full {
+			return true, nil
+		}
+		if c.Progress != nil {
+			c.Progress(hop, st.Next, len(readers))
+		}
+		if st.Next-savedAt >= checkpointEvery || c.now().Sub(lastSave) > 30*time.Second {
+			c.Store.Checkpoint(c.Dir, *st)
+			lastSave, savedAt = c.now(), st.Next
+		}
+		if c.Pace > 0 {
+			select {
+			case <-ctx.Done():
+				return false, pause() // this batch is read; the place is st.Last
+			case <-time.After(c.Pace):
+			}
+		}
+	}
+	return false, nil
 }
 
 func (c *Crawler) now() time.Time {
@@ -270,8 +324,9 @@ type ResultFile struct {
 	// Floor is set only on a copy handed to a device (handoff.go): people
 	// who show under it were left out.
 	Floor float64 `json:"floor,omitempty"`
-	// Globe: [pubkey, shown, hop, via] for the globe only (globe.go). Travels
-	// whole; the feed never reads it. Older apps ignore it.
+	// Globe: [pubkey, shown, hop, via] for the globe only (globe.go), from
+	// rank B (globewalk.go). Travels whole; the feed never reads it. Older
+	// apps ignore it.
 	Globe [][4]any `json:"globe,omitempty"`
 }
 
@@ -280,8 +335,11 @@ func ResultPath(dir, account string) string {
 	return filepath.Join(dir, "wot_rank_"+account+".json")
 }
 
-func writeResult(dir string, r *Result, now time.Time) error {
-	f := ResultFile{Account: r.Owner, BuiltAt: now.Unix(), Version: 2, Params: r.Params, MaxHop: r.Params.MaxHop, ViewBar: DefaultViewBar}
+// writeResult writes r (rank A) as `people` and globe (rank B's rows) as
+// `globe`; maxHop covers both.
+func writeResult(dir string, r *Result, globe [][4]any, now time.Time) error {
+	f := ResultFile{Account: r.Owner, BuiltAt: now.Unix(), Version: 2, Params: r.Params,
+		MaxHop: fileMaxHop(r.Params.MaxHop, globe), ViewBar: DefaultViewBar, Globe: globe}
 	for _, p := range r.People() {
 		s := ShownRounded(p.Score)
 		if s == 0 && p.Hop > 1 {
@@ -289,7 +347,6 @@ func writeResult(dir string, r *Result, now time.Time) error {
 		}
 		f.People = append(f.People, [3]any{p.Pubkey, s, p.Hop})
 	}
-	f.Globe = globeForFile(r.Globe(GlobePerRing))
 	b, err := json.Marshal(f)
 	if err != nil {
 		return err

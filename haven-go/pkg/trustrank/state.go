@@ -23,6 +23,10 @@ type State struct {
 	// Last pubkey whose list was read in this hop; a resume goes on at the
 	// first reader after it.
 	Last string `json:"last,omitempty"`
+	// Globe: the ring whose top is having its lists read by the globe step
+	// (globewalk.go); 0 = not in it. While it is set, Last and Next are the
+	// globe step's place and Hop is the hop the feed walk stopped at.
+	Globe int `json:"globe,omitempty"`
 	// Refresh: the pass in progress asks only for newer lists.
 	Refresh bool `json:"refresh,omitempty"`
 	// Capped: the last pass stopped at the store cap (not a finished pass).

@@ -55,11 +55,12 @@ func (c *Crawler) walks(res *Result, h int, resumed bool) bool {
 // rankTo ranks what the store holds out to ring maxHop and no further. The
 // pass's result uses the ring this pass reached, so lists left in the store
 // by an earlier, deeper pass cannot put people in rings this pass did not
-// walk to.
+// walk to. Lists read only for the globe are left out (store_globe.go), so
+// they never move a feed score.
 func (c *Crawler) rankTo(maxHop int) (*Result, error) {
 	p := c.Params
 	p.MaxHop = max(1, min(maxHop, p.MaxHop))
-	g, err := c.Store.Graph()
+	g, err := c.Store.FeedGraph(c.Owner)
 	if err != nil {
 		return nil, err
 	}
