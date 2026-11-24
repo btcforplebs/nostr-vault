@@ -6,15 +6,17 @@ import SwiftUI
 /// its web address. On, its domain goes in your relay list (10002), your DM
 /// inbox (10050) and the relay hints in your posts, and the domain, port and
 /// tunnel settings show. The switch only lists or unlists the domain: a
-/// tunnel you run keeps serving until you stop it. The fipsmesh entry is
-/// separate, under Media Servers › Your Vaults (Logen 2026-11-12).
+/// tunnel you run keeps serving until you stop it. The mesh entry is
+/// separate: "Media over the Mesh" on the Mesh page (MacMeshMediaSwitch).
+///
+/// Each tap edits the newest published lists through DesktopVaultListEdit,
+/// with this Mac as a Vault (Desktop Vaults P8, §2.5): only this Mac's
+/// entries change. Any number of Macs may be public at once (rule 3), so
+/// nothing asks to "move" public web and no Mac turns itself off.
 struct PublicOnWebSettingsView: View {
     @EnvironmentObject var configService: ConfigService
-    /// Why a list change on switch-off didn't go out (empty list, unsettled lookup).
+    /// Why a list change didn't go out (unusable list, unsettled lookup).
     @State private var notice: String?
-    /// Another own Mac is public on the web now: turning on asks first
-    /// (WebRoleService, multi-Mac rules §3.3).
-    @State private var moveFrom: WebRoleService.WebDevice?
 
     /// Never touched: on when a domain is already set, so nothing an owner
     /// published before this switch existed is dropped.
@@ -39,23 +41,11 @@ struct PublicOnWebSettingsView: View {
                             .foregroundColor(.orange)
                     }
                 } footer: {
-                    Text("Needs your own domain and a tunnel. On: your domain goes in your DM inbox now and in your relay list the next time you save Relays, so other apps can reach this vault. Turning it off takes it out of your relay list and DM inbox now. A tunnel you started keeps running until you stop it.")
+                    Text("Needs your own domain and a tunnel. On: your domain goes in your relay list and DM inbox now, after your other Vaults, so other apps can reach this vault. Your other Macs can be public too. Turning it off takes it out of both now. A tunnel you started keeps running until you stop it.")
                 }
             }
             .warmFormBackground()
             .groupedFormStyleCompat()
-            .confirmationDialog(moveFrom.flatMap(WebRoleService.shared.movePrompt) ?? "",
-                                isPresented: Binding(get: { moveFrom != nil }, set: { if !$0 { moveFrom = nil } }),
-                                titleVisibility: .visible) {
-                Button("Move") {
-                    let from = moveFrom
-                    moveFrom = nil
-                    set(true, movingFrom: from)
-                }
-                Button("Cancel", role: .cancel) { moveFrom = nil }
-            } message: {
-                Text("Only one of your Macs is public on the web. Your lists will name this Mac instead, and the other one turns its switch off.")
-            }
             if isOn {
                 MacRelayDomainSettingsView()
             }
@@ -67,34 +57,31 @@ struct PublicOnWebSettingsView: View {
     }
 
     private func set(_ on: Bool) {
-        if on, !isOn, let other = WebRoleService.shared.otherWebDevice() {
-            moveFrom = other
+        notice = nil
+        let wasOn = isOn
+        configService.config.publicOnWeb = on
+        guard on != wasOn else { return }
+        let config = configService.config
+        let thisMac = config.thisMacVault(meshNpub: MacFipsMeshService.shared.ownNpub,
+                                          name: Host.current().localizedName ?? "This Mac")
+        // No reachable domain yet: nothing is listed; adding one below lists it.
+        guard let https = thisMac.httpsURL else { return }
+        if on, DesktopVaultsEditing.isIPHost(https) {
+            notice = DesktopVaultsEditing.ipHostMessage
             return
         }
-        set(on, movingFrom: nil)
-    }
-
-    private func set(_ on: Bool, movingFrom other: WebRoleService.WebDevice?) {
-        notice = nil
-        let oldInbox = configService.config.ownHavenDMInboxURL
-        let wasListed = configService.config.listsOwnDomain
-        let domain = "wss://\(configService.config.sanitizedRelayURL)"
-        configService.config.publicOnWeb = on
-        let newInbox = configService.config.ownHavenDMInboxURL
-        let show: @MainActor (String?) -> Void = { line in
-            if let line { notice = [notice, line].compactMap { $0 }.joined(separator: "\n") }
-        }
-        // Off: the domain leaves the published 10002 now. Once it is no longer
-        // pinned, Settings › Relays would read it back as one of the owner's
-        // own rows and Save would keep it (Tron #1991).
-        if wasListed && !configService.config.listsOwnDomain {
-            NostrService.shared.publishOwnerRelayListDrop(domain, done: show)
-        }
-        if let other {
-            // One republish: the other Mac's entries become this one's.
-            WebRoleService.shared.moveHere(from: other, done: show)
-        } else if oldInbox != newInbox {
-            NostrService.shared.publishOwnerDMInboxMove(from: oldInbox, to: newInbox, done: show)
+        // Relays, then the DM inbox, each from the newest list (rule 7).
+        let vaults = config.vaultsWithThisMac(thisMac)
+        // A line per list that didn't change; the switch stays where it was
+        // set, so another tap (or a Relays save) can finish the job.
+        DesktopVaultListEdit.set(on, vault: thisMac, path: .web, list: .relays, vaults: vaults) { first in
+            DesktopVaultListEdit.set(on, vault: thisMac, path: .web, list: .inbox, vaults: vaults) { second in
+                var lines: [String] = []
+                for line in [first.message, second.message].compactMap({ $0 }) where !lines.contains(line) {
+                    lines.append(line)
+                }
+                notice = lines.isEmpty ? nil : lines.joined(separator: "\n")
+            }
         }
     }
 }

@@ -59,7 +59,7 @@ extension YourDevicesLogic {
     }
 }
 
-// MARK: - The web device (multi-Mac rules §3.3)
+// MARK: - Public on the web (Desktop Vaults §2.5 rule 3)
 
 extension YourDevicesLogic {
     /// The host of an `https://`/`wss://` URL or a bare domain, lowercased,
@@ -72,74 +72,12 @@ extension YourDevicesLogic {
         return host
     }
 
-    /// Which own device is public on the web: the one whose domain is the
-    /// first of the owner's https entries in the newest 10063 that is one of
-    /// theirs. The list is the one source of truth. `domains`: each own
-    /// device's domain (this one's included), by mesh npub. nil: none is.
-    /// Two devices with the same domain: `prefer` (this device) wins, else
-    /// the lower npub, so the answer never hangs on dictionary order.
-    static func webDevice(serverList: [String], domains: [String: String], prefer: String? = nil) -> String? {
-        let byHost = Dictionary(domains.compactMap { npub, domain in host(domain).map { ($0, npub) } },
-                                uniquingKeysWith: { a, b in
-                                    if let prefer, a == prefer || b == prefer { return prefer }
-                                    return min(a, b)
-                                })
-        for entry in serverList where entry.lowercased().hasPrefix("https://") {
-            if let h = host(entry), let npub = byHost[h] { return npub }
-        }
-        return nil
-    }
-
-    /// Turning Public on the web on asks first when another own device has
-    /// it now (Logen's pick 2): "Move public web from <A> to <B>?". nil:
-    /// nothing to ask, the switch just turns on.
-    static func moveWebPrompt(current: String?, currentName: String, this ownNpub: String, thisName: String) -> String? {
-        guard let current, current != ownNpub else { return nil }
-        return "Move public web from \(currentName) to \(thisName)?"
-    }
-
-    /// The old web device turns its own switch off once it sees lists that
-    /// name another own device as the web device. A list that names no own
-    /// device (the owner took the domain out by hand) changes nothing here.
-    static func standsDown(publicOnWeb: Bool, ownNpub: String, serverList: [String], domains: [String: String]) -> Bool {
-        guard publicOnWeb, let web = webDevice(serverList: serverList, domains: domains, prefer: ownNpub) else { return false }
-        return web != ownNpub
-    }
-
-    /// A list of URLs with the old web device's host swapped for `to`, in
-    /// place, so its order is kept; `to` goes first when `from` isn't there.
-    /// Once only: a second copy of `to` is dropped. Used for 10050 and 10063.
-    static func movingWeb(urls: [String], from oldHost: String?, to newURL: String) -> [String] {
-        guard let newHost = host(newURL) else { return urls }
-        let old = oldHost.flatMap(host)
-        var out: [String] = []
-        var placed = false
-        for url in urls {
-            let h = host(url)
-            if h == newHost || (old != nil && h == old) {
-                if !placed { out.append(newURL); placed = true }
-                continue
-            }
-            out.append(url)
-        }
-        return placed ? out : [newURL] + out
-    }
-
-    /// The same for 10002's `r` tags, keeping each tag's read/write marker.
-    static func movingWeb(relayTags: [[String]], from oldHost: String?, to newURL: String) -> [[String]] {
-        guard let newHost = host(newURL) else { return relayTags }
-        let old = oldHost.flatMap(host)
-        var out: [[String]] = []
-        var placed = false
-        for tag in relayTags {
-            guard tag.count >= 2, tag[0] == "r" else { out.append(tag); continue }
-            let h = host(tag[1])
-            if h == newHost || (old != nil && h == old) {
-                if !placed { var moved = tag; moved[1] = newURL; out.append(moved); placed = true }
-                continue
-            }
-            out.append(tag)
-        }
-        return placed ? out : [["r", newURL]] + out
+    /// Every own device whose domain is one of the https entries in the
+    /// owner's newest 10063: each gets a "Public on the web" mark. Any number
+    /// may be listed at once; there is no single web device any more.
+    /// `domains`: each own device's domain, by mesh npub.
+    static func publicOnWeb(serverList: [String], domains: [String: String]) -> Set<String> {
+        let listed = Set(serverList.filter { $0.lowercased().hasPrefix("https://") }.compactMap(host))
+        return Set(domains.compactMap { npub, domain in host(domain).flatMap { listed.contains($0) ? npub : nil } })
     }
 }

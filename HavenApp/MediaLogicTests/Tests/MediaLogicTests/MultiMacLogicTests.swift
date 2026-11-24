@@ -115,63 +115,23 @@ final class MultiMacLogicTests: XCTestCase {
         XCTAssertEqual(back.fullCopyWifiOnly, false)
     }
 
-    // MARK: The web device (rule 3, Logen's pick 2)
+    // MARK: Public on the web (Desktop Vaults §2.5 rule 3)
 
     private let domains = ["npub1maca": "a.example.com", "npub1macb": "b.example.com"]
 
-    func testTheWebDeviceIsTheOwnDomainTheNewestListNames() {
-        XCTAssertEqual(YourDevicesLogic.webDevice(serverList: ["https://blossom.primal.net", "https://A.example.com/", "https://b.example.com"],
-                                                  domains: domains), macA)
-        XCTAssertEqual(YourDevicesLogic.webDevice(serverList: ["https://b.example.com", "fipsmesh://npub1maca/"], domains: domains), macB)
-        XCTAssertNil(YourDevicesLogic.webDevice(serverList: ["https://blossom.primal.net"], domains: domains), "outside servers aren't devices")
-        XCTAssertNil(YourDevicesLogic.webDevice(serverList: ["http://a.example.com"], domains: domains), "https only")
-        XCTAssertNil(YourDevicesLogic.webDevice(serverList: [], domains: domains))
+    func testEveryOwnDomainTheNewestListNamesIsMarked() {
+        XCTAssertEqual(YourDevicesLogic.publicOnWeb(serverList: ["https://blossom.primal.net", "https://A.example.com/", "https://b.example.com"],
+                                                    domains: domains), [macA, macB], "two Vaults both public: both marked")
+        XCTAssertEqual(YourDevicesLogic.publicOnWeb(serverList: ["https://b.example.com", "fipsmesh://npub1maca/"], domains: domains), [macB],
+                       "a mesh entry is not public on the web")
+        XCTAssertEqual(YourDevicesLogic.publicOnWeb(serverList: ["https://blossom.primal.net"], domains: domains), [], "outside servers aren't devices")
+        XCTAssertEqual(YourDevicesLogic.publicOnWeb(serverList: ["http://a.example.com"], domains: domains), [], "https only")
+        XCTAssertEqual(YourDevicesLogic.publicOnWeb(serverList: [], domains: domains), [])
     }
 
-    func testTwoDevicesWithOneDomainPreferThisDeviceThenTheLowerNpub() {
+    func testTwoDevicesWithOneDomainAreBothMarked() {
         let same = ["npub1macb": "a.example.com", "npub1maca": "a.example.com", "npub1macc": "c.example.com"]
-        for _ in 0..<20 {
-            XCTAssertEqual(YourDevicesLogic.webDevice(serverList: ["https://a.example.com"], domains: same, prefer: "npub1macb"), "npub1macb")
-            XCTAssertEqual(YourDevicesLogic.webDevice(serverList: ["https://a.example.com"], domains: same), "npub1maca")
-            XCTAssertFalse(YourDevicesLogic.standsDown(publicOnWeb: true, ownNpub: "npub1macb",
-                                                       serverList: ["https://a.example.com"], domains: same),
-                           "a Mac never stands itself down for a twin of its own domain")
-        }
-    }
-
-    func testTurningItOnAsksOnlyWhenAnotherDeviceHasIt() {
-        XCTAssertEqual(YourDevicesLogic.moveWebPrompt(current: macA, currentName: "Studio", this: macB, thisName: "Laptop"),
-                       "Move public web from Studio to Laptop?")
-        XCTAssertNil(YourDevicesLogic.moveWebPrompt(current: nil, currentName: "", this: macB, thisName: "Laptop"))
-        XCTAssertNil(YourDevicesLogic.moveWebPrompt(current: macB, currentName: "Laptop", this: macB, thisName: "Laptop"))
-    }
-
-    func testTheOldWebDeviceStandsDownOnlyForAnotherOwnDevice() {
-        let movedToB = ["https://b.example.com", "https://blossom.primal.net"]
-        XCTAssertTrue(YourDevicesLogic.standsDown(publicOnWeb: true, ownNpub: macA, serverList: movedToB, domains: domains))
-        XCTAssertFalse(YourDevicesLogic.standsDown(publicOnWeb: true, ownNpub: macB, serverList: movedToB, domains: domains))
-        XCTAssertFalse(YourDevicesLogic.standsDown(publicOnWeb: false, ownNpub: macA, serverList: movedToB, domains: domains))
-        XCTAssertFalse(YourDevicesLogic.standsDown(publicOnWeb: true, ownNpub: macA, serverList: ["https://blossom.primal.net"], domains: domains),
-                       "a domain taken out by hand turns no switch off")
-    }
-
-    func testMovingSwapsTheDomainInPlaceOnce() {
-        XCTAssertEqual(YourDevicesLogic.movingWeb(urls: ["https://blossom.primal.net", "https://a.example.com", "https://x.io"],
-                                                  from: "a.example.com", to: "https://b.example.com"),
-                       ["https://blossom.primal.net", "https://b.example.com", "https://x.io"])
-        XCTAssertEqual(YourDevicesLogic.movingWeb(urls: ["https://x.io"], from: nil, to: "https://b.example.com"),
-                       ["https://b.example.com", "https://x.io"], "no web device yet: goes first")
-        XCTAssertEqual(YourDevicesLogic.movingWeb(urls: ["https://b.example.com", "https://a.example.com"], from: "a.example.com", to: "https://b.example.com"),
-                       ["https://b.example.com"], "listed once")
-        XCTAssertEqual(YourDevicesLogic.movingWeb(urls: ["https://x.io"], from: "a.example.com", to: "nonsense url"), ["https://x.io"])
-    }
-
-    func testMovingKeepsTheRelayMarker() {
-        let tags = [["r", "wss://relay.damus.io"], ["r", "wss://a.example.com", "write"], ["p", "x"]]
-        XCTAssertEqual(YourDevicesLogic.movingWeb(relayTags: tags, from: "a.example.com", to: "wss://b.example.com"),
-                       [["r", "wss://relay.damus.io"], ["r", "wss://b.example.com", "write"], ["p", "x"]])
-        XCTAssertEqual(YourDevicesLogic.movingWeb(relayTags: [["r", "wss://relay.damus.io"]], from: nil, to: "wss://b.example.com"),
-                       [["r", "wss://b.example.com"], ["r", "wss://relay.damus.io"]])
+        XCTAssertEqual(YourDevicesLogic.publicOnWeb(serverList: ["https://a.example.com"], domains: same), ["npub1maca", "npub1macb"])
     }
 }
 

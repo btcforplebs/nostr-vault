@@ -6,8 +6,8 @@ import SwiftUI
 /// (`MeshPhotoPath`, no picker). No
 /// "Pause after" limit: kiosk mode runs the engine for My Devices, which
 /// ignores one (own devices uncapped, strangers on fixed caps; #1023).
-/// No listing switch: a phone's own mesh npub is never put in the 10063; the
-/// Mac's photo node is listed on its own (PhotoNode, Logen 2026-10-21).
+/// No listing switch: a phone's own mesh npub is never put in the 10063; a
+/// Mac lists its own only with its "Media over the Mesh" switch (Beta, off).
 struct FipsMeshShareSection: View {
     @EnvironmentObject var configService: ConfigService
     @ObservedObject private var mesh = FipsMeshService.shared

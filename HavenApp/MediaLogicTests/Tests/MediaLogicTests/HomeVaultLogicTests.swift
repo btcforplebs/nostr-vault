@@ -141,48 +141,20 @@ final class ServerListMergeTests: XCTestCase {
         XCTAssertEqual(out, ["https://a.example/", "https://other-phone.example/", mesh(kiosk)])
     }
 
-    func testThePhotoNodeIsListedLast() {
-        let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/", mesh(kiosk)], current: ["https://a.example/"],
-                                                 previouslyManaged: [], ownMeshNpub: me, photoNpub: third)
-        XCTAssertEqual(out, ["https://a.example/", mesh(kiosk), mesh(third)])
-        // Already listed: once, where it was.
-        let again = HomeVaultLogic.mergeServerList(existing: out ?? [], current: ["https://a.example/"],
-                                                   previouslyManaged: [], ownMeshNpub: me, photoNpub: third)
-        XCTAssertEqual(again, out)
-    }
-
-    func testNoPhotoNodeListsNothingAndNeverFallsBackToTheMainNpub() {
-        let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: ["https://a.example/"],
-                                                 previouslyManaged: [], ownMeshNpub: me, photoNpub: nil)
-        XCTAssertEqual(out, ["https://a.example/"])
-        // A photo npub equal to the main one is refused, not listed.
+    func testNoMeshEntryIsAddedOnItsOwnAndTheMacsOwnIsKept() {
+        // The Mac's own entry comes only from its "Media over the Mesh" switch
+        // (Desktop Vaults P8): a Mac publish (ownMeshNpub nil) adds none...
         XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: ["https://a.example/"],
-                                                      previouslyManaged: [], ownMeshNpub: me, photoNpub: me), ["https://a.example/"])
-        // The file's text as written (trailing newline) is read; garbage is not.
-        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: [], previouslyManaged: [],
-                                                      ownMeshNpub: nil, photoNpub: "\(third)\n"), ["https://a.example/", mesh(third)])
-        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: [], previouslyManaged: [],
-                                                      ownMeshNpub: nil, photoNpub: "not an npub"), ["https://a.example/"])
-    }
-
-    func testTheMacListsItsPhotoNodeOnlyWhileItsEngineRuns() {
-        // Switch on, but no device added (or the start failed): the engine is not running, nothing is listed.
-        let dead = HomeVaultLogic.macPhotoNpub(third, engineRunning: false)
-        XCTAssertNil(dead)
-        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: ["https://a.example/"],
-                                                      previouslyManaged: [], ownMeshNpub: nil, photoNpub: dead),
+                                                      previouslyManaged: [], ownMeshNpub: nil),
                        ["https://a.example/"])
-        XCTAssertFalse(HomeVaultLogic.photoNodeMissing(from: ["https://a.example/"], photoNpub: dead), "no republish for a dead node")
-        // Running with a device: listed.
-        let live = HomeVaultLogic.macPhotoNpub(third, engineRunning: true)
-        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: ["https://a.example/"],
-                                                      previouslyManaged: [], ownMeshNpub: nil, photoNpub: live),
-                       ["https://a.example/", mesh(third)])
-        XCTAssertNil(HomeVaultLogic.macPhotoNpub(nil, engineRunning: true), "switch off")
+        // ...and keeps the one the switch listed, where it was.
+        let listed = ["https://a.example/", mesh(third)]
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: listed, current: ["https://a.example/"],
+                                                      previouslyManaged: [], ownMeshNpub: nil), listed)
     }
 
-    func testAPhoneKeepsTheMacsPhotoNodeWhenItRepublishes() {
-        // The Mac listed its photo node; a phone that knows nothing of it republishes its own servers.
+    func testAPhoneKeepsTheMacsMeshEntryWhenItRepublishes() {
+        // The Mac's mesh media switch listed it; a phone that knows nothing of it republishes its own servers.
         let macList = ["https://a.example/", mesh(third)]
         let out = HomeVaultLogic.mergeServerList(existing: macList, current: ["https://a.example/", "https://b.example/"],
                                                  previouslyManaged: ["https://a.example/"], ownMeshNpub: me)
@@ -223,8 +195,8 @@ final class ServerListMergeTests: XCTestCase {
     }
 
     func testAMeshOnlyListIsNeverPublished() {
-        XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [mesh(kiosk)], current: [], previouslyManaged: [],
-                                                    ownMeshNpub: me, photoNpub: third))
+        XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [mesh(kiosk), mesh(third)], current: [], previouslyManaged: [],
+                                                    ownMeshNpub: me))
     }
 
     func testAHomeAddressOnlyListIsNeverPublished() {
@@ -234,8 +206,8 @@ final class ServerListMergeTests: XCTestCase {
                      "https://100.101.102.103/", "https://mac.local/", "http://a.example/", "https://x.FIPS./"] {
             XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [], current: [home], previouslyManaged: [], ownMeshNpub: nil),
                          home)
-            XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [home], current: [], previouslyManaged: [], ownMeshNpub: me,
-                                                        photoNpub: third), home)
+            XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [home, mesh(third)], current: [], previouslyManaged: [], ownMeshNpub: me),
+                         home)
             XCTAssertFalse(HomeVaultLogic.isPublicServer(home), home)
         }
         // Next to a real public server it is kept, as another phone's entry.
@@ -395,7 +367,7 @@ final class MacMediaVaultTests: XCTestCase {
             MeshDevice(npub: browser, name: "", role: .browser),
         ]
         let listed = ["https://a.example", "fipsmesh://\(kioskNpub)/", "fipsmesh://\(stray)/", "fipsmesh://\(phone)/", "fipsmesh://bad/"]
-        let rows = HomeVaultLogic.meshMediaServerRows(devices: devices, listed: listed, own: nil, photoNpub: nil)
+        let rows = HomeVaultLogic.meshMediaServerRows(devices: devices, listed: listed, own: nil)
         XCTAssertEqual(rows.map(\.npub), [macNpub, kioskNpub, stray, phone], "vaults first; phones and browser only when already listed")
         XCTAssertEqual(rows.map(\.listed), [false, true, true, true])
         XCTAssertEqual(rows[0].name, "Studio Mac")
@@ -403,10 +375,9 @@ final class MacMediaVaultTests: XCTestCase {
         XCTAssertEqual(rows[3].role, .phone, "an old listing of a phone can still be removed")
         XCTAssertEqual(rows[1].entry, "fipsmesh://\(kioskNpub)/")
 
-        // This device is never a row; this Mac's photo node is, not removable.
-        let mac = HomeVaultLogic.meshMediaServerRows(devices: devices, listed: ["fipsmesh://\(stray)/"], own: stray, photoNpub: kioskNpub)
+        // This device is never a row: a Mac lists its own with its mesh media switch.
+        let mac = HomeVaultLogic.meshMediaServerRows(devices: devices, listed: ["fipsmesh://\(stray)/"], own: stray)
         XCTAssertEqual(mac.map(\.npub), [macNpub, kioskNpub])
-        XCTAssertEqual(mac.map(\.removable), [true, false])
     }
 
     func testForwardServerIsTheFirstPublicEntryOfTheOwnersList() {
@@ -427,15 +398,6 @@ final class MacMediaVaultTests: XCTestCase {
         for s in ["http://logen.btcforplebs.com", "https://npub1x.fips", "https://10.0.0.2", "https://127.0.0.1:3355", "fipsmesh://\(macNpub)/"] {
             XCTAssertFalse(HomeVaultLogic.isPublicServer(s), s)
         }
-    }
-    func testThePhotoNodeIsMissingUntilTheKeptListNamesIt() {
-        // Logen's 2026-10-21 list: only the public server, no Mac entry.
-        let kept = ["https://logen.btcforplebs.com"]
-        XCTAssertTrue(HomeVaultLogic.photoNodeMissing(from: kept, photoNpub: macNpub))
-        XCTAssertTrue(HomeVaultLogic.photoNodeMissing(from: kept + ["fipsmesh://\(kioskNpub)/"], photoNpub: macNpub), "another node is not ours")
-        XCTAssertFalse(HomeVaultLogic.photoNodeMissing(from: kept + ["fipsmesh://\(macNpub)/"], photoNpub: macNpub))
-        XCTAssertFalse(HomeVaultLogic.photoNodeMissing(from: kept, photoNpub: nil), "Mesh off")
-        XCTAssertFalse(HomeVaultLogic.photoNodeMissing(from: nil, photoNpub: macNpub), "no list seen yet")
     }
 }
 

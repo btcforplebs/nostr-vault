@@ -225,7 +225,9 @@ struct HavenConfig: Codable, Equatable {
 
     // FIPS Blossom Publishing
     var fipsPublishEnabled: Bool = false
-    var fipsAddressSource: String = "detected"  // "detected" | "owner" | "custom"
+    /// "detected" | "custom". "owner" (the account npub as a mesh address)
+    /// is gone (Tron S3, Desktop Vaults P8): a saved one reads as "detected".
+    var fipsAddressSource: String = "detected"
     var fipsCustomNpub: String = ""
 
     // FIPS Mesh: the owner's own devices (one list both ways) and where a
@@ -545,7 +547,7 @@ struct HavenConfig: Codable, Equatable {
         saveGifsToBlossom = try container.decodeIfPresent(Bool.self, forKey: .saveGifsToBlossom) ?? defaults.saveGifsToBlossom
 
         fipsPublishEnabled = try container.decodeIfPresent(Bool.self, forKey: .fipsPublishEnabled) ?? defaults.fipsPublishEnabled
-        fipsAddressSource = try container.decodeIfPresent(String.self, forKey: .fipsAddressSource) ?? defaults.fipsAddressSource
+        fipsAddressSource = Self.fipsAddressSource(try container.decodeIfPresent(String.self, forKey: .fipsAddressSource))
         fipsCustomNpub = try container.decodeIfPresent(String.self, forKey: .fipsCustomNpub) ?? defaults.fipsCustomNpub
         // An entry a newer app wrote (a role this one doesn't know) is skipped
         // on its own, so it neither stops the config loading nor drops the rest.

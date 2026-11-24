@@ -236,6 +236,7 @@ struct MacFipsMeshSettingsView: View {
 
     private var shareSection: some View {
         Section {
+            MacMeshMediaSwitch()
             Toggle(isOn: Binding(
                 get: { configService.config.fipsPublishEnabled },
                 set: { on in
@@ -295,17 +296,15 @@ struct MacFipsMeshSettingsView: View {
                 }
             }
             Picker("Address source", selection: Binding(
-                get: { configService.config.fipsAddressSource },
+                get: { HavenConfig.fipsAddressSource(configService.config.fipsAddressSource) },
                 set: { value in
                     configService.config.fipsAddressSource = value
                     configService.save()
                     NostrService.shared.publishServerList(fipsDetectedNpub: detection.detectedNpub)
                 }
             )) {
-                Text("My Nostr npub").tag("owner")
-                if detection.detectedNpub != nil {
-                    Text("Detected (nostr-vpn)").tag("detected")
-                }
+                // No "My Nostr npub": the account key is never a mesh address (Tron S3).
+                Text(detection.detectedNpub != nil ? "Detected (nostr-vpn)" : "Detected (nostr-vpn, none yet)").tag("detected")
                 Text("Custom").tag("custom")
             }
             if configService.config.fipsAddressSource == "custom" {

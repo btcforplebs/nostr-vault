@@ -2,6 +2,9 @@ import Foundation
 
 /// Words the Desktop Vaults screens share.
 enum DesktopVaultText {
+    /// "What is this? (NIP-F1)" beside each "Media over the Mesh" switch.
+    static let nipF1URL = URL(string: "https://nostrvault.app/docs/developers/#nips")!
+
     static func icon(_ kind: DesktopVaultKind) -> String {
         switch kind {
         case .mac: return "desktopcomputer"
