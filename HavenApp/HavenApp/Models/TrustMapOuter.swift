@@ -4,8 +4,10 @@ import Foundation
 /// Vault ranked them (`TrustRankCopy`), one ring per hop. Only your own
 /// globe on the WOT tab draws them (plan phase 4, Logen 2026-11-22).
 ///
-/// - `ranked`: a rank copy is here. Rings with someone over the Discovery
-///   reach bar, labelled "found by your desktop Vault".
+/// - `ranked`: a rank copy is here. Each ring's top 300 by score from the
+///   copy's globe list, whatever their score (no bar: the feed keeps the
+///   bar, the globe shows the best of each ring; Logen 2026-11-23),
+///   labelled "found by your desktop Vault".
 /// - `waiting`: a desktop Vault is paired but has not sent a rank yet.
 ///   Faint rings, no people.
 /// - `invite`: no desktop Vault. Faint rings and the invite card.
@@ -16,27 +18,26 @@ struct TrustMapOuter: Equatable {
 
     struct Ring: Equatable, Identifiable {
         let hop: Int
-        /// Everyone in this ring over the bar.
-        let count: Int
-        /// The highest-scored of them, best first, at most `shownPeople`.
+        /// The ring's top from the globe list, best first, at most `shownPeople`.
         let top: [String]
         var id: Int { hop }
+        var count: Int { top.count }
     }
 
     let source: Source
     /// Inner to outer. Empty when ranked with nobody out there.
     let rings: [Ring]
-    /// The bar the counts are at, nil unless ranked.
-    let bar: Double?
 
-    static let none = TrustMapOuter(source: .invite, rings: [], bar: nil)
+    static let none = TrustMapOuter(source: .invite, rings: [])
 
     /// The first outer ring: past your circle (`DiscoveryReach.circleHops`).
     static let firstHop = DiscoveryReach.circleHops + 1
     /// Faint rings drawn with no rank: hops 3 to 5.
     static let faintHops = firstHop...5
-    /// How many people a ring's sheet and its dots show.
-    static let shownPeople = 200
+    /// Rings drawn from the globe list: hops 3 to 5 (`trustrank.GlobeFromHop`..`GlobeHop`).
+    static let rankedHops = firstHop...TrustRankCopy.globeHop
+    /// How many people a ring's sheet and its dots show: the engine's per-ring top.
+    static let shownPeople = TrustRankCopy.globePerRing
 
     /// Settings key: the invite card was put away with "Not now". Only
     /// Settings › Feeds › Discovery Reach turns it back on.
@@ -44,25 +45,36 @@ struct TrustMapOuter: Equatable {
 
     var isFaint: Bool { source != .ranked }
 
-    static func make(copy: TrustRankCopy?, bar: Double?, desktopPaired: Bool,
-                     hidden: Set<String> = []) -> TrustMapOuter {
-        guard let copy, let bar else {
-            let faint = faintHops.map { Ring(hop: $0, count: 0, top: []) }
-            return TrustMapOuter(source: desktopPaired ? .waiting : .invite, rings: faint, bar: nil)
+    static func make(copy: TrustRankCopy?, desktopPaired: Bool, hidden: Set<String> = []) -> TrustMapOuter {
+        guard let copy else {
+            let faint = faintHops.map { Ring(hop: $0, top: []) }
+            return TrustMapOuter(source: desktopPaired ? .waiting : .invite, rings: faint)
         }
-        var byHop: [Int: [(String, Double)]] = [:]
-        for (pubkey, person) in copy.people where person.hop >= firstHop && person.score >= bar {
-            guard !hidden.contains(pubkey) else { continue }
-            byHop[person.hop, default: []].append((pubkey, person.score))
+        // The globe list's first `shownPeople` rows of a hop are that ring's
+        // top, best first; any later ones are chain links (contract §5).
+        // The top leaves out anyone who shows 0 (haven-go `Globe`), so a
+        // 0 row is always a link, even in a ring with under 300 scored.
+        var byHop: [Int: [String]] = [:]
+        var seen: [Int: Int] = [:]
+        for key in copy.globeOrder {
+            guard let person = copy.globe[key], rankedHops.contains(person.hop), person.score > 0 else { continue }
+            let n = seen[person.hop, default: 0]
+            guard n < shownPeople else { continue }
+            seen[person.hop] = n + 1
+            if !hidden.contains(key) { byHop[person.hop, default: []].append(key) }
         }
-        let rings = byHop.keys.sorted().map { hop -> Ring in
-            let people = byHop[hop] ?? []
-            // Best first; equal scores by key so the order never shuffles.
-            let top = people.sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }
-                .prefix(shownPeople).map(\.0)
-            return Ring(hop: hop, count: people.count, top: Array(top))
+        let rings = byHop.keys.sorted().map { Ring(hop: $0, top: byHop[$0] ?? []) }
+        return TrustMapOuter(source: .ranked, rings: rings)
+    }
+
+    /// How strong a ring's dots and line are: hop 3 full, hop 4 about 60%,
+    /// hop 5 about 35% (plan, two bars).
+    static func fade(hop: Int) -> Double {
+        switch hop {
+        case ...3: return 1
+        case 4: return 0.6
+        default: return 0.35
         }
-        return TrustMapOuter(source: .ranked, rings: rings, bar: bar)
     }
 
     /// A Mac (or a Linux box, which pairs as one) is among your devices.
@@ -71,16 +83,15 @@ struct TrustMapOuter: Equatable {
         isDesktop || devices.contains { $0.role == .mac }
     }
 
-    /// "3 hops · 2,015".
+    /// "3 hops · top 300": the best of the ring, never "people at 55 and up".
     static func chipText(_ ring: Ring) -> String {
-        "\(ring.hop) hops · \(ring.count.formatted())"
+        "\(ring.hop) hops · top \(ring.count.formatted())"
     }
 
-    /// The sheet's line: "2,015 people at score 55 and up."
-    static func countText(_ ring: Ring, bar: Double?) -> String {
+    /// The sheet's line: "Top 300 by score, whatever their score."
+    static func countText(_ ring: Ring) -> String {
         let people = ring.count == 1 ? "person" : "people"
-        guard let bar else { return "\(ring.count.formatted()) \(people)." }
-        return "\(ring.count.formatted()) \(people) at score \(Int(bar)) and up."
+        return "The \(ring.count.formatted()) best-scored \(people) in this ring, whatever their score."
     }
 
     static let foundLabel = "Found by your desktop Vault"

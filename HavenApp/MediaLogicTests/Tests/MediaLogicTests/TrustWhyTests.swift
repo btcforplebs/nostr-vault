@@ -24,7 +24,7 @@ final class TrustWhyTests: XCTestCase {
     private func path(_ reach: TrustPath.Reach) -> TrustPath { TrustPath(reach: reach, bridges: [], hasMore: false) }
 
     func testScoreRingAndFollowersHighestScoreFirstUnscoredLast() throws {
-        let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([unknown, mid, hi])))
+        let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([unknown, mid, hi]), follows: [], blocked: []))
         XCTAssertEqual(why.score, 61)
         XCTAssertEqual(why.hop, 2)
         XCTAssertEqual(why.bar, 55)
@@ -36,57 +36,57 @@ final class TrustWhyTests: XCTestCase {
     }
 
     func testARelayCountIsAFloor() throws {
-        let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([hi, mid], exact: false)))
+        let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([hi, mid], exact: false), follows: [], blocked: []))
         XCTAssertEqual(TrustWhyText.followersTitle(why), "At least 2 people you follow follow them")
     }
 
     func testFarOutUnderTheBarNoOneYouFollowFollowsThem() throws {
         let far = copy([them: Person(score: 47.2, hop: 4)])
-        let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: far, path: path(.outside)))
+        let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: far, path: path(.outside), follows: [], blocked: []))
         XCTAssertEqual(why.hop, 4)
         XCTAssertEqual(TrustWhyText.place(why), "4 hops from you · under the 55 discovery starts at")
         XCTAssertEqual(TrustWhyText.followersTitle(why), "No one you follow follows them")
     }
 
     func testARelayFloorOfOneIsAFloorToo() throws {
-        let floor = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([hi], exact: false)))
+        let floor = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([hi], exact: false), follows: [], blocked: []))
         XCTAssertEqual(TrustWhyText.followersTitle(floor), "At least 1 person you follow follows them")
-        let exact = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([hi])))
+        let exact = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([hi]), follows: [], blocked: []))
         XCTAssertEqual(TrustWhyText.followersTitle(exact), "1 person you follow follows them")
     }
 
     func testNoOneIsSaidOnlyWhenThePathSaysOutside() throws {
         // Still tracing: the file's ring 2 shows, the follower line waits.
-        XCTAssertEqual(TrustWhyText.followersTitle(try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: nil))),
+        XCTAssertEqual(TrustWhyText.followersTitle(try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: nil, follows: [], blocked: []))),
                        "Checking…")
         // In the graph but no bridge seen, or no graph yet: no claim either way.
-        XCTAssertNil(TrustWhyText.followersTitle(try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: path(.web)))))
-        XCTAssertNil(TrustWhyText.followersTitle(try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: path(.unknown)))))
+        XCTAssertNil(TrustWhyText.followersTitle(try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: path(.web), follows: [], blocked: []))))
+        XCTAssertNil(TrustWhyText.followersTitle(try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: path(.unknown), follows: [], blocked: []))))
         // A follow whose own follows aren't known.
         let follow = copy([them: Person(score: 70, hop: 1)])
-        let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: follow, path: path(.follow)))
+        let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: follow, path: path(.follow), follows: [], blocked: []))
         XCTAssertEqual(why.hop, 1)
         XCTAssertNil(TrustWhyText.followersTitle(why))
     }
 
     func testLongListsAreCutAndCounted() throws {
         let many = (100..<(100 + TrustWhy.shown + 3)).map { String(format: "%064x", $0) }
-        XCTAssertEqual(TrustWhyText.more(try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged(many)))),
+        XCTAssertEqual(TrustWhyText.more(try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged(many), follows: [], blocked: []))),
                        "and 3 more")
-        XCTAssertNil(TrustWhyText.more(try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([hi])))))
+        XCTAssertNil(TrustWhyText.more(try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([hi]), follows: [], blocked: []))))
     }
 
     func testNoSheetWithoutAScoreForYouOrWhenTheWebSaysTheyAreOutsideTheFilesNearRing() {
-        XCTAssertNil(TrustWhy.of(pubkey: them, me: me, copy: nil, path: bridged([hi])))
-        XCTAssertNil(TrustWhy.of(pubkey: Self.pk("z"), me: me, copy: ranked, path: nil))
-        XCTAssertNil(TrustWhy.of(pubkey: me, me: me, copy: copy([me: Person(score: 99, hop: 1)]), path: nil))
+        XCTAssertNil(TrustWhy.of(pubkey: them, me: me, copy: nil, path: bridged([hi]), follows: [], blocked: []))
+        XCTAssertNil(TrustWhy.of(pubkey: Self.pk("z"), me: me, copy: ranked, path: nil, follows: [], blocked: []))
+        XCTAssertNil(TrustWhy.of(pubkey: me, me: me, copy: copy([me: Person(score: 99, hop: 1)]), path: nil, follows: [], blocked: []))
         // The file says ring 2, the path (live) says outside: no claim.
-        XCTAssertNil(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: path(.outside)))
+        XCTAssertNil(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: path(.outside), follows: [], blocked: []))
     }
 
     func testHalvesRoundUpAsOnAndroid() throws {
         let half = copy([them: Person(score: 54.5, hop: 3)])
-        let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: half, path: nil))
+        let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: half, path: nil, follows: [], blocked: []))
         XCTAssertEqual(why.score, 55)
         XCTAssertTrue(why.overBar)
     }
@@ -95,13 +95,13 @@ final class TrustWhyTests: XCTestCase {
         for bar in [1e300, -1e300, .infinity] {
             let odd = TrustRankCopy(account: me, builtAt: 1, maxHop: 4, viewBar: bar, floor: 0,
                                     people: [them: Person(score: 50, hop: 3)])
-            let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: odd, path: nil))
+            let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: odd, path: nil, follows: [], blocked: []))
             XCTAssertTrue((0...100).contains(why.bar))
         }
     }
 
         func testTheSheetHasNoMuteWords() throws {
-        let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([hi])))
+        let why = try XCTUnwrap(TrustWhy.of(pubkey: them, me: me, copy: ranked, path: bridged([hi]), follows: [], blocked: []))
         let words = [TrustWhyText.headline(why), TrustWhyText.place(why), TrustWhyText.followersTitle(why), TrustWhyText.how]
             .compactMap { $0 }
         XCTAssertFalse(words.contains { $0.localizedCaseInsensitiveContains("mute") })
