@@ -409,7 +409,7 @@ The app calls the engine when a linked device comes into reach. The engine then:
      yet, or is an engine from before this.
    - B keeps a copy only when it is for the account it asked for, `version` 2, newer than the one it holds, and
      every row is a hex pubkey with a score 0-100 in rings 1 to `maxHop` (at most 6); and, when `globe` is there, at
-     most 2,000 globe rows, each a hex pubkey with a score 0-100 in rings 2 to 5 (and `maxHop`) and a hex `via`. Anything else is dropped and
+     most 2,700 globe rows (9 × 300: chain links need links of their own), each a hex pubkey with a score 0-100 in rings 2 to 5 (and `maxHop`) and a hex `via`. Anything else is dropped and
      the last good copy stays. The file is kept next to the WoT cache and its `builtAt` is its age.
    - A Mac or a box ranks for itself and never asks. Nothing is ever sent the other way: `PUT` is 404.
    - It never fails or delays the catch-up's mark: a 404 or a refused copy just leaves the device without one.

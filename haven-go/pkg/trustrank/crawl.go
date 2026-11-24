@@ -289,7 +289,7 @@ func writeResult(dir string, r *Result, now time.Time) error {
 		}
 		f.People = append(f.People, [3]any{p.Pubkey, s, p.Hop})
 	}
-	f.Globe = r.Globe(GlobePerRing)
+	f.Globe = globeForFile(r.Globe(GlobePerRing))
 	b, err := json.Marshal(f)
 	if err != nil {
 		return err

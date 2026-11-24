@@ -207,3 +207,46 @@ func TestGlobeLeavesFeedRowsAlone(t *testing.T) {
 		t.Fatal("the hand-off's feed rows depend on the globe list")
 	}
 }
+
+// The cap holds the largest globe the writer can make (9 × GlobePerRing),
+// and a globe over it is left out of the file rather than costing the copy
+// its feed rows.
+func TestGlobeCapFitsTheWorstCase(t *testing.T) {
+	if maxGlobeRows < 9*GlobePerRing {
+		t.Fatalf("cap %d is under the worst case %d", maxGlobeRows, 9*GlobePerRing)
+	}
+	g, owner, _, _ := globeMap()
+	res := mustRank(t, g, owner, nil)
+	dir := t.TempDir()
+	if err := writeResult(dir, res, time.Unix(100, 0)); err != nil {
+		t.Fatal(err)
+	}
+	f, err := ReadResult(dir, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := f.Handoff(HandoffFloor)
+	// A worst-case globe of 9 × GlobePerRing rows is kept whole.
+	full.Globe = nil
+	for len(full.Globe) < 9*GlobePerRing {
+		full.Globe = append(full.Globe, [4]any{pk(len(full.Globe) + 20000), 10.0, 3, pk(10)})
+	}
+	raw, _ := json.Marshal(full)
+	if _, err := CheckHandoff(raw, owner); err != nil {
+		t.Fatalf("a worst-case globe refused: %v", err)
+	}
+	// One row over: the writer leaves the globe out, the feed rows stay.
+	over := append(full.Globe, full.Globe[0])
+	if got := globeForFile(over); got != nil {
+		t.Fatalf("writer kept a %d-row globe over the cap", len(got))
+	}
+	if got := globeForFile(full.Globe); len(got) != len(full.Globe) {
+		t.Fatal("writer dropped a globe at the cap")
+	}
+	full.Globe = globeForFile(over)
+	raw, _ = json.Marshal(full)
+	c, err := CheckHandoff(raw, owner)
+	if err != nil || len(c.People) == 0 {
+		t.Fatalf("copy with the globe left out refused or empty: %v", err)
+	}
+}

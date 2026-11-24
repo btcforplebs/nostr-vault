@@ -15,10 +15,23 @@ const (
 	GlobeHop = 5
 	// GlobePerRing: how many people each ring shows, best first.
 	GlobePerRing = 300
-	// maxGlobeRows bounds a copy's globe list: GlobePerRing a ring plus one
-	// chain link for each of them is well under it.
-	maxGlobeRows = 2_000
+	// maxGlobeRows bounds a copy's globe list. Chain links need links of
+	// their own, so they pile up ring by ring: ring 5 holds its top (1×),
+	// ring 4 its top plus a link for each ring-5 row (2×), ring 3 its top
+	// plus a link for each ring-4 row (3×), and ring 2 a link for each
+	// ring-3 row (3×): at most 9 × GlobePerRing = 2,700 rows.
+	maxGlobeRows = 9 * GlobePerRing
 )
+
+// globeForFile: the globe list the writer puts in the file, or none when
+// it is over maxGlobeRows, so a globe the hand-off would refuse can never
+// cost a device the feed rows that travel with it.
+func globeForFile(rows [][4]any) [][4]any {
+	if len(rows) > maxGlobeRows {
+		return nil
+	}
+	return rows
+}
 
 // Globe is the result file's globe list: rows [pubkey, shown, hop, via].
 // via is the person's highest-scored follower one ring nearer, the next
