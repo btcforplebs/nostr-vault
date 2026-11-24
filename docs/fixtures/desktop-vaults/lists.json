@@ -1,0 +1,1331 @@
+{
+ "about": "Desktop Vaults in the public lists, PLANS/NV_DESKTOP_VAULTS_PLAN.md section 2.5 rules 1-6. Shared by Apple DesktopVaultsListsTests, Android DesktopVaultsRules and web box/public-on-web.js. A case's vault and expected owner name a key of 'vaults'; lists are tag arrays as signed.",
+ "vaults": {
+  "A": {
+   "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "name": "Mac mini",
+   "kind": "mac",
+   "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "httpsURL": "https://a.example.com",
+   "order": 0
+  },
+  "B": {
+   "id": "https:b.example.com",
+   "name": "",
+   "kind": "box",
+   "httpsURL": "https://b.example.com",
+   "order": 1
+  },
+  "C": {
+   "id": "mesh:npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "name": "Laptop",
+   "kind": "mac",
+   "meshNpub": "npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "order": 2
+  },
+  "D": {
+   "id": "https:d.example.com:8443",
+   "name": "Pi",
+   "kind": "linux",
+   "httpsURL": "https://d.example.com:8443",
+   "order": 3
+  }
+ },
+ "cases": [
+  {
+   "name": "folds case, scheme and trailing slash",
+   "op": "owner",
+   "list": 10002,
+   "tag": [
+    "r",
+    "WSS://A.Example.com/"
+   ],
+   "expect": {
+    "owner": "A"
+   }
+  },
+  {
+   "name": "folds the default port",
+   "op": "owner",
+   "list": 10002,
+   "tag": [
+    "r",
+    "wss://a.example.com:443"
+   ],
+   "expect": {
+    "owner": "A"
+   }
+  },
+  {
+   "name": "inbox entry by host",
+   "op": "owner",
+   "list": 10050,
+   "tag": [
+    "relay",
+    "wss://a.example.com/inbox"
+   ],
+   "expect": {
+    "owner": "A"
+   }
+  },
+  {
+   "name": "http spelling of a media server",
+   "op": "owner",
+   "list": 10063,
+   "tag": [
+    "server",
+    "http://b.example.com"
+   ],
+   "expect": {
+    "owner": "B"
+   }
+  },
+  {
+   "name": "mesh media entry by npub",
+   "op": "owner",
+   "list": 10063,
+   "tag": [
+    "server",
+    "fipsmesh://npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+   ],
+   "expect": {
+    "owner": "A"
+   }
+  },
+  {
+   "name": "10002 fipsmesh tag by npub",
+   "op": "owner",
+   "list": 10002,
+   "tag": [
+    "fipsmesh",
+    "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/",
+    "write"
+   ],
+   "expect": {
+    "owner": "C"
+   }
+  },
+  {
+   "name": "a user relay belongs to no Vault",
+   "op": "owner",
+   "list": 10002,
+   "tag": [
+    "r",
+    "wss://relay.damus.io"
+   ],
+   "expect": {
+    "owner": null
+   }
+  },
+  {
+   "name": "a non-default port is another host",
+   "op": "owner",
+   "list": 10002,
+   "tag": [
+    "r",
+    "wss://d.example.com"
+   ],
+   "expect": {
+    "owner": null
+   }
+  },
+  {
+   "name": "the same non-default port matches",
+   "op": "owner",
+   "list": 10002,
+   "tag": [
+    "r",
+    "wss://d.example.com:8443/"
+   ],
+   "expect": {
+    "owner": "D"
+   }
+  },
+  {
+   "name": "a mesh address in an r tag is not a mesh entry",
+   "op": "owner",
+   "list": 10002,
+   "tag": [
+    "r",
+    "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/"
+   ],
+   "expect": {
+    "owner": null
+   }
+  },
+  {
+   "name": "a mesh server tag in 10002 is not an entry",
+   "op": "owner",
+   "list": 10002,
+   "tag": [
+    "server",
+    "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/"
+   ],
+   "expect": {
+    "owner": null
+   }
+  },
+  {
+   "name": "first Vault entry goes in front of the user's",
+   "op": "on",
+   "list": 10002,
+   "vault": "B",
+   "path": "web",
+   "tags": [
+    [
+     "r",
+     "wss://relay.damus.io"
+    ],
+    [
+     "r",
+     "wss://nos.lol",
+     "write"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "r",
+      "wss://b.example.com"
+     ],
+     [
+      "r",
+      "wss://relay.damus.io"
+     ],
+     [
+      "r",
+      "wss://nos.lol",
+      "write"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "after an earlier Vault, never moving it",
+   "op": "on",
+   "list": 10002,
+   "vault": "B",
+   "path": "web",
+   "tags": [
+    [
+     "r",
+     "wss://relay.damus.io"
+    ],
+    [
+     "r",
+     "wss://a.example.com"
+    ],
+    [
+     "r",
+     "wss://nos.lol",
+     "write"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "r",
+      "wss://relay.damus.io"
+     ],
+     [
+      "r",
+      "wss://a.example.com"
+     ],
+     [
+      "r",
+      "wss://b.example.com"
+     ],
+     [
+      "r",
+      "wss://nos.lol",
+      "write"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "before a later Vault",
+   "op": "on",
+   "list": 10002,
+   "vault": "A",
+   "path": "web",
+   "tags": [
+    [
+     "r",
+     "wss://b.example.com"
+    ],
+    [
+     "r",
+     "wss://relay.damus.io"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "r",
+      "wss://a.example.com"
+     ],
+     [
+      "r",
+      "wss://b.example.com"
+     ],
+     [
+      "r",
+      "wss://relay.damus.io"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "after the last earlier Vault",
+   "op": "on",
+   "list": 10002,
+   "vault": "D",
+   "path": "web",
+   "tags": [
+    [
+     "r",
+     "wss://a.example.com"
+    ],
+    [
+     "r",
+     "wss://b.example.com"
+    ],
+    [
+     "r",
+     "wss://relay.damus.io"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "r",
+      "wss://a.example.com"
+     ],
+     [
+      "r",
+      "wss://b.example.com"
+     ],
+     [
+      "r",
+      "wss://d.example.com:8443"
+     ],
+     [
+      "r",
+      "wss://relay.damus.io"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "web entry never goes after a mesh entry",
+   "op": "on",
+   "list": 10002,
+   "vault": "B",
+   "path": "web",
+   "tags": [
+    [
+     "fipsmesh",
+     "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/",
+     "write"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "r",
+      "wss://b.example.com"
+     ],
+     [
+      "fipsmesh",
+      "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/",
+      "write"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "already listed in another spelling: unchanged",
+   "op": "on",
+   "list": 10002,
+   "vault": "B",
+   "path": "web",
+   "tags": [
+    [
+     "r",
+     "wss://B.example.com/"
+    ],
+    [
+     "r",
+     "wss://relay.damus.io"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "r",
+      "wss://B.example.com/"
+     ],
+     [
+      "r",
+      "wss://relay.damus.io"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "inbox entry",
+   "op": "on",
+   "list": 10050,
+   "vault": "A",
+   "path": "web",
+   "tags": [
+    [
+     "relay",
+     "wss://auth.nostr1.com"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "relay",
+      "wss://a.example.com/inbox"
+     ],
+     [
+      "relay",
+      "wss://auth.nostr1.com"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "inbox after an earlier Vault",
+   "op": "on",
+   "list": 10050,
+   "vault": "B",
+   "path": "web",
+   "tags": [
+    [
+     "relay",
+     "wss://a.example.com/inbox"
+    ],
+    [
+     "relay",
+     "wss://auth.nostr1.com"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "relay",
+      "wss://a.example.com/inbox"
+     ],
+     [
+      "relay",
+      "wss://b.example.com/inbox"
+     ],
+     [
+      "relay",
+      "wss://auth.nostr1.com"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "mesh media goes last",
+   "op": "on",
+   "list": 10063,
+   "vault": "A",
+   "path": "mesh",
+   "tags": [
+    [
+     "server",
+     "https://blossom.primal.net"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "server",
+      "https://blossom.primal.net"
+     ],
+     [
+      "server",
+      "fipsmesh://npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "mesh media in Vault order among mesh entries",
+   "op": "on",
+   "list": 10063,
+   "vault": "A",
+   "path": "mesh",
+   "tags": [
+    [
+     "server",
+     "https://blossom.primal.net"
+    ],
+    [
+     "server",
+     "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "server",
+      "https://blossom.primal.net"
+     ],
+     [
+      "server",
+      "fipsmesh://npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+     ],
+     [
+      "server",
+      "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "mesh media after the public servers even with a Vault server",
+   "op": "on",
+   "list": 10063,
+   "vault": "A",
+   "path": "mesh",
+   "tags": [
+    [
+     "server",
+     "https://a.example.com"
+    ],
+    [
+     "server",
+     "https://blossom.primal.net"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "server",
+      "https://a.example.com"
+     ],
+     [
+      "server",
+      "https://blossom.primal.net"
+     ],
+     [
+      "server",
+      "fipsmesh://npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "a list of mesh entries only is refused",
+   "op": "on",
+   "list": 10063,
+   "vault": "A",
+   "path": "mesh",
+   "tags": [
+    [
+     "server",
+     "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/"
+    ]
+   ],
+   "expect": {
+    "refused": 10063
+   }
+  },
+  {
+   "name": "10002 mesh relay tag goes last",
+   "op": "on",
+   "list": 10002,
+   "vault": "A",
+   "path": "mesh",
+   "tags": [
+    [
+     "r",
+     "wss://relay.damus.io"
+    ],
+    [
+     "r",
+     "wss://a.example.com"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "r",
+      "wss://relay.damus.io"
+     ],
+     [
+      "r",
+      "wss://a.example.com"
+     ],
+     [
+      "fipsmesh",
+      "fipsmesh://npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+      "write"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "10050 takes no mesh entry",
+   "op": "on",
+   "list": 10050,
+   "vault": "A",
+   "path": "mesh",
+   "tags": [
+    [
+     "relay",
+     "wss://auth.nostr1.com"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "relay",
+      "wss://auth.nostr1.com"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "a Vault with no web address adds no web entry",
+   "op": "on",
+   "list": 10063,
+   "vault": "C",
+   "path": "web",
+   "tags": [
+    [
+     "server",
+     "https://blossom.primal.net"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "server",
+      "https://blossom.primal.net"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "media server entry",
+   "op": "on",
+   "list": 10063,
+   "vault": "B",
+   "path": "web",
+   "tags": [
+    [
+     "server",
+     "https://a.example.com"
+    ],
+    [
+     "server",
+     "https://blossom.primal.net"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "server",
+      "https://a.example.com"
+     ],
+     [
+      "server",
+      "https://b.example.com"
+     ],
+     [
+      "server",
+      "https://blossom.primal.net"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "removes every spelling and nothing else",
+   "op": "off",
+   "list": 10002,
+   "vault": "A",
+   "path": "web",
+   "tags": [
+    [
+     "r",
+     "wss://A.Example.com/"
+    ],
+    [
+     "r",
+     "wss://relay.damus.io"
+    ],
+    [
+     "r",
+     "wss://a.example.com:443",
+     "write"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "r",
+      "wss://relay.damus.io"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "refused when no wss write relay is left",
+   "op": "off",
+   "list": 10002,
+   "vault": "A",
+   "path": "web",
+   "tags": [
+    [
+     "r",
+     "wss://a.example.com"
+    ],
+    [
+     "r",
+     "wss://read.example",
+     "read"
+    ]
+   ],
+   "expect": {
+    "refused": 10002
+   }
+  },
+  {
+   "name": "a mesh relay does not count as a write relay",
+   "op": "off",
+   "list": 10002,
+   "vault": "A",
+   "path": "web",
+   "tags": [
+    [
+     "r",
+     "wss://a.example.com"
+    ],
+    [
+     "fipsmesh",
+     "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/",
+     "write"
+    ]
+   ],
+   "expect": {
+    "refused": 10002
+   }
+  },
+  {
+   "name": "taking a mesh entry off is always allowed",
+   "op": "off",
+   "list": 10002,
+   "vault": "C",
+   "path": "mesh",
+   "tags": [
+    [
+     "fipsmesh",
+     "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/",
+     "write"
+    ],
+    [
+     "r",
+     "wss://read.example",
+     "read"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "r",
+      "wss://read.example",
+      "read"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "refused when the inbox would be empty",
+   "op": "off",
+   "list": 10050,
+   "vault": "A",
+   "path": "web",
+   "tags": [
+    [
+     "relay",
+     "wss://a.example.com/inbox"
+    ]
+   ],
+   "expect": {
+    "refused": 10050
+   }
+  },
+  {
+   "name": "refused when only mesh servers are left",
+   "op": "off",
+   "list": 10063,
+   "vault": "A",
+   "path": "web",
+   "tags": [
+    [
+     "server",
+     "https://a.example.com"
+    ],
+    [
+     "server",
+     "fipsmesh://npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+    ]
+   ],
+   "expect": {
+    "refused": 10063
+   }
+  },
+  {
+   "name": "mesh media off keeps the web entries",
+   "op": "off",
+   "list": 10063,
+   "vault": "A",
+   "path": "mesh",
+   "tags": [
+    [
+     "server",
+     "https://a.example.com"
+    ],
+    [
+     "server",
+     "https://blossom.primal.net"
+    ],
+    [
+     "server",
+     "fipsmesh://npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "server",
+      "https://a.example.com"
+     ],
+     [
+      "server",
+      "https://blossom.primal.net"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "not listed: unchanged",
+   "op": "off",
+   "list": 10063,
+   "vault": "B",
+   "path": "web",
+   "tags": [
+    [
+     "server",
+     "https://blossom.primal.net"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "server",
+      "https://blossom.primal.net"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "delete takes the Vault out of every list",
+   "op": "remove",
+   "vault": "A",
+   "lists": {
+    "10002": [
+     [
+      "r",
+      "wss://a.example.com"
+     ],
+     [
+      "r",
+      "wss://relay.damus.io"
+     ]
+    ],
+    "10050": [
+     [
+      "relay",
+      "wss://a.example.com/inbox"
+     ],
+     [
+      "relay",
+      "wss://auth.nostr1.com"
+     ]
+    ],
+    "10063": [
+     [
+      "server",
+      "https://a.example.com"
+     ],
+     [
+      "server",
+      "https://blossom.primal.net"
+     ],
+     [
+      "server",
+      "fipsmesh://npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+     ]
+    ]
+   },
+   "expect": {
+    "changed": {
+     "10002": [
+      [
+       "r",
+       "wss://relay.damus.io"
+      ]
+     ],
+     "10050": [
+      [
+       "relay",
+       "wss://auth.nostr1.com"
+      ]
+     ],
+     "10063": [
+      [
+       "server",
+       "https://blossom.primal.net"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "name": "delete changes only the lists that name the Vault",
+   "op": "remove",
+   "vault": "B",
+   "lists": {
+    "10002": [
+     [
+      "r",
+      "wss://b.example.com"
+     ],
+     [
+      "r",
+      "wss://relay.damus.io"
+     ]
+    ],
+    "10050": [
+     [
+      "relay",
+      "wss://auth.nostr1.com"
+     ]
+    ],
+    "10063": [
+     [
+      "server",
+      "https://blossom.primal.net"
+     ]
+    ]
+   },
+   "expect": {
+    "changed": {
+     "10002": [
+      [
+       "r",
+       "wss://relay.damus.io"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "name": "delete is refused for all lists when one would be unusable",
+   "op": "remove",
+   "vault": "A",
+   "lists": {
+    "10002": [
+     [
+      "r",
+      "wss://a.example.com"
+     ],
+     [
+      "r",
+      "wss://relay.damus.io"
+     ]
+    ],
+    "10050": [
+     [
+      "relay",
+      "wss://auth.nostr1.com"
+     ]
+    ],
+    "10063": [
+     [
+      "server",
+      "https://a.example.com"
+     ],
+     [
+      "server",
+      "fipsmesh://npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+     ]
+    ]
+   },
+   "expect": {
+    "refused": 10063
+   }
+  },
+  {
+   "name": "reorder puts Vault entries in list order in their own places",
+   "op": "reorder",
+   "list": 10002,
+   "tags": [
+    [
+     "r",
+     "wss://b.example.com"
+    ],
+    [
+     "r",
+     "wss://relay.damus.io"
+    ],
+    [
+     "r",
+     "wss://a.example.com"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "r",
+      "wss://a.example.com"
+     ],
+     [
+      "r",
+      "wss://relay.damus.io"
+     ],
+     [
+      "r",
+      "wss://b.example.com"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "reorder sorts the mesh entries among themselves, web ones already in order",
+   "op": "reorder",
+   "list": 10063,
+   "tags": [
+    [
+     "server",
+     "https://a.example.com"
+    ],
+    [
+     "server",
+     "https://blossom.primal.net"
+    ],
+    [
+     "server",
+     "https://b.example.com"
+    ],
+    [
+     "server",
+     "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/"
+    ],
+    [
+     "server",
+     "fipsmesh://npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "server",
+      "https://a.example.com"
+     ],
+     [
+      "server",
+      "https://blossom.primal.net"
+     ],
+     [
+      "server",
+      "https://b.example.com"
+     ],
+     [
+      "server",
+      "fipsmesh://npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+     ],
+     [
+      "server",
+      "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "over NIP-65 guidance: 5 write relays",
+   "op": "overGuidance",
+   "list": 10002,
+   "tags": [
+    [
+     "r",
+     "wss://r0.example"
+    ],
+    [
+     "r",
+     "wss://r1.example"
+    ],
+    [
+     "r",
+     "wss://r2.example"
+    ],
+    [
+     "r",
+     "wss://r3.example"
+    ],
+    [
+     "r",
+     "wss://nos.lol",
+     "write"
+    ]
+   ],
+   "expect": {
+    "over": true
+   }
+  },
+  {
+   "name": "read-only and mesh relays do not count",
+   "op": "overGuidance",
+   "list": 10002,
+   "tags": [
+    [
+     "r",
+     "wss://r0.example"
+    ],
+    [
+     "r",
+     "wss://r1.example"
+    ],
+    [
+     "r",
+     "wss://r2.example"
+    ],
+    [
+     "r",
+     "wss://r3.example"
+    ],
+    [
+     "r",
+     "wss://read.example",
+     "read"
+    ],
+    [
+     "fipsmesh",
+     "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/",
+     "write"
+    ]
+   ],
+   "expect": {
+    "over": false
+   }
+  },
+  {
+   "name": "over NIP-17 guidance: 4 DM relays",
+   "op": "overGuidance",
+   "list": 10050,
+   "tags": [
+    [
+     "relay",
+     "wss://r0.example"
+    ],
+    [
+     "relay",
+     "wss://r1.example"
+    ],
+    [
+     "relay",
+     "wss://r2.example"
+    ],
+    [
+     "relay",
+     "wss://r3.example"
+    ]
+   ],
+   "expect": {
+    "over": true
+   }
+  },
+  {
+   "name": "3 DM relays is fine",
+   "op": "overGuidance",
+   "list": 10050,
+   "tags": [
+    [
+     "relay",
+     "wss://r0.example"
+    ],
+    [
+     "relay",
+     "wss://r1.example"
+    ],
+    [
+     "relay",
+     "wss://r2.example"
+    ]
+   ],
+   "expect": {
+    "over": false
+   }
+  },
+  {
+   "name": "media servers have no guidance",
+   "op": "overGuidance",
+   "list": 10063,
+   "tags": [
+    [
+     "server",
+     "https://s0.example"
+    ],
+    [
+     "server",
+     "https://s1.example"
+    ],
+    [
+     "server",
+     "https://s2.example"
+    ],
+    [
+     "server",
+     "https://s3.example"
+    ],
+    [
+     "server",
+     "https://s4.example"
+    ],
+    [
+     "server",
+     "https://s5.example"
+    ],
+    [
+     "server",
+     "https://s6.example"
+    ],
+    [
+     "server",
+     "https://s7.example"
+    ],
+    [
+     "server",
+     "https://s8.example"
+    ]
+   ],
+   "expect": {
+    "over": false
+   }
+  },
+  {
+   "name": "same host in another spelling is taken",
+   "op": "hostTaken",
+   "url": "https://A.Example.com/",
+   "except": null,
+   "expect": {
+    "owner": "A"
+   }
+  },
+  {
+   "name": "a Vault editing its own address is not refused",
+   "op": "hostTaken",
+   "url": "wss://a.example.com",
+   "except": "A",
+   "expect": {
+    "owner": null
+   }
+  },
+  {
+   "name": "a new host is free",
+   "op": "hostTaken",
+   "url": "https://new.example.com",
+   "except": null,
+   "expect": {
+    "owner": null
+   }
+  },
+  {
+   "name": "reorder: already in order is unchanged",
+   "op": "reorder",
+   "list": 10063,
+   "tags": [
+    [
+     "server",
+     "https://a.example.com"
+    ],
+    [
+     "server",
+     "https://blossom.primal.net"
+    ],
+    [
+     "server",
+     "https://b.example.com"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "server",
+      "https://a.example.com"
+     ],
+     [
+      "server",
+      "https://blossom.primal.net"
+     ],
+     [
+      "server",
+      "https://b.example.com"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "web entry stops before the first mesh entry, even ahead of a later Vault behind it",
+   "op": "on",
+   "list": 10002,
+   "vault": "A",
+   "path": "web",
+   "tags": [
+    [
+     "r",
+     "wss://relay.damus.io"
+    ],
+    [
+     "fipsmesh",
+     "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/",
+     "write"
+    ],
+    [
+     "r",
+     "wss://b.example.com"
+    ]
+   ],
+   "expect": {
+    "tags": [
+     [
+      "r",
+      "wss://relay.damus.io"
+     ],
+     [
+      "r",
+      "wss://a.example.com"
+     ],
+     [
+      "fipsmesh",
+      "fipsmesh://npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/",
+      "write"
+     ],
+     [
+      "r",
+      "wss://b.example.com"
+     ]
+    ]
+   }
+  }
+ ]
+}

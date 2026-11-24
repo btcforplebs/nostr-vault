@@ -161,6 +161,8 @@ class ConfigService: ObservableObject {
         // Ensure ownerNpub is sanitized (remove invisible junk characters like non-breaking spaces)
         config.ownerNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
             .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
+        // The one-slot Mac setting into the desktop Vault list, once (plan §3).
+        config.takeInDesktopVaultSlot()
         
         // Only save if we loaded successfully, recovered, or if it's a fresh install (no .env)
         // This prevents overwriting a "broken" config.json with empty defaults on every startup
@@ -208,6 +210,7 @@ class ConfigService: ObservableObject {
                 // Reload lists
                 loadRelayLists()
                 config.dropDeadRelaysOnce()
+                config.takeInDesktopVaultSlot()
 
                 // Sync relay info
                 MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
@@ -265,6 +268,9 @@ class ConfigService: ObservableObject {
         // Ensure ownerNpub is sanitized (remove invisible junk characters like non-breaking spaces)
         config.ownerNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
             .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
+
+        // The old Desktop vault sync tab still edits the slot (until P4).
+        config.takeInDesktopVaultSlot()
 
         let store = ConfigFileStore(url: configURL)
         if loadFailed {
