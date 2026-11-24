@@ -57,6 +57,7 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.ui.components.ListHistoryOptInRow
 import com.nostrvault.ui.components.ListHistoryScanStatus
 import com.nostrvault.relay.LogStore
+import com.nostrvault.relay.macRelayURLInEffect
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.tutorials.TutorialContent
 import com.nostrvault.tutorials.tutorialAnchor
@@ -161,7 +162,7 @@ internal fun VaultDashboardContent(
     }
     val usesSigner = viewModel.usesSigner(cfg)
     val keyOk = hasLocalKey || usesSigner
-    val macConfigured = cfg.macRelayURL.isNotBlank()
+    val macConfigured = cfg.macRelayURLInEffect.isNotBlank()
     val exportBusy = exportingNotes || exportingMedia
     val actionsEnabled = running || isImporting
 

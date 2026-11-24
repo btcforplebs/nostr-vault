@@ -143,6 +143,8 @@ data class HavenConfig(
     @kotlinx.serialization.Serializable(with = LossyDesktopVaultList::class)
     val desktopVaults: List<DesktopVault> = emptyList(),
     val desktopVaultsSlot: String? = null,
+    /** Addresses of Vaults deleted on Desktop Vaults ([DesktopVaultsEditing.removedKeys]), so the slot or a paired Mac doesn't bring them back. */
+    val desktopVaultsRemoved: List<String> = emptyList(),
 
     // FIPS mesh. The preference only; the identity itself is a private key and
     // lives in CredentialStore, not in this file, which is plaintext JSON.
@@ -498,8 +500,10 @@ data class HavenConfig(
      */
     val macRelayNormalizedBase: String
         get() {
-            if (com.nostrvault.fips.HomeVaultRules.meshNpubFromInput(macRelayURL) != null) return ""
-            var url = macRelayURL.trim()
+            // The slot only while a Vault still has its address (P7): a deleted Vault's slot counts as empty everywhere.
+            val slot = macRelayURLInEffect
+            if (com.nostrvault.fips.HomeVaultRules.meshNpubFromInput(slot) != null) return ""
+            var url = slot.trim()
             for (scheme in listOf("wss://", "ws://", "https://", "http://")) {
                 if (url.lowercase().startsWith(scheme)) {
                     url = url.drop(scheme.length)

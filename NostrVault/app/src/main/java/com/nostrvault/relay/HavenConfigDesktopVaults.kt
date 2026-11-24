@@ -23,8 +23,18 @@ fun HavenConfig.desktopVaultsInEffect(ownNpub: String?): List<DesktopVault> {
     val taken = DesktopVaultsRules.takingInSlot(
         desktopVaults, macRelayURL, desktopVaultsSlot, fipsMesh.devices, ownNpub = ownNpub, ownerNpub = ownerNpub,
     )
-    return DesktopVaultsRules.followingDevices(taken, fipsMesh.devices, macRelayURL, ownNpub, ownerNpub)
+    val following = DesktopVaultsRules.followingDevices(taken, fipsMesh.devices, macRelayURL, ownNpub, ownerNpub)
+    // Every address deleted on Desktop Vaults stays out (P7, Tron N3 on #2499).
+    return DesktopVaultsEditing.applyingRemoved(following, desktopVaultsRemoved)
 }
+
+/**
+ * The one-slot `macRelayURL` while a Vault still has its address, else "" ([DesktopVaultsEditing.slotInEffect]).
+ * Everything derived from the slot reads this, so deleting its Vault on Desktop Vaults turns it off. iOS
+ * `HavenConfig.macRelayURLInEffect`.
+ */
+val HavenConfig.macRelayURLInEffect: String
+    get() = DesktopVaultsEditing.slotInEffect(macRelayURL, desktopVaultsInEffect)
 
 /** This config with [desktopVaultsInEffect] stored and the slot value it took in. `macRelayURL` stays as it is (plan §3 step 5). */
 fun HavenConfig.takingInDesktopVaultSlot(ownNpub: String? = OwnMeshNpub.value): HavenConfig {
@@ -50,4 +60,23 @@ fun HavenConfig.desktopVaultMeshNpubs(ownNpub: String?): List<String> =
 
 /** Every HTTPS Vault's DM inbox, in list order (§2.2 rule 2; it was the one Mac relay's). */
 val HavenConfig.desktopVaultDMInboxURLs: List<String>
-    get() = DesktopVaultsRules.dmInboxURLs(desktopVaultsInEffect, macRelayURL)
+    get() = DesktopVaultsRules.dmInboxURLs(desktopVaultsInEffect, macRelayURLInEffect)
+
+// ── Edits from the Desktop Vaults screens (P7; iOS HavenConfig+DesktopVaults.swift) ──
+
+/** Adds [vault] at the end; its addresses leave [HavenConfig.desktopVaultsRemoved]. */
+fun HavenConfig.addingDesktopVault(vault: DesktopVault): HavenConfig =
+    DesktopVaultsEditing.inserting(vault, desktopVaultsInEffect, desktopVaultsRemoved).let { copy(desktopVaults = it.vaults, desktopVaultsRemoved = it.removed) }
+
+/** Deletes the Vault; its addresses go on [HavenConfig.desktopVaultsRemoved]. */
+fun HavenConfig.deletingDesktopVault(id: String): HavenConfig =
+    DesktopVaultsEditing.deleting(id, desktopVaultsInEffect, desktopVaultsRemoved).let { copy(desktopVaults = it.vaults, desktopVaultsRemoved = it.removed) }
+
+/** Stores a new order (after a drag) or a rename. */
+fun HavenConfig.withDesktopVaults(vaults: List<DesktopVault>): HavenConfig = copy(desktopVaults = DesktopVaultsRules.ordered(vaults))
+
+/** Pairing a device again undoes an earlier delete of its Vault. */
+fun HavenConfig.forgettingRemovedDesktopVault(meshNpub: String): HavenConfig {
+    val key = DesktopVaultsEditing.removedKeyForMesh(meshNpub)
+    return if (key in desktopVaultsRemoved) copy(desktopVaultsRemoved = desktopVaultsRemoved - key) else this
+}
