@@ -29,11 +29,20 @@ data class TrustMapOuter(
         val hop: Int,
         /** The ring's best-ranked people, best first, at most [TrustRankCopy.GLOBE_PER_RING]. */
         val top: List<String>,
+        /** Each of [top]'s link one ring in: the zoomed globe draws a line to them ([GlobeRingZoom]). */
+        val via: Map<String, String> = emptyMap(),
     ) {
         val count: Int get() = top.size
     }
 
     val isFaint: Boolean get() = source != Source.RANKED
+
+    /**
+     * A hop layer (Hop 3, 4, 5) is picked only once a desktop Vault's
+     * ranking is on this device with that ring in it; until then the picker
+     * greys it out, as the reason to run one (Logen 2026-11-24).
+     */
+    fun unlocks(hop: Int): Boolean = source == Source.RANKED && rings.any { it.hop == hop }
 
     companion object {
         val NONE = TrustMapOuter(Source.INVITE, emptyList())
@@ -49,6 +58,8 @@ data class TrustMapOuter(
         const val FOUND_LABEL = "Found by your desktop Vault"
         const val WAITING_LABEL = "Your desktop Vault hasn't sent its ranking yet"
         const val PAIR_LINE = "Pair a desktop Vault to see distant connections"
+        /** The line a greyed hop shows when tapped. */
+        const val LOCKED_LINE = "A desktop Vault unlocks the far rings"
 
         fun make(copy: TrustRankCopy?, desktopPaired: Boolean, hidden: Set<String> = emptySet()): TrustMapOuter {
             if (copy == null) {
@@ -59,6 +70,7 @@ data class TrustMapOuter(
             // GLOBE_PER_RING; its chain links come after. A short ring's links follow
             // its top straight away and can only show 0, so 0 rows are never top.
             val byHop = HashMap<Int, MutableList<String>>()
+            val via = HashMap<Int, MutableMap<String, String>>()
             val seen = HashMap<Int, Int>()
             for (row in copy.globe) {
                 if (row.hop !in FAINT_HOPS || row.score <= 0.0) continue
@@ -67,8 +79,9 @@ data class TrustMapOuter(
                 seen[row.hop] = n + 1
                 if (row.pubkey in hidden) continue
                 byHop.getOrPut(row.hop) { mutableListOf() }.add(row.pubkey)
+                if (row.via.isNotEmpty() && row.via !in hidden) via.getOrPut(row.hop) { mutableMapOf() }[row.pubkey] = row.via
             }
-            return TrustMapOuter(Source.RANKED, byHop.keys.sorted().map { Ring(it, byHop.getValue(it)) })
+            return TrustMapOuter(Source.RANKED, byHop.keys.sorted().map { Ring(it, byHop.getValue(it), via[it].orEmpty()) })
         }
 
         /** How strongly a ring and its dots are drawn: hop 3 full, hop 4 about 60%, hop 5 about 35%. */

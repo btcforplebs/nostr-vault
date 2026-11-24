@@ -5,6 +5,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.only
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -16,6 +17,7 @@ import com.nostrvault.data.model.GlobeArcs
 import com.nostrvault.data.model.GlobeCamera
 import com.nostrvault.data.model.GlobeEdge
 import com.nostrvault.data.model.GlobeStorm
+import com.nostrvault.data.model.GlobeRingZoom
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.data.model.Vec3
 import com.nostrvault.ui.theme.Motion
@@ -374,12 +376,19 @@ internal class GlobeScene(
         wake()
     }
 
-    /** Lights one layer and hides the rest. Nothing is reloaded. */
-    fun focus(layer: TrustMap.Layer) {
+    /** Lights one layer and hides the rest. Nothing is reloaded. A hop zooms out to its ring when [zoomsToRings] (your own globe). */
+    fun focus(layer: TrustMap.Layer, zoomsToRings: Boolean = false) {
         weightTarget = TrustMap.layerWeights(layer)
         if (Motion.isReduced) weights = weightTarget
+        ringZoomTarget = if (zoomsToRings) GlobeRingZoom.level(layer.hop) else 0.0
+        if (Motion.isReduced) ringZoom = ringZoomTarget
         wake()
     }
+
+    /** How far the globe is zoomed out to an outer ring ([GlobeRingZoom]), easing toward the picked hop's level. */
+    var ringZoom by mutableDoubleStateOf(0.0)
+        private set
+    private var ringZoomTarget = 0.0
 
     fun wake() {
         if (!awake) {
@@ -413,7 +422,13 @@ internal class GlobeScene(
             layerDim += (dimTarget - layerDim) * (1 - exp(-dt * 8))
             if (abs(dimTarget - layerDim) < 0.005 || reduceMotion) layerDim = dimTarget
         }
-        val fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget || seatFades.fading
+        if (ringZoom != ringZoomTarget) {
+            // About a second each way, slowing into the ring.
+            val next = ringZoom + (ringZoomTarget - ringZoom) * (1 - exp(-dt * 4.5))
+            ringZoom = if (abs(ringZoomTarget - next) < 0.002 || reduceMotion) ringZoomTarget else next
+        }
+        val fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget || seatFades.fading ||
+            ringZoom != ringZoomTarget
         if (weights != weightTarget) {
             val ease = 1 - exp(-dt * 8)
             fun step(from: Double, to: Double) = if (abs(to - from) < 0.005) to else from + (to - from) * ease
@@ -513,7 +528,10 @@ internal class GlobeScene(
     private fun Projector.of(star: Star) = project(star.dir, star.radius)
 
     /** Closest front-facing face to a tap, within reach of a fingertip. Zoomed in, plain stars can be tapped too. */
-    fun hit(at: Offset, w: Float, h: Float, density: Float): String? {
+    fun hit(tap: Offset, w: Float, h: Float, density: Float): String? {
+        // Zoomed out to a ring, the globe is drawn shrunk round the middle.
+        val shrink = GlobeRingZoom.innerScale(ringZoom).toFloat()
+        val at = Offset(w / 2 + (tap.x - w / 2) / shrink, h / 2 + (tap.y - h / 2) / shrink)
         val project = Projector(camera, w, h, phone)
         var best: String? = null
         var bestDistance = Double.MAX_VALUE
@@ -522,7 +540,8 @@ internal class GlobeScene(
             val p = project.of(star) ?: return
             if (p.depth <= -0.15) return
             val d = hypot(p.x - at.x, p.y - at.y)
-            if (d < reach && d < bestDistance) { best = star.key; bestDistance = d }
+            // Reach is a fingertip on screen, so it grows as the globe shrinks.
+            if (d < reach / shrink && d < bestDistance) { best = star.key; bestDistance = d }
         }
         for (star in stars) if (star.isFace) consider(star, 30.0 * density)
         if (best == null && camera.zoom >= 1.6) {
@@ -624,14 +643,17 @@ internal class GlobeScene(
         originY = origin.y
         coreR = 22 * k * core.scale * min(zoom, 1.8) * density
         ready = true
-        val pad = 8 * density
+        // Shrunk to an outer ring, more of the globe fits: keep what now lands on screen.
+        val grow = (1 / GlobeRingZoom.innerScale(ringZoom) - 1) / 2
+        val padX = 8 * density + w * grow
+        val padY = 8 * density + h * grow
 
         for (star in stars) {
             if (star.isFace) continue
             val a = star.alpha * weight(star)
             if (a <= 0.02) continue
             val p = project.of(star) ?: continue
-            if (p.x < -pad || p.y < -pad || p.x > w + pad || p.y > h + pad) continue
+            if (p.x < -padX || p.y < -padY || p.x > w + padX || p.y > h + padY) continue
             val front = p.front
             val (slot, base, size) = when (star.kind) {
                 Kind.HAZE -> Triple(Slot.HAZE, 0.06 + 0.16 * front, 1.2)

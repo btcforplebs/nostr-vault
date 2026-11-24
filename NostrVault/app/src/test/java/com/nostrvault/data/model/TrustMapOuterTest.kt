@@ -55,6 +55,28 @@ class TrustMapOuterTest {
         assertEquals("4 hops", TrustMapOuter.chipText(ring4))
     }
 
+    @Test fun `rings keep each person's link one ring in`() {
+        val outer = TrustMapOuter.make(copy(), desktopPaired = true)
+        assertEquals(pk('c'), outer.rings[0].via[pk('e')])
+        assertEquals(mapOf(pk('0') to pk('e')), outer.rings[1].via)
+        assertEquals(mapOf(pk('1') to pk('0')), outer.rings[2].via)
+    }
+
+    @Test fun `hops unlock only with a ranked ring`() {
+        val ranked = TrustMapOuter.make(copy(), desktopPaired = true)
+        assertTrue(ranked.unlocks(3))
+        assertTrue(ranked.unlocks(5))
+        // Faint rings (paired but no rank yet, or no desktop Vault) stay greyed.
+        val waiting = TrustMapOuter.make(null, desktopPaired = true)
+        assertEquals(3, waiting.rings.size)
+        assertFalse(waiting.unlocks(3))
+        assertFalse(TrustMapOuter.make(null, desktopPaired = false).unlocks(4))
+        // A rank with nobody out at a hop leaves that hop greyed.
+        val partial = TrustMapOuter(TrustMapOuter.Source.RANKED, listOf(TrustMapOuter.Ring(3, listOf(pk('e')))))
+        assertTrue(partial.unlocks(3))
+        assertFalse(partial.unlocks(4))
+    }
+
     @Test fun `fade per hop, 3 full, 4 about 60 percent, 5 about 35`() {
         assertEquals(1f, TrustMapOuter.fade(3), 0f)
         assertEquals(0.6f, TrustMapOuter.fade(4), 0f)

@@ -48,6 +48,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.GlobeRingZoom
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.ui.theme.Motion
 import kotlinx.coroutines.delay
@@ -108,13 +109,13 @@ internal fun TrustGlobe(
      * show: without these the only face is the core ([TrustMap.pickFaces]).
      */
     ringFaces: List<String>,
-    /** Pictures on the outer shell for the picked layer (Close or Further out), on your own globe. */
+    /** Pictures on the outer shell for the picked layer (Vouched), on your own globe. */
     layerFaces: List<String> = emptyList(),
     /** Who the WOT tab's filters leave lit; the rest dim. Null when no filter is on. */
     filterLit: Set<String>? = null,
     /** False while a sheet covers the globe: the clock stops. */
     running: Boolean,
-    /** Which part of the web is lit (the WOT tab's layer picker). */
+    /** Which part of the web is lit (the WOT tab's layer picker). A hop zooms out to its outer ring ([GlobeRingZoom]). */
     layer: TrustMap.Layer = TrustMap.Layer.EVERYONE,
     /** The person the trust card is about: the globe turns to face them. */
     focus: String? = null,
@@ -197,7 +198,7 @@ internal fun TrustGlobe(
         if (scene.hasLoaded && center != scene.center) scene.turn(center)
     }
 
-    LaunchedEffect(layer) { scene.focus(layer) }
+    LaunchedEffect(layer, showsOuterRings) { scene.focus(layer, zoomsToRings = showsOuterRings) }
 
     LaunchedEffect(filterLit) { scene.filter(filterLit) }
 
@@ -308,10 +309,24 @@ internal fun TrustGlobe(
             },
     ) {
         val outer = if (showsOuterRings) rememberTrustMapOuter() else null
-        Canvas(Modifier.fillMaxSize()) {
-            outer?.let { GlobeOuterRings.draw(this, it, scene.camera.zoom, phone, textMeasurer) }
-            scene.drawBack(this, accent)
+        outer?.let {
+            Canvas(Modifier.fillMaxSize()) {
+                GlobeOuterRings.draw(this, it, scene.camera.zoom, phone, textMeasurer, scene.ringZoom)
+            }
         }
+        // Zoomed out to an outer ring (a Hop layer), the whole inner globe,
+        // faces too, shrinks round the middle and fades ([GlobeRingZoom]).
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val shrink = GlobeRingZoom.innerScale(scene.ringZoom).toFloat()
+                    scaleX = shrink
+                    scaleY = shrink
+                    alpha = GlobeRingZoom.innerAlpha(scene.ringZoom).toFloat()
+                },
+        ) {
+        Canvas(Modifier.fillMaxSize()) { scene.drawBack(this, accent) }
         // The threads' glow in its own blurred layer, as iOS (API 31+; a lite
         // phone and older Android get soft strokes). Only while threads show.
         if (scene.threaded) {
@@ -373,5 +388,6 @@ internal fun TrustGlobe(
         }
 
         Canvas(Modifier.fillMaxSize()) { scene.drawLabels(this, textMeasurer, currentName) }
+        }
     }
 }

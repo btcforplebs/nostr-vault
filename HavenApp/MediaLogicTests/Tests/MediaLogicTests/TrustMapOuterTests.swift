@@ -34,6 +34,28 @@ final class TrustMapOuterTests: XCTestCase {
                        "The 1 best-scored person in this ring, whatever their score.")
     }
 
+    func testRingsKeepEachPersonsLinkOneRingIn() throws {
+        let outer = TrustMapOuter.make(copy: try makeCopy(), desktopPaired: true)
+        XCTAssertEqual(outer.rings[0].via[pk("e")], pk("c"))
+        XCTAssertEqual(outer.rings[1].via[pk("0")], pk("e"))
+        XCTAssertEqual(outer.rings[2].via, [pk("1"): pk("0")])
+    }
+
+    func testHopsUnlockOnlyWithARankedRing() throws {
+        let ranked = TrustMapOuter.make(copy: try makeCopy(), desktopPaired: true)
+        XCTAssertTrue(ranked.unlocks(hop: 3))
+        XCTAssertTrue(ranked.unlocks(hop: 5))
+        // Faint rings (paired but no rank yet, or no desktop Vault) stay greyed.
+        let waiting = TrustMapOuter.make(copy: nil, desktopPaired: true)
+        XCTAssertEqual(waiting.rings.count, 3)
+        XCTAssertFalse(waiting.unlocks(hop: 3))
+        XCTAssertFalse(TrustMapOuter.make(copy: nil, desktopPaired: false).unlocks(hop: 4))
+        // A rank with nobody out at a hop leaves that hop greyed.
+        let partial = TrustMapOuter(source: .ranked, rings: [.init(hop: 3, top: [pk("e")])])
+        XCTAssertTrue(partial.unlocks(hop: 3))
+        XCTAssertFalse(partial.unlocks(hop: 4))
+    }
+
     func testOnlyARingsFirst300RowsAreItsTopLaterRowsAreLinks() throws {
         let hex = (0..<301).map { String(format: "%064x", $0 + 1) }
         let link = String(repeating: "c", count: 64)

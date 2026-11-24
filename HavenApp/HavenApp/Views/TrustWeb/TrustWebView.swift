@@ -97,6 +97,8 @@ struct TrustWebView: View {
     @State var relaySearch: Task<Void, Never>?
     /// The WOT tab's layer picker: which part of your web is lit.
     @State var layer: TrustMap.Layer = .everyone
+    /// The outer rings, for which hop layers are unlocked.
+    @ObservedObject var outerWatch = TrustMapOuterWatch.shared
     /// The WOT tab's filter icons that are on, and who they leave lit (nil:
     /// none on, nothing dims). Reset when you leave the tab.
     @State var filters: Set<TrustMap.Filter> = []
@@ -236,6 +238,7 @@ struct TrustWebView: View {
             prepareLayerFaces()
             relightLayer()
         }
+        .onChange(of: outerWatch.outer) { _, _ in dropLockedLayer() }
         // Back onto someone: their faces again, and their web if it failed.
         .onChange(of: centerKey) { _, key in
             guard key != me else { return }

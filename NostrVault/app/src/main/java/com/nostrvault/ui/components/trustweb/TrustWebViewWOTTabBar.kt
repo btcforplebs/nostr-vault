@@ -21,6 +21,8 @@ internal fun TrustWebViewWOTTabBar(
     layer: TrustMap.Layer,
     vouches: Map<String, Int>?,
     counts: Map<TrustMap.Layer, Int>,
+    /** Hops greyed out until a desktop Vault ranks them ([TrustWebHopLayers]). */
+    lockedHops: Set<TrustMap.Layer>,
     onLayer: (TrustMap.Layer) -> Unit,
     refreshState: RefreshState?,
     onRebuild: () -> Unit,
@@ -48,6 +50,7 @@ internal fun TrustWebViewWOTTabBar(
             layer = layer,
             layers = TrustMap.layers(vouches != null),
             counts = counts,
+            lockedHops = lockedHops,
             onLayer = onLayer,
             refreshing = refreshState != null,
             onRebuild = onRebuild,

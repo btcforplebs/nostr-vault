@@ -15,7 +15,7 @@ extension TrustWebView {
     }
 
     /// Pictures past your follows for the picked layer, most vouched first:
-    /// a few for Everyone, many for Close or Further out. Only pictures that
+    /// a few for Everyone (and the hops), many for Close. Only pictures that
     /// have loaded.
     var layerFaces: [String] {
         guard isWOTTab, frame?.center == me else { return [] }
@@ -24,7 +24,7 @@ extension TrustWebView {
             return TrustMap.pickFaces(filterCandidates, renders: pictureRenders,
                                       count: TrustGlobeCanvas.faces(TrustMap.layerFaceCount))
         }
-        guard let candidates = layerCandidates[layer] else { return [] }
+        guard let candidates = layerCandidates[layer.globeLayer] else { return [] }
         return TrustMap.pickFaces(candidates, renders: pictureRenders,
                                   count: TrustGlobeCanvas.faces(TrustMap.faceCount(for: layer)))
     }
@@ -167,7 +167,7 @@ extension TrustWebView {
     /// Fetches the picked layer's faces. Run on each pick, since the
     /// picture loader stops after a while and profiles can arrive late.
     func prepareLayerFaces() {
-        guard let candidates = layerCandidates[layer], !candidates.isEmpty else { return }
+        guard let candidates = layerCandidates[layer.globeLayer], !candidates.isEmpty else { return }
         nostrService.fetchMissingProfiles(for: candidates)
         layerPictureLoader?.cancel()
         layerPictureLoader = loadPictures(candidates)

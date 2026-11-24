@@ -310,15 +310,18 @@ enum TrustMap {
 
     /// The WOT tab's layer picker. Picking one shows only that part of your
     /// web, with its faces; switching never reloads the web.
+    /// Hop 3, 4 and 5 are the outer rings (`TrustMapOuter`): picking one
+    /// zooms the globe out to it (`GlobeRingZoom`) and the inner globe
+    /// shows Everyone, shrunk (Logen 2026-11-24: "Further out" is gone).
     enum Layer: String, CaseIterable {
-        case everyone, following, close, furtherOut
+        case everyone, following, close, hop3, hop4, hop5
 
         var title: String {
             switch self {
             case .everyone: "Everyone"
             case .following: "Following"
             case .close: "Vouched"
-            case .furtherOut: "Further out"
+            case .hop3, .hop4, .hop5: "Hop \(hop ?? 0)"
             }
         }
 
@@ -327,9 +330,24 @@ enum TrustMap {
             case .everyone: "circle.hexagongrid"
             case .following: "person.2.fill"
             case .close: "person.3.sequence.fill"
-            case .furtherOut: "circle.dashed"
+            case .hop3: "3.circle"
+            case .hop4: "4.circle"
+            case .hop5: "5.circle"
             }
         }
+
+        /// The outer ring this layer zooms out to; nil inside your circle.
+        var hop: Int? {
+            switch self {
+            case .hop3: 3
+            case .hop4: 4
+            case .hop5: 5
+            default: nil
+            }
+        }
+
+        /// What the inner globe lights: a hop shows Everyone, shrunk.
+        var globeLayer: Layer { hop == nil ? self : .everyone }
     }
 
     // MARK: Filters
@@ -414,18 +432,17 @@ enum TrustMap {
     /// a layer visibly empties the globe; the shell's stars are faint, so
     /// they are lit brighter when they are all that's left.
     static func layerWeights(_ layer: Layer) -> SIMD3<Double> {
-        switch layer {
-        case .everyone: SIMD3(1, 1, 1)
+        switch layer.globeLayer {
         case .following: SIMD3(1, 0, 0)
         case .close: SIMD3(0, 1.6, 0)
-        case .furtherOut: SIMD3(0, 0, 1.6)
+        default: SIMD3(1, 1, 1)
         }
     }
 
     /// People past your follows worth a profile fetch for a layer's faces.
     /// Many further out have no profile at all, so the pool is wide.
     static let layerFaceCandidateCount = 400
-    /// Faces on the outer shell when Close or Further out is picked; faces
+    /// Faces on the outer shell when Close is picked; faces
     /// that would cover another stay stars (`seatFaces`).
     static let layerFaceCount = 100
     /// With Everyone picked, smaller, dimmer faces past your follows, half on
@@ -436,17 +453,17 @@ enum TrustMap {
 
     /// Faces past your follows for `layer`; Following has none.
     static func faceCount(for layer: Layer) -> Int {
-        switch layer {
-        case .everyone: everyoneFaceCount
+        switch layer.globeLayer {
         case .following: 0
-        case .close, .furtherOut: layerFaceCount
+        case .close: layerFaceCount
+        default: everyoneFaceCount
         }
     }
 
     /// Profiles fetched for `layer`'s faces: a wide pool, since many people
     /// further out have no picture.
     static func faceCandidateCount(for layer: Layer) -> Int {
-        layer == .everyone ? everyoneFaceCount * 6 : layerFaceCandidateCount
+        layer.globeLayer == .everyone ? everyoneFaceCount * 6 : layerFaceCandidateCount
     }
 
     /// The people past your follows a layer shows as faces, most vouched
@@ -457,6 +474,7 @@ enum TrustMap {
     static func layerFaceCandidates(_ layer: Layer, me: String, follows: Set<String>, web: Set<String>,
                                     vouches: [String: Int]? = nil,
                                     count: Int = layerFaceCandidateCount) -> [String] {
+        let layer = layer.globeLayer
         guard layer != .following else { return [] }
         let people = layerPeople(layer, me: me, follows: follows, web: web, vouches: vouches).web
         let ranked = people.map { (vouches: vouches?[$0] ?? 0, rank: fraction($0, from: 16), key: $0) }
@@ -476,18 +494,14 @@ enum TrustMap {
 
     /// People in each layer, never counting you. `web` is the relay's whole
     /// graph, which also holds your follows. Without `vouches` there is no
-    /// Close, and Further out is everyone past your follows.
+    /// Close. The hops count their rings (`TrustMapOuter`), not this web.
     static func layerCounts(me: String, follows: Set<String>, web: Set<String>,
                             vouches: [String: Int]? = nil) -> [Layer: Int] {
         let following = follows.subtracting([me]).count
         let past = web.subtracting(follows).subtracting([me])
         var counts: [Layer: Int] = [.everyone: following + past.count, .following: following]
         if let vouches {
-            let close = past.filter { (vouches[$0] ?? 0) >= closeVouches }.count
-            counts[.close] = close
-            counts[.furtherOut] = past.count - close
-        } else {
-            counts[.furtherOut] = past.count
+            counts[.close] = past.filter { (vouches[$0] ?? 0) >= closeVouches }.count
         }
         return counts
     }
@@ -503,14 +517,13 @@ enum TrustMap {
                 return a != b ? a > b : $0 < $1
             }
         }
+        let layer = layer.globeLayer
         let following = layer == .everyone || layer == .following ? ranked(follows.subtracting([me])) : []
         var past = web.subtracting(follows).subtracting([me])
         switch layer {
-        case .everyone: break
         case .following: past = []
         case .close: past = past.filter { (vouches?[$0] ?? 0) >= closeVouches }
-        case .furtherOut:
-            if let vouches { past = past.filter { (vouches[$0] ?? 0) < closeVouches } }
+        default: break
         }
         return (following, ranked(past))
     }

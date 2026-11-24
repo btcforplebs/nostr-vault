@@ -20,6 +20,9 @@ struct TrustMapOuter: Equatable {
         let hop: Int
         /// The ring's top from the globe list, best first, at most `shownPeople`.
         let top: [String]
+        /// Each of `top`'s link one ring in (`TrustRankCopy.GlobePerson.via`):
+        /// the zoomed globe draws a line to them (`GlobeRingZoom`).
+        var via: [String: String] = [:]
         var id: Int { hop }
         var count: Int { top.count }
     }
@@ -45,6 +48,16 @@ struct TrustMapOuter: Equatable {
 
     var isFaint: Bool { source != .ranked }
 
+    /// A hop layer (Hop 3, 4, 5) is picked only once a desktop Vault's
+    /// ranking is on this device with that ring in it; until then the
+    /// picker greys it out, as the reason to run one (Logen 2026-11-24).
+    func unlocks(hop: Int) -> Bool {
+        source == .ranked && rings.contains { $0.hop == hop }
+    }
+
+    /// The line a greyed hop shows when tapped.
+    static let lockedLine = "A desktop Vault unlocks the far rings"
+
     static func make(copy: TrustRankCopy?, desktopPaired: Bool, hidden: Set<String> = []) -> TrustMapOuter {
         guard let copy else {
             let faint = faintHops.map { Ring(hop: $0, top: []) }
@@ -55,15 +68,18 @@ struct TrustMapOuter: Equatable {
         // The top leaves out anyone who shows 0 (haven-go `Globe`), so a
         // 0 row is always a link, even in a ring with under 300 scored.
         var byHop: [Int: [String]] = [:]
+        var via: [Int: [String: String]] = [:]
         var seen: [Int: Int] = [:]
         for key in copy.globeOrder {
             guard let person = copy.globe[key], rankedHops.contains(person.hop), person.score > 0 else { continue }
             let n = seen[person.hop, default: 0]
             guard n < shownPeople else { continue }
             seen[person.hop] = n + 1
-            if !hidden.contains(key) { byHop[person.hop, default: []].append(key) }
+            guard !hidden.contains(key) else { continue }
+            byHop[person.hop, default: []].append(key)
+            if !person.via.isEmpty, !hidden.contains(person.via) { via[person.hop, default: [:]][key] = person.via }
         }
-        let rings = byHop.keys.sorted().map { Ring(hop: $0, top: byHop[$0] ?? []) }
+        let rings = byHop.keys.sorted().map { Ring(hop: $0, top: byHop[$0] ?? [], via: via[$0] ?? [:]) }
         return TrustMapOuter(source: .ranked, rings: rings)
     }
 

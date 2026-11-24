@@ -26,7 +26,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BlurCircular
+import androidx.compose.material.icons.filled.Looks3
+import androidx.compose.material.icons.filled.Looks4
+import androidx.compose.material.icons.filled.Looks5
 import com.nostrvault.ui.screens.dashboard.IconFilterButton
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,8 +51,10 @@ internal val TrustMap.Layer.icon: ImageVector
         TrustMap.Layer.EVERYONE -> NostrVaultIcons.WebOfTrust
         TrustMap.Layer.FOLLOWING -> NostrVaultIcons.People
         TrustMap.Layer.CLOSE -> NostrVaultIcons.Groups
-        // iOS circle.dashed; Sparkles is the New filter's.
-        TrustMap.Layer.FURTHER_OUT -> Icons.Filled.BlurCircular
+        // iOS 3.circle, 4.circle, 5.circle.
+        TrustMap.Layer.HOP3 -> Icons.Filled.Looks3
+        TrustMap.Layer.HOP4 -> Icons.Filled.Looks4
+        TrustMap.Layer.HOP5 -> Icons.Filled.Looks5
     }
 
 /** 16K, 1.5K, 912: short enough that a menu row stays on one line (iOS compactName). */
@@ -70,6 +74,8 @@ internal fun WotTopBar(
     layer: TrustMap.Layer,
     layers: List<TrustMap.Layer>,
     counts: Map<TrustMap.Layer, Int>,
+    /** Hops greyed out until a desktop Vault ranks them. */
+    lockedHops: Set<TrustMap.Layer>,
     onLayer: (TrustMap.Layer) -> Unit,
     refreshing: Boolean,
     onRebuild: () -> Unit,
@@ -117,7 +123,9 @@ internal fun WotTopBar(
                 onDismiss = { expanded = false },
                 layers = layers,
                 current = layer,
-                counts = layers.associateWith { compactCount(counts[it] ?: 0) },
+                counts = layers.filter { it !in lockedHops && (it.hop == null || it in counts) }
+                    .associateWith { compactCount(counts[it] ?: 0) },
+                locked = lockedHops,
                 onPick = onLayer,
                 onList = onList,
                 refreshing = refreshing,

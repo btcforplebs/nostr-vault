@@ -55,6 +55,7 @@ final class TrustMapWiderWebTests: XCTestCase {
         XCTAssertNil(TrustMap.layerLit(.everyone, me: me, follows: follows, web: web, vouches: vouches))
         XCTAssertEqual(TrustMap.layerLit(.following, me: me, follows: follows, web: web, vouches: vouches), [key(1), key(2)])
         XCTAssertEqual(TrustMap.layerLit(.close, me: me, follows: follows, web: web, vouches: vouches), [key(3)])
-        XCTAssertEqual(TrustMap.layerLit(.furtherOut, me: me, follows: follows, web: web, vouches: vouches), [key(4)])
+        // A hop zooms your own globe out; on someone else's it lights no one out.
+        XCTAssertNil(TrustMap.layerLit(.hop3, me: me, follows: follows, web: web, vouches: vouches))
     }
 }

@@ -70,6 +70,8 @@ import com.nostrvault.ui.theme.SecondaryGroupedBg
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.WindowBackground
 import java.text.NumberFormat
+import com.nostrvault.data.model.TrustMapOuter
+import androidx.compose.material.icons.filled.Lock
 
 /** My Web's words, apart so they can be tested (iOS `MyWebDashboardView`). */
 internal object MyWebWords {
@@ -86,9 +88,7 @@ internal object MyWebWords {
         TrustMap.Layer.EVERYONE -> "Your whole web"
         TrustMap.Layer.FOLLOWING -> "People you follow"
         TrustMap.Layer.CLOSE -> "Followed by ${TrustMap.CLOSE_VOUCHES}+ people you follow"
-        TrustMap.Layer.FURTHER_OUT ->
-            if (hasVouches) "Followed by fewer than ${TrustMap.CLOSE_VOUCHES} people you follow"
-            else "Followed by people you follow"
+        TrustMap.Layer.HOP3, TrustMap.Layer.HOP4, TrustMap.Layer.HOP5 -> "The best of the ring ${layer.hop} hops out"
     }
 
     fun followsBackDetail(followsBack: Int?, follows: Int, checking: Boolean): String = when {
@@ -159,6 +159,8 @@ internal class MyWebNumbers(
     val rebuilding: Boolean,
     /** "3 hours ago", or null before the web was first saved. */
     val rebuiltAgo: String?,
+    /** Hops greyed out until a desktop Vault ranks them. */
+    val lockedHops: Set<TrustMap.Layer> = emptySet(),
 )
 
 /**
@@ -207,8 +209,12 @@ internal fun MyWebSheet(
                 DashSection(title = "Who you can see") {
                     TrustMap.layers(numbers.hasVouches).forEachIndexed { index, item ->
                         if (index > 0) DashDivider()
-                        CountRow(item.icon, item.title, MyWebWords.layerDetail(item, numbers.hasVouches),
-                            numbers.counts[item] ?: 0, selected = item == numbers.layer) { onLayer(item) }
+                        val isLocked = item in numbers.lockedHops
+                        Box(Modifier.alpha(if (isLocked) 0.45f else 1f)) {
+                            CountRow(if (isLocked) Icons.Filled.Lock else item.icon, item.title,
+                                if (isLocked) TrustMapOuter.LOCKED_LINE else MyWebWords.layerDetail(item, numbers.hasVouches),
+                                if (isLocked) null else numbers.counts[item] ?: 0, selected = item == numbers.layer) { onLayer(item) }
+                        }
                     }
                 }
                 DashSection(title = "With you") {

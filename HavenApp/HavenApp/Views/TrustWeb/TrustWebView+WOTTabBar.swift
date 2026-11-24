@@ -60,26 +60,40 @@ extension TrustWebView {
     #endif
 
     var layerCounts: [TrustMap.Layer: Int] {
-        TrustMap.layerCounts(me: me, follows: myFollows, web: web, vouches: vouches)
+        countsWithHops(TrustMap.layerCounts(me: me, follows: myFollows, web: web, vouches: vouches))
     }
 
     /// The feed picker's shape: the layer's icon, its name and a chevron, with
-    /// the rare Rebuild at the bottom after a divider.
+    /// the rare Rebuild at the bottom after a divider. Greyed hops sit
+    /// after the picker as buttons that say what unlocks them.
     private var layerMenu: some View {
         let counts = layerCounts
+        let items = TrustMap.layers(hasVouches: vouches != nil)
         return Menu {
-            Picker(selection: $layer) {
-                ForEach(TrustMap.layers(hasVouches: vouches != nil), id: \.self) { item in
+            Picker(selection: Binding(get: { layer }, set: { pickLayer($0) })) {
+                ForEach(items.filter { !isLocked($0) }, id: \.self) { item in
                     // Compact counts (15K) keep each row on one line; a menu
                     // row drops a second Text, so there's no subtitle.
-                    let count = (counts[item] ?? 0).formatted(.number.notation(.compactName))
-                    Label("\(item.title) · \(count)", systemImage: item.symbolName)
+                    let count = counts[item].map { " · " + $0.formatted(.number.notation(.compactName)) } ?? ""
+                    Label("\(item.title)\(count)", systemImage: item.symbolName)
                         .tag(item)
                 }
             } label: {
                 EmptyView()
             }
             .pickerStyle(.inline)
+
+            ForEach(items.filter { isLocked($0) }, id: \.self) { item in
+                // A menu row keeps its title white whatever the style, so the
+                // grey is in the lock and the subtitle; a disabled row would
+                // be greyer but could not say what unlocks it.
+                Button { pickLayer(item) } label: {
+                    Text(item.title)
+                    Text("Needs a desktop Vault")
+                    lockedIcon
+                }
+                .accessibilityHint(Text(TrustMapOuter.lockedLine))
+            }
 
             Divider()
 
@@ -113,6 +127,17 @@ extension TrustWebView {
         .accessibilityLabel("Showing: \(layer.title)")
         .accessibilityValue("\((counts[layer] ?? 0).formatted()) people")
         .accessibilityHint("Pick which part of your web to light up, or rebuild it")
+    }
+
+    /// A grey lock: menus tint SF Symbols with the accent unless the image
+    /// keeps its own colour.
+    private var lockedIcon: Image {
+        #if canImport(UIKit)
+        let lock = UIImage(systemName: "lock.fill")?.withTintColor(.systemGray, renderingMode: .alwaysOriginal)
+        return lock.map(Image.init(uiImage:)) ?? Image(systemName: "lock.fill")
+        #else
+        return Image(systemName: "lock.fill")
+        #endif
     }
 
     private func toggleSearch() {

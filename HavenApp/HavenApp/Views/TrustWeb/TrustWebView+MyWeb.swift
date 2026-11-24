@@ -94,10 +94,11 @@ extension TrustWebView {
             rebuiltAt: FeedService.shared.wotCacheStamp?.modified,
             rebuilding: refreshStep != nil,
             layer: layer,
+            locked: TrustMap.Layer.allCases.filter { isLocked($0) },
             filters: filters,
             onLayer: { picked in
                 jump(to: 0)
-                layer = picked
+                pickLayer(picked)
                 myWebOpen = false
             },
             onFilter: { filter in
@@ -135,6 +136,8 @@ struct MyWebDashboardView: View {
     let rebuiltAt: Date?
     let rebuilding: Bool
     let layer: TrustMap.Layer
+    /// Hops greyed out until a desktop Vault ranks them.
+    let locked: [TrustMap.Layer]
     let filters: Set<TrustMap.Filter>
     let onLayer: (TrustMap.Layer) -> Void
     let onFilter: (TrustMap.Filter) -> Void
@@ -169,8 +172,11 @@ struct MyWebDashboardView: View {
                 DashboardSection(title: "Who you can see") {
                     ForEach(Array(layers.enumerated()), id: \.element) { index, item in
                         if index > 0 { DashboardDivider() }
-                        countRow(icon: item.symbolName, title: item.title, detail: detail(for: item),
-                                 count: counts[item] ?? 0, selected: item == layer) { onLayer(item) }
+                        let isLocked = locked.contains(item)
+                        countRow(icon: isLocked ? "lock.fill" : item.symbolName, title: item.title,
+                                 detail: isLocked ? TrustMapOuter.lockedLine : detail(for: item),
+                                 count: isLocked ? nil : counts[item] ?? 0, selected: item == layer) { onLayer(item) }
+                            .opacity(isLocked ? 0.45 : 1)
                     }
                 }
                 DashboardSection(title: "With you") {
@@ -239,9 +245,7 @@ struct MyWebDashboardView: View {
         case .everyone: return "Your whole web"
         case .following: return "People you follow"
         case .close: return "Followed by \(TrustMap.closeVouches)+ people you follow"
-        case .furtherOut:
-            return hasVouches ? "Followed by fewer than \(TrustMap.closeVouches) people you follow"
-                              : "Followed by people you follow"
+        case .hop3, .hop4, .hop5: return "The best of the ring \(item.hop ?? 0) hops out"
         }
     }
 

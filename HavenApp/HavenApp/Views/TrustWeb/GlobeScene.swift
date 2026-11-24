@@ -329,12 +329,20 @@ final class GlobeScene: ObservableObject {
         wake()
     }
 
-    /// Lights one layer and hides the rest. Nothing is reloaded.
-    func focus(_ layer: TrustMap.Layer) {
+    /// Lights one layer and hides the rest. Nothing is reloaded. A hop
+    /// layer zooms out to its ring when `zoomsToRings` (your own globe).
+    func focus(_ layer: TrustMap.Layer, zoomsToRings: Bool = false) {
         weightTarget = TrustMap.layerWeights(layer)
         if reduceMotion { weights = weightTarget }
+        ringZoomTarget = zoomsToRings ? GlobeRingZoom.level(hop: layer.hop) : 0
+        if reduceMotion { ringZoom = ringZoomTarget }
         wake()
     }
+
+    /// How far the globe is zoomed out to an outer ring (`GlobeRingZoom`),
+    /// easing toward the picked hop's level.
+    private(set) var ringZoom = 0.0
+    private var ringZoomTarget = 0.0
 
     /// A finger on the globe or the spin it left: full rate. A busy sky: 60.
     private var wantedRate: GlobeArcs.FrameRate {
@@ -431,7 +439,13 @@ final class GlobeScene: ObservableObject {
                 self.syncArcKeys()
             }
         }
+        if ringZoom != ringZoomTarget {
+            // About a second each way, slowing into the ring.
+            ringZoom += (ringZoomTarget - ringZoom) * (1 - exp(-dt * 4.5))
+            if abs(ringZoomTarget - ringZoom) < 0.002 || reduceMotion { ringZoom = ringZoomTarget }
+        }
         let fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget || facesFading
+            || ringZoom != ringZoomTarget
         if weights != weightTarget {
             weights += (weightTarget - weights) * (1 - exp(-dt * 8))
             if simd_reduce_max(abs(weightTarget - weights)) < 0.005 { weights = weightTarget }
@@ -535,11 +549,16 @@ final class GlobeScene: ObservableObject {
     /// Zoomed in, plain stars can be tapped too.
     func hit(_ point: CGPoint, in size: CGSize) -> String? {
         let project = Projector(camera, size: size)
+        // Zoomed out to a ring, the globe is drawn shrunk round the middle.
+        let shrink = GlobeRingZoom.innerScale(ringZoom)
+        let point = CGPoint(x: size.width / 2 + (point.x - size.width / 2) / shrink,
+                            y: size.height / 2 + (point.y - size.height / 2) / shrink)
         var best: (key: String, distance: CGFloat)?
         func consider(_ i: Int, reach: CGFloat) {
             guard alpha[i] * min(1, weight(i)) > 0.5, let p = project(dirs[i] * radius[i]), p.depth > -0.15 else { return }
             let d = hypot(p.point.x - point.x, p.point.y - point.y)
-            if d < reach, d < (best?.distance ?? .infinity) { best = (keys[i], d) }
+            // Reach is a fingertip on screen, so it grows as the globe shrinks.
+            if d < reach / shrink, d < (best?.distance ?? .infinity) { best = (keys[i], d) }
         }
         for i in keys.indices where isFace[i] { consider(i, reach: 30) }
         if best == nil, camera.zoom >= Self.starTapZoom {
@@ -564,12 +583,31 @@ final class GlobeScene: ObservableObject {
     /// Brightness steps for the threads, front to back.
     private static let threadBands = 12
 
+    /// Draws the globe, shrunk round the middle and faded while zoomed out
+    /// to an outer ring (`GlobeRingZoom`).
     func draw(in context: inout GraphicsContext, size: CGSize, accent: Color, name: (String) -> String) {
+        let shrink = GlobeRingZoom.innerScale(ringZoom)
+        guard shrink < 0.999 else {
+            return drawGlobe(in: &context, size: size, shrink: 1, accent: accent, name: name)
+        }
+        var inner = context
+        inner.translateBy(x: size.width / 2, y: size.height / 2)
+        inner.scaleBy(x: shrink, y: shrink)
+        inner.translateBy(x: -size.width / 2, y: -size.height / 2)
+        inner.opacity *= GlobeRingZoom.innerAlpha(ringZoom)
+        drawGlobe(in: &inner, size: size, shrink: shrink, accent: accent, name: name)
+    }
+
+    private func drawGlobe(in context: inout GraphicsContext, size: CGSize, shrink: Double, accent: Color,
+                           name: (String) -> String) {
         guard hasLoaded, let centerIndex = index[center] else { return }
         let project = Projector(camera, size: size)
         let zoom = camera.zoom
         let k = min(1, min(size.width, size.height) / 620)
-        let view = CGRect(origin: .zero, size: size).insetBy(dx: -8, dy: -8)
+        // Shrunk, more of the globe fits: don't cull what now lands on screen.
+        let grow = (1 / shrink - 1) / 2
+        let view = CGRect(origin: .zero, size: size)
+            .insetBy(dx: -8 - size.width * grow, dy: -8 - size.height * grow)
         guard let core = project(dirs[centerIndex] * radius[centerIndex]) else { return }
         // The trust card's person, if any, takes the author's place.
         let author = traceTarget ?? self.author
