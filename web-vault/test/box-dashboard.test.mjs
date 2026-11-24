@@ -112,7 +112,10 @@ test("status, storage, mesh, My Devices and Update all show from the box", async
   assert.match(t, /\/data/)
   assert.match(t, /Connected/)
   assert.match(t, /Approved/)
-  assert.match(t, /add this box as a mobile vault \(Mobile vault · new posts\)/)
+  // The box's own paired set decides (P9b): Remove on each device, Add a device below the list.
+  assert.match(t, /Devices you pair here reach the box over the mesh/)
+  assert.ok(button(el, "Remove"))
+  assert.ok(button(el, "Add a device"))
   assert.ok(button(el, "Move vault to…"))
   render(null, el)
 })

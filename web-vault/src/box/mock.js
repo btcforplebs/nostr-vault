@@ -24,7 +24,27 @@ export function mockBox({ now = () => Date.now(), store } = {}) {
       ...(store && { update_via: store, move_off: true }),
     })
     if (method === "GET" && name === "storage") return answer(200, { path: state.path, used: state.used, free: state.total - state.used, total: state.total, ...(store && { move_off: true }) })
-    if (method === "GET" && name === "devices") return answer(200, { box: { npub: npub("z"), name: "Box" }, devices: state.devices })
+    if (method === "GET" && name === "devices") return answer(200, { box: { npub: npub("z"), name: "Box", approved: true }, devices: state.devices, paired: true })
+    if (method === "POST" && name === "devices/remove") {
+      const { npub: n } = JSON.parse(body ?? "{}")
+      if (!state.devices.some(d => d.npub === n)) return answer(404, { error: "that device is not paired with this box" })
+      state.devices = state.devices.filter(d => d.npub !== n)
+      return answer(200, { removed: n, devices: { box: { npub: npub("z") }, devices: state.devices, paired: true } })
+    }
+    // Two-scan pairing (api-devices.js): a code, then a pretend phone says hello on the next read, then linked.
+    const pairStatus = () => ({ state: state.pair?.state ?? "idle", box: { npub: npub("z") }, ...(state.pair ?? {}) })
+    if (method === "GET" && name === "pair") {
+      if (state.pair?.state === "waiting") state.pair = { ...state.pair, state: "hello", code: undefined, device: { npub: npub("w"), name: "Logen's iPhone", role: "phone" }, words: [172, 696, 1627, 1557], confirmText: "Add Logen's iPhone as another of your phones.", expiresAt: Math.floor(now() / 1000) + 180 }
+      return answer(200, pairStatus())
+    }
+    if (method === "POST" && name === "pair") { state.pair = { state: "waiting", code: `nvpair:v1?m=${npub("z")}&n=Nostr%20Vault%20box&r=homeVault&o=${npub("o")}&s=MfL-vrRY_QiUhuVK2cwvQQ`, startedAt: Math.floor(now() / 1000), expiresAt: Math.floor(now() / 1000) + 180 }; return answer(200, pairStatus()) }
+    if (method === "POST" && name === "pair/confirm") {
+      if (state.pair?.state !== "hello") return answer(409, { error: "no device is waiting to be added", pairing: pairStatus() })
+      state.devices.push({ ...state.pair.device, approved: true, pairedAt: Math.floor(now() / 1000) })
+      state.pair = { state: "linked", device: state.pair.device, acked: 2 }
+      return answer(200, pairStatus())
+    }
+    if (method === "POST" && name === "pair/cancel") { state.pair = null; return answer(200, pairStatus()) }
     if (method === "GET" && name === "contents") return answer(200, {
       vaultDir: state.path, measuredAt: Math.floor(now() / 1000), disk: { used: state.used, free: state.total - state.used, total: state.total },
       split: { database: 2.1 * GB, media: 14.2 * GB, other: 0.3 * GB },
