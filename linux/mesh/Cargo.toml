@@ -17,7 +17,8 @@ fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev
 serde_json = "1"
 # The box's own signature on a copy start (src/dial.rs), with its mesh key.
 # Same version fips already links, so no second nostr is built.
-nostr = { version = "=0.44.8", default-features = false, features = ["std"] }
+# nip44 for two-scan pairing (dial.rs pair_open / pair_ack): chacha20 is already linked by fips.
+nostr = { version = "=0.44.8", default-features = false, features = ["std", "nip44"] }
 base64 = "0.22"
 libc = "0.2"
 tracing = "0.1"

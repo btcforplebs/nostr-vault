@@ -18,6 +18,22 @@
 //!
 //! Both answer only for the owner's devices nv-mesh runs with (its current
 //! `mesh-devices.json` list): the box reaches *your* vaults, nobody else's.
+//!
+//! Two more ops serve two-scan pairing (docs/MESH_PAIRING_CONTRACT.md §3), where
+//! the other device is, by definition, not paired yet, so these two skip the
+//! device check. havend runs the session (haven-go internal/box/pairing_box.go);
+//! nv-mesh only does what needs the key:
+//!
+//! - `{"op":"pair_open","event":{…}}` → `{"ok":true,"sender":"<hex>","content":"…"}`:
+//!   one kind-21195 event to this box (`p` = the box's mesh pubkey), signature
+//!   checked, content NIP-44 decrypted between the two mesh keys. Nothing else
+//!   is decrypted: not another kind, not an event to someone else.
+//! - `{"op":"pair_ack","npub":"npub1…","content":"{\"v\":1,\"ack\":true,\"d\":\"<hex>\",\"w\":true}"}`
+//!   → `{"ok":true,"event":{…}}`: the ack sealed to that device and signed by
+//!   the box's mesh key, as a kind-21195 event with `p` = that device. The
+//!   content must be exactly an ack of the contract's shape (the box has no
+//!   camera, so always the check-words form, `w` true); anything else is refused,
+//!   so this op cannot get a hello, a DM or any other event signed.
 //! Only havend's uid and nv-mesh's own may use the socket. havend's uid is
 //! looked up by name ("nvvault", the .deb's and the .apk's, then "vault", the
 //! container's), never assumed: a package gives nvvault another uid when 10002
@@ -39,7 +55,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64::Engine as _;
-use nostr::{EventBuilder, Keys, Kind, Tag, TagKind, Timestamp};
+use nostr::nips::nip44;
+use nostr::{Event, EventBuilder, FromBech32, JsonUtil, Keys, Kind, PublicKey, Tag, TagKind, Timestamp};
 use serde_json::{Value, json};
 
 /// The socket's name in `mesh/`.
@@ -54,6 +71,10 @@ const MAX_REQUEST: u64 = 4096;
 const IO_TIMEOUT: Duration = Duration::from_secs(15);
 /// Asks served at once; more are turned away rather than queued.
 const MAX_IN_FLIGHT: usize = 4;
+/// Two-scan pairing's ephemeral event (docs/MESH_PAIRING_CONTRACT.md §3).
+const PAIR_KIND: u16 = 21195;
+/// A sealed hello is a few hundred bytes; anything bigger is not one.
+const MAX_PAIR_CONTENT: usize = 2048;
 
 /// How a vault is reached: `nvfips::ingress`, or a fake in tests.
 pub type Ingress = Box<dyn Fn(&str) -> Result<String, i32> + Send + Sync>;
@@ -215,6 +236,24 @@ impl Dialer {
             Ok(v) => v,
             Err(_) => return refuse("request is not JSON"),
         };
+        // Pairing talks to a device that is not paired yet: no device check.
+        match req.get("op").and_then(Value::as_str) {
+            Some("pair_open") => {
+                return match self.pair_open(req.get("event")) {
+                    Ok((sender, content)) => json!({"ok": true, "sender": sender, "content": content}),
+                    Err(e) => refuse(&e),
+                };
+            }
+            Some("pair_ack") => {
+                let npub = req.get("npub").and_then(Value::as_str).unwrap_or_default();
+                let content = req.get("content").and_then(Value::as_str).unwrap_or_default();
+                return match self.pair_ack(npub, content) {
+                    Ok(ev) => json!({"ok": true, "event": ev}),
+                    Err(e) => refuse(&e),
+                };
+            }
+            _ => {}
+        }
         let Some(npub) = req.get("npub").and_then(Value::as_str).map(str::trim) else {
             return refuse("no npub");
         };
@@ -259,6 +298,55 @@ impl Dialer {
             .map_err(|e| format!("signing: {e}"))?;
         Ok(base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&ev).map_err(|e| e.to_string())?))
     }
+
+/// A pairing hello or ack to this box: the event's signature checked, `p` =
+/// this box, then its content opened between the two mesh keys.
+    fn pair_open(&self, ev: Option<&Value>) -> Result<(String, String), String> {
+        let ev = ev.ok_or("no event")?;
+        let ev = Event::from_json(ev.to_string()).map_err(|_| "not a nostr event".to_string())?;
+        if ev.kind != Kind::from(PAIR_KIND) {
+            return Err("not a pairing event".into());
+        }
+        let me = self.keys.public_key();
+        let to: Vec<&PublicKey> = ev.tags.public_keys().collect();
+        if to.len() != 1 || *to[0] != me {
+            return Err("not addressed to this box".into());
+        }
+        ev.verify().map_err(|_| "bad signature".to_string())?;
+        if ev.content.len() > MAX_PAIR_CONTENT {
+            return Err("content too long".into());
+        }
+        let content = nip44::decrypt(self.keys.secret_key(), &ev.pubkey, &ev.content).map_err(|_| "does not decrypt".to_string())?;
+        Ok((ev.pubkey.to_hex(), content))
+    }
+
+    /// The check-words ack (contract §3) sealed to `npub` and signed by the
+    /// box's mesh key. Only that exact shape is sealed and signed.
+    fn pair_ack(&self, npub: &str, content: &str) -> Result<Value, String> {
+        let to = PublicKey::from_bech32(npub.trim()).map_err(|_| "not an npub".to_string())?;
+        if !is_words_ack(content) {
+            return Err("not a check-words ack".into());
+        }
+        let sealed = nip44::encrypt(self.keys.secret_key(), &to, content, nip44::Version::V2).map_err(|e| format!("sealing: {e}"))?;
+        let ev = EventBuilder::new(Kind::from(PAIR_KIND), sealed)
+            .tags([Tag::public_key(to)])
+            .custom_created_at(Timestamp::now())
+            .sign_with_keys(&self.keys)
+            .map_err(|e| format!("signing: {e}"))?;
+        serde_json::to_value(&ev).map_err(|e| e.to_string())
+    }
+}
+
+/// Exactly `{"v":1,"ack":true,"d":"<64 lower-case hex>","w":true}`: the ack a
+/// device with no camera sends (MESH_PAIRING_CONTRACT.md §3). Parsed, not
+/// compared as text, so key order is checked by the shape and the digest by
+/// its alphabet; nothing else may be in it.
+fn is_words_ack(content: &str) -> bool {
+    let Ok(Value::Object(o)) = serde_json::from_str::<Value>(content) else { return false };
+    if o.len() != 4 || o.get("v") != Some(&json!(1)) || o.get("ack") != Some(&json!(true)) || o.get("w") != Some(&json!(true)) {
+        return false;
+    }
+    matches!(o.get("d").and_then(Value::as_str), Some(d) if d.len() == 64 && d.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
 }
 
 /// `http://127.0.0.1:<port>/copy/v2/start` from an ingress base
@@ -382,6 +470,78 @@ mod tests {
         }
         // Nothing else gets signed.
         assert_eq!(d.answer(&json!({"op": "sign", "npub": mac, "event": {}}).to_string())["ok"], false);
+    }
+
+    /// A device's sealed kind-21195 to `to_hex`, as the phones send it.
+    fn sealed(from: &Keys, to: &PublicKey, content: &str, kind: u16) -> Value {
+        let sealed = nip44::encrypt(from.secret_key(), to, content, nip44::Version::V2).unwrap();
+        let ev = EventBuilder::new(Kind::from(kind), sealed).tags([Tag::public_key(*to)]).sign_with_keys(from).unwrap();
+        serde_json::to_value(&ev).unwrap()
+    }
+
+    const WORDS_ACK: &str = "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\",\"w\":true}";
+
+    #[test]
+    fn pair_open_decrypts_one_hello_to_this_box_and_nothing_else() {
+        let (d, box_npub) = dialer(vec![], 10002);
+        let me = PublicKey::from_bech32(&box_npub).unwrap();
+        let phone = Keys::generate();
+        let hello = "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}";
+        // The phone is not paired (an empty device list): pairing still opens.
+        let r = d.answer(&json!({"op": "pair_open", "event": sealed(&phone, &me, hello, 21195)}).to_string());
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(r["sender"], phone.public_key().to_hex());
+        assert_eq!(r["content"], hello);
+        // Another kind, an event to someone else, a broken signature, no event.
+        let other = Keys::generate();
+        for (name, ev) in [
+            ("kind", sealed(&phone, &me, hello, 1059)),
+            ("to someone else", sealed(&phone, &other.public_key(), hello, 21195)),
+            ("bad signature", {
+                let mut ev = sealed(&phone, &me, hello, 21195);
+                ev["content"] = Value::from(sealed(&phone, &me, "x", 21195)["content"].as_str().unwrap().to_owned());
+                ev
+            }),
+            ("not an event", json!({"kind": 21195})),
+        ] {
+            let r = d.answer(&json!({"op": "pair_open", "event": ev}).to_string());
+            assert_eq!(r["ok"], false, "{name}: {r}");
+        }
+        assert_eq!(d.answer(&json!({"op": "pair_open"}).to_string())["ok"], false);
+    }
+
+    #[test]
+    fn pair_ack_seals_and_signs_only_a_check_words_ack() {
+        let (d, box_npub) = dialer(vec![], 10002);
+        let phone = Keys::generate();
+        let phone_npub = nostr::ToBech32::to_bech32(&phone.public_key()).unwrap();
+        let r = d.answer(&json!({"op": "pair_ack", "npub": phone_npub, "content": WORDS_ACK}).to_string());
+        assert_eq!(r["ok"], true, "{r}");
+        let ev = Event::from_json(r["event"].to_string()).unwrap();
+        ev.verify().unwrap();
+        assert_eq!(ev.kind, Kind::from(21195u16));
+        assert_eq!(nostr::ToBech32::to_bech32(&ev.pubkey).unwrap(), box_npub, "signed by the box's mesh key");
+        let to: Vec<&PublicKey> = ev.tags.public_keys().collect();
+        assert_eq!(to, vec![&phone.public_key()]);
+        let opened = nip44::decrypt(phone.secret_key(), &ev.pubkey, &ev.content).unwrap();
+        assert_eq!(opened, WORDS_ACK, "the phone reads the ack byte for byte");
+        // Nothing but that shape: the scan form (no w), a hello, extra keys,
+        // an upper-case or short digest, a bad npub.
+        for (name, content) in [
+            ("scan form", "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}"),
+            ("a hello", "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"r\":\"phone\",\"o\":\"npub1x\",\"t\":1}"),
+            ("extra key", "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\",\"w\":true,\"x\":1}"),
+            ("upper case", "{\"v\":1,\"ack\":true,\"d\":\"16330BFCFF08BC831FB22950D3942D08FC108565D9E866BD226B505008FB37B7\",\"w\":true}"),
+            ("short", "{\"v\":1,\"ack\":true,\"d\":\"1633\",\"w\":true}"),
+            ("w false", "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\",\"w\":false}"),
+            ("not json", "ack"),
+        ] {
+            let r = d.answer(&json!({"op": "pair_ack", "npub": phone_npub, "content": content}).to_string());
+            assert_eq!(r["ok"], false, "{name}: {r}");
+        }
+        assert_eq!(d.answer(&json!({"op": "pair_ack", "npub": "npub1nope", "content": WORDS_ACK}).to_string())["ok"], false);
+        // The two old ops still need a paired device.
+        assert_eq!(d.answer(&json!({"op": "dial", "npub": phone_npub}).to_string())["ok"], false);
     }
 
     #[test]

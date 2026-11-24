@@ -78,6 +78,10 @@ type Config struct {
 	// DirectoryRelays are asked for the owner's server list (kind 10063)
 	// when the vault itself has none yet.
 	DirectoryRelays []string
+	// FinderRelays carry two-scan pairing hellos and acks (kind 21195):
+	// NV_MESH_RELAYS, the relays nv-mesh and the phones find each other on
+	// (linux/mesh/src/main.rs FINDER_RELAYS). Default: the same three.
+	FinderRelays []string
 }
 
 // DefaultDirectoryRelays are the relays the apps write the owner's 10063 to
@@ -87,6 +91,14 @@ var DefaultDirectoryRelays = []string{
 	"wss://relay.damus.io",
 	"wss://relay.btcforplebs.com",
 	"wss://purplepag.es",
+}
+
+// DefaultFinderRelays are nv-mesh's FINDER_RELAYS and the apps' finder relays
+// (MeshDevices.swift defaultFinderRelays, web my-devices.js FINDER_RELAYS).
+var DefaultFinderRelays = []string{
+	"wss://relay.nostr.net",
+	"wss://nostr.bitcoiner.social",
+	"wss://relay.btcforplebs.com",
 }
 
 // UpdateStores are the NV_UPDATE_VIA values: the stores that own updates.
@@ -178,6 +190,15 @@ func ConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 		for _, r := range strings.Split(v, ",") {
 			if r = strings.TrimSpace(r); r != "" {
 				c.DirectoryRelays = append(c.DirectoryRelays, r)
+			}
+		}
+	}
+	c.FinderRelays = DefaultFinderRelays
+	if v := strings.TrimSpace(getenv("NV_MESH_RELAYS")); v != "" {
+		c.FinderRelays = nil
+		for _, r := range strings.Split(v, ",") {
+			if r = strings.TrimSpace(r); r != "" {
+				c.FinderRelays = append(c.FinderRelays, r)
 			}
 		}
 	}

@@ -155,3 +155,32 @@ The role confirm, refusals and outcomes have one wording on every platform, pinn
 `roleConfirmText(role, name, setup)`, the refusal lines, "Already linked.", "This code has expired. Show a new one.",
 and the abort line. `setup: true` is the first-run "Already using Nostr Vault on another device?" path, which uses no
 mesh or role words. An empty name reads "this device".
+
+## 8. The box (Linux home vault)
+
+A box pairs the same way, always as **A** (Desktop Vaults plan §2.3, Tron N1, N4). Its code is shown in the box web UI,
+which is already signed in; a phone scans it and sends the hello. The box has no camera, so it can only finish on the
+check-words path (§5): the UI shows the 4 words, the device's name and the role confirm (§7), and one tap, "They match"
+and Add together, stores the device and sends the `w` ack. The phone then needs its own tap too, as §4 says.
+
+| Side | Code | Tests |
+|---|---|---|
+| havend (`haven-go/internal/box/`) | `pairing_code.go` (§1), `pairing.go` (§2, §3, §5), `pairing_session.go` (A, §4), `pairing_box.go` (the live flow), `routes_pairing.go` (`/api/box/pair`) | `pairing_test.go` reads the same fixtures: every parse, build, owner, role, builder, shower and check-words case. The joiner cases are the apps' alone: a box never scans. |
+| nv-mesh (`linux/mesh/src/dial.rs`) | `pair_open`, `pair_ack` on `dial.sock` | `cargo test` in `linux/mesh` |
+
+What stays where:
+- **The mesh key never leaves nv-mesh.** havend runs the session and holds no key. It asks nv-mesh, over `dial.sock`, to
+  check and open one kind-21195 event to the box (`pair_open`) and to seal and sign the ack (`pair_ack`). `pair_ack`
+  takes exactly `{"v":1,"ack":true,"d":"<64 hex>","w":true}` and nothing else, so the socket cannot get another event
+  signed. Neither op needs the other device to be paired: that is the point of pairing.
+- **The code names the box as `homeVault`**, with `o` the account signed in to the box UI (the one that asked for the
+  code). The hello's `o` is checked against every account signed in to the box: another one is `switchTo`, as on a
+  phone with several accounts.
+- **Confirm carries the role shown** (`{"role":"phone"}`), so a confirm never adds a device under another role than the
+  hello's. The stored entry keeps the hello's name and role and the account that confirmed it.
+- **Stored where:** the box's own paired set, `box/paired-devices.json`. It is seeded once from the devices the box
+  trusts today, only after a settled 10063 read and never from an empty result. Until the box UI ships pair and Remove
+  (P9b), `mesh-devices.json` keeps following the 10063s; after that the paired set alone decides who the mesh lets in.
+- **Relays:** the hello comes in and the ack goes out on the finder relays (`NV_MESH_RELAYS`, the same three nv-mesh
+  and the apps use).
+- **Nothing is published** but the ack, and no account key is used anywhere in this flow.

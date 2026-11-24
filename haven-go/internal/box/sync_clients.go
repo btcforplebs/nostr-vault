@@ -25,7 +25,7 @@ type MeshDial struct {
 	Timeout time.Duration
 }
 
-func (d MeshDial) ask(ctx context.Context, req map[string]string) (map[string]any, error) {
+func (d MeshDial) ask(ctx context.Context, req map[string]any) (map[string]any, error) {
 	timeout := d.Timeout
 	if timeout == 0 {
 		timeout = 20 * time.Second // nv-mesh waits up to 15 s on a dial
@@ -63,7 +63,7 @@ func (d MeshDial) ask(ctx context.Context, req map[string]string) (map[string]an
 // Dial: the loopback base that reaches npub's own-device port over the mesh.
 // It holds an ingress token: never log it.
 func (d MeshDial) Dial(ctx context.Context, npub string) (string, error) {
-	out, err := d.ask(ctx, map[string]string{"op": "dial", "npub": npub})
+	out, err := d.ask(ctx, map[string]any{"op": "dial", "npub": npub})
 	if err != nil {
 		return "", err
 	}
@@ -77,7 +77,7 @@ func (d MeshDial) Dial(ctx context.Context, npub string) (string, error) {
 // SignCopyStart: the start proof for a first copy from npub through base,
 // signed by the box's mesh key (base64 of a kind 27235).
 func (d MeshDial) SignCopyStart(ctx context.Context, npub, base string) (string, error) {
-	out, err := d.ask(ctx, map[string]string{"op": "sign_copy_start", "npub": npub, "base": base})
+	out, err := d.ask(ctx, map[string]any{"op": "sign_copy_start", "npub": npub, "base": base})
 	if err != nil {
 		return "", err
 	}
