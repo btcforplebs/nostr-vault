@@ -179,6 +179,8 @@ extension BlossomService {
             let host = item.url.host?.lowercased() ?? ""
             if host.isEmpty { continue }
             if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" { continue }
+            // An htree:// photo is encrypted on its server: Save to Vault decrypts it (saveHtree); Auto-Mirror doesn't yet.
+            if HtreeLink.isURI(item.url) { continue }
             candidates.append(item.url)
             if let tags = item.tags {
                 knownHashes.merge(AutoMirrorLedger.imetaHashes(tags)) { first, _ in first }

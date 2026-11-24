@@ -581,7 +581,7 @@ struct MediaFailedPlaceholder: View {
         let vault = MediaVaultLink.isVault(url)
         // A `blossom:` link names no server of its own: none of the ones
         // tried had it, which the line says plainly.
-        let blossom = BlossomURI.isURI(url)
+        let blossom = BlossomURI.isURI(url) || HtreeLink.isURI(url)
         VStack(spacing: 6) {
             Image(systemName: vault ? "externaldrive.badge.xmark" : "photo.badge.exclamationmark")
                 .font(.appSystem(size: compact ? 18 : 26))

@@ -143,6 +143,7 @@ extension MediaCacheService {
     func fetchData(url: URL, meshAuthor: String?, imetaSha256: String?,
                    onLookup: (@MainActor @Sendable () -> Void)? = nil) async -> (data: Data, cacheKey: URL)? {
         if BlossomURI.isURI(url) { return await fetchBlossomURI(url, author: meshAuthor).map { ($0, url) } }
+        if HtreeLink.isURI(url) { return await fetchHtree(url, author: meshAuthor).map { ($0, url) } }
         guard let author = meshAuthor,
               let plan = MeshMediaRouter.plan(url: url, imetaSha256: imetaSha256)
         else { return await fetchData(url: url).map { ($0, url) } }

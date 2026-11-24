@@ -53,8 +53,8 @@ enum NoteURLs {
         var result = text
         let ns = text as NSString
         let all = NSRange(location: 0, length: ns.length)
-        // BUD-10 `blossom:` links are media too, drawn from their hash.
-        let matches = ([cardRegex] + [BlossomURI.regex].compactMap { $0 })
+        // BUD-10 `blossom:` links and `htree://` photos are media too, drawn from their hash.
+        let matches = ([cardRegex] + [BlossomURI.regex, HtreeLink.regex].compactMap { $0 })
             .flatMap { $0.matches(in: text, range: all) }
             .sorted { $0.range.location > $1.range.location }
         for match in matches {

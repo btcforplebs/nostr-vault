@@ -150,6 +150,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         self.quotedEventIds = Self.parseQuotedEventIds(from: resolvedContent) + [highlightSource].compactMap { $0 }
         MediaHints.shared.register(tags: resolvedTags)
         BlossomURIFetcher.register(self.mediaURLs, author: resolvedPubkey)
+        HtreeFetcher.register(self.mediaURLs, author: resolvedPubkey)
     }
 
     var replyCount: Int {
