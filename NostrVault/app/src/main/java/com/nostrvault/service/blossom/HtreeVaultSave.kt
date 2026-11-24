@@ -3,6 +3,7 @@ package com.nostrvault.service
 import android.content.Context
 import com.nostrvault.data.model.HtreeLink
 import java.io.File
+import java.io.IOException
 
 /**
  * Save to Vault for an `htree://` photo: the decrypted photo goes into the
@@ -16,10 +17,24 @@ internal suspend fun BlossomService.saveHtreeToLocal(context: Context, url: Stri
     val sha = link.plainSha256
     if (localBlobFile(sha) != null) return sha
     val photo = HtreeLoader.file(context, url) ?: return null
-    val temp = File.createTempFile("htree-${sha.take(12)}-", ".blob", BlobStream.tempDir())
-    photo.copyTo(temp, overwrite = true)
+    var temp: File? = null
+    return try {
+        val copy = File.createTempFile("htree-${sha.take(12)}-", ".blob", BlobStream.tempDir()).also { temp = it }
+        photo.copyTo(copy, overwrite = true)
+        val mime = sniffImageFile(copy) ?: run { copy.delete(); return null }
+        if (storeStreamed(StreamedBlob(copy, sha, copy.length()), mime, null)) sha else null
+    } catch (e: IOException) {
+        // Disk full, or the cache was trimmed under us: no crash, no temp left behind.
+        temp?.delete()
+        null
+    }
+}
+
+/** The image type [file]'s first bytes say it is (never its name), or null. */
+internal fun sniffImageFile(file: File): String? = try {
     val head = ByteArray(16)
-    val n = temp.inputStream().use { it.read(head) }
-    val mime = HtreeLink.sniffImage(head.copyOf(maxOf(n, 0))) ?: run { temp.delete(); return null }
-    return if (storeStreamed(StreamedBlob(temp, sha, temp.length()), mime, null)) sha else null
+    val n = file.inputStream().use { it.read(head) }
+    HtreeLink.sniffImage(head.copyOf(maxOf(n, 0)))
+} catch (e: IOException) {
+    null
 }

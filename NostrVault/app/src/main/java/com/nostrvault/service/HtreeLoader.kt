@@ -12,6 +12,7 @@ import coil.request.Options
 import com.nostrvault.data.model.BlossomUri
 import com.nostrvault.data.model.HtreeLink
 import com.nostrvault.fips.MeshAuthor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -84,6 +85,11 @@ object HtreeLoader {
         if (running != null) return running.await()
         val result = try {
             download(link, noteAuthor ?: HtreeLink.noteAuthor(link.blobHash), path)
+        } catch (e: CancellationException) {
+            // The row went away: not a failure, so no 120 s hold, and the cancel goes on.
+            inFlight.remove(sha)
+            mine.complete(null)
+            throw e
         } catch (e: Exception) {
             null
         }

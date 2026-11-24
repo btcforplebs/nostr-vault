@@ -65,7 +65,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
             } else if (com.nostrvault.data.model.HtreeLink.isUri(url)) {
                 // An htree:// photo saves the decrypted, checked photo.
                 com.nostrvault.service.HtreeLoader.file(appContext, url)
-                    ?.let { mediaSaveService.saveToGallery(it, MediaSaveService.mimeTypeForExtension(url) ?: "image/jpeg") }
+                    ?.let { file -> com.nostrvault.service.sniffImageFile(file)?.let { mediaSaveService.saveToGallery(file, it) } }
                     ?: Result.failure(Exception("Media unavailable"))
             } else if (com.nostrvault.data.model.BlossomUri.isUri(url)) {
                 com.nostrvault.service.BlossomUriLoader.file(appContext, url)
@@ -137,8 +137,11 @@ class FeedMediaMirrorViewModel @Inject constructor(
                 } else blossomService.mirrorUrlToLocal(url)
                 if (sha == null) return@withContext null
                 val servers = if (!hasServers) MirrorOutcome.OnPhoneOnly else MirrorOutcome.of(blossomService.pushToMissing(sha))
-                val type = MediaSaveService.mimeTypeForExtension(url) ?: "application/octet-stream"
-                val mesh = blossomService.mirrorToMesh(sha, type, mediaCacheService.blossomFile(forHash = sha))
+                val stored = mediaCacheService.blossomFile(forHash = sha)
+                // An htree link often has no name: its type comes from the photo's own bytes.
+                val sniffed = if (com.nostrvault.data.model.HtreeLink.isUri(url)) stored?.let { com.nostrvault.service.sniffImageFile(it) } else null
+                val type = sniffed ?: MediaSaveService.mimeTypeForExtension(url) ?: "application/octet-stream"
+                val mesh = blossomService.mirrorToMesh(sha, type, stored)
                 MirrorReport(servers, mesh.map { MeshDeviceLine(deviceName(it.npub, it.role), it.outcome) })
             }
             if (openUrl != null && openUrl != url) return@launch
@@ -244,6 +247,8 @@ class FeedMediaMirrorViewModel @Inject constructor(
 
     /** Extract a 64-hex sha256 from a Blossom-style URL, or null. Mirrors iOS extractSHA256FromURL(). */
     private fun extractSha256(url: String): String? {
+        // Delete stays off htree:// photos: a 64-hex name in the link is not a blob of yours.
+        if (com.nostrvault.data.model.HtreeLink.isUri(url)) return null
         val last = url.substringAfterLast('/').substringBefore('?').substringBefore('#')
         val bare = last.substringBeforeLast('.')
         if (bare.length == 64 && bare.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
