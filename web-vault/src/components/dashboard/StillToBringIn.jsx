@@ -25,7 +25,12 @@ export function useImportJobs(ctx) {
 }
 
 export function StillToBringIn({ ctx }) {
-  const { file, here, busy, note, press } = useImportJobs(ctx)
+  return <StillToBringInView {...useImportJobs(ctx)} />
+}
+
+/** The card itself, from the jobs file and the job running here: the browser's (useImportJobs) or a box's
+ *  (box/BoxStillToBringIn.jsx). */
+export function StillToBringInView({ file, here, busy, note, press }) {
   return (
     <Section title="Still to bring in">
       {file.jobs.filter(j => LONG_JOBS.includes(j.name)).map(j => {

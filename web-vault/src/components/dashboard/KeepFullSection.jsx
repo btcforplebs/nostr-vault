@@ -14,13 +14,16 @@ export const HISTORY_DEFAULT_ON = true
 /** Why the phone's Import media isn't here (parity #30): said on the page, not only in this file. */
 export const IMPORT_MEDIA_NOTE = "Import media isn't on the web yet: this browser's vault can't take files from your media servers. Back up media saves them to a file instead."
 
+/** `box`: box mode. Import notes is the box's own import (`importing` and `importDetail` come from it), and the
+ *  browser-only rows (Back up media from this browser's vault, Restore from a file into it) give way to Backups on your
+ *  box (box/BoxBackupSection.jsx). */
 export function KeepFullSection({ startDate, history = {}, importing, mediaBusy, exportBusy, status, onImport, onMedia, onExport,
-  historyRelays = HISTORY_DEFAULT_ON, onHistoryRelays, onSkip }) {
+  historyRelays = HISTORY_DEFAULT_ON, onHistoryRelays, onSkip, box = false, importDetail }) {
   const busy = !!importing || mediaBusy || exportBusy
   return (
     <Section title="Keep it full">
       <Row icon="down" title="Import notes" progress={importing ? importing.progress : undefined}
-        detail={importing ? importing.text : `Since ${monthYear(startDate)}. ${history.notesImport ? `Last ran ${relative(history.notesImport)}.` : "Never ran."}`}>
+        detail={importing ? importing.text : importDetail ?? `Since ${monthYear(startDate)}. ${history.notesImport ? `Last ran ${relative(history.notesImport)}.` : "Never ran."}`}>
         {importing?.skippable && onSkip
           ? <button type="button" class="dash-button small" onClick={onSkip}>Skip</button>
           : <RowButton title="Import" busy={!!importing} disabled={busy} onClick={onImport} />}
@@ -35,16 +38,16 @@ export function KeepFullSection({ startDate, history = {}, importing, mediaBusy,
           </span>
         </label>
       )}
-      <Row icon="stack" title="Back up media" detail={history.mediaBackup ? `Last made ${relative(history.mediaBackup)}.` : "Never made."}>
+      {!box && <Row icon="stack" title="Back up media" detail={history.mediaBackup ? `Last made ${relative(history.mediaBackup)}.` : "Never made."}>
         <RowButton title="Back up" busy={mediaBusy} disabled={busy} onClick={onMedia} />
-      </Row>
+      </Row>}
       <Row icon="up" title="Export notes" detail={history.notesBackup ? `Last made ${relative(history.notesBackup)}.` : "Never made."}>
         <RowButton title="Export" busy={exportBusy} disabled={busy} onClick={onExport} />
       </Row>
       {/* The backup zip left setup (Logen 2026-11-05): restored from here, as the apps' Keep it full does. */}
-      <SettingRow icon="zip" title="Restore from a backup" href="#/settings/backup" />
+      {!box && <SettingRow icon="zip" title="Restore from a backup" href="#/settings/backup" />}
       {status && <div class={`dash-row dash-note${status.error ? " error" : ""}`} role="status">{status.text}</div>}
-      <div class="dash-row dash-note small muted">{IMPORT_MEDIA_NOTE}</div>
+      {!box && <div class="dash-row dash-note small muted">{IMPORT_MEDIA_NOTE}</div>}
     </Section>
   )
 }

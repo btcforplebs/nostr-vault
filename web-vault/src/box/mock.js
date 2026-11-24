@@ -37,6 +37,30 @@ export function mockBox({ now = () => Date.now(), store } = {}) {
       { seq: 2, at: Math.floor(now() / 1000) - 300, source: "engine", text: "import: retrying relay.example in 30s" },
       { seq: 3, at: Math.floor(now() / 1000) - 60, source: "engine", text: "blossom: upload failed: disk full" },
     ] })
+    // Jobs (api-jobs.js): imports, trust, block list, backups, restart. A job finishes on the next read.
+    const job = (kind, jobName) => { state.job = { kind, name: jobName, phase: "stopping", startedAt: Math.floor(now() / 1000) }; return answer(202, state.job) }
+    if (method === "GET" && name === "imports") return answer(200, { account: "a".repeat(64), jobs: state.jobs ??= [{ name: "setup", status: "done", stored: 120, unread: [] }, { name: "replies", status: "partial", stored: 40, unread: [{ relay: "wss://relay.example", from: "2025-01-01", to: "2025-02-01", why: "timeout" }] }] })
+    if (method === "POST" && (name === "imports/run" || name === "imports/cancel")) {
+      const { job: j } = JSON.parse(body ?? "{}")
+      const running = state.jobs?.find(x => x.status === "running")
+      if (name === "imports/run" && running) return answer(200, { asked: true, answered: true, code: 2, message: "Another job is running; try again when it ends." })
+      state.jobs = (state.jobs ?? []).filter(x => x.name !== j).concat({ name: j, status: name === "imports/run" ? "running" : "cancelled", stored: 0, unread: [] })
+      return answer(200, { asked: true, answered: true, code: 0, message: name === "imports/run" ? "Started." : "Stopping." })
+    }
+    if (method === "POST" && name === "trust/refresh") return answer(200, { asked: true, answered: true, code: 0, message: "Rebuilding who can reach you." })
+    if (method === "GET" && name === "trust") return answer(200, { trust: { running: false, size: 5120 }, last: { seq: 1, code: 0 } })
+    if (method === "GET" && name === "blocklist") return answer(200, { npubs: state.blocklist ??= [] })
+    if (method === "POST" && name === "blocklist") { state.blocklist = JSON.parse(body ?? "{}").npubs; return answer(200, { npubs: state.blocklist, blocked: state.blocklist.length, answered: true }) }
+    if (method === "GET" && name === "backups") {
+      if (state.job && state.job.phase !== "done" && state.job.phase !== "failed") {
+        state.job = { ...state.job, phase: "done", finishedAt: Math.floor(now() / 1000) }
+        if (state.job.kind === "backup") (state.backups ??= []).unshift({ name: state.job.name, size: 2_400_000, createdAt: state.job.finishedAt })
+      }
+      return answer(200, { backups: state.backups ??= [{ name: "vault-20261120-030000.zip", size: 2_100_000, createdAt: Math.floor(now() / 1000) - 86400 }], job: state.job ?? null })
+    }
+    if (method === "POST" && name === "backups/now") return job("backup", `vault-${new Date(now()).toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15)}.zip`)
+    if (method === "POST" && name === "backups/restore") return job("restore", JSON.parse(body ?? "{}").name)
+    if (method === "POST" && name === "restart") return job("restart")
     if (method === "POST" && name === "update") return answer(200, store ? { started: false, managed: true, via: store, from: state.version } : { started: false, manual: true, via: "manual", from: state.version })
     if (method === "POST" && name === "move") {
       if (store) return answer(403, { error: "moving the vault is off on this box: its store manages the disk" })
