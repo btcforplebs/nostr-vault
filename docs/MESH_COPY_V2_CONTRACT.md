@@ -436,7 +436,9 @@ The app calls the engine when a linked device comes into reach. The engine then:
    - A box (`havend`) serves its result like a Mac (Desktop Vaults P12, Logen 2026-11-24). Its engine ranks the
      accounts havend writes into `copy-accounts.json` (the first account and each signed-in one, never a watch-only
      one) and answers only devices in the paired set havend writes (`HAVEN_MESH_DEVICES_FILE`, P9); a device taken
-     out by Remove has a dead token at once, and after a restart. A box has no app to send the rank nudge, so a
+     out by Remove has a dead token within the engine's 5 s re-read, and after a restart. Known gap (Tron, PR 2520,
+     older than P12): while havend cannot read nv-mesh's npub it writes no `self`, and the token check skips the
+     paired set then, so any unexpired token is still let in until the npub is readable. A box has no app to send the rank nudge, so a
      phone takes a box's new result at its hourly check or its next catch-up.
    - It never fails or delays the catch-up's mark: a 404 or a refused copy just leaves the device without one.
    - The `204` is answered from the start of the Haven's file (account and builtAt), without reading the rows.

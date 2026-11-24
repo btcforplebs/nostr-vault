@@ -47,11 +47,34 @@ func TestBoxHandsItsTrustRankToThePairedSetOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// havend's paired-set file, read the way the engine reads it.
+	// havend's paired-set file, written by havend's own writer (P9
+	// EngineDevices.Sync) from nv-mesh's npub and mesh-devices.json, and
+	// read the way the engine reads it.
 	pairMeshDevices(t, vaultKey) // a fresh set, restored after the test
-	devices := filepath.Join(t.TempDir(), "engine-mesh-devices.json")
-	if err := os.WriteFile(devices, []byte(meshSetJSON(t, vaultKey, phone)), 0o600); err != nil {
+	meshDir := t.TempDir()
+	npubFile := filepath.Join(meshDir, "npub")
+	if err := os.WriteFile(npubFile, []byte(npubOf(t, vaultKey.pk)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	meshList := filepath.Join(meshDir, "mesh-devices.json")
+	writeList := func(keys ...testKey) {
+		t.Helper()
+		body := "["
+		for i, k := range keys {
+			if i > 0 {
+				body += ","
+			}
+			body += `{"npub":"` + npubOf(t, k.pk) + `"}`
+		}
+		if err := os.WriteFile(meshList, []byte(body+"]\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	devices := filepath.Join(t.TempDir(), "engine-mesh-devices.json")
+	writer := &box.EngineDevices{Mesh: box.MeshID{NpubFile: npubFile}, From: meshList, To: devices}
+	writeList(vaultKey, phone) // nv-mesh's list names the box too; havend drops it
+	if changed, err := writer.Sync(); err != nil || !changed {
+		t.Fatalf("havend did not write the paired set: changed %v, %v", changed, err)
 	}
 	(&meshDevicesFile{path: devices}).load()
 	if !meshDevices.paired(phone.pk) {
@@ -82,8 +105,9 @@ func TestBoxHandsItsTrustRankToThePairedSetOnly(t *testing.T) {
 
 	// Remove in the box UI rewrites the file without the phone: its token
 	// is refused at once, and still after an engine restart.
-	if err := os.WriteFile(devices, []byte(meshSetJSON(t, vaultKey)), 0o600); err != nil {
-		t.Fatal(err)
+	writeList(vaultKey)
+	if changed, err := writer.Sync(); err != nil || !changed {
+		t.Fatalf("havend did not rewrite the paired set: changed %v, %v", changed, err)
 	}
 	(&meshDevicesFile{path: devices}).load()
 	if resp := trustGet(t, ts.URL, "?account="+owner.pk, token); resp.StatusCode != http.StatusUnauthorized {
