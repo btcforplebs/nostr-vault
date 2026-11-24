@@ -139,6 +139,10 @@ data class HavenConfig(
 
     // Haven Relay (wss:// URL to a remote Haven relay to sync missed notes)
     val macRelayURL: String = "",
+    /** The desktop Vaults (plan §2.1) and the slot value they last took in; see HavenConfigDesktopVaults.kt. */
+    @kotlinx.serialization.Serializable(with = LossyDesktopVaultList::class)
+    val desktopVaults: List<DesktopVault> = emptyList(),
+    val desktopVaultsSlot: String? = null,
 
     // FIPS mesh. The preference only; the identity itself is a private key and
     // lives in CredentialStore, not in this file, which is plaintext JSON.
@@ -529,33 +533,16 @@ data class HavenConfig(
     val activeInboxRelays: List<String>
         get() = inboxRelays ?: DEFAULT_READ_RELAYS
 
-    /** Active feed relays, including the Haven relay if configured. */
+    /** Active feed relays, with every HTTPS desktop Vault first. */
     val activeFeedRelays: List<String>
-        get() {
-            val relays = (feedRelays ?: activeInboxRelays).toMutableList()
-            val macWss = macRelayWssURL
-            if (macWss.isNotEmpty() && macWss !in relays) {
-                relays.add(0, macWss)
-            }
-            return relays
-        }
+        get() = DesktopVaultsRules.withVaultsFirst(feedRelays ?: activeInboxRelays, desktopVaultWssURLs)
 
-    /** Active blastr relays, including the Haven relay if configured. */
+    /** Active blastr relays, with every HTTPS desktop Vault first. */
     val activeBlastrRelays: List<String>
-        get() {
-            val relays = blastrRelays.ifEmpty {
-                listOf(
-                    "wss://relay.btcforplebs.com",
-                    "wss://relay.damus.io",
-                    "wss://relay.snort.social",
-                )
-            }.toMutableList()
-            val macWss = macRelayWssURL
-            if (macWss.isNotEmpty() && macWss !in relays) {
-                relays.add(0, macWss)
-            }
-            return relays
-        }
+        get() = DesktopVaultsRules.withVaultsFirst(
+            blastrRelays.ifEmpty { listOf("wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social") },
+            desktopVaultWssURLs,
+        )
 
     /**
      * The relays features read other people's events from: the feed relays
@@ -588,27 +575,13 @@ data class HavenConfig(
     val vaultSeedRelays: List<String>
         get() = VaultSeedRelays.vaultSeeds(feedRelays ?: activeInboxRelays, blastrRelays, importSeedRelays)
 
-    /** Active import seed relays, including the Haven relay if configured. */
+    /** Active import seed relays, with every HTTPS desktop Vault first. */
     val activeImportSeedRelays: List<String>
-        get() {
-            val relays = vaultSeedRelays.toMutableList()
-            val macWss = macRelayWssURL
-            if (macWss.isNotEmpty() && macWss !in relays) {
-                relays.add(0, macWss)
-            }
-            return relays
-        }
+        get() = DesktopVaultsRules.withVaultsFirst(vaultSeedRelays, desktopVaultWssURLs)
 
-    /** Active blossom mirror servers, including the Haven relay if configured. */
+    /** Active blossom mirror servers, with every HTTPS desktop Vault first. */
     val activeBlossomMirrors: List<String>
-        get() {
-            val mirrors = blossomMirrors.mapNotNull { blossomUploadServer(it) }.distinct().toMutableList()
-            val macHttps = macRelayHttpsURL
-            if (macHttps.isNotEmpty() && macHttps !in mirrors) {
-                mirrors.add(0, macHttps)
-            }
-            return mirrors
-        }
+        get() = DesktopVaultsRules.withVaultsFirst(blossomMirrors.mapNotNull { blossomUploadServer(it) }.distinct(), desktopVaultHttpsURLs)
 
     /**
      * Where a blob delete goes: the home vault (when [includeHomeVault]), the
@@ -624,7 +597,7 @@ data class HavenConfig(
      * [BlossomService.deleteFromLocal] deletes from, so its host is not added.
      *
      * "Delete from mirrors" never targets the owner's own vaults, under any
-     * name: the configured Mac, and every server only a home network can reach
+     * name: every HTTPS desktop Vault, and every server only a home network can reach
      * (LAN and Tailscale addresses, `.local`, loopback). A plain-http public host is
      * a mirror asked over https, as on iOS ([httpsForPublicHost]). The 10063
      * keeps other devices' entries, so a Mac this phone knows by another name
@@ -634,18 +607,19 @@ data class HavenConfig(
      * asks each server who runs it before deleting.
      */
     fun blossomDeleteTargets(published: List<String>, photoUrl: String?, includeHomeVault: Boolean): List<String> {
-        val home = macRelayHttpsURL
+        // The slot is kept a home too until P7 retires it, so a lost Vault list can never send a delete to the owner's Mac (Tron M1, #2500).
+        val homes = (desktopVaultHttpsURLs + macRelayHttpsURL).filter(String::isNotEmpty).distinct()
         // The same address typed with its default port is the same server.
         fun key(origin: String) = serverKey(origin).removeSuffix(if (origin.startsWith("https")) ":443" else ":80")
-        val homeKey = blossomOrigin(home)?.let(::key)
-        val candidates = listOf(home) +
+        val homeKeys = homes.mapNotNull { blossomOrigin(it)?.let(::key) }.toSet()
+        val candidates = homes +
             (blossomMirrors + published).mapNotNull { blossomUploadServer(it) } +
             listOfNotNull(photoUrl?.let(::blossomOrigin)?.takeUnless(::isLoopbackServer))
         val seen = mutableSetOf<String>()
         return candidates.mapNotNull { it.trim().takeIf(String::isNotEmpty)?.let(::httpsForPublicHost) }.filter { server ->
             val origin = blossomOrigin(server) ?: return@filter false
             if (com.nostrvault.fips.FipsHostGuard.isFipsHost(java.net.URI(origin).host)) return@filter false
-            if (!includeHomeVault && (key(origin) == homeKey || !com.nostrvault.fips.HomeVaultRules.isPublicServer(origin))) {
+            if (!includeHomeVault && (key(origin) in homeKeys || !com.nostrvault.fips.HomeVaultRules.isPublicServer(origin))) {
                 return@filter false
             }
             seen.add(serverKey(server))
