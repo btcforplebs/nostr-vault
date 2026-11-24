@@ -48,6 +48,14 @@ extension HavenConfig {
     /// Every HTTPS Vault's `https://host`, in list order (Blossom mirrors).
     var desktopVaultHttpsURLs: [String] { DesktopVaultsLogic.httpsURLs(desktopVaultsInEffect) }
 
+    /// The media servers adoption of a published 10063 never copies into
+    /// `blossomMirrors`: every HTTPS Vault's host (its switch's entry, not an
+    /// ordinary mirror) and the old slot's (Tron must-fix 1 on #2516).
+    var vaultMediaServers: [String] {
+        var seen = Set<String>()
+        return (desktopVaultHttpsURLs + [macRelayHttpsURL]).filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
     /// The mesh npubs of the Vaults reachable over FIPS, in list order
     /// (DesktopVaultsLogic.meshNpubs): what the relay dials and where
     /// publish-for-me and mesh media go. Replaces `macRelayMeshNpub` (P3).
@@ -76,6 +84,15 @@ extension HavenConfig {
         let next = DesktopVaultsEditing.deleting(id, from: desktopVaultsInEffect, removed: desktopVaultsRemoved)
         desktopVaultsRemoved = next.removed
         desktopVaults = next.vaults
+    }
+
+    /// After a Delete that took the Vault out of the lists: its host leaves
+    /// `blossomMirrors` too, or uploads keep going to the deleted Vault and the
+    /// next Media Servers Save lists it again (Tron must-fix 1 on #2516).
+    mutating func dropMirrors(onHost host: String?) {
+        guard let host, !host.isEmpty else { return }
+        let kept = blossomMirrors.filter { DesktopVaultsLists.hostKey($0) != host }
+        if kept.count != blossomMirrors.count { blossomMirrors = kept }
     }
 
     /// Stores a new order (after a drag) or a rename.
