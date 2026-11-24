@@ -108,6 +108,11 @@ func (d *Devices) read(ctx context.Context, get func(context.Context, string) (*
 	}
 	npub, pubkey, _ := d.Mesh.Read()
 	r := buildAccountsReport(npub, pubkey, now, d.lists)
+	// What the file held before this read: the seed (below) takes it too.
+	var before []string
+	if d.Paired != nil && d.DevicesFile != "" {
+		before = readMeshDevicesList(d.DevicesFile)
+	}
 	// With no list known the file is left as it was (an outage must not
 	// drop every device), unless this read just forgot an account: then the
 	// lists left, even none, are the whole truth, and the removed account's
@@ -122,6 +127,7 @@ func (d *Devices) read(ctx context.Context, get func(context.Context, string) (*
 			log.Printf("box: mesh devices now %d (from %d account lists)", len(devices), len(d.lists))
 		}
 	}
+	d.seedPaired(r, len(d.lists) > 0, before)
 	return r
 }
 

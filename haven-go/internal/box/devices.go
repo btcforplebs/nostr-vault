@@ -273,6 +273,9 @@ type Devices struct {
 	TTL      time.Duration
 	// DevicesFile is mesh-devices.json (NV_MESH_DEVICES). Empty: not written.
 	DevicesFile string
+	// Paired is the box's own paired set, seeded once from a settled read
+	// (devices_seed.go). Nil: no seed.
+	Paired *PairedSet
 
 	mu     sync.Mutex
 	cached *DevicesReport
