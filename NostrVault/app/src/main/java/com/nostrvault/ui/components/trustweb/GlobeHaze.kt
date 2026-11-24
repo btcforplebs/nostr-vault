@@ -29,8 +29,16 @@ internal object GlobeHaze {
 
     private class Built(val keys: List<String>, val points: FloatArray)
 
-    /** One per hop; the canvas draws on the main thread only. */
-    private val built = HashMap<Int, Built>()
+    /**
+     * Which cache slot a ring uses: its hop plus its haze's first key and size,
+     * so two globes on the same hop with different accounts each keep their own
+     * points instead of rebuilding every frame (iOS `GlobeHaze.Slot`).
+     */
+    private data class Slot(val hop: Int, val first: String, val count: Int)
+
+    /** A handful of slots at most; the canvas draws on the main thread only. */
+    private val built = HashMap<Slot, Built>()
+    private const val MAX_SLOTS = 8
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
 
     /**
@@ -60,10 +68,19 @@ internal object GlobeHaze {
     }
 
     private fun points(ring: TrustMapOuter.Ring): FloatArray {
-        // A ring's keys come from one TrustMapOuter, so this is a reference check first.
-        built[ring.hop]?.let { if (it.keys === ring.haze || it.keys == ring.haze) return it.points }
+        val slot = Slot(ring.hop, ring.haze[0], ring.haze.size)
+        built[slot]?.let { b ->
+            if (b.keys === ring.haze) return b.points
+            if (b.keys == ring.haze) {
+                // A rebuilt outer copy with the same keys is a new list: keep that
+                // list so later frames take the identity fast path.
+                built[slot] = Built(ring.haze, b.points)
+                return b.points
+            }
+        }
         val b = Built(ring.haze, GlobeHazeField.positions(ring.haze))
-        built[ring.hop] = b
+        if (built.size >= MAX_SLOTS) built.clear()
+        built[slot] = b
         return b.points
     }
 }
