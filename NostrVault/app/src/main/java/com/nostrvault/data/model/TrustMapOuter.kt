@@ -31,6 +31,11 @@ data class TrustMapOuter(
         val top: List<String>,
         /** Each of [top]'s link one ring in: the zoomed globe draws a line to them ([GlobeRingZoom]). */
         val via: Map<String, String> = emptyMap(),
+        /**
+         * The people ranked after [top], best first ([TrustRankCopy.haze]): the
+         * zoomed-out ring's faint, untappable dots ([com.nostrvault.ui.components.GlobeHaze]).
+         */
+        val haze: List<String> = emptyList(),
     ) {
         val count: Int get() = top.size
     }
@@ -81,7 +86,12 @@ data class TrustMapOuter(
                 byHop.getOrPut(row.hop) { mutableListOf() }.add(row.pubkey)
                 if (row.via.isNotEmpty() && row.via !in hidden) via.getOrPut(row.hop) { mutableMapOf() }[row.pubkey] = row.via
             }
-            return TrustMapOuter(Source.RANKED, byHop.keys.sorted().map { Ring(it, byHop.getValue(it), via[it].orEmpty()) })
+            return TrustMapOuter(Source.RANKED, byHop.keys.sorted().map { hop ->
+                val top = byHop.getValue(hop)
+                val inTop = top.toHashSet()
+                val haze = copy.haze[hop].orEmpty().filter { it !in hidden && it !in inTop }
+                Ring(hop, top, via[hop].orEmpty(), haze)
+            })
         }
 
         /** How strongly a ring and its dots are drawn: hop 3 full, hop 4 about 60%, hop 5 about 35%. */

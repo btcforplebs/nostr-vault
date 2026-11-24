@@ -311,18 +311,21 @@ internal fun TrustGlobe(
         val outer = if (showsOuterRings) rememberTrustMapOuter() else null
         outer?.let {
             Canvas(Modifier.fillMaxSize()) {
-                GlobeOuterRings.draw(this, it, scene.camera.zoom, phone, textMeasurer, scene.ringZoom)
+                GlobeOuterRings.draw(this, it, scene.camera.zoom, phone, textMeasurer, scene.ringZoom, lite)
             }
         }
         // Zoomed out to an outer ring (a Hop layer), the whole inner globe,
-        // faces too, shrinks round the middle and fades ([GlobeRingZoom]).
+        // faces too, shrinks round the middle, sinks down and fades ([GlobeRingZoom.sink]).
         Box(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    val shrink = GlobeRingZoom.innerScale(scene.ringZoom).toFloat()
+                    val w = size.width.toDouble()
+                    val h = size.height.toDouble()
+                    val shrink = GlobeRingZoom.innerDrawScale(scene.ringZoom, w, h).toFloat()
                     scaleX = shrink
                     scaleY = shrink
+                    translationY = GlobeRingZoom.innerSink(scene.ringZoom, w, h).drop.toFloat()
                     alpha = GlobeRingZoom.innerAlpha(scene.ringZoom).toFloat()
                 },
         ) {
