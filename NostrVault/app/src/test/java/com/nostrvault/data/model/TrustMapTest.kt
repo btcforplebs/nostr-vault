@@ -392,8 +392,9 @@ class TrustMapTest {
         val web = setOf(me, key(1), key(2), key(3), key(4), key(5))
         val counts = TrustMap.layerCounts(me, follows, web)
         assertEquals(2, counts[TrustMap.Layer.FOLLOWING])
-        assertEquals(3, counts[TrustMap.Layer.FURTHER_OUT])
         assertEquals(5, counts[TrustMap.Layer.EVERYONE])
+        // The hops count their outer rings, not this web.
+        assertNull(counts[TrustMap.Layer.HOP3])
         // A follow the relay hasn't mapped yet still counts as a follow.
         assertEquals(1, TrustMap.layerCounts(me, setOf(key(9)), emptySet())[TrustMap.Layer.EVERYONE])
     }
@@ -406,10 +407,9 @@ class TrustMapTest {
         assertEquals(0.0, close.follows, 0.0)
         assertTrue(close.close > 1)
         assertEquals(0.0, close.further, 0.0)
-        val further = TrustMap.layerWeights(TrustMap.Layer.FURTHER_OUT)
-        assertEquals(0.0, further.follows, 0.0)
-        assertEquals(0.0, further.close, 0.0)
-        assertTrue(further.further > 1)
+        // A hop zooms out over the whole inner globe.
+        assertEquals(TrustMap.Weights(1.0, 1.0, 1.0), TrustMap.layerWeights(TrustMap.Layer.HOP3))
+        assertEquals(TrustMap.Weights(1.0, 1.0, 1.0), TrustMap.layerWeights(TrustMap.Layer.HOP5))
     }
 
     @Test
@@ -421,7 +421,7 @@ class TrustMapTest {
             TrustMap.layerFaceCandidates(layer, me, follows, web, vouches, count)
         assertEquals(listOf(key(2), key(3), key(5)), faces(TrustMap.Layer.CLOSE))
         assertEquals(listOf(key(2), key(3)), faces(TrustMap.Layer.CLOSE, count = 2))
-        assertEquals(listOf(key(6), key(4)), faces(TrustMap.Layer.FURTHER_OUT))
+        assertEquals(faces(TrustMap.Layer.EVERYONE), faces(TrustMap.Layer.HOP4))
         // Everyone draws from everyone past your follows, Close and further out
         // in turn so both outer shells get faces; Following keeps your follows' faces only.
         assertEquals(listOf(key(2), key(6), key(3), key(4), key(5)), faces(TrustMap.Layer.EVERYONE))
@@ -434,7 +434,7 @@ class TrustMapTest {
         assertEquals(36, TrustMap.faceCount(TrustMap.Layer.EVERYONE))
         assertEquals(0, TrustMap.faceCount(TrustMap.Layer.FOLLOWING))
         assertEquals(TrustMap.LAYER_FACES, TrustMap.faceCount(TrustMap.Layer.CLOSE))
-        assertEquals(TrustMap.LAYER_FACES, TrustMap.faceCount(TrustMap.Layer.FURTHER_OUT))
+        assertEquals(TrustMap.EVERYONE_FACES, TrustMap.faceCount(TrustMap.Layer.HOP3))
         assertTrue(TrustMap.faceCandidateCount(TrustMap.Layer.EVERYONE) > TrustMap.EVERYONE_FACES)
         assertEquals(TrustMap.LAYER_FACE_CANDIDATES, TrustMap.faceCandidateCount(TrustMap.Layer.CLOSE))
     }
@@ -480,13 +480,21 @@ class TrustMapTest {
         val vouches = mapOf(key(2) to 10, key(3) to 9, key(4) to 3)
         val counts = TrustMap.layerCounts(me, follows, web, vouches)
         assertEquals(1, counts[TrustMap.Layer.CLOSE])
-        assertEquals(2, counts[TrustMap.Layer.FURTHER_OUT])
         assertEquals(4, counts[TrustMap.Layer.EVERYONE])
-        // An old cache has no vouches: no Close, and Further out is everyone past your follows.
+        // An old cache has no vouches: no Close.
         val old = TrustMap.layerCounts(me, follows, web)
         assertNull(old[TrustMap.Layer.CLOSE])
-        assertEquals(3, old[TrustMap.Layer.FURTHER_OUT])
-        assertEquals(listOf(TrustMap.Layer.EVERYONE, TrustMap.Layer.FOLLOWING, TrustMap.Layer.FURTHER_OUT), TrustMap.layers(false))
+        assertEquals(4, old[TrustMap.Layer.EVERYONE])
+        // The hops are always offered (greyed until a desktop Vault ranks them).
+        assertEquals(
+            listOf(TrustMap.Layer.EVERYONE, TrustMap.Layer.FOLLOWING, TrustMap.Layer.HOP3, TrustMap.Layer.HOP4, TrustMap.Layer.HOP5),
+            TrustMap.layers(false),
+        )
+        // "Further out" is gone: the picker ends Hop 3, Hop 4, Hop 5 (Logen 2026-11-24).
+        assertEquals(listOf("Everyone", "Following", "Vouched", "Hop 3", "Hop 4", "Hop 5"), TrustMap.Layer.entries.map { it.title })
+        assertEquals(listOf(3, 4, 5), TrustMap.Layer.entries.mapNotNull { it.hop })
+        assertEquals(TrustMap.Layer.EVERYONE, TrustMap.Layer.HOP5.globeLayer)
+        assertEquals(TrustMap.Layer.CLOSE, TrustMap.Layer.CLOSE.globeLayer)
         assertEquals(TrustMap.Layer.entries, TrustMap.layers(true))
     }
 
@@ -497,7 +505,7 @@ class TrustMapTest {
         val web = (0 until 4000).map { (0 until 4).joinToString("") { "%016x".format(random.nextLong()) } }.toSet()
         // Most people further out are vouched for by the same one or two follows.
         val vouches = web.associateWith { 1 }
-        val faces = TrustMap.layerFaceCandidates(TrustMap.Layer.FURTHER_OUT, me, emptySet(), web, vouches, TrustMap.LAYER_FACES)
+        val faces = TrustMap.layerFaceCandidates(TrustMap.Layer.EVERYONE, me, emptySet(), web, vouches, TrustMap.LAYER_FACES)
         assertEquals(TrustMap.LAYER_FACES, faces.size)
         val octants = faces.map {
             val d = TrustMap.direction(it)
@@ -521,15 +529,14 @@ class TrustMapTest {
         val close = TrustMap.layerPeople(TrustMap.Layer.CLOSE, me, follows, web, vouches)
         assertEquals(emptyList<String>(), close.following)
         assertEquals(listOf(key(3), key(5)), close.web)
-        assertEquals(listOf(key(4)), TrustMap.layerPeople(TrustMap.Layer.FURTHER_OUT, me, follows, web, vouches).web)
         // Same people as the counts, layer by layer.
         val counts = TrustMap.layerCounts(me, follows, web, vouches)
-        for (layer in TrustMap.Layer.entries) {
+        for (layer in TrustMap.Layer.entries.filter { it.hop == null }) {
             val people = TrustMap.layerPeople(layer, me, follows, web, vouches)
             assertEquals("$layer", counts[layer], people.following.size + people.web.size)
         }
-        // An old cache has no vouches: Further out is everyone past your follows, by key.
-        assertEquals(listOf(key(3), key(4), key(5)), TrustMap.layerPeople(TrustMap.Layer.FURTHER_OUT, me, follows, web).web)
+        // An old cache has no vouches: Everyone's web is by key.
+        assertEquals(listOf(key(3), key(4), key(5)), TrustMap.layerPeople(TrustMap.Layer.EVERYONE, me, follows, web).web)
     }
 
     @Test

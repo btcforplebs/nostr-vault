@@ -10,13 +10,13 @@ class MyWebWordsTest {
         assertEquals("16,240 people", MyWebWords.headline(16_240))
     }
 
-    @Test fun closeAndFurtherOutNameTheVouchLine() {
+    @Test fun closeNamesTheVouchLine() {
         assertEquals("Followed by 10+ people you follow", MyWebWords.layerDetail(TrustMap.Layer.CLOSE, true))
-        assertEquals("Followed by fewer than 10 people you follow", MyWebWords.layerDetail(TrustMap.Layer.FURTHER_OUT, true))
     }
 
-    @Test fun furtherOutWithoutVouchesHasNoLine() {
-        assertEquals("Followed by people you follow", MyWebWords.layerDetail(TrustMap.Layer.FURTHER_OUT, false))
+    @Test fun hopsNameTheirRing() {
+        assertEquals("The best of the ring 3 hops out", MyWebWords.layerDetail(TrustMap.Layer.HOP3, false))
+        assertEquals("The best of the ring 5 hops out", MyWebWords.layerDetail(TrustMap.Layer.HOP5, true))
     }
 
     @Test fun followsBackOutOfYourFollows() {

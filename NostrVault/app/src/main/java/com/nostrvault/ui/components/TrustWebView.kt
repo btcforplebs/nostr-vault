@@ -52,6 +52,9 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.nostrvault.data.model.TrustMapOuter
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.Icons
 
 @Composable
 internal fun TrustWebContent(
@@ -163,7 +166,7 @@ internal fun TrustWebContent(
         if (isWOTTab) {
             val follows = myFollows
             layerCandidates = withContext(Dispatchers.Default) {
-                listOf(TrustMap.Layer.EVERYONE, TrustMap.Layer.CLOSE, TrustMap.Layer.FURTHER_OUT).associateWith {
+                listOf(TrustMap.Layer.EVERYONE, TrustMap.Layer.CLOSE).associateWith {
                     TrustMap.layerFaceCandidates(it, me, follows, graph, counts, globeFaces(TrustMap.faceCandidateCount(it)))
                 }
             }
@@ -276,13 +279,13 @@ internal fun TrustWebContent(
     }
     // The picked layer's faces past your follows, fetched on each pick:
     // the picture loader stops after a while and profiles can arrive late.
-    val pickedLayerCandidates = layerCandidates[layer].orEmpty()
+    val pickedLayerCandidates = layerCandidates[layer.globeLayer].orEmpty()
     LaunchedEffect(layer, pickedLayerCandidates) {
         if (pickedLayerCandidates.isEmpty()) return@LaunchedEffect
         nostrService.fetchMissingProfiles(pickedLayerCandidates)
         loadPictures(pickedLayerCandidates)
     }
-    /** Pictures past your follows for the picked layer, most vouched first: a few for Everyone, many for Vouched or Further out. Only ones that loaded. */
+    /** Pictures past your follows for the picked layer, most vouched first: a few for Everyone (and the hops), many for Vouched. Only ones that loaded. */
     val layerFaces = remember(isWOTTab, centerKey, layer, pickedLayerCandidates, renderedPictures, filterLit, filterCandidates) {
         if (!isWOTTab || centerKey != me) emptyList()
         // A filter's people take the outer faces first, as long as the layer lights them.
@@ -598,7 +601,17 @@ internal fun TrustWebContent(
     if (isWOTTab) {
         // Full bleed, like the feed: space runs under the status bar and the
         // floating tab bar, and the bar's glass pills sit over it (iOS WOT bar).
-        val counts = remember(myFollows, web, vouches) { TrustMap.layerCounts(me, myFollows, web, vouches) }
+        val outerRings = rememberTrustMapOuter()
+        val lockedHops = remember(outerRings) { TrustWebHopLayers.locked(outerRings) }
+        val counts = remember(myFollows, web, vouches, outerRings) {
+            TrustWebHopLayers.withHops(TrustMap.layerCounts(me, myFollows, web, vouches), outerRings)
+        }
+        // A greyed hop says what unlocks it; a ranking that goes away takes a picked hop back to Everyone.
+        val pickLayer = { item: TrustMap.Layer ->
+            if (item in lockedHops) wotFilters.note.show(FilterNote(Icons.Filled.Lock, TrustMapOuter.LOCKED_LINE))
+            else layer = item
+        }
+        LaunchedEffect(lockedHops) { if (layer in lockedHops) layer = TrustMap.Layer.EVERYONE }
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val sidePanel = wotCardIsSidePanel(maxWidth)
             globeArea(
@@ -611,7 +624,8 @@ internal fun TrustWebContent(
                 layer = layer,
                 vouches = vouches,
                 counts = counts,
-                onLayer = { layer = it },
+                lockedHops = lockedHops,
+                onLayer = pickLayer,
                 refreshState = refreshState,
                 onRebuild = ::refresh,
                 searchOpen = searchOpen,
@@ -664,7 +678,7 @@ internal fun TrustWebContent(
                 val rebuilding = refreshState != null
                 val rebuiltAgo = remember(rebuilding) { wotRebuiltAgo(feedService) }
                 MyWebSheet(
-                    numbers = MyWebNumbers(counts, vouches != null, layer, (myFollows - me).size, rebuilding, rebuiltAgo),
+                    numbers = MyWebNumbers(counts, vouches != null, layer, (myFollows - me).size, rebuilding, rebuiltAgo, lockedHops),
                     filters = wotFilters,
                     liveArcs = liveArcs,
                     newcomers = {
@@ -675,7 +689,7 @@ internal fun TrustWebContent(
                     desktopVault = {
                         MyWebDesktopVaultSection(accent, profiles, onNeedProfiles = { nostrService.fetchMissingProfiles(it) })
                     },
-                    onLayer = { jump(0); layer = it; myWebOpen = false },
+                    onLayer = { jump(0); pickLayer(it); myWebOpen = false },
                     onRebuild = ::refresh,
                     onDismiss = { myWebOpen = false },
                 )
@@ -698,7 +712,10 @@ internal fun TrustWebContent(
     }
 
     if (showingList && isWOTTab) {
-        val listed = remember(layer, myFollows, web, vouches) { TrustMap.layerPeople(layer, me, myFollows, web, vouches) }
+        val outerForList = rememberTrustMapOuter()
+        val listed = remember(layer, myFollows, web, vouches, outerForList) {
+            TrustWebHopLayers.listed(layer, outerForList) { TrustMap.layerPeople(layer, me, myFollows, web, vouches) }
+        }
         WotPeopleList(
             card = card, cardPath = cardPath, layer = layer, listed = listed, myFollows = myFollows,
             vouches = vouches, profiles = profiles, accent = accent, name = ::name,

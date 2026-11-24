@@ -370,11 +370,18 @@ object TrustMap {
 
     /**
      * The WOT tab's layer picker. Picking one shows only that part of your
-     * web, with its faces; switching never reloads the web. iOS
-     * `TrustMap.Layer`.
+     * web, with its faces; switching never reloads the web. Hop 3, 4 and 5
+     * are the outer rings ([TrustMapOuter]): picking one zooms the globe out
+     * to it ([GlobeRingZoom]) over Everyone, shrunk (Logen 2026-11-24:
+     * "Further out" is gone). iOS `TrustMap.Layer`.
      */
-    enum class Layer(val title: String) {
-        EVERYONE("Everyone"), FOLLOWING("Following"), CLOSE("Vouched"), FURTHER_OUT("Further out"),
+    enum class Layer(val title: String, val hop: Int? = null) {
+        EVERYONE("Everyone"), FOLLOWING("Following"), CLOSE("Vouched"),
+        HOP3("Hop 3", 3), HOP4("Hop 4", 4), HOP5("Hop 5", 5),
+        ;
+
+        /** What the inner globe lights: a hop shows Everyone, shrunk. */
+        val globeLayer: Layer get() = if (hop == null) this else EVERYONE
     }
 
     /**
@@ -404,16 +411,15 @@ object TrustMap {
      * shell's stars are faint, so they are lit brighter when they are all
      * that's left. iOS `layerWeights`.
      */
-    fun layerWeights(layer: Layer): Weights = when (layer) {
-        Layer.EVERYONE -> Weights(1.0, 1.0, 1.0)
+    fun layerWeights(layer: Layer): Weights = when (layer.globeLayer) {
         Layer.FOLLOWING -> Weights(1.0, 0.0, 0.0)
         Layer.CLOSE -> Weights(0.0, 1.6, 0.0)
-        Layer.FURTHER_OUT -> Weights(0.0, 0.0, 1.6)
+        else -> Weights(1.0, 1.0, 1.0)
     }
 
     /** People past your follows worth a profile fetch for a layer's faces. Many further out have no profile, so the pool is wide. */
     const val LAYER_FACE_CANDIDATES = 400
-    /** Faces on the outer shell when Vouched or Further out is picked; faces that would cover another stay stars ([seatFaces]). */
+    /** Faces on the outer shell when Vouched is picked; faces that would cover another stay stars ([seatFaces]). */
     const val LAYER_FACES = 100
     /**
      * With Everyone picked, smaller, dimmer faces past your follows, half on
@@ -424,15 +430,15 @@ object TrustMap {
     const val EVERYONE_FACES = 36
 
     /** Faces past your follows for [layer]; Following has none. iOS `faceCount(for:)`. */
-    fun faceCount(layer: Layer): Int = when (layer) {
-        Layer.EVERYONE -> EVERYONE_FACES
+    fun faceCount(layer: Layer): Int = when (layer.globeLayer) {
         Layer.FOLLOWING -> 0
-        Layer.CLOSE, Layer.FURTHER_OUT -> LAYER_FACES
+        Layer.CLOSE -> LAYER_FACES
+        else -> EVERYONE_FACES
     }
 
     /** Profiles fetched for [layer]'s faces: a wide pool, since many people further out have no picture. */
     fun faceCandidateCount(layer: Layer): Int =
-        if (layer == Layer.EVERYONE) EVERYONE_FACES * 6 else LAYER_FACE_CANDIDATES
+        if (layer.globeLayer == Layer.EVERYONE) EVERYONE_FACES * 6 else LAYER_FACE_CANDIDATES
 
     /**
      * The people past your follows [layer] shows as faces, most vouched first.
@@ -450,6 +456,7 @@ object TrustMap {
         vouches: Map<String, Int>? = null,
         count: Int = LAYER_FACE_CANDIDATES,
     ): List<String> {
+        val layer = layer.globeLayer
         if (layer == Layer.FOLLOWING) return emptyList()
         val ranked = layerPeople(layer, me, follows, web, vouches).web
             .sortedWith(compareByDescending<String> { vouches?.get(it) ?: 0 }.thenBy { fraction(it, 16) }.thenBy { it })
@@ -478,20 +485,14 @@ object TrustMap {
 
     /**
      * People in each layer, never counting you. [web] is the relay's whole
-     * graph, follows included. Without [vouches] there is no Close, and
-     * Further out is everyone past your follows.
+     * graph, follows included. Without [vouches] there is no Close. The
+     * hops count their rings ([TrustMapOuter]), not this web.
      */
     fun layerCounts(me: String, follows: Set<String>, web: Set<String>, vouches: Map<String, Int>? = null): Map<Layer, Int> {
         val following = (follows - me).size
         val past = web - follows - me
         val counts = mutableMapOf(Layer.EVERYONE to following + past.size, Layer.FOLLOWING to following)
-        if (vouches != null) {
-            val close = past.count { (vouches[it] ?: 0) >= CLOSE_VOUCHES }
-            counts[Layer.CLOSE] = close
-            counts[Layer.FURTHER_OUT] = past.size - close
-        } else {
-            counts[Layer.FURTHER_OUT] = past.size
-        }
+        if (vouches != null) counts[Layer.CLOSE] = past.count { (vouches[it] ?: 0) >= CLOSE_VOUCHES }
         return counts
     }
 
@@ -506,13 +507,13 @@ object TrustMap {
         val ranked = { people: Set<String> ->
             people.sortedWith(compareByDescending<String> { vouches?.get(it) ?: 0 }.thenBy { it })
         }
+        val layer = layer.globeLayer
         val following = if (layer == Layer.EVERYONE || layer == Layer.FOLLOWING) ranked(follows - me) else emptyList()
         var past = web - follows - me
         when (layer) {
-            Layer.EVERYONE -> {}
             Layer.FOLLOWING -> past = emptySet()
             Layer.CLOSE -> past = past.filter { (vouches?.get(it) ?: 0) >= CLOSE_VOUCHES }.toSet()
-            Layer.FURTHER_OUT -> if (vouches != null) past = past.filter { (vouches[it] ?: 0) < CLOSE_VOUCHES }.toSet()
+            else -> {}
         }
         return LayerPeople(following, ranked(past))
     }

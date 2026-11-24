@@ -62,7 +62,8 @@ class TrustMapWiderTest {
         assertNull(TrustMapWider.layerLit(TrustMap.Layer.EVERYONE, me, follows, web, vouches))
         assertEquals(setOf(key(1), key(2)), TrustMapWider.layerLit(TrustMap.Layer.FOLLOWING, me, follows, web, vouches))
         assertEquals(setOf(key(3)), TrustMapWider.layerLit(TrustMap.Layer.CLOSE, me, follows, web, vouches))
-        assertEquals(setOf(key(4)), TrustMapWider.layerLit(TrustMap.Layer.FURTHER_OUT, me, follows, web, vouches))
+        // A hop zooms your own globe out; on someone else's it lights no one out.
+        assertNull(TrustMapWider.layerLit(TrustMap.Layer.HOP3, me, follows, web, vouches))
     }
 
     @Test

@@ -356,8 +356,9 @@ final class TrustMapTests: XCTestCase {
         let web: Set<String> = [me, key(1), key(2), key(3), key(4), key(5)]
         let counts = TrustMap.layerCounts(me: me, follows: follows, web: web)
         XCTAssertEqual(counts[.following], 2)
-        XCTAssertEqual(counts[.furtherOut], 3)
         XCTAssertEqual(counts[.everyone], 5)
+        // The hops count their outer rings, not this web.
+        XCTAssertNil(counts[.hop3])
         // A follow the relay hasn't mapped yet still counts as a follow.
         XCTAssertEqual(TrustMap.layerCounts(me: me, follows: [key(9)], web: [])[.everyone], 1)
     }
@@ -368,9 +369,9 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(TrustMap.layerWeights(.close).x, 0)
         XCTAssertGreaterThan(TrustMap.layerWeights(.close).y, 1)
         XCTAssertEqual(TrustMap.layerWeights(.close).z, 0)
-        XCTAssertEqual(TrustMap.layerWeights(.furtherOut).x, 0)
-        XCTAssertEqual(TrustMap.layerWeights(.furtherOut).y, 0)
-        XCTAssertGreaterThan(TrustMap.layerWeights(.furtherOut).z, 1)
+        // A hop zooms out over the whole inner globe.
+        XCTAssertEqual(TrustMap.layerWeights(.hop3), SIMD3(1, 1, 1))
+        XCTAssertEqual(TrustMap.layerWeights(.hop5), SIMD3(1, 1, 1))
     }
 
     func testLayerFacesAreTheMostVouchedOfThatLayer() {
@@ -382,7 +383,7 @@ final class TrustMapTests: XCTestCase {
         }
         XCTAssertEqual(faces(.close), [key(2), key(3), key(5)])
         XCTAssertEqual(faces(.close, count: 2), [key(2), key(3)])
-        XCTAssertEqual(faces(.furtherOut), [key(6), key(4)])
+        XCTAssertEqual(faces(.hop4), faces(.everyone))
         // Everyone draws from both outer shells in turn, most vouched first in
         // each, so a short list still puts faces on the Close (Discover) ring
         // and further out; Following keeps your follows' faces.
@@ -395,7 +396,7 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(TrustMap.faceCount(for: .everyone), TrustMap.everyoneFaceCount)
         XCTAssertLessThan(TrustMap.faceCount(for: .everyone), TrustMap.faceCount(for: .close))
         XCTAssertEqual(TrustMap.faceCount(for: .close), TrustMap.layerFaceCount)
-        XCTAssertEqual(TrustMap.faceCount(for: .furtherOut), TrustMap.layerFaceCount)
+        XCTAssertEqual(TrustMap.faceCount(for: .hop3), TrustMap.everyoneFaceCount)
         XCTAssertEqual(TrustMap.faceCount(for: .following), 0)
         XCTAssertGreaterThan(TrustMap.faceCandidateCount(for: .everyone), TrustMap.everyoneFaceCount)
     }
@@ -403,6 +404,12 @@ final class TrustMapTests: XCTestCase {
     func testCloseLayerReadsVouched() {
         // 10+ of your follows vouch for them; they're outside your follows, so not "Close".
         XCTAssertEqual(TrustMap.Layer.close.title, "Vouched")
+        // "Further out" is gone: the picker ends Hop 3, Hop 4, Hop 5 (Logen 2026-11-24).
+        XCTAssertEqual(TrustMap.Layer.allCases.map(\.title),
+                       ["Everyone", "Following", "Vouched", "Hop 3", "Hop 4", "Hop 5"])
+        XCTAssertEqual(TrustMap.Layer.allCases.compactMap(\.hop), [3, 4, 5])
+        XCTAssertEqual(TrustMap.Layer.hop5.globeLayer, .everyone)
+        XCTAssertEqual(TrustMap.Layer.close.globeLayer, .close)
     }
 
     func testCloseHasItsOwnShellBetweenYourFollowsAndFurtherOut() {
@@ -428,7 +435,7 @@ final class TrustMapTests: XCTestCase {
         let web = Set((0..<4000).map { _ in randomKey() })
         // Most people further out are vouched for by the same one or two follows.
         let vouches = Dictionary(uniqueKeysWithValues: web.map { ($0, 1) })
-        let faces = TrustMap.layerFaceCandidates(.furtherOut, me: me, follows: [], web: web, vouches: vouches,
+        let faces = TrustMap.layerFaceCandidates(.everyone, me: me, follows: [], web: web, vouches: vouches,
                                                  count: TrustMap.layerFaceCount)
         XCTAssertEqual(faces.count, TrustMap.layerFaceCount)
         let octants = Set(faces.map { key -> Int in
@@ -444,14 +451,14 @@ final class TrustMapTests: XCTestCase {
         let vouches = [key(2): 10, key(3): 9, key(4): 3]
         let counts = TrustMap.layerCounts(me: me, follows: follows, web: web, vouches: vouches)
         XCTAssertEqual(counts[.close], 1)
-        XCTAssertEqual(counts[.furtherOut], 2)
         XCTAssertEqual(counts[.everyone], 4)
-        // An old cache has no vouches: no Close, and Further out is everyone past your follows.
+        // An old cache has no vouches: no Close.
         let old = TrustMap.layerCounts(me: me, follows: follows, web: web)
         XCTAssertNil(old[.close])
-        XCTAssertEqual(old[.furtherOut], 3)
-        XCTAssertEqual(TrustMap.layers(hasVouches: false), [.everyone, .following, .furtherOut])
-        XCTAssertEqual(TrustMap.layers(hasVouches: true), [.everyone, .following, .close, .furtherOut])
+        XCTAssertEqual(old[.everyone], 4)
+        // The hops are always offered (greyed until a desktop Vault ranks them).
+        XCTAssertEqual(TrustMap.layers(hasVouches: false), [.everyone, .following, .hop3, .hop4, .hop5])
+        XCTAssertEqual(TrustMap.layers(hasVouches: true), [.everyone, .following, .close, .hop3, .hop4, .hop5])
     }
 
     func testLayerPeopleListWhatTheCountsCount() {
@@ -468,15 +475,15 @@ final class TrustMapTests: XCTestCase {
         let close = TrustMap.layerPeople(.close, me: me, follows: follows, web: web, vouches: vouches)
         XCTAssertEqual(close.following, [])
         XCTAssertEqual(close.web, [key(3), key(5)])
-        XCTAssertEqual(TrustMap.layerPeople(.furtherOut, me: me, follows: follows, web: web, vouches: vouches).web, [key(4)])
+
         // Same people as the counts, layer by layer.
         let counts = TrustMap.layerCounts(me: me, follows: follows, web: web, vouches: vouches)
-        for layer in TrustMap.Layer.allCases {
+        for layer in TrustMap.Layer.allCases where layer.hop == nil {
             let people = TrustMap.layerPeople(layer, me: me, follows: follows, web: web, vouches: vouches)
             XCTAssertEqual(people.following.count + people.web.count, counts[layer], "\(layer)")
         }
-        // An old cache has no vouches: Further out is everyone past your follows, by key.
-        XCTAssertEqual(TrustMap.layerPeople(.furtherOut, me: me, follows: follows, web: web).web, [key(3), key(4), key(5)])
+        // An old cache has no vouches: Everyone's web is by key.
+        XCTAssertEqual(TrustMap.layerPeople(.everyone, me: me, follows: follows, web: web).web, [key(3), key(4), key(5)])
     }
 
     func testVouchesComeFromTheCacheAndAreNilOnAnOldOne() throws {

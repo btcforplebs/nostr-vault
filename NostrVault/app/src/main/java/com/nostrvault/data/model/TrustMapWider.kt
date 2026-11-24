@@ -58,7 +58,7 @@ object TrustMapWider {
         cap: Int = TrustMap.HAZE_CAP,
     ): HazeLayout {
         val shell = TrustMap.haze(graph - inner, cap)
-        val layerFaces = listOf(TrustMap.Layer.EVERYONE, TrustMap.Layer.CLOSE, TrustMap.Layer.FURTHER_OUT).associateWith {
+        val layerFaces = listOf(TrustMap.Layer.EVERYONE, TrustMap.Layer.CLOSE).associateWith {
             TrustMap.layerFaceCandidates(it, me, follows, graph, vouches,
                 (TrustMap.faceCandidateCount(it) * faceScale).roundToInt())
         }
@@ -70,7 +70,7 @@ object TrustMapWider {
 
     /**
      * The layer picker's people as a lit set, for a globe that isn't yours:
-     * it still lights your follows, your Vouched and your Further out, so you
+     * it still lights your follows and your Vouched, so you
      * can see who in their web is close to you. Null for Everyone.
      */
     fun layerLit(
@@ -79,11 +79,10 @@ object TrustMapWider {
         follows: Set<String>,
         web: Set<String>,
         vouches: Map<String, Int>?,
-    ): Set<String>? = when (layer) {
-        TrustMap.Layer.EVERYONE -> null
+    ): Set<String>? = when (layer.globeLayer) {
         TrustMap.Layer.FOLLOWING -> follows - me
-        TrustMap.Layer.CLOSE, TrustMap.Layer.FURTHER_OUT ->
-            TrustMap.layerPeople(layer, me, follows, web, vouches).web.toSet()
+        TrustMap.Layer.CLOSE -> TrustMap.layerPeople(TrustMap.Layer.CLOSE, me, follows, web, vouches).web.toSet()
+        else -> null
     }
 
     /** Who someone else's globe leaves lit: the filters and the layer, both still about you. */

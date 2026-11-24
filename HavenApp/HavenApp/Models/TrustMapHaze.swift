@@ -16,7 +16,7 @@ extension TrustMap {
         var layout = HazeLayout()
         layout.shell = haze(graph.subtracting(inner))
         if wot {
-            for layer in [Layer.everyone, .close, .furtherOut] {
+            for layer in [Layer.everyone, .close] {
                 layout.layerFaces[layer] = layerFaceCandidates(layer, me: me, follows: follows, web: graph, vouches: vouches,
                                                                count: Int((Double(faceCandidateCount(for: layer)) * faceScale).rounded()))
             }
@@ -65,16 +65,16 @@ extension TrustMap {
     }
 
     /// The layer picker's people as a lit set, for a globe that isn't yours:
-    /// it still lights your follows, your Vouched and your Further out, so
+    /// it still lights your follows and your Vouched, so
     /// you can see who in their web is close to you. nil for Everyone.
     static func layerLit(_ layer: Layer, me: String, follows: Set<String>, web: Set<String>,
                          vouches: [String: Int]?) -> Set<String>? {
-        switch layer {
-        case .everyone: return nil
+        switch layer.globeLayer {
         case .following: return follows.subtracting([me])
-        case .close, .furtherOut:
-            let people = layerPeople(layer, me: me, follows: follows, web: web, vouches: vouches)
+        case .close:
+            let people = layerPeople(.close, me: me, follows: follows, web: web, vouches: vouches)
             return Set(people.web)
+        default: return nil
         }
     }
 }

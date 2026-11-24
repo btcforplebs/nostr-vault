@@ -25,7 +25,8 @@ struct TrustGlobeCanvas: View {
     var filterLit: Set<String>? = nil
     /// False while a sheet covers the globe: the clock stops.
     let running: Bool
-    /// Which part of the web is lit (the WOT tab's layer picker).
+    /// Which part of the web is lit (the WOT tab's layer picker). A hop
+    /// zooms out to its outer ring (`GlobeRingZoom`).
     var layer: TrustMap.Layer = .everyone
     let summary: String
     let avatar: (String, CGFloat) -> AnyView
@@ -120,7 +121,7 @@ struct TrustGlobeCanvas: View {
                     scene.ink = day ? .day : .night
                     if showsOuterRings {
                         GlobeOuterRings.draw(outer.outer, in: &context, size: size, zoom: scene.camera.zoom,
-                                             phone: GlobeScene.isPhone, ink: scene.ink)
+                                             phone: GlobeScene.isPhone, ink: scene.ink, level: scene.ringZoom)
                     }
                     #if DEBUG
                     probe.frame(at: now, lines: { scene.arcsInFlight }) {
@@ -172,11 +173,11 @@ struct TrustGlobeCanvas: View {
             LiveArcsSetting.retireCutSwitches()
             scene.showsNames = showsNames
             scene.reduceMotion = reduceMotion
-            scene.focus(layer)
+            scene.focus(layer, zoomsToRings: showsOuterRings)
             scene.filter(filterLit)
         }
         .onDisappear { onScreen = false }
-        .onChange(of: layer) { _, layer in scene.focus(layer) }
+        .onChange(of: layer) { _, layer in scene.focus(layer, zoomsToRings: showsOuterRings) }
         .task(id: liveArcs && liveArcsOn && clockAllowed ? show : nil) {
             // Listens while the switch is on, the globe is on screen and
             // uncovered, and the app is in front; leaving the tab or the app,

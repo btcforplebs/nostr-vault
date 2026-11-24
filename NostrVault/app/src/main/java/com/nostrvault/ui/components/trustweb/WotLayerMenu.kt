@@ -28,6 +28,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.ui.draw.alpha
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.ui.navigation.DockHoldMenuRow
 import com.nostrvault.ui.navigation.DockHoldRow
@@ -52,6 +55,8 @@ internal fun WotLayerMenu(
     layers: List<TrustMap.Layer>,
     current: TrustMap.Layer,
     counts: Map<TrustMap.Layer, String>,
+    /** Hops greyed out until a desktop Vault ranks them: a tap says so ([onPick] shows the line). */
+    locked: Set<TrustMap.Layer>,
     onPick: (TrustMap.Layer) -> Unit,
     onList: () -> Unit,
     refreshing: Boolean,
@@ -105,16 +110,19 @@ internal fun WotLayerMenu(
                 DockMenuPanel {
                     val pick = { action: () -> Unit -> { onDismiss(); action() } }
                     layers.forEachIndexed { i, item ->
-                        DockHoldMenuRow(
-                            spec = DockHoldRow(
-                                item.icon,
-                                item.title,
-                                current = item == current,
-                                subtitle = counts[item]?.let { "$it people" },
-                            ),
-                            hovered = false,
-                            onClick = pick { onPick(item) },
-                        )
+                        val isLocked = item in locked
+                        Box(Modifier.alpha(if (isLocked) 0.45f else 1f)) {
+                            DockHoldMenuRow(
+                                spec = DockHoldRow(
+                                    if (isLocked) Icons.Filled.Lock else item.icon,
+                                    item.title,
+                                    current = item == current,
+                                    subtitle = if (isLocked) "Desktop Vault" else counts[item]?.let { "$it people" },
+                                ),
+                                hovered = false,
+                                onClick = pick { onPick(item) },
+                            )
+                        }
                         if (i == layers.lastIndex) DockMenuDivider()
                     }
                     // Android's list of the layer's people. iOS has no list; it sits
