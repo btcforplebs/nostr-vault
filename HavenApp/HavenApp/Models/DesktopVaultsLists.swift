@@ -252,6 +252,30 @@ enum DesktopVaultsLists {
         return .success(changed)
     }
 
+    // MARK: Rule 7: one switch, one change to the newest list
+
+    /// A Vault switch applied to the newest published list's tags (P3,
+    /// DesktopVaultListEdit). `tags` nil: the relays said no list exists, so
+    /// turning on starts one and turning off changes nothing.
+    static func switching(_ on: Bool, _ vault: DesktopVault, path: DesktopVaultPath, in list: DesktopVaultList,
+                          tags: [[String]]?, vaults: [DesktopVault]) -> DesktopVaultListChange {
+        guard let tags else {
+            guard on else { return .tags([]) }
+            let started = turningOn(vault, path: path, in: list, tags: [], vaults: vaults)
+            if case .tags(let out) = started, !isUsable(out, list: list) { return .refused(list) }
+            return started
+        }
+        return on ? turningOn(vault, path: path, in: list, tags: tags, vaults: vaults)
+                  : turningOff(vault, path: path, in: list, tags: tags)
+    }
+
+    /// The `fipsmesh` tags of a published 10002, as published. A Relays save
+    /// signs only `r` tags, so it carries these over after them (P3): the
+    /// mesh relay switch can ship later without a plain save dropping it.
+    static func meshRelayTags(_ tags: [[String]]) -> [[String]] {
+        tags.filter { meshNpub($0, in: .relays) != nil }
+    }
+
     // MARK: Rule 4: one host, one Vault
 
     /// The other Vault that already has `httpsURL`'s host, if any: adding

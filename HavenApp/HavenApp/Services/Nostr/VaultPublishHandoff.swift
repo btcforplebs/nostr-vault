@@ -25,14 +25,12 @@ enum VaultPublishHandoff {
         isEnabled(config: config) ? meshVault(config: config) : nil
     }
 
-    /// The Mac relay given as a mesh npub, dialed for that same npub this
-    /// session (as RelayConfiguration.blastrRelays). Only the iPhone/iPad
-    /// dials one; a Mac build has none.
+    /// The first mesh Vault in Desktop Vaults order that answered this
+    /// session's dial (§2.2 rule 3; RelayConfiguration.dialedVault, as
+    /// blastrRelays). Only the iPhone/iPad dials one; a Mac build has none.
     private static func meshVault(config: HavenConfig) -> RelayConfiguration.MacMeshRelay? {
         #if os(iOS)
-        guard let npub = config.macRelayMeshNpub, let mesh = RelayConfiguration.macMeshRelay,
-              mesh.npub == npub else { return nil }
-        return mesh
+        return RelayConfiguration.dialedVault(config: config, mesh: RelayConfiguration.macMeshRelay)
         #else
         return nil
         #endif

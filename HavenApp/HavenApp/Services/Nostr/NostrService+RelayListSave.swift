@@ -29,9 +29,10 @@ extension NostrService {
         #endif
         // Entries the screen can't edit (ws://, home network) stay as
         // published; loopback ones are dropped, they never worked for anyone.
-        let kept = rl.event?.tags.filter {
+        // A desktop Vault's `fipsmesh` tags stay too, last (Desktop Vaults P3).
+        let kept = (rl.event?.tags.filter {
             $0.count >= 2 && $0[0] == "r" && !RelayDraft.listable($0[1]) && !Self.isLoopbackRelay($0[1])
-        } ?? []
+        } ?? []) + DesktopVaultsLists.meshRelayTags(rl.event?.tags ?? [])
         return RelayDraft.Published(
             read: read.filter(RelayDraft.listable),
             write: write.filter(RelayDraft.listable),

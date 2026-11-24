@@ -50,7 +50,7 @@ extension RelayProcessManager {
 
     private static func needsMeshDial(_ config: HavenConfig) -> Bool {
         #if os(iOS)
-        return config.macRelayMeshNpub != nil
+        return !config.desktopVaultMeshNpubs.isEmpty
         #else
         return false
         #endif
@@ -127,21 +127,21 @@ extension RelayProcessManager {
     }
 
     #if os(iOS)
-    /// A Mac relay given as a mesh npub is reached through FIPS: dial it
-    /// before the relay starts, so MAC_RELAY_URL is its local ws:// address.
-    /// Can take ~10 s. A failed dial starts the relay without the Mac.
+    /// Desktop Vaults on the mesh are reached through FIPS: dial them in
+    /// Desktop Vaults order before the relay starts and keep the first that
+    /// answers (Desktop Vaults P3, §2.2 rule 3), so MAC_RELAY_URL is its
+    /// local ws:// address and publish-for-me goes to it. Each failed dial
+    /// can take ~10 s. None answering starts the relay without one.
     private func resolveMacMeshRelay(config: HavenConfig) async {
-        guard let npub = config.macRelayMeshNpub else {
-            RelayConfiguration.macMeshRelay = nil
-            return
+        for npub in config.desktopVaultMeshNpubs {
+            if let url = await FipsMeshService.shared.relayWebsocketURL(meshNpub: npub) {
+                RelayConfiguration.macMeshRelay = .init(npub: npub, url: url)
+                logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Desktop Vault reached over the mesh (\(npub.prefix(16))…)"))
+                return
+            }
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Desktop Vault \(npub.prefix(16))… not reachable over the mesh"))
         }
-        if let url = await FipsMeshService.shared.relayWebsocketURL(meshNpub: npub) {
-            RelayConfiguration.macMeshRelay = .init(npub: npub, url: url)
-            logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Mac relay reached over the mesh (\(npub.prefix(16))…)"))
-        } else {
-            RelayConfiguration.macMeshRelay = nil
-            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Mac relay \(npub.prefix(16))… not reachable over the mesh; starting without it"))
-        }
+        RelayConfiguration.macMeshRelay = nil
     }
     #endif
 

@@ -111,7 +111,8 @@ final class ListSaveRulesTests: XCTestCase {
         }
         // NostrService+ListRestore.swift: a restore from the vault's list history.
         // NostrService+ListVersionSave.swift: the emoji list and emoji sets (undo copy in the vault first).
-        XCTAssertEqual(sites.sorted(), ["FeedService+Follow.swift", "NostrService+ListPublishing.swift",
+        // DesktopVaultListEdit.swift: a desktop Vault's media server switch (10063).
+        XCTAssertEqual(sites.sorted(), ["DesktopVaultListEdit.swift", "FeedService+Follow.swift", "NostrService+ListPublishing.swift",
                                         "NostrService+ListPublishing.swift", "NostrService+ListPublishing.swift",
                                         "NostrService+ListRestore.swift", "NostrService+ListVersionSave.swift"])
         let interests = try String(contentsOf: app.appendingPathComponent("Services/InterestListService.swift"), encoding: .utf8)

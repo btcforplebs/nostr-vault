@@ -77,6 +77,9 @@ final class UserListSignGuardTests: XCTestCase {
             "HavenApp/Services/Nostr/NostrService+ListPublishing.swift": ["10000", "10006", "10063"],
             // Save in Relays.
             "HavenApp/Services/Nostr/NostrService+RelayListSave.swift": ["10002", "10050"],
+            // A desktop Vault switch (Desktop Vaults P3): only on a tap, one Vault's
+            // entry changed on the newest list, nothing signed unless the lookup settled.
+            "HavenApp/Services/Nostr/DesktopVaultListEdit.swift": ["10002", "10050", "10063"],
             // Delete Account: the blank profile, owner-signed, before the erase request (LeaveNostr).
             "HavenApp/Services/LeaveNostrService.swift": ["0"],
             // Save in Edit profile.

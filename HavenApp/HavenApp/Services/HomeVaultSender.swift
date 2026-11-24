@@ -60,10 +60,12 @@ final class HomeVaultSender: ObservableObject {
 
     // MARK: - Choosing the vault
 
-    /// Where media goes: the home vault, else the Mac set by mesh npub.
+    /// Where media goes: the home vault, else the first mesh desktop Vault
+    /// in Desktop Vaults order (Desktop Vaults P3; it was the Mac set by
+    /// mesh npub).
     var mediaVault: HomeVault? {
         HomeVaultLogic.mediaVault(homeVault: homeVault,
-                                  macMeshNpub: ConfigService.shared.config.macRelayMeshNpub,
+                                  macMeshNpub: ConfigService.shared.config.desktopVaultMeshNpubs.first,
                                   ownerHex: NostrService.shared.activeHexPubkey)
     }
 
@@ -155,7 +157,7 @@ final class HomeVaultSender: ObservableObject {
         return HomeVaultLogic.laneTargets(devices: FipsMeshDevices.current(config),
                                           ownNpub: FipsMeshService.shared.ownMeshNpub,
                                           homeVault: homeVault?.meshNpub, mediaVault: mediaVault?.meshNpub,
-                                          mac: config.macRelayMeshNpub)
+                                          mac: config.desktopVaultMeshNpubs.first)
     }
 
     /// A blob just saved to this phone's own Blossom, signed for by `signer`.

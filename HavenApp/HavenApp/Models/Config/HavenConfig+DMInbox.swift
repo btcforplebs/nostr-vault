@@ -3,26 +3,24 @@ import Foundation
 extension HavenConfig {
     // MARK: - DM Inbox (NIP-17)
 
-    /// The owner's always-on Haven inbox as a DM relay, or "" when there is
-    /// none. On iOS that is the Mac relay; on a Mac it is this relay itself,
-    /// once it has a public address. Only a wss:// address counts: the list it
-    /// joins is published for other people, and a plain ws:// LAN address is
-    /// unreachable to them.
-    var ownHavenDMInboxURL: String {
+    /// The owner's always-on Haven inboxes as DM relays, in Desktop Vaults
+    /// order. On iOS that is every HTTPS desktop Vault (Desktop Vaults P3,
+    /// §2.2 rule 2; it was the one Mac relay); on a Mac it is this relay
+    /// itself, once it has a public address. Only a wss:// address counts:
+    /// the list it joins is published for other people, and a plain ws:// LAN
+    /// address or a home-network host is unreachable to them.
+    var ownHavenDMInboxURLs: [String] {
         #if os(macOS)
-        guard listsOwnDomain, !Self.isPrivateNetworkHost(sanitizedRelayURL) else { return "" }
-        return Self.normalizedRelayURL(nostrURL + "/inbox")
+        guard listsOwnDomain, !Self.isPrivateNetworkHost(sanitizedRelayURL) else { return [] }
+        return [Self.normalizedRelayURL(nostrURL + "/inbox")]
         #else
-        let base = macRelayNormalizedBase
-        guard !base.isEmpty else { return "" }
-        let typed = macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if typed.hasPrefix("ws://") || typed.hasPrefix("http://") { return "" }
-        // A home-network address typed without a scheme would otherwise be
-        // published to everyone as wss://…, put first, and be undeliverable.
-        if Self.isPrivateNetworkHost(base) { return "" }
-        return Self.normalizedRelayURL("wss://\(base)/inbox")
+        return desktopVaultDMInboxURLs.map(Self.normalizedRelayURL)
         #endif
     }
+
+    /// The first of `ownHavenDMInboxURLs`, or "" when there is none: the one
+    /// pinned at the top of Settings › Relays.
+    var ownHavenDMInboxURL: String { ownHavenDMInboxURLs.first ?? "" }
 
     /// True for an address only this network can reach: loopback, private
     /// and link-local IPv4/IPv6 ranges, CGNAT (Tailscale's 100.64.0.0/10),
@@ -71,13 +69,18 @@ extension HavenConfig {
     /// where this account's own sent copies go, and where every device reads
     /// DMs from. The owner's Haven inbox comes first, then `dmRelays`.
     var dmInboxRelays: [String] {
-        Self.mergedDMInboxRelays(havenInbox: ownHavenDMInboxURL, dmRelays: dmRelays)
+        Self.mergedDMInboxRelays(havenInboxes: ownHavenDMInboxURLs, dmRelays: dmRelays)
     }
 
     static func mergedDMInboxRelays(havenInbox: String, dmRelays: [String]) -> [String] {
+        mergedDMInboxRelays(havenInboxes: [havenInbox], dmRelays: dmRelays)
+    }
+
+    /// The Haven inboxes first, in their order, then `dmRelays`; each once.
+    static func mergedDMInboxRelays(havenInboxes: [String], dmRelays: [String]) -> [String] {
         var result: [String] = []
         var seen = Set<String>()
-        for raw in [havenInbox] + dmRelays {
+        for raw in havenInboxes + dmRelays {
             let url = normalizedRelayURL(raw)
             guard !url.isEmpty, seen.insert(url.lowercased()).inserted else { continue }
             result.append(url)
