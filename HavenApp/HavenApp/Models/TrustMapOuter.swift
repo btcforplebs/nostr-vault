@@ -83,9 +83,11 @@ struct TrustMapOuter: Equatable {
         isDesktop || devices.contains { $0.role == .mac }
     }
 
-    /// "3 hops · top 300": the best of the ring, never "people at 55 and up".
+    /// "3 hops". The rank copy has no ring total, so no "best 300 of N";
+    /// the sheet's `countText` says how many are shown. Never "people at
+    /// 55 and up": the globe has no bar.
     static func chipText(_ ring: Ring) -> String {
-        "\(ring.hop) hops · top \(ring.count.formatted())"
+        "\(ring.hop) hops"
     }
 
     /// The sheet's line: "Top 300 by score, whatever their score."

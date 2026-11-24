@@ -151,7 +151,7 @@ internal fun MyWebDesktopVaultSection(
                                 modifier = Modifier
                                     .background(accent.copy(alpha = 0.12f), CircleShape)
                                     .clickable(role = Role.Button) { open = ring }
-                                    .semantics { contentDescription = "${ring.hop} hops out, top ${ring.count} people, found by your desktop Vault" }
+                                    .semantics { contentDescription = "${ring.hop} hops out, ${ring.count} people, found by your desktop Vault" }
                                     .padding(horizontal = 12.dp, vertical = 6.dp),
                             )
                         }

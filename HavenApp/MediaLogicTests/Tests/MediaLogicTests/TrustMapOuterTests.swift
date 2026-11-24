@@ -28,7 +28,7 @@ final class TrustMapOuterTests: XCTestCase {
         XCTAssertEqual(outer.rings.map(\.hop), [3, 4, 5], "hop-2 link rows are not a ring")
         XCTAssertEqual(outer.rings[0].top, [pk("e"), pk("d"), pk("f")], "file order, f at 12 is in: no bar")
         XCTAssertEqual(outer.rings[2].top, [pk("1")])
-        XCTAssertEqual(TrustMapOuter.chipText(outer.rings[0]), "3 hops · top 3")
+        XCTAssertEqual(TrustMapOuter.chipText(outer.rings[0]), "3 hops")
         XCTAssertFalse(TrustMapOuter.chipText(outer.rings[0]).contains("55"))
         XCTAssertEqual(TrustMapOuter.countText(outer.rings[2]),
                        "The 1 best-scored person in this ring, whatever their score.")
@@ -46,7 +46,7 @@ final class TrustMapOuterTests: XCTestCase {
         XCTAssertEqual(ring.top.count, 300)
         XCTAssertEqual(ring.top.first, hex[0])
         XCTAssertFalse(ring.top.contains(hex[300]), "row 301 of a hop is a chain link, not on the ring")
-        XCTAssertEqual(TrustMapOuter.chipText(ring), "3 hops · top 300")
+        XCTAssertEqual(TrustMapOuter.chipText(ring), "3 hops")
     }
 
     func testAZeroRowIsALinkEvenInARingUnder300() throws {

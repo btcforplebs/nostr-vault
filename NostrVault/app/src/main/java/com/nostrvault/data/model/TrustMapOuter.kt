@@ -81,8 +81,11 @@ data class TrustMapOuter(
         /** A Mac (or a Linux box, which pairs as one) is among your devices. A phone is never a desktop Vault. */
         fun desktopPaired(roles: List<DeviceRole>): Boolean = roles.any { it == DeviceRole.MAC }
 
-        /** "3 hops · top 300". Never "people at 55 and up": the globe has no bar. */
-        fun chipText(ring: Ring): String = "${ring.hop} hops · top ${NumberFormat.getIntegerInstance().format(ring.count)}"
+        /**
+         * "3 hops". The rank copy has no ring total, so no "best 300 of N"; the
+         * sheet's [countText] says how many are shown. Never "people at 55 and up".
+         */
+        fun chipText(ring: Ring): String = "${ring.hop} hops"
 
         /** The sheet's line: "The 300 best-ranked people in this ring." */
         fun countText(ring: Ring): String =
