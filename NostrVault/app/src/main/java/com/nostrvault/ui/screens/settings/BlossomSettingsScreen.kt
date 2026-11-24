@@ -28,6 +28,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
+import com.nostrvault.relay.desktopVaultMeshNpubs
+import com.nostrvault.relay.desktopVaultsInEffect
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -64,8 +67,11 @@ class BlossomSettingsViewModel @Inject constructor(
     private val _newMirrorUrl = MutableStateFlow("")
     val newMirrorUrl = _newMirrorUrl.asStateFlow()
 
-    private val _macRelayHttps = MutableStateFlow<String?>(null)
-    val macRelayHttps = _macRelayHttps.asStateFlow()
+    /** The desktop Vaults, for Added for You and their published entries (Desktop Vaults P7). */
+    val desktopVaults: StateFlow<List<com.nostrvault.relay.DesktopVault>> = configStore.config.map { it.desktopVaultsInEffect }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, configStore.config.value.desktopVaultsInEffect)
+    val publishedServers: StateFlow<List<String>> = nostrService.serverLists.map { it[nostrService.ownerHexPubkey].orEmpty() }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyList())
 
     private val _publishStatus = MutableStateFlow("")
     val publishStatus = _publishStatus.asStateFlow()
@@ -75,12 +81,14 @@ class BlossomSettingsViewModel @Inject constructor(
     /** Your mobile and desktop vaults, listed in your 10063 or not, as the draft would leave them (MediaServerVaults). */
     val vaults: StateFlow<List<com.nostrvault.fips.MediaServerVault>> =
         kotlinx.coroutines.flow.combine(configStore.config, nostrService.serverLists, _draft) { cfg, lists, draft ->
+            // A desktop Vault's mesh entry is its "Media over the Mesh" switch (Desktop Vaults P7).
+            val vaultNpubs = cfg.desktopVaultMeshNpubs.toSet()
             com.nostrvault.fips.MediaServerVaults.rows(draft.applyVaults(cfg), lists[nostrService.ownerHexPubkey].orEmpty())
+                .filter { it.npub !in vaultNpubs }
         }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyList())
 
     init {
         val config = configStore.config.value
-        _macRelayHttps.value = config.macRelayHttpsURL.takeIf { it.isNotBlank() }
         // What the published list holds now, for the vaults' Add / Take off.
         nostrService.ownerHexPubkey.takeIf { it.isNotEmpty() }?.let { nostrService.fetchServerList(it) }
         // Another device's list adopted while this screen is open: follow it unless there are unsaved edits.
@@ -137,6 +145,7 @@ class BlossomSettingsViewModel @Inject constructor(
 fun BlossomSettingsScreen(
     onBack: () -> Unit,
     onOpenFipsMesh: () -> Unit = {},
+    onOpenVault: (String) -> Unit = {},
     viewModel: BlossomSettingsViewModel = hiltViewModel(),
     health: com.nostrvault.ui.screens.dashboard.MediaCopyViewModel = hiltViewModel(),
 ) {
@@ -144,7 +153,8 @@ fun BlossomSettingsScreen(
     val mirrors = draft.mirrors
     val changes = draft.changeCount
     val newMirrorUrl by viewModel.newMirrorUrl.collectAsState()
-    val macRelayHttps by viewModel.macRelayHttps.collectAsState()
+    val desktopVaults by viewModel.desktopVaults.collectAsState()
+    val publishedServers by viewModel.publishedServers.collectAsState()
     val publishStatus by viewModel.publishStatus.collectAsState()
     val waitingPosts by viewModel.waitingPosts.collectAsState()
     val healthState by health.state.collectAsState()
@@ -202,46 +212,14 @@ fun BlossomSettingsScreen(
                 HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
             }
 
-            // Auto-applied server from Haven relay
-            if (!macRelayHttps.isNullOrBlank()) {
-                Surface(
-                    color = SuccessGreen.copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            NostrVaultIcons.Check,
-                            contentDescription = null,
-                            tint = SuccessGreen,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "Auto-Applied Blossom Server",
-                                color = PrimaryText,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                text = macRelayHttps!!,
-                                color = SecondaryText,
-                                fontSize = 12.sp,
-                            )
-                        }
-                    }
-                }
-                // Read once: the desktop can unlink before the next redraw (Tron).
-                val desktopUrl = macRelayHttps.orEmpty()
-                val desktop = healthState.servers.firstOrNull { it.url == desktopUrl }
-                ServerHealthLine(desktop, "Not checked yet") { health.test(desktopUrl) }
+            // Every HTTPS desktop Vault, and the Vault entries of the published list (Desktop Vaults P7).
+            com.nostrvault.ui.screens.settings.desktopvaults.DesktopVaultMediaRows(desktopVaults, onOpenVault) { url ->
+                ServerHealthLine(healthState.servers.firstOrNull { it.url == url }, "Not checked yet") { health.test(url) }
             }
+            com.nostrvault.ui.screens.settings.desktopvaults.DesktopVaultEntryRows(
+                com.nostrvault.ui.screens.settings.desktopvaults.desktopVaultEntries(servers = publishedServers, vaults = desktopVaults),
+                onOpenVault, Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
 
             // Every server plain http: uploads and their auth headers go out unencrypted (Tron #1451).
             if (com.nostrvault.service.ServerListAdoption.allPlainHttp(mirrors)) {

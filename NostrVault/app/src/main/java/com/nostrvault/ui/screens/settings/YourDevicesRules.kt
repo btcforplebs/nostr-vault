@@ -105,5 +105,5 @@ object YourDevicesRules {
         "your vault runs, and after a restart. Your devices reach it in full."
     const val ADVANCED_HEADER = "Advanced"
     const val MESH_ROW = "Mesh"
-    const val DESKTOP_BY_ADDRESS_ROW = "Desktop vault by web address"
+    const val DESKTOP_BY_ADDRESS_ROW = "Desktop Vaults"
 }

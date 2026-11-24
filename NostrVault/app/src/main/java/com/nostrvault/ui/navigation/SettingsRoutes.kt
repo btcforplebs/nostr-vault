@@ -20,7 +20,8 @@ import com.nostrvault.ui.screens.settings.PrivacySettingsScreen
 import com.nostrvault.ui.screens.settings.RelayAccessSettingsScreen
 import com.nostrvault.ui.screens.settings.NotificationSettingsScreen
 import com.nostrvault.ui.screens.settings.PowSettingsScreen
-import com.nostrvault.ui.screens.settings.HavenRelaySettingsScreen
+import com.nostrvault.ui.screens.settings.desktopvaults.DesktopVaultDetailScreen
+import com.nostrvault.ui.screens.settings.desktopvaults.DesktopVaultsScreen
 import com.nostrvault.ui.screens.settings.RelayMatrixScreen
 import com.nostrvault.ui.screens.settings.fipsmesh.FipsMeshAdvancedScreen
 import com.nostrvault.ui.screens.settings.fipsmesh.FipsMeshDeviceScreen
@@ -121,6 +122,7 @@ internal fun NavGraphBuilder.settingsRoutes(
         RelayMatrixScreen(
             onBack = { navController.popBackStack() },
             onOpenMediaServers = { navController.navigate(Screen.BlossomSettings.route) },
+            onOpenVault = { id -> navController.navigate(Screen.DesktopVaultDetail.createRoute(id)) },
         )
     }
 
@@ -128,6 +130,7 @@ internal fun NavGraphBuilder.settingsRoutes(
         BlossomSettingsScreen(
             onBack = { navController.popBackStack() },
             onOpenFipsMesh = { navController.navigate(Screen.MeshSettings.route) },
+            onOpenVault = { id -> navController.navigate(Screen.DesktopVaultDetail.createRoute(id)) },
         )
     }
 
@@ -155,9 +158,19 @@ internal fun NavGraphBuilder.settingsRoutes(
         )
     }
 
-    composable(Screen.HavenRelaySettings.route) {
-        HavenRelaySettingsScreen(
+    composable(Screen.DesktopVaults.route) {
+        DesktopVaultsScreen(
             onBack = { navController.popBackStack() },
+            onOpenVault = { id -> navController.navigate(Screen.DesktopVaultDetail.createRoute(id)) },
+            onPair = { navController.navigate(Screen.PairDevice.route) },
+        )
+    }
+
+    composable(Screen.DesktopVaultDetail.route) { entry ->
+        DesktopVaultDetailScreen(
+            vaultId = entry.arguments?.getString("id").orEmpty(),
+            onBack = { navController.popBackStack() },
+            onPair = { navController.navigate(Screen.PairDevice.route) },
         )
     }
 
@@ -167,7 +180,7 @@ internal fun NavGraphBuilder.settingsRoutes(
             onOpenDevice = { npub -> navController.navigate(Screen.FipsMeshDevice.createRoute(npub)) },
             onLinkDevice = { navController.navigate(Screen.PairDevice.route) },
             onOpenMesh = { navController.navigate(Screen.MeshSettings.route) },
-            onOpenDesktopByAddress = { navController.navigate(Screen.HavenRelaySettings.route) },
+            onOpenDesktopByAddress = { navController.navigate(Screen.DesktopVaults.route) },
         )
     }
 

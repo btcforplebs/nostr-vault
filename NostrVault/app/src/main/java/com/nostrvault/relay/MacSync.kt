@@ -62,6 +62,10 @@ object MacSync {
 
     fun parse(text: String): MacSyncStatus? = runCatching { json.decodeFromString<MacSyncStatus>(text) }.getOrNull()
 
+    /** One desktop Vault's status file ([DesktopVaultsRules.statusFileName], P1), by its `wss://<base>`. */
+    fun read(relayDataDir: File, vaultURL: String): MacSyncStatus? =
+        runCatching { File(relayDataDir, DesktopVaultsRules.statusFileName(vaultURL)).readText() }.getOrNull()?.let(::parse)
+
     fun read(relayDataDir: File): MacSyncStatus? =
         runCatching { File(relayDataDir, STATUS_FILE).readText() }.getOrNull()?.let(::parse)
 
