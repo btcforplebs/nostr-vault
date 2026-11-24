@@ -23,6 +23,9 @@ struct TrustMapOuter: Equatable {
         /// Each of `top`'s link one ring in (`TrustRankCopy.GlobePerson.via`):
         /// the zoomed globe draws a line to them (`GlobeRingZoom`).
         var via: [String: String] = [:]
+        /// The people ranked after `top`, best first (`TrustRankCopy.haze`):
+        /// the zoomed-out ring's faint, untappable dots (`GlobeHaze`).
+        var haze: [String] = []
         var id: Int { hop }
         var count: Int { top.count }
     }
@@ -79,7 +82,11 @@ struct TrustMapOuter: Equatable {
             byHop[person.hop, default: []].append(key)
             if !person.via.isEmpty, !hidden.contains(person.via) { via[person.hop, default: [:]][key] = person.via }
         }
-        let rings = byHop.keys.sorted().map { Ring(hop: $0, top: byHop[$0] ?? [], via: via[$0] ?? [:]) }
+        let rings = byHop.keys.sorted().map { hop in
+            let top = Set(byHop[hop] ?? [])
+            let haze = (copy.haze[hop] ?? []).filter { !hidden.contains($0) && !top.contains($0) }
+            return Ring(hop: hop, top: byHop[hop] ?? [], via: via[hop] ?? [:], haze: haze)
+        }
         return TrustMapOuter(source: .ranked, rings: rings)
     }
 

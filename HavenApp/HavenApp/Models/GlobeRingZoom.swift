@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// The WOT tab's Hop 3, Hop 4 and Hop 5 layers zoom your own globe out to
@@ -36,6 +37,48 @@ enum GlobeRingZoom {
     static let maxLinks = 40
 
     /// The zoom level a hop layer asks for; nil (your circle) is 0.
+    // MARK: Sink (Logen 2026-11-24)
+
+    /// Everything inside the picked ring (the inner globe, and the rings
+    /// between it and the picked one) sinks down and gets smaller, so it
+    /// reads as pulling back into space; the picked ring and its haze
+    /// (`GlobeHazeField`) stay centred. How far down, as a share of half the
+    /// frame's short side, at each whole level.
+    static let sinkDrops: [Double] = [0, 0.34, 0.36, 0.38]
+    /// How much smaller what sinks is drawn, on top of `innerScales`.
+    static let sinkScales: [Double] = [1, 0.8, 0.74, 0.68]
+
+    /// How much `hop`'s ring sinks (0 to 1): the inner globe (hop 2 and
+    /// in) once any hop is picked, an outer ring once a hop past it is.
+    static func inside(hop: Int, level: Double) -> Double {
+        let (lo, hi, t) = bracket(level)
+        let a = inside(hop: hop, whole: lo), b = inside(hop: hop, whole: hi)
+        return a + (b - a) * t
+    }
+
+    /// Where `hop`'s ring is drawn at `level`: its centre `drop` points below
+    /// the frame's middle, and `scale` times its radius.
+    static func sink(hop: Int, level: Double, half: Double) -> (drop: Double, scale: Double) {
+        let a = inside(hop: hop, level: level)
+        return (a * lerp(sinkDrops, level) * half, 1 - a * (1 - lerp(sinkScales, level)))
+    }
+
+    /// The inner globe's drawing transform at `level`: shrunk (`innerScale`
+    /// times the sink's scale) round the frame's middle, then dropped.
+    static func innerTransform(level: Double, size: CGSize) -> CGAffineTransform {
+        let half = Double(min(size.width, size.height)) / 2
+        let (drop, scale) = sink(hop: TrustMapOuter.firstHop - 1, level: level, half: half)
+        let s = innerScale(level) * scale
+        let mx = Double(size.width) / 2, my = Double(size.height) / 2
+        return CGAffineTransform(translationX: -mx, y: -my)
+            .concatenating(CGAffineTransform(scaleX: s, y: s))
+            .concatenating(CGAffineTransform(translationX: mx, y: my + drop))
+    }
+
+    private static func inside(hop: Int, whole: Int) -> Double {
+        whole > 0 && hop < TrustMapOuter.firstHop + whole - 1 ? 1 : 0
+    }
+
     static func level(hop: Int?) -> Double {
         guard let hop else { return 0 }
         return Double(min(maxLevel, max(1, hop - TrustMapOuter.firstHop + 1)))

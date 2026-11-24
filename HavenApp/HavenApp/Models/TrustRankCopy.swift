@@ -38,9 +38,15 @@ struct TrustRankCopy: Equatable {
     /// Empty when the file has none (an engine from before G1).
     let globeOrder: [String]
     let globe: [String: GlobePerson]
+    /// The haze (`haze` in the file): for ring 3 and ring 4, the people
+    /// ranked after the ring's globe top, best first. Drawn only as the
+    /// zoomed-out ring's faint dots (`GlobeHazeField`), never tapped.
+    /// Empty when the file has none, or a bad one.
+    let haze: [Int: [String]]
 
     init(account: String, builtAt: Int64, maxHop: Int, viewBar: Double, floor: Double,
-         people: [String: Person], globeOrder: [String] = [], globe: [String: GlobePerson] = [:]) {
+         people: [String: Person], globeOrder: [String] = [], globe: [String: GlobePerson] = [:],
+         haze: [Int: [String]] = [:]) {
         self.account = account
         self.builtAt = builtAt
         self.maxHop = maxHop
@@ -49,6 +55,7 @@ struct TrustRankCopy: Equatable {
         self.people = people
         self.globeOrder = globeOrder
         self.globe = globe
+        self.haze = haze
     }
 
     subscript(pubkey: String) -> Person? { people[pubkey.lowercased()] }
@@ -66,6 +73,10 @@ struct TrustRankCopy: Equatable {
     /// 9 x `globePerRing`). docs/MESH_COPY_V2_CONTRACT.md §5 says the number;
     /// `TrustMapOuterTests` reads it from there so the two cannot drift.
     static let maxGlobeRows = 9 * globePerRing
+    /// The engine's `trustrank.HazePerRing`: the most haze rows a ring
+    /// carries (1,000 and 2,000 people in all, less the ring's top 300).
+    /// Contract §6 says them; `TrustRankCopyHazeTests` reads them from there.
+    static let hazePerRing: [Int: Int] = [3: 700, 4: 1_700]
 
     /// haven-go `trustrank.ResultPath`.
     static func fileName(account: String) -> String { "wot_rank_\(account).json" }
@@ -108,7 +119,33 @@ struct TrustRankCopy: Equatable {
         }
         return TrustRankCopy(account: account, builtAt: builtAt, maxHop: maxHop,
                              viewBar: score(root["viewBar"]) ?? 55, floor: score(root["floor"]) ?? 0,
-                             people: people, globeOrder: order, globe: globe)
+                             people: people, globeOrder: order, globe: globe,
+                             haze: parseHaze(root["haze"], maxHop: maxHop, globe: globe))
+    }
+
+    /// The optional `haze` (haven-go `checkHaze`): rings "3" and "4" only (and
+    /// maxHop), each within `hazePerRing`, every row a hex pubkey shown over 0
+    /// and at most 100, in no other ring and not a globe row. Unlike a bad
+    /// globe, a bad haze costs only the haze: it is empty, the copy stays.
+    static func parseHaze(_ value: Any?, maxHop: Int, globe: [String: GlobePerson]) -> [Int: [String]] {
+        guard let rings = value as? [String: Any] else { return [:] }
+        var out: [Int: [String]] = [:]
+        var seen = Set<String>()
+        for (name, value) in rings {
+            guard let hop = Int(name), String(hop) == name, let cap = hazePerRing[hop], hop <= maxHop,
+                  let rows = value as? [Any], rows.count <= cap else { return [:] }
+            var keys: [String] = []
+            keys.reserveCapacity(rows.count)
+            for row in rows {
+                guard let cells = row as? [Any], cells.count == 2,
+                      let pk = cells[0] as? String, isHex64(pk),
+                      let score = number(cells[1]), score > 0, score <= 100,
+                      globe[pk] == nil, seen.insert(pk).inserted else { return [:] }
+                keys.append(pk)
+            }
+            out[hop] = keys
+        }
+        return out
     }
 
     /// The optional `globe` list (haven-go `trustrank.CheckHandoff`): missing
