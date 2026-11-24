@@ -11,6 +11,14 @@ enum class DesktopVaultList(val kind: Int) {
     /** BUD-03 media servers: `["server", "https://<base>"]` and `["server", "fipsmesh://<npub>/"]`. */
     MEDIA(10063);
 
+    /** The list's name in a sentence ("your relays list"). */
+    val title: String
+        get() = when (this) {
+            RELAYS -> "relays"
+            INBOX -> "DM inbox"
+            MEDIA -> "media servers"
+        }
+
     /** The message a refused change shows (§2.5 rule 5). */
     val refusal: String
         get() = when (this) {

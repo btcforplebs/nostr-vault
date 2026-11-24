@@ -168,4 +168,30 @@ class DesktopVaultsEditingTest {
         assertEquals(listOf(false, true), rows.map { it.mesh })
         assertEquals(listOf(listOf("server", "https://blossom.example")), DesktopVaultsEditing.splitting(tags, DesktopVaultList.MEDIA, listOf(vault)).second)
     }
+
+    /** A Relays Save keeps the Vault entries first and as published, never as rows, and never adds the old slot. */
+    @Test fun aRelaysSaveKeepsVaultEntriesFirstAndAsPublished() {
+        val published = RelayDraft.Published(
+            read = listOf("wss://nostr.land"), write = listOf("wss://relay.primal.net"), dms = listOf("wss://inbox.nostr.wine"),
+            relayListKnown = true, dmListKnown = true,
+            vaultRelays = listOf(listOf("r", "wss://vault.example.com"), listOf("r", "wss://two.example.com", "write")),
+            vaultInboxes = listOf("wss://vault.example.com/inbox"),
+        )
+        val lists = RelayMatrix.Lists(read = listOf("wss://nostr.land"), write = listOf("wss://relay.primal.net"),
+            dms = listOf("wss://inbox.nostr.wine"), search = emptyList(), import = emptyList())
+        var state = RelayDraft.start(lists, published)
+        val vaultKeys = listOf("wss://vault.example.com", "wss://two.example.com", "wss://vault.example.com/inbox").map(RelayMatrix::key)
+        assertFalse(RelayDraft.rows(state).any { it.entry.key in vaultKeys })
+        state = RelayDraft.add(state, "wss://new.example", setOf(RelayMatrix.Job.READ, RelayMatrix.Job.WRITE, RelayMatrix.Job.DMS))
+        val plan = RelayDraft.plan(state, ownRelay = "", ownInbox = "")
+        assertEquals(published.vaultRelays, plan.relayListTags!!.take(2))
+        assertEquals("wss://vault.example.com/inbox", plan.dmRelays!!.first())
+        assertFalse(plan.relayListChanges.any { it.url.contains("vault.example.com") })
+        assertFalse(plan.dmChanges.any { it.url.contains("vault.example.com") })
+        // Save's rebase sees no change to the Vault entries: the newest list's stay as they are.
+        val newest = listOf(listOf("r", "wss://two.example.com", "write"), listOf("r", "wss://nostr.land"), listOf("r", "wss://relay.primal.net"))
+        val rebased = RelayDraft.rebaseRelayList(published.relayListBefore, plan.relayListTags!!, newest)
+        assertFalse("a Vault entry switched off elsewhere stays off", rebased.any { it.getOrNull(1) == "wss://vault.example.com" })
+        assertTrue(rebased.any { it.getOrNull(1) == "wss://new.example" })
+    }
 }
