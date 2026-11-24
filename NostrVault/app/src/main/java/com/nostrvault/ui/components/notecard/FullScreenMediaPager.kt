@@ -285,7 +285,7 @@ internal fun FullScreenMediaPager(
                         onVerticalDrag = onVerticalDrag,
                         onVerticalDragEnd = { onVerticalDragEnd() },
                         onLongPress = {
-                            if (!closing && !deleting && viewModel.canDelete(url)) showDeleteBar = !showDeleteBar
+                            if (!closing && !deleting && viewModel.canDelete(url, authors.getOrNull(page))) showDeleteBar = !showDeleteBar
                         },
                         onTap = if (isVideoUrl(url) && !isInPiP) videoControls::tap else null,
                         modifier = Modifier
@@ -314,7 +314,7 @@ internal fun FullScreenMediaPager(
                         onVerticalDrag = onVerticalDrag,
                         onVerticalDragEnd = { onVerticalDragEnd() },
                         onLongPress = {
-                            if (!closing && !deleting && viewModel.canDelete(url)) showDeleteBar = !showDeleteBar
+                            if (!closing && !deleting && viewModel.canDelete(url, authors.getOrNull(page))) showDeleteBar = !showDeleteBar
                         },
                         modifier = Modifier.fillMaxSize(),
                     )

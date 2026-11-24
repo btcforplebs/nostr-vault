@@ -7,12 +7,18 @@ struct IdentifiableURL: Identifiable {
     /// The full set of media in the note this URL came from, in display order.
     /// Defaults to just `[url]` so single-media call sites are unchanged.
     let allURLs: [URL]
-    /// What the opening screen adds to the viewer; nil from the feed.
-    var extras: MediaViewerExtras? = nil
+    /// What the opening screen adds to the viewer. From the feed this is
+    /// just the poster: the author of the note whose photo was tapped
+    /// (`MeshMediaTap`, set by the tap a moment ago), so a repost or quote
+    /// names the original author, not whoever reposted it.
+    var extras: MediaViewerExtras?
 
+    @MainActor
     init(url: URL, allURLs: [URL]? = nil, extras: MediaViewerExtras? = nil) {
         self.url = url
         self.allURLs = (allURLs?.isEmpty == false ? allURLs! : [url])
+        var extras = extras ?? MediaViewerExtras()
+        if extras.poster == nil { extras.poster = MeshMediaTap.note?.author }
         self.extras = extras
     }
 }
