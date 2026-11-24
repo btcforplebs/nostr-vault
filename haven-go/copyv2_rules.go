@@ -271,7 +271,24 @@ var copySettingsAllowlist = map[string]copySettingsKey{
 	"dm_relays":           {Type: "string[]"},
 	"media_servers":       {Type: "string[]"},
 	"notifications":       {Type: "object<bool>"},
+	// Desktop Vaults P10: the Vault list, merged per Vault id (copyVaultsMerge).
+	"desktop_vaults": {Type: "object[]", Max: copyVaultsMax},
 }
+
+// copyVaultsMax: more Vaults than this and the settings file is refused.
+const copyVaultsMax = 32
+
+// copyVaultTombDays: a tombstone older than this is dropped on merge.
+const copyVaultTombDays = 90
+
+// copyVaultFields / copyTombFields: what a Vault and a tombstone may hold
+// (settings-allowlist.json). Addresses only: never My Devices, a pairing or
+// a key, so a copied Vault grants nothing (plan §2.6).
+var (
+	copyVaultFields = map[string]string{"id": "string", "name": "string?", "kind": "string?",
+		"meshNpub": "npub?", "httpsURL": "https?", "order": "int", "updatedAt": "int"}
+	copyTombFields = map[string]string{"id": "string", "deletedAt": "int"}
+)
 
 // copySettingsFutureSlack: a settings file dated further ahead than this is refused.
 const copySettingsFutureSlack = 10 * time.Minute
@@ -335,6 +352,8 @@ func copyTypeOK(want copySettingsKey, v any) bool {
 			}
 		}
 		return true
+	case "object[]":
+		return copyVaultsOK(v, want.Max)
 	case "object<string>", "object<bool>":
 		m, ok := v.(map[string]any)
 		if !ok {
@@ -352,6 +371,193 @@ func copyTypeOK(want copySettingsKey, v any) bool {
 		return true
 	}
 	return false
+}
+
+// copyWholeNumber: v is a JSON number with no fraction, at least min.
+func copyWholeNumber(v any, min float64) bool {
+	f, ok := v.(float64)
+	return ok && f == math.Trunc(f) && f >= min && f < 1e15
+}
+
+// copyVaultsOK checks desktop_vaults field by field: a list of Vaults and
+// tombstones (an entry with deletedAt), each id once, at most max Vaults.
+func copyVaultsOK(v any, max int) bool {
+	list, ok := v.([]any)
+	if !ok {
+		return false
+	}
+	seen := map[string]bool{}
+	vaults := 0
+	for _, x := range list {
+		e, ok := x.(map[string]any)
+		if !ok {
+			return false
+		}
+		fields := copyVaultFields
+		if _, tomb := e["deletedAt"]; tomb {
+			fields = copyTombFields
+		} else {
+			vaults++
+		}
+		for k := range e {
+			if _, ok := fields[k]; !ok {
+				return false
+			}
+		}
+		for k, t := range fields {
+			val, has := e[k]
+			if !has {
+				if strings.HasSuffix(t, "?") {
+					continue
+				}
+				return false
+			}
+			str, isStr := val.(string)
+			switch strings.TrimSuffix(t, "?") {
+			case "string":
+				if !isStr || (k == "id" && str == "") {
+					return false
+				}
+			case "npub":
+				if !isStr || !strings.HasPrefix(str, "npub1") {
+					return false
+				}
+			case "https":
+				if !isStr || !strings.HasPrefix(str, "https://") {
+					return false
+				}
+			case "int":
+				min := 0.0
+				if k != "order" {
+					min = 1
+				}
+				if !copyWholeNumber(val, min) {
+					return false
+				}
+			}
+		}
+		if fields["meshNpub"] != "" && e["meshNpub"] == nil && e["httpsURL"] == nil {
+			return false
+		}
+		id := e["id"].(string)
+		if seen[id] {
+			return false
+		}
+		seen[id] = true
+	}
+	return vaults <= max
+}
+
+// copyVaultStamp: a Vault's updatedAt, or a tombstone's deletedAt.
+func copyVaultStamp(e map[string]any) (float64, bool) {
+	if at, ok := e["deletedAt"].(float64); ok {
+		return at, true
+	}
+	at, _ := e["updatedAt"].(float64)
+	return at, false
+}
+
+// copyVaultsMerge merges two checked desktop_vaults lists per Vault id
+// (plan §2.6, Tron S4; settings-vault-merge-cases.json): the newer stamp wins
+// for each id, a tie keeps mine, and a tombstone removes a Vault only when it
+// is newer. Tombstones older than 90 days are dropped. Out: Vaults by
+// (order, id), then tombstones by id. It merges data only: it never reads or
+// writes the paired set, so a copied Vault can't pair anything.
+func copyVaultsMerge(mine, theirs []any, now time.Time) []any {
+	byID := map[string]map[string]any{}
+	for _, x := range mine {
+		e := x.(map[string]any)
+		byID[e["id"].(string)] = e
+	}
+	for _, x := range theirs {
+		t := x.(map[string]any)
+		id := t["id"].(string)
+		m, has := byID[id]
+		if !has {
+			byID[id] = t
+			continue
+		}
+		ts, tTomb := copyVaultStamp(t)
+		ms, mTomb := copyVaultStamp(m)
+		if ts > ms || (ts == ms && mTomb && !tTomb) {
+			byID[id] = t
+		}
+	}
+	oldest := float64(now.Add(-copyVaultTombDays * 24 * time.Hour).Unix())
+	var vaults, tombs []map[string]any
+	for _, e := range byID {
+		if at, tomb := copyVaultStamp(e); tomb {
+			if at >= oldest {
+				tombs = append(tombs, e)
+			}
+		} else {
+			vaults = append(vaults, e)
+		}
+	}
+	slices.SortFunc(vaults, func(a, b map[string]any) int {
+		if oa, ob := a["order"].(float64), b["order"].(float64); oa != ob {
+			if oa < ob {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a["id"].(string), b["id"].(string))
+	})
+	slices.SortFunc(tombs, func(a, b map[string]any) int { return strings.Compare(a["id"].(string), b["id"].(string)) })
+	out := make([]any, 0, len(vaults)+len(tombs))
+	for _, e := range vaults {
+		out = append(out, e)
+	}
+	for _, e := range tombs {
+		out = append(out, e)
+	}
+	return out
+}
+
+// copySettingsMerge: the settings file after theirs meets mine (both already
+// passed copySettingsRefusal; mine may be nil for none). Every key but
+// desktop_vaults is whole-file: the newer updated_at's keys, a tie keeps
+// mine. desktop_vaults merges per Vault (copyVaultsMerge) from both sides,
+// whichever file won. updated_at is the newer of the two.
+func copySettingsMerge(mine, theirs []byte, now time.Time) ([]byte, error) {
+	type file struct {
+		V         int            `json:"v"`
+		UpdatedAt int64          `json:"updated_at"`
+		Keys      map[string]any `json:"keys"`
+	}
+	var t file
+	if err := json.Unmarshal(theirs, &t); err != nil {
+		return nil, err
+	}
+	var m file
+	if mine == nil || json.Unmarshal(mine, &m) != nil || m.Keys == nil {
+		m = file{}
+	}
+	out := file{V: 1, UpdatedAt: max(m.UpdatedAt, t.UpdatedAt), Keys: map[string]any{}}
+	winner := m.Keys
+	if copySettingsNewer(m.UpdatedAt, t.UpdatedAt) || mine == nil {
+		winner = t.Keys
+	}
+	for k, v := range winner {
+		out.Keys[k] = v
+	}
+	mv, mHas := m.Keys["desktop_vaults"].([]any)
+	tv, tHas := t.Keys["desktop_vaults"].([]any)
+	if mHas || tHas {
+		out.Keys["desktop_vaults"] = copyVaultsMerge(mv, tv, now)
+	}
+	return json.Marshal(out)
+}
+
+// copySettingsSame: a and b hold the same settings, however each is spelled.
+func copySettingsSame(a, b []byte) bool {
+	var x, y any
+	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
+		return false
+	}
+	xs, _ := json.Marshal(x)
+	ys, _ := json.Marshal(y)
+	return string(xs) == string(ys)
 }
 
 // copySettingsRefusal: why raw may not be copied or applied ("" = it may):

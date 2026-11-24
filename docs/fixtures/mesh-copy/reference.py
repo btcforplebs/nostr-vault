@@ -129,6 +129,13 @@ allow = {"v": 1, "keys": {
     "dm_relays": {"type": "string[]", "hex": False, "about": "DM relay choice"},
     "media_servers": {"type": "string[]", "hex": False, "about": "media server choice, in order"},
     "notifications": {"type": "object<bool>", "hex": False, "about": "notification switches, switch name -> on"},
+    # Desktop Vaults P10 (PLANS/NV_DESKTOP_VAULTS_PLAN.md 2.6): the Vault list, addresses only, merged per Vault id
+    # (settings-vault-merge-cases.json). Each entry is a Vault, or a tombstone (an entry with deletedAt).
+    "desktop_vaults": {"type": "object[]", "hex": False, "min": 0, "max": 32,
+        "vault": {"id": "string", "name": "string?", "kind": "string?", "meshNpub": "npub?", "httpsURL": "https?",
+                  "order": "int", "updatedAt": "int"},
+        "tombstone": {"id": "string", "deletedAt": "int"},
+        "about": "the Desktop Vault list: addresses only, never pairing; per-Vault newest wins, tombstones for deletes"},
 }}
 write("settings-allowlist.json", allow)
 
@@ -138,6 +145,17 @@ ok_keys = {"feed_layouts": {"following": "cards", "global": "compact"}, "zaps_on
            "notifications": {"replies": True, "zaps": False}}
 s = lambda keys, **over: {"v": 1, "updated_at": 1767000000, "keys": keys, **over}
 nsec = "nsec1" + "q" * 58
+MAC = npub(h("a mac"))
+BOX = npub(h("a box"))
+def vault(id, mesh=None, https=None, order=0, at=1767000000, name="", kind="mac"):
+    v = {"id": id, "name": name, "kind": kind, "order": order, "updatedAt": at}
+    if mesh is not None: v["meshNpub"] = mesh
+    if https is not None: v["httpsURL"] = https
+    return v
+def tomb(id, at=1767000000): return {"id": id, "deletedAt": at}
+VAULTS_OK = [vault("mesh:" + MAC, mesh=MAC, https="https://mac.example", order=0, name="Studio Mac"),
+             vault("mesh:" + BOX, mesh=BOX, order=1, name="Box", kind="box"),
+             tomb("https:old.example")]
 write("settings-refuse-cases.json", {"now": 1767000300, "cases": [
     {"name": "every key, clean", "settings": s(ok_keys), "expect": {"ok": True}},
     {"name": "empty keys", "settings": s({}), "expect": {"ok": True}},
@@ -162,6 +180,31 @@ write("settings-refuse-cases.json", {"now": 1767000300, "cases": [
     {"name": "no updated_at", "settings": {"v": 1, "keys": {}}, "expect": {"ok": False, "reason": "bad_version"}},
     {"name": "dated 11 minutes ahead", "settings": s({}, updated_at=1767000300 + 660), "expect": {"ok": False, "reason": "bad_version"}},
     {"name": "keys missing", "settings": {"v": 1, "updated_at": 1767000000}, "expect": {"ok": False, "reason": "bad_version"}},
+    # Desktop Vaults (P10): the object[] type, checked field by field.
+    {"name": "vault list, clean", "settings": s({"desktop_vaults": VAULTS_OK}), "expect": {"ok": True}},
+    {"name": "vault list, empty", "settings": s({"desktop_vaults": []}), "expect": {"ok": True}},
+    {"name": "vault list, 32 Vaults and a tombstone", "settings": s({"desktop_vaults": [vault(f"https:v{i}.example", https=f"https://v{i}.example", order=i) for i in range(32)] + [tomb("https:gone.example")]}), "expect": {"ok": True}},
+    {"name": "vault list, 33 Vaults", "settings": s({"desktop_vaults": [vault(f"https:v{i}.example", https=f"https://v{i}.example", order=i) for i in range(33)]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault list, not a list", "settings": s({"desktop_vaults": {"a": VAULTS_OK[0]}}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault list, an entry not an object", "settings": s({"desktop_vaults": ["https://a.example"]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault with a field that isn't listed", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "paired": True}]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault carrying My Devices", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "meshDevices": []}]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault with the mesh key", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "meshNsec": "x"}]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault with no id", "settings": s({"desktop_vaults": [{k: v for k, v in VAULTS_OK[0].items() if k != "id"}]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault with an empty id", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "id": ""}]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "two entries with one id", "settings": s({"desktop_vaults": [VAULTS_OK[0], tomb(VAULTS_OK[0]["id"])]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault with no address", "settings": s({"desktop_vaults": [vault("https:a.example")]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault with no updatedAt", "settings": s({"desktop_vaults": [{k: v for k, v in VAULTS_OK[0].items() if k != "updatedAt"}]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault order not whole", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "order": 1.5}]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault order below 0", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "order": -1}]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault name not a string", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "name": 3}]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault mesh address not an npub", "settings": s({"desktop_vaults": [vault("mesh:x", mesh="fipsmesh://x.fips")]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault web address not https", "settings": s({"desktop_vaults": [vault("https:a.example", https="wss://a.example")]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "tombstone with a Vault field", "settings": s({"desktop_vaults": [{**tomb("https:a.example"), "httpsURL": "https://a.example"}]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "tombstone date not whole", "settings": s({"desktop_vaults": [{**tomb("https:a.example"), "deletedAt": 1.5}]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "vault mesh address as a raw hex key", "settings": s({"desktop_vaults": [vault("mesh:x", mesh=OWNER)]}), "expect": {"ok": False, "reason": "secret_value"}},
+    {"name": "vault named with an nsec", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "name": nsec}]}), "expect": {"ok": False, "reason": "secret_value"}},
+    {"name": "vault web address with a bunker string", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "httpsURL": "https://a.example/?bunker://x"}]}), "expect": {"ok": False, "reason": "secret_value"}},
 ], "newest_wins": [
     {"name": "theirs newer", "mine": 100, "theirs": 200, "expect": "theirs"},
     {"name": "mine newer", "mine": 200, "theirs": 100, "expect": "mine"},
@@ -169,6 +212,47 @@ write("settings-refuse-cases.json", {"now": 1767000300, "cases": [
     {"name": "none here", "mine": None, "theirs": 100, "expect": "theirs"},
     {"name": "none there", "mine": 100, "theirs": None, "expect": "mine"},
 ]})
+
+# Desktop Vaults P10 (plan 2.6, Tron S4): desktop_vaults merges per Vault id, not whole-file. The newer stamp
+# (updatedAt, or a tombstone's deletedAt) wins for each id; a tie keeps mine, except that a tombstone must be NEWER
+# than a Vault to remove it. Tombstones older than 90 days are dropped. Out: Vaults by (order, id), then tombstones
+# by id. The engine runs it on every settings write from another device; the other keys stay whole-file.
+TOMB_DAYS = 90
+def stamp(e): return e["deletedAt"] if "deletedAt" in e else e["updatedAt"]
+def merge_vaults(mine, theirs, now):
+    out = {e["id"]: e for e in mine}
+    for t in theirs:
+        m = out.get(t["id"])
+        if m is None or stamp(t) > stamp(m) or (stamp(t) == stamp(m) and "deletedAt" in m and "deletedAt" not in t):
+            out[t["id"]] = t
+    keep = [e for e in out.values() if "deletedAt" not in e or e["deletedAt"] >= now - TOMB_DAYS * 86400]
+    vaults = sorted((e for e in keep if "deletedAt" not in e), key=lambda e: (e["order"], e["id"]))
+    tombs = sorted((e for e in keep if "deletedAt" in e), key=lambda e: e["id"])
+    return vaults + tombs
+
+NOW = 1767000300
+A = vault("mesh:" + MAC, mesh=MAC, order=0, name="Studio Mac")
+B = vault("https:box.example", https="https://box.example", order=1, name="Box", kind="box")
+C = vault("https:new.example", https="https://new.example", order=2, name="New")
+def ed(v, **kw): return {**v, **kw}
+merge_cases = [
+    ("both empty", [], []),
+    ("added there, kept here", [A], [A, C]),
+    ("added here while there edits another", [A, B, ed(C, updatedAt=1767000200)], [ed(A, name="Mac", updatedAt=1767000100), B]),
+    ("theirs newer", [A], [ed(A, name="Renamed", updatedAt=1767000100)]),
+    ("mine newer", [ed(A, name="Mine", updatedAt=1767000100)], [A]),
+    ("tie keeps mine", [ed(A, name="Mine")], [ed(A, name="Theirs")]),
+    ("tombstone newer than the Vault removes it", [A, B], [A, tomb(B["id"], at=1767000100)]),
+    ("Vault newer than the tombstone comes back", [tomb(B["id"], at=1767000100)], [ed(B, updatedAt=1767000200)]),
+    ("tombstone at the same second does not remove", [B], [tomb(B["id"])]),
+    ("newer of two tombstones", [tomb(B["id"])], [tomb(B["id"], at=1767000100)]),
+    ("tombstone 91 days old is dropped", [A, tomb(B["id"], at=NOW - 91 * 86400)], [A]),
+    ("tombstone exactly 90 days old stays", [A, tomb(B["id"], at=NOW - 90 * 86400)], [A]),
+    ("order tie breaks by id", [ed(C, order=0)], [A]),
+    ("a changed mesh address merges as data", [ed(A, meshNpub=BOX, updatedAt=1767000100)], [A]),
+]
+write("settings-vault-merge-cases.json", {"now": NOW, "tombstone_days": TOMB_DAYS, "cases": [
+    {"name": n, "mine": m, "theirs": t, "expect": merge_vaults(m, t, NOW)} for n, m, t in merge_cases]})
 
 # Media (contract 4, Logen 2026-11-05): every file under a record by one of
 # the vault's own keys is the owner's, saved and mirrored photos included; a

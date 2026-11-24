@@ -782,7 +782,10 @@ func (c *copyClient) syncFile(ctx context.Context, f copyFile, deleted map[strin
 	return true, nil
 }
 
-// syncSettings: newest updated_at wins, a tie keeps each side's own.
+// syncSettings: both sides end with the merge of the two files
+// (copySettingsMerge): newest updated_at wins for every key but the Vault
+// list, which merges per Vault. Each side is written only when the merge
+// changes it; a tie with nothing new sends nothing.
 func (c *copyClient) syncSettings(ctx context.Context) (string, error) {
 	resp, err := c.do(ctx, http.MethodGet, "/copy/v2/sync/settings", nil, nil)
 	if err != nil {
@@ -790,30 +793,40 @@ func (c *copyClient) syncSettings(ctx context.Context) (string, error) {
 	}
 	theirs, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	resp.Body.Close()
-	var theirStamp int64
-	if resp.StatusCode == http.StatusOK {
-		var s copySettings
-		if json.Unmarshal(theirs, &s) == nil {
-			theirStamp = s.UpdatedAt
+	if resp.StatusCode != http.StatusOK || copySettingsRefusal(theirs, time.Now()) != "" {
+		theirs = nil
+	}
+	mine, err := os.ReadFile(copySettingsFile)
+	if err != nil || copySettingsRefusal(mine, time.Now()) != "" {
+		mine = nil
+	}
+	got := "same"
+	if theirs != nil {
+		if got = storeCopySettings(theirs); got == "refused" {
+			return got, nil
+		}
+		if mine != nil && copySettingsSame(mine, theirs) {
+			return "same", nil
 		}
 	}
-	mine := localCopySettingsStamp()
-	switch {
-	case copySettingsNewer(mine, theirStamp):
-		return storeCopySettings(theirs), nil
-	case copySettingsNewer(theirStamp, mine):
-		raw, err := os.ReadFile(copySettingsFile)
-		if err != nil || copySettingsRefusal(raw, time.Now()) != "" {
-			return "refused", nil
+	// What this side holds now (theirs merged in), sent when it differs
+	// from theirs.
+	now, err := os.ReadFile(copySettingsFile)
+	if err != nil || copySettingsRefusal(now, time.Now()) != "" {
+		if theirs == nil {
+			return "same", nil
 		}
-		resp, err := c.do(ctx, http.MethodPut, "/copy/v2/sync/settings", map[string]string{"Content-Type": "application/json"}, raw)
-		if err != nil {
-			return "", err
-		}
-		resp.Body.Close()
-		return "sent", nil
+		return "refused", nil
 	}
-	return "same", nil
+	if theirs != nil && copySettingsSame(now, theirs) {
+		return got, nil
+	}
+	resp, err = c.do(ctx, http.MethodPut, "/copy/v2/sync/settings", map[string]string{"Content-Type": "application/json"}, now)
+	if err != nil {
+		return "", err
+	}
+	resp.Body.Close()
+	return "sent", nil
 }
 
 // syncAccounts: A's accounts merged into B's, then B's into A's. Each side

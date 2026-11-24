@@ -443,13 +443,22 @@ func storeCopySettings(raw []byte) string {
 		slog.Warn("copy: settings refused", "reason", why)
 		return "refused"
 	}
-	var theirs copySettings
-	_ = json.Unmarshal(raw, &theirs)
-	if !copySettingsNewer(localCopySettingsStamp(), theirs.UpdatedAt) {
+	// Merged with this device's own: the newer file's keys, and the Vault
+	// list per Vault from both (copySettingsMerge). Written only on a change.
+	mine, err := os.ReadFile(copySettingsFile)
+	if err != nil || copySettingsRefusal(mine, time.Now()) != "" {
+		mine = nil
+	}
+	merged, err := copySettingsMerge(mine, raw, time.Now())
+	if err != nil || copySettingsRefusal(merged, time.Now()) != "" {
+		slog.Warn("copy: merged settings refused")
+		return "refused"
+	}
+	if mine != nil && copySettingsSame(mine, merged) {
 		return "included"
 	}
 	tmp := copySettingsFile + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+	if err := os.WriteFile(tmp, merged, 0o600); err != nil {
 		return "none"
 	}
 	if err := os.Rename(tmp, copySettingsFile); err != nil {
