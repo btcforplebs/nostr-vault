@@ -177,11 +177,11 @@ func copyIsHex(s string, n int) bool {
 }
 
 // checkStart verifies the NIP-98 proof for POST /copy/v2/start: signed by a
-// paired device's own mesh key (the device form), or, until the apps switch,
-// by the owner. The u tag's path must be /copy/v2/start; its host is not
-// compared (A and B name the same mesh link by different loopback
-// addresses). 401 for no, bad, stale or replayed proof; 403 for a good proof
-// by a key that is neither. Returns the device the token is bound to.
+// paired device's own mesh key (the device form), never by the account key.
+// The u tag's path must be /copy/v2/start; its host is not compared (A and B
+// name the same mesh link by different loopback addresses). 401 for no, bad,
+// stale or replayed proof; 403 for a good proof by a key that is not a paired
+// device. Returns the device the token is bound to.
 func (s *copyServer) checkStart(r *http.Request) (int, string, string) {
 	now := s.now()
 	ev, code, why := copySignedPost(r, "/copy/v2/start", now)
@@ -202,12 +202,9 @@ func (s *copyServer) checkStart(r *http.Request) (int, string, string) {
 			return http.StatusUnauthorized, "authorization names another device", ""
 		}
 	case config.OwnerPubKey != "" && strings.EqualFold(ev.PubKey, config.OwnerPubKey):
-		// The owner-key form. TODO(mesh-key): remove once every app signs the
-		// start with its device key (docs/MESH_COPY_V2_CONTRACT.md §2).
-		device = copyDevice(ev.Tags)
-		if device == "" {
-			return http.StatusUnauthorized, "authorization names no device", ""
-		}
+		// The account key never starts a copy (Logen, 2026-11-19: fail
+		// closed); the apps sign the start with their mesh key.
+		return http.StatusForbidden, "the account key is not accepted for a copy: sign with this device's mesh key", ""
 	default:
 		return http.StatusForbidden, "only the owner's paired devices may copy this vault", ""
 	}
