@@ -86,14 +86,17 @@ object DesktopVaultsRules {
         if (taken == null) return if (vaults.isEmpty()) migrated(slot, devices, ownNpub, ownerNpub) else ordered(vaults)
         val old = SlotAddress.of(taken)
         val new = SlotAddress.of(slot)
+        val out = ordered(vaults).toMutableList()
         if (old == new) {
+            // The slot's address held by no Vault (the stored list was lost or dropped it): take it in again as new,
+            // so the owner's Mac stays a Vault and out of "Delete from mirrors" (Tron M1 on #2500).
+            if (!holds(out, new, ownNpub)) return out.also { addSlot(it, new, slot, devices, ownNpub, ownerNpub) }.renumbered()
             // Same host, new path or spelling (`/haven` to `/relay`): the Vault takes the new address, as MAC_RELAY_URL does.
             if (new !is SlotAddress.Web || httpsURL(taken) == httpsURL(slot)) return vaults
             val i = vaults.indexOfFirst { it.hostKey == new.host }
             if (i < 0) return vaults
             return vaults.toMutableList().also { it[i] = it[i].copy(httpsURL = httpsURL(slot)) }
         }
-        val out = ordered(vaults).toMutableList()
         // The old address leaves the Vault that had it.
         when (old) {
             is SlotAddress.Web -> out.indexOfFirst { it.hostKey == old.host }.takeIf { it >= 0 }?.let { out[it] = out[it].copy(httpsURL = null) }
@@ -106,20 +109,26 @@ object DesktopVaultsRules {
             SlotAddress.None -> Unit
         }
         out.removeAll { it.meshNpub == null && it.httpsURL == null }
-        // The new one goes to the Vault that has it, else to the Mac whose domain or npub it is, else to a new Vault, first.
-        when (new) {
-            is SlotAddress.Web -> if (out.none { it.hostKey == new.host }) {
-                val device = macDevice(new.host, devices, ownNpub, ownerNpub)
-                val i = device?.let { d -> out.indexOfFirst { it.meshNpub == d.npub } } ?: -1
-                if (i >= 0) out[i] = out[i].copy(httpsURL = httpsURL(slot))
-                else out.add(0, vaultForSlot(new, slot, devices, ownNpub, ownerNpub))
-            }
-            is SlotAddress.Mesh -> if (new.npub != ownNpub && out.none { it.meshNpub == new.npub }) {
-                out.add(0, vaultForSlot(new, slot, devices, ownNpub, ownerNpub))
-            }
-            SlotAddress.None -> Unit
-        }
+        if (!holds(out, new, ownNpub)) addSlot(out, new, slot, devices, ownNpub, ownerNpub)
         return out.renumbered()
+    }
+
+    /** Whether a Vault already has the slot's address (nothing to hold for an empty slot or this device's own npub). */
+    private fun holds(vaults: List<DesktopVault>, address: SlotAddress, ownNpub: String?): Boolean = when (address) {
+        is SlotAddress.Web -> vaults.any { it.hostKey == address.host }
+        is SlotAddress.Mesh -> address.npub == ownNpub || vaults.any { it.meshNpub == address.npub }
+        SlotAddress.None -> true
+    }
+
+    /** The slot's address goes to the Mac whose domain it is, else to a new Vault, first. */
+    private fun addSlot(
+        out: MutableList<DesktopVault>, address: SlotAddress, slot: String, devices: List<FipsDevice>,
+        ownNpub: String?, ownerNpub: String,
+    ) {
+        val device = (address as? SlotAddress.Web)?.let { macDevice(it.host, devices, ownNpub, ownerNpub) }
+        val i = device?.let { d -> out.indexOfFirst { it.meshNpub == d.npub } } ?: -1
+        if (i >= 0) out[i] = out[i].copy(httpsURL = httpsURL(slot))
+        else out.add(0, vaultForSlot(address, slot, devices, ownNpub, ownerNpub))
     }
 
     fun migrated(slot: String, devices: List<FipsDevice>, ownNpub: String?, ownerNpub: String = ""): List<DesktopVault> {
@@ -168,13 +177,14 @@ object DesktopVaultsRules {
     }
 
     /**
-     * Whether config.json's `desktopVaults` is there but not a list at all, so it read as empty
-     * ([LossyDesktopVaultList]): ConfigStore then sets `desktopVaultsSlot` to null and the slot is migrated again
-     * (Tron S1 on #2499).
+     * Whether config.json's `desktopVaults` is there but read as empty when it should not have: not a list at all
+     * (`null` included), or a list none of whose Vaults this build can read ([LossyDesktopVaultList]). ConfigStore
+     * then sets `desktopVaultsSlot` to null and the slot is migrated again (Tron S1 on #2499, M1 on #2500).
      */
     fun unreadableList(configText: String): Boolean = runCatching {
-        val value = (Json.parseToJsonElement(configText) as JsonObject)["desktopVaults"]
-        value != null && value !is JsonArray && value.toString() != "null"
+        val value = (Json.parseToJsonElement(configText) as JsonObject)["desktopVaults"] ?: return@runCatching false
+        if (value !is JsonArray) return@runCatching true
+        value.isNotEmpty() && Json.decodeFromJsonElement(LossyDesktopVaultList, value).isEmpty()
     }.getOrDefault(false)
 
     // ── Addresses the relay and the derived lists get ────────────

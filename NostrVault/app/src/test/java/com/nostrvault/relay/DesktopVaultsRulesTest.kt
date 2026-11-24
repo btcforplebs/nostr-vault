@@ -207,6 +207,41 @@ class DesktopVaultsRulesTest {
         assertEquals(false, DesktopVaultsRules.unreadableList("""{"macRelayURL":""}"""))
     }
 
+    /**
+     * Tron M1 on #2500: a stored list that loads empty after the slot was taken in never loses the slot's Vault, so
+     * the owner's Mac stays in the feed and Blossom lists and out of "Delete from mirrors".
+     */
+    @Test
+    fun lostListKeepsTheSlotVault() {
+        val mac = "https://mac.example.com"
+        val lost = listOf(
+            """{"macRelayURL":"$mac","feedRelays":[],"blossomMirrors":[],"desktopVaults":null,"desktopVaultsSlot":"$mac"}""",
+            """{"macRelayURL":"$mac","feedRelays":[],"blossomMirrors":[],"desktopVaults":[{"id":7,"httpsURL":"$mac"}],"desktopVaultsSlot":"$mac"}""",
+        )
+        for (text in lost) {
+            assertTrue(text, DesktopVaultsRules.unreadableList(text))
+            // Even without the reset ConfigStore does on an unreadable list, the slot's Vault comes back.
+            val decoded = json.decodeFromString(HavenConfig.serializer(), text)
+            assertEquals(emptyList<DesktopVault>(), decoded.desktopVaults)
+            assertEquals(mac, decoded.desktopVaultsSlot)
+            assertEquals(listOf("wss://mac.example.com"), decoded.activeFeedRelays)
+            assertEquals(listOf(mac), decoded.activeBlossomMirrors)
+            assertEquals(emptyList<String>(), decoded.blossomDeleteTargets(listOf(mac), null, includeHomeVault = false))
+            val saved = json.decodeFromString(HavenConfig.serializer(), json.encodeToString(HavenConfig.serializer(), decoded.takingInDesktopVaultSlot()))
+            assertEquals(listOf(mac), saved.desktopVaults.map { it.httpsURL })
+        }
+        // A mesh slot comes back the same way; this device's own npub never does.
+        val npub = "npub1" + "a".repeat(58)
+        assertEquals(listOf(npub), DesktopVaultsRules.takingInSlot(emptyList(), npub, npub, emptyList()).map { it.meshNpub })
+        assertEquals(emptyList<DesktopVault>(), DesktopVaultsRules.takingInSlot(emptyList(), npub, npub, emptyList(), ownNpub = npub))
+        // Belt and braces until P7: the slot is never a delete target even when no Vault holds it.
+        val bare = HavenConfig(macRelayURL = mac, blossomMirrors = emptyList(), desktopVaultsSlot = mac)
+        assertEquals(emptyList<String>(), bare.blossomDeleteTargets(listOf(mac), null, includeHomeVault = false))
+        assertEquals(listOf(mac), bare.blossomDeleteTargets(emptyList(), null, includeHomeVault = true))
+        // A list with one readable Vault is not "unreadable".
+        assertEquals(false, DesktopVaultsRules.unreadableList("""{"desktopVaults":[{"id":7},{"id":"a"}]}"""))
+    }
+
     /** iOS testConfigRoundTripAndUnknownVaultSkipped. */
     @Test
     fun configRoundTripAndUnknownVaultSkipped() {

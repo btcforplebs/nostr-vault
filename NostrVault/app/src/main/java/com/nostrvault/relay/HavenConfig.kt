@@ -607,7 +607,8 @@ data class HavenConfig(
      * asks each server who runs it before deleting.
      */
     fun blossomDeleteTargets(published: List<String>, photoUrl: String?, includeHomeVault: Boolean): List<String> {
-        val homes = desktopVaultHttpsURLs
+        // The slot is kept a home too until P7 retires it, so a lost Vault list can never send a delete to the owner's Mac (Tron M1, #2500).
+        val homes = (desktopVaultHttpsURLs + macRelayHttpsURL).filter(String::isNotEmpty).distinct()
         // The same address typed with its default port is the same server.
         fun key(origin: String) = serverKey(origin).removeSuffix(if (origin.startsWith("https")) ":443" else ":80")
         val homeKeys = homes.mapNotNull { blossomOrigin(it)?.let(::key) }.toSet()
