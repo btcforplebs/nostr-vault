@@ -58,6 +58,16 @@ enum RelayConfiguration {
         #endif
     }
 
+    /// DESKTOP_VAULT_URLS: the HTTPS desktop Vaults besides MAC_RELAY_URL's
+    /// (DesktopVaultsLogic.envList). iOS only, like MAC_RELAY_URL.
+    static func desktopVaultURLs(config: HavenConfig) -> String {
+        #if os(iOS)
+        return DesktopVaultsLogic.envList(config.desktopVaultsInEffect, slot: config.macRelayURL)
+        #else
+        return ""
+        #endif
+    }
+
     /// A Mac relay typed as a mesh npub, dialed through FIPS: `url` is the
     /// local `ws://127.0.0.1:<port>/<token>` that reaches it. Set before the
     /// relay starts (RelayProcessManager), nil when there is none or the dial
@@ -455,6 +465,9 @@ enum RelayConfiguration {
 
             // Mac relay: synced like any other relay, plus a one-time full-history copy
             "MAC_RELAY_URL": macRelayURL(config: config),
+            // Every other HTTPS desktop Vault. Always set, "" when there is
+            // none: the engine never clears a host env key.
+            "DESKTOP_VAULT_URLS": desktopVaultURLs(config: config),
 
             // Backup
             "BACKUP_PROVIDER": config.backupProvider,

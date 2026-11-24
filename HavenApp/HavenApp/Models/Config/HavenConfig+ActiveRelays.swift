@@ -49,11 +49,10 @@ extension HavenConfig {
                 mirrors.append(server)
             }
         }
-        let macHttps = macRelayHttpsURL
-        // After the owner's servers, not first: their order stays first
-        // (Logen, 2026-10-31).
-        if !macHttps.isEmpty, !mirrors.contains(macHttps) {
-            mirrors.append(macHttps)
+        // Every HTTPS desktop Vault, in list order, after the owner's
+        // servers, not first: their order stays first (Logen, 2026-10-31).
+        for vault in desktopVaultHttpsURLs where !mirrors.contains(vault) {
+            mirrors.append(vault)
         }
         if let fipsURL = fipsBlossomURL(detectedNpub: detectedNpub), !mirrors.contains(fipsURL) {
             mirrors.append(fipsURL)
@@ -89,7 +88,7 @@ extension HavenConfig {
            let server = Self.blossomUploadServer(photoServer) {
             candidates.append(server)
         }
-        let homeVault = Set([macRelayHttpsURL, fipsBlossomURL(detectedNpub: detectedNpub) ?? ""]
+        let homeVault = Set((desktopVaultHttpsURLs + [fipsBlossomURL(detectedNpub: detectedNpub) ?? ""])
             .filter { !$0.isEmpty }.map(Self.blossomServerKey))
         var seen = Set<String>()
         var targets: [String] = []
@@ -161,28 +160,14 @@ extension HavenConfig {
         return pubkey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == owner ? .ownVault : .mirror
     }
 
-    /// Active feed relays, including the Mac relay if configured.
+    /// Active feed relays, with every HTTPS desktop Vault first.
     var activeFeedRelays: [String] {
-        var relays = feedRelays
-        let macWss = macRelayWssURL
-        if !macWss.isEmpty {
-            if !relays.contains(macWss) {
-                relays.insert(macWss, at: 0)
-            }
-        }
-        return relays
+        Self.withDesktopVaultsFirst(feedRelays, vaults: desktopVaultWssURLs)
     }
 
-    /// Active blastr relays, including the Mac relay if configured.
+    /// Active blastr relays, with every HTTPS desktop Vault first.
     var activeBlastrRelays: [String] {
-        var relays = blastrRelays
-        let macWss = macRelayWssURL
-        if !macWss.isEmpty {
-            if !relays.contains(macWss) {
-                relays.insert(macWss, at: 0)
-            }
-        }
-        return relays
+        Self.withDesktopVaultsFirst(blastrRelays, vaults: desktopVaultWssURLs)
     }
 
     /// What the vault reads from: the owner's read and write relays plus
@@ -191,15 +176,15 @@ extension HavenConfig {
         VaultSeedRelays.vaultSeeds(read: feedRelays, write: blastrRelays, chosen: importSeedRelays)
     }
 
-    /// Active import seed relays, including the Mac relay if configured.
+    /// Active import seed relays, with every HTTPS desktop Vault first.
     var activeImportSeedRelays: [String] {
-        var relays = vaultSeedRelays
-        let macWss = macRelayWssURL
-        if !macWss.isEmpty {
-            if !relays.contains(macWss) {
-                relays.insert(macWss, at: 0)
-            }
-        }
-        return relays
+        Self.withDesktopVaultsFirst(vaultSeedRelays, vaults: desktopVaultWssURLs)
+    }
+
+    /// `relays` with each Vault relay not already in it put in front, in
+    /// Vault list order. One already listed keeps its place, as the slot did.
+    static func withDesktopVaultsFirst(_ relays: [String], vaults: [String]) -> [String] {
+        let missing = vaults.filter { !relays.contains($0) }
+        return missing + relays
     }
 }

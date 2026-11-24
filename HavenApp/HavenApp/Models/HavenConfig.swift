@@ -94,6 +94,12 @@ struct HavenConfig: Codable, Equatable {
 
     // Mac relay (iOS only)
     var macRelayURL: String = "" // wss:// URL to a remote Mac Haven relay to sync missed notes
+    /// The owner's desktop Vaults (DesktopVault, PLANS/NV_DESKTOP_VAULTS_PLAN.md
+    /// §2.1). Replaces `macRelayURL`, which is left as it was for older builds.
+    var desktopVaults: [DesktopVault] = []
+    /// The `macRelayURL` value `desktopVaults` last took in
+    /// (DesktopVaultsLogic.takingInSlot); nil until the one-time migration.
+    var desktopVaultsSlot: String?
     /// Your Devices › Public on the web (Mac): list this vault's own domain in
     /// the owner's published lists. nil until the owner touches the switch:
     /// then a domain already set keeps being listed (`listsOwnDomain`).
@@ -349,6 +355,7 @@ struct HavenConfig: Codable, Equatable {
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags, showDMTextInNotifications
         case macRelayURL, publicOnWeb, keepFullCopy, fullCopyWifiOnly
+        case desktopVaults, desktopVaultsSlot
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
         case outboxRelayName, outboxRelayDescription, outboxRelayIcon, outboxMaxEventsPerMinute, outboxMaxConnectionsPerMinute
@@ -400,6 +407,17 @@ struct HavenConfig: Codable, Equatable {
         showReplies = try container.decodeIfPresent(Bool.self, forKey: .showReplies) ?? defaults.showReplies
         nwcURI = try container.decodeIfPresent(String.self, forKey: .nwcURI) ?? defaults.nwcURI
         macRelayURL = try container.decodeIfPresent(String.self, forKey: .macRelayURL) ?? defaults.macRelayURL
+        // One Vault a newer app wrote that this one can't read is skipped on its own.
+        desktopVaultsSlot = try container.decodeIfPresent(String.self, forKey: .desktopVaultsSlot)
+        do {
+            desktopVaults = try container.decodeIfPresent([LossyDesktopVault].self, forKey: .desktopVaults)?
+                .compactMap(\.vault) ?? defaults.desktopVaults
+        } catch {
+            // The whole list is unreadable: take the slot in again (§3), or
+            // the slot's Vault would drop out of every list for good.
+            desktopVaults = defaults.desktopVaults
+            desktopVaultsSlot = nil
+        }
         publicOnWeb = try container.decodeIfPresent(Bool.self, forKey: .publicOnWeb)
         keepFullCopy = try container.decodeIfPresent(Bool.self, forKey: .keepFullCopy)
         fullCopyWifiOnly = try container.decodeIfPresent(Bool.self, forKey: .fullCopyWifiOnly)

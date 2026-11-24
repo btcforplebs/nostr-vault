@@ -1,0 +1,477 @@
+{
+ "about": "Desktop Vaults migration from the one-slot macRelayURL (plan section 3), the addresses the relay and derived lists get, and the engine's per-Vault status file names (expected values printed by haven-go macSyncStatusFile). 'taken' is the slot value last taken in, null before the migration.",
+ "migration": [
+  {
+   "name": "nothing set: no Vaults",
+   "slot": "",
+   "taken": null,
+   "vaults": [],
+   "devices": [],
+   "expect": []
+  },
+  {
+   "name": "slot npub: a FIPS-only Vault named from its device",
+   "slot": "npub1dddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+   "taken": null,
+   "vaults": [],
+   "devices": [
+    {
+     "npub": "npub1dddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+     "name": "Studio",
+     "role": "mac"
+    },
+    {
+     "npub": "npub1eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+     "name": "Phone",
+     "role": "phone"
+    }
+   ],
+   "expect": [
+    {
+     "id": "mesh:npub1dddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+     "name": "Studio",
+     "kind": "mac",
+     "meshNpub": "npub1dddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+     "order": 0
+    }
+   ]
+  },
+  {
+   "name": "slot fipsmesh address, then the other Macs in My Devices order",
+   "slot": "fipsmesh://npub1dddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/",
+   "taken": null,
+   "vaults": [],
+   "devices": [
+    {
+     "npub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "role": "mac"
+    },
+    {
+     "npub": "npub1dddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+     "name": "Studio",
+     "role": "mac"
+    }
+   ],
+   "expect": [
+    {
+     "id": "mesh:npub1dddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+     "name": "Studio",
+     "kind": "mac",
+     "meshNpub": "npub1dddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+     "order": 0
+    },
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "order": 1
+    }
+   ]
+  },
+  {
+   "name": "slot web address merges with the Mac whose domain it is",
+   "slot": "https://Relay.Example.com/",
+   "taken": null,
+   "vaults": [],
+   "devices": [
+    {
+     "npub": "npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "name": "Laptop",
+     "role": "mac"
+    },
+    {
+     "npub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "role": "mac",
+     "domain": "relay.example.com"
+    },
+    {
+     "npub": "npub1eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+     "name": "Phone",
+     "role": "phone"
+    }
+   ],
+   "expect": [
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "httpsURL": "https://Relay.Example.com",
+     "order": 0
+    },
+    {
+     "id": "mesh:npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "name": "Laptop",
+     "kind": "mac",
+     "meshNpub": "npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "order": 1
+    }
+   ]
+  },
+  {
+   "name": "slot web address with no matching Mac: HTTPS-only",
+   "slot": "wss://relay.example.com",
+   "taken": null,
+   "vaults": [],
+   "devices": [
+    {
+     "npub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "role": "mac",
+     "domain": "other.example.com"
+    }
+   ],
+   "expect": [
+    {
+     "id": "https:relay.example.com",
+     "name": "",
+     "kind": "mac",
+     "httpsURL": "https://relay.example.com",
+     "order": 0
+    },
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "order": 1
+    }
+   ]
+  },
+  {
+   "name": "Macs only, no slot",
+   "slot": "",
+   "taken": null,
+   "vaults": [],
+   "devices": [
+    {
+     "npub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "role": "mac"
+    }
+   ],
+   "expect": [
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "order": 0
+    }
+   ]
+  },
+  {
+   "name": "already taken in and unchanged: left alone",
+   "slot": "https://old.example.com",
+   "taken": "https://old.example.com",
+   "vaults": [
+    {
+     "id": "https:old.example.com",
+     "name": "",
+     "kind": "mac",
+     "httpsURL": "https://old.example.com",
+     "order": 0
+    },
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "order": 1
+    }
+   ],
+   "devices": [
+    {
+     "npub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "role": "mac"
+    }
+   ],
+   "expect": [
+    {
+     "id": "https:old.example.com",
+     "name": "",
+     "kind": "mac",
+     "httpsURL": "https://old.example.com",
+     "order": 0
+    },
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "order": 1
+    }
+   ]
+  },
+  {
+   "name": "old tab moved the slot: only that Vault's address moves",
+   "slot": "https://new.example.com",
+   "taken": "https://old.example.com",
+   "vaults": [
+    {
+     "id": "https:old.example.com",
+     "name": "",
+     "kind": "mac",
+     "httpsURL": "https://old.example.com",
+     "order": 0
+    },
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "order": 1
+    }
+   ],
+   "devices": [
+    {
+     "npub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "role": "mac"
+    }
+   ],
+   "expect": [
+    {
+     "id": "https:new.example.com",
+     "name": "",
+     "kind": "mac",
+     "httpsURL": "https://new.example.com",
+     "order": 0
+    },
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "order": 1
+    }
+   ]
+  },
+  {
+   "name": "old tab cleared the slot: a both Vault keeps its mesh path",
+   "slot": "",
+   "taken": "https://a.example.com",
+   "vaults": [
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "httpsURL": "https://a.example.com",
+     "order": 0
+    }
+   ],
+   "devices": [
+    {
+     "npub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "role": "mac",
+     "domain": "a.example.com"
+    }
+   ],
+   "expect": [
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "order": 0
+    }
+   ]
+  },
+  {
+   "name": "old tab set the slot to a paired Mac's domain: merged into it",
+   "slot": "https://a.example.com",
+   "taken": "",
+   "vaults": [
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "order": 0
+    }
+   ],
+   "devices": [
+    {
+     "npub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "role": "mac",
+     "domain": "a.example.com"
+    }
+   ],
+   "expect": [
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "httpsURL": "https://a.example.com",
+     "order": 0
+    }
+   ]
+  },
+  {
+   "name": "removed Mac in the slot: its Vault goes, the next Mac stays",
+   "slot": "npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "taken": "npub1dddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+   "vaults": [
+    {
+     "id": "mesh:npub1dddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+     "name": "Studio",
+     "kind": "mac",
+     "meshNpub": "npub1dddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+     "order": 0
+    },
+    {
+     "id": "mesh:npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "name": "Laptop",
+     "kind": "mac",
+     "meshNpub": "npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "order": 1
+    }
+   ],
+   "devices": [
+    {
+     "npub": "npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "name": "Laptop",
+     "role": "mac"
+    }
+   ],
+   "expect": [
+    {
+     "id": "mesh:npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "name": "Laptop",
+     "kind": "mac",
+     "meshNpub": "npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "order": 0
+    }
+   ]
+  },
+  {
+   "name": "a stored list is never replaced by the migration",
+   "slot": "https://x.example.com",
+   "taken": null,
+   "vaults": [
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "httpsURL": "https://a.example.com",
+     "order": 0
+    }
+   ],
+   "devices": [],
+   "expect": [
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "httpsURL": "https://a.example.com",
+     "order": 0
+    }
+   ]
+  }
+ ],
+ "derived": [
+  {
+   "name": "every HTTPS Vault in list order, once per host",
+   "slot": "https://a.example.com",
+   "vaults": [
+    {
+     "id": "https:b.example.com",
+     "name": "",
+     "kind": "box",
+     "httpsURL": "https://b.example.com",
+     "order": 1
+    },
+    {
+     "id": "mesh:npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "name": "Laptop",
+     "kind": "mac",
+     "meshNpub": "npub1cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "order": 2
+    },
+    {
+     "id": "mesh:npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "name": "Mac mini",
+     "kind": "mac",
+     "meshNpub": "npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "httpsURL": "https://a.example.com",
+     "order": 0
+    }
+   ],
+   "expect": {
+    "wss": [
+     "wss://a.example.com",
+     "wss://b.example.com"
+    ],
+    "https": [
+     "https://a.example.com",
+     "https://b.example.com"
+    ],
+    "env": "wss://b.example.com"
+   }
+  },
+  {
+   "name": "only the slot's Vault: the env list is empty",
+   "slot": "ws://192.168.1.5:3355",
+   "vaults": [
+    {
+     "id": "https:192.168.1.5:3355",
+     "name": "",
+     "kind": "mac",
+     "httpsURL": "https://192.168.1.5:3355",
+     "order": 0
+    }
+   ],
+   "expect": {
+    "wss": [
+     "wss://192.168.1.5:3355"
+    ],
+    "https": [
+     "https://192.168.1.5:3355"
+    ],
+    "env": ""
+   }
+  },
+  {
+   "name": "no Vaults",
+   "slot": "",
+   "vaults": [],
+   "expect": {
+    "wss": [],
+    "https": [],
+    "env": ""
+   }
+  }
+ ],
+ "statusFiles": [
+  {
+   "base": "wss://mac.example.com",
+   "file": "mac_sync_status-wss_mac.example.com.json"
+  },
+  {
+   "base": "ws://192.168.1.5:3355",
+   "file": "mac_sync_status-ws_192.168.1.5_3355.json"
+  },
+  {
+   "base": "wss://Relay.Example.com/path?x=1",
+   "file": "mac_sync_status-wss_Relay.Example.com_path_x_1.json"
+  },
+  {
+   "base": "wss://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example.com",
+   "file": "mac_sync_status-ac12fe092da2c85e58f34424582977def65c163b57cc2db499265d04e1734a64.json"
+  },
+  {
+   "base": "ws://127.0.0.1:4869/tok-En_1",
+   "file": "mac_sync_status-ws_127.0.0.1_4869_tok-En_1.json"
+  }
+ ]
+}
