@@ -47,14 +47,6 @@ extension HomeVaultLogic {
         }
     }
 
-    /// Whether a blob over the mesh may fall back to the owner's upload form
-    /// (no mesh key yet, or an older vault that turns the device form down).
-    /// Only with the account key on this device: a bunker or other remote
-    /// signer is never asked for a mesh send.
-    static func meshBlobMayUseOwnerForm(signingMode: String) -> Bool {
-        signingMode == "local"
-    }
-
     /// Whether a Delete everywhere sends this device's `/files` kind 5: only
     /// when the home vault itself took the delete. A mirror or another device
     /// taking it while the vault keeps the blob would empty the room of notes

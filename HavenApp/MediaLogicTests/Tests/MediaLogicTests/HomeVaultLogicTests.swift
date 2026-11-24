@@ -58,7 +58,13 @@ final class HomeVaultLogicTests: XCTestCase {
     func testUploadStatuses() {
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 200), .sent)
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 201), .sent)
-        XCTAssertEqual(HomeVaultLogic.uploadResult(status: 403), .rejected("HTTP 403"), "not the owner: retrying won't help")
+        // Fail closed: a vault that turns this phone's mesh key down keeps the
+        // blob waiting (never dropped, never re-sent with the account key).
+        for status in [401, 403] {
+            guard case .unreachable = HomeVaultLogic.uploadResult(status: status) else {
+                return XCTFail("\(status) must wait, not drop the blob")
+            }
+        }
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 413), .rejected("HTTP 413"), "over the door's 256 MB")
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 411), .rejected("HTTP 411"))
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 429), .unreachable("HTTP 429"), "rate limit is about now")

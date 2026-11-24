@@ -55,17 +55,6 @@ enum MeshDeleteTargets {
         ((200...299).contains(deleteStatus) || deleteStatus == 404) && checkStatus == 404
     }
 
-    /// One owner token for every mesh device, covering the DELETE and the HEAD
-    /// after it. It names each device as `<npub>.fips` (which a vault takes as
-    /// itself), so it is never a token without a server, and it only ever goes
-    /// to the owner's own devices. Same tags as Android.
-    static func authTags(sha256: String, targets: [MeshDeleteTarget], now: Date = Date()) -> [[String]] {
-        var tags = [["t", "delete"], ["t", "get"], ["x", sha256]]
-        tags += targets.map { ["server", "\($0.npub).fips"] }
-        tags.append(["expiration", String(Int64(now.timeIntervalSince1970 + BlossomDeleteAuth.lifetime))])
-        return tags
-    }
-
     /// A configured or listed server that is a mesh address (`fipsmesh://`,
     /// `<npub>.fips`): reached over the mesh above, never over HTTP.
     static func isMeshAddress(_ server: String) -> Bool {
