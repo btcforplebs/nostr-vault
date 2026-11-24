@@ -277,17 +277,22 @@ class RelayForegroundService : Service() {
         /**
          * Restart the embedded relay in place onto the saved config, if the
          * saved config would start it differently. Suspends until the service
-         * has handled the request. Used by [RelayConfigApplier] only; the
+         * has handled the request. Used by [RelayConfigApplier] and [MeshVaultDial]; the
          * service re-checks the saved config itself before restarting.
+         * False when the wait ran out first: the restart may still be
+         * draining and will start later.
          */
-        suspend fun restartForSavedConfig() {
-            if (externalMode || !serviceAlive) return
-            if (restartRequests.subscriptionCount.value == 0) return
+        suspend fun restartForSavedConfig(): Boolean {
+            if (externalMode || !serviceAlive) return true
+            if (restartRequests.subscriptionCount.value == 0) return true
             val before = restartsHandled.value
             restartRequests.tryEmit(Unit)
-            withTimeoutOrNull(RESTART_AWAIT_TIMEOUT_MS) {
+            return withTimeoutOrNull(RESTART_AWAIT_TIMEOUT_MS) {
                 restartsHandled.first { it > before }
-            } ?: Log.w(TAG, "Settings restart did not finish within ${RESTART_AWAIT_TIMEOUT_MS}ms")
+            }?.let { true } ?: run {
+                Log.w(TAG, "Settings restart did not finish within ${RESTART_AWAIT_TIMEOUT_MS}ms")
+                false
+            }
         }
 
         /**

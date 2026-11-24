@@ -411,8 +411,9 @@ object RelayConfiguration {
     /**
      * The mesh Vault this start uses, also set as [macMeshRelay] (port of iOS RelayProcessManager.resolveMacMeshRelay,
      * P3 #2506). Only with FIPS on and a mesh Vault on the list. When the slot itself is a mesh npub, the Vaults are
-     * dialed now, in list order inside one budget ([MeshVaultDial.dial]); otherwise this start takes only what the
-     * background dial handed over, and [MeshVaultDial.afterStart] dials once the relay is up. A failed dial leaves
+     * dialed now, in list order inside one budget ([MeshVaultDial.dial]); otherwise this start takes what the
+     * background dial handed over, or re-dials the one it already had ([MeshVaultDial.redial]), and
+     * [MeshVaultDial.afterStart] dials the list once the relay is up. A failed dial leaves
      * [macMeshRelay] null and the relay starts without it.
      */
     fun resolveMacMeshRelay(
@@ -422,10 +423,13 @@ object RelayConfiguration {
     ): MacMeshRelay? {
         val handedOver = pendingMeshRelay
         pendingMeshRelay = null
+        val held = macMeshRelay
         val npubs = config.desktopVaultMeshNpubs
         val relay = when (DesktopVaultsRules.meshDial(config.fipsMeshEnabled, config.macRelayURL, npubs)) {
             DesktopVaultsRules.MeshDial.NONE -> null
-            DesktopVaultsRules.MeshDial.AFTER_START -> dialedVault(config, handedOver)
+            // The Vault the relay already had is re-dialed alone, not dropped (Tron M2 on #2513): the compare predicted it.
+            DesktopVaultsRules.MeshDial.AFTER_START ->
+                dialedVault(config, handedOver) ?: dialedVault(config, held)?.let { MeshVaultDial.redial(it, dial) }
             DesktopVaultsRules.MeshDial.BEFORE_START -> dialedVault(config, handedOver) ?: MeshVaultDial.dial(npubs, dial, pause)
         }
         macMeshRelay = relay

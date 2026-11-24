@@ -27,7 +27,7 @@ object MeshVaultDial {
     @Volatile private var background: Job? = null
 
     /** The list the last background dial found nobody on, and when: a save doesn't dial it again for a while. */
-    @Volatile private var failed: Pair<List<String>, Long>? = null
+    @Volatile internal var failed: Pair<List<String>, Long>? = null
 
     /** How long a save waits before dialing a list that just found nobody again. A start always dials. */
     const val RETRY_AFTER_SAVE_MS = 5 * 60_000L
@@ -63,12 +63,22 @@ object MeshVaultDial {
     }
 
     /**
+     * [held] dialed again on its own inside one [DesktopVaultsRules.MESH_DIAL_BUDGET_MS], or null when it no longer
+     * answers. A wss start keeps the mesh Vault the relay already had this way, so a settings restart doesn't drop it
+     * and cost a second restart once [afterStart] finds it again (Tron M2 on #2513). Blocks.
+     */
+    fun redial(held: RelayConfiguration.MacMeshRelay, dial: (String) -> FipsIngress = FipsBridge::ingress): RelayConfiguration.MacMeshRelay? =
+        DesktopVaultsRules.firstAnswering(listOf(held.npub), DesktopVaultsRules.MESH_DIAL_BUDGET_MS) { npub ->
+            dial(npub).url?.let(RelayConfiguration::meshWebsocketURL)
+        }?.let { RelayConfiguration.MacMeshRelay(it.first, it.second) }
+
+    /**
      * The relay is up over wss: dial the mesh Vaults now and restart once one answers, so it moves to the mesh. The
      * restart goes straight to [RelayForegroundService.restartForSavedConfig], skipping the settings applier's gap
      * (Tron F1 on #2506: after a settings restart the dial answers within seconds and the move was lost). It can't
      * loop: it runs only while the relay holds no mesh Vault, and the start it causes takes the hand-over. Nothing
-     * with FIPS off, with no mesh Vault, for a mesh-npub slot (dialed before the start), with no relay running or
-     * while a dial runs. Called after each start and each config save (Mesh turned on, a Mac paired), since a save
+     * with FIPS off, with no mesh Vault, with no relay running or while a dial runs; for a mesh-npub slot
+     * (dialed before the start) only on a save. Called after each start and each config save (Mesh turned on, a Mac paired), since a save
      * no longer dials ([RelayConfiguration.comparedInputs]).
      *
      * [latest]: the saved config when the dial ends; the hand-over is dropped when the relay stopped or the Vault
@@ -80,11 +90,17 @@ object MeshVaultDial {
         fromSave: Boolean = false,
         now: () -> Long = System::currentTimeMillis,
         relayRunning: () -> Boolean = { RelayForegroundService.launchedInputs != null },
-        restart: suspend () -> Unit = { RelayForegroundService.restartForSavedConfig() },
+        restart: suspend () -> Boolean = { RelayForegroundService.restartForSavedConfig() },
         ingress: (String) -> FipsIngress = FipsBridge::ingress,
     ): Job? {
         val npubs = config.desktopVaultMeshNpubs
-        if (DesktopVaultsRules.meshDial(config.fipsMeshEnabled, config.macRelayURL, npubs) != DesktopVaultsRules.MeshDial.AFTER_START) return null
+        when (DesktopVaultsRules.meshDial(config.fipsMeshEnabled, config.macRelayURL, npubs)) {
+            DesktopVaultsRules.MeshDial.NONE -> return null
+            // A mesh-npub slot was dialed by the start itself; a save dials it again when that found nobody (Tron M1
+            // on #2513: the save no longer runs launchInputs, so a Mac that woke up later was never reached).
+            DesktopVaultsRules.MeshDial.BEFORE_START -> if (!fromSave) return null
+            DesktopVaultsRules.MeshDial.AFTER_START -> Unit
+        }
         if (RelayConfiguration.macMeshRelay != null || !relayRunning()) return null
         // Saves come often: an unreachable list is dialed again on the next start, or after a while.
         failed?.let { (list, at) -> if (fromSave && list == npubs && now() - at < RETRY_AFTER_SAVE_MS) return null }
@@ -97,8 +113,8 @@ object MeshVaultDial {
                 val now = latest()
                 if (!relayRunning() || RelayConfiguration.macMeshRelay != null || found.npub !in now.desktopVaultMeshNpubs) return@launch
                 RelayConfiguration.pendingMeshRelay = found
-                restart()
-                RelayConfiguration.droppingUnusedHandOver(found)
+                // A restart still draining when the wait ends keeps the hand-over for the start it will make (Tron L1).
+                if (restart()) RelayConfiguration.droppingUnusedHandOver(found)
             }.also { background = it }
         }
     }

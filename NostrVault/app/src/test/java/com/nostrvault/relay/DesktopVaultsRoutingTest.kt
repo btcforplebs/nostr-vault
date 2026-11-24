@@ -40,6 +40,7 @@ class DesktopVaultsRoutingTest {
         RelayConfiguration.macMeshRelay = null
         RelayConfiguration.pendingMeshRelay = null
         OwnMeshNpub.value = null
+        MeshVaultDial.failed = null
     }
 
     // ── N1, N2: the list follows My Devices ──
@@ -184,6 +185,7 @@ class DesktopVaultsRoutingTest {
         assertEquals(emptyList<String>(), dialed)
 
         // A hand-over for a Mac no longer on the list is not taken.
+        RelayConfiguration.macMeshRelay = null
         RelayConfiguration.pendingMeshRelay = RelayConfiguration.MacMeshRelay(macB, meshURL)
         assertEquals("wss://web.example.com", RelayConfiguration.launchInputs(c, dir, reach).env["MAC_RELAY_URL"])
     }
@@ -212,7 +214,7 @@ class DesktopVaultsRoutingTest {
         var restarts = 0
         var takenAtRestart: RelayConfiguration.MacMeshRelay? = null
         val job = MeshVaultDial.afterStart(c, latest = { c }, relayRunning = { true },
-            restart = { restarts++; takenAtRestart = RelayConfiguration.pendingMeshRelay },
+            restart = { restarts++; takenAtRestart = RelayConfiguration.pendingMeshRelay; true },
             ingress = { if (it == macB) FipsIngress(url = ingressBase) else FipsIngress(error = com.nostrvault.fips.FipsBridge.ERR_START) })
         kotlinx.coroutines.runBlocking { job!!.join() }
         assertEquals(1, restarts)
@@ -224,13 +226,13 @@ class DesktopVaultsRoutingTest {
         var dials = 0
         val none: (String) -> FipsIngress = { dials++; FipsIngress(error = com.nostrvault.fips.FipsBridge.ERR_START) }
         kotlinx.coroutines.runBlocking {
-            MeshVaultDial.afterStart(c, latest = { c }, relayRunning = { true }, restart = { restarts++ }, ingress = none)!!.join()
+            MeshVaultDial.afterStart(c, latest = { c }, relayRunning = { true }, restart = { restarts++; true }, ingress = none)!!.join()
         }
         assertEquals(1, restarts)
-        assertNull(MeshVaultDial.afterStart(c, latest = { c }, fromSave = true, relayRunning = { true }, restart = { restarts++ }, ingress = none))
+        assertNull(MeshVaultDial.afterStart(c, latest = { c }, fromSave = true, relayRunning = { true }, restart = { restarts++; true }, ingress = none))
         val again = dials
         kotlinx.coroutines.runBlocking {
-            MeshVaultDial.afterStart(c, latest = { c }, relayRunning = { true }, restart = { restarts++ }, ingress = none)!!.join()
+            MeshVaultDial.afterStart(c, latest = { c }, relayRunning = { true }, restart = { restarts++; true }, ingress = none)!!.join()
         }
         assertTrue(dials > again)
 
@@ -238,12 +240,12 @@ class DesktopVaultsRoutingTest {
         var checks = 0
         kotlinx.coroutines.runBlocking {
             // Running at the gate, stopped when the dial ends.
-            MeshVaultDial.afterStart(c, latest = { c }, relayRunning = { checks++ == 0 }, restart = { restarts++ },
+            MeshVaultDial.afterStart(c, latest = { c }, relayRunning = { checks++ == 0 }, restart = { restarts++; true },
                 ingress = { FipsIngress(url = ingressBase) })!!.join()
         }
         assertEquals(1, restarts)
         assertNull(RelayConfiguration.pendingMeshRelay)
-        // A web slot with no mesh Vault, or a mesh slot (dialed before its start), never dials here.
+        // A web slot with no mesh Vault, or a mesh slot after its start (it dialed before), never dials here.
         assertNull(MeshVaultDial.afterStart(config(slot = "https://web.example.com", fips = true), latest = { c }, relayRunning = { true }))
         assertNull(MeshVaultDial.afterStart(config(slot = macA, fips = true).takingInDesktopVaultSlot(ownNpub = null), latest = { c }, relayRunning = { true }))
     }
@@ -339,5 +341,56 @@ class DesktopVaultsRoutingTest {
         RelayConfiguration.pendingMeshRelay = other
         RelayConfiguration.droppingUnusedHandOver(found)
         assertEquals(other, RelayConfiguration.pendingMeshRelay)
+    }
+
+    // ── Tron's M1, M2, L1 on #2513 ──
+
+    /** M1: a mesh-npub slot whose start found nobody is dialed again by a save, and the restart takes what it found. */
+    @Test fun aSaveRedialsAMeshSlotThatFoundNobody() {
+        val c = config(slot = macA, fips = true).takingInDesktopVaultSlot(ownNpub = null)
+        var restarts = 0
+        var taken: RelayConfiguration.MacMeshRelay? = null
+        val reach: (String) -> FipsIngress = { FipsIngress(url = ingressBase) }
+        // A start dialed before it, so the dial after it does nothing.
+        assertNull(MeshVaultDial.afterStart(c, latest = { c }, relayRunning = { true }, restart = { restarts++; true }, ingress = reach))
+        val job = MeshVaultDial.afterStart(c, latest = { c }, fromSave = true, relayRunning = { true },
+            restart = { restarts++; taken = RelayConfiguration.pendingMeshRelay; true }, ingress = reach)
+        kotlinx.coroutines.runBlocking { job!!.join() }
+        assertEquals(1, restarts)
+        assertEquals(RelayConfiguration.MacMeshRelay(macA, meshURL), taken)
+        // That restart's start takes it with no dial.
+        RelayConfiguration.pendingMeshRelay = taken
+        val env = RelayConfiguration.launchInputs(c, dir) { throw IllegalStateException("no dial") }.env
+        assertEquals(meshURL, env["MAC_RELAY_URL"])
+        // Once it holds one, a save does nothing.
+        assertNull(MeshVaultDial.afterStart(c, latest = { c }, fromSave = true, relayRunning = { true }, ingress = reach))
+    }
+
+    /** M2: a wss start keeps the mesh Vault the relay had (one re-dial of it alone), as the settings check predicted. */
+    @Test fun aWebSlotRestartKeepsTheHeldMeshVault() {
+        val c = config(slot = "https://web.example.com", devices = listOf(mac(macA), mac(macB)), fips = true)
+            .takingInDesktopVaultSlot(ownNpub = null)
+        RelayConfiguration.macMeshRelay = RelayConfiguration.MacMeshRelay(macB, meshURL)
+        val predicted = RelayConfiguration.comparedInputs(c, dir)
+        assertEquals(meshURL, predicted.env["MAC_RELAY_URL"])
+        val dialed = mutableListOf<String>()
+        val started = RelayConfiguration.launchInputs(c, dir) { dialed += it; FipsIngress(url = ingressBase) }
+        assertEquals(predicted, started)
+        assertEquals(listOf(macB), dialed)
+        assertEquals(RelayConfiguration.MacMeshRelay(macB, meshURL), RelayConfiguration.macMeshRelay)
+
+        // It no longer answers: the start is on wss and the list is dialed after it.
+        val env = RelayConfiguration.launchInputs(c, dir) { FipsIngress(error = com.nostrvault.fips.FipsBridge.ERR_START) }.env
+        assertEquals("wss://web.example.com", env["MAC_RELAY_URL"])
+        assertNull(RelayConfiguration.macMeshRelay)
+    }
+
+    /** L1: a restart still draining when the wait ends keeps the hand-over for the start it makes later. */
+    @Test fun aRestartThatTimedOutKeepsTheHandOver() {
+        val c = config(slot = "https://web.example.com", devices = listOf(mac(macA)), fips = true).takingInDesktopVaultSlot(ownNpub = null)
+        val job = MeshVaultDial.afterStart(c, latest = { c }, relayRunning = { true }, restart = { false },
+            ingress = { FipsIngress(url = ingressBase) })
+        kotlinx.coroutines.runBlocking { job!!.join() }
+        assertEquals(RelayConfiguration.MacMeshRelay(macA, meshURL), RelayConfiguration.pendingMeshRelay)
     }
 }
