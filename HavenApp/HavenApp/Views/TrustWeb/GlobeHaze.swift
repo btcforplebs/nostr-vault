@@ -20,8 +20,18 @@ enum GlobeHaze {
         let rest: Path
     }
 
-    /// One per hop; the canvas draws on the main thread only.
-    private static var built: [Int: Built] = [:]
+    /// Which cache slot a ring uses: its hop plus its haze's first key and
+    /// size, so two windows on the same hop with different accounts (Mac or
+    /// iPad) each keep their own paths instead of rebuilding every frame.
+    private struct Slot: Hashable {
+        let hop: Int
+        let first: String
+        let count: Int
+    }
+
+    /// A handful of slots at most; the canvas draws on the main thread only.
+    private static var built: [Slot: Built] = [:]
+    private static let maxSlots = 8
 
     /// Draws `ring`'s haze at `alpha` (0 to 1, the ring's emphasis), round
     /// `mid` at radius `r`. `ref` is the fitted ring's radius, where a dot is
@@ -38,8 +48,14 @@ enum GlobeHaze {
     }
 
     private static func paths(for ring: TrustMapOuter.Ring, ref: Double) -> Built {
-        // A ring's keys come from one TrustMapOuter, so this is a buffer check.
-        if let b = built[ring.hop], b.keys == ring.haze, abs(b.ref - ref) < 0.5 { return b }
+        let slot = Slot(hop: ring.hop, first: ring.haze[0], count: ring.haze.count)
+        if let b = built[slot], abs(b.ref - ref) < 0.5, b.keys == ring.haze {
+            // A rebuilt outer copy with the same keys sits in a new buffer:
+            // keep that buffer so later frames take the identity fast path.
+            let same = Built(keys: ring.haze, ref: b.ref, best: b.best, rest: b.rest)
+            built[slot] = same
+            return same
+        }
         let d = dot / ref
         var best = Path(), rest = Path()
         let half = ring.haze.count / 2
@@ -48,7 +64,8 @@ enum GlobeHaze {
             if i < half { best.addEllipse(in: rect) } else { rest.addEllipse(in: rect) }
         }
         let b = Built(keys: ring.haze, ref: ref, best: best, rest: rest)
-        built[ring.hop] = b
+        if built.count >= maxSlots { built.removeAll(keepingCapacity: true) }
+        built[slot] = b
         return b
     }
 }
