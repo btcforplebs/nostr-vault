@@ -144,11 +144,16 @@ object RelayDraft {
 
     /**
      * How many relays [state] lists, as the Relays page counts them: every row
-     * not removed, plus the vault's own relay when it has one. The Vault
-     * Dashboard's Relays row uses this too, so the two never disagree.
+     * not removed, plus each desktop Vault relay the published 10002 lists
+     * (those are not rows, P7; one switched off is not counted, Tron nit 3 on
+     * #2516). The Vault Dashboard's Relays row uses this too, so the two never disagree.
      */
-    fun count(state: State, ownRelay: String): Int =
-        rows(state).count { !it.removed } + if (ownRelay.isEmpty()) 0 else 1
+    fun count(state: State): Int {
+        val live = rows(state).filter { !it.removed }
+        val rowKeys = live.map { it.entry.key }.toSet()
+        val vaults = state.published.vaultRelays.mapNotNull { it.getOrNull(1) }.map(RelayMatrix::key).distinct()
+        return live.size + vaults.count { it !in rowKeys }
+    }
 
     /** The vault's own relay and DM inbox: rows of their own, left out of the lists. */
     fun pinned(cfg: HavenConfig): List<String> = listOf(cfg.macRelayWssURL, cfg.ownHavenDMInboxURL)

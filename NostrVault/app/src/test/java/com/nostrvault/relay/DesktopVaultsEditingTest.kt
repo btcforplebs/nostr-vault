@@ -194,4 +194,32 @@ class DesktopVaultsEditingTest {
         assertFalse("a Vault entry switched off elsewhere stays off", rebased.any { it.getOrNull(1) == "wss://vault.example.com" })
         assertTrue(rebased.any { it.getOrNull(1) == "wss://new.example" })
     }
+
+    // Tron nit 3 on #2516: a Vault relay counts when the published 10002 lists it, not because a slot is set.
+    @Test fun theRelayCountCountsListedVaultRelaysOnly() {
+        val lists = RelayMatrix.Lists(read = listOf("wss://nostr.land"), write = emptyList(), dms = emptyList(), search = emptyList(), import = emptyList())
+        val off = RelayDraft.start(lists, RelayDraft.Published(read = listOf("wss://nostr.land"), relayListKnown = true))
+        assertEquals(1, RelayDraft.count(off))
+        val on = RelayDraft.start(lists, RelayDraft.Published(read = listOf("wss://nostr.land"), relayListKnown = true,
+            vaultRelays = listOf(listOf("r", "wss://vault.example.com"), listOf("r", "wss://two.example.com", "write"))))
+        assertEquals(3, RelayDraft.count(on))
+    }
+
+    // Tron must-fix 1 on #2516: a second HTTPS Vault's host is never adopted as a mirror, and Delete with Yes drops it.
+    @Test fun everyVaultHostStaysOutOfTheAdoptedMirrorsAndLeavesOnDelete() {
+        var config = migrated("https://vault.example.com")
+        val b = add(config, "Attic", "two.example.com")
+        config = config.copy(desktopVaults = config.desktopVaultsInEffect(null) + b)
+        assertEquals(listOf("https://vault.example.com", "https://two.example.com"), config.vaultMediaServers)
+        val adopted = com.nostrvault.service.ServerListAdoption.adopt(
+            emptyList(), null, listOf("https://vault.example.com", "https://two.example.com", "https://blossom.primal.net"), 100, null,
+            config.vaultMediaServers,
+        )!!
+        assertEquals(listOf("https://blossom.primal.net"), adopted.mirrors)
+        // A mirror adopted before the fix leaves with the Vault.
+        config = config.copy(blossomMirrors = listOf("https://two.example.com/", "https://blossom.primal.net"))
+            .deletingDesktopVault(b.id).droppingMirrorsOnHost(b.hostKey)
+        assertEquals(listOf("https://blossom.primal.net"), config.blossomMirrors)
+        assertEquals(config, config.droppingMirrorsOnHost(null))
+    }
 }

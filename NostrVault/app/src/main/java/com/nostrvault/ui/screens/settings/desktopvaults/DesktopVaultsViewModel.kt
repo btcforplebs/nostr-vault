@@ -17,6 +17,7 @@ import com.nostrvault.relay.MacSync
 import com.nostrvault.relay.OwnMeshNpub
 import com.nostrvault.relay.addingDesktopVault
 import com.nostrvault.relay.deletingDesktopVault
+import com.nostrvault.relay.droppingMirrorsOnHost
 import com.nostrvault.relay.desktopVaultsInEffect
 import com.nostrvault.relay.withDesktopVaults
 import com.nostrvault.service.DesktopVaultListEdit
@@ -187,7 +188,7 @@ class DesktopVaultsViewModel @Inject constructor(
         viewModelScope.launch {
             when (val outcome = DesktopVaultListEdit.remove(nostr, vault)) {
                 DesktopVaultListEdit.Outcome.Published, DesktopVaultListEdit.Outcome.Unchanged -> {
-                    removeHere(vault)
+                    removeHere(vault, unlisted = true)
                     done(null)
                 }
                 else -> {
@@ -198,8 +199,8 @@ class DesktopVaultsViewModel @Inject constructor(
         }
     }
 
-    private fun removeHere(vault: DesktopVault) {
-        configStore.update { it.deletingDesktopVault(vault.id) }
+    private fun removeHere(vault: DesktopVault, unlisted: Boolean = false) {
+        configStore.update { c -> c.deletingDesktopVault(vault.id).let { if (unlisted) it.droppingMirrorsOnHost(vault.hostKey) else it } }
         // Its media entry is no longer this phone's to drop: after "No, leave my lists" a later Media Servers Save
         // must keep it (should-fix 3 on #2511).
         vault.hostKey?.let { host -> viewModelScope.launch(Dispatchers.IO) { DesktopVaultListEdit.forgetManagedServer(nostr, host) } }

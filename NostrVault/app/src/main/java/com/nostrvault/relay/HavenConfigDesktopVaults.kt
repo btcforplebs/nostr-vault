@@ -72,6 +72,23 @@ fun HavenConfig.addingDesktopVault(vault: DesktopVault): HavenConfig =
 fun HavenConfig.deletingDesktopVault(id: String): HavenConfig =
     DesktopVaultsEditing.deleting(id, desktopVaultsInEffect, desktopVaultsRemoved).let { copy(desktopVaults = it.vaults, desktopVaultsRemoved = it.removed) }
 
+/**
+ * The media servers adoption of a published 10063 never copies into [HavenConfig.blossomMirrors]: every HTTPS Vault's
+ * host (its switch's entry, not an ordinary mirror) and the old slot's (Tron must-fix 1 on #2516).
+ */
+val HavenConfig.vaultMediaServers: List<String>
+    get() = (desktopVaultHttpsURLs + macRelayHttpsURL).filter(String::isNotBlank).distinct()
+
+/**
+ * After a Delete that took the Vault out of the lists: its host leaves [HavenConfig.blossomMirrors] too, or uploads
+ * keep going to the deleted Vault and the next Media Servers Save lists it again (Tron must-fix 1 on #2516).
+ */
+fun HavenConfig.droppingMirrorsOnHost(host: String?): HavenConfig {
+    if (host.isNullOrEmpty()) return this
+    val kept = blossomMirrors.filterNot { DesktopVaultsLists.hostKey(it) == host }
+    return if (kept.size == blossomMirrors.size) this else copy(blossomMirrors = kept)
+}
+
 /** Stores a new order (after a drag) or a rename. */
 fun HavenConfig.withDesktopVaults(vaults: List<DesktopVault>): HavenConfig = copy(desktopVaults = DesktopVaultsRules.ordered(vaults))
 

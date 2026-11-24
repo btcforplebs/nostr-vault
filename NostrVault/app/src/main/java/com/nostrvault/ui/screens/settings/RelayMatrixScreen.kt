@@ -426,7 +426,7 @@ fun RelayMatrixScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
-                    Chip("${state?.let { RelayDraft.count(it, ownRelay) } ?: 0} relays", SecondaryText)
+                    Chip("${state?.let { RelayDraft.count(it) } ?: 0} relays", SecondaryText)
                     if (times.isNotEmpty()) Chip("avg ${times.sum() / times.size} ms", SecondaryText)
                     if (fixCount > 0) {
                         Box(Modifier.clickable { recommended = true }) { Chip("⚠ $fixCount to fix", SlowAmber) }

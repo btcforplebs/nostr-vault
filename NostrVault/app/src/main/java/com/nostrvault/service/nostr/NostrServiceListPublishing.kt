@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import com.nostrvault.relay.desktopVaultsInEffect
+import com.nostrvault.relay.vaultMediaServers
 import android.util.Log
 import com.nostrvault.BuildConfig
 import com.nostrvault.data.model.MuteList
@@ -204,7 +205,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val ask = (config.writeRelays + config.readRelays + NostrService.PROFILE_RELAYS).filterNot(::isLoopbackRelay).distinct()
         val event = lookupNewestReplaceable(10063, owner, ask).event ?: return
         val base = config.appSupportDir?.let { ListMerge.Bases(java.io.File(it, ListMerge.BASES_FILE)) }?.get("10063:$owner")
-        val own = listOf(config.macRelayHttpsURL).filter { it.isNotBlank() }
+        val own = config.vaultMediaServers
         var added = emptyList<String>()
         configStore.updateAsync { current ->
             val result = ServerListAdoption.adopt(

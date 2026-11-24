@@ -100,7 +100,9 @@ object DesktopVaultListEdit {
             val tags = base.tags ?: continue
             val moved = DesktopVaultsLists.reordered(tags, list, vaults)
             if (moved == tags || !nostr.ownerHexPubkey.equals(owner, ignoreCase = true)) continue
-            line = line ?: publish(nostr, moved, list, owner, base.event).message
+            // Publish first: an earlier list's failure must not skip this one (Tron should-fix 2 on #2516).
+            val failed = publish(nostr, moved, list, owner, base.event).message
+            line = line ?: failed
         }
         return line
     }
