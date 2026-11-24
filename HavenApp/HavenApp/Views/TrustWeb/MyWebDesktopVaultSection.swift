@@ -3,7 +3,7 @@ import SwiftUI
 
 /// My Web › Desktop Vault: what the globe's outer rings are, off the globe
 /// (Logen, 11/24: the status sat bottom-left over the web). With a rank,
-/// "Found by your desktop Vault" and one chip per ring ("3 hops · top 300"),
+/// "Found by your desktop Vault" and one chip per ring ("3 hops"),
 /// each opening that ring (`OuterRingSheet`). A paired desktop Vault that
 /// has not ranked yet says so. Pull asks the desktop Vault for its ranking
 /// now: the same catch-up its new-rank nudge starts
@@ -102,7 +102,7 @@ struct MyWebDesktopVaultSection: View {
                             .background(Color.havenPurple.opacity(0.12), in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(Text("\(ring.hop) hops out, top \(ring.count) people, found by your desktop Vault"))
+                    .accessibilityLabel(Text("\(ring.hop) hops out, \(ring.count) people, found by your desktop Vault"))
                 }
             }
             .padding(.horizontal, 14)

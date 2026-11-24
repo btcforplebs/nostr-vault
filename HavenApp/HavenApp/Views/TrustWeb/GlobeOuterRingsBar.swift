@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Under your own globe on the Mac's WOT tab: what the outer rings are
 /// (iPhone and iPad show it in My Web, `MyWebDesktopVaultSection`). With a
-/// rank, "Found by your desktop Vault" and one chip per ring ("3 hops ·
-/// top 300": the best of the ring, whatever their score), each opening
+/// rank, "Found by your desktop Vault" and one chip per ring ("3 hops": the
+/// best of the ring, whatever their score), each opening
 /// that ring as a community (`OuterRingSheet`). A paired desktop Vault
 /// that has not ranked yet says so. With no desktop Vault, the invite
 /// (`HavenInviteCard`) until "Not now". Android has no Mac; its twin is
@@ -37,7 +37,7 @@ struct GlobeOuterRingsBar: View {
                                         .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel(Text("\(ring.hop) hops out, top \(ring.count) people, found by your desktop Vault"))
+                                .accessibilityLabel(Text("\(ring.hop) hops out, \(ring.count) people, found by your desktop Vault"))
                             }
                         }
                     }
