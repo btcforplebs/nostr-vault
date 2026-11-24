@@ -235,6 +235,13 @@ func run(args []string) error {
 			}
 		}()
 	}
+	// Remove in the box UI: hand the engine the set without the device now,
+	// so its copy tokens go at once (box/devices_paired.go).
+	api.Devices.Removed = func() {
+		if _, err := engineDevices.Sync(); err != nil {
+			log.Printf("box: engine devices: %v", err)
+		}
+	}
 	go engineDevices.Run(ctx, 5*time.Second)
 	go api.Sync.Run(ctx)
 	go accountsWatch.Run(ctx, 5*time.Second)

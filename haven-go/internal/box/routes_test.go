@@ -35,6 +35,7 @@ func TestRoutesRegistered(t *testing.T) {
 		"POST /api/box/backups/now",
 		"POST /api/box/backups/restore",
 		"POST /api/box/blocklist",
+		"POST /api/box/devices/remove",
 		"POST /api/box/imports/cancel",
 		"POST /api/box/imports/run",
 		"POST /api/box/media/auto-mirror/run",

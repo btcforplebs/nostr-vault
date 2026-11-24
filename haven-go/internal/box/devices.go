@@ -33,6 +33,8 @@ type MeshEntry struct {
 	Approved bool   `json:"approved"`
 	// VouchedBy: the npubs of the signed-in accounts whose lists name it.
 	VouchedBy []string `json:"vouchedBy,omitempty"`
+	// PairedAt: when the box paired it (devices_paired.go); 0 for a 10063 entry.
+	PairedAt int64 `json:"pairedAt,omitempty"`
 }
 
 // DevicesReport is GET /api/box/devices.
@@ -54,6 +56,9 @@ type DevicesReport struct {
 	// Lists: each counted account's list (ListAt, ListID and Source above
 	// stay the first account's, as before accounts).
 	Lists []AccountList `json:"lists,omitempty"`
+	// Paired: Devices is the box's own paired set (devices_paired.go), and
+	// Remove works; false while the 10063s still decide.
+	Paired bool `json:"paired,omitempty"`
 }
 
 // MeshEntries reads the fipsmesh entries of a kind-10063 event. Only the
@@ -276,6 +281,9 @@ type Devices struct {
 	// Paired is the box's own paired set, seeded once from a settled read
 	// (devices_seed.go). Nil: no seed.
 	Paired *PairedSet
+	// Removed runs after Remove wrote the set and the file, so main can hand
+	// the engine its file at once rather than at the next 5 s tick.
+	Removed func()
 
 	mu     sync.Mutex
 	cached *DevicesReport
