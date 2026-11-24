@@ -145,3 +145,44 @@ func TestCrawlRefreshFloorFromPassStart(t *testing.T) {
 		t.Fatalf("refresh floor %v, want %d (a day before the pass started)", n.floors, want)
 	}
 }
+
+// A finished full pass marks the checkpoint as written with the globe step
+// (GlobeStep), and a refresh keeps the mark; a refresh alone never sets it,
+// because its floor skips lists it has never read. The job reads the mark:
+// a checkpoint without it (build 50 and earlier) gets a full pass at once.
+func TestCrawlFullPassMarksGlobeStep(t *testing.T) {
+	n := net()
+	dir := t.TempDir()
+	c := crawler(t, n, dir)
+	c.ParamsVersion = 2
+	before := time.Unix(1_800_000_000, 0)
+	// A checkpoint from before the globe step: a finished full pass, no mark.
+	if err := SaveState(dir, State{Account: pk(0), ParamsVersion: 2, Hop: 1, FullAt: before.Unix(), DoneStart: before.Unix()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.RunPass(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if st := LoadState(dir, pk(0)); st.GlobeStep {
+		t.Fatalf("a refresh must not claim the globe step: %+v", st)
+	}
+	if _, err := c.RunPass(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if st := LoadState(dir, pk(0)); !st.GlobeStep || st.FullAt == 0 {
+		t.Fatalf("a finished full pass marks the globe step: %+v", st)
+	}
+	// Later refreshes, and a pass restarted for new weights, keep the mark.
+	if _, err := c.RunPass(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	c.ParamsVersion = 3
+	allowed := 1
+	c.Wait = func(context.Context) bool { allowed--; return allowed >= 0 }
+	if _, err := c.RunPass(context.Background(), true); err != ErrStopped {
+		t.Fatalf("want ErrStopped, got %v", err)
+	}
+	if st := LoadState(dir, pk(0)); !st.GlobeStep {
+		t.Fatalf("a refresh or a restarted pass must keep the mark: %+v", st)
+	}
+}

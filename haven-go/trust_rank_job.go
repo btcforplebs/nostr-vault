@@ -273,12 +273,21 @@ func hasHeadroom(bytes int64) bool { return bytes <= trustRankCap-trustRankHeadr
 
 // trustRankDue: whether account's pass is due now, and whether it is a
 // refresh (changed lists only) or a full pass. A pass cut halfway is always
-// due, of the same kind.
+// due, of the same kind. A finished full pass from before the globe step
+// (State.GlobeStep false) makes a full pass due at once.
 func trustRankDue(st trustrank.State, now time.Time) (refresh, due bool) {
 	if st.Hop > 1 || st.Last != "" {
 		return st.Refresh, true
 	}
 	if st.FullAt == 0 || now.Sub(time.Unix(st.FullAt, 0)) >= trustRankFullPass {
+		return false, true
+	}
+	// The last full pass was by a build without the globe step, so the
+	// result file has no globe rows and the apps draw rings 4 and 5 empty:
+	// a full pass now, not in up to a week. A refresh would not do: it asks
+	// only for lists newer than the last pass, and the globe step's rings
+	// were never read.
+	if !st.GlobeStep {
 		return false, true
 	}
 	last := max(st.FullAt, st.RefreshAt)
