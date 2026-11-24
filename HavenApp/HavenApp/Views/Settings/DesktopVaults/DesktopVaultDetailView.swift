@@ -118,7 +118,7 @@ struct DesktopVaultDetailView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
-                        .disabled(listedOnWeb(vault))
+                        .disabled(addressLocked(vault))
                     if address != (vault.httpsURL ?? "") {
                         Button("Save") { saveAddress(vault) }
                             .buttonStyle(.borderless)
@@ -126,9 +126,8 @@ struct DesktopVaultDetailView: View {
                 }
                 if let addressLine {
                     Text(addressLine).font(.appCaption).foregroundColor(.orange)
-                } else if listedOnWeb(vault) {
-                    Text("Turn its public lists off below first to change the address.")
-                        .font(.appCaption).foregroundColor(.secondary)
+                } else if let why = addressLockedLine(vault) {
+                    Text(why).font(.appCaption).foregroundColor(.secondary)
                 }
             }
         } header: {
@@ -150,6 +149,22 @@ struct DesktopVaultDetailView: View {
         DesktopVaultList.allCases.contains { list in
             lists[list].map { DesktopVaultsLists.isListed(vault, path: .web, in: list, tags: $0) } ?? false
         }
+    }
+
+    /// The address can change only once every list is read and none names
+    /// it: a list still loading (or that failed to) may name the old host,
+    /// which would be left listed with no Vault (Tron should-fix 4 on #2511).
+    private func addressLocked(_ vault: DesktopVault) -> Bool {
+        addressLockedLine(vault) != nil
+    }
+
+    private func addressLockedLine(_ vault: DesktopVault) -> String? {
+        if loading { return "Checking your public lists…" }
+        if DesktopVaultList.allCases.contains(where: { lists[$0] == nil }) {
+            return "Your public lists couldn't be read, so the address can't change now."
+        }
+        if listedOnWeb(vault) { return "Turn its public lists off below first to change the address." }
+        return nil
     }
 
     private func statusLine(_ vault: DesktopVault) -> String? {
@@ -191,12 +206,16 @@ struct DesktopVaultDetailView: View {
                 removeHere(vault)
             default:
                 deleteLine = (outcome.message ?? DesktopVaultListEdit.notLoadedMessage) + " The Vault was not deleted."
+                if case .partlyPublished = outcome { Task { await load() } }
             }
         }
     }
 
     private func removeHere(_ vault: DesktopVault) {
         configService.editDesktopVaults { $0.deleteDesktopVault(id: vault.id) }
+        // Its media entry is no longer this phone's to drop: after "No, leave
+        // my lists" a later Media Servers Save must keep it (should-fix 3).
+        if let host = vault.hostKey { NostrService.forgetManagedServer(host: host) }
         dismiss()
     }
 

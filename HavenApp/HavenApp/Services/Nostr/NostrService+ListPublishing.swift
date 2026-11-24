@@ -220,6 +220,19 @@ extension NostrService {
         UserDefaults.standard.stringArray(forKey: "serverListManaged.\(owner)") ?? []
     }
 
+    /// Takes `host` out of every account's managed set, so a later Save
+    /// keeps its 10063 entry as another device's. A deleted desktop Vault's
+    /// host was managed here before P4 (`activeBlossomMirrors` added it); once
+    /// it is no longer a Vault, `notVault` stops filtering it and the merge
+    /// would drop it (Tron should-fix 3 on #2511).
+    static func forgetManagedServer(host: String, defaults: UserDefaults = .standard) {
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("serverListManaged.") {
+            guard let urls = defaults.stringArray(forKey: key) else { continue }
+            let kept = urls.filter { DesktopVaultsLists.hostKey($0) != host }
+            if kept.count != urls.count { defaults.set(kept, forKey: key) }
+        }
+    }
+
     /// `meshAdd` / `meshRemove`: `fipsmesh://` entries the owner added or
     /// removed on Media Servers. Nothing else changes the list's mesh
     /// entries: linking or removing a device never does (Logen via Tod,

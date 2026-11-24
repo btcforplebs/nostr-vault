@@ -32,6 +32,10 @@ enum DesktopVaultListEdit {
         /// No signed-in account, the account changed during the lookup, or
         /// the signer said no.
         case notSigned
+        /// A delete's unlist stopped part way: these lists already went out
+        /// without the Vault, the rest weren't signed (Tron should-fix 5 on
+        /// #2511).
+        case partlyPublished([DesktopVaultList])
 
         /// The line the switch shows when it snaps back; nil for a change
         /// that went out or had nothing to do.
@@ -41,6 +45,9 @@ enum DesktopVaultListEdit {
             case .notLoaded: return DesktopVaultListEdit.notLoadedMessage
             case .refused(let list): return list.refusal
             case .notSigned: return "Your list wasn't signed, so it wasn't changed."
+            case .partlyPublished(let lists):
+                let names = lists.map(\.name).joined(separator: " and ")
+                return "It was taken out of your \(names) list, but the rest wasn't signed."
             }
         }
     }
@@ -156,14 +163,16 @@ enum DesktopVaultListEdit {
                     return
                 }
                 var outcome: Outcome = .unchanged
+                var sent: [DesktopVaultList] = []
                 for list in DesktopVaultList.allCases {
                     guard let tags = changed[list] else { continue }
                     let one = await publish(tags, list: list, owner: owner, signer: config.ownerNpub,
                                             baseAt: bases[list], nostr: nostr)
                     if one != .published {
-                        done(one)
+                        done(sent.isEmpty ? one : .partlyPublished(sent))
                         return
                     }
+                    sent.append(list)
                     outcome = .published
                 }
                 done(outcome)

@@ -110,11 +110,23 @@ enum DesktopVaultsEditing {
             npub = parsed
         }
         guard https != nil || npub != nil else { return .failure(.noAddress) }
-        let id = npub.map(DesktopVaultsLogic.id(meshNpub:))
-            ?? DesktopVaultsLogic.id(httpsHost: DesktopVaultsLists.hostKey(https!)!)
+        let id = freshID(npub.map(DesktopVaultsLogic.id(meshNpub:))
+            ?? DesktopVaultsLogic.id(httpsHost: DesktopVaultsLists.hostKey(https!)!), in: vaults)
         let order = (vaults.map(\.order).max() ?? -1) + 1
         return .success(DesktopVault(id: id, name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                                      kind: kind, meshNpub: npub, httpsURL: https, order: order))
+    }
+
+    /// `base`, or `base#2`, `base#3`… when another Vault already has it. A
+    /// Vault keeps its id when its address changes, so a later Vault at the
+    /// old address would otherwise share it, and Delete or the detail page
+    /// would pick the wrong one (Tron must-fix 1 on #2511).
+    static func freshID(_ base: String, in vaults: [DesktopVault]) -> String {
+        let taken = Set(vaults.map(\.id))
+        guard taken.contains(base) else { return base }
+        var n = 2
+        while taken.contains("\(base)#\(n)") { n += 1 }
+        return "\(base)#\(n)"
     }
 
     /// The list with `vault` added at the end, and `removed` without its

@@ -66,6 +66,34 @@ final class DesktopVaultsEditingTests: XCTestCase {
         XCTAssertEqual(config.desktopVaultMeshNpubs(ownNpub: nil), [macA])
     }
 
+    /// Tron must-fix 1 on #2511: a Vault keeps its id when its address
+    /// changes, so a Vault added later at the old address must get its own.
+    func testAVaultAddedAtAMovedVaultsOldAddressGetsItsOwnIdAndDeletesAlone() {
+        var config = migrated(slot: "https://old.example.com")
+        let first = config.desktopVaultsInEffect(ownNpub: nil)[0].id
+        XCTAssertNil(config.setDesktopVaultAddress(id: first, to: "new.example.com"))
+        guard case .success(let second) = DesktopVaultsEditing.adding(
+            name: "Second", httpsTyped: "old.example.com", meshNpub: nil, kind: .linux,
+            to: config.desktopVaultsInEffect(ownNpub: nil), ownNpub: nil) else { return XCTFail() }
+        config.addDesktopVault(second)
+        let vaults = config.desktopVaultsInEffect(ownNpub: nil)
+        XCTAssertEqual(vaults.count, 2)
+        XCTAssertEqual(Set(vaults.map(\.id)).count, 2, "every Vault has its own id")
+
+        config.deleteDesktopVault(id: second.id)
+        XCTAssertEqual(config.desktopVaultsInEffect(ownNpub: nil).map(\.httpsURL), ["https://new.example.com"])
+        XCTAssertFalse(config.desktopVaultsRemoved.contains(DesktopVaultsEditing.removedKey(host: "new.example.com")))
+        XCTAssertEqual(config.macRelayURLInEffect, "", "the old slot stays off")
+    }
+
+    func testFreshIDCountsUpPastTakenIds() {
+        let taken = ["https:a.example.com", "https:a.example.com#2"].enumerated().map {
+            DesktopVault(id: $1, name: "", httpsURL: "https://x\($0).example.com", order: $0)
+        }
+        XCTAssertEqual(DesktopVaultsEditing.freshID("https:b.example.com", in: taken), "https:b.example.com")
+        XCTAssertEqual(DesktopVaultsEditing.freshID("https:a.example.com", in: taken), "https:a.example.com#3")
+    }
+
     // MARK: Add (rule 4)
 
     func testAddRefusesATakenHostOrDeviceAndNeedsAnAddress() {
