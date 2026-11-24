@@ -93,7 +93,9 @@ class HomeVaultQueueTest {
     fun `an upload status is sent, refused for good, or retried`() {
         assertEquals(HomeVaultSend.SENT, HomeVaultRules.uploadOutcome(200))
         assertEquals(HomeVaultSend.SENT, HomeVaultRules.uploadOutcome(201))
-        assertEquals(HomeVaultSend.REJECTED, HomeVaultRules.uploadOutcome(403))
+        // Fail closed: a refused mesh key keeps the blob waiting, never dropped, never re-sent with the account key.
+        assertEquals(HomeVaultSend.RETRY, HomeVaultRules.uploadOutcome(401))
+        assertEquals(HomeVaultSend.RETRY, HomeVaultRules.uploadOutcome(403))
         assertEquals(HomeVaultSend.REJECTED, HomeVaultRules.uploadOutcome(413))
         assertEquals(HomeVaultSend.RETRY, HomeVaultRules.uploadOutcome(404))
         assertEquals(HomeVaultSend.RETRY, HomeVaultRules.uploadOutcome(400)) // a cut body, or plain HTTP on a TLS port: this try, not the blob
