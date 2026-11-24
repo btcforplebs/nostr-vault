@@ -1636,6 +1636,7 @@
 		A8E9D2A3824BB02F5A3D6D63 /* MediaImportAfterMovingIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10FA15B2301FCB6B78E1E8DA /* MediaImportAfterMovingIn.swift */; };
 		A9175BE3300E9CE097E14F26 /* BlossomService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803F7E83A0267F02449FA666 /* BlossomService.swift */; };
 		A945F90593453AEC2794E43C /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E7F41B7A5FACA30EA7AE9015 /* Localizable.xcstrings */; };
+		A972CD451ACD09FAA6BBBB59 /* MediaDeleteGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D5B2623E682314257338353 /* MediaDeleteGate.swift */; };
 		A9B920B944467163F1F215D3 /* DMService+SignerPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64BAF7CD86FC5EBA575A0824 /* DMService+SignerPolicy.swift */; };
 		A9BD6764846DB55ACAEBB348 /* NoteRow+ExpandedLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D7F06C12BC798B50FBF8CA0 /* NoteRow+ExpandedLayout.swift */; };
 		A9F61360795D5D8B2007582E /* BlossomService+Mirroring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80E8DDC285524202934229A5 /* BlossomService+Mirroring.swift */; };
@@ -1901,6 +1902,7 @@
 		C5899FB94FFBF6F1CBCF4EB0 /* TrustPathText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D36F3CFEC85EB25E524B13D /* TrustPathText.swift */; };
 		C592C2A78330BB1D10AE444E /* AppDataWipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2FF162CEBBC03954CBBB65 /* AppDataWipe.swift */; };
 		C5C8191696EA0207483291CF /* MediaCacheService+Sources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 140A9D83B992BBCA74D259C2 /* MediaCacheService+Sources.swift */; };
+		C5D087CDB2B43D1B05AC8402 /* MediaDeleteGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D5B2623E682314257338353 /* MediaDeleteGate.swift */; };
 		C5D6D43CEFAD7105CBB42484 /* MediaTypeFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AC1C2DD18B59FCCA75A7CEE /* MediaTypeFilter.swift */; };
 		C5F42D5D8EC4D36D38A4183C /* CustomEmoji.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5491B12E550308F38BE003 /* CustomEmoji.swift */; };
 		C61C638C785450F8CCFDB9B7 /* GlobeScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E2E0E2740A5B3C348F5DE28 /* GlobeScene.swift */; };
@@ -3134,6 +3136,7 @@
 		7CFB14BE787FF5D3A51852F1 /* NoteDetailView+Replies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteDetailView+Replies.swift"; sourceTree = "<group>"; };
 		7D08ABA7CDBFD26CF0423E33 /* MediaTypeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTypeDetector.swift; sourceTree = "<group>"; };
 		7D321A8DE1CDEFF237C6323E /* ProfileShareHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileShareHandler.swift; sourceTree = "<group>"; };
+		7D5B2623E682314257338353 /* MediaDeleteGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaDeleteGate.swift; sourceTree = "<group>"; };
 		7D8AA58D6F5990BE4F751953 /* MediaPostShareHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPostShareHandler.swift; sourceTree = "<group>"; };
 		7DBB01D87B267D0ACA43B8EC /* VaultView+Content.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VaultView+Content.swift"; sourceTree = "<group>"; };
 		7DE9D372B8B8E0E8D53391F9 /* DMSendFailedAway.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMSendFailedAway.swift; sourceTree = "<group>"; };
@@ -4996,6 +4999,7 @@
 				62B1CCA082F36A09EF426579 /* MarketScopeGate.swift */,
 				8C08934047CF27D98E3E6A9E /* MediaClipboard.swift */,
 				FEC8D69A1DD319E0BBC022F1 /* MediaDateGrouping.swift */,
+				7D5B2623E682314257338353 /* MediaDeleteGate.swift */,
 				2777E951D68131C64DAEAA23 /* MediaDeleteWording.swift */,
 				B2629DCD7132AF2247C1ADC8 /* MediaImportAfterMovingInRule.swift */,
 				FE2060B412DD17816F0495D8 /* MediaItem.swift */,
@@ -6551,6 +6555,7 @@
 				273B1268DFEB87F736061F75 /* MediaClipboard.swift in Sources */,
 				44E80A628D1FFA5E86841553 /* MediaCopyFileRow.swift in Sources */,
 				81E4B84A7AD7E745DE93E2A4 /* MediaDateGrouping.swift in Sources */,
+				A972CD451ACD09FAA6BBBB59 /* MediaDeleteGate.swift in Sources */,
 				90944A821D57E5A3CB52C1C3 /* MediaDeleteWording.swift in Sources */,
 				040DD927F572B12A2A02312B /* MediaGalleryDataProcessing.swift in Sources */,
 				18D877F6D6B57C3C14907074 /* MediaGalleryGrid.swift in Sources */,
@@ -7803,6 +7808,7 @@
 				79735010C7F180214E319B8A /* MediaClipboard.swift in Sources */,
 				5B55C977E5ADD84B68CF98E1 /* MediaCopyFileRow.swift in Sources */,
 				4295059D93DE26D8335EE808 /* MediaDateGrouping.swift in Sources */,
+				C5D087CDB2B43D1B05AC8402 /* MediaDeleteGate.swift in Sources */,
 				35AFA5B050700FDD3363075F /* MediaDeleteWording.swift in Sources */,
 				98F3C8B40BF9B4F8F3C99EBD /* MediaGalleryDataProcessing.swift in Sources */,
 				346E57283E62BF450CDC1B58 /* MediaGalleryGrid.swift in Sources */,

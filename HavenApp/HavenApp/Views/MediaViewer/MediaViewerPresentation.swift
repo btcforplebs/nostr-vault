@@ -30,8 +30,11 @@ extension EnvironmentValues {
 }
 
 /// What a screen with its own media list (the Media page, a profile's media
-/// grid) adds to the shared viewer. The feed passes none of it.
+/// grid) adds to the shared viewer. The feed passes only `poster`.
 struct MediaViewerExtras {
+    /// Hex pubkey of whoever posted the note the file came from. Delete is
+    /// only offered when this is the active account (`MediaDeleteGate`).
+    var poster: String? = nil
     /// The screen already knows each file's type; the viewer then never
     /// guesses from the network.
     var mimeHint: (URL) -> String? = { _ in nil }
