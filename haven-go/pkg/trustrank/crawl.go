@@ -140,11 +140,15 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 		c.Store.Sync()
 	}
 	// The globe step (globewalk.go) reads on for the globe only. A full
-	// store skips it; one that fills during it keeps what it read.
+	// store skips it; one that fills during it keeps what it read and is
+	// capped like a feed walk that filled (Tron, #2489), so the capped
+	// retry compacts before the next pass.
 	if !full {
-		if _, err := c.walkGlobe(ctx, &st, refresh, floor); err != nil {
+		gfull, err := c.walkGlobe(ctx, &st, refresh, floor)
+		if err != nil {
 			return nil, err
 		}
+		full = gfull
 	}
 	globe, err := c.globeRows()
 	if err != nil {
@@ -177,7 +181,8 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 // readLists reads readers' lists from st.Next on, a batch at a time,
 // keeping st's place (Next, Last) and the checkpoint. hop is what Progress
 // hears. globe: the lists are read for the globe only and are marked so
-// before they are stored (store_globe.go); a feed read drops the mark.
+// before they are stored (store_globe.go); the owner's feed read drops
+// the owner's mark.
 // full: the store reached its cap. ErrStopped: Wait said no or ctx ended,
 // with the place saved.
 func (c *Crawler) readLists(ctx context.Context, st *State, hop int, readers []string, refresh, globe bool, floor int64) (full bool, err error) {
@@ -193,16 +198,26 @@ func (c *Crawler) readLists(ctx context.Context, st *State, hop int, readers []s
 		}
 		batch := readers[st.Next:min(len(readers), st.Next+max(1, c.Fetch.Batch(refresh)))]
 		asks := make([]Ask, len(batch))
+		var fresh []string // not stored yet
 		for i, pk := range batch {
 			// A full pass reads every list again (a resumed one starts
 			// at the checkpoint's place); a refresh asks only for newer.
 			asks[i].Pubkey = pk
-			if have, stored := c.Store.CreatedAt(pk); stored && refresh {
+			have, stored := c.Store.CreatedAt(pk)
+			if stored && refresh {
 				asks[i].Since = have + 1
 			}
+			if !stored {
+				fresh = append(fresh, pk)
+			}
 		}
-		if globe {
-			if err := c.Store.MarkGlobe(batch); err != nil {
+		// Only a list not stored yet is marked (Tron, #2489): a stored one
+		// already counts in the feed (an earlier, deeper feed pass of this
+		// account, or the shared store), so marking it would move feed
+		// scores, and marking the owner's own list would leave the feed
+		// with no owner. A list marked earlier stays marked.
+		if globe && len(fresh) > 0 {
+			if err := c.Store.MarkGlobe(c.Owner, fresh); err != nil {
 				c.Store.Checkpoint(c.Dir, *st)
 				return false, err
 			}
@@ -236,7 +251,7 @@ func (c *Crawler) readLists(ctx context.Context, st *State, hop int, readers []s
 		if !globe {
 			// Read by the feed walk now: these lists count in the feed. A
 			// failed write leaves the mark, the safe side (left out).
-			c.Store.UnmarkGlobe(readers[from:st.Next])
+			c.Store.UnmarkGlobe(c.Owner, readers[from:st.Next])
 		}
 		if full {
 			return true, nil

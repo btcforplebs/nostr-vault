@@ -3,6 +3,8 @@ package trustrank
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -55,14 +57,14 @@ func TestGlobeWalksToHop5(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, h := range []int{3, 4} {
-		if !n.called(ring(h, 0)) || !c.Store.GlobeOnly(ring(h, 0)) {
+		if !n.called(ring(h, 0)) || !c.Store.GlobeOnly(c.Owner, ring(h, 0)) {
 			t.Fatalf("ring %d's lists must be read, for the globe only", h)
 		}
 	}
 	if n.called(ring(5, 0)) {
 		t.Fatal("ring 5's lists are past GlobeHop: never read")
 	}
-	if c.Store.GlobeOnly(ring(2, 0)) || c.Store.GlobeOnly(pk(0)) {
+	if c.Store.GlobeOnly(c.Owner, ring(2, 0)) || c.Store.GlobeOnly(c.Owner, pk(0)) {
 		t.Fatal("lists the feed walk read are not globe-only")
 	}
 	rf := resultFile(t, dir)
@@ -154,7 +156,7 @@ func TestFeedReadDropsTheGlobeMark(t *testing.T) {
 	if _, err := c.RunPass(context.Background(), false); err != nil {
 		t.Fatal(err)
 	}
-	if !c.Store.GlobeOnly(ring(3, 0)) {
+	if !c.Store.GlobeOnly(c.Owner, ring(3, 0)) {
 		t.Fatal("setup: ring 3 is globe-only after the first pass")
 	}
 	c.OuterBar = 0 // now ring 3 earns the walk
@@ -162,7 +164,7 @@ func TestFeedReadDropsTheGlobeMark(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Store.GlobeOnly(ring(3, 0)) {
+	if c.Store.GlobeOnly(c.Owner, ring(3, 0)) {
 		t.Fatal("a list the feed walk read must lose its globe mark")
 	}
 	if _, hop, ok := res.Score(ring(4, 0)); !ok || hop != 4 {
@@ -177,22 +179,30 @@ func TestGlobeMarksSurviveReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MarkGlobe([]string{pk(1), pk(2), "not hex"}); err != nil {
+	me, other := pk(0), pk(9)
+	if err := s.MarkGlobe(me, []string{pk(1), pk(2), "not hex"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkGlobe(other, []string{pk(2)}); err != nil {
 		t.Fatal(err)
 	}
 	s.Put(pk(1), 1, []string{pk(3)}, nil)
 	s.Put(pk(2), 1, []string{pk(3)}, nil)
-	s.UnmarkGlobe([]string{pk(2)})
+	s.UnmarkGlobe(me, []string{pk(2)})
 	s.Close()
 	s, err = OpenStore(dir, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if !s.GlobeOnly(pk(1)) || s.GlobeOnly(pk(2)) || s.GlobeMarks() != 1 {
-		t.Fatalf("marks after reopen: 1=%v 2=%v n=%d", s.GlobeOnly(pk(1)), s.GlobeOnly(pk(2)), s.GlobeMarks())
+	if !s.GlobeOnly(me, pk(1)) || s.GlobeOnly(me, pk(2)) || s.GlobeMarks(me) != 1 {
+		t.Fatalf("marks after reopen: 1=%v 2=%v n=%d", s.GlobeOnly(me, pk(1)), s.GlobeOnly(me, pk(2)), s.GlobeMarks(me))
 	}
-	g, err := s.FeedGraph()
+	// Each account's marks are its own: me's unmark left other's mark.
+	if s.GlobeOnly(other, pk(1)) || !s.GlobeOnly(other, pk(2)) || s.GlobeMarks(other) != 1 {
+		t.Fatalf("other's marks: 1=%v 2=%v", s.GlobeOnly(other, pk(1)), s.GlobeOnly(other, pk(2)))
+	}
+	g, err := s.FeedGraph(me)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,5 +242,175 @@ func TestGlobeStepResumes(t *testing.T) {
 	}
 	if !n.called(ring(4, 0)) {
 		t.Fatal("the resume must finish the globe step")
+	}
+}
+
+// Two accounts share the list store (Tron, #2489). B is in A's ring 3 and
+// follows A's ring 3, so A's globe ring 3 holds B's own list and A's globe
+// ring 4 is B's ring 2. B's pass pauses after its hop 2; A's whole pass
+// runs; B resumes. B's feed must be what it is alone (no owner list taken
+// away, no ring-1 list left out), and B reading A's globe-only lists must
+// not put them back into A's feed: marks are each account's own. A signing
+// out takes only A's marks.
+func TestAnotherAccountsGlobeStepLeavesAPausedFeedAlone(t *testing.T) {
+	b := pk(7777)
+	setup := func() (*fakeNet, func(h, i int) string) {
+		n, ring := ringNet()
+		var r3 []string
+		for i := 0; i < 20; i++ {
+			r3 = append(r3, ring(3, i))
+			l := n.lists[ring(2, i)]
+			l.Follows = append(append([]string{}, l.Follows...), b)
+			n.lists[ring(2, i)] = l
+		}
+		n.lists[b] = list(r3...)
+		return n, ring
+	}
+	// B alone: the reference.
+	n, ring := setup()
+	cb := globeCrawler(t, n, t.TempDir())
+	cb.Owner = b
+	alone, err := cb.RunPass(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, hop, ok := alone.Score(ring(4, 0)); !ok || hop != 2 {
+		t.Fatalf("setup: B alone ranks ring4[0] at hop 2 (ok %v hop %d)", ok, hop)
+	}
+
+	n, _ = setup()
+	dir := t.TempDir()
+	ca := globeCrawler(t, n, dir)
+	cb = &Crawler{}
+	*cb = *ca
+	cb.Owner = b
+	allowed := 1 + 20 // B's own list and its ring 1's lists, then pause
+	cb.Wait = func(context.Context) bool { allowed--; return allowed >= 0 }
+	if _, err := cb.RunPass(context.Background(), false); err != ErrStopped {
+		t.Fatalf("want ErrStopped, got %v", err)
+	}
+	if st := LoadState(dir, b); st.Hop != 3 || st.Globe != 0 {
+		t.Fatalf("B paused after hop 2: %+v", st)
+	}
+	n.calls = nil
+	if _, err := ca.RunPass(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if !n.called(b) {
+		t.Fatal("setup: A's globe step reads B's own list")
+	}
+	if !ca.Store.GlobeOnly(ca.Owner, ring(4, 0)) {
+		t.Fatal("setup: A's globe step marks ring 4 (B's ring 2)")
+	}
+	cb.Wait = func(context.Context) bool { return true }
+	got, err := cb.RunPass(context.Background(), false)
+	if err != nil {
+		t.Fatalf("B's resume: %v", err)
+	}
+	if !reflect.DeepEqual(got.People(), alone.People()) {
+		t.Fatalf("B's feed moved with A's globe step: %d people, want %d", len(got.People()), len(alone.People()))
+	}
+	if !ca.Store.GlobeOnly(ca.Owner, ring(4, 0)) {
+		t.Fatal("B's feed read must leave A's mark")
+	}
+
+	// A signs out: A's marks go, B's stay.
+	if !ca.Store.GlobeOnly(b, ring(5, 0)) {
+		t.Fatal("setup: B's globe step marks its ring 3 (A's ring 5)")
+	}
+	ca.Store.Close()
+	PruneAccounts(dir, []string{b})
+	if _, err := os.Stat(filepath.Join(dir, "wot_deep", globeMarksFile(ca.Owner))); !os.IsNotExist(err) {
+		t.Fatalf("A's marks must go when A signs out: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "wot_deep", globeMarksFile(b))); err != nil {
+		t.Fatalf("B's marks stay: %v", err)
+	}
+}
+
+// A list this account's own earlier, deeper feed pass stored is never
+// marked when the globe step reads it again (Tron, #2489): it already
+// counts in the feed, so marking it would move feed scores.
+func TestGlobeStepLeavesStoredListsInTheFeed(t *testing.T) {
+	n, ring := ringNet()
+	dir := t.TempDir()
+	c := globeCrawler(t, n, dir)
+	c.OuterBar = 0 // pass 1: the feed walks every ring
+	if _, err := c.RunPass(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if !n.called(ring(3, 0)) || c.Store.GlobeOnly(c.Owner, ring(3, 0)) {
+		t.Fatal("setup: pass 1's feed walk reads ring 3")
+	}
+	g, err := c.Store.Graph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.Params
+	p.MaxHop = 3
+	want, err := Rank(g, c.Owner, nil, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.OuterBar = 101 // pass 2: the feed stops at ring 3, the globe step reads on
+	n.calls = nil
+	got, err := c.RunPass(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !n.called(ring(3, 0)) {
+		t.Fatal("setup: pass 2's globe step reads ring 3 again")
+	}
+	if c.Store.GlobeOnly(c.Owner, ring(3, 0)) || c.Store.GlobeMarks(c.Owner) != 0 {
+		t.Fatalf("stored lists marked: %d", c.Store.GlobeMarks(c.Owner))
+	}
+	if !reflect.DeepEqual(got.People(), want.People()) {
+		t.Fatal("feed scores moved: pass 2's feed is not the rank of the stored lists")
+	}
+}
+
+// A store that fills during the globe step is capped like one that fills
+// during the feed walk (Tron, #2489): the pass is ranked but not counted as
+// done, so the capped retry compacts before the next one.
+func TestGlobeStepThatFillsTheStoreIsCapped(t *testing.T) {
+	// The store's size once the feed walk is done, and once the globe step
+	// is: the cap goes between them.
+	n, _ := ringNet()
+	probe := globeCrawler(t, n, t.TempDir())
+	allowed := 1 + 20 + 20 // the feed walk: owner, rings 1 and 2
+	probe.Wait = func(context.Context) bool { allowed--; return allowed >= 0 }
+	if _, err := probe.RunPass(context.Background(), false); err != ErrStopped {
+		t.Fatalf("want ErrStopped, got %v", err)
+	}
+	if st := LoadState(probe.Dir, probe.Owner); st.Globe == 0 {
+		t.Fatalf("setup: the probe stops inside the globe step: %+v", st)
+	}
+	feed := probe.Store.Bytes()
+	probe.Wait = func(context.Context) bool { return true }
+	if _, err := probe.RunPass(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	whole := probe.Store.Bytes()
+	if whole <= feed {
+		t.Fatalf("setup: the globe step stores lists (%d then %d bytes)", feed, whole)
+	}
+
+	n, ring := ringNet()
+	dir := t.TempDir()
+	s, err := OpenStore(dir+"/wot_deep", (feed+whole)/2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	c := globeCrawler(t, n, dir)
+	c.Store = s
+	if _, err := c.RunPass(context.Background(), false); err != nil {
+		t.Fatalf("a full store keeps what it has and ranks it: %v", err)
+	}
+	if !n.called(ring(3, 0)) {
+		t.Fatal("setup: the feed walk fits and the globe step starts")
+	}
+	if st := LoadState(dir, c.Owner); !st.Capped || st.FullAt != 0 {
+		t.Fatalf("a pass the globe step filled is not a finished pass: %+v", st)
 	}
 }

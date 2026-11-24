@@ -55,21 +55,24 @@ func ResultBuiltAt(dir, account string) (int64, error) {
 	return built, nil
 }
 
-// PruneAccounts removes the result file and crawl checkpoint of every
-// account in dir that is not in keep (signed out), and says which. The
-// list store (wot_deep) is shared by all accounts and stays.
+// PruneAccounts removes the result file, crawl checkpoint and globe marks
+// of every account in dir that is not in keep (signed out), and says which.
+// The list store (wot_deep) is shared by all accounts and stays.
 func PruneAccounts(dir string, keep []string) []string {
 	kept := map[string]bool{}
 	for _, a := range keep {
 		kept[a] = true
 	}
 	var gone []string
-	for _, pattern := range []string{"wot_rank_*.json", "state_*.json"} {
+	// The list store's globe marks (store_globe.go) are each account's own
+	// too; the store itself is shared and stays.
+	for _, pattern := range []string{"wot_rank_*.json", "state_*.json", filepath.Join("wot_deep", "globe_only_*.bin")} {
 		paths, _ := filepath.Glob(filepath.Join(dir, pattern))
 		for _, p := range paths {
 			name := filepath.Base(p)
-			prefix := strings.TrimSuffix(pattern, "*.json")
-			account := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".json")
+			base := filepath.Base(pattern)
+			prefix, suffix, _ := strings.Cut(base, "*")
+			account := strings.TrimSuffix(strings.TrimPrefix(name, prefix), suffix)
 			if !validAccount(account) || kept[account] {
 				continue
 			}

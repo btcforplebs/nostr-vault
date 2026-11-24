@@ -62,7 +62,7 @@ func TestDepthStopsWhenARingAddsUnderOnePercent(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The globe step (globewalk.go) reads it, for the globe only.
-	if !n.called(pk(2000)) || !c.Store.GlobeOnly(pk(2000)) {
+	if !n.called(pk(2000)) || !c.Store.GlobeOnly(c.Owner, pk(2000)) {
 		t.Fatal("a ring that adds under 1% must have its lists read for the globe only")
 	}
 	if _, _, ok := res.Score(pk(3000)); ok {
@@ -214,8 +214,11 @@ func TestDepthShrinksWhenARingStopsEarningIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.Store.GlobeOnly(pk(2000)) {
-		t.Fatal("ring 3 now adds under 1%: its list is read again for the globe only")
+	// Ring 3 now adds under 1%: the globe step reads its list again, but
+	// the list was stored by the first pass's feed walk, so it is not
+	// marked and still counts in the feed, as before the globe step.
+	if !n.called(pk(2000)) || c.Store.GlobeOnly(c.Owner, pk(2000)) {
+		t.Fatal("ring 3's stored list is read again for the globe and stays unmarked")
 	}
 	if _, _, ok := res.Score(pk(3000)); ok {
 		t.Fatal("a ring this pass did not walk to must not come back from old lists")

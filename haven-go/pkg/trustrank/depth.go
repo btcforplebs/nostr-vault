@@ -60,7 +60,7 @@ func (c *Crawler) walks(res *Result, h int, resumed bool) bool {
 func (c *Crawler) rankTo(maxHop int) (*Result, error) {
 	p := c.Params
 	p.MaxHop = max(1, min(maxHop, p.MaxHop))
-	g, err := c.Store.FeedGraph()
+	g, err := c.Store.FeedGraph(c.Owner)
 	if err != nil {
 		return nil, err
 	}

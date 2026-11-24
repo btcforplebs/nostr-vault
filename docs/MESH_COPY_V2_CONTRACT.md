@@ -407,8 +407,10 @@ The app calls the engine when a linked device comes into reach. The engine then:
      links. Older engines and apps ignore the field (version stays 2).
    - `globe` comes from its own rank (`globewalk.go`, rank B): after the depth rule ends the feed walk, the Haven
      reads the lists of the last ring's top 300, ring by ring, out to ring 5 (`GlobeHop`), and ranks every stored
-     list out to ring 5. Those globe-only lists are marked in the store and left out of the rank that makes
-     `people` (rank A), so `people` and every feed score are what they would be without the globe step.
+     list out to ring 5. A list the globe step stores for the first time is marked globe-only for that account
+     (each account has its own marks, `wot_deep/globe_only_<account>.bin`) and left out of the rank that makes
+     `people` (rank A); a list already in the store is never marked. So `people` and every feed score are what
+     they would be without the globe step. The marks go when the account signs out.
    - `maxHop` is the furthest ring in `people` or `globe` (so a globe row is never past it); `params.maxHop` is
      how far the feed's rank (`people`) reached.
    - `204`: the device's copy is as new as the Haven's. `404`: the Haven does not rank that account, has no result

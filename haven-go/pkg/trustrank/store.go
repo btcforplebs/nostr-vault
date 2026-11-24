@@ -31,8 +31,8 @@ type Store struct {
 	listsF   *os.File
 	listsLen int64
 	keysLen  int64
-	dead     int64       // bytes of records a newer one replaced
-	globe    *globeMarks // lists read for the globe only (store_globe.go)
+	dead     int64                  // bytes of records a newer one replaced
+	globe    map[string]*globeMarks // per account: lists read for its globe only (store_globe.go)
 }
 
 type entry struct {
