@@ -13,6 +13,7 @@ import com.nostrvault.service.deleteEverywhereLeftover
 import com.nostrvault.service.deleteOwnEvents
 import com.nostrvault.service.pushToMissing
 import com.nostrvault.service.mirrorToMesh
+import com.nostrvault.service.saveHtreeToLocal
 import com.nostrvault.service.loadOwnerServerList
 import com.nostrvault.ui.screens.DeleteScope
 import com.nostrvault.ui.theme.*
@@ -61,6 +62,11 @@ class FeedMediaMirrorViewModel @Inject constructor(
                 runCatching { com.nostrvault.service.DMFileLoader.openToFile(appContext, url) }.getOrNull()
                     ?.let { (file, mime) -> mediaSaveService.saveToGallery(file, mime).also { file.delete() } }
                     ?: Result.failure(Exception("Media unavailable"))
+            } else if (com.nostrvault.data.model.HtreeLink.isUri(url)) {
+                // An htree:// photo saves the decrypted, checked photo.
+                com.nostrvault.service.HtreeLoader.file(appContext, url)
+                    ?.let { mediaSaveService.saveToGallery(it, MediaSaveService.mimeTypeForExtension(url) ?: "image/jpeg") }
+                    ?: Result.failure(Exception("Media unavailable"))
             } else if (com.nostrvault.data.model.BlossomUri.isUri(url)) {
                 com.nostrvault.service.BlossomUriLoader.file(appContext, url)
                     ?.let { mediaSaveService.saveToGallery(it, hint) }
@@ -103,7 +109,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
         _saveState.value = SaveState.Idle
         // The owner's 10063 says which mesh devices a Mirror goes to; read it before the tap.
         if (canMirror) blossomService.loadOwnerServerList()
-        val hash = extractSha256(url)
+        val hash = vaultSha256(url)
         _state.value = if (hash != null && mediaCacheService.isInLocalBlossom(hash)) {
             MirrorState.Mirrored(MirrorReport(if (hasServers) MirrorOutcome.InVault else MirrorOutcome.OnPhoneOnly))
         } else {
@@ -124,8 +130,11 @@ class FeedMediaMirrorViewModel @Inject constructor(
         viewModelScope.launch {
             _state.value = MirrorState.Mirroring
             val report = withContext(Dispatchers.IO) {
-                val known = extractSha256(url)?.takeIf { mediaCacheService.isInLocalBlossom(it) }
-                val sha = known ?: blossomService.mirrorUrlToLocal(url)
+                val known = vaultSha256(url)?.takeIf { mediaCacheService.isInLocalBlossom(it) }
+                // An htree:// photo goes in decrypted, under the plain sha256 its link carries.
+                val sha = known ?: if (com.nostrvault.data.model.HtreeLink.isUri(url)) {
+                    blossomService.saveHtreeToLocal(appContext, url)
+                } else blossomService.mirrorUrlToLocal(url)
                 if (sha == null) return@withContext null
                 val servers = if (!hasServers) MirrorOutcome.OnPhoneOnly else MirrorOutcome.of(blossomService.pushToMissing(sha))
                 val type = MediaSaveService.mimeTypeForExtension(url) ?: "application/octet-stream"
@@ -224,6 +233,14 @@ class FeedMediaMirrorViewModel @Inject constructor(
     private suspend fun refreshCloudBadges(sha: String) {
         blossomService.checkMirrorPresence(sha, force = true)
     }
+
+    /**
+     * The hash the vault keeps [url]'s file under: an htree:// photo's plain
+     * sha256 (its CHK key), else the link's own. Only for "in your vault" and
+     * Save; Delete stays off an htree photo (its blob lives on Iris, not under this hash).
+     */
+    private fun vaultSha256(url: String): String? =
+        if (com.nostrvault.data.model.HtreeLink.isUri(url)) com.nostrvault.data.model.HtreeLink.parse(url)?.plainSha256 else extractSha256(url)
 
     /** Extract a 64-hex sha256 from a Blossom-style URL, or null. Mirrors iOS extractSHA256FromURL(). */
     private fun extractSha256(url: String): String? {
