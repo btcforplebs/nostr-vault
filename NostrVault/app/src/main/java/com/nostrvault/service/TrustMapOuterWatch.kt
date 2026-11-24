@@ -18,7 +18,7 @@ import javax.inject.Singleton
 
 /**
  * The globe's outer rings for the active account ([TrustMapOuter]), worked
- * out again only when the rank copy, the Discovery reach bar, your devices or
+ * out again only when the rank copy, your devices or
  * your blocks change, not on every frame of the globe. iOS
  * `Services/TrustMapOuterWatch.swift`.
  */
@@ -45,7 +45,6 @@ class TrustMapOuterWatch @Inject constructor(
         val config = configStore.config.value
         _outer.value = TrustMapOuter.make(
             copy = reach.copy.value,
-            bar = reach.bar(),
             desktopPaired = TrustMapOuter.desktopPaired(config.fipsMesh.devices.map { it.role }),
             hidden = feedService.get().blockedHexForActiveAccount(),
         )

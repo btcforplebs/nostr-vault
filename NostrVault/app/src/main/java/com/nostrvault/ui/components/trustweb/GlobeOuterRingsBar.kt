@@ -47,8 +47,8 @@ internal fun rememberTrustMapOuter(): TrustMapOuter {
 
 /**
  * Under your own globe on the WOT tab: what the outer rings are. With a rank,
- * "Found by your desktop Vault" and one chip per ring, each opening that ring
- * as a community ([OuterRingSheet]). A paired desktop Vault that has not
+ * "Found by your desktop Vault" and one chip per ring ("3 hops · top 300"),
+ * each opening that ring's list ([OuterRingSheet]). A paired desktop Vault that has not
  * ranked yet says so. With no desktop Vault, the invite ([HavenInviteCard])
  * until "Not now". iOS `Views/TrustWeb/GlobeOuterRingsBar.swift`.
  */
@@ -57,7 +57,6 @@ internal fun GlobeOuterRingsBar(
     accent: Color,
     profiles: Map<String, FeedProfile>,
     onNeedProfiles: (List<String>) -> Unit,
-    onPick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -78,7 +77,7 @@ internal fun GlobeOuterRingsBar(
                         TrustMapOuter.chipText(ring), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                         modifier = pill
                             .clickable(role = Role.Button) { open = ring }
-                            .semantics { contentDescription = "${ring.hop} hops out, ${ring.count} people, found by your desktop Vault" }
+                            .semantics { contentDescription = "${ring.hop} hops out, top ${ring.count} people, found by your desktop Vault" }
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                 }
@@ -92,7 +91,6 @@ internal fun GlobeOuterRingsBar(
             HavenInviteCard(accent, onNotNow = { HavenInviteSetting.setHidden(context, true) }, modifier = modifier)
     }
     open?.let { ring ->
-        OuterRingSheet(ring, outer.bar, copy, profiles, onNeedProfiles,
-            onPick = { open = null; onPick(it) }, onDismiss = { open = null })
+        OuterRingSheet(ring, copy, accent, profiles, onNeedProfiles, onDismiss = { open = null })
     }
 }
