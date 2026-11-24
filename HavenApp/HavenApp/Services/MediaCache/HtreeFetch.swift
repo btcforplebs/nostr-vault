@@ -53,15 +53,17 @@ actor HtreeFetcher {
             }
             try? FileManager.default.removeItem(at: path)
         }
-        if let failed = failedAt[link.blobHash], Date().timeIntervalSince(failed) < Self.retryAfter { return nil }
-        if let running = inFlight[link.blobHash] { return await running.value }
+        // Same blob with a different key is a different file: key by both.
+        let key = "\(link.blobHash)|\(link.sha256)"
+        if let failed = failedAt[key], Date().timeIntervalSince(failed) < Self.retryAfter { return nil }
+        if let running = inFlight[key] { return await running.value }
 
         let author = author ?? noteAuthors[link.blobHash]
         let task = Task { await Self.download(link, author: author, to: path) }
-        inFlight[link.blobHash] = task
+        inFlight[key] = task
         let result = await task.value
-        inFlight[link.blobHash] = nil
-        failedAt[link.blobHash] = result == nil ? Date() : nil
+        inFlight[key] = nil
+        failedAt[key] = result == nil ? Date() : nil
         return result
     }
 
