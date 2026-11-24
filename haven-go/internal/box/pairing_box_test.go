@@ -48,6 +48,7 @@ type fakeRelays struct {
 	mu        sync.Mutex
 	published []*nostr.Event
 	listening chan struct{}
+	took      int // relays that take a publish; 0 reads as 2, -1 as none
 }
 
 func newFakeRelays() *fakeRelays {
@@ -70,6 +71,9 @@ func (f *fakeRelays) Publish(_ context.Context, ev *nostr.Event) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.published = append(f.published, ev)
+	if f.took < 0 {
+		return 0
+	}
 	return 2
 }
 

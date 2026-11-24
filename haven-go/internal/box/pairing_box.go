@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +46,7 @@ type pairRun struct {
 	session *PairingSession
 	code    string
 	by      string // the account that started it (npub)
+	byHex   string // the same, hex: only this caller may read, confirm or cancel the run
 	started int64
 	cancel  context.CancelFunc
 	seen    map[string]bool
@@ -60,7 +62,8 @@ type pairRun struct {
 // PairStatus is GET /api/box/pair.
 type PairStatus struct {
 	// State: idle, waiting (code shown), hello (device found: confirm),
-	// linked, expired, aborted.
+	// linked, expired, aborted; busy when another account's pairing is
+	// live (nothing of it is shown).
 	State string `json:"state"`
 	Code  string `json:"code,omitempty"`
 	Box   struct {
@@ -90,6 +93,15 @@ var ErrNotReady = errors.New("no device is waiting to be added")
 // ErrRoleMismatch: Confirm named another role than the hello's.
 var ErrRoleMismatch = errors.New("the device's role changed; read the code again")
 
+// ErrNotYours: another signed-in account started the pairing that is
+// running (Tron #2502 must-fix: the live code and secret, the confirm and
+// the cancel are the starter's alone).
+var ErrNotYours = errors.New("another account on this box is pairing a device right now; try again when it is done")
+
+// ErrNoAck: the device was stored but no finder relay took the ack, so the
+// phone will not hear back.
+var ErrNoAck = errors.New("no relay took the answer to the phone; remove the device and pair again")
+
 func (p *Pairing) now() int64 {
 	if p.Now != nil {
 		return p.Now()
@@ -98,11 +110,20 @@ func (p *Pairing) now() int64 {
 }
 
 // Start shows a fresh code for the account byHex (the signed-in caller).
+// While another account's pairing is live (code shown or a device waiting),
+// it is refused: a Start would otherwise cancel that run.
 func (p *Pairing) Start(ctx context.Context, byHex string) (PairStatus, error) {
 	npub, boxHex, ok := p.Mesh.Read()
 	if !ok {
 		return PairStatus{}, ErrNoMesh
 	}
+	byHex = strings.ToLower(byHex)
+	p.mu.Lock()
+	if r := p.run; r != nil && r.byHex != byHex && p.live(r) {
+		p.mu.Unlock()
+		return PairStatus{State: "busy"}, ErrNotYours
+	}
+	p.mu.Unlock()
 	byNpub := mustNpub(byHex)
 	var accounts []string
 	if p.Accounts != nil {
@@ -120,6 +141,7 @@ func (p *Pairing) Start(ctx context.Context, byHex string) (PairStatus, error) {
 		session: NewPairingSession(secret, now, boxHex, byNpub, accounts),
 		code:    BuildPairCode(PairCodeArgs{M: npub, N: name, R: "homeVault", O: byNpub, S: secret}),
 		by:      byNpub,
+		byHex:   byHex,
 		started: now,
 		seen:    map[string]bool{},
 	}
@@ -134,7 +156,7 @@ func (p *Pairing) Start(ctx context.Context, byHex string) (PairStatus, error) {
 	if p.Relays != nil {
 		go p.listen(lctx, run, boxHex, now-30)
 	}
-	return p.Status(), nil
+	return p.Status(byHex), nil
 }
 
 // listen follows the finder relays for this run's hellos until it ends.
@@ -150,8 +172,31 @@ func (p *Pairing) listen(ctx context.Context, run *pairRun, boxHex string, since
 	})
 }
 
+// live: the run still shows a code or waits for a confirm.
+func (p *Pairing) live(r *pairRun) bool {
+	if r.linked {
+		return false
+	}
+	st := r.session.State()
+	return (st == "waiting" || st == "camera") && !r.session.Expired(p.now())
+}
+
+// mine: the run a caller may act on, or ErrNotYours / ErrNotReady.
+func (p *Pairing) mine(callerHex string) (*pairRun, error) {
+	r := p.run
+	if r == nil {
+		return nil, ErrNotReady
+	}
+	if r.byHex != strings.ToLower(callerHex) {
+		return nil, ErrNotYours
+	}
+	return r, nil
+}
+
 // Hello feeds one relay event to run's session. "stop" when the run is
-// over (aborted, expired), else the session's outcome word.
+// over (aborted, expired), else the session's outcome word. A device the
+// box already pairs under another role is refused here, at the hello, so
+// the owner is told before the code is spent (contract §2, Tron 1).
 func (p *Pairing) Hello(ctx context.Context, run *pairRun, ev *nostr.Event) string {
 	if ev == nil || ev.Kind != PairHelloKind || p.Crypto == nil {
 		return "ignore:notHello"
@@ -171,6 +216,19 @@ func (p *Pairing) Hello(ctx context.Context, run *pairRun, ev *nostr.Event) stri
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if h := ParsePairHello(content); h != nil && p.Paired != nil && run.session.State() == "waiting" {
+		known, _ := p.Paired.List()
+		existing := make([]PairKnownDevice, 0, len(known))
+		for _, k := range known {
+			if k.Role != "" {
+				existing = append(existing, PairKnownDevice{Npub: k.Npub, Role: k.Role})
+			}
+		}
+		if rc := PairRoleCheck(mustNpub(sender), h.R, existing); strings.HasPrefix(rc, "refuseOtherRole:") {
+			run.refusal = "refuseOtherRole"
+			return "refuse:refuseOtherRole"
+		}
+	}
 	out := run.session.ReceiveHello(sender, content, p.now())
 	switch {
 	case out == "abort":
@@ -186,23 +244,28 @@ func (p *Pairing) Hello(ctx context.Context, run *pairRun, ev *nostr.Event) stri
 
 // Confirm is the owner's "They match" and Add in one: role is the role the
 // UI showed, so a confirm never adds a device as something else. It stores
-// the device, then sends the ack.
-func (p *Pairing) Confirm(ctx context.Context, role string) (PairStatus, error) {
+// the device, then sends the ack. Only the account that started the run
+// may confirm it.
+func (p *Pairing) Confirm(ctx context.Context, callerHex, role string) (PairStatus, error) {
 	p.mu.Lock()
-	run := p.run
-	if run == nil || run.session.Sender() == "" || run.linked {
+	run, err := p.mine(callerHex)
+	if err != nil {
 		p.mu.Unlock()
-		return p.Status(), ErrNotReady
+		return p.Status(callerHex), err
+	}
+	if run.session.Sender() == "" || run.linked {
+		p.mu.Unlock()
+		return p.Status(callerHex), ErrNotReady
 	}
 	now := p.now()
 	if run.session.State() == "camera" && run.session.hello.R != role {
 		p.mu.Unlock()
-		return p.Status(), ErrRoleMismatch
+		return p.Status(callerHex), ErrRoleMismatch
 	}
 	out := run.session.AcceptWithoutScan(now)
 	if out != "confirm" {
 		p.mu.Unlock()
-		return p.Status(), ErrNotReady
+		return p.Status(callerHex), ErrNotReady
 	}
 	dev := *run.session.Device
 	ack := run.session.Ack()
@@ -213,12 +276,12 @@ func (p *Pairing) Confirm(ctx context.Context, role string) (PairStatus, error) 
 	sealed, err := p.Crypto.PairAck(ctx, dev.Npub, ack)
 	if err != nil {
 		p.setErr(run, pairErr(err))
-		return p.Status(), err
+		return p.Status(callerHex), err
 	}
 	if p.Paired != nil {
 		if err := p.Paired.Add(PairedDevice{Npub: dev.Npub, Name: dev.Name, Role: dev.Role, PairedAt: now, By: run.by}); err != nil {
 			p.setErr(run, err.Error())
-			return p.Status(), err
+			return p.Status(callerHex), err
 		}
 	}
 	took := 0
@@ -227,12 +290,18 @@ func (p *Pairing) Confirm(ctx context.Context, role string) (PairStatus, error) 
 	}
 	p.mu.Lock()
 	run.linked, run.acked = true, took
+	if took == 0 {
+		run.err = ErrNoAck.Error()
+	}
 	p.mu.Unlock()
 	if run.cancel != nil {
 		run.cancel()
 	}
 	log.Printf("box: paired %s (%s) by two-scan pairing; ack taken by %d relays", dev.Role, PairShortAddress(dev.Npub), took)
-	return p.Status(), nil
+	if took == 0 {
+		return p.Status(callerHex), ErrNoAck
+	}
+	return p.Status(callerHex), nil
 }
 
 func (p *Pairing) setErr(run *pairRun, msg string) {
@@ -241,20 +310,27 @@ func (p *Pairing) setErr(run *pairRun, msg string) {
 	p.mu.Unlock()
 }
 
-// Cancel ends the current pairing; nothing is stored.
-func (p *Pairing) Cancel() PairStatus {
+// Cancel ends the caller's pairing; nothing is stored. Another account's
+// run is left alone (ErrNotYours).
+func (p *Pairing) Cancel(callerHex string) (PairStatus, error) {
 	p.mu.Lock()
-	run := p.run
+	run, err := p.mine(callerHex)
+	if errors.Is(err, ErrNotYours) {
+		p.mu.Unlock()
+		return p.Status(callerHex), err
+	}
 	p.run = nil
 	p.mu.Unlock()
 	if run != nil && run.cancel != nil {
 		run.cancel()
 	}
-	return p.Status()
+	return p.Status(callerHex), nil
 }
 
-// Status is the current pairing as the UI shows it.
-func (p *Pairing) Status() PairStatus {
+// Status is the caller's pairing as the UI shows it. Another account's live
+// run reads as "busy" with nothing of it shown: no code, no secret, no
+// device.
+func (p *Pairing) Status(callerHex string) PairStatus {
 	var st PairStatus
 	st.Box.Npub, _, _ = p.Mesh.Read()
 	p.mu.Lock()
@@ -262,6 +338,14 @@ func (p *Pairing) Status() PairStatus {
 	run := p.run
 	if run == nil {
 		st.State = "idle"
+		return st
+	}
+	if run.byHex != strings.ToLower(callerHex) {
+		if p.live(run) {
+			st.State = "busy"
+		} else {
+			st.State = "idle"
+		}
 		return st
 	}
 	now := p.now()

@@ -14,19 +14,27 @@ import (
 //   - after a settled read: at least one account's list is known, the same
 //     guard that keeps mesh-devices.json as it was while no list is known;
 //   - from a non-empty set: the devices nv-mesh lets in now (every counted
-//     account's mesh entries, while the box is approved) plus whatever
-//     mesh-devices.json holds. "Seeded" is never written from nothing.
+//     account's mesh entries, while the box is approved). What
+//     mesh-devices.json held before is added only while some counted
+//     account's list is still unknown: with every list read, the lists are
+//     the whole truth, and a device the owner dropped from their 10063
+//     while the box was off must not come back from the old file (Tron
+//     #2502). "Seeded" is never written from nothing.
 //
 // Until the seed happens, and in this PR after it too, mesh-devices.json
 // follows the 10063s as before. P9b switches it to the paired set.
 
 // seedPaired is called by Devices.read under wmu with the merged report;
-// before is what mesh-devices.json held before this read wrote it.
-func (d *Devices) seedPaired(r DevicesReport, settled bool, before []string) {
+// before is what mesh-devices.json held before this read wrote it, and
+// allKnown whether every counted account's list is known.
+func (d *Devices) seedPaired(r DevicesReport, settled, allKnown bool, before []string) {
 	if d.Paired == nil || !settled || d.Paired.Seeded() {
 		return
 	}
-	npubs := append(MeshDevices(r), before...)
+	npubs := MeshDevices(r)
+	if !allKnown {
+		npubs = append(npubs, before...)
+	}
 	seeded, err := d.Paired.Seed(npubs, time.Now().Unix())
 	if err != nil {
 		log.Printf("box: paired set: %v", err)

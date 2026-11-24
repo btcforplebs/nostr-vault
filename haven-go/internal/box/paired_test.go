@@ -95,6 +95,7 @@ func TestPairedSetSeedOnceAddRemove(t *testing.T) {
 func TestDevicesSeedThePairedSetOnceAfterASettledRead(t *testing.T) {
 	owner, boxKey, phone, mac, old, late := newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t)
 	nBox, nPhone, nMac, nOld, nLate := npubOf(t, boxKey), npubOf(t, phone), npubOf(t, mac), npubOf(t, old), npubOf(t, late)
+	_ = nOld
 	dir := t.TempDir()
 	file := filepath.Join(dir, "mesh-devices.json")
 	paired := &PairedSet{Path: filepath.Join(dir, "box", "paired-devices.json")}
@@ -114,9 +115,11 @@ func TestDevicesSeedThePairedSetOnceAfterASettledRead(t *testing.T) {
 	if paired.Seeded() {
 		t.Fatal("seeded while the box is not approved")
 	}
-	// 3. mesh-devices.json holds a device from before (an older rule); the
-	// list now approves the box and names the phone and the Mac: the seed is
-	// the union, once.
+	// 3. mesh-devices.json holds a device the owner dropped from their
+	// 10063 while the box was off; the list now approves the box and names
+	// the phone and the Mac. Every counted account's list is known, so the
+	// lists are the whole truth: the seed is the phone and the Mac, once,
+	// and the dropped device does not come back (Tron #2502).
 	if _, err := writeMeshDevices(file, []string{nOld}); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +127,7 @@ func TestDevicesSeedThePairedSetOnceAfterASettledRead(t *testing.T) {
 	d.Refresh(ctx)
 	got, _ := paired.Npubs()
 	slices.Sort(got)
-	want := []string{nPhone, nMac, nOld}
+	want := []string{nPhone, nMac}
 	slices.Sort(want)
 	if !paired.Seeded() || !slices.Equal(got, want) {
 		t.Fatalf("seed = %v, want %v", got, want)

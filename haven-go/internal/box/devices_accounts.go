@@ -127,7 +127,7 @@ func (d *Devices) read(ctx context.Context, get func(context.Context, string) (*
 			log.Printf("box: mesh devices now %d (from %d account lists)", len(devices), len(d.lists))
 		}
 	}
-	d.seedPaired(r, len(d.lists) > 0, before)
+	d.seedPaired(r, len(d.lists) > 0, len(d.lists) == len(now), before)
 	return r
 }
 
