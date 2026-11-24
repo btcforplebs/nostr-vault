@@ -139,16 +139,18 @@ export function authorServers(pubkey, relays, { query = (r, f, o) => pool.queryS
 }
 
 /** The cache entry for a link, fetching it once. `revokeUrl` (tests) releases an object URL; `makeUrl` makes one. */
-function entryFor(b, { author, relays, fetch, query, usual = DEFAULT_MEDIA_SERVERS, servers = usual, maxCacheBytes = MAX_CACHE_BYTES, makeUrl = (bytes, mime) => URL.createObjectURL(new Blob([bytes], { type: mime })), revokeUrl = revokeDefault } = {}) {
+/*  `fetchFile` (an htree:// photo, net/htree.js): how to get the checked bytes instead, -> { bytes, mime, server } | null.
+ *  The cache is keyed by the plain sha256 either way, so a blossom: and an htree:// link to one photo share an entry. */
+function entryFor(b, { author, relays, fetch, query, fetchFile, usual = DEFAULT_MEDIA_SERVERS, servers = usual, maxCacheBytes = MAX_CACHE_BYTES, makeUrl = (bytes, mime) => URL.createObjectURL(new Blob([bytes], { type: mime })), revokeUrl = revokeDefault } = {}) {
   let e = files.get(b.sha256)
   if (e) return e
   e = { views: 0, bytes: 0, url: null, last: 0, revoke: revokeUrl, promise: null }
   files.set(b.sha256, e)
   e.promise = (async () => {
     // The link's own servers first, before the author's list is even read: most links say where the file is.
-    const first = candidateServers(b, [], [])
-    let got = await fetchVerified(b, first, { fetch })
-    if (!got) {
+    const first = fetchFile ? [] : candidateServers(b, [], [])
+    let got = fetchFile ? await fetchFile() : await fetchVerified(b, first, { fetch })
+    if (!got && !fetchFile) {
       const listed = await authorServers(b.author ?? author, relays, { query })
       got = await fetchVerified(b, candidateServers(b, listed, servers).filter(s => !first.includes(s)), { fetch })
     }
@@ -161,7 +163,7 @@ function entryFor(b, { author, relays, fetch, query, usual = DEFAULT_MEDIA_SERVE
     // The ceiling is checked again now the bytes are counted: `retain` asked before they landed, when this file still
     // weighed nothing, so an entry one file over the cap would otherwise sit there until the next retain.
     keepUnderCap(maxCacheBytes)
-    return { url, kind: blossomKind(b) || (got.mime.startsWith("video/") ? "video" : "image"), server: got.server }
+    return { url, kind: fetchFile ? "image" : blossomKind(b) || (got.mime.startsWith("video/") ? "video" : "image"), server: got.server }
   })()
   return e
 }
