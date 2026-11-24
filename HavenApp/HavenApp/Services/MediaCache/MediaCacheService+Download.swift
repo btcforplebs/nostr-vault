@@ -12,6 +12,7 @@ extension MediaCacheService {
     ///   promotes the queued transfer.
     func fetchData(url: URL, priority: Operation.QueuePriority = .normal) async -> Data? {
         if BlossomURI.isURI(url) { return await fetchBlossomURI(url, author: nil) }
+        if HtreeLink.isURI(url) { return await fetchHtree(url, author: nil) }
         // A locked DM photo's decrypted copy on this device (DMFileTransfer): the viewer reads it from disk.
         if DMFileTransfer.isOpenedFile(url) { return try? Data(contentsOf: url, options: .mappedIfSafe) }
         // Bypass cache for local relay Blossom URLs to avoid redundant storage and preserve MIME handling

@@ -9,6 +9,11 @@ enum BlossomURIFetcher {
     static func register(_ urls: [URL], author: String) {}
 }
 
+/// The same for `htree://` photos (Services/MediaCache/HtreeFetch.swift).
+enum HtreeFetcher {
+    static func register(_ urls: [URL], author: String) {}
+}
+
 extension FeedNote {
     /// Same as the app's (Views/Components/PollCardView.swift), which lives in a view file.
     var poll: NIP88Poll.Poll? {

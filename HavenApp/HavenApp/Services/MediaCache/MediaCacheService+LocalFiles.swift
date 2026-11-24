@@ -72,7 +72,10 @@ extension MediaCacheService {
         pattern: #"^([a-f0-9]{64})(\.[a-z0-9]+)?$"#, options: .caseInsensitive)
 
     /// Extracts a 64-hex Blossom content hash from the URL's last path component, if present.
+    /// An `htree://` photo's hash is the plain file's sha256 its link carries (HtreeLink): the
+    /// decrypted copy is cached, saved and looked up in the vault under it, like any Blossom file.
     static func blossomHash(in url: URL) -> String? {
+        if HtreeLink.isURI(url) { return HtreeLink(url)?.sha256 }
         let last = url.lastPathComponent
         guard let regex = blossomHashRegex else { return nil }
         let ns = last as NSString

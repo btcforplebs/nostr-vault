@@ -220,7 +220,10 @@ enum MediaBackupActions {
     /// the user's Blossom servers that do not have it yet.
     static func saveToVault(url: URL, configService: ConfigService, nostrService: NostrService) async -> SaveOutcome {
         let service = BlossomService(configService: configService, nostrService: nostrService)
-        guard await service.downloadFromURL(url: url, mirrorToExternal: false) else { return .failed }
+        let saved = HtreeLink.isURI(url)
+            ? await service.saveHtree(url: url)
+            : await service.downloadFromURL(url: url, mirrorToExternal: false)
+        guard saved else { return .failed }
         guard let hash = MediaCacheService.blossomHash(in: url),
               !configService.config.activeBlossomMirrors.isEmpty else { return .savedOnly }
         return await mirrorMissing(hash: hash, configService: configService, nostrService: nostrService)

@@ -191,6 +191,12 @@ enum SupportedMediaFormats {
     /// Blossom SHA-256 path on a host that isn't a web page.
     static func isMediaURL(_ url: URL) -> Bool {
         if let blossom = BlossomURI(url) { return allExtensions.contains(blossom.ext) }
+        // An Iris hashtree photo (phase 1: pictures only). Its bytes must also sniff as one (HtreeLink.open);
+        // a name that says video stays text, so the player never gets it.
+        if HtreeLink.isURI(url) {
+            guard let link = HtreeLink(url) else { return false }
+            return link.ext.isEmpty || imageOrGifExtensions.contains(link.ext)
+        }
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
         if allExtensions.contains(url.pathExtension.lowercased()) { return true }
         guard url.pathExtension.isEmpty,
@@ -208,13 +214,13 @@ enum SupportedMediaFormats {
     }
 
     /// The media URLs written in a note's text, in order: extension URLs,
-    /// Blossom hash URLs, then BUD-10 `blossom:` links. Web pages that only
+    /// Blossom hash URLs, then BUD-10 `blossom:` links, then `htree://` photos. Web pages that only
     /// look like media are dropped.
     static func mediaURLs(in content: String) -> [URL] {
         let ns = content as NSString
         let range = NSRange(location: 0, length: ns.length)
         var urls: [URL] = []
-        for regex in [mediaExtensionRegex, blossomHashRegex, BlossomURI.regex].compactMap({ $0 }) {
+        for regex in [mediaExtensionRegex, blossomHashRegex, BlossomURI.regex, HtreeLink.regex].compactMap({ $0 }) {
             urls += regex.matches(in: content, range: range)
                 .compactMap { URL(string: ns.substring(with: $0.range)) }
                 .filter(isMediaURL)
