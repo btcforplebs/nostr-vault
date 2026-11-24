@@ -529,9 +529,9 @@ internal class GlobeScene(
 
     /** Closest front-facing face to a tap, within reach of a fingertip. Zoomed in, plain stars can be tapped too. */
     fun hit(tap: Offset, w: Float, h: Float, density: Float): String? {
-        // Zoomed out to a ring, the globe is drawn shrunk round the middle.
-        val shrink = GlobeRingZoom.innerScale(ringZoom).toFloat()
-        val at = Offset(w / 2 + (tap.x - w / 2) / shrink, h / 2 + (tap.y - h / 2) / shrink)
+        // Zoomed out to a ring, the globe is drawn shrunk and sunk ([GlobeRingZoom.unsink]).
+        val shrink = GlobeRingZoom.innerDrawScale(ringZoom, w.toDouble(), h.toDouble()).toFloat()
+        val at = GlobeRingZoom.unsink(tap.x, tap.y, w, h, ringZoom).let { Offset(it.first, it.second) }
         val project = Projector(camera, w, h, phone)
         var best: String? = null
         var bestDistance = Double.MAX_VALUE
@@ -643,8 +643,8 @@ internal class GlobeScene(
         originY = origin.y
         coreR = 22 * k * core.scale * min(zoom, 1.8) * density
         ready = true
-        // Shrunk to an outer ring, more of the globe fits: keep what now lands on screen.
-        val grow = (1 / GlobeRingZoom.innerScale(ringZoom) - 1) / 2
+        // Shrunk and sunk to an outer ring, more of the globe fits: keep what now lands on screen.
+        val grow = GlobeRingZoom.cullGrow(ringZoom, w.toDouble(), h.toDouble())
         val padX = 8 * density + w * grow
         val padY = 8 * density + h * grow
 

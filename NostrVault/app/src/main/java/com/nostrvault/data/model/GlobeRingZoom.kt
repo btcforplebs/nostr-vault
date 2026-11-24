@@ -1,6 +1,7 @@
 package com.nostrvault.data.model
 
 import kotlin.math.floor
+import kotlin.math.min
 
 /**
  * The WOT tab's Hop 3, Hop 4 and Hop 5 layers zoom your own globe out to
@@ -37,6 +38,53 @@ object GlobeRingZoom {
      * best 40 get one, faint.
      */
     const val MAX_LINKS = 40
+
+    // ── Sink (Logen 2026-11-24) ──
+
+    /**
+     * Everything inside the picked ring (the inner globe, and the rings between
+     * it and the picked one) sinks down and gets smaller, so it reads as pulling
+     * back into space; the picked ring and its haze ([GlobeHazeField]) stay
+     * centred. How far down, as a share of half the frame's short side, at each
+     * whole level.
+     */
+    val SINK_DROPS = doubleArrayOf(0.0, 0.34, 0.36, 0.38)
+    /** How much smaller what sinks is drawn, on top of [INNER_SCALES]. */
+    val SINK_SCALES = doubleArrayOf(1.0, 0.8, 0.74, 0.68)
+
+    /** Where a ring is drawn: its centre [drop] px below the frame's middle, at [scale] times its radius. */
+    data class Sink(val drop: Double, val scale: Double)
+
+    /** How much [hop]'s ring sinks (0 to 1): the inner globe (hop 2 and in) once any hop is picked, an outer ring once a hop past it is. */
+    fun inside(hop: Int, level: Double): Double = blend(level) { if (it > 0 && hop < TrustMapOuter.FIRST_HOP + it - 1) 1.0 else 0.0 }
+
+    /** Where [hop]'s ring is drawn at [level]; [half] is half the frame's short side. */
+    fun sink(hop: Int, level: Double, half: Double): Sink {
+        val a = inside(hop, level)
+        return Sink(a * lerp(SINK_DROPS, level) * half, 1 - a * (1 - lerp(SINK_SCALES, level)))
+    }
+
+    /** The inner globe's sink at [level] in a [w] x [h] frame. */
+    fun innerSink(level: Double, w: Double, h: Double): Sink = sink(TrustMapOuter.FIRST_HOP - 1, level, min(w, h) / 2)
+
+    /** The inner globe's whole drawn scale at [level]: [innerScale] times its sink. */
+    fun innerDrawScale(level: Double, w: Double, h: Double): Double = innerScale(level) * innerSink(level, w, h).scale
+
+    /**
+     * How much past the frame (as a share of its size, each side) the shrunk and
+     * sunk inner globe still lands on screen: its stars there must be kept.
+     */
+    fun cullGrow(level: Double, w: Double, h: Double): Double {
+        val s = innerDrawScale(level, w, h)
+        return (1 / s - 1) / 2 + innerSink(level, w, h).drop / s / min(w, h)
+    }
+
+    /** A tap at ([x], [y]) on screen, in the inner globe's own unshrunk, unsunk frame. */
+    fun unsink(x: Float, y: Float, w: Float, h: Float, level: Double): Pair<Float, Float> {
+        val s = innerDrawScale(level, w.toDouble(), h.toDouble()).toFloat()
+        val drop = innerSink(level, w.toDouble(), h.toDouble()).drop.toFloat()
+        return Pair(w / 2 + (x - w / 2) / s, h / 2 + (y - drop - h / 2) / s)
+    }
 
     /** The zoom level a hop layer asks for; null (your circle) is 0. */
     fun level(hop: Int?): Double =
