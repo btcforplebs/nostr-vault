@@ -71,6 +71,8 @@ class UserListSignGuardTest {
                 "com/nostrvault/service/FeedServiceFollow.kt" to setOf(3),
                 // Interests: the hashtag follow tap.
                 "com/nostrvault/service/InterestListService.kt" to setOf(10015),
+                // A desktop Vault switch: only that Vault's entry on the newest list (Desktop Vaults P6, rule 7).
+                "com/nostrvault/service/nostr/DesktopVaultListEdit.kt" to setOf(10002, 10050, 10063),
                 // 10000 Block, 10002/10050 Save in Relays, 10006 + 10063 Save in Media servers / relay sets.
                 "com/nostrvault/service/nostr/NostrServiceListPublishing.kt" to setOf(10000, 10002, 10006, 10050, 10063),
                 // Save in Edit profile.

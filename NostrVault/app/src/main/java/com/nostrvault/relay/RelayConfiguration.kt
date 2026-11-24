@@ -47,6 +47,7 @@ object RelayConfiguration {
     fun generateEnvDictionary(
         config: HavenConfig,
         relayDataDir: File,
+        mesh: MacMeshRelay? = macMeshRelay,
     ): Map<String, String> {
         val cleanNpub = config.ownerNpub
             .trim()
@@ -166,11 +167,14 @@ object RelayConfiguration {
 
             // Mac relay: synced like any other relay, plus a one-time
             // full-history copy whose result lands in mac_sync_status.json
-            // (iOS passes the same; see MacSync). A Mac on the mesh is its
-            // dialed local address (macMeshRelay), "" until then.
-            "MAC_RELAY_URL" to MacSync.macRelayURL(config),
-            // Every other HTTPS desktop Vault. Always set, "" when there is none: the engine never clears a host env key.
-            "DESKTOP_VAULT_URLS" to DesktopVaultsRules.envList(config.desktopVaultsInEffect, config.macRelayURL),
+            // (iOS passes the same; see MacSync). The first mesh desktop Vault
+            // that answered is its dialed local address ([dialedVault]).
+            "MAC_RELAY_URL" to MacSync.macRelayURL(config, mesh),
+            // Every other HTTPS desktop Vault, the dialed one's wss included (Tron M2 on #2506). Always set, "" when
+            // there is none: the engine never clears a host env key.
+            "DESKTOP_VAULT_URLS" to DesktopVaultsRules.envList(
+                config.desktopVaultsInEffect, MacSync.macRelayURL(config, mesh), typed = config.macRelayURL,
+            ),
 
             // Backup
             "BACKUP_PROVIDER" to config.backupProvider,
@@ -326,91 +330,105 @@ object RelayConfiguration {
     const val WHITELIST_FILE_NAME = "whitelisted_npubs.json"
 
     /**
-     * Dials a Mac on the mesh first (see [resolveMacMeshRelay]), so it blocks
-     * up to ~20 s when there is one: call it off the main thread.
+     * Everything the relay starts with, for a real start: it takes what the background dial handed over
+     * ([pendingMeshRelay]) or, for a slot holding a mesh npub, dials the mesh Vaults first ([resolveMacMeshRelay]: it
+     * blocks up to ~20 s, so call it off the main thread).
      */
     fun launchInputs(
         config: HavenConfig,
         relayDataDir: File,
         dial: (String) -> FipsIngress = FipsBridge::ingress,
-    ): LaunchInputs {
-        resolveMacMeshRelay(config, dial)
-        return LaunchInputs(
-            env = generateEnvDictionary(config, relayDataDir),
-            importSeedRelays = config.vaultSeedRelays,
-            blastrRelays = blastrRelays(config, macMeshRelay),
-            dmRelays = config.dmRelays,
-            whitelist = VaultWhitelist.npubs(config),
-            accountReach = config.relayAccountReach,
-        )
-    }
+    ): LaunchInputs = inputs(config, relayDataDir, resolveMacMeshRelay(config, dial))
 
     /**
-     * The broadcast list the relay writes to: a Mac on the mesh goes first,
-     * at its dialed local address, so the phone's notes reach it. A Mac with
-     * a URL is synced through MAC_RELAY_URL as before. Port of iOS
+     * [launchInputs] for the settings check ([RelayConfigApplier], the in-place restart): it reads [macMeshRelay] and
+     * a waiting hand-over as they are and dials nothing (Desktop Vaults P6), so a save never blocks on the mesh and
+     * never takes the hand-over meant for the next start.
+     */
+    fun comparedInputs(config: HavenConfig, relayDataDir: File): LaunchInputs =
+        inputs(config, relayDataDir, if (config.fipsMeshEnabled) dialedVault(config, pendingMeshRelay ?: macMeshRelay) else null)
+
+    private fun inputs(config: HavenConfig, relayDataDir: File, mesh: MacMeshRelay?) = LaunchInputs(
+        env = generateEnvDictionary(config, relayDataDir, mesh),
+        importSeedRelays = config.vaultSeedRelays,
+        blastrRelays = blastrRelays(config, mesh),
+        dmRelays = config.dmRelays,
+        whitelist = VaultWhitelist.npubs(config),
+        accountReach = config.relayAccountReach,
+    )
+
+    /**
+     * The broadcast list the relay writes to: the dialed mesh Vault goes first, at its local address, so the phone's
+     * notes reach it. An HTTPS Vault is synced through MAC_RELAY_URL / DESKTOP_VAULT_URLS. Port of iOS
      * RelayConfiguration.blastrRelays(config:mesh:).
      */
     fun blastrRelays(config: HavenConfig, mesh: MacMeshRelay?): List<String> {
-        val npub = MacSync.macMeshNpub(config)
-        if (npub == null || mesh == null || mesh.npub != npub) return config.blastrRelays
+        val vault = dialedVault(config, mesh) ?: return config.blastrRelays
         // Marked second-hand: the Mac stores the phone's note and does not blast it again; the phone
         // already did (haven-go isSecondHandConn, device sync map §4.5).
-        val marked = com.nostrvault.fips.PulledInjection.url(mesh.url)
+        val marked = com.nostrvault.fips.PulledInjection.url(vault.url)
         if (marked in config.blastrRelays) return config.blastrRelays
-        return listOf(marked) + config.blastrRelays.filterNot { it == mesh.url }
+        return listOf(marked) + config.blastrRelays.filterNot { it == vault.url }
     }
 
     /**
-     * A Mac relay on the mesh, dialed through FIPS: [url] is the local
-     * `ws://127.0.0.1:<port>/<token>` that reaches it. Never log [url]: the
-     * token keeps other apps on the phone out. Port of iOS
-     * RelayConfiguration.MacMeshRelay.
+     * A desktop Vault reached over the mesh, dialed through FIPS: [url] is the local
+     * `ws://127.0.0.1:<port>/<token>` that reaches it. Never log [url]: the token keeps other apps on the phone out.
+     * Port of iOS RelayConfiguration.MacMeshRelay.
      */
     data class MacMeshRelay(val npub: String, val url: String)
 
-    /** Set by [resolveMacMeshRelay]; null when there is no Mac on the mesh or the dial failed. */
+    /**
+     * The first mesh Vault in Desktop Vaults order that answered (P6, §2.2 rule 3; it was the one Mac given as an
+     * npub). Set by [resolveMacMeshRelay]; null when there is none or no dial answered.
+     */
     @Volatile
     var macMeshRelay: MacMeshRelay? = null
 
-    /** How long a dial waits for the mesh node, which the app starts on open, possibly after the relay. */
-    const val MESH_NODE_WAIT_MS = 10_000L
-    private const val MESH_NODE_POLL_MS = 500L
+    /**
+     * A mesh Vault the background dial reached after a wss start ([DesktopVaultsRules.MeshDial.AFTER_START],
+     * [MeshVaultDial]): the restart it asks for takes it as [macMeshRelay] instead of dialing again.
+     */
+    @Volatile
+    var pendingMeshRelay: MacMeshRelay? = null
 
     /**
-     * Dials the Mac given as a mesh npub ([MacSync.macMeshNpub]) before the
-     * relay starts, so MAC_RELAY_URL is its local ws:// address and the relay
-     * syncs notes and history from it as from a Mac with a URL. Blocks: up to
-     * [MESH_NODE_WAIT_MS] for the node to come up, then up to 10 s for the
-     * dial. A failed dial leaves [macMeshRelay] null and the relay starts
-     * without the Mac; the next start tries again. Port of iOS
-     * RelayProcessManager.resolveMacMeshRelay.
+     * After the restart the background dial asked for (Tron F1 on #2506): a hand-over that start didn't take is
+     * dropped, so a later unrelated start never takes a mesh address that may have died since. One the dial didn't
+     * leave is not touched.
+     */
+    fun droppingUnusedHandOver(asked: MacMeshRelay) {
+        if (pendingMeshRelay == asked) pendingMeshRelay = null
+    }
+
+    /** [mesh] when it is one of the Vault list's mesh Vaults (a dial left from before a list change is not), else null. */
+    fun dialedVault(config: HavenConfig, mesh: MacMeshRelay?): MacMeshRelay? =
+        mesh?.takeIf { it.npub in config.desktopVaultMeshNpubs }
+
+    /** How long a dial waits for the mesh node, which the app starts on open, possibly after the relay. */
+    const val MESH_NODE_WAIT_MS = 10_000L
+
+    /**
+     * The mesh Vault this start uses, also set as [macMeshRelay] (port of iOS RelayProcessManager.resolveMacMeshRelay,
+     * P3 #2506). Only with FIPS on and a mesh Vault on the list. When the slot itself is a mesh npub, the Vaults are
+     * dialed now, in list order inside one budget ([MeshVaultDial.dial]); otherwise this start takes only what the
+     * background dial handed over, and [MeshVaultDial.afterStart] dials once the relay is up. A failed dial leaves
+     * [macMeshRelay] null and the relay starts without it.
      */
     fun resolveMacMeshRelay(
         config: HavenConfig,
         dial: (String) -> FipsIngress = FipsBridge::ingress,
         pause: (Long) -> Unit = Thread::sleep,
     ): MacMeshRelay? {
-        val npub = MacSync.macMeshNpub(config)
-        if (npub == null || !config.fipsMeshEnabled) {
-            macMeshRelay = null
-            return null
+        val handedOver = pendingMeshRelay
+        pendingMeshRelay = null
+        val npubs = config.desktopVaultMeshNpubs
+        val relay = when (DesktopVaultsRules.meshDial(config.fipsMeshEnabled, config.macRelayURL, npubs)) {
+            DesktopVaultsRules.MeshDial.NONE -> null
+            DesktopVaultsRules.MeshDial.AFTER_START -> dialedVault(config, handedOver)
+            DesktopVaultsRules.MeshDial.BEFORE_START -> dialedVault(config, handedOver) ?: MeshVaultDial.dial(npubs, dial, pause)
         }
-        var ingress = dial(npub)
-        var waited = 0L
-        while (ingress.error == FipsBridge.ERR_NOT_RUNNING && waited < MESH_NODE_WAIT_MS) {
-            pause(MESH_NODE_POLL_MS)
-            waited += MESH_NODE_POLL_MS
-            ingress = dial(npub)
-        }
-        val url = ingress.url?.let(::meshWebsocketURL)
-        val relay = url?.let { MacMeshRelay(npub, it) }
         macMeshRelay = relay
-        if (relay == null) {
-            Log.w("RelayConfiguration", "Mac relay ${npub.take(16)}… not reachable over the mesh (${ingress.error}); starting without it")
-        } else {
-            Log.i("RelayConfiguration", "Mac relay reached over the mesh (${npub.take(16)}…)")
-        }
         return relay
     }
 

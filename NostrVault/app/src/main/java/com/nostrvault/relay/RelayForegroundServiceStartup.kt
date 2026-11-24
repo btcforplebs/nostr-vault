@@ -262,6 +262,8 @@ import kotlinx.coroutines.withTimeoutOrNull
             Log.i(TAG, "Go relay started successfully and health check passed")
             restoreMesh()
             restoreDmListening()
+            // Up over wss: dial the mesh desktop Vaults now and move to the first that answers (P6, Tron M1 on #2506).
+            MeshVaultDial.afterStart(config, latest = { loadSavedConfig() })
 
             // Clients may connect now. The health check above already had the
             // relay answer its NIP-11 document as this app's relay, so it is
@@ -298,7 +300,8 @@ import kotlinx.coroutines.withTimeoutOrNull
             return
         }
         val relayDataDir = File(filesDir, "relay_data")
-        val saved = RelayConfiguration.launchInputs(loadSavedConfig(), relayDataDir)
+        // Compare only: no dial, and a waiting mesh hand-over stays for the start below (P6).
+        val saved = RelayConfiguration.comparedInputs(loadSavedConfig(), relayDataDir)
         if (saved == launchedInputs) {
             Log.i(TAG, "Settings restart skipped: relay already runs the saved config")
             return

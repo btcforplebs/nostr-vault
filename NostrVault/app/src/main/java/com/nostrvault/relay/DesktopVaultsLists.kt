@@ -210,6 +210,24 @@ object DesktopVaultsLists {
         return DesktopVaultListChange.Tags(out)
     }
 
+    /**
+     * A Vault switch applied to the newest published list's tags (rule 7, [com.nostrvault.service.nostr.DesktopVaultListEdit]).
+     * [tags] null: the relays said no list exists, so turning on starts one when it is usable on its own and turning
+     * off changes nothing. iOS DesktopVaultsLists.switching.
+     */
+    fun switching(
+        on: Boolean, vault: DesktopVault, path: DesktopVaultPath, list: DesktopVaultList,
+        tags: List<List<String>>?, vaults: List<DesktopVault>,
+    ): DesktopVaultListChange {
+        if (tags == null) {
+            if (!on) return DesktopVaultListChange.Tags(emptyList())
+            val started = turningOn(vault, path, list, emptyList(), vaults)
+            if (started is DesktopVaultListChange.Tags && !isUsable(started.tags, list)) return DesktopVaultListChange.Refused(list)
+            return started
+        }
+        return if (on) turningOn(vault, path, list, tags, vaults) else turningOff(vault, path, list, tags)
+    }
+
     /** What deleting a Vault from the public lists gives: only the lists that change, or the list that refused. */
     sealed class Removal {
         data class Changed(val lists: Map<DesktopVaultList, List<List<String>>>) : Removal()

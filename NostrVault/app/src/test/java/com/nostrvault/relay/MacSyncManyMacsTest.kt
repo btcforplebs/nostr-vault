@@ -6,7 +6,10 @@ import com.nostrvault.fips.FipsMeshSettings
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Multi-Mac rules §1: every Mac of the owner's, not only the first (iOS MultiMacLogicTests). */
+/**
+ * Multi-Mac rules §1: every Mac of the owner's, not only the first (iOS MultiMacLogicTests). Since Desktop Vaults P6
+ * the list is the mesh desktop Vaults ([desktopVaultMeshNpubs]); MacSync.macMeshNpubs is gone.
+ */
 class MacSyncManyMacsTest {
     private val macA = "npub1qszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszq764t2k"
     private val macB = "npub1q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zsmgv3u5"
@@ -22,24 +25,24 @@ class MacSyncManyMacsTest {
     @Test
     fun `every mac and box is listed, the first one first, phones never`() {
         val c = config(listOf(FipsDevice(macA, DeviceRole.MAC), FipsDevice(phone), FipsDevice(macB, DeviceRole.MAC), FipsDevice(box, DeviceRole.MAC)))
-        assertEquals(listOf(macA, macB, box), MacSync.macMeshNpubs(c))
+        assertEquals(listOf(macA, macB, box), c.desktopVaultMeshNpubs(ownNpub = null))
     }
 
     @Test
     fun `a mac typed in the field comes first and is listed once`() {
         val c = config(listOf(FipsDevice(macA, DeviceRole.MAC), FipsDevice(macB, DeviceRole.MAC)), typed = macB)
-        assertEquals(listOf(macB, macA), MacSync.macMeshNpubs(c))
+        assertEquals(listOf(macB, macA), c.desktopVaultMeshNpubs(ownNpub = null))
     }
 
     @Test
     fun `this device and another account's mac are left out`() {
         val c = config(listOf(FipsDevice(macA, DeviceRole.MAC), FipsDevice(macB, DeviceRole.MAC, linkedBy = "npub1someoneelse")))
-        assertEquals(emptyList<String>(), MacSync.macMeshNpubs(c, ownNpub = macA))
+        assertEquals(emptyList<String>(), c.desktopVaultMeshNpubs(ownNpub = macA))
     }
 
     @Test
     fun `no macs gives an empty list`() {
-        assertEquals(emptyList<String>(), MacSync.macMeshNpubs(config(listOf(FipsDevice(phone)))))
+        assertEquals(emptyList<String>(), config(listOf(FipsDevice(phone))).desktopVaultMeshNpubs(ownNpub = null))
     }
 
     @Test

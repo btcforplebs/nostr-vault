@@ -179,7 +179,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     }
 
     /** Where Save looks up the owner's relay lists: the same relays the screen read them from. */
-    private fun NostrService.relayListLookupRelays(): List<String> {
+    internal fun NostrService.relayListLookupRelays(): List<String> {
         val config = configStore.config.value
         return (config.writeRelays + config.readRelays.take(3) + NostrService.PROFILE_RELAYS + com.nostrvault.relay.RelayDraft.INDEXERS +
             config.dmInboxRelays).filterNot(::isLoopbackRelay).distinctBy(com.nostrvault.relay.RelayMatrix::key)

@@ -4,7 +4,6 @@ import android.util.Log
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.fips.PulledInjection
 import com.nostrvault.relay.HavenConfig
-import com.nostrvault.relay.MacSync
 import com.nostrvault.relay.RelayConfiguration
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
@@ -32,14 +31,13 @@ object VaultPublishHandoff {
     const val LOCAL_OK_MS = 5_000L
 
     /**
-     * The vault that sends this phone's posts: the owner's Mac on the mesh as dialed at relay start, the same one the
-     * blast list names ([RelayConfiguration.blastrRelays]). Null when there is none, so posting is as before with no
-     * delay.
+     * The vault that sends this phone's posts: the first mesh desktop Vault in Desktop Vaults order that answered
+     * this session's dial (§2.2 rule 3, [RelayConfiguration.dialedVault]), the same one the blast list names
+     * ([RelayConfiguration.blastrRelays]). Null when there is none, so posting is as before with no delay.
      */
     fun target(config: HavenConfig, mesh: RelayConfiguration.MacMeshRelay? = RelayConfiguration.macMeshRelay): RelayConfiguration.MacMeshRelay? {
         if (!config.fipsMeshEnabled) return null
-        val npub = MacSync.macMeshNpub(config) ?: return null
-        return mesh?.takeIf { it.npub == npub }
+        return RelayConfiguration.dialedVault(config, mesh)
     }
 
     /** The one gate: true when a vault sends this phone's posts. A "Send through my vault" switch hooks in here. */

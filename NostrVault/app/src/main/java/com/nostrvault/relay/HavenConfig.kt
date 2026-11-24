@@ -519,13 +519,20 @@ data class HavenConfig(
     val macRelayHttpsURL: String
         get() = macRelayNormalizedBase.let { if (it.isEmpty()) "" else "https://$it" }
 
-    /** The Mac relay's inbox as a DM relay, or "" — see [DMInbox.havenInboxURL]. */
-    val ownHavenDMInboxURL: String
-        get() = DMInbox.havenInboxURL(macRelayURL, macRelayNormalizedBase)
+    /**
+     * The owner's always-on Haven inboxes as DM relays: every HTTPS desktop Vault's, in Desktop Vaults order (P6,
+     * §2.2 rule 2; it was the one Mac relay's). See [DesktopVaultsRules.dmInboxURLs].
+     */
+    val ownHavenDMInboxURLs: List<String>
+        get() = desktopVaultDMInboxURLs.map(DMInbox::normalizedRelayURL)
 
-    /** The one DM inbox list: the Haven inbox first, then [dmRelays]. */
+    /** The first of [ownHavenDMInboxURLs], or "": the one pinned at the top of Settings › Relays. */
+    val ownHavenDMInboxURL: String
+        get() = ownHavenDMInboxURLs.firstOrNull().orEmpty()
+
+    /** The one DM inbox list: the Haven inboxes first, then [dmRelays]. */
     val dmInboxRelays: List<String>
-        get() = DMInbox.merged(ownHavenDMInboxURL, dmRelays)
+        get() = DMInbox.merged(ownHavenDMInboxURLs, dmRelays)
 
     // ── Active Relay Lists (with Haven relay prepended) ───────────
 
