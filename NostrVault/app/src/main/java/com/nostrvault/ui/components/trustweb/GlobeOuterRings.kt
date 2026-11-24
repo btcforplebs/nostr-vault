@@ -20,7 +20,8 @@ import kotlin.math.sqrt
 /**
  * Draws the globe's outer rings ([TrustMapOuter]) behind the stars: one
  * circle per hop past your circle, a dot on it for each of its best-ranked
- * people, and its hop count where the ring crosses the screen. Faint, with
+ * people (the globe list's top 300), fainter the further out (hop 3 full,
+ * 4 about 60%, 5 about 35%), and its label where the ring crosses the screen. Faint, with
  * no dots, when there is no rank. The rings sit round the middle of the
  * screen and grow with the camera's zoom, so they stay outside the globe.
  * iOS `Views/TrustWeb/GlobeOuterRings.swift`.
@@ -58,15 +59,16 @@ internal object GlobeOuterRings {
         val dash = if (faint) PathEffect.dashPathEffect(floatArrayOf(3.dp2px(density), 6.dp2px(density))) else null
         for (ring in outer.rings) {
             val r = radius(ring.hop, base)
+            val fade = if (faint) 1f else TrustMapOuter.fade(ring.hop)
             drawCircle(
-                color = HazeColor.copy(alpha = if (faint) 0.10f else 0.28f),
+                color = HazeColor.copy(alpha = if (faint) 0.10f else 0.28f * fade),
                 radius = r.toFloat(), center = mid,
                 style = Stroke(width = (if (faint) 0.8f else 1.1f) * density, pathEffect = dash),
             )
             if (!faint) {
                 for (key in ring.top) {
                     val a = angle(key)
-                    drawCircle(MutualStar.copy(alpha = 0.75f), radius = 1.6f * density,
+                    drawCircle(MutualStar.copy(alpha = 0.75f * fade), radius = 1.6f * density,
                         center = Offset((mid.x + r * cos(a)).toFloat(), (mid.y + r * sin(a)).toFloat()))
                 }
             }
@@ -74,7 +76,7 @@ internal object GlobeOuterRings {
                 val layout = measurer.measure(
                     if (faint) "${ring.hop} hops" else TrustMapOuter.chipText(ring),
                     TextStyle(fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
-                        color = GlobeLabel.copy(alpha = if (faint) 0.35f else 0.7f)),
+                        color = GlobeLabel.copy(alpha = if (faint) 0.35f else 0.7f * maxOf(fade, 0.6f))),
                 )
                 drawText(layout, topLeft = Offset(at.x - layout.size.width, at.y - layout.size.height))
             }

@@ -34,7 +34,8 @@ internal fun TrustWhyButton(pubkey: String, accent: Color) {
     val me by services.configStore().activeAccountHexPubkey.collectAsState()
     var copy by remember(me) { mutableStateOf<TrustRankCopy?>(null) }
     LaunchedEffect(me) { copy = services.trustRankCopyStore().copyFor(me) }
-    if (copy?.get(pubkey) == null || pubkey == me) return
+    val held = copy
+    if (held == null || (held[pubkey] == null && held.globeRow(pubkey) == null) || pubkey == me) return
     var open by remember(pubkey) { mutableStateOf(false) }
     TextButton(onClick = { open = true }, contentPadding = PaddingValues(horizontal = 8.dp)) {
         Text("Why?", color = accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -44,8 +45,8 @@ internal fun TrustWhyButton(pubkey: String, accent: Color) {
 
 /**
  * Score, ring and the people you follow who follow them, highest score
- * first. No mute rows (Logen's question 3 is open). iOS twin to come:
- * `Views/TrustWeb/TrustWhySheet.swift`.
+ * first, and for hop 3 and out how they connect ("You > A > B > them").
+ * No mute rows (Logen's question 3 is open). iOS `Views/TrustWeb/TrustWhySheet.swift`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,8 +58,8 @@ internal fun TrustWhySheet(pubkey: String, me: String, copy: TrustRankCopy?, acc
     val path = rememberLiveTrustPath(pubkey)
     val why = TrustWhy.of(pubkey, me, copy, path)
     val profiles by services.nostrService().profiles.collectAsState()
-    LaunchedEffect(why?.followers) {
-        why?.followers?.take(TrustWhy.SHOWN)?.map { it.pubkey }?.let { services.nostrService().fetchMissingProfiles(listOf(pubkey) + it) }
+    LaunchedEffect(why?.followers, why?.chain) {
+        why?.let { w -> services.nostrService().fetchMissingProfiles(listOf(pubkey) + w.followers.take(TrustWhy.SHOWN).map { it.pubkey } + w.chain.orEmpty()) }
     }
     fun name(pk: String) = profiles[pk]?.bestName ?: "npub…${pk.takeLast(6)}"
     ModalBottomSheet(
@@ -79,6 +80,10 @@ internal fun TrustWhySheet(pubkey: String, me: String, copy: TrustRankCopy?, acc
             }
             Text(TrustWhyText.headline(why), color = accent, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             Text(TrustWhyText.place(why), color = PrimaryText, fontSize = 14.sp)
+            TrustWhyText.chain(why, ::name)?.let {
+                Text("How they connect", color = SecondaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+                Text(it, color = PrimaryText, fontSize = 14.sp)
+            }
             TrustWhyText.followersTitle(why)?.let {
                 Text(it, color = SecondaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
             }
