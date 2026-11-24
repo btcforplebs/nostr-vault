@@ -429,8 +429,9 @@ The app calls the engine when a linked device comes into reach. The engine then:
      every row is a hex pubkey with a score 0-100 in rings 1 to `maxHop` (at most 6); and, when `globe` is there, at
      most 2,700 globe rows (9 × 300: chain links need links of their own), each a hex pubkey with a score 0-100 in rings 2 to 5 (and `maxHop`) and a hex `via`; and, when `haze` is
      there, only rings `"3"` and `"4"` (and `maxHop`), at most 700 and 1,700 rows, each a hex pubkey with a score over
-     0 and at most 100, in no other haze ring and not a `globe` row. Anything else is dropped and
-     the last good copy stays. The file is kept next to the WoT cache and its `builtAt` is its age.
+     0 and at most 100, in no other haze ring and not a `globe` row. A haze that breaks these is dropped and the
+     rest of the copy is kept (so a later engine's haze never blocks a copy); anything else is dropped and
+     the last good copy stays. The Haven writes no haze when it has no `globe`. The file is kept next to the WoT cache and its `builtAt` is its age.
    - A Mac or a box ranks for itself and never asks. Nothing is ever sent the other way: `PUT` is 404.
    - It never fails or delays the catch-up's mark: a 404 or a refused copy just leaves the device without one.
    - The `204` is answered from the start of the Haven's file (account and builtAt), without reading the rows.

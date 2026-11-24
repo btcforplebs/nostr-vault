@@ -2,7 +2,6 @@ package trustrank
 
 import (
 	"encoding/json"
-	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -72,7 +71,8 @@ func TestHazeIsTheRingAfterItsGlobeTop(t *testing.T) {
 }
 
 // Haze rows never change `people` or `globe`; the writer drops a haze
-// over its cap; the hand-off carries a good haze whole and refuses a bad one.
+// over its cap; the hand-off carries a good haze whole and drops a bad one
+// while keeping the rest of the copy.
 func TestHazeThroughFileAndHandoff(t *testing.T) {
 	g, owner, _, _ := globeMap()
 	res := mustRank(t, g, owner, nil)
@@ -111,14 +111,39 @@ func TestHazeThroughFileAndHandoff(t *testing.T) {
 		c.Haze = map[string][][2]any{"3": append([][2]any(nil), copy.Haze["3"]...)}
 		change(&c)
 		b, _ := json.Marshal(c)
-		if _, err := CheckHandoff(b, owner); !errors.Is(err, ErrBadResult) {
-			t.Errorf("%s: kept (%v)", name, err)
+		got, err := CheckHandoff(b, owner)
+		if err != nil {
+			t.Errorf("%s: whole copy refused (%v)", name, err)
+			return
+		}
+		if got.Haze != nil {
+			t.Errorf("%s: bad haze kept", name)
+		}
+		if !reflect.DeepEqual(got.People, c.People) || !reflect.DeepEqual(got.Globe, c.Globe) {
+			t.Errorf("%s: people or globe changed", name)
 		}
 	}
 	bad("hop-5 haze", func(c *ResultFile) { c.MaxHop = 5; c.Haze["5"] = [][2]any{{pk(30000), 10.0}} })
 	bad("hop-2 haze", func(c *ResultFile) { c.Haze["2"] = [][2]any{{pk(30000), 10.0}} })
 	bad("ring not a number", func(c *ResultFile) { c.Haze["03"] = [][2]any{{pk(30000), 10.0}} })
-	bad("past maxHop", func(c *ResultFile) { c.MaxHop = 3; c.Haze["4"] = [][2]any{{pk(30000), 10.0}} })
+	bad("past maxHop", func(c *ResultFile) {
+		// Cut the file to ring 3 so only the haze is past maxHop.
+		c.MaxHop = 3
+		var people [][3]any
+		for _, r := range c.People {
+			if _, _, hop, _ := row(r); hop <= 3 {
+				people = append(people, r)
+			}
+		}
+		var globe [][4]any
+		for _, r := range c.Globe {
+			if _, _, hop, _, _ := globeRow(r); hop <= 3 {
+				globe = append(globe, r)
+			}
+		}
+		c.People, c.Globe = people, globe
+		c.Haze["4"] = [][2]any{{pk(30000), 10.0}}
+	})
 	bad("shown 0", func(c *ResultFile) { c.Haze["3"][0] = [2]any{row0[0], 0.0} })
 	bad("shown 101", func(c *ResultFile) { c.Haze["3"][0] = [2]any{row0[0], 101.0} })
 	bad("not hex", func(c *ResultFile) { c.Haze["3"][0] = [2]any{"nope", 10.0} })

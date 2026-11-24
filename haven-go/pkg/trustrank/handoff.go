@@ -72,8 +72,9 @@ func (f ResultFile) Handoff(floor float64) ResultFile {
 // may keep. It refuses another account's file, a version this build does
 // not read, and any row that is not a hex pubkey with a 0-100 score in
 // rings 1 to CeilingHop, and any globe row that is not a hex pubkey with a
-// 0-100 score in rings 2 to GlobeHop and a hex via, and any haze that
-// checkHaze (haze.go) refuses.
+// 0-100 score in rings 2 to GlobeHop and a hex via. A haze that checkHaze
+// (haze.go) refuses is dropped and the rest is kept, so a later engine's
+// haze never stops a device from taking the copy.
 func CheckHandoff(raw []byte, account string) (ResultFile, error) {
 	var f ResultFile
 	if !validAccount(account) || json.Unmarshal(raw, &f) != nil {
@@ -99,7 +100,7 @@ func CheckHandoff(raw []byte, account string) (ResultFile, error) {
 		}
 	}
 	if !checkHaze(f.Haze, f.Globe, f.MaxHop) {
-		return f, ErrBadResult
+		f.Haze = nil
 	}
 	return f, nil
 }

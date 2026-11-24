@@ -110,6 +110,9 @@ func (c *Crawler) globeRows() ([][4]any, map[string][][2]any, error) {
 		return nil, nil, err
 	}
 	globe := globeForFile(res.Globe(GlobePerRing))
+	if globe == nil {
+		return nil, nil, nil // no haze without its globe top
+	}
 	return globe, hazeForFile(res.Haze(globe)), nil
 }
 
