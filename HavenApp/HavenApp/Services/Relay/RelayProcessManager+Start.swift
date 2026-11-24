@@ -185,7 +185,14 @@ extension RelayProcessManager {
             guard self.isRunning, RelayConfiguration.macMeshRelay == nil,
                   let current = self.lastConfig, current.desktopVaultMeshNpubs.contains(found.npub) else { return }
             RelayConfiguration.pendingMeshRelay = found
+            // This restart skips the 60 s cooldown (Tron F1 on #2506): after
+            // a restart (My Devices, the FIPS switch, blossom recovery) the
+            // dial answers within seconds and the move to the mesh was lost.
+            // It can't loop: it is asked only by a start that holds no mesh
+            // Vault, and the start it causes takes `found`.
+            self.lastRestartFinished = nil
             _ = await self.gracefulRestart()
+            RelayConfiguration.droppingUnusedHandOver(found)
         }
     }
 

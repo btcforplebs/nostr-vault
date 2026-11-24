@@ -88,6 +88,14 @@ enum RelayConfiguration {
     /// takes it as `macMeshRelay` instead of dialing again.
     static var pendingMeshRelay: MacMeshRelay?
 
+    /// After the restart the background dial asked for (Tron F1 on #2506):
+    /// a hand-over that start didn't take is dropped, so a later unrelated
+    /// start never takes a mesh address that may have died since. One the
+    /// dial didn't leave is not touched.
+    static func droppingUnusedHandOver(_ asked: MacMeshRelay) {
+        if pendingMeshRelay == asked { pendingMeshRelay = nil }
+    }
+
     /// `mesh` when it is one of the Vault list's mesh Vaults (a dial left
     /// from before a list change is not), else nil.
     static func dialedVault(config: HavenConfig, mesh: MacMeshRelay?) -> MacMeshRelay? {

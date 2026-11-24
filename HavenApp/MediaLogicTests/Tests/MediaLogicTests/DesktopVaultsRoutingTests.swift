@@ -272,4 +272,22 @@ final class DesktopVaultsRoutingTests: XCTestCase {
         XCTAssertEqual(out.last, fips)
         XCTAssertEqual(out.filter { $0.first == "fipsmesh" }, [fips])
     }
+
+    // MARK: Tron F1 on #2506: the dial's hand-over
+
+    /// A hand-over the restart didn't take is dropped, so a later start
+    /// can't take a mesh address that may be dead; another one stays.
+    func testUnusedHandOverIsDroppedAfterTheRestart() {
+        let saved = RelayConfiguration.pendingMeshRelay
+        defer { RelayConfiguration.pendingMeshRelay = saved }
+        let found = RelayConfiguration.MacMeshRelay(npub: macA, url: meshURL)
+        RelayConfiguration.pendingMeshRelay = found
+        RelayConfiguration.droppingUnusedHandOver(found)
+        XCTAssertNil(RelayConfiguration.pendingMeshRelay)
+
+        let other = RelayConfiguration.MacMeshRelay(npub: macB, url: meshURL)
+        RelayConfiguration.pendingMeshRelay = other
+        RelayConfiguration.droppingUnusedHandOver(found)
+        XCTAssertEqual(RelayConfiguration.pendingMeshRelay, other)
+    }
 }
