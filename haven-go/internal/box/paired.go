@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -25,6 +26,11 @@ import (
 // is written, not yet read for access.
 type PairedSet struct {
 	Path string
+	// MeshFile is mesh-devices.json. A box whose set was never seeded (no
+	// 10063 named it yet) seeds it at its first confirmed pairing (Add), and
+	// takes what this file holds then, so a device the 10063s let in is not
+	// lost. Empty: the first pairing seeds from itself alone.
+	MeshFile string
 
 	mu sync.Mutex
 }
@@ -103,12 +109,25 @@ func (p *PairedSet) Npubs() ([]string, error) {
 }
 
 // Seeded: the one-time seed has happened. An unreadable file reads as not
-// seeded, and Seed then refuses to write over it (load's error).
+// seeded, and Seed then refuses to write over it (load's error). Callers
+// that must fail closed on an unreadable file use State.
 func (p *PairedSet) Seeded() bool {
+	seeded, err := p.State()
+	return err == nil && seeded
+}
+
+// State is Seeded with the file's error: a file that exists but can't be
+// read or parsed is neither "seeded" nor "the 10063 rule applies" (Tron
+// #2505: a removed device must not come back from the lists because the
+// set is broken), so callers leave mesh-devices.json as it is.
+func (p *PairedSet) State() (seeded bool, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	f, err := p.load()
-	return err == nil && f.SeededAt > 0
+	if err != nil {
+		return false, err
+	}
+	return f.SeededAt > 0, nil
 }
 
 // Seed records the devices the box trusts today as the paired set, once.
@@ -144,6 +163,13 @@ func (p *PairedSet) Seed(npubs []string, now int64) (bool, error) {
 // Add stores a device the owner confirmed. A device already paired under
 // the same role (or seeded, with no role yet) is updated in place; one
 // under another role is refused (ErrPairedOtherRole).
+//
+// A confirmed pairing counts as the seed (Tron #2505): a box no 10063 names
+// (a new owner, or one whose list leaves the box out) never seeds from the
+// lists, yet pairing from its UI must make the set decide, or the paired
+// phone is "Linked" and still let in nowhere. The set then takes what
+// mesh-devices.json holds now too (MeshFile), so 10063 devices nv-mesh
+// already let in stay.
 func (p *PairedSet) Add(d PairedDevice) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -155,6 +181,27 @@ func (p *PairedSet) Add(d PairedDevice) error {
 	f, err := p.load()
 	if err != nil {
 		return err
+	}
+	if f.SeededAt == 0 {
+		known := map[string]bool{d.Npub: true}
+		for _, e := range f.Devices {
+			known[e.Npub] = true
+		}
+		took := 0
+		if p.MeshFile != "" {
+			for _, n := range readMeshDevicesList(p.MeshFile) {
+				if _, npub, err := ParseOwner(n); err == nil && !known[npub] {
+					known[npub] = true
+					took++
+					f.Devices = append(f.Devices, PairedDevice{Npub: npub, PairedAt: d.PairedAt, From: "seed"})
+				}
+			}
+		}
+		f.SeededAt = d.PairedAt
+		if f.SeededAt == 0 {
+			f.SeededAt = 1
+		}
+		log.Printf("box: paired set seeded by the first pairing, with %d devices from mesh-devices.json", took)
 	}
 	for i := range f.Devices {
 		if f.Devices[i].Npub != d.Npub {

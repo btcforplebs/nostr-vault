@@ -42,6 +42,12 @@ test("idle, waiting, hello, linked, failed and busy", () => {
   assert.match(h.text, /npub1zzz…zzz9/)
   assert.equal(h.secondsLeft, 30)
   assert.equal(h.refusal, refusalText("otherOwner"), "a stranger's hello shows the shared line and the code stays")
+  assert.ok(h.canConfirm)
+  // Bad word indexes from the box: nothing to check against, so no They match.
+  const noWords = pairView({ state: "hello", device, words: [1, 2, 3], expiresAt: 1_793_800_030, box }, now)
+  assert.equal(noWords.step, "hello")
+  assert.equal(noWords.words, null)
+  assert.ok(!noWords.canConfirm)
 
   const l = pairView({ state: "linked", device, acked: 2 })
   assert.equal(l.step, "linked")

@@ -25,7 +25,7 @@ export function refusalLine(refusal, { otherRole = "" } = {}) {
 
 /**
  * The screen for a pairing status: `{ step, title, text, code?, words?, device?, confirmText?, role?, secondsLeft?,
- * canCancel, canStart, error? }`. `step`: idle | waiting | hello | linked | failed | busy.
+ * canCancel, canStart, canConfirm?, error? }`. `step`: idle | waiting | hello | linked | failed | busy.
  */
 export function pairView(status, nowMs = Date.now()) {
   const s = status ?? { state: "idle" }
@@ -41,6 +41,8 @@ export function pairView(status, nowMs = Date.now()) {
       return { ...base, step: "hello", title: `${d.name?.trim() || "A device"} wants to pair`,
         text: `Check that your phone shows the same four words and ${shortAddress(s.box?.npub ?? "")}. Then tap They match on both.`,
         words: wordsOf(s.words), device: d, role: d.role, roleWord: ROLE[d.role] ?? "device",
+        // No confirm without the words: there is nothing to check them against (Tron #2505).
+        canConfirm: wordsOf(s.words) !== null,
         confirmText: s.confirmText, secondsLeft: secondsLeft(s.expiresAt, nowMs), canCancel: true, refusal }
     }
     case "linked": {

@@ -42,9 +42,13 @@ export function PairDeviceSection({ api, onPaired, poll = POLL_MS }) {
         <p class="muted small">Expires in {v.secondsLeft} s. <span class="box-pair-text">{v.code}</span></p>
       </div>}
       {v.step === "hello" && <div class="box-pad">
-        {v.words && <p class="box-pair-words" aria-label="Check words">{v.words.map(w => <span key={w} class="box-pair-word">{w}</span>)}</p>}
-        <p class="small">{v.confirmText}</p>
-        <button type="button" disabled={busy} onClick={() => ask(() => api.pairConfirm(v.role))}>They match: add this {v.roleWord}</button>
+        {v.canConfirm
+          ? <>
+            <p class="box-pair-words" aria-label="Check words">{v.words.map(w => <span key={w} class="box-pair-word">{w}</span>)}</p>
+            <p class="small">{v.confirmText}</p>
+            <button type="button" disabled={busy} onClick={() => ask(() => api.pairConfirm(v.role))}>They match: add this {v.roleWord}</button>
+          </>
+          : <p class="error small" role="alert">The box sent no check words for this device. Cancel and show a new code.</p>}
         <p class="muted small">{v.secondsLeft} s left.</p>
       </div>}
       {v.refusal && <p class="error small box-pad" role="alert">{v.refusal}</p>}
