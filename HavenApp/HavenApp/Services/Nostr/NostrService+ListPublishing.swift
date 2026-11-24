@@ -235,7 +235,14 @@ extension NostrService {
     func publishServerList(fipsDetectedNpub: String? = nil, meshAdd: [String] = [], meshRemove: [String] = [],
                            webMove: (fromHost: String, to: String)? = nil,
                            onResult: (@MainActor (ServerListPublishOutcome) -> Void)? = nil) {
-        let servers = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub) + meshAdd
+        // A desktop Vault's entries are its own switches' (Desktop Vaults P4,
+        // DesktopVaultListEdit): this phone neither adds nor drops them here,
+        // so a Save never puts back a Vault whose media switch is off.
+        let vaultHosts = Set(ConfigService.shared.config.desktopVaultHttpsURLs.compactMap(DesktopVaultsLists.hostKey))
+        let notVault: (String) -> Bool = { url in
+            url.hasPrefix("fipsmesh://") || DesktopVaultsLists.hostKey(url).map { !vaultHosts.contains($0) } ?? true
+        }
+        let servers = (ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub) + meshAdd).filter(notVault)
         let owner = activeHexPubkey
         // Merge into the newest list, never replace it (one rule for every
         // phone): another phone's servers and mesh entries stay; only the
@@ -252,7 +259,7 @@ extension NostrService {
         photoNpub = PhotoNode.npub()
         #endif
         let managedKey = "serverListManaged.\(owner)"
-        let previouslyManaged = Set(Self.serverListManaged(owner: owner))
+        let previouslyManaged = Set(Self.serverListManaged(owner: owner).filter(notVault))
         let ownMeshNpub = ownMesh, photo = photoNpub, current = servers
         let removed = Set(meshRemove)
         // What this phone manages: its https servers only (mergeServerList).

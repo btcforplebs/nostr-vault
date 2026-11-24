@@ -11,6 +11,15 @@ enum DesktopVaultPick {
         return synced.max { (lastSync[$0.npub] ?? 0) < (lastSync[$1.npub] ?? 0) } ?? desktops.first
     }
 
+    /// "Found by <name>" for My Web when more than one desktop is paired,
+    /// so it says which one ranked (Desktop Vaults P4, plan §6.1); nil with
+    /// one desktop, or one with no name, where "your desktop Vault" is clear.
+    static func foundBy(_ desktop: MeshDevice?, devices: [MeshDevice]) -> String? {
+        guard devices.filter({ $0.role == .mac }).count > 1,
+              let name = desktop?.name.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
+        return "Found by \(name)"
+    }
+
     /// A hand-off row's name: the device's own name (the desktop's My
     /// Devices, else this device's), "This device" for an unnamed self, and
     /// its type only when it has no name anywhere.

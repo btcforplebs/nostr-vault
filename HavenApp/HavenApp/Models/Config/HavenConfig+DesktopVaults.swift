@@ -9,13 +9,22 @@ extension HavenConfig {
     /// an edit in the old Desktop vault sync tab counts before the next save.
     ///
     /// It follows My Devices too (DesktopVaultsLogic.followingDevices), and
-    /// leaves out this device's own mesh address (`ownNpub`, Tron N2).
+    /// leaves out this device's own mesh address (`ownNpub`, Tron N2), and
+    /// every address deleted on Desktop Vaults (`desktopVaultsRemoved`, P4).
     var desktopVaultsInEffect: [DesktopVault] { desktopVaultsInEffect(ownNpub: Self.storedOwnMeshNpub) }
 
     func desktopVaultsInEffect(ownNpub: String?) -> [DesktopVault] {
         let taken = DesktopVaultsLogic.takingInSlot(desktopVaults, slot: macRelayURL, taken: desktopVaultsSlot,
                                                     devices: meshDevices, ownNpub: ownNpub)
-        return DesktopVaultsLogic.followingDevices(taken, devices: meshDevices, slot: macRelayURL, ownNpub: ownNpub)
+        let following = DesktopVaultsLogic.followingDevices(taken, devices: meshDevices, slot: macRelayURL, ownNpub: ownNpub)
+        return DesktopVaultsEditing.applyingRemoved(following, removed: desktopVaultsRemoved)
+    }
+
+    /// The one-slot `macRelayURL` while a Vault still has its address, else
+    /// "" (DesktopVaultsEditing.slotInEffect). Everything derived from the
+    /// slot reads this, so deleting its Vault on Desktop Vaults turns it off.
+    var macRelayURLInEffect: String {
+        DesktopVaultsEditing.slotInEffect(macRelayURL, vaults: desktopVaultsInEffect)
     }
 
     /// This device's own mesh npub as FipsMeshService last saw it
@@ -50,6 +59,45 @@ extension HavenConfig {
 
     /// Every HTTPS Vault's DM inbox, in list order (iOS; a Mac lists its own).
     var desktopVaultDMInboxURLs: [String] {
-        DesktopVaultsLogic.dmInboxURLs(desktopVaultsInEffect, slot: macRelayURL)
+        DesktopVaultsLogic.dmInboxURLs(desktopVaultsInEffect, slot: macRelayURLInEffect)
+    }
+
+    // MARK: Edits from the Desktop Vaults screens (P4)
+
+    /// Adds `vault` at the end; its addresses leave `desktopVaultsRemoved`.
+    mutating func addDesktopVault(_ vault: DesktopVault) {
+        let next = DesktopVaultsEditing.inserting(vault, into: desktopVaultsInEffect, removed: desktopVaultsRemoved)
+        desktopVaultsRemoved = next.removed
+        desktopVaults = next.vaults
+    }
+
+    /// Deletes the Vault; its addresses go on `desktopVaultsRemoved`.
+    mutating func deleteDesktopVault(id: String) {
+        let next = DesktopVaultsEditing.deleting(id, from: desktopVaultsInEffect, removed: desktopVaultsRemoved)
+        desktopVaultsRemoved = next.removed
+        desktopVaults = next.vaults
+    }
+
+    /// Stores a new order (after a drag) or a rename.
+    mutating func setDesktopVaults(_ vaults: [DesktopVault]) {
+        desktopVaults = DesktopVaultsLogic.ordered(vaults)
+    }
+
+    /// Changes a Vault's web address; nil when that went, else why not.
+    mutating func setDesktopVaultAddress(id: String, to typed: String) -> String? {
+        switch DesktopVaultsEditing.changingAddress(of: id, to: typed, in: desktopVaultsInEffect,
+                                                    removed: desktopVaultsRemoved) {
+        case .success(let next):
+            desktopVaultsRemoved = next.removed
+            desktopVaults = next.vaults
+            return nil
+        case .failure(let refusal):
+            return refusal.message
+        }
+    }
+
+    /// Pairing a device again undoes an earlier delete of its Vault.
+    mutating func forgetRemovedDesktopVault(meshNpub: String) {
+        desktopVaultsRemoved.removeAll { $0 == DesktopVaultsEditing.removedKey(meshNpub: meshNpub) }
     }
 }

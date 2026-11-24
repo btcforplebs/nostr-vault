@@ -420,7 +420,7 @@ struct VaultDashboardView: View {
     }
 
     private var macSyncDetail: String {
-        RelayConfiguration.macSyncRowDetail(macSync, macURL: config.macRelayURL, relative: relative)
+        RelayConfiguration.macSyncRowDetail(macSync, macURL: config.macRelayURLInEffect, relative: relative)
     }
 
     // MARK: - Who can reach you
@@ -600,8 +600,8 @@ struct VaultDashboardView: View {
             #if os(iOS)
             // A phone's link to its desktop vault; on a Mac this vault is the desktop one.
             DashboardDivider()
-            SettingLink(icon: "laptopcomputer", title: "Desktop vault sync", value: config.macRelayURL.isEmpty ? "Off" : "On") {
-                MacSyncSettingsPage().settingsPage("Desktop vault sync")
+            SettingLink(icon: "laptopcomputer", title: "Desktop Vaults", value: "\(config.desktopVaultsInEffect.count)") {
+                MacSyncSettingsPage().settingsPage("Desktop Vaults")
             }
             #endif
             DashboardDivider()

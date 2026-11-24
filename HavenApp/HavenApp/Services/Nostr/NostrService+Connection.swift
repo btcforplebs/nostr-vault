@@ -221,7 +221,7 @@ extension NostrService {
 
         // A mesh npub is not a URL: use the address the relay dialed for it.
         let macURL = config.macRelayMeshNpub == nil
-            ? config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            ? config.macRelayURLInEffect.trimmingCharacters(in: .whitespacesAndNewlines)
             : RelayConfiguration.macRelayURL(config: config)
         if !macURL.isEmpty {
             if let macRelay = URL(string: macURL) { urls.append(macRelay) }

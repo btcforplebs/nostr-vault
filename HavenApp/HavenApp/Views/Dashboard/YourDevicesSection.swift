@@ -27,11 +27,12 @@ struct YourDevicesSection: View {
     var body: some View {
         DashboardSection(title: "Your devices") {
             ForEach(devices) { device in
-                // A phone's Mac row opens its desktop sync page. On a Mac that
+                // A phone's Mac row opens its Desktop Vault's page. On a Mac that
                 // page is this vault's own address, so another Mac is just a device.
                 if device.role == .mac && opensDesktopSync {
+                    let vault = configService.config.desktopVaultsInEffect.first { $0.meshNpub == device.npub }
                     DashboardRowLink(icon: device.role.icon, title: device.displayName, detail: macDetail, state: dotState(device)) {
-                        MacSyncSettingsPage().settingsPage("Desktop vault sync")
+                        MacSyncSettingsPage(vaultID: vault?.id).settingsPage(vault?.displayName ?? "Desktop Vaults")
                     }
                 } else {
                     DashboardRowLink(icon: device.role.icon, title: device.displayName, detail: line(device), state: dotState(device)) {

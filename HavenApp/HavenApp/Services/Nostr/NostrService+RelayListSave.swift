@@ -33,13 +33,27 @@ extension NostrService {
         let kept = (rl.event?.tags.filter {
             $0.count >= 2 && $0[0] == "r" && !RelayDraft.listable($0[1]) && !Self.isLoopbackRelay($0[1])
         } ?? []) + DesktopVaultsLists.meshRelayTags(rl.event?.tags ?? [])
+        // Desktop Vault entries are their switches' (P4): carried through
+        // as published, never rows.
+        #if os(iOS)
+        let vaults = config.desktopVaultsInEffect
+        #else
+        let vaults: [DesktopVault] = []
+        #endif
+        let vaultRelays = DesktopVaultsEditing.splitting(rl.event?.tags ?? [], in: .relays, vaults: vaults).vault
+            .filter { $0[0] == "r" }
+        let vaultInboxes = DesktopVaultsEditing.splitting(dl.event?.tags ?? [], in: .inbox, vaults: vaults).vault.map { $0[1] }
+        let vaultKeys = Set((vaultRelays.map { $0[1] } + vaultInboxes).map(RelayMatrix.key))
+        let notVault: (String) -> Bool = { !vaultKeys.contains(RelayMatrix.key($0)) }
         return RelayDraft.Published(
-            read: read.filter(RelayDraft.listable),
-            write: write.filter(RelayDraft.listable),
-            dms: dms.filter { !Self.isLoopbackRelay($0) },
+            read: read.filter(RelayDraft.listable).filter(notVault),
+            write: write.filter(RelayDraft.listable).filter(notVault),
+            dms: dms.filter { !Self.isLoopbackRelay($0) }.filter(notVault),
             relayListKnown: RelayDraft.settled(found: rl.event != nil, answeredBy: rl.answeredBy),
             dmListKnown: RelayDraft.settled(found: dl.event != nil, answeredBy: dl.answeredBy),
-            kept: kept)
+            kept: kept,
+            vaultRelays: vaultRelays,
+            vaultInboxes: vaultInboxes)
     }
 
     /// Publishes `tags` as kind 10002 for `npub` (the owner by default).

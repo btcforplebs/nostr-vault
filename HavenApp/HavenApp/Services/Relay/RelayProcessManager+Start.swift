@@ -59,7 +59,7 @@ extension RelayProcessManager {
 
     private static func meshDial(_ config: HavenConfig) -> DesktopVaultsLogic.MeshDial {
         #if os(iOS)
-        return DesktopVaultsLogic.meshDial(fipsOn: FipsMeshSettings.enabled, slot: config.macRelayURL,
+        return DesktopVaultsLogic.meshDial(fipsOn: FipsMeshSettings.enabled, slot: config.macRelayURLInEffect,
                                            meshNpubs: config.desktopVaultMeshNpubs)
         #else
         return .none

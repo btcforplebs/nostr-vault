@@ -16,11 +16,15 @@ struct MeshMediaServersSection: View {
 
     private var rows: [MeshMediaServerRow] {
         #if os(iOS)
-        HomeVaultLogic.meshMediaServerRows(devices: FipsMeshDevices.current(configService.config), listed: listed,
-                                           own: FipsMeshService.shared.ownMeshNpub, photoNpub: nil)
+        // A desktop Vault's mesh entry is its "Media over the Mesh" switch
+        // (Desktop Vaults P4), shown in "From your desktop Vaults".
+        let vaultNpubs = Set(configService.config.desktopVaultMeshNpubs)
+        return HomeVaultLogic.meshMediaServerRows(devices: FipsMeshDevices.current(configService.config), listed: listed,
+                                                  own: FipsMeshService.shared.ownMeshNpub, photoNpub: nil)
+            .filter { !vaultNpubs.contains($0.npub) }
         #else
-        HomeVaultLogic.meshMediaServerRows(devices: configService.config.meshDevices, listed: listed,
-                                           own: MacFipsMeshService.shared.ownNpub, photoNpub: PhotoNode.npub())
+        return HomeVaultLogic.meshMediaServerRows(devices: configService.config.meshDevices, listed: listed,
+                                                         own: MacFipsMeshService.shared.ownNpub, photoNpub: PhotoNode.npub())
         #endif
     }
 

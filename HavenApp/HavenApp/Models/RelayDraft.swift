@@ -37,6 +37,12 @@ enum RelayDraft {
         /// network, .local, CGNAT, .ts.net). Save carries them through as
         /// published, so editing one relay never drops another app's entries.
         var kept: [[String]] = []
+        /// The desktop Vault entries of the published 10002 and 10050, as
+        /// published (Desktop Vaults P4, §2.4). Only a Vault's own switch adds
+        /// or removes them, so Save carries them through first, in place of
+        /// the old one-slot address (Tron M2).
+        var vaultRelays: [[String]] = []
+        var vaultInboxes: [String] = []
         /// False during setup, before the new key is stored: there is no
         /// list to load, and setup's own step publishes the first one.
         var hasAccount = true
@@ -278,17 +284,21 @@ enum RelayDraft {
             || movedAny(state, [.read, .write])
         let shown = HavenConfig.publicRelayListTags(ownRelays: ownRelays, read: readNow, write: writeNow)
         let shownKeys = Set(shown.map { RelayMatrix.key($0[1]) })
-        let newTags = shown + p.kept.filter { !shownKeys.contains(RelayMatrix.key($0[1])) }
+        let vaultKeys = Set(p.vaultRelays.map { RelayMatrix.key($0[1]) })
+        let newTags = p.vaultRelays + shown.filter { !vaultKeys.contains(RelayMatrix.key($0[1])) }
+            + p.kept.filter { !shownKeys.contains(RelayMatrix.key($0[1])) && !vaultKeys.contains(RelayMatrix.key($0[1])) }
         let relayListChanges = relayListEdited
-            ? diff(before: HavenConfig.publicRelayListTags(ownRelays: [], read: p.read, write: p.write) + p.kept, after: newTags)
+            ? diff(before: p.vaultRelays + HavenConfig.publicRelayListTags(ownRelays: [], read: p.read, write: p.write) + p.kept,
+                   after: newTags)
             : []
         let publishRelayList = relayListEdited && p.relayListKnown && !relayListChanges.isEmpty
 
         let dmsNow = yoursOnly(draft.dms, yours)
         let dmEdited = keys(dmsNow) != keys(yoursOnly(start.dms, yours)) || movedAny(state, [.dms])
-        let newDMs = HavenConfig.mergedDMInboxRelays(havenInbox: ownInbox, dmRelays: dmsNow)
+        let newDMs = HavenConfig.mergedDMInboxRelays(havenInboxes: [ownInbox].filter { !$0.isEmpty } + p.vaultInboxes,
+                                                     dmRelays: dmsNow)
             .filter { !HavenConfig.isPrivateNetworkHost(RelayMatrix.label($0)) }
-        let dmChanges = dmEdited ? setDiff(before: p.dms, after: newDMs, job: .dms) : []
+        let dmChanges = dmEdited ? setDiff(before: p.vaultInboxes + p.dms, after: newDMs, job: .dms) : []
         let publishDMs = dmEdited && p.dmListKnown && !dmChanges.isEmpty
 
         let localChanges: [Change] = allRelays(state).compactMap { k, url in
@@ -326,22 +336,25 @@ enum RelayDraft {
         func same(_ a: [String], _ b: [String]) -> Bool { Set(a.map(RelayMatrix.key)) == Set(b.map(RelayMatrix.key)) }
         if plan.relayListTags != nil {
             guard fresh.relayListKnown else { return .unknown }
-            guard same(opened.read, fresh.read), same(opened.write, fresh.write), opened.kept == fresh.kept else { return .changed }
+            guard same(opened.read, fresh.read), same(opened.write, fresh.write), opened.kept == fresh.kept,
+                  opened.vaultRelays == fresh.vaultRelays else { return .changed }
         }
         if plan.dmRelays != nil {
             guard fresh.dmListKnown else { return .unknown }
-            guard same(opened.dms, fresh.dms) else { return .changed }
+            guard same(opened.dms, fresh.dms), opened.vaultInboxes == fresh.vaultInboxes else { return .changed }
         }
         return .ok
     }
 
     static func saved(_ state: State, plan: Plan) -> State {
         var published = state.published
-        if let tags = plan.relayListTags?.filter({ listable($0[1]) }) {
+        let vaultRelayKeys = Set(published.vaultRelays.map { RelayMatrix.key($0[1]) })
+        let vaultInboxKeys = Set(published.vaultInboxes.map(RelayMatrix.key))
+        if let tags = plan.relayListTags?.filter({ listable($0[1]) && !vaultRelayKeys.contains(RelayMatrix.key($0[1])) }) {
             published.read = tags.filter { $0.count == 2 || ($0.count > 2 && $0[2] == "read") }.map { $0[1] }
             published.write = tags.filter { $0.count == 2 || ($0.count > 2 && $0[2] == "write") }.map { $0[1] }
         }
-        if let dms = plan.dmRelays { published.dms = dms }
+        if let dms = plan.dmRelays { published.dms = dms.filter { !vaultInboxKeys.contains(RelayMatrix.key($0)) } }
         var next = state
         next.start = state.draft
         next.layout = state.layout.filter { state.removed[$0.key] == nil }

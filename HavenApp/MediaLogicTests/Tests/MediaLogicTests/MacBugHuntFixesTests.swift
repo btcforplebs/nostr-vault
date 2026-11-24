@@ -1,16 +1,9 @@
 import XCTest
 @testable import MediaLogic
 
-/// Mac bug hunt 2026-11-05: the phone's web-address check before pairing,
-/// and the dashboard's Mac row. (The Add deadline is MeshPairingConfirmWindow.)
+/// Mac bug hunt 2026-11-05: the dashboard's Mac row (the web-address check
+/// before pairing went with Desktop Vaults P4). (The Add deadline is MeshPairingConfirmWindow.)
 final class MacBugHuntFixesTests: XCTestCase {
-    func testAMacSetByWebAddressIsRefusedBeforePairing() {
-        XCTAssertTrue(MeshPairing.macSetByWebAddress(role: .mac, macRelayURL: "https://mac.example", macRelayMeshNpub: nil))
-        XCTAssertFalse(MeshPairing.macSetByWebAddress(role: .mac, macRelayURL: "npub1x", macRelayMeshNpub: "npub1x"))
-        XCTAssertFalse(MeshPairing.macSetByWebAddress(role: .mac, macRelayURL: "  ", macRelayMeshNpub: nil))
-        XCTAssertFalse(MeshPairing.macSetByWebAddress(role: .phone, macRelayURL: "https://mac.example", macRelayMeshNpub: nil))
-    }
-
     private func status(_ state: String, url: String = "https://mac.example", finished: Int64 = 1_700_000_000) -> RelayConfiguration.MacSyncStatus {
         var s = try! JSONDecoder().decode(RelayConfiguration.MacSyncStatus.self, from: Data("{}".utf8))
         s.macURL = url
