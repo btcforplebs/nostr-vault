@@ -47,6 +47,14 @@ class TrustMapOuterTest {
         assertEquals("3 hops · top 300", TrustMapOuter.chipText(outer.rings.single()))
     }
 
+    @Test fun `a short ring never counts its chain links at 0 as top`() {
+        val outer = TrustMapOuter.make(copy(globe = listOf(row('c', 40, 2), row('e', 80, 3, 'c'),
+            row('0', 12, 4, 'e'), row('2', 0, 4, 'e'), row('1', 3, 5, '2')).joinToString(",")), desktopPaired = true)
+        val ring4 = outer.rings.single { it.hop == 4 }
+        assertEquals(listOf(pk('0')), ring4.top)
+        assertEquals("4 hops · top 1", TrustMapOuter.chipText(ring4))
+    }
+
     @Test fun `fade per hop, 3 full, 4 about 60 percent, 5 about 35`() {
         assertEquals(1f, TrustMapOuter.fade(3), 0f)
         assertEquals(0.6f, TrustMapOuter.fade(4), 0f)

@@ -55,11 +55,13 @@ data class TrustMapOuter(
                 val faint = FAINT_HOPS.map { Ring(it, emptyList()) }
                 return TrustMapOuter(if (desktopPaired) Source.WAITING else Source.INVITE, faint)
             }
-            // A hop's first GLOBE_PER_RING rows are its top, best first; later ones are chain links.
+            // A ring's top is everyone in it who shows above 0, best first, up to
+            // GLOBE_PER_RING; its chain links come after. A short ring's links follow
+            // its top straight away and can only show 0, so 0 rows are never top.
             val byHop = HashMap<Int, MutableList<String>>()
             val seen = HashMap<Int, Int>()
             for (row in copy.globe) {
-                if (row.hop !in FAINT_HOPS) continue
+                if (row.hop !in FAINT_HOPS || row.score <= 0.0) continue
                 val n = seen.getOrDefault(row.hop, 0)
                 if (n >= TrustRankCopy.GLOBE_PER_RING) continue
                 seen[row.hop] = n + 1
