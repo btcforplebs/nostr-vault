@@ -30,8 +30,13 @@ object GlobeRingZoom {
     const val FIT = 0.84
     /** Rings inside the picked one are drawn this strongly. */
     const val INSIDE_ALPHA = 0.6
-    /** At most this many of the picked ring's people get a line to their link one ring in. */
-    const val MAX_LINKS = 120
+    /**
+     * At most this many of the picked ring's people get a line to their link one
+     * ring in. 120 drew a web of chords right across the ring and over the shrunk
+     * globe (a via's place on its ring has nothing to do with yours), so only the
+     * best 40 get one, faint.
+     */
+    const val MAX_LINKS = 40
 
     /** The zoom level a hop layer asks for; null (your circle) is 0. */
     fun level(hop: Int?): Double =

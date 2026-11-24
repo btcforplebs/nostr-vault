@@ -117,7 +117,7 @@ internal fun WotLayerMenu(
                                     if (isLocked) Icons.Filled.Lock else item.icon,
                                     item.title,
                                     current = item == current,
-                                    subtitle = if (isLocked) "Desktop Vault" else counts[item]?.let { "$it people" },
+                                    subtitle = if (isLocked) "Needs a desktop Vault" else counts[item]?.let { "$it people" },
                                 ),
                                 hovered = false,
                                 onClick = pick { onPick(item) },

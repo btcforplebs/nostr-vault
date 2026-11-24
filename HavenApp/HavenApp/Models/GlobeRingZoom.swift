@@ -30,7 +30,10 @@ enum GlobeRingZoom {
     static let insideAlpha = 0.6
     /// At most this many of the picked ring's people get a line to the
     /// person one ring in who links them to you (`TrustRankCopy.GlobePerson.via`).
-    static let maxLinks = 120
+    /// 120 drew a web of chords right across the ring and over the shrunk
+    /// globe (a via's place on its ring has nothing to do with yours), so
+    /// only the best 40 get one, faint.
+    static let maxLinks = 40
 
     /// The zoom level a hop layer asks for; nil (your circle) is 0.
     static func level(hop: Int?) -> Double {

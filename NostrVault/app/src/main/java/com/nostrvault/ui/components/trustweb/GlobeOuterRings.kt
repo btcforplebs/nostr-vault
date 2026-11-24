@@ -94,7 +94,7 @@ internal object GlobeOuterRings {
                         lines.moveTo(from.x, from.y)
                         lines.lineTo(to.x, to.y)
                     }
-                    drawPath(lines, HazeColor.copy(alpha = 0.16f * picked), style = Stroke(width = 0.6f * density))
+                    drawPath(lines, HazeColor.copy(alpha = 0.12f * picked), style = Stroke(width = 0.6f * density))
                 }
                 val dot = 1.6f * (1 + 0.5f * picked) * density
                 for (key in ring.top) {

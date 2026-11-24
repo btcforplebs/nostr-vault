@@ -84,7 +84,7 @@ enum GlobeOuterRings {
             lines.move(to: point(key, r))
             lines.addLine(to: point(via, inner))
         }
-        context.stroke(lines, with: .color(ink.haze.opacity(0.16 * alpha)), lineWidth: 0.6)
+        context.stroke(lines, with: .color(ink.haze.opacity(0.12 * alpha)), lineWidth: 0.6)
     }
 
     /// Up and to the right on the ring, where it is still on screen: the

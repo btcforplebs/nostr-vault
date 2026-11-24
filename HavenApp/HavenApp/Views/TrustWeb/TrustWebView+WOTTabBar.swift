@@ -84,10 +84,14 @@ extension TrustWebView {
             .pickerStyle(.inline)
 
             ForEach(items.filter { isLocked($0) }, id: \.self) { item in
+                // A menu row keeps its title white whatever the style, so the
+                // grey is in the lock and the subtitle; a disabled row would
+                // be greyer but could not say what unlocks it.
                 Button { pickLayer(item) } label: {
-                    Label(item.title, systemImage: "lock.fill")
+                    Text(item.title)
+                    Text("Needs a desktop Vault")
+                    lockedIcon
                 }
-                .foregroundStyle(.secondary)
                 .accessibilityHint(Text(TrustMapOuter.lockedLine))
             }
 
@@ -123,6 +127,17 @@ extension TrustWebView {
         .accessibilityLabel("Showing: \(layer.title)")
         .accessibilityValue("\((counts[layer] ?? 0).formatted()) people")
         .accessibilityHint("Pick which part of your web to light up, or rebuild it")
+    }
+
+    /// A grey lock: menus tint SF Symbols with the accent unless the image
+    /// keeps its own colour.
+    private var lockedIcon: Image {
+        #if canImport(UIKit)
+        let lock = UIImage(systemName: "lock.fill")?.withTintColor(.systemGray, renderingMode: .alwaysOriginal)
+        return lock.map(Image.init(uiImage:)) ?? Image(systemName: "lock.fill")
+        #else
+        return Image(systemName: "lock.fill")
+        #endif
     }
 
     private func toggleSearch() {
