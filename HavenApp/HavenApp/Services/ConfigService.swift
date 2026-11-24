@@ -49,6 +49,16 @@ class ConfigService: ObservableObject {
     var configSecretSync = NIP46SecretSync()
     var configSecretsInKeychain: Set<String> = []
     var plaintextConfigSecrets: [String] = []
+    /// A plaintext owner key's keychain copy; see PlainOwnerKeyAtRest and
+    /// ConfigService+PlainOwnerKey. `plainOwnerKeyOnDisk` is what config.json
+    /// gets for `ownerNsec`, decided at each save.
+    var plainOwnerKey = PlainOwnerKeyAtRest()
+    var plainOwnerKeyOnDisk = ""
+    var plainOwnerKeyRefused = false
+    var ownerPasswordRefused = false
+    /// The keychain refused the owner's key: it is not saved on this device
+    /// (OwnerKeyNotSavedAlert).
+    @Published var ownerKeyNotSaved = false
     /// Explicit @Published hex pubkey for the active account. Computed properties
     /// on ObservableObject don't reliably trigger SwiftUI re-renders in all
     /// hosting contexts (e.g. macOS MenuBarExtra). This property is updated
@@ -275,10 +285,12 @@ class ConfigService: ObservableObject {
                                          store: { CredentialStore.store($0, account: $1) },
                                          delete: { CredentialStore.delete(account: $0) })
         syncConfigSecretsToKeychain()
+        preparePlainOwnerKeySave()
 
         do {
             let data = try JSONEncoder().encode(diskConfig)
             try store.write(data)
+            finishPlainOwnerKeySave(store)
             store.forgetBackupIfKeyRemoved(hadKey: savedHasKey, hasKey: config.hasKeyMaterial,
                                            setupDone: config.hasCompletedSetup)
             savedHasKey = config.hasKeyMaterial
@@ -404,7 +416,10 @@ class ConfigService: ObservableObject {
             case .nothingToDo:
                 return
             case .keptUnverified, .failed:
-                RelayProcessManager.shared.addLog("Plaintext owner key left in config.json (\(outcome))", level: "ERROR")
+                // Not encrypted, but it still leaves config.json once the
+                // keychain holds it (PlainOwnerKeyAtRest).
+                RelayProcessManager.shared.addLog("Owner key not encrypted (\(outcome)); keeping it in the keychain instead", level: "ERROR")
+                save()
                 return
             }
             secrets = [config.ownerNsec.trimmingCharacters(in: .whitespacesAndNewlines), config.ownerHexKey ?? ""]
@@ -480,6 +495,7 @@ class ConfigService: ObservableObject {
         configSecretSync = NIP46SecretSync()
         configSecretsInKeychain = []
         plaintextConfigSecrets = []
+        forgetPlainOwnerKeyState()
 
         // 3. Keychain passwords, notifications and widget data
         ResetLeftovers.clear()

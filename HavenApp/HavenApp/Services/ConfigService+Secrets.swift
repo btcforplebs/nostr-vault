@@ -30,12 +30,16 @@ extension ConfigService {
             return value
         }
         configSecretSync = NIP46SecretSync(synced: storedOther)
+
+        // A plaintext owner key (ConfigService+PlainOwnerKey).
+        attachPlainOwnerKey()
     }
 
     /// The config as config.json gets it: without each secret the keychain holds.
     var diskConfig: HavenConfig {
         config.withoutNIP46ClientSecrets(inKeychain: nip46InKeychain)
             .withoutConfigSecrets(inKeychain: configSecretsInKeychain)
+            .withPlainOwnerKeyOnDisk(plainOwnerKeyOnDisk)
     }
 
     /// Writes the wallet, backup and signer-link secrets to the keychain
