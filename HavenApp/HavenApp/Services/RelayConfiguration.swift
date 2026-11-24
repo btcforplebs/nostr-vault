@@ -63,9 +63,8 @@ enum RelayConfiguration {
     /// MAC_RELAY_URL.
     static func desktopVaultURLs(config: HavenConfig) -> String {
         #if os(iOS)
-        let mesh = dialedVault(config: config, mesh: macMeshRelay)
         return DesktopVaultsLogic.envList(config.desktopVaultsInEffect, slot: macRelayURL(config: config, mesh: macMeshRelay),
-                                          dialed: mesh?.npub, typed: config.macRelayURL)
+                                          typed: config.macRelayURL)
         #else
         return ""
         #endif
@@ -83,6 +82,11 @@ enum RelayConfiguration {
     }
 
     static var macMeshRelay: MacMeshRelay?
+
+    /// A mesh Vault the background dial reached after a wss start
+    /// (DesktopVaultsLogic.MeshDial.afterStart): the restart it asks for
+    /// takes it as `macMeshRelay` instead of dialing again.
+    static var pendingMeshRelay: MacMeshRelay?
 
     /// `mesh` when it is one of the Vault list's mesh Vaults (a dial left
     /// from before a list change is not), else nil.

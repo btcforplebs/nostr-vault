@@ -128,7 +128,7 @@ final class DesktopVaultsRoutingTests: XCTestCase {
         XCTAssertEqual(RelayConfiguration.macRelayURL(config: config, mesh: dialed), meshURL)
         XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: dialed).first, meshURL + "?pulled=1")
         // The web slot is not lost: it goes to DESKTOP_VAULT_URLS.
-        XCTAssertEqual(DesktopVaultsLogic.envList(config.desktopVaultsInEffect, slot: meshURL, dialed: macA,
+        XCTAssertEqual(DesktopVaultsLogic.envList(config.desktopVaultsInEffect, slot: meshURL,
                                                   typed: config.macRelayURL), "wss://web.example.com")
 
         let stale = RelayConfiguration.MacMeshRelay(npub: macB, url: meshURL)
@@ -137,16 +137,63 @@ final class DesktopVaultsRoutingTests: XCTestCase {
         XCTAssertFalse(RelayConfiguration.blastrRelays(config: config, mesh: stale).contains { $0.hasPrefix("ws://127.0.0.1") })
     }
 
+    // MARK: When the mesh is dialed (Tron M1 on #2506)
+
+    /// Before the start only for a mesh-npub slot; any other mesh Vault is
+    /// dialed after a wss start; nothing with FIPS off or no mesh Vault.
+    func testMeshDialHoldsTheStartOnlyForAMeshSlot() {
+        XCTAssertEqual(DesktopVaultsLogic.meshDial(fipsOn: true, slot: macA, meshNpubs: [macA]), .beforeStart)
+        XCTAssertEqual(DesktopVaultsLogic.meshDial(fipsOn: true, slot: "https://web.example.com", meshNpubs: [macA, macB]),
+                       .afterStart)
+        XCTAssertEqual(DesktopVaultsLogic.meshDial(fipsOn: true, slot: "", meshNpubs: [macA]), .afterStart)
+        XCTAssertEqual(DesktopVaultsLogic.meshDial(fipsOn: false, slot: macA, meshNpubs: [macA]), .none)
+        XCTAssertEqual(DesktopVaultsLogic.meshDial(fipsOn: false, slot: "https://web.example.com", meshNpubs: [macA]),
+                       .none)
+        XCTAssertEqual(DesktopVaultsLogic.meshDial(fipsOn: true, slot: "https://web.example.com", meshNpubs: []), .none)
+    }
+
+    /// Dials go in list order and the first answer wins.
+    func testFirstAnsweringTakesTheFirstThatAnswersInOrder() async {
+        let answering = macB
+        let found = await DesktopVaultsLogic.firstAnswering([macA, macB], budget: 5) { npub in
+            npub == answering ? "ws://127.0.0.1:1/b" : nil
+        }
+        XCTAssertEqual(found?.npub, macB)
+        XCTAssertEqual(found?.url, "ws://127.0.0.1:1/b")
+    }
+
+    /// Unreachable Vaults share one budget: three dials that never answer
+    /// end with the budget, not three of them, and a later one is not tried.
+    func testFirstAnsweringSharesOneBudget() async {
+        let tried = Tried()
+        let start = Date()
+        let found = await DesktopVaultsLogic.firstAnswering([macA, macB, "npub1third"], budget: 0.6) { npub in
+            await tried.add(npub)
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            return "ws://127.0.0.1:1/late"
+        }
+        XCTAssertNil(found)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 2.0)
+        let names = await tried.names
+        XCTAssertEqual(names, [macA])
+    }
+
+    private actor Tried {
+        var names: [String] = []
+        func add(_ name: String) { names.append(name) }
+    }
+
     // MARK: The env
 
-    /// A Vault reached over the mesh is not also synced over wss; a plain
-    /// ws:// slot keeps ws://.
-    func testEnvListLeavesOutTheDialedVaultAndKeepsPlainWS() {
+    /// A Vault reached over the mesh keeps its wss as the fallback (Tron M2
+    /// on #2506: the mesh link ends in the background and nothing re-dials);
+    /// a plain ws:// slot keeps ws://.
+    func testEnvListKeepsTheDialedVaultsWSSAndPlainWS() {
         let vaults = [vault("a", https: "https://a.example.com", mesh: macA, order: 0),
                       vault("b", https: "https://b.example.com/haven", order: 1),
                       vault("c", https: "https://192.168.1.5:3355", order: 2)]
-        XCTAssertEqual(DesktopVaultsLogic.envList(vaults, slot: meshURL, dialed: macA, typed: "ws://192.168.1.5:3355"),
-                       "wss://b.example.com/haven,ws://192.168.1.5:3355")
+        XCTAssertEqual(DesktopVaultsLogic.envList(vaults, slot: meshURL, typed: "ws://192.168.1.5:3355"),
+                       "wss://a.example.com,wss://b.example.com/haven,ws://192.168.1.5:3355")
         XCTAssertEqual(DesktopVaultsLogic.envList(vaults, slot: "wss://a.example.com"),
                        "wss://b.example.com/haven,wss://192.168.1.5:3355")
     }

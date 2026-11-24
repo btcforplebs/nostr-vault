@@ -203,6 +203,63 @@ enum DesktopVaultsLogic {
         }
     }
 
+    /// When the relay dials the mesh Vaults (Tron M1 on #2506). Only with
+    /// FIPS on. Before the start only when the slot itself is a mesh npub:
+    /// that Vault has no other way in, as before P3. Any other mesh Vault is
+    /// dialed after the relay is up over wss, so a paired Mac out of reach
+    /// never holds the launch start or a restart.
+    enum MeshDial: Equatable {
+        case none
+        case beforeStart
+        case afterStart
+    }
+
+    static func meshDial(fipsOn: Bool, slot: String, meshNpubs: [String]) -> MeshDial {
+        guard fipsOn, !meshNpubs.isEmpty else { return .none }
+        if case .mesh = SlotAddress(slot) { return .beforeStart }
+        return .afterStart
+    }
+
+    /// One total wait for all the dials of a start (Tron M1): one failed
+    /// dial takes about this long, so N unreachable Macs no longer cost N×.
+    static let meshDialBudget: TimeInterval = 10
+
+    /// The first of `npubs`, in order, whose `dial` answers inside one
+    /// shared `budget`. A dial still running when the budget ends is left
+    /// to finish on its own (the FFI dial can't be interrupted) and its
+    /// answer is dropped.
+    static func firstAnswering(_ npubs: [String], budget: TimeInterval,
+                               dial: @escaping @Sendable (String) async -> String?) async -> (npub: String, url: String)? {
+        let deadline = Date().addingTimeInterval(budget)
+        for npub in npubs {
+            let left = deadline.timeIntervalSinceNow
+            guard left > 0 else { return nil }
+            let url: String? = await withCheckedContinuation { continuation in
+                let once = ResumeOnce(continuation)
+                Task { once.resume(await dial(npub)) }
+                Task {
+                    try? await Task.sleep(nanoseconds: UInt64(left * 1_000_000_000))
+                    once.resume(nil)
+                }
+            }
+            if let url { return (npub, url) }
+        }
+        return nil
+    }
+
+    private final class ResumeOnce: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<String?, Never>?
+        init(_ continuation: CheckedContinuation<String?, Never>) { self.continuation = continuation }
+        func resume(_ value: String?) {
+            lock.lock()
+            let c = continuation
+            continuation = nil
+            lock.unlock()
+            c?.resume(returning: value)
+        }
+    }
+
     /// Every HTTPS Vault's DM inbox, `wss://<base>/inbox`, in list order
     /// (§2.2 rule 2): where other people send DMs and the own sent copies go.
     /// Left out: a home-network address, which others can't reach, and the
@@ -285,19 +342,17 @@ enum DesktopVaultsLogic {
     /// when there is none. Always passed, empty included, because the engine
     /// never clears a host env key (Tidy, P1).
     ///
-    /// `dialed`: the mesh npub MAC_RELAY_URL reaches this start. That Vault
-    /// is synced over the mesh, so its web address is left out too (§2.2:
-    /// mesh first, wss as fallback, never both at once). `typed`: the old
-    /// tab's value; a slot typed as plain `ws://`/`http://` that lands here
-    /// keeps `ws://`, as MAC_RELAY_URL kept it.
-    static func envList(_ vaults: [DesktopVault], slot: String, dialed: String? = nil, typed: String = "") -> String {
+    /// A Vault MAC_RELAY_URL reaches over the mesh keeps its web address
+    /// here (Tron M2 on #2506): the mesh link ends when the client engine
+    /// stops in the background and nothing dials again until the next start,
+    /// so its wss is the fallback (§2.2: mesh first, wss as fallback).
+    /// `typed`: the old tab's value; a slot typed as plain `ws://`/`http://`
+    /// that lands here keeps `ws://`, as MAC_RELAY_URL kept it.
+    static func envList(_ vaults: [DesktopVault], slot: String, typed: String = "") -> String {
         let slotHost: String? = { if case .web(let host) = SlotAddress(slot) { return host } else { return nil } }()
-        let dialedHost = dialed.flatMap { npub in
-            vaults.first { $0.meshNpub.flatMap(HomeVaultLogic.meshNpub(fromInput:)) == npub }?.hostKey
-        }
         let lower = typed.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let plainHost = lower.hasPrefix("ws://") || lower.hasPrefix("http://") ? DesktopVaultsLists.hostKey(lower) : nil
-        return bases(vaults).filter { $0.host != slotHost && $0.host != dialedHost }
+        return bases(vaults).filter { $0.host != slotHost }
             .map { ($0.host == plainHost ? "ws://" : "wss://") + $0.base }.joined(separator: ",")
     }
 
