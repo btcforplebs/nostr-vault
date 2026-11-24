@@ -190,7 +190,7 @@ function App() {
       }
       const local = await readAccount(v, session.pubkey)
       putProfile(local.profileEvent)
-      setQuoteSource({ vault: v, relays: uniq([...local.relays.read, ...DEFAULT_RELAYS]) }) // quoted notes and mention names (NoteText)
+      setQuoteSource({ vault: v, me: session.pubkey, relays: uniq([...local.relays.read, ...DEFAULT_RELAYS]) }) // quoted notes and mention names (NoteText)
       shown = { ...local, loaded: !!local.contacts }
       if (firstTime && !opened && !(await hasLocalData(v, local))) {
         step("relay", { state: "done" })

@@ -10,7 +10,7 @@ import { repostedNote, verifiedCopy } from "./thread.js"
 const HEX64 = /^[0-9a-f]{64}$/
 
 let source = null
-/** main.jsx: the signed-in user's vault and read relays, once the account is loaded. */
+/** main.jsx: the signed-in user's vault, pubkey (`me`) and read relays, once the account is loaded. */
 export function setQuoteSource(s) { source = s; changed() }
 export const quoteSource = () => source
 

@@ -10,8 +10,8 @@
 // are a picture. rnd-v1 keys (random, no plain hash in the link) and links without a key stay plain text, and so does
 // anything bigger than one blob (a chunked file or a folder: phase 2).
 import { bech32 } from "@scure/base"
-import { pool, uniq } from "./pool.js"
-import { readCapped, serverOrigin, sha256Hex } from "./blossom-uri.js"
+import { uniq } from "./pool.js"
+import { authorServers, readCapped, serverOrigin, sha256Hex } from "./blossom-uri.js"
 
 /** Iris's own upload server: every htree photo seen so far is only there (RESEARCH/NV_HTREE_MEDIA_SCOPE.md §0). */
 export const IRIS_SERVERS = ["https://upload.iris.to"]
@@ -118,25 +118,34 @@ export async function fetchHtree(h, servers, { fetch = globalThis.fetch, maxByte
   return null
 }
 
-const lists = new Map()
-/** A pubkey's newest kind 10063 servers from `relays` (or from the user's own vault outbox), or []. Once a session. */
-function serverListOf(key, run) {
-  if (!lists.has(key)) {
-    const capped = Promise.race([run(), new Promise(r => setTimeout(() => r([]), LIST_WAIT_MS))])
-    lists.set(key, capped.then(evs => {
-      const ev = (evs ?? []).filter(e => e?.kind === 10063).sort((a, b) => b.created_at - a.created_at)[0]
+const own = new Map()
+/** The reader's own media servers: their newest kind 10063 in their vault's outbox, or []. Keyed by pubkey, so signing in
+ *  or switching accounts reads the new one's list. Capped like authorServers. */
+export function ownList(vault, me) {
+  if (!me || !vault?.outbox?.query) return Promise.resolve([])
+  if (!own.has(me)) {
+    const capped = Promise.race([vault.outbox.query({ kinds: [10063], authors: [me] }), new Promise(r => setTimeout(() => r([]), LIST_WAIT_MS))])
+    own.set(me, capped.then(evs => {
+      const ev = (evs ?? []).filter(e => e?.kind === 10063 && e.pubkey === me).sort((a, b) => b.created_at - a.created_at)[0]
       return (ev?.tags ?? []).filter(t => t[0] === "server").map(t => t[1])
     }).catch(() => []))
   }
-  return lists.get(key)
+  return own.get(me)
 }
 
-/** The author's media servers, from their kind 10063 on `relays`. */
-export const authorList = (pubkey, relays, { query = (r, f, o) => pool.querySync(r, f, o) } = {}) =>
-  pubkey && relays?.length ? serverListOf(`a:${pubkey}`, () => query(uniq(relays), { kinds: [10063], authors: [pubkey] }, { maxWait: 5000 }).then(evs => evs.filter(e => e?.pubkey === pubkey))) : Promise.resolve([])
-
-/** The reader's own media servers: their kind 10063 in their vault's outbox (only their own events live there). */
-export const ownList = vault => vault?.outbox?.query ? serverListOf("own", () => vault.outbox.query({ kinds: [10063] })) : Promise.resolve([])
+/**
+ * An htree photo the way a note draws it: Iris first, with no list read at all (every htree photo seen so far is there);
+ * only when Iris hasn't got it, the author's kind 10063 (blossom-uri's authorServers, one read per author for both
+ * kinds of link) and the reader's own list. -> { bytes, mime, server } | null. `fetch` and `query` are for tests.
+ */
+export async function loadHtree(h, { author, relays = [], vault, me, fetch, query } = {}) {
+  const first = await fetchHtree(h, IRIS_SERVERS, fetch ? { fetch } : {})
+  if (first) return first
+  const [theirs, mine] = await Promise.all([authorServers(author, relays, query ? { query } : {}), ownList(vault, me)])
+  const iris = new Set(IRIS_SERVERS.map(serverOrigin))
+  const rest = htreeServers(theirs, mine).filter(s => !iris.has(s))
+  return rest.length ? fetchHtree(h, rest, fetch ? { fetch } : {}) : null
+}
 
 /** Tests: forget the server lists read this session. */
-export const resetHtreeLists = () => lists.clear()
+export const resetHtreeLists = () => own.clear()

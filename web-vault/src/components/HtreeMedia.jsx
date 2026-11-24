@@ -4,7 +4,7 @@
 // stranger's DM, or pictures that wait) nothing is fetched until it is tapped.
 import { useEffect, useState } from "preact/hooks"
 import { releaseBlossom, retainBlossom } from "../net/blossom-uri.js"
-import { authorList, fetchHtree, htreeServers, ownList } from "../net/htree.js"
+import { loadHtree } from "../net/htree.js"
 import { quoteSource } from "../net/quotes.js"
 
 export function HtreeMedia({ h, author, images = true }) {
@@ -15,10 +15,7 @@ export function HtreeMedia({ h, author, images = true }) {
     let live = true
     setGot(undefined)
     const src = quoteSource()
-    const fetchFile = async () => {
-      const [theirs, mine] = await Promise.all([authorList(author, src?.relays ?? []), ownList(src?.vault)])
-      return fetchHtree(h, htreeServers(theirs, mine))
-    }
+    const fetchFile = () => loadHtree(h, { author, relays: src?.relays ?? [], vault: src?.vault, me: src?.me })
     retainBlossom(h, { fetchFile }).then(r => live && setGot(r)).catch(() => live && setGot(null))
     return () => { live = false; releaseBlossom(h.sha256) }
   }, [h.sha256, asked])

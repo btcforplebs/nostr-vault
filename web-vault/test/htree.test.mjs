@@ -20,7 +20,7 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { parseHtree, decodeNhash, decryptChk, fetchHtree, htreeServers, sniffImage, MAX_BLOB_BYTES } = await import("../src/net/htree.js")
+const { parseHtree, decodeNhash, decryptChk, fetchHtree, htreeServers, loadHtree, ownList, resetHtreeLists, sniffImage, MAX_BLOB_BYTES } = await import("../src/net/htree.js")
 const { retainBlossom, releaseBlossom, resetBlossom } = await import("../src/net/blossom-uri.js")
 const { NoteText } = await import("../src/components/NoteText.jsx")
 
@@ -81,6 +81,38 @@ test("servers: Iris first, then the author's, then the reader's; private ones ne
   const v = V.e2e[0], h = parseHtree(v.link)
   const big = new Uint8Array(MAX_BLOB_BYTES + 1)
   assert.equal(await fetchHtree(h, ["https://upload.iris.to"], { fetch: async () => res(big) }), null)
+})
+
+test("Iris first with no list read; only on a miss the author's list (shared with blossom) and the reader's own", async () => {
+  const v = V.e2e[0], h = parseHtree(v.link)
+  resetBlossom(); resetHtreeLists()
+  let reqs = 0, ownReads = 0
+  const query = async () => { reqs++; return [{ kind: 10063, pubkey: "a".repeat(64), created_at: 1, tags: [["server", "https://theirs.example"]] }] }
+  const vault = { outbox: { query: async () => { ownReads++; return [] } } }
+  const atIris = server({ "https://upload.iris.to": { [v.blobHash]: unhex(v.blob) } })
+  assert.ok(await loadHtree(h, { author: "a".repeat(64), relays: ["wss://r.example"], vault, me: "b".repeat(64), fetch: atIris, query }))
+  assert.equal(reqs + ownReads, 0, "Iris had it: no kind 10063 read, no wait on a relay")
+  const elsewhere = server({ "https://theirs.example": { [v.blobHash]: unhex(v.blob) } })
+  const got = await loadHtree(h, { author: "a".repeat(64), relays: ["wss://r.example"], vault, me: "b".repeat(64), fetch: elsewhere, query })
+  assert.equal(got.server, "https://theirs.example")
+  assert.deepEqual(elsewhere.asked, [`https://upload.iris.to/${v.blobHash}`, `https://theirs.example/${v.blobHash}`], "Iris is asked once, not again after the lists")
+  assert.equal(reqs, 1); assert.equal(ownReads, 1)
+  await loadHtree(h, { author: "a".repeat(64), relays: ["wss://r.example"], vault, me: "b".repeat(64), fetch: elsewhere, query })
+  assert.equal(reqs, 1, "one REQ per author for the page, the same cache blossom: links use")
+  resetBlossom(); resetHtreeLists()
+})
+
+test("the reader's own list: only their own 10063, read again for another account, none for a guest", async () => {
+  resetHtreeLists()
+  const asked = []
+  const evs = { ["b".repeat(64)]: [{ kind: 10063, pubkey: "b".repeat(64), created_at: 2, tags: [["server", "https://mine.example"]] }, { kind: 10063, pubkey: "c".repeat(64), created_at: 9, tags: [["server", "https://not-mine.example"]] }] }
+  const vault = { outbox: { query: async f => { asked.push(f); return evs[f.authors?.[0]] ?? [] } } }
+  assert.deepEqual(await ownList(vault, null), [], "a guest has no own list")
+  assert.deepEqual(await ownList(vault, "b".repeat(64)), ["https://mine.example"])
+  assert.deepEqual(asked[0], { kinds: [10063], authors: ["b".repeat(64)] })
+  assert.deepEqual(await ownList(vault, "d".repeat(64)), [], "another account is read on its own, not handed b's answer")
+  assert.equal(asked.length, 2)
+  resetHtreeLists()
 })
 
 test("sniffImage knows the picture types and nothing else", () => {
