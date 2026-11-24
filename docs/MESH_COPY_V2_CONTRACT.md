@@ -408,19 +408,28 @@ The app calls the engine when a linked device comes into reach. The engine then:
      row too (ring 2 rows are only these links), so every row walks back to a ring-1 person in `people` with no relay
      call. Within a ring the top rows come first, so a ring's first 300 rows are its top and any later ones are
      links. Older engines and apps ignore the field (version stays 2).
+   - Optional `haze: {"3": [[pubkey, score 0-100], …], "4": […]}` (`trustrank.Haze`), for the globe's zoomed-out
+     rings only: never tappable, no `via`. For ring 3 and ring 4 only (no ring 5), as far as `maxHop`, it holds the
+     people ranked after that ring's `globe` top, best first: ring 3 to 1,000 people in all (at most 700 haze rows,
+     `HazePerRing(3)`), ring 4 to 2,000 (at most 1,700, `HazePerRing(4)`). Owner-muted people, score 0, and anyone
+     already a `globe` row are left out, so nobody is in both. It comes from the same rank B as `globe`, needs no
+     extra reads, and is not trimmed at `floor`. A haze over its cap is left out by the writer, so it can never
+     cost the copy its `people` or `globe`. Older engines and apps ignore the field (version stays 2).
    - `globe` comes from its own rank (`globewalk.go`, rank B): after the depth rule ends the feed walk, the Haven
      reads the lists of the last ring's top 300, ring by ring, out to ring 5 (`GlobeHop`), and ranks every stored
      list out to ring 5. A list the globe step stores for the first time is marked globe-only for that account
      (each account has its own marks, `wot_deep/globe_only_<account>.bin`) and left out of the rank that makes
      `people` (rank A); a list already in the store is never marked. So `people` and every feed score are what
      they would be without the globe step. The marks go when the account signs out.
-   - `maxHop` is the furthest ring in `people` or `globe` (so a globe row is never past it); `params.maxHop` is
+   - `maxHop` is the furthest ring in `people`, `globe` or `haze` (so no row is ever past it); `params.maxHop` is
      how far the feed's rank (`people`) reached.
    - `204`: the device's copy is as new as the Haven's. `404`: the Haven does not rank that account, has no result
      yet, or is an engine from before this.
    - B keeps a copy only when it is for the account it asked for, `version` 2, newer than the one it holds, and
      every row is a hex pubkey with a score 0-100 in rings 1 to `maxHop` (at most 6); and, when `globe` is there, at
-     most 2,700 globe rows (9 × 300: chain links need links of their own), each a hex pubkey with a score 0-100 in rings 2 to 5 (and `maxHop`) and a hex `via`. Anything else is dropped and
+     most 2,700 globe rows (9 × 300: chain links need links of their own), each a hex pubkey with a score 0-100 in rings 2 to 5 (and `maxHop`) and a hex `via`; and, when `haze` is
+     there, only rings `"3"` and `"4"` (and `maxHop`), at most 700 and 1,700 rows, each a hex pubkey with a score over
+     0 and at most 100, in no other haze ring and not a `globe` row. Anything else is dropped and
      the last good copy stays. The file is kept next to the WoT cache and its `builtAt` is its age.
    - A Mac or a box ranks for itself and never asks. Nothing is ever sent the other way: `PUT` is 404.
    - It never fails or delays the catch-up's mark: a 404 or a refused copy just leaves the device without one.

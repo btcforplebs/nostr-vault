@@ -150,7 +150,7 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 		}
 		full = gfull
 	}
-	globe, err := c.globeRows()
+	globe, haze, err := c.globeRows()
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := writeResult(c.Dir, res, globe, c.now()); err != nil {
+	if err := writeResult(c.Dir, res, globe, haze, c.now()); err != nil {
 		return nil, err
 	}
 	st.Hop, st.Next, st.Last, st.Refresh, st.Globe = 1, 0, "", false, 0
@@ -329,6 +329,10 @@ type ResultFile struct {
 	// rank B (globewalk.go). Travels whole; the feed never reads it. Older
 	// apps ignore it.
 	Globe [][4]any `json:"globe,omitempty"`
+	// Haze: ring ("3", "4") to [pubkey, shown] for the people ranked after
+	// that ring's globe top (haze.go), best first. Globe only, never
+	// tappable; older apps ignore it.
+	Haze map[string][][2]any `json:"haze,omitempty"`
 }
 
 // ResultPath is the result's file for account in dir.
@@ -336,11 +340,11 @@ func ResultPath(dir, account string) string {
 	return filepath.Join(dir, "wot_rank_"+account+".json")
 }
 
-// writeResult writes r (rank A) as `people` and globe (rank B's rows) as
-// `globe`; maxHop covers both.
-func writeResult(dir string, r *Result, globe [][4]any, now time.Time) error {
+// writeResult writes r (rank A) as `people`, and rank B's rows as `globe`
+// and `haze`; maxHop covers all three.
+func writeResult(dir string, r *Result, globe [][4]any, haze map[string][][2]any, now time.Time) error {
 	f := ResultFile{Account: r.Owner, BuiltAt: now.Unix(), Version: 2, Params: r.Params,
-		MaxHop: fileMaxHop(r.Params.MaxHop, globe), ViewBar: DefaultViewBar, Globe: globe}
+		MaxHop: fileMaxHop(r.Params.MaxHop, globe, haze), ViewBar: DefaultViewBar, Globe: globe, Haze: haze}
 	for _, p := range r.People() {
 		s := ShownRounded(p.Score)
 		if s == 0 && p.Hop > 1 {
