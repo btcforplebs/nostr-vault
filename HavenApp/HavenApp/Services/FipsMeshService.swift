@@ -304,9 +304,12 @@ final class FipsMeshService: ObservableObject {
             stopEngine()
             status = nil
         }
-        // The relay dials a Mac set by its mesh address once, at start,
-        // through this engine; a cold start drops that link: dial again.
-        if ConfigService.shared.config.macRelayMeshNpub != nil {
+        // The relay dials the mesh desktop Vaults once per start through
+        // this engine; a cold start drops that link: dial again. Also when
+        // the change took the dialed Mac off the list, which leaves it
+        // empty when the last Mac goes (Tron S2 on #2506).
+        if RelayConfiguration.macMeshRelay != nil
+            || (FipsMeshSettings.enabled && !ConfigService.shared.config.desktopVaultMeshNpubs.isEmpty) {
             Task { _ = await RelayProcessManager.shared.gracefulRestart() }
         }
     }
@@ -407,9 +410,9 @@ final class FipsMeshService: ObservableObject {
         FipsMeshSettings.enabled = on
         lastError = nil
         if !on { stopAll() }
-        // The relay dials a Mac set by its mesh address once, at start:
+        // The relay dials the mesh desktop Vaults once per start:
         // restart it so it drops that link, or makes it again.
-        if ConfigService.shared.config.macRelayMeshNpub != nil {
+        if RelayConfiguration.macMeshRelay != nil || !ConfigService.shared.config.desktopVaultMeshNpubs.isEmpty {
             Task { _ = await RelayProcessManager.shared.gracefulRestart() }
         }
     }

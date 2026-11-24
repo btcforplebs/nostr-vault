@@ -58,18 +58,22 @@ enum RelayConfiguration {
         #endif
     }
 
-    /// DESKTOP_VAULT_URLS: the HTTPS desktop Vaults besides MAC_RELAY_URL's
-    /// (DesktopVaultsLogic.envList). iOS only, like MAC_RELAY_URL.
+    /// DESKTOP_VAULT_URLS: the HTTPS desktop Vaults besides the one
+    /// MAC_RELAY_URL reaches (DesktopVaultsLogic.envList). iOS only, like
+    /// MAC_RELAY_URL.
     static func desktopVaultURLs(config: HavenConfig) -> String {
         #if os(iOS)
-        return DesktopVaultsLogic.envList(config.desktopVaultsInEffect, slot: config.macRelayURL)
+        return DesktopVaultsLogic.envList(config.desktopVaultsInEffect, slot: macRelayURL(config: config, mesh: macMeshRelay),
+                                          typed: config.macRelayURL)
         #else
         return ""
         #endif
     }
 
-    /// A Mac relay typed as a mesh npub, dialed through FIPS: `url` is the
-    /// local `ws://127.0.0.1:<port>/<token>` that reaches it. Set before the
+    /// A desktop Vault reached over the mesh, dialed through FIPS: `url` is
+    /// the local `ws://127.0.0.1:<port>/<token>` that reaches it. The first
+    /// mesh Vault in Desktop Vaults order that answered (Desktop Vaults P3,
+    /// §2.2 rule 3; it was the one Mac typed as an npub). Set before the
     /// relay starts (RelayProcessManager), nil when there is none or the dial
     /// failed. Never log `url`: the token keeps other apps on the phone out.
     struct MacMeshRelay: Equatable {
@@ -79,13 +83,24 @@ enum RelayConfiguration {
 
     static var macMeshRelay: MacMeshRelay?
 
-    /// macRelayURL(config:) without the platform check. A mesh npub gives the
-    /// dialed address for that same npub, or "" until it has been dialed.
+    /// A mesh Vault the background dial reached after a wss start
+    /// (DesktopVaultsLogic.MeshDial.afterStart): the restart it asks for
+    /// takes it as `macMeshRelay` instead of dialing again.
+    static var pendingMeshRelay: MacMeshRelay?
+
+    /// `mesh` when it is one of the Vault list's mesh Vaults (a dial left
+    /// from before a list change is not), else nil.
+    static func dialedVault(config: HavenConfig, mesh: MacMeshRelay?) -> MacMeshRelay? {
+        guard let mesh, config.desktopVaultMeshNpubs.contains(mesh.npub) else { return nil }
+        return mesh
+    }
+
+    /// macRelayURL(config:) without the platform check. A dialed mesh Vault
+    /// comes first (mesh before wss, §2.2); else a slot holding a mesh npub
+    /// gives "" until it has been dialed, and a web slot its address.
     static func macRelayURL(config: HavenConfig, mesh: MacMeshRelay?) -> String {
-        if let npub = config.macRelayMeshNpub {
-            guard let mesh, mesh.npub == npub else { return "" }
-            return mesh.url
-        }
+        if let mesh = dialedVault(config: config, mesh: mesh) { return mesh.url }
+        if config.macRelayMeshNpub != nil { return "" }
         let base = config.macRelayNormalizedBase
         guard !base.isEmpty else { return "" }
         let typed = config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -315,7 +330,7 @@ enum RelayConfiguration {
     /// (haven-go isSecondHandConn, device sync map §4.5).
     static func blastrRelays(config: HavenConfig, mesh: MacMeshRelay?) -> [String] {
         var relays = droppingMeshAddresses(config.activeBlastrRelays)
-        if let npub = config.macRelayMeshNpub, let mesh, mesh.npub == npub {
+        if let mesh = dialedVault(config: config, mesh: mesh) {
             let marked = PulledInjection.url(mesh.url)?.absoluteString ?? mesh.url
             if !relays.contains(marked) { relays.insert(marked, at: 0) }
         }

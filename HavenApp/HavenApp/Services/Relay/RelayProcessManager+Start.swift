@@ -30,8 +30,9 @@ extension RelayProcessManager {
     /// the first frame was drawn: 407 ms on an iPhone 18 Pro, while the
     /// stores open in ~90 ms. Nothing can be on the chain yet at launch and
     /// a fresh process has no drain to wait for, so it runs now, the same
-    /// steps as performStart. A Mac relay over the mesh needs a dial first
-    /// (seconds), so that start stays queued.
+    /// steps as performStart. A slot set to a mesh npub needs a dial first
+    /// (seconds), so that start stays queued; other mesh Vaults are dialed
+    /// after the start (DesktopVaultsLogic.MeshDial).
     func startRelayAtLaunch(config: HavenConfig) {
         guard LaunchStart.startsNow(chainBusy: lifecyclePending > 0,
                                     draining: RelayDrainingC() == 1,
@@ -44,15 +45,24 @@ extension RelayProcessManager {
         prepareStart(config: config, isRetry: false)
         #if os(iOS)
         RelayConfiguration.macMeshRelay = nil
+        RelayConfiguration.pendingMeshRelay = nil
         #endif
         continueStartRelay(config: config, relayDataDir: ConfigService.shared.relayDataDir)
+        #if os(iOS)
+        dialMeshVaultsAfterStart(config: config)
+        #endif
     }
 
     private static func needsMeshDial(_ config: HavenConfig) -> Bool {
+        meshDial(config) == .beforeStart
+    }
+
+    private static func meshDial(_ config: HavenConfig) -> DesktopVaultsLogic.MeshDial {
         #if os(iOS)
-        return config.macRelayMeshNpub != nil
+        return DesktopVaultsLogic.meshDial(fipsOn: FipsMeshSettings.enabled, slot: config.macRelayURL,
+                                           meshNpubs: config.desktopVaultMeshNpubs)
         #else
-        return false
+        return .none
         #endif
     }
 
@@ -85,6 +95,9 @@ extension RelayProcessManager {
         #endif
 
         continueStartRelay(config: config, relayDataDir: ConfigService.shared.relayDataDir)
+        #if os(iOS)
+        dialMeshVaultsAfterStart(config: config)
+        #endif
     }
 
     /// The start's own steps before the engine is called: state, locks,
@@ -127,22 +140,56 @@ extension RelayProcessManager {
     }
 
     #if os(iOS)
-    /// A Mac relay given as a mesh npub is reached through FIPS: dial it
-    /// before the relay starts, so MAC_RELAY_URL is its local ws:// address.
-    /// Can take ~10 s. A failed dial starts the relay without the Mac.
+    /// Desktop Vaults on the mesh are reached through FIPS, and the first
+    /// that answers in Desktop Vaults order becomes MAC_RELAY_URL's local
+    /// ws:// address and publish-for-me (Desktop Vaults P3, §2.2 rule 3).
+    /// Dialed here, before the start, only when the slot is a mesh npub,
+    /// inside one shared budget (Tron M1 on #2506); otherwise this start
+    /// takes what the background dial reached, if it asked for this start.
     private func resolveMacMeshRelay(config: HavenConfig) async {
-        guard let npub = config.macRelayMeshNpub else {
+        let handedOver = RelayConfiguration.pendingMeshRelay
+        RelayConfiguration.pendingMeshRelay = nil
+        switch Self.meshDial(config) {
+        case .none:
             RelayConfiguration.macMeshRelay = nil
-            return
-        }
-        if let url = await FipsMeshService.shared.relayWebsocketURL(meshNpub: npub) {
-            RelayConfiguration.macMeshRelay = .init(npub: npub, url: url)
-            logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Mac relay reached over the mesh (\(npub.prefix(16))…)"))
-        } else {
-            RelayConfiguration.macMeshRelay = nil
-            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Mac relay \(npub.prefix(16))… not reachable over the mesh; starting without it"))
+        case .afterStart:
+            RelayConfiguration.macMeshRelay = RelayConfiguration.dialedVault(config: config, mesh: handedOver)
+        case .beforeStart:
+            RelayConfiguration.macMeshRelay = await dialMeshVaults(config.desktopVaultMeshNpubs)
         }
     }
+
+    private func dialMeshVaults(_ npubs: [String]) async -> RelayConfiguration.MacMeshRelay? {
+        let found = await DesktopVaultsLogic.firstAnswering(npubs, budget: DesktopVaultsLogic.meshDialBudget) { npub in
+            await FipsMeshService.shared.relayWebsocketURL(meshNpub: npub)
+        }
+        if let found {
+            logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Desktop Vault reached over the mesh (\(found.npub.prefix(16))…)"))
+            return .init(npub: found.npub, url: found.url)
+        }
+        logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "No mesh Desktop Vault answered (\(npubs.count) dialed)"))
+        return nil
+    }
+
+    /// The relay is up over wss; dial the mesh Vaults now and restart once
+    /// one answers, so it moves to the mesh (Tron M1 on #2506). One dial at
+    /// a time; nothing when the start already holds a mesh Vault.
+    private func dialMeshVaultsAfterStart(config: HavenConfig) {
+        guard Self.meshDial(config) == .afterStart, RelayConfiguration.macMeshRelay == nil,
+              Self.backgroundMeshDial == nil else { return }
+        let npubs = config.desktopVaultMeshNpubs
+        Self.backgroundMeshDial = Task { @MainActor [weak self] in
+            defer { Self.backgroundMeshDial = nil }
+            guard let self, let found = await self.dialMeshVaults(npubs) else { return }
+            // The relay may have stopped, or the list changed, while dialing.
+            guard self.isRunning, RelayConfiguration.macMeshRelay == nil,
+                  let current = self.lastConfig, current.desktopVaultMeshNpubs.contains(found.npub) else { return }
+            RelayConfiguration.pendingMeshRelay = found
+            _ = await self.gracefulRestart()
+        }
+    }
+
+    private static var backgroundMeshDial: Task<Void, Never>?
     #endif
 
     /// True while stdout goes to relay.log (captureOutput .. restoreOutput).
