@@ -51,3 +51,14 @@ test("without IndexedDB (tests, old browsers) the key stays plain hex, as before
   const a = await loadMeshSecret(s)
   assert.equal(s.getItem(KEY_ITEM), hex(a))
 })
+
+test("when IndexedDB refuses, the key stays plain and the mesh still has a key", async () => {
+  const broken = { get: async () => { throw new Error("InvalidStateError") }, add: async () => { throw new Error("InvalidStateError") } }
+  const s = memStorage()
+  const a = await loadMeshSecret(s, { ks: broken })
+  assert.equal(s.getItem(KEY_ITEM), hex(a), "a new key is kept plain rather than lost")
+  const p = memStorage(), old = "cd".repeat(32)
+  p.setItem(KEY_ITEM, old)
+  assert.equal(hex(await loadMeshSecret(p, { ks: broken })), old)
+  assert.equal(p.getItem(KEY_ITEM), old, "a plain key from before is left as it was")
+})

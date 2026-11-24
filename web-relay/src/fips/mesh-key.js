@@ -62,6 +62,16 @@ async function seal(s, hex) {
   return JSON.stringify({ v: 1, iv: b64(iv), ct: b64(ct) })
 }
 
+/** `hex` sealed, or `hex` itself when there is no sealer or sealing fails (IndexedDB refused: private mode, storage
+ *  blocked). A key that stays plain is what the browser had before this; losing the mesh here would be worse. */
+async function sealOrPlain(s, hex) {
+  if (!s) return hex
+  try { return await seal(s, hex) } catch (e) {
+    console.warn("mesh key: could not seal, kept plain:", e?.message ?? e)
+    return hex
+  }
+}
+
 const CANT_READ = "this browser's mesh key can't be read"
 
 async function unseal(s, stored) {
@@ -89,13 +99,14 @@ export async function loadMeshSecret(storage, { ks } = {}) {
   let stored = storage.getItem(KEY_ITEM)
   if (stored === null || stored === "") {
     const hex = toHex(crypto.getRandomValues(new Uint8Array(32)))
-    storage.setItem(KEY_ITEM, s ? await seal(s, hex) : hex)
+    storage.setItem(KEY_ITEM, await sealOrPlain(s, hex))
     // Another tab may have written its key between the read and the write: read back, so all tabs use one key.
     stored = storage.getItem(KEY_ITEM)
   }
   if (HEX64.test(stored)) {
     // Sealed only once the sealed copy exists, so a failure leaves the plain key, not none.
-    if (s) storage.setItem(KEY_ITEM, await seal(s, stored))
+    const sealed = await sealOrPlain(s, stored)
+    if (sealed !== stored) storage.setItem(KEY_ITEM, sealed)
     return fromHex(stored)
   }
   return fromHex(await unseal(s, stored))
