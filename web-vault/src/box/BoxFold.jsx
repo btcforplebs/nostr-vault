@@ -18,9 +18,10 @@ export const BoxTrustRanking = ({ box }) => (
   <div class="box-fold"><TrustRankingSection state={box.data.vaultStatus} names={deviceNames(box.data.devices)} /></div>
 )
 
-// Your devices on a box: the mesh, the owner's devices, and how the box keeps up with each (W3).
+// Your devices on a box: the mesh, the owner's devices with Add a device and Remove (P9b), and how the box keeps up
+// with each (W3).
 export const BoxDevices = ({ box }) => (
-  <div class="box-fold"><MeshSection state={box.data.status} /><DevicesSection state={box.data.devices} /><SyncRows ctx={{}} api={box.sync} names={deviceNames(box.data.devices)} /></div>
+  <div class="box-fold"><MeshSection state={box.data.status} /><DevicesSection state={box.data.devices} api={box.api} onChanged={() => box.load("devices")} /><SyncRows ctx={{}} api={box.sync} names={deviceNames(box.data.devices)} /></div>
 )
 
 /** hex -> a device's name from GET devices, where the box knows one. */

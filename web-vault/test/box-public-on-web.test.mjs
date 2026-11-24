@@ -12,13 +12,18 @@ test("the box's web address becomes a public wss relay, or nothing", () => {
   assert.equal(boxInbox("wss://vault.example.com"), "wss://vault.example.com/inbox")
 })
 
-test("listed matches any spelling; withRelay adds first and removes every spelling", () => {
+test("listed matches any spelling; withRelay follows the shared Desktop Vaults rules", () => {
   const tags = [["r", "wss://relay.damus.io"], ["r", "wss://Vault.example.com/", "write"]]
   assert.ok(listed(tags, "r", "wss://vault.example.com"))
   assert.ok(!listed(tags, "relay", "wss://vault.example.com"))
-  assert.deepEqual(withRelay(tags, "r", "wss://vault.example.com", false), [["r", "wss://relay.damus.io"]])
+  assert.deepEqual(withRelay(tags, "r", "wss://vault.example.com", false), { tags: [["r", "wss://relay.damus.io"]] })
+  // In front of the user's own relays (rule 2), never newest-first; a 10050 entry is the /inbox.
   assert.deepEqual(withRelay([["r", "wss://relay.damus.io"]], "r", "wss://vault.example.com", true),
-    [["r", "wss://vault.example.com"], ["r", "wss://relay.damus.io"]])
+    { tags: [["r", "wss://vault.example.com"], ["r", "wss://relay.damus.io"]] })
+  assert.deepEqual(withRelay([["relay", "wss://inbox.nostr.wine"]], "relay", "wss://vault.example.com/inbox", true),
+    { tags: [["relay", "wss://vault.example.com/inbox"], ["relay", "wss://inbox.nostr.wine"]] })
+  // A list left without a usable relay is refused (rule 5): a read-only relay does not count.
+  assert.deepEqual(withRelay([["r", "wss://vault.example.com"], ["r", "wss://read.example", "read"]], "r", "wss://vault.example.com", false), { refused: 10002 })
 })
 
 const recorder = () => {

@@ -132,13 +132,14 @@ func TestDevicesSeedThePairedSetOnceAfterASettledRead(t *testing.T) {
 	if !paired.Seeded() || !slices.Equal(got, want) {
 		t.Fatalf("seed = %v, want %v", got, want)
 	}
-	// 4. A newer 10063 adds a device: mesh-devices.json follows it (today's
-	// rule, kept until P9b), the paired set does not change again.
+	// 4. A newer 10063 adds a device: the paired set now decides, so
+	// mesh-devices.json does not follow it and the set does not change.
 	src[owner.pk] = serverList(t, owner, nostr.Now(), nBox, nPhone, nMac, nLate)
-	d.Refresh(ctx)
+	r := d.Refresh(ctx)
 	mesh := readDevicesFile(t, file)
-	if !slices.Contains(mesh, nLate) {
-		t.Fatalf("mesh-devices.json = %v: must still follow the 10063 in P9a", mesh)
+	slices.Sort(mesh)
+	if slices.Contains(mesh, nLate) || !slices.Equal(mesh, want) || !r.Paired {
+		t.Fatalf("mesh-devices.json = %v (paired=%v): the paired set decides after the seed", mesh, r.Paired)
 	}
 	again, _ := paired.Npubs()
 	slices.Sort(again)

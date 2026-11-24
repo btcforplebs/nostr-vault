@@ -113,21 +113,30 @@ func (d *Devices) read(ctx context.Context, get func(context.Context, string) (*
 	if d.Paired != nil && d.DevicesFile != "" {
 		before = readMeshDevicesList(d.DevicesFile)
 	}
+	// The one-time seed of the paired set, then the switch to it: once
+	// seeded, the paired set is what the file holds (devices_paired.go).
+	d.seedPaired(r, len(d.lists) > 0, len(d.lists) == len(now), before)
+	paired, perr := d.applyPaired(&r)
+	if perr != nil {
+		log.Printf("box: paired set: %v; mesh-devices.json left as it was", perr)
+	}
 	// With no list known the file is left as it was (an outage must not
 	// drop every device), unless this read just forgot an account: then the
 	// lists left, even none, are the whole truth, and the removed account's
 	// devices must go now. A restart would not catch it later, since lists
-	// starts empty (Tron #2376).
-	if d.DevicesFile != "" && (len(d.lists) > 0 || dropped) {
+	// starts empty (Tron #2376). The paired set needs no list at all. An
+	// unreadable paired set writes nothing (Tron #2505, fail closed).
+	if d.DevicesFile != "" && perr == nil && (paired || len(d.lists) > 0 || dropped) {
 		devices := MeshDevices(r)
 		changed, err := writeMeshDevices(d.DevicesFile, devices)
 		if err != nil {
 			log.Printf("box: %v", err)
+		} else if changed && paired {
+			log.Printf("box: mesh devices now %d (the box's paired set)", len(devices))
 		} else if changed {
 			log.Printf("box: mesh devices now %d (from %d account lists)", len(devices), len(d.lists))
 		}
 	}
-	d.seedPaired(r, len(d.lists) > 0, len(d.lists) == len(now), before)
 	return r
 }
 

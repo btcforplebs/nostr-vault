@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -28,6 +29,11 @@ type EngineDevices struct {
 	Mesh MeshID // the box's mesh npub (self)
 	From string // mesh-devices.json, nv-mesh's list (NV_MESH_DEVICES)
 	To   string // the engine's file (HAVEN_MESH_DEVICES_FILE)
+
+	// mu: Sync runs from Run's tick and from a Remove (Devices.Removed) at
+	// once; one at a time, or a tick that read the old list could write it
+	// over the remove's (Tron #2505).
+	mu sync.Mutex
 }
 
 // engineDevicesInput is SetMeshDevicesC's JSON.
@@ -91,6 +97,8 @@ func (e *EngineDevices) Paired() ([]string, error) {
 // Sync writes the engine's file when the set changed. On an error (an
 // unreadable mesh-devices.json) the engine's file is left as it was.
 func (e *EngineDevices) Sync() (changed bool, err error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	in, err := e.Build()
 	if err != nil {
 		return false, err

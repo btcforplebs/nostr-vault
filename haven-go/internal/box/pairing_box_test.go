@@ -87,9 +87,14 @@ func pairingAPI(t *testing.T) (*httptest.Server, testKey, *API, *fakePairCrypto,
 	now := &atomic.Int64{} // the listen goroutine reads it while tests move it
 	now.Store(time.Now().Unix())
 	crypto, relays := &fakePairCrypto{}, newFakeRelays()
+	dir := t.TempDir()
+	// The devices screen and the pairing share the set and mesh-devices.json,
+	// as in main.
+	api.Devices.Paired = &PairedSet{Path: filepath.Join(dir, "paired-devices.json"), MeshFile: filepath.Join(dir, "mesh-devices.json")}
+	api.Devices.DevicesFile = api.Devices.Paired.MeshFile
 	api.Pairing = &Pairing{
 		Mesh: api.Mesh, Crypto: crypto, Relays: relays,
-		Paired:   &PairedSet{Path: filepath.Join(t.TempDir(), "paired-devices.json")},
+		Paired:   api.Devices.Paired,
 		Accounts: func() []string { return []string{owner.pk} },
 		Now:      now.Load,
 	}
@@ -174,7 +179,15 @@ func TestBoxPairingHappyPathStoresAndAcksWithTheWords(t *testing.T) {
 	if st != 200 || ps.State != "linked" || ps.Acked != 2 {
 		t.Fatalf("confirm: %d %+v", st, ps)
 	}
-	// Stored, with who confirmed it and the hello's name and role.
+	// Stored, with who confirmed it and the hello's name and role. This box
+	// had no seed (no 10063 names it): the pairing is the seed, and the
+	// devices screen and mesh-devices.json show the phone now (Tron #2505).
+	if _, out := call(t, srv, &owner, "GET", "/api/box/devices", nil); out["paired"] != true || len(out["devices"].([]any)) != 1 {
+		t.Fatalf("devices after pairing: %v", out)
+	}
+	if got := readDevicesFile(t, api.Devices.DevicesFile); !slices.Equal(got, []string{npubOf(t, phone)}) {
+		t.Fatalf("mesh-devices.json = %v", got)
+	}
 	list, _ := api.Pairing.Paired.List()
 	if len(list) != 1 || list[0].Npub != npubOf(t, phone) || list[0].Role != "phone" || list[0].Name != "Logen's iPhone" || list[0].By != ownerNpub || list[0].From != "pair" {
 		t.Fatalf("paired = %+v", list)

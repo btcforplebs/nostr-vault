@@ -161,8 +161,9 @@ func run(args []string) error {
 
 	accounts := box.NewAccountStore(cfg)
 	// The box's own paired devices (box/paired.go): seeded once from the
-	// 10063s, then grown by two-scan pairing from the box web UI.
-	paired := &box.PairedSet{Path: filepath.Join(cfg.BoxDir(), "paired-devices.json")}
+	// 10063s, or by the first pairing from the box web UI when no 10063
+	// names the box, then grown by two-scan pairing there.
+	paired := &box.PairedSet{Path: filepath.Join(cfg.BoxDir(), "paired-devices.json"), MeshFile: cfg.MeshDevicesFile}
 	meshDial := box.MeshDial{Socket: filepath.Join(cfg.MeshRunDir, "dial.sock")}
 
 	api := &box.API{
@@ -234,6 +235,13 @@ func run(args []string) error {
 				log.Printf("box: engine devices: %v", err)
 			}
 		}()
+	}
+	// Remove in the box UI: hand the engine the set without the device now,
+	// so its copy tokens go at once (box/devices_paired.go).
+	api.Devices.Removed = func() {
+		if _, err := engineDevices.Sync(); err != nil {
+			log.Printf("box: engine devices: %v", err)
+		}
 	}
 	go engineDevices.Run(ctx, 5*time.Second)
 	go api.Sync.Run(ctx)

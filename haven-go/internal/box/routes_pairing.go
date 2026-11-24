@@ -49,6 +49,12 @@ func init() {
 			return
 		}
 		st, err := a.Pairing.Confirm(r.Context(), c.Pubkey, in.Role)
+		if st.State == "linked" && a.Devices != nil {
+			// Stored (acked or not): the set changed, so mesh-devices.json
+			// and the devices screen follow now, not at the next poll or
+			// after the report cache's minute (Tron #2505).
+			a.Devices.PairedChanged()
+		}
 		switch {
 		case errors.Is(err, ErrNotYours):
 			writeJSON(w, http.StatusForbidden, map[string]any{"error": err.Error(), "pairing": st})
