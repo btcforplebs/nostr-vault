@@ -179,14 +179,7 @@ internal fun TrustWebViewGlobe(
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp),
                 )
         }
-        if (isWOTTab && centerKey == me && card == null && frame != null && !followsPending && !mappingWeb) {
-            GlobeOuterRingsBar(
-                accent = accent, profiles = profiles,
-                onNeedProfiles = { feedService.nostrService.fetchMissingProfiles(it) },
-                // Above the My Web button, which sits on the bottom edge.
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, end = 16.dp, bottom = 76.dp),
-            )
-        }
+        // What the outer rings are, and Pull, live in My Web (MyWebDesktopVaultSection), not over the globe (Logen 11/24).
         val followed by feedService.followedPubkeys.collectAsState()
         val shown = card
         if (shown != null) {

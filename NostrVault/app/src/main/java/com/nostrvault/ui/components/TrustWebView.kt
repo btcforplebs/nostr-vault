@@ -672,6 +672,9 @@ internal fun TrustWebContent(
                             myWebOpen = false; jump(0); if (picked != me) openCard(picked)
                         }
                     },
+                    desktopVault = {
+                        MyWebDesktopVaultSection(accent, profiles, onNeedProfiles = { nostrService.fetchMissingProfiles(it) })
+                    },
                     onLayer = { jump(0); layer = it; myWebOpen = false },
                     onRebuild = ::refresh,
                     onDismiss = { myWebOpen = false },
