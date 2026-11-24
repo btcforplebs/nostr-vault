@@ -195,17 +195,18 @@ func TestWritesFromAnotherOwnDeviceAreNotBlasted(t *testing.T) {
 	}
 }
 
-// What this vault sends to another of the owner's devices (the Mac relay:
-// owner catch-up uploads, the blast list) carries the second-hand mark;
-// public relays are dialled as they are.
+// What this vault sends to another of the owner's devices (every desktop
+// Vault: owner catch-up uploads, the blast list) carries the second-hand
+// mark; public relays are dialled as they are.
 func TestOwnDeviceWritesCarryTheMark(t *testing.T) {
-	saved := config.MacRelayURL
-	t.Cleanup(func() { config.MacRelayURL = saved })
-	config.MacRelayURL = "ws://192.168.4.20:3355/"
+	saved := config.DesktopVaultURLs
+	t.Cleanup(func() { config.DesktopVaultURLs = saved })
+	config.DesktopVaultURLs = desktopVaultURLList("ws://192.168.4.20:3355/", "wss://box.example.com")
 	for in, want := range map[string]string{
 		"ws://192.168.4.20:3355":          "ws://192.168.4.20:3355?pulled=1",
 		"ws://192.168.4.20:3355/":         "ws://192.168.4.20:3355/?pulled=1",
 		"ws://192.168.4.20:3355?pulled=1": "ws://192.168.4.20:3355?pulled=1",
+		"wss://box.example.com":           "wss://box.example.com?pulled=1",
 		"wss://relay.damus.io":            "wss://relay.damus.io",
 		"ws://192.168.4.20:3355/inbox":    "ws://192.168.4.20:3355/inbox",
 	} {

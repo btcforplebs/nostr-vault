@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -83,7 +85,7 @@ func setupMacFixture(t *testing.T, mac *fakeMac) *macFixture {
 	prevCfg, prevFs, prevPool := config, fs, pool
 	t.Cleanup(func() { config, fs, pool = prevCfg, prevFs, prevPool })
 	setupSyncConfig(owner)
-	config.MacRelayURL = mac.url
+	config.DesktopVaultURLs = []string{mac.url}
 	fs = afero.NewMemMapFs()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -150,7 +152,7 @@ func TestMacBackfillNegentropyCopiesEverything(t *testing.T) {
 
 	f.fill.runIfNeeded(context.Background(), false)
 
-	st := loadMacSyncStatus()
+	st := loadMacSyncStatus(mac.url)
 	if st.State != "done" || st.Method != "negentropy" || st.Missing != 0 {
 		t.Fatalf("status = %+v, want done/negentropy/0 missing", st)
 	}
@@ -164,12 +166,12 @@ func TestMacBackfillNegentropyCopiesEverything(t *testing.T) {
 	st.Posts = -7
 	saveMacSyncStatus(st)
 	f.fill.runIfNeeded(context.Background(), false)
-	if loadMacSyncStatus().Posts != -7 {
+	if loadMacSyncStatus(mac.url).Posts != -7 {
 		t.Fatal("completed backfill re-ran without force")
 	}
 	// ...but a forced check re-runs and finds nothing new and nothing missing.
 	f.fill.runIfNeeded(context.Background(), true)
-	if st := loadMacSyncStatus(); st.State != "done" || st.Posts != 0 || st.Mentions != 0 || st.Missing != 0 {
+	if st := loadMacSyncStatus(mac.url); st.State != "done" || st.Posts != 0 || st.Mentions != 0 || st.Missing != 0 {
 		t.Fatalf("forced re-check status = %+v, want done with 0 copied / 0 missing", st)
 	}
 }
@@ -184,7 +186,7 @@ func TestMacBackfillCheckReportsMissing(t *testing.T) {
 
 	f.fill.runIfNeeded(context.Background(), false)
 
-	st := loadMacSyncStatus()
+	st := loadMacSyncStatus(mac.url)
 	if st.State != "incomplete" || st.Missing != len(f.ownerIDs) {
 		t.Fatalf("status = %+v, want incomplete with %d missing", st, len(f.ownerIDs))
 	}
@@ -209,7 +211,7 @@ func TestMacBackfillSupersededReplaceableIsNotMissing(t *testing.T) {
 
 	f.fill.runIfNeeded(context.Background(), false)
 
-	if st := loadMacSyncStatus(); st.State != "done" || st.Missing != 0 {
+	if st := loadMacSyncStatus(mac.url); st.State != "done" || st.Missing != 0 {
 		t.Fatalf("status = %+v, want done with 0 missing", st)
 	}
 }
@@ -223,7 +225,7 @@ func TestMacBackfillPagedFallbackPassesRelayCap(t *testing.T) {
 
 	f.fill.runIfNeeded(context.Background(), false)
 
-	st := loadMacSyncStatus()
+	st := loadMacSyncStatus(mac.url)
 	if st.State != "done" || st.Method != "paged" || st.Missing != -1 {
 		t.Fatalf("status = %+v, want done/paged/-1", st)
 	}
@@ -231,16 +233,129 @@ func TestMacBackfillPagedFallbackPassesRelayCap(t *testing.T) {
 	assertHasAll(t, "mentions", f.inbox, f.mentionIDs)
 }
 
-func TestMacRelayURLs(t *testing.T) {
+func TestDesktopVaultURLList(t *testing.T) {
+	got := desktopVaultURLList(" wss://mac.example.com/ ", "wss://box.example.com/,  wss://mac.example.com\nws://192.168.4.20:3355 ,")
+	want := []string{"wss://mac.example.com", "wss://box.example.com", "ws://192.168.4.20:3355"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if got := desktopVaultURLList("", " , "); len(got) != 0 {
+		t.Fatalf("blank values gave %q", got)
+	}
+
 	prev := config
 	t.Cleanup(func() { config = prev })
-	config.MacRelayURL = " wss://mac.example.com/ "
-	if b, i := macRelayURLs(); b != "wss://mac.example.com" || i != "wss://mac.example.com/inbox" {
-		t.Fatalf("got %q %q", b, i)
+	config.DesktopVaultURLs = desktopVaultURLList("wss://mac.example.com", "")
+	vs := desktopVaults()
+	if len(vs) != 1 || vs[0].base != "wss://mac.example.com" || vs[0].inbox != "wss://mac.example.com/inbox" {
+		t.Fatalf("got %+v", vs)
 	}
-	config.MacRelayURL = ""
-	if b, i := macRelayURLs(); b != "" || i != "" {
-		t.Fatalf("unset Mac relay gave %q %q", b, i)
+	config.DesktopVaultURLs = nil
+	if vs := desktopVaults(); len(vs) != 0 {
+		t.Fatalf("unset Vaults gave %+v", vs)
+	}
+}
+
+// The status file name keeps the scheme, so ws:// and wss:// to one host have
+// separate files, and stays short enough to write.
+func TestMacSyncStatusFile(t *testing.T) {
+	for base, want := range map[string]string{
+		"wss://mac.example.com":       "mac_sync_status-wss_mac.example.com.json",
+		"ws://192.168.4.20:3355":      "mac_sync_status-ws_192.168.4.20_3355.json",
+		"wss://box.example.com/relay": "mac_sync_status-wss_box.example.com_relay.json",
+	} {
+		if got := macSyncStatusFile(base); got != want {
+			t.Errorf("macSyncStatusFile(%q) = %q, want %q", base, got, want)
+		}
+	}
+	if a, b := macSyncStatusFile("ws://h"), macSyncStatusFile("wss://h"); a == b {
+		t.Fatalf("ws and wss share %q", a)
+	}
+	long := "wss://h.example.com/" + strings.Repeat("p", 300)
+	got := macSyncStatusFile(long)
+	if len(got) > 255 {
+		t.Fatalf("name is %d bytes", len(got))
+	}
+	if got == macSyncStatusFile(long+"q") {
+		t.Fatal("two long URLs share a file")
+	}
+	if got != macSyncStatusFile(long) {
+		t.Fatal("long name is not stable")
+	}
+}
+
+// Every Vault has its own status file; the first listed one is also the shared
+// file today's apps read. A phone updated from the one-slot build still has
+// only the shared file: it counts for the Vault it names and for no other.
+func TestMacSyncStatusPerVault(t *testing.T) {
+	prevCfg, prevFs := config, fs
+	t.Cleanup(func() { config, fs = prevCfg, prevFs })
+	fs = afero.NewMemMapFs()
+	mac, box := "wss://mac.example.com", "wss://box.example.com"
+	config.DesktopVaultURLs = []string{mac, box}
+
+	saveMacSyncStatus(macSyncStatus{MacURL: mac, State: "done", Posts: 3})
+	saveMacSyncStatus(macSyncStatus{MacURL: box, State: "incomplete", Posts: 1})
+	if st := loadMacSyncStatus(mac); st.State != "done" || st.Posts != 3 {
+		t.Fatalf("mac: %+v", st)
+	}
+	if st := loadMacSyncStatus(box); st.State != "incomplete" || st.Posts != 1 {
+		t.Fatalf("box: %+v", st)
+	}
+	data, err := afero.ReadFile(fs, macSyncStatusPath)
+	var shared macSyncStatus
+	if err != nil || json.Unmarshal(data, &shared) != nil || shared.MacURL != mac || shared.State != "done" {
+		t.Fatalf("shared file does not hold the first Vault: %s %v", data, err)
+	}
+
+	// Only the shared file, from the one-slot build.
+	fs = afero.NewMemMapFs()
+	data, _ = json.Marshal(macSyncStatus{MacURL: mac, State: "done"})
+	if err := afero.WriteFile(fs, macSyncStatusPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if st := loadMacSyncStatus(mac); st.State != "done" {
+		t.Fatalf("shared file not used for the Vault it names: %+v", st)
+	}
+	if st := loadMacSyncStatus(box); st.MacURL != "" || st.State != "" {
+		t.Fatalf("shared file used for another Vault: %+v", st)
+	}
+	// The fallback moved the status to the Mac's own file, so the Mac keeps
+	// it once another Vault is listed first and takes over the shared file.
+	config.DesktopVaultURLs = []string{box, mac}
+	saveMacSyncStatus(macSyncStatus{MacURL: box, State: "running"})
+	if st := loadMacSyncStatus(mac); st.MacURL != mac || st.State != "done" {
+		t.Fatalf("mac status lost after another Vault took the shared file: %+v", st)
+	}
+}
+
+// Two listed Vaults are both copied, each with its own status, and a second
+// launch copies neither again.
+func TestMacBackfillCopiesEveryVault(t *testing.T) {
+	skipWithoutSockets(t)
+	mac := newFakeMac(t, true, 0)
+	f := setupMacFixture(t, mac)
+	box := newFakeMac(t, true, 0)
+	owner := f.fill.pTags[0]
+	now := time.Now()
+	boxIDs := box.seed(t, nostr.GeneratePrivateKey(), 40, now.AddDate(-2, 0, 0), now, nostr.Tags{{"p", owner}})
+	config.DesktopVaultURLs = []string{mac.url, box.url}
+
+	if !f.fill.runIfNeeded(context.Background(), false) {
+		t.Fatal("no copy ran")
+	}
+	assertHasAll(t, "mac mentions", f.inbox, f.mentionIDs)
+	assertHasAll(t, "box mentions", f.inbox, boxIDs)
+	for _, v := range desktopVaults() {
+		if st := loadMacSyncStatus(v.base); st.MacURL != v.base || st.State != "done" {
+			t.Fatalf("%s: %+v", v.base, st)
+		}
+	}
+	if st := loadMacSyncStatus(box.url); st.Mentions != len(boxIDs) {
+		t.Fatalf("box status counts %d mentions, seeded %d", st.Mentions, len(boxIDs))
+	}
+	if f.fill.runIfNeeded(context.Background(), false) {
+		t.Fatal("finished copies ran again")
 	}
 }
 
@@ -269,7 +384,7 @@ func TestMacBackfillPagedWalkCutShortIsNotDone(t *testing.T) {
 
 	f.fill.runIfNeeded(context.Background(), false)
 
-	st := loadMacSyncStatus()
+	st := loadMacSyncStatus(mac.url)
 	if st.State == "done" || st.Error == "" {
 		t.Fatalf("status = %+v, want incomplete with an error", st)
 	}
@@ -286,7 +401,7 @@ func TestMacBackfillRejectsAreNotCountedAsCopied(t *testing.T) {
 	wot.MarkReady(wot.NewCycle(), stubWot{members: map[string]bool{}})
 
 	f.fill.runIfNeeded(context.Background(), false)
-	st := loadMacSyncStatus()
+	st := loadMacSyncStatus(mac.url)
 	if st.State != "done" || st.Missing != 0 || st.Mentions != 0 {
 		t.Fatalf("status = %+v, want done, 0 missing, 0 mentions copied", st)
 	}
@@ -295,7 +410,7 @@ func TestMacBackfillRejectsAreNotCountedAsCopied(t *testing.T) {
 	// those rejects and must still not report them as copied.
 	f.fill.rejects.prune(nostr.Timestamp(time.Now().Add(time.Hour).Unix()))
 	f.fill.runIfNeeded(context.Background(), true)
-	if st := loadMacSyncStatus(); st.State != "done" || st.Mentions != 0 || st.Posts != 0 {
+	if st := loadMacSyncStatus(mac.url); st.State != "done" || st.Mentions != 0 || st.Posts != 0 {
 		t.Fatalf("re-check status = %+v, want done with nothing copied", st)
 	}
 }
@@ -304,17 +419,17 @@ func TestMacBackfillIncompleteRetriesDaily(t *testing.T) {
 	skipWithoutSockets(t)
 	mac := newFakeMac(t, true, 0)
 	f := setupMacFixture(t, mac)
-	base, _ := macRelayURLs()
+	base := desktopVaults()[0].base
 	prev := macSyncStatus{MacURL: base, State: "incomplete", Missing: 1, FinishedAt: time.Now().Add(-time.Hour).Unix()}
 	saveMacSyncStatus(prev)
 	f.fill.runIfNeeded(context.Background(), false)
-	if st := loadMacSyncStatus(); st.StartedAt != 0 {
+	if st := loadMacSyncStatus(base); st.StartedAt != 0 {
 		t.Fatalf("clean incomplete copy from an hour ago re-ran: %+v", st)
 	}
 	prev.FinishedAt = time.Now().Add(-25 * time.Hour).Unix()
 	saveMacSyncStatus(prev)
 	f.fill.runIfNeeded(context.Background(), false)
-	if st := loadMacSyncStatus(); st.State != "done" {
+	if st := loadMacSyncStatus(base); st.State != "done" {
 		t.Fatalf("day-old incomplete copy did not re-run: %+v", st)
 	}
 }
@@ -327,7 +442,7 @@ func TestMacCheckDuringCopyIsAnsweredByIt(t *testing.T) {
 	checks := make(chan struct{}, 1)
 	checks <- struct{}{} // tapped while the copy was running
 	f.fill.runAndSettle(context.Background(), false, checks)
-	st := loadMacSyncStatus()
+	st := loadMacSyncStatus(mac.url)
 	if st.State != "done" || st.Posts == 0 {
 		t.Fatalf("startup copy: %+v", st)
 	}

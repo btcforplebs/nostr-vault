@@ -488,12 +488,12 @@ func subscribeInboxAndChat(ctx context.Context) {
 		runCatchup(true)
 		lastRun = time.Now()
 
-		// One-time full-history copy from the Mac relay, started after the
-		// first round so recent items land first. It runs on its own goroutine
-		// (a slow Mac can take minutes) so pull-to-refresh and the ticker keep
-		// working meanwhile; it has its own inbox store and notifier so its
-		// batch never mixes with a round's.
-		if base, _ := macRelayURLs(); base != "" {
+		// One-time full-history copy from every desktop Vault, started after
+		// the first round so recent items land first. It runs on its own
+		// goroutine (a slow Mac can take minutes) so pull-to-refresh and the
+		// ticker keep working meanwhile; it has its own inbox store and
+		// notifier so its batch never mixes with a round's.
+		if len(desktopVaults()) > 0 {
 			macNotifier := &batchNotifier{}
 			macFill := &macBackfiller{
 				pTags: pTags,
