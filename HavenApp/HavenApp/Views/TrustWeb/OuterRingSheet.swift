@@ -1,13 +1,15 @@
 import SwiftUI
 
-/// One outer ring opened as a community: its best-ranked people, as your
-/// desktop Vault scored them. Tapping someone opens them on the globe.
+/// One outer ring opened as a community: its top people by score from the
+/// globe list, whatever their score, as your desktop Vault scored them.
+/// Tapping someone opens "why?" with how they connect; from there "Show on
+/// the globe" opens them on the globe.
 /// Android twin: `ui/components/trustweb/OuterRingSheet.kt`.
 struct OuterRingSheet: View {
     let ring: TrustMapOuter.Ring
-    let bar: Double?
     let onPick: (String) -> Void
     @EnvironmentObject var nostrService: NostrService
+    @ObservedObject private var config = ConfigService.shared
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var reach = DiscoveryReachStore.shared
 
@@ -16,16 +18,15 @@ struct OuterRingSheet: View {
             List {
                 Section {
                     ForEach(ring.top, id: \.self) { key in
-                        Button { onPick(key) } label: { row(key) }
-                            .buttonStyle(.plain)
+                        NavigationLink {
+                            TrustWhySheet(pubkey: key, me: config.activeAccountHexPubkey, copy: reach.copy) {
+                                onPick(key)
+                            }
+                        } label: { row(key) }
                     }
                 } header: {
-                    Text("\(TrustMapOuter.foundLabel). \(TrustMapOuter.countText(ring, bar: bar))")
+                    Text("\(TrustMapOuter.foundLabel). \(TrustMapOuter.countText(ring))")
                         .textCase(nil)
-                } footer: {
-                    if ring.count > ring.top.count {
-                        Text("Showing the top \(ring.top.count.formatted()).")
-                    }
                 }
             }
             .navigationTitle("\(ring.hop) hops away")
@@ -48,7 +49,7 @@ struct OuterRingSheet: View {
             Text(nostrService.profiles[key]?.bestName ?? "npub…" + String(key.suffix(6)))
                 .lineLimit(1)
             Spacer()
-            if let score = reach.copy?[key]?.score {
+            if let score = reach.copy?.globePerson(key)?.score {
                 Text("\(Int(score.rounded()))")
                     .foregroundStyle(.secondary)
                     .monospacedDigit()

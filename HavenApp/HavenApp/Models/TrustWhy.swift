@@ -7,6 +7,9 @@ import Foundation
 ///
 /// Only offered when your Haven's copy has a score for them (`of` is nil
 /// otherwise): a phone with no Haven has no scores (Logen 2026-11-22).
+/// The score is from `people`; someone only on the globe list (under the
+/// floor, far out) gets the globe row's score. Hop 3 and out also get the
+/// chain back to you (`TrustChain`) when the globe list has one.
 /// Android twin: `data/model/TrustWhy.kt`.
 struct TrustWhy: Equatable {
     /// One of your follows who follows them; `score` nil when your Haven's copy doesn't have them.
@@ -27,6 +30,9 @@ struct TrustWhy: Equatable {
     let exact: Bool
     /// What the live path found; nil while it is still tracing.
     let reach: TrustPath.Reach?
+    /// Your follow first, out to them (`TrustChain.links`); nil under hop 3
+    /// or when the globe list has no chain for them.
+    var chain: [String]? = nil
 
     var overBar: Bool { score >= bar }
 
@@ -34,7 +40,9 @@ struct TrustWhy: Equatable {
     static let shown = 12
 
     static func of(pubkey: String, me: String, copy: TrustRankCopy?, path: TrustPath?) -> TrustWhy? {
-        guard let copy, pubkey.caseInsensitiveCompare(me) != .orderedSame, let person = copy[pubkey] else { return nil }
+        guard let copy, pubkey.caseInsensitiveCompare(me) != .orderedSame,
+              let person = copy[pubkey] ?? copy.globePerson(pubkey).map({ TrustRankCopy.Person(score: $0.score, hop: $0.hop) })
+        else { return nil }
         // The web outranks the copy for the near rings (ProfileHopText).
         guard let hop = ProfileHopText.hop(pubkey: pubkey, me: me, path: path, rank: person) else { return nil }
         let bridges: [String]
@@ -49,8 +57,9 @@ struct TrustWhy: Equatable {
                 let sa = a.score ?? -1, sb = b.score ?? -1
                 return sa != sb ? sa > sb : a.pubkey < b.pubkey
             }
+        let chain = hop >= 3 ? TrustChain.links(to: pubkey, copy: copy) : nil
         return TrustWhy(score: whole(person.score), hop: hop, bar: whole(copy.viewBar), rankedAt: copy.builtAt,
-                        followers: followers, exact: path?.complete == true, reach: path?.reach)
+                        followers: followers, exact: path?.complete == true, reach: path?.reach, chain: chain)
     }
 
     /// Kotlin's `roundToInt`: halves round up. Clamped to 0-100 so no value
@@ -85,6 +94,11 @@ enum TrustWhyText {
         }
         let who = n == 1 ? "person you follow follows" : "people you follow follow"
         return why.exact ? "\(n) \(who) them" : "At least \(n) \(who) them"
+    }
+
+    /// "How they connect: You > Alice > Bob > Carol", nil with no chain.
+    static func chain(_ why: TrustWhy, name: (String) -> String) -> String? {
+        why.chain.map { TrustChain.text($0, name: name) }
     }
 
     /// What the score is made of, in a sentence.

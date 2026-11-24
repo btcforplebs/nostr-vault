@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Draws the globe's outer rings (`TrustMapOuter`) behind the stars: one
 /// circle per hop past your circle, a dot on it for each of its best-ranked
-/// people, and its hop count where the ring crosses the screen. Faint, with
+/// people, fainter the further out (`TrustMapOuter.fade`), and its hop count
+/// where the ring crosses the screen. Faint, with
 /// no dots, when there is no rank. The rings sit round the middle of the
 /// screen and grow with the camera's zoom, so they stay outside the globe.
 /// Android twin: `ui/components/trustweb/GlobeOuterRings.kt`.
@@ -38,8 +39,9 @@ enum GlobeOuterRings {
         let faint = outer.isFaint
         for ring in outer.rings {
             let r = radius(hop: ring.hop, outline: base)
+            let fade = faint ? 1 : TrustMapOuter.fade(hop: ring.hop)
             let circle = Path(ellipseIn: CGRect(x: mid.x - r, y: mid.y - r, width: r * 2, height: r * 2))
-            context.stroke(circle, with: .color(ink.haze.opacity(faint ? 0.10 : 0.28)),
+            context.stroke(circle, with: .color(ink.haze.opacity(faint ? 0.10 : 0.28 * max(fade, 0.5))),
                            style: StrokeStyle(lineWidth: faint ? 0.8 : 1.1, dash: faint ? [3, 6] : []))
             if !faint {
                 var dots = Path()
@@ -48,12 +50,12 @@ enum GlobeOuterRings {
                     let p = CGPoint(x: mid.x + r * cos(a), y: mid.y + r * sin(a))
                     dots.addEllipse(in: CGRect(x: p.x - 1.6, y: p.y - 1.6, width: 3.2, height: 3.2))
                 }
-                context.fill(dots, with: .color(ink.star.opacity(0.75)))
+                context.fill(dots, with: .color(ink.star.opacity(0.75 * fade)))
             }
             if let at = labelPoint(r: r, mid: mid, size: size) {
                 let text = Text(faint ? "\(ring.hop) hops" : TrustMapOuter.chipText(ring))
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(ink.label.opacity(faint ? 0.35 : 0.7))
+                    .foregroundColor(ink.label.opacity(faint ? 0.35 : 0.7 * max(fade, 0.5)))
                 context.draw(text, at: at, anchor: .bottomTrailing)
             }
         }

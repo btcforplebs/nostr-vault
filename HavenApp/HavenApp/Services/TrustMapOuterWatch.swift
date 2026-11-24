@@ -2,8 +2,7 @@ import Foundation
 import Combine
 
 /// The globe's outer rings for the active account (`TrustMapOuter`), worked
-/// out again only when the rank copy, the Discovery reach bar, your devices
-/// or your blocks change, not on every redraw of the globe. Android twin:
+/// out again only when the rank copy, your devices or your blocks change, not on every redraw of the globe. Android twin:
 /// `service/TrustMapOuterWatch.kt`.
 @MainActor
 final class TrustMapOuterWatch: ObservableObject {
@@ -36,7 +35,7 @@ final class TrustMapOuterWatch: ObservableObject {
         let store = DiscoveryReachStore.shared
         let config = ConfigService.shared
         let next = TrustMapOuter.make(
-            copy: store.copy, bar: store.bar,
+            copy: store.copy,
             desktopPaired: TrustMapOuter.desktopPaired(config.config.meshDevices, isDesktop: Self.isDesktop),
             hidden: config.activeAccountBlockedHexPubkeys)
         if next != outer { outer = next }
