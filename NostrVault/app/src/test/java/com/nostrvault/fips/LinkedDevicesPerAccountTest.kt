@@ -1,9 +1,8 @@
 package com.nostrvault.fips
 
 import com.nostrvault.relay.HavenConfig
-import com.nostrvault.relay.MacSync
+import com.nostrvault.relay.desktopVaultMeshNpubs
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -65,8 +64,9 @@ class LinkedDevicesPerAccountTest {
 
     @Test
     fun `only the owner's mac fills the owner's vault`() {
-        assertNull(MacSync.macMeshNpub(config(listOf(FipsDevice(othersMac, DeviceRole.MAC, linkedBy = other)))))
-        assertEquals(mac, MacSync.macMeshNpub(config(listOf(FipsDevice(othersMac, DeviceRole.MAC, linkedBy = other), FipsDevice(mac, DeviceRole.MAC)))))
+        // The mesh desktop Vaults (Desktop Vaults P6), which the relay dials and publish-for-me picks from.
+        assertEquals(emptyList<String>(), config(listOf(FipsDevice(othersMac, DeviceRole.MAC, linkedBy = other))).desktopVaultMeshNpubs(ownNpub = null))
+        assertEquals(listOf(mac), config(listOf(FipsDevice(othersMac, DeviceRole.MAC, linkedBy = other), FipsDevice(mac, DeviceRole.MAC))).desktopVaultMeshNpubs(ownNpub = null))
     }
 
     @Test

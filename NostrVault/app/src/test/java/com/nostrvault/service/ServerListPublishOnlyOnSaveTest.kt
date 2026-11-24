@@ -47,7 +47,9 @@ class ServerListPublishOnlyOnSaveTest {
         // Positive control: the pattern catches the direct publishes it guards against.
         listOf("signAndPost(kind = 10063, content = \"\")", "signEventAsync(10063", "publishOwnerEntryList(10063, \"server\"")
             .forEach { assertTrue(it, direct.containsMatchIn(it)) }
-        assertEquals(emptyList<String>(), filesUsing(direct, setOf("NostrServiceListPublishing.kt")))
+        // DesktopVaultListEdit: a desktop Vault's media switch, one tap, only that Vault's entry on the newest list
+        // (Desktop Vaults P6, §2.5 rule 7; its UI is P7). Reviewed: the iOS twin signs the same way.
+        assertEquals(emptyList<String>(), filesUsing(direct, setOf("NostrServiceListPublishing.kt", "DesktopVaultListEdit.kt")))
     }
 
     /** Logen 2026-11-08: linking or removing a vault does not touch the 10063, now or at the next Save. */

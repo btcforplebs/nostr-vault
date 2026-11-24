@@ -190,7 +190,8 @@ class ConfigStore @Inject constructor(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         now = { android.os.SystemClock.elapsedRealtime() },
         launchedInputs = { RelayForegroundService.launchedInputs },
-        inputsFor = { RelayConfiguration.launchInputs(it, File(context.filesDir, "relay_data")) },
+        // Compare only (P6): a save never dials the mesh or takes the background dial's hand-over.
+        inputsFor = { RelayConfiguration.comparedInputs(it, File(context.filesDir, "relay_data")) },
         restart = { RelayForegroundService.restartForSavedConfig() },
     )
 
@@ -512,6 +513,12 @@ class ConfigStore @Inject constructor(
         setConfig(transform(_config.value))
         save()
         relayApplier.configSaved(_config.value)
+        meshVaultDialAfterSave()
+    }
+
+    /** A save no longer dials the mesh (P6): Mesh turned on or a Mac paired gets its dial here. */
+    private fun meshVaultDialAfterSave() {
+        com.nostrvault.relay.MeshVaultDial.afterStart(_config.value, latest = { _config.value }, fromSave = true)
     }
 
     /** Update config synchronously (saves in background). */
@@ -521,6 +528,7 @@ class ConfigStore @Inject constructor(
             save()
             // After the write: the relay re-reads the config from disk.
             relayApplier.configSaved(_config.value)
+            meshVaultDialAfterSave()
         }
     }
 

@@ -29,6 +29,7 @@ class MacMeshRelayTest {
 
     @After fun reset() {
         RelayConfiguration.macMeshRelay = null
+        RelayConfiguration.pendingMeshRelay = null
     }
 
     @Test fun meshNpubInTheMacFieldStartsTheRelayWithItsDialedAddress() {
@@ -40,20 +41,21 @@ class MacMeshRelayTest {
         assertEquals(ws, MacSync.macRelayURL(config))
     }
 
-    @Test fun aVaultOnMacDeviceIsDialedLikeATypedNpub() {
+    /**
+     * A Vault on Mac device with no slot is a mesh desktop Vault, dialed after a wss start (Desktop Vaults P6, Tron M1
+     * on #2506): the start dials nothing and takes what the background dial hands over.
+     */
+    @Test fun aVaultOnMacDeviceIsDialedAfterTheStart() {
         val config = HavenConfig(
             fipsMeshEnabled = true,
             fipsPeers = listOf(other, mac),
             fipsMesh = FipsMeshSettings(devices = listOf(FipsDevice(npub = other), FipsDevice(npub = mac, role = DeviceRole.MAC))),
         )
-        assertEquals(mac, MacSync.macMeshNpub(config))
+        assertEquals(listOf(mac), config.desktopVaultMeshNpubs)
+        assertEquals("", RelayConfiguration.launchInputs(config, dir, reaches(base)).env["MAC_RELAY_URL"])
+        assertEquals(emptyList<String>(), dialed)
+        RelayConfiguration.pendingMeshRelay = RelayConfiguration.MacMeshRelay(mac, ws)
         assertEquals(ws, RelayConfiguration.launchInputs(config, dir, reaches(base)).env["MAC_RELAY_URL"])
-    }
-
-    @Test fun aMacRoleOffTheAllowlistOrMarkedHomeVaultIsNotTheMac() {
-        val labels = FipsMeshSettings(devices = listOf(FipsDevice(npub = mac, role = DeviceRole.MAC)))
-        assertNull(MacSync.macMeshNpub(HavenConfig(fipsMeshEnabled = true, fipsMesh = labels)))
-        assertNull(MacSync.macMeshNpub(HavenConfig(fipsMeshEnabled = true, fipsPeers = listOf(mac), homeVaultNpub = mac, fipsMesh = labels)))
     }
 
     @Test fun aMacWithAURLKeepsItAndIsNeverDialed() {
@@ -132,6 +134,7 @@ class MacMeshRelayTest {
             fipsMesh = FipsMeshSettings(devices = listOf(FipsDevice(npub = mac, role = DeviceRole.MAC))),
             blastrRelays = listOf("wss://relay.damus.io"),
         )
+        RelayConfiguration.pendingMeshRelay = RelayConfiguration.MacMeshRelay(mac, ws)
         assertEquals(listOf("$ws?pulled=1", "wss://relay.damus.io"), RelayConfiguration.launchInputs(config, dir, reaches(base)).blastrRelays)
     }
 

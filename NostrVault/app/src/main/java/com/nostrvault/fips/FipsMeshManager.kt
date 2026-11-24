@@ -120,7 +120,10 @@ class FipsMeshManager @Inject constructor(
         // On IO throughout (it reads the mesh key): no hop back to the caller's dispatcher.
         appScope.launch(Dispatchers.IO) {
             kotlinx.coroutines.flow.combine(configStore.config, _status.map { it.npub }) { config, npub ->
-                MeshDeviceSetSync.json(config, npub ?: MeshKeySigner.npub())
+                val own = npub ?: MeshKeySigner.npub()
+                // This device's own mesh address is never a desktop Vault's (Desktop Vaults P6, §2.6).
+                if (own != null) com.nostrvault.relay.OwnMeshNpub.value = own
+                MeshDeviceSetSync.json(config, own)
             }
                 .distinctUntilChanged()
                 .collect { pushDeviceSet() }

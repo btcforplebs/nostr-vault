@@ -48,47 +48,15 @@ object MacSync {
      * a Mac relay. Mirrors iOS RelayConfiguration.macRelayURL(config:mesh:).
      */
     fun macRelayURL(config: HavenConfig, mesh: RelayConfiguration.MacMeshRelay? = RelayConfiguration.macMeshRelay): String {
-        macMeshNpub(config)?.let { npub ->
-            return mesh?.takeIf { it.npub == npub }?.url ?: ""
-        }
+        // A dialed mesh Vault comes first (mesh before wss, §2.2; P6). Else a slot holding a mesh npub gives "" until
+        // it has been dialed, and a web slot its address.
+        RelayConfiguration.dialedVault(config, mesh)?.let { return it.url }
+        if (DesktopVaultsRules.SlotAddress.of(config.macRelayURL) is DesktopVaultsRules.SlotAddress.Mesh) return ""
         val base = config.macRelayNormalizedBase
         if (base.isEmpty()) return ""
         val typed = config.macRelayURL.trim().lowercase()
         val plain = typed.startsWith("ws://") || typed.startsWith("http://")
         return (if (plain) "ws://" else "wss://") + base
-    }
-
-    /**
-     * The Mac's mesh npub, or null when the relay reaches it by URL (or there
-     * is none): the Mac relay field holding an npub (`npub1…`, `nostr:npub1…`,
-     * `fipsmesh://npub1…/`) as on iOS, else a device in My Devices marked
-     * Vault on Mac. A URL in the field wins, so a Mac that has one keeps it.
-     */
-    fun macMeshNpub(config: HavenConfig): String? {
-        val typed = config.macRelayURL.trim()
-        if (typed.isNotEmpty()) return HomeVaultRules.meshNpubFromInput(typed)
-        // Only the owner's Mac fills the owner's vault: another account's Mac is that account's (Logen 2026-11-05).
-        return config.fipsMesh.devices
-            .firstOrNull {
-                it.role == DeviceRole.MAC && it.npub in config.fipsPeers && it.npub != config.homeVaultNpub &&
-                    MyDevicesRules.isOwners(it.linkedBy, config.ownerNpub)
-            }
-            ?.npub
-    }
-
-    /**
-     * Every Mac and box of the owner's (multi-Mac rules §1: the Go sync took only the first). [macMeshNpub]'s first,
-     * then My Devices order, each once, never this phone's own mesh npub. iOS MeshDevicesLogic.macs.
-     */
-    fun macMeshNpubs(config: HavenConfig, ownNpub: String? = null): List<String> {
-        val out = mutableListOf<String>()
-        macMeshNpub(config)?.takeIf { it != ownNpub }?.let { out += it }
-        config.fipsMesh.devices
-            .filter { it.role == DeviceRole.MAC && MyDevicesRules.isOwners(it.linkedBy, config.ownerNpub) }
-            .map { it.npub }
-            .filter { it != ownNpub && it !in out && MyDevicesRules.isMeshNpub(it) }
-            .forEach { out += it }
-        return out
     }
 
     fun parse(text: String): MacSyncStatus? = runCatching { json.decodeFromString<MacSyncStatus>(text) }.getOrNull()

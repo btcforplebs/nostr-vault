@@ -4,7 +4,7 @@ package com.nostrvault.relay
  * The DM inbox list — one list for every device. It is where other people
  * send this account's DMs (published as kind 10050), where this account's own
  * sent copies go, and where every device reads DMs from. The owner's Haven
- * inbox (the Mac relay) comes first, then [HavenConfig.dmRelays].
+ * inboxes (every HTTPS desktop Vault's) come first, then [HavenConfig.dmRelays].
  *
  * Mirrors the iOS/macOS HavenConfig DM inbox helpers (nostr-vault #210).
  */
@@ -23,9 +23,12 @@ object DMInbox {
     /** Trims whitespace and trailing slashes so one relay typed two ways compares equal. */
     fun normalizedRelayURL(raw: String): String = raw.trim().trimEnd('/')
 
-    fun merged(havenInbox: String, dmRelays: List<String>): List<String> {
+    fun merged(havenInbox: String, dmRelays: List<String>): List<String> = merged(listOf(havenInbox), dmRelays)
+
+    /** The Haven inboxes first, in their order, then [dmRelays]; each once. */
+    fun merged(havenInboxes: List<String>, dmRelays: List<String>): List<String> {
         val seen = HashSet<String>()
-        return (listOf(havenInbox) + dmRelays)
+        return (havenInboxes + dmRelays)
             .map(::normalizedRelayURL)
             .filter { it.isNotEmpty() && seen.add(it.lowercase()) }
     }
@@ -43,19 +46,6 @@ object DMInbox {
             .filter { it.size >= 2 && it[0] == "relay" }
             .map { normalizedRelayURL(it[1]) }
             .filter { it.isNotEmpty() && seen.add(it.lowercase()) }
-    }
-
-    /**
-     * The Mac relay's inbox as a DM relay, or "" when there is none. Only a
-     * public address counts: the list it joins is published for other
-     * people, and a plain ws:// or home-network address is unreachable to them.
-     */
-    fun havenInboxURL(macRelayURL: String, macRelayNormalizedBase: String): String {
-        if (macRelayNormalizedBase.isEmpty()) return ""
-        val typed = macRelayURL.trim().lowercase()
-        if (typed.startsWith("ws://") || typed.startsWith("http://")) return ""
-        if (isPrivateNetworkHost(macRelayNormalizedBase)) return ""
-        return normalizedRelayURL("wss://$macRelayNormalizedBase/inbox")
     }
 
     /**

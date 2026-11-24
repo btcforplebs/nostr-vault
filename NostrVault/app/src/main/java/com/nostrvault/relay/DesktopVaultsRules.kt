@@ -72,7 +72,7 @@ object DesktopVaultsRules {
      * [taken] is the slot value the list last took in, null when it never has. The first time (§3), with no Vaults
      * yet: a slot holding a mesh npub becomes a FIPS-only Vault; a slot holding a web address becomes an HTTPS-only
      * Vault, merged with the owner's Mac whose `domain` has that host; every other Mac of the owner's becomes a
-     * FIPS-only Vault, in [MacSync.macMeshNpubs] order after the slot's. Nothing is published and `macRelayURL` is
+     * FIPS-only Vault, in [macs] order after the slot's. Nothing is published and `macRelayURL` is
      * never written (§3 steps 4-5).
      *
      * Until the Desktop Vaults screens replace the old Haven relay field (P7), that field still edits the slot, so a
@@ -176,6 +176,99 @@ object DesktopVaultsRules {
         SlotAddress.None -> DesktopVault(id = "")
     }
 
+    // ── Following My Devices and routing (P6, iOS P3 #2506) ──────
+
+    /**
+     * The list kept in step with My Devices after migration (Tron N1, N2 on #2499), since routing reads it:
+     * - this device's own npub is never a Vault's mesh address (§2.6);
+     * - a Vault's mesh address goes when its `.mac` device leaves My Devices, unless the slot still names it; a Vault
+     *   left with no address goes;
+     * - an owner's `.mac` device with no Vault becomes one, on the HTTPS Vault whose host is its domain, else as a
+     *   new FIPS-only Vault at the end.
+     * Clearing the old field takes only the slot's address off (N3): a Mac still in My Devices stays a Vault.
+     * iOS DesktopVaultsLogic.followingDevices.
+     */
+    fun followingDevices(
+        vaults: List<DesktopVault>, devices: List<FipsDevice>, slot: String, ownNpub: String?, ownerNpub: String = "",
+    ): List<DesktopVault> {
+        val slotNpub = (SlotAddress.of(slot) as? SlotAddress.Mesh)?.npub
+        val macs = devices.filter { it.role == DeviceRole.MAC && it.npub != ownNpub && MyDevicesRules.isOwners(it.linkedBy, ownerNpub) }
+            .map { it.npub }.toSet()
+        val out = ordered(vaults).map { vault ->
+            val npub = vault.meshNpub?.let(HomeVaultRules::meshNpubFromInput) ?: return@map vault
+            if (npub == ownNpub || (npub !in macs && npub != slotNpub)) vault.copy(meshNpub = null) else vault
+        }.filterNot { it.meshNpub == null && it.httpsURL == null }.toMutableList()
+        for (npub in macs(devices, null, ownNpub, ownerNpub)) {
+            if (out.any { it.meshNpub?.let(HomeVaultRules::meshNpubFromInput) == npub }) continue
+            val device = devices.firstOrNull { it.npub == npub }
+            val host = device?.domain?.let(DesktopVaultsLists::hostKey)
+            val i = if (host == null) -1 else out.indexOfFirst { it.hostKey == host && it.meshNpub == null }
+            if (i >= 0) {
+                out[i] = out[i].copy(meshNpub = npub, name = out[i].name.ifEmpty { device?.name.orEmpty() })
+            } else {
+                out += DesktopVault(id = idForMesh(npub), name = device?.name.orEmpty(), meshNpub = npub, order = out.size)
+            }
+        }
+        return out.renumbered()
+    }
+
+    /** The mesh npubs of the Vaults reachable over FIPS, in list order, each once: the dial order (§2.2 rule 3). */
+    fun meshNpubs(vaults: List<DesktopVault>): List<String> {
+        val seen = mutableSetOf<String>()
+        return ordered(vaults).mapNotNull { vault ->
+            vault.meshNpub?.let(HomeVaultRules::meshNpubFromInput)?.takeIf { seen.add(it) }
+        }
+    }
+
+    /**
+     * When the relay dials the mesh Vaults (Tron M1 on #2506). Only with FIPS on. Before the start only when the slot
+     * itself is a mesh npub: that Vault has no other way in. Any other mesh Vault is dialed after the relay is up
+     * over wss ([MeshVaultDial]), so a paired Mac out of reach never holds a start.
+     */
+    enum class MeshDial { NONE, BEFORE_START, AFTER_START }
+
+    fun meshDial(fipsOn: Boolean, slot: String, meshNpubs: List<String>): MeshDial = when {
+        !fipsOn || meshNpubs.isEmpty() -> MeshDial.NONE
+        SlotAddress.of(slot) is SlotAddress.Mesh -> MeshDial.BEFORE_START
+        else -> MeshDial.AFTER_START
+    }
+
+    /** One total wait for all the dials of a start (Tron M1): N unreachable Macs no longer cost N×. */
+    const val MESH_DIAL_BUDGET_MS = 10_000L
+
+    /**
+     * The first of [npubs], in order, whose [dial] answers inside one shared [budgetMs]. A dial still running when the
+     * budget ends is left to finish on its own (the FFI dial can't be interrupted) and its answer is dropped. Blocks.
+     */
+    fun firstAnswering(npubs: List<String>, budgetMs: Long, dial: (String) -> String?): Pair<String, String>? {
+        val deadline = System.nanoTime() + budgetMs * 1_000_000
+        val pool = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "mesh-vault-dial").apply { isDaemon = true } }
+        try {
+            for (npub in npubs) {
+                val left = (deadline - System.nanoTime()) / 1_000_000
+                if (left <= 0) return null
+                val url = runCatching { pool.submit<String?> { dial(npub) }.get(left, java.util.concurrent.TimeUnit.MILLISECONDS) }.getOrNull()
+                if (url != null) return npub to url
+            }
+            return null
+        } finally {
+            pool.shutdown()
+        }
+    }
+
+    /**
+     * Every HTTPS Vault's DM inbox, `wss://<base>/inbox`, in list order (§2.2 rule 2): where other people send DMs
+     * and the own sent copies go. Left out: a home-network address, which others can't reach, and the slot when it
+     * was typed as plain `ws://` or `http://`. iOS DesktopVaultsLogic.dmInboxURLs.
+     */
+    fun dmInboxURLs(vaults: List<DesktopVault>, slot: String): List<String> {
+        val typed = slot.trim().lowercase()
+        val plainHost = if (typed.startsWith("ws://") || typed.startsWith("http://")) DesktopVaultsLists.hostKey(typed) else null
+        return bases(vaults).mapNotNull { (host, base) ->
+            if (host == plainHost || DMInbox.isPrivateNetworkHost(base)) null else "wss://$base/inbox"
+        }
+    }
+
     /**
      * Whether config.json's `desktopVaults` is there but read as empty when it should not have: not a list at all
      * (`null` included), or a list none of whose Vaults this build can read ([LossyDesktopVaultList]). ConfigStore
@@ -208,10 +301,18 @@ object DesktopVaultsRules {
      * DESKTOP_VAULT_URLS for the relay (haven-go macsync.go): every HTTPS Vault but the one MAC_RELAY_URL already
      * names, comma separated, "" when there is none. Always passed, empty included, because the engine never clears
      * a host env key (Tidy, P1).
+     *
+     * [slot] is MAC_RELAY_URL as passed. A Vault it reaches over the mesh keeps its web address here (Tron M2 on
+     * #2506): the mesh link ends when the engine stops and nothing dials again until the next start, so its wss is
+     * the fallback (§2.2: mesh first, wss as fallback). [typed]: the old field's value; a slot typed as plain
+     * `ws://`/`http://` that lands here keeps `ws://`, as MAC_RELAY_URL kept it.
      */
-    fun envList(vaults: List<DesktopVault>, slot: String): String {
+    fun envList(vaults: List<DesktopVault>, slot: String, typed: String = ""): String {
         val slotHost = (SlotAddress.of(slot) as? SlotAddress.Web)?.host
-        return bases(vaults).filter { it.first != slotHost }.joinToString(",") { "wss://${it.second}" }
+        val lower = typed.trim().lowercase()
+        val plainHost = if (lower.startsWith("ws://") || lower.startsWith("http://")) DesktopVaultsLists.hostKey(lower) else null
+        return bases(vaults).filter { it.first != slotHost }
+            .joinToString(",") { (if (it.first == plainHost) "ws://" else "wss://") + it.second }
     }
 
     /** `relays` with each Vault relay not already in it put in front, in Vault list order. One already listed keeps its place, as the slot did. */
