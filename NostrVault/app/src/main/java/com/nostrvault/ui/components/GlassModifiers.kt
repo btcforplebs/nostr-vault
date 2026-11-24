@@ -184,13 +184,15 @@ fun Modifier.glassRectBackground(
 fun GlassPill(
     modifier: Modifier = Modifier,
     horizontalArrangement: Arrangement.Horizontal = Arrangement.spacedBy(4.dp),
+    /** Fully solid, for buttons over a photo that could wash out the glass. */
+    opaque: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
     val isOled = LocalOledMode.current
     val accentColor = LocalNostrVaultColors.current.primary
     Row(
         modifier = modifier
-            .glassPillBackground(isOled = isOled, accentColor = accentColor)
+            .glassPillBackground(isOled = isOled, accentColor = accentColor, opaque = opaque)
             .padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalArrangement = horizontalArrangement,
         verticalAlignment = Alignment.CenterVertically,
