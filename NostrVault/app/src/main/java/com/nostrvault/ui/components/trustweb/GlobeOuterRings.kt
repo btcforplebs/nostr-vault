@@ -86,9 +86,12 @@ internal object GlobeOuterRings {
                     // the ring inside, or for Hop 3 on the shrunk globe's edge.
                     // Faint and capped so they read as threads, not a fan.
                     val inner = radius(ring.hop - 1)
+                    // On an outer ring, only to a dot drawn there: no line ends in empty space.
+                    val innerDots = outer.rings.firstOrNull { it.hop == ring.hop - 1 }?.top?.toHashSet()
                     val lines = Path()
                     for (key in ring.top.take(GlobeRingZoom.MAX_LINKS)) {
                         val via = ring.via[key] ?: continue
+                        if (innerDots != null && via !in innerDots) continue
                         val from = point(key, r)
                         val to = point(via, inner)
                         lines.moveTo(from.x, from.y)

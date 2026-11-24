@@ -79,7 +79,7 @@ data class TrustMapOuter(
                 seen[row.hop] = n + 1
                 if (row.pubkey in hidden) continue
                 byHop.getOrPut(row.hop) { mutableListOf() }.add(row.pubkey)
-                if (row.via.isNotEmpty()) via.getOrPut(row.hop) { mutableMapOf() }[row.pubkey] = row.via
+                if (row.via.isNotEmpty() && row.via !in hidden) via.getOrPut(row.hop) { mutableMapOf() }[row.pubkey] = row.via
             }
             return TrustMapOuter(Source.RANKED, byHop.keys.sorted().map { Ring(it, byHop.getValue(it), via[it].orEmpty()) })
         }

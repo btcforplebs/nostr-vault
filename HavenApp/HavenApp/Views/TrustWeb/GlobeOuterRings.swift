@@ -54,8 +54,9 @@ enum GlobeOuterRings {
             context.stroke(circle, with: .color(ink.haze.opacity((faint ? 0.10 : 0.28 * max(fade, 0.5 * shown)) + 0.14 * picked)),
                            style: StrokeStyle(lineWidth: (faint ? 0.8 : 1.1) + 0.5 * picked, dash: faint ? [3, 6] : []))
             if !faint {
-                if picked > 0.01 { drawLinks(ring, alpha: picked, from: r, to: radius(ring.hop - 1), point: point,
-                                             in: &context, ink: ink) }
+                if picked > 0.01 { drawLinks(ring, alpha: picked, from: r, to: radius(ring.hop - 1),
+                                             innerDots: outer.rings.first { $0.hop == ring.hop - 1 }.map { Set($0.top) },
+                                             point: point, in: &context, ink: ink) }
                 let dot = 1.6 * (1 + 0.5 * picked)
                 var dots = Path()
                 for key in ring.top {
@@ -76,11 +77,13 @@ enum GlobeOuterRings {
     /// Lines from the picked ring's best people to who links them in: on
     /// the ring inside, or for Hop 3 on the shrunk globe's edge. Faint and
     /// capped (`GlobeRingZoom.maxLinks`) so they read as threads, not a fan.
+    /// On an outer ring a line is drawn only when its far end is a dot
+    /// there (`innerDots`), so none ends in empty space.
     private static func drawLinks(_ ring: TrustMapOuter.Ring, alpha: Double, from r: Double, to inner: Double,
-                                  point: (String, Double) -> CGPoint, in context: inout GraphicsContext, ink: GlobeInk) {
+                                  innerDots: Set<String>?, point: (String, Double) -> CGPoint, in context: inout GraphicsContext, ink: GlobeInk) {
         var lines = Path()
         for key in ring.top.prefix(GlobeRingZoom.maxLinks) {
-            guard let via = ring.via[key] else { continue }
+            guard let via = ring.via[key], innerDots?.contains(via) ?? true else { continue }
             lines.move(to: point(key, r))
             lines.addLine(to: point(via, inner))
         }

@@ -540,7 +540,8 @@ internal class GlobeScene(
             val p = project.of(star) ?: return
             if (p.depth <= -0.15) return
             val d = hypot(p.x - at.x, p.y - at.y)
-            if (d < reach && d < bestDistance) { best = star.key; bestDistance = d }
+            // Reach is a fingertip on screen, so it grows as the globe shrinks.
+            if (d < reach / shrink && d < bestDistance) { best = star.key; bestDistance = d }
         }
         for (star in stars) if (star.isFace) consider(star, 30.0 * density)
         if (best == null && camera.zoom >= 1.6) {

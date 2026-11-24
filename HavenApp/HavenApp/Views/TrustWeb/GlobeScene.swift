@@ -557,7 +557,8 @@ final class GlobeScene: ObservableObject {
         func consider(_ i: Int, reach: CGFloat) {
             guard alpha[i] * min(1, weight(i)) > 0.5, let p = project(dirs[i] * radius[i]), p.depth > -0.15 else { return }
             let d = hypot(p.point.x - point.x, p.point.y - point.y)
-            if d < reach, d < (best?.distance ?? .infinity) { best = (keys[i], d) }
+            // Reach is a fingertip on screen, so it grows as the globe shrinks.
+            if d < reach / shrink, d < (best?.distance ?? .infinity) { best = (keys[i], d) }
         }
         for i in keys.indices where isFace[i] { consider(i, reach: 30) }
         if best == nil, camera.zoom >= Self.starTapZoom {

@@ -77,7 +77,7 @@ struct TrustMapOuter: Equatable {
             seen[person.hop] = n + 1
             guard !hidden.contains(key) else { continue }
             byHop[person.hop, default: []].append(key)
-            if !person.via.isEmpty { via[person.hop, default: [:]][key] = person.via }
+            if !person.via.isEmpty, !hidden.contains(person.via) { via[person.hop, default: [:]][key] = person.via }
         }
         let rings = byHop.keys.sorted().map { Ring(hop: $0, top: byHop[$0] ?? [], via: via[$0] ?? [:]) }
         return TrustMapOuter(source: .ranked, rings: rings)
