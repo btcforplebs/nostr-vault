@@ -28,4 +28,14 @@ extension HavenConfig {
         }
         return others + [thisMac]
     }
+
+    /// Where Public on the web reads once its list edits are back (Tron
+    /// should-fix 2 on #2512). `done`: per list, whether it ended the way the
+    /// tap asked (published or unchanged). Off stays off only when every list
+    /// dropped the domain, so a failed off reads on and another tap retries.
+    /// On falls back to off only when no list took the domain: once one did,
+    /// the switch must read on or a Relays save keeps it as an own row.
+    static func publicOnWebAfterEdits(on: Bool, done: [Bool]) -> Bool {
+        on ? done.contains(true) : !done.allSatisfy { $0 }
+    }
 }

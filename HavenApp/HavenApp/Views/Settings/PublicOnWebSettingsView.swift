@@ -53,7 +53,14 @@ struct PublicOnWebSettingsView: View {
     }
 
     private var statusLine: String {
-        configService.config.listsOwnDomain ? "Listed as wss://\(configService.config.sanitizedRelayURL)" : "Add your domain below"
+        let config = configService.config
+        if config.listsOwnDomain { return "Listed as wss://\(config.sanitizedRelayURL)" }
+        // Never listed (listsOwnDomain): the switch stays on so the field
+        // below stays open to type a domain instead.
+        if !config.isLocal, DesktopVaultsEditing.isIPHost(config.sanitizedRelayURL) {
+            return DesktopVaultsEditing.ipHostMessage
+        }
+        return "Add your domain below"
     }
 
     private func set(_ on: Bool) {
@@ -66,18 +73,20 @@ struct PublicOnWebSettingsView: View {
                                           name: Host.current().localizedName ?? "This Mac")
         // No reachable domain yet: nothing is listed; adding one below lists it.
         guard let https = thisMac.httpsURL else { return }
-        if on, DesktopVaultsEditing.isIPHost(https) {
-            notice = DesktopVaultsEditing.ipHostMessage
-            return
-        }
+        // An IP is never listed (listsOwnDomain), so nothing goes out; the
+        // status line says why. Off still unlists one an older build listed.
+        if on, DesktopVaultsEditing.isIPHost(https) { return }
         // Relays, then the DM inbox, each from the newest list (rule 7).
         let vaults = config.vaultsWithThisMac(thisMac)
-        // A line per list that didn't change; the switch stays where it was
-        // set, so another tap (or a Relays save) can finish the job.
         DesktopVaultListEdit.set(on, vault: thisMac, path: .web, list: .relays, vaults: vaults) { first in
             DesktopVaultListEdit.set(on, vault: thisMac, path: .web, list: .inbox, vaults: vaults) { second in
+                let outcomes = [first, second]
+                // A failed edit snaps the switch back, so it never reads off
+                // while the domain is still listed (Tron should-fix 2).
+                configService.config.publicOnWeb = HavenConfig.publicOnWebAfterEdits(
+                    on: on, done: outcomes.map { $0 == .published || $0 == .unchanged })
                 var lines: [String] = []
-                for line in [first.message, second.message].compactMap({ $0 }) where !lines.contains(line) {
+                for line in outcomes.compactMap(\.message) where !lines.contains(line) {
                     lines.append(line)
                 }
                 notice = lines.isEmpty ? nil : lines.joined(separator: "\n")
