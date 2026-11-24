@@ -118,12 +118,6 @@ func (p *Pairing) Start(ctx context.Context, byHex string) (PairStatus, error) {
 		return PairStatus{}, ErrNoMesh
 	}
 	byHex = strings.ToLower(byHex)
-	p.mu.Lock()
-	if r := p.run; r != nil && r.byHex != byHex && p.live(r) {
-		p.mu.Unlock()
-		return PairStatus{State: "busy"}, ErrNotYours
-	}
-	p.mu.Unlock()
 	byNpub := mustNpub(byHex)
 	var accounts []string
 	if p.Accounts != nil {
@@ -147,7 +141,14 @@ func (p *Pairing) Start(ctx context.Context, byHex string) (PairStatus, error) {
 	}
 	lctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	run.cancel = cancel
+	// The check for another account's live run and the swap happen under
+	// one lock, so two Starts cannot both pass the check (Tron #2502).
 	p.mu.Lock()
+	if old := p.run; old != nil && old.byHex != byHex && p.live(old) {
+		p.mu.Unlock()
+		cancel()
+		return PairStatus{State: "busy"}, ErrNotYours
+	}
 	if p.run != nil && p.run.cancel != nil {
 		p.run.cancel()
 	}

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -80,18 +81,19 @@ func (f *fakeRelays) Publish(_ context.Context, ev *nostr.Event) int {
 // pairingAPI is newTestAPI with pairing on a clock the test moves.
 // NIP-98 proofs are one-use, and the same request twice in one second is the
 // same event: repeated calls in these tests carry a nonce in the body.
-func pairingAPI(t *testing.T) (*httptest.Server, testKey, *API, *fakePairCrypto, *fakeRelays, *int64) {
+func pairingAPI(t *testing.T) (*httptest.Server, testKey, *API, *fakePairCrypto, *fakeRelays, *atomic.Int64) {
 	t.Helper()
 	srv, owner, api := newTestAPI(t)
-	now := time.Now().Unix()
+	now := &atomic.Int64{} // the listen goroutine reads it while tests move it
+	now.Store(time.Now().Unix())
 	crypto, relays := &fakePairCrypto{}, newFakeRelays()
 	api.Pairing = &Pairing{
 		Mesh: api.Mesh, Crypto: crypto, Relays: relays,
 		Paired:   &PairedSet{Path: filepath.Join(t.TempDir(), "paired-devices.json")},
 		Accounts: func() []string { return []string{owner.pk} },
-		Now:      func() int64 { return now },
+		Now:      now.Load,
 	}
-	return srv, owner, api, crypto, relays, &now
+	return srv, owner, api, crypto, relays, now
 }
 
 func pairStatus(t *testing.T, srv *httptest.Server, k testKey, method, path string, body []byte) (int, PairStatus) {
@@ -131,7 +133,7 @@ func TestBoxPairingHappyPathStoresAndAcksWithTheWords(t *testing.T) {
 	ownerNpub := npubOf(t, owner)
 
 	st, ps := pairStatus(t, srv, owner, "POST", "/api/box/pair", nil)
-	if st != 200 || ps.State != "waiting" || ps.Code == "" || ps.ExpiresAt != *now+pairCodeLifetime {
+	if st != 200 || ps.State != "waiting" || ps.Code == "" || ps.ExpiresAt != now.Load()+pairCodeLifetime {
 		t.Fatalf("start: %d %+v", st, ps)
 	}
 	code, refusal := ParsePairCode(ps.Code, "")
@@ -142,10 +144,10 @@ func TestBoxPairingHappyPathStoresAndAcksWithTheWords(t *testing.T) {
 
 	// A stranger's hello (another account) is refused and does not abort;
 	// garbage is ignored; then the owner's phone says hello.
-	relays.in <- helloEvent(t, newTestKey(t), code.Secret, "Not yours", "phone", npubOf(t, newTestKey(t)), *now+5)
+	relays.in <- helloEvent(t, newTestKey(t), code.Secret, "Not yours", "phone", npubOf(t, newTestKey(t)), now.Load()+5)
 	relays.in <- &nostr.Event{Kind: 1, Content: "hi"}
-	relays.in <- helloEvent(t, phone, code.Secret, "Logen's iPhone", "phone", ownerNpub, *now+10)
-	*now += 12
+	relays.in <- helloEvent(t, phone, code.Secret, "Logen's iPhone", "phone", ownerNpub, now.Load()+10)
+	now.Add(12)
 	ps = waitState(t, srv, owner, "hello")
 	if ps.Device == nil || ps.Device.Npub != npubOf(t, phone) || ps.Device.Name != "Logen's iPhone" || ps.Device.Role != "phone" {
 		t.Fatalf("device %+v", ps.Device)
@@ -194,7 +196,7 @@ func TestBoxPairingHappyPathStoresAndAcksWithTheWords(t *testing.T) {
 	if st, _ := pairStatus(t, srv, owner, "POST", "/api/box/pair/confirm", []byte(`{"role":"phone","again":1}`)); st != 409 {
 		t.Fatalf("second confirm: %d", st)
 	}
-	if out := api.Pairing.Hello(context.Background(), api.Pairing.run, helloEvent(t, newTestKey(t), code.Secret, "x", "phone", ownerNpub, *now)); out != "ignoreDuplicate" {
+	if out := api.Pairing.Hello(context.Background(), api.Pairing.run, helloEvent(t, newTestKey(t), code.Secret, "x", "phone", ownerNpub, now.Load())); out != "ignoreDuplicate" {
 		t.Fatalf("hello after linking: %s", out)
 	}
 	if _, ps := pairStatus(t, srv, owner, "POST", "/api/box/pair/cancel", nil); ps.State != "idle" {
@@ -216,12 +218,12 @@ func TestBoxPairingRefusesBeforeAHelloAndExpires(t *testing.T) {
 		t.Fatalf("confirm before a hello: %d", st)
 	}
 	// The code runs out after 3 minutes with no hello; a hello then is too late.
-	*now += pairCodeLifetime + 1
+	now.Add(pairCodeLifetime + 1)
 	if _, ps := pairStatus(t, srv, owner, "GET", "/api/box/pair", nil); ps.State != "expired" {
 		t.Fatalf("after the code's life: %+v", ps)
 	}
 	code, _ := ParsePairCode(ps.Code, "")
-	out := api.Pairing.Hello(context.Background(), api.Pairing.run, helloEvent(t, newTestKey(t), code.Secret, "late", "phone", npubOf(t, owner), *now))
+	out := api.Pairing.Hello(context.Background(), api.Pairing.run, helloEvent(t, newTestKey(t), code.Secret, "late", "phone", npubOf(t, owner), now.Load()))
 	if out != "stop" {
 		t.Fatalf("late hello: %s", out)
 	}
@@ -240,10 +242,10 @@ func TestBoxPairingSecondDeviceAbortsAndMeshAwayStoresNothing(t *testing.T) {
 	_, ps := pairStatus(t, srv, owner, "POST", "/api/box/pair", nil)
 	code, _ := ParsePairCode(ps.Code, "")
 	<-relays.listening
-	relays.in <- helloEvent(t, newTestKey(t), code.Secret, "one", "phone", ownerNpub, *now)
+	relays.in <- helloEvent(t, newTestKey(t), code.Secret, "one", "phone", ownerNpub, now.Load())
 	waitState(t, srv, owner, "hello")
 	// Another device with the same secret: the code was shown to two devices.
-	relays.in <- helloEvent(t, newTestKey(t), code.Secret, "two", "phone", ownerNpub, *now)
+	relays.in <- helloEvent(t, newTestKey(t), code.Secret, "two", "phone", ownerNpub, now.Load())
 	ps = waitState(t, srv, owner, "aborted")
 	if ps.Refusal != "abort" {
 		t.Fatalf("%+v", ps)
@@ -257,7 +259,7 @@ func TestBoxPairingSecondDeviceAbortsAndMeshAwayStoresNothing(t *testing.T) {
 	code, _ = ParsePairCode(ps.Code, "")
 	<-relays.listening
 	phone := newTestKey(t)
-	relays.in <- helloEvent(t, phone, code.Secret, "Logen's iPhone", "phone", ownerNpub, *now)
+	relays.in <- helloEvent(t, phone, code.Secret, "Logen's iPhone", "phone", ownerNpub, now.Load())
 	waitState(t, srv, owner, "hello")
 	crypto.broken = true
 	st, ps := pairStatus(t, srv, owner, "POST", "/api/box/pair/confirm", []byte(`{"role":"phone"}`))

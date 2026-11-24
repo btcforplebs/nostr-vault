@@ -42,7 +42,7 @@ func TestBoxPairingRunBelongsToTheAccountThatStartedIt(t *testing.T) {
 	if st, _ := pairStatus(t, srv, other, "POST", "/api/box/pair", nil); st != 409 {
 		t.Fatalf("other start over a live run: %d", st)
 	}
-	relays.in <- helloEvent(t, newTestKey(t), code.Secret, "Logen's iPhone", "phone", npubOf(t, owner), *now)
+	relays.in <- helloEvent(t, newTestKey(t), code.Secret, "Logen's iPhone", "phone", npubOf(t, owner), now.Load())
 	waitState(t, srv, owner, "hello")
 	if st, _ := pairStatus(t, srv, other, "POST", "/api/box/pair/confirm", []byte(`{"role":"phone"}`)); st != 403 {
 		t.Fatalf("other confirm: %d", st)
@@ -72,7 +72,7 @@ func TestBoxPairingRunBelongsToTheAccountThatStartedIt(t *testing.T) {
 		t.Fatalf("owner during the other's run: %+v", ps)
 	}
 	// An expired run of another account no longer blocks.
-	*now += pairCodeLifetime + 1
+	now.Add(pairCodeLifetime + 1)
 	if st, _ := pairStatus(t, srv, owner, "POST", "/api/box/pair", []byte(`{"again":3}`)); st != 200 {
 		t.Fatalf("owner start after the other's run expired: %d", st)
 	}
@@ -112,7 +112,7 @@ func TestBoxPairingRoleClashIsToldAtTheHello(t *testing.T) {
 	_, ps := pairStatus(t, srv, owner, "POST", "/api/box/pair", nil)
 	code, _ := ParsePairCode(ps.Code, "")
 	<-relays.listening
-	out := api.Pairing.Hello(context.Background(), api.Pairing.run, helloEvent(t, phone, code.Secret, "Logen's iPhone", "phone", npubOf(t, owner), *now))
+	out := api.Pairing.Hello(context.Background(), api.Pairing.run, helloEvent(t, phone, code.Secret, "Logen's iPhone", "phone", npubOf(t, owner), now.Load()))
 	if out != "refuse:refuseOtherRole" {
 		t.Fatalf("hello from a device paired under another role: %s", out)
 	}
@@ -121,7 +121,7 @@ func TestBoxPairingRoleClashIsToldAtTheHello(t *testing.T) {
 		t.Fatalf("%+v: the code stays live and the clash is shown", ps)
 	}
 	// The same device as a Mac again is fine (alreadyLinked is not a clash).
-	out = api.Pairing.Hello(context.Background(), api.Pairing.run, helloEvent(t, phone, code.Secret, "Logen's Mac", "mac", npubOf(t, owner), *now))
+	out = api.Pairing.Hello(context.Background(), api.Pairing.run, helloEvent(t, phone, code.Secret, "Logen's Mac", "mac", npubOf(t, owner), now.Load()))
 	if out != "camera" {
 		t.Fatalf("same role: %s", out)
 	}
@@ -134,7 +134,7 @@ func TestBoxPairingAckNoRelayTookIsAFailure(t *testing.T) {
 	_, ps := pairStatus(t, srv, owner, "POST", "/api/box/pair", nil)
 	code, _ := ParsePairCode(ps.Code, "")
 	<-relays.listening
-	relays.in <- helloEvent(t, phone, code.Secret, "Logen's iPhone", "phone", npubOf(t, owner), *now)
+	relays.in <- helloEvent(t, phone, code.Secret, "Logen's iPhone", "phone", npubOf(t, owner), now.Load())
 	waitState(t, srv, owner, "hello")
 	st, ps := pairStatus(t, srv, owner, "POST", "/api/box/pair/confirm", []byte(`{"role":"phone"}`))
 	if st != 503 || ps.State != "linked" || ps.Acked != 0 || ps.Error == "" {
