@@ -65,12 +65,23 @@ actor HtreeFetcher {
         return result
     }
 
+    /// Iris first: every htree photo seen so far is there, so the author's
+    /// list is only looked up (and waited for) on a miss (Tron, web #2508).
     private static func download(_ link: HtreeLink, author: String?, to path: URL) async -> URL? {
+        let iris = link.candidates(authorServers: [], ownServers: [])
+        if let file = await firstMatch(link, in: iris, to: path) { return file }
         var authorServers: [String] = []
         if let author { authorServers = await serverList(author) }
         let ours = await MainActor.run { ConfigService.shared.config.blossomMirrors }
-        let urls = link.candidates(authorServers: authorServers, ownServers: ours + HavenConfig.newAccountBlossomMirrors)
-        for url in urls.prefix(maxServers) {
+        let rest = link.candidates(authorServers: authorServers, ownServers: ours + HavenConfig.newAccountBlossomMirrors)
+            .filter { !iris.contains($0) }
+        if let file = await firstMatch(link, in: Array(rest.prefix(maxServers - iris.count)), to: path) { return file }
+        print("htree: \(link.blobHash.prefix(8)) unavailable on \(iris.count + min(rest.count, maxServers - iris.count)) servers")
+        return nil
+    }
+
+    private static func firstMatch(_ link: HtreeLink, in urls: [URL], to path: URL) async -> URL? {
+        for url in urls {
             guard let blob = await get(url), let photo = link.open(blob) else {
                 print("htree: \(link.blobHash.prefix(8)) not on \(url.host ?? "?")")
                 continue
@@ -81,7 +92,6 @@ actor HtreeFetcher {
             print("htree: read \(link.blobHash.prefix(8)) from \(url.host ?? "?") (\(photo.data.count) bytes, \(photo.mime))")
             return path
         }
-        print("htree: \(link.blobHash.prefix(8)) unavailable on \(min(urls.count, maxServers)) servers")
         return nil
     }
 
