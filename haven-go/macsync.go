@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -88,25 +90,32 @@ type macSyncStatus struct {
 // own file (macSyncStatusFile).
 const macSyncStatusPath = "mac_sync_status.json"
 
-// macSyncStatusFile names a Vault's own status file after its URL without the
-// scheme, with every character outside letters, digits, dots and dashes
-// replaced by "_": "mac_sync_status-mac.example.com.json",
-// "mac_sync_status-192.168.4.20_3355.json". The app derives it the same way.
-// Two URLs that differ only in replaced characters share a file; the file's
-// mac_url tells them apart (needsCopy).
+// macSyncStatusFile names a Vault's own status file after its URL, with every
+// character outside letters, digits, dots and dashes replaced by "_":
+// "mac_sync_status-wss_mac.example.com.json",
+// "mac_sync_status-ws_192.168.4.20_3355.json". The scheme stays in the name so
+// ws:// and wss:// to one host keep separate files. A name over
+// macSyncStatusNameMax bytes would not fit a file system's limit, so it is
+// replaced by the URL's SHA-256 hex. Two URLs that differ only in replaced
+// characters share a file; the file's mac_url tells them apart (needsCopy).
 func macSyncStatusFile(base string) string {
-	name := base
-	if i := strings.Index(name, "://"); i >= 0 {
-		name = name[i+3:]
-	}
+	name := strings.Replace(base, "://", "_", 1)
 	name = strings.Map(func(r rune) rune {
 		if r == '.' || r == '-' || (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
 			return r
 		}
 		return '_'
 	}, name)
+	if len(name) > macSyncStatusNameMax {
+		sum := sha256.Sum256([]byte(base))
+		name = hex.EncodeToString(sum[:])
+	}
 	return "mac_sync_status-" + name + ".json"
 }
+
+// macSyncStatusNameMax is the longest URL part kept in a status file name;
+// file systems commonly cap a name at 255 bytes.
+const macSyncStatusNameMax = 200
 
 // macHeartbeat is how often a running copy refreshes UpdatedAt. The app treats
 // "running" with a heartbeat older than a few of these as a copy that died.
@@ -124,6 +133,12 @@ func loadMacSyncStatus(base string) macSyncStatus {
 	if data, err := afero.ReadFile(fs, macSyncStatusPath); err == nil {
 		_ = json.Unmarshal(data, &st)
 		if st.MacURL == base {
+			// Move it to the Vault's own file now: the shared file follows the
+			// first listed Vault, so once another Vault is listed first it no
+			// longer names this one and the fallback would be gone.
+			if err := afero.WriteFile(fs, macSyncStatusFile(base), data, 0o644); err != nil {
+				slog.Warn("could not write mac sync status", "path", macSyncStatusFile(base), "err", err)
+			}
 			return st
 		}
 	}

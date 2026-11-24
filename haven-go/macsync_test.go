@@ -256,15 +256,31 @@ func TestDesktopVaultURLList(t *testing.T) {
 	}
 }
 
+// The status file name keeps the scheme, so ws:// and wss:// to one host have
+// separate files, and stays short enough to write.
 func TestMacSyncStatusFile(t *testing.T) {
 	for base, want := range map[string]string{
-		"wss://mac.example.com":       "mac_sync_status-mac.example.com.json",
-		"ws://192.168.4.20:3355":      "mac_sync_status-192.168.4.20_3355.json",
-		"wss://box.example.com/relay": "mac_sync_status-box.example.com_relay.json",
+		"wss://mac.example.com":       "mac_sync_status-wss_mac.example.com.json",
+		"ws://192.168.4.20:3355":      "mac_sync_status-ws_192.168.4.20_3355.json",
+		"wss://box.example.com/relay": "mac_sync_status-wss_box.example.com_relay.json",
 	} {
 		if got := macSyncStatusFile(base); got != want {
 			t.Errorf("macSyncStatusFile(%q) = %q, want %q", base, got, want)
 		}
+	}
+	if a, b := macSyncStatusFile("ws://h"), macSyncStatusFile("wss://h"); a == b {
+		t.Fatalf("ws and wss share %q", a)
+	}
+	long := "wss://h.example.com/" + strings.Repeat("p", 300)
+	got := macSyncStatusFile(long)
+	if len(got) > 255 {
+		t.Fatalf("name is %d bytes", len(got))
+	}
+	if got == macSyncStatusFile(long+"q") {
+		t.Fatal("two long URLs share a file")
+	}
+	if got != macSyncStatusFile(long) {
+		t.Fatal("long name is not stable")
 	}
 }
 
@@ -303,6 +319,13 @@ func TestMacSyncStatusPerVault(t *testing.T) {
 	}
 	if st := loadMacSyncStatus(box); st.MacURL != "" || st.State != "" {
 		t.Fatalf("shared file used for another Vault: %+v", st)
+	}
+	// The fallback moved the status to the Mac's own file, so the Mac keeps
+	// it once another Vault is listed first and takes over the shared file.
+	config.DesktopVaultURLs = []string{box, mac}
+	saveMacSyncStatus(macSyncStatus{MacURL: box, State: "running"})
+	if st := loadMacSyncStatus(mac); st.MacURL != mac || st.State != "done" {
+		t.Fatalf("mac status lost after another Vault took the shared file: %+v", st)
 	}
 }
 
