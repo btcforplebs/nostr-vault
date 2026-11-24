@@ -68,6 +68,14 @@ enum DesktopVaultsLogic {
         }
         let old = SlotAddress(taken), new = SlotAddress(slot)
         guard old != new else {
+            // The slot's address held by no Vault (the stored list was lost
+            // or dropped it): take it in again as new, so the owner's Mac
+            // stays a Vault and out of "Delete from mirrors" (Tron M1, #2500).
+            if !holds(vaults, new, ownNpub: ownNpub) {
+                var out = ordered(vaults)
+                addSlot(&out, new, slot: slot, devices: devices, ownNpub: ownNpub)
+                return renumbered(out)
+            }
             // Same host, new path or spelling (`/haven` to `/relay`): the
             // Vault takes the new address, as MAC_RELAY_URL does.
             guard case .web(let host) = new, httpsURL(taken) != httpsURL(slot),
@@ -90,24 +98,37 @@ enum DesktopVaultsLogic {
             break
         }
         out.removeAll { $0.meshNpub == nil && $0.httpsURL == nil }
-        // The new one goes to the Vault that has it, else to the `.mac`
-        // device whose domain or npub it is, else to a new Vault, first.
-        switch new {
-        case .web(let host):
-            guard !out.contains(where: { $0.hostKey == host }) else { break }
-            if let device = macDevice(domain: host, devices: devices, ownNpub: ownNpub),
-               let i = out.firstIndex(where: { $0.meshNpub == device.npub }) {
-                out[i].httpsURL = httpsURL(slot)
-            } else {
-                out.insert(vaultForSlot(new, typed: slot, devices: devices, ownNpub: ownNpub), at: 0)
-            }
-        case .mesh(let npub):
-            guard npub != ownNpub, !out.contains(where: { $0.meshNpub == npub }) else { break }
-            out.insert(vaultForSlot(new, typed: slot, devices: devices, ownNpub: ownNpub), at: 0)
-        case .none:
-            break
+        if !holds(out, new, ownNpub: ownNpub) {
+            addSlot(&out, new, slot: slot, devices: devices, ownNpub: ownNpub)
         }
-        return out.enumerated().map { i, vault in
+        return renumbered(out)
+    }
+
+    /// Whether a Vault already has the slot's address (nothing to hold for an
+    /// empty slot or this device's own npub).
+    private static func holds(_ vaults: [DesktopVault], _ address: SlotAddress, ownNpub: String?) -> Bool {
+        switch address {
+        case .web(let host): return vaults.contains { $0.hostKey == host }
+        case .mesh(let npub): return npub == ownNpub || vaults.contains { $0.meshNpub == npub }
+        case .none: return true
+        }
+    }
+
+    /// The slot's address goes to the `.mac` device whose domain it is, else
+    /// to a new Vault, first.
+    private static func addSlot(_ out: inout [DesktopVault], _ address: SlotAddress, slot: String,
+                                devices: [MeshDevice], ownNpub: String?) {
+        if case .web(let host) = address,
+           let device = macDevice(domain: host, devices: devices, ownNpub: ownNpub),
+           let i = out.firstIndex(where: { $0.meshNpub == device.npub }) {
+            out[i].httpsURL = httpsURL(slot)
+        } else {
+            out.insert(vaultForSlot(address, typed: slot, devices: devices, ownNpub: ownNpub), at: 0)
+        }
+    }
+
+    private static func renumbered(_ vaults: [DesktopVault]) -> [DesktopVault] {
+        vaults.enumerated().map { i, vault in
             var vault = vault
             vault.order = i
             return vault
