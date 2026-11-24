@@ -56,16 +56,23 @@ func resultFile(t *testing.T, dir string) ResultFile {
 func TestDepthStopsWhenARingAddsUnderOnePercent(t *testing.T) {
 	n := wideNet(150, 1)
 	dir := t.TempDir()
-	res, err := deepCrawler(t, n, dir).RunPass(context.Background(), false)
+	c := deepCrawler(t, n, dir)
+	res, err := c.RunPass(context.Background(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n.called(pk(2000)) {
-		t.Fatal("a ring that adds under 1% must not have its lists read")
+	// The globe step (globewalk.go) reads it, for the globe only.
+	if !n.called(pk(2000)) || !c.Store.GlobeOnly(pk(2000)) {
+		t.Fatal("a ring that adds under 1% must have its lists read for the globe only")
+	}
+	if _, _, ok := res.Score(pk(3000)); ok {
+		t.Fatal("the feed's rank must stop at ring 3")
 	}
 	if _, hop, ok := res.Score(pk(2000)); !ok || hop != 3 {
 		t.Fatal("ring 3 itself is still ranked")
 	}
+	// Ring 4 shows 0 here, so the globe step reads no further and the globe
+	// has no rows past ring 3 (globewalk_test.go walks to ring 5).
 	if rf := resultFile(t, dir); rf.MaxHop != 3 || rf.Params.MaxHop != 3 {
 		t.Fatalf("the file says how far the pass reached: %d %d", rf.MaxHop, rf.Params.MaxHop)
 	}
@@ -207,14 +214,14 @@ func TestDepthShrinksWhenARingStopsEarningIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n.called(pk(2000)) {
-		t.Fatal("ring 3 now adds under 1%: its list must not be read again")
+	if !c.Store.GlobeOnly(pk(2000)) {
+		t.Fatal("ring 3 now adds under 1%: its list is read again for the globe only")
 	}
 	if _, _, ok := res.Score(pk(3000)); ok {
 		t.Fatal("a ring this pass did not walk to must not come back from old lists")
 	}
-	if rf := resultFile(t, dir); rf.MaxHop != 3 {
-		t.Fatalf("file maxHop %d", rf.MaxHop)
+	if rf := resultFile(t, dir); rf.Params.MaxHop != 3 {
+		t.Fatalf("file params maxHop %d", rf.Params.MaxHop)
 	}
 }
 

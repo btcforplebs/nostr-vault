@@ -126,7 +126,7 @@ func TestGlobeListFillsEachRingCappedAndWalksBack(t *testing.T) {
 
 	// Through the file and the hand-off: the globe travels whole and is checked.
 	dir := t.TempDir()
-	if err := writeResult(dir, res, time.Unix(100, 0)); err != nil {
+	if err := writeResult(dir, res, globeForFile(res.Globe(GlobePerRing)), time.Unix(100, 0)); err != nil {
 		t.Fatal(err)
 	}
 	f, err := ReadResult(dir, owner)
@@ -170,7 +170,7 @@ func TestGlobeLeavesFeedRowsAlone(t *testing.T) {
 	g, owner, _, _ := globeMap()
 	res := mustRank(t, g, owner, nil)
 	dir := t.TempDir()
-	if err := writeResult(dir, res, time.Unix(100, 0)); err != nil {
+	if err := writeResult(dir, res, globeForFile(res.Globe(GlobePerRing)), time.Unix(100, 0)); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(ResultPath(dir, owner))
@@ -218,7 +218,7 @@ func TestGlobeCapFitsTheWorstCase(t *testing.T) {
 	g, owner, _, _ := globeMap()
 	res := mustRank(t, g, owner, nil)
 	dir := t.TempDir()
-	if err := writeResult(dir, res, time.Unix(100, 0)); err != nil {
+	if err := writeResult(dir, res, globeForFile(res.Globe(GlobePerRing)), time.Unix(100, 0)); err != nil {
 		t.Fatal(err)
 	}
 	f, err := ReadResult(dir, owner)

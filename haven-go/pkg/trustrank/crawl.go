@@ -114,8 +114,10 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 	// at distance h-1 who pass the bar. Ranking out to MaxHop needs lists
 	// out to MaxHop-1. Past SureHop the depth rule (depth.go) says whether
 	// a hop is read at all; the first one it turns down ends the walk.
+	// A checkpoint inside the globe step (st.Globe set) resumes there: the
+	// feed walk is done.
 	full := false
-	for ; st.Hop <= c.Params.MaxHop && !full; st.Hop, st.Next, st.Last = st.Hop+1, 0, "" {
+	for ; st.Globe == 0 && st.Hop <= c.Params.MaxHop && !full; st.Hop, st.Next, st.Last = st.Hop+1, 0, "" {
 		readers, walk, err := c.readers(st.Hop, st.Last != "")
 		if err != nil {
 			return nil, err
@@ -132,10 +134,21 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 			st.Next++
 		}
 		var err2 error
-		if full, err2 = c.readLists(ctx, &st, st.Hop, readers, refresh, floor); err2 != nil {
+		if full, err2 = c.readLists(ctx, &st, st.Hop, readers, refresh, false, floor); err2 != nil {
 			return nil, err2
 		}
 		c.Store.Sync()
+	}
+	// The globe step (globewalk.go) reads on for the globe only. A full
+	// store skips it; one that fills during it keeps what it read.
+	if !full {
+		if _, err := c.walkGlobe(ctx, &st, refresh, floor); err != nil {
+			return nil, err
+		}
+	}
+	globe, err := c.globeRows()
+	if err != nil {
+		return nil, err
 	}
 	// st.Hop is one past the last hop read (or the hop turned down), so the
 	// furthest ring this pass found is st.Hop-1.
@@ -143,10 +156,10 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := writeResult(c.Dir, res, c.now()); err != nil {
+	if err := writeResult(c.Dir, res, globe, c.now()); err != nil {
 		return nil, err
 	}
-	st.Hop, st.Next, st.Last, st.Refresh = 1, 0, "", false
+	st.Hop, st.Next, st.Last, st.Refresh, st.Globe = 1, 0, "", false, 0
 	// A pass cut short by a full store is ranked but not counted as done.
 	st.Capped = full
 	switch {
@@ -163,9 +176,11 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 
 // readLists reads readers' lists from st.Next on, a batch at a time,
 // keeping st's place (Next, Last) and the checkpoint. hop is what Progress
-// hears. full: the store reached its cap. ErrStopped: Wait said no or ctx
-// ended, with the place saved.
-func (c *Crawler) readLists(ctx context.Context, st *State, hop int, readers []string, refresh bool, floor int64) (full bool, err error) {
+// hears. globe: the lists are read for the globe only and are marked so
+// before they are stored (store_globe.go); a feed read drops the mark.
+// full: the store reached its cap. ErrStopped: Wait said no or ctx ended,
+// with the place saved.
+func (c *Crawler) readLists(ctx context.Context, st *State, hop int, readers []string, refresh, globe bool, floor int64) (full bool, err error) {
 	// pause keeps the place: lists on disk first, then the checkpoint.
 	pause := func() error {
 		c.Store.Checkpoint(c.Dir, *st)
@@ -186,6 +201,12 @@ func (c *Crawler) readLists(ctx context.Context, st *State, hop int, readers []s
 				asks[i].Since = have + 1
 			}
 		}
+		if globe {
+			if err := c.Store.MarkGlobe(batch); err != nil {
+				c.Store.Checkpoint(c.Dir, *st)
+				return false, err
+			}
+		}
 		got, err := c.Fetch.Fetch(ctx, asks, floor)
 		if err != nil {
 			// No answer (no relay reached, or ctx ended) is not "no
@@ -197,6 +218,7 @@ func (c *Crawler) readLists(ctx context.Context, st *State, hop int, readers []s
 			}
 			return false, fmt.Errorf("trustrank: lists from %s…: %w", batch[0][:8], err)
 		}
+		from := st.Next
 		for _, pk := range batch {
 			if l, found := got[pk]; found {
 				limit := c.now().Add(maxSkew).Unix()
@@ -210,6 +232,11 @@ func (c *Crawler) readLists(ctx context.Context, st *State, hop int, readers []s
 			}
 			st.Last = pk
 			st.Next++
+		}
+		if !globe {
+			// Read by the feed walk now: these lists count in the feed. A
+			// failed write leaves the mark, the safe side (left out).
+			c.Store.UnmarkGlobe(readers[from:st.Next])
 		}
 		if full {
 			return true, nil
@@ -282,8 +309,9 @@ type ResultFile struct {
 	// Floor is set only on a copy handed to a device (handoff.go): people
 	// who show under it were left out.
 	Floor float64 `json:"floor,omitempty"`
-	// Globe: [pubkey, shown, hop, via] for the globe only (globe.go). Travels
-	// whole; the feed never reads it. Older apps ignore it.
+	// Globe: [pubkey, shown, hop, via] for the globe only (globe.go), from
+	// rank B (globewalk.go). Travels whole; the feed never reads it. Older
+	// apps ignore it.
 	Globe [][4]any `json:"globe,omitempty"`
 }
 
@@ -292,8 +320,11 @@ func ResultPath(dir, account string) string {
 	return filepath.Join(dir, "wot_rank_"+account+".json")
 }
 
-func writeResult(dir string, r *Result, now time.Time) error {
-	f := ResultFile{Account: r.Owner, BuiltAt: now.Unix(), Version: 2, Params: r.Params, MaxHop: r.Params.MaxHop, ViewBar: DefaultViewBar}
+// writeResult writes r (rank A) as `people` and globe (rank B's rows) as
+// `globe`; maxHop covers both.
+func writeResult(dir string, r *Result, globe [][4]any, now time.Time) error {
+	f := ResultFile{Account: r.Owner, BuiltAt: now.Unix(), Version: 2, Params: r.Params,
+		MaxHop: fileMaxHop(r.Params.MaxHop, globe), ViewBar: DefaultViewBar, Globe: globe}
 	for _, p := range r.People() {
 		s := ShownRounded(p.Score)
 		if s == 0 && p.Hop > 1 {
@@ -301,7 +332,6 @@ func writeResult(dir string, r *Result, now time.Time) error {
 		}
 		f.People = append(f.People, [3]any{p.Pubkey, s, p.Hop})
 	}
-	f.Globe = globeForFile(r.Globe(GlobePerRing))
 	b, err := json.Marshal(f)
 	if err != nil {
 		return err
