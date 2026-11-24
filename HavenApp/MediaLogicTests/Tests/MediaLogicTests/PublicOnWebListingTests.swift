@@ -49,6 +49,35 @@ final class PublicOnWebListingTests: XCTestCase {
         XCTAssertEqual(c.publicRelayHint, "")
     }
 
+    /// A bare IP is never listed, switch on or untouched (Tron must-fix 1 on
+    /// #2512): not in 10002, the DM inbox or a hint. isPrivateNetworkHost
+    /// lets a WAN address through, so this is the only stop.
+    func testABareIPIsNeverListed() {
+        for domain in ["203.0.113.7", "203.0.113.7:4869", "[2001:db8::1]:443", "2001:db8::1"] {
+            for value in [nil, true] as [Bool?] {
+                let c = config(domain: domain, publicOnWeb: value)
+                XCTAssertFalse(c.listsOwnDomain, domain)
+                XCTAssertFalse(c.ownPublicRelays.contains { $0.contains(domain) }, domain)
+                XCTAssertEqual(c.ownHavenDMInboxURL, "", domain)
+                XCTAssertEqual(c.publicRelayHint, "", domain)
+            }
+        }
+    }
+
+    /// A failed list edit snaps the switch back (Tron should-fix 2 on #2512):
+    /// off reads off only when every list dropped the domain; on falls back
+    /// to off only when no list took it.
+    func testTheSwitchSnapsBackOnAFailedEdit() {
+        XCTAssertFalse(HavenConfig.publicOnWebAfterEdits(on: false, done: [true, true]))
+        XCTAssertTrue(HavenConfig.publicOnWebAfterEdits(on: false, done: [false, false]))
+        XCTAssertTrue(HavenConfig.publicOnWebAfterEdits(on: false, done: [true, false]), "10050 still lists it")
+        XCTAssertTrue(HavenConfig.publicOnWebAfterEdits(on: false, done: [false, true]), "10002 still lists it")
+        XCTAssertTrue(HavenConfig.publicOnWebAfterEdits(on: true, done: [true, true]))
+        XCTAssertTrue(HavenConfig.publicOnWebAfterEdits(on: true, done: [true, false]), "10002 lists it")
+        XCTAssertTrue(HavenConfig.publicOnWebAfterEdits(on: true, done: [false, true]), "10050 lists it")
+        XCTAssertFalse(HavenConfig.publicOnWebAfterEdits(on: true, done: [false, false]))
+    }
+
     /// Saved and loaded: on, off and never touched each survive, and an old
     /// config without the key loads as never touched.
     func testTheSwitchRoundTripsAndOldConfigsLoadAsUntouched() throws {

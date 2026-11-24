@@ -32,9 +32,11 @@ extension HavenConfig {
     /// it has an address and the owner has not turned Public on the web off.
     /// Turning it off stops the listing only; the domain still serves. nil
     /// (never touched) keeps today's behaviour: a domain is listed. Callers
-    /// keep their own private-network check.
+    /// keep their own private-network check. A bare IP address is never
+    /// listed, switch or not (rule 8, Tron must-fix 1 on #2512): every list
+    /// and hint reads this, so a WAN address can't leak through any of them.
     var listsOwnDomain: Bool {
-        !isLocal && (publicOnWeb ?? true)
+        !isLocal && (publicOnWeb ?? true) && !DesktopVaultsEditing.isIPHost(sanitizedRelayURL)
     }
 
     /// This vault's own web host as told to the owner's other devices over

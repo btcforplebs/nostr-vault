@@ -14,7 +14,7 @@ import Foundation
 /// (Tron M2). When the lookup doesn't settle, nothing is signed and the
 /// switch snaps back with `notLoadedMessage`. The settled rule per list is
 /// the one its other editors use: 10002 and 10050 need both indexers to
-/// answer (as `publishOwnerDMInbox`), 10063 goes through ListMerge.editBase
+/// answer (RelayDraft.settled), 10063 goes through ListMerge.editBase
 /// (as `publishServerList`).
 ///
 /// There is no mesh relay (10002 `fipsmesh`) switch yet (Logen, 13:53Z):
@@ -55,9 +55,13 @@ enum DesktopVaultListEdit {
     static let notLoadedMessage = "Couldn't load your list, try again"
 
     /// Turns `vault`'s `path` switch on `list` on or off. `done` runs on the
-    /// main actor once, with what happened.
+    /// main actor once, with what happened. `vaults`: the Vaults whose
+    /// entries count as Vault entries (rules 1 and 2); nil is the Desktop
+    /// Vaults list. A Mac editing its own entries passes
+    /// `HavenConfig.vaultsWithThisMac` (P8).
     @MainActor
     static func set(_ on: Bool, vault: DesktopVault, path: DesktopVaultPath, list: DesktopVaultList,
+                    vaults: [DesktopVault]? = nil,
                     nostr: NostrService = .shared, done: (@MainActor (Outcome) -> Void)? = nil) {
         let config = ConfigService.shared.config
         guard let owner = Bech32.decode(config.ownerNpub)?.hexString.lowercased() else {
@@ -65,7 +69,7 @@ enum DesktopVaultListEdit {
             return
         }
         let signer = config.ownerNpub
-        let vaults = config.desktopVaultsInEffect
+        let vaults = vaults ?? config.desktopVaultsInEffect
         Task { @MainActor in
             guard let base = await newest(list, owner: owner, config: config, nostr: nostr) else {
                 done?(.notLoaded)

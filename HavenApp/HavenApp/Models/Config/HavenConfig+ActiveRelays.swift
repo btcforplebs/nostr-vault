@@ -3,18 +3,23 @@ import Foundation
 extension HavenConfig {
     // MARK: - Blossom Mirrors Configuration
 
+    /// A saved address source as read: "custom" stays, anything else (the
+    /// removed "owner", nil, a value from a newer app) is "detected".
+    static func fipsAddressSource(_ saved: String?) -> String {
+        saved == "custom" ? "custom" : "detected"
+    }
+
     /// Builds the .fips Blossom URL from the configured source, or nil if FIPS publishing is disabled.
     func fipsBlossomURL(detectedNpub: String? = nil) -> String? {
         guard fipsPublishEnabled else { return nil }
+        // The account npub is never a mesh address (Tron S3): anything but
+        // "custom" is the detected one.
         let npub: String
-        switch fipsAddressSource {
-        case "detected":
+        if fipsAddressSource == "custom" {
+            npub = fipsCustomNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
             guard let detected = detectedNpub, !detected.isEmpty else { return nil }
             npub = detected
-        case "custom":
-            npub = fipsCustomNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        default:
-            npub = ownerNpub
         }
         let clean = npub.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard clean.hasPrefix("npub1") else { return nil }

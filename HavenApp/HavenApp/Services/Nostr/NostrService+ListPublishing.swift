@@ -238,15 +238,13 @@ extension NostrService {
     /// entries: linking or removing a device never does (Logen via Tod,
     /// 2026-11-08), so a publish for a typed server keeps them as they are.
     ///
-    /// `webMove`: Public on the web moved here (multi-Mac rules §3.3): the
-    /// old web device's https entry becomes `to`, in its place, so this
-    /// device is the one the list names. Not managed by this device: a later
-    /// publish here keeps it, as another device's entry.
+    /// This Mac's own mesh entry is its "Media over the Mesh" switch
+    /// (MacMeshMediaSwitch, Desktop Vaults P8), never added here: a publish
+    /// keeps it as published, like any other mesh entry.
     ///
     /// `onResult`: what the publish did (Settings › Media Servers shows it
     /// under Save). Not called when the account changed during the lookup.
     func publishServerList(fipsDetectedNpub: String? = nil, meshAdd: [String] = [], meshRemove: [String] = [],
-                           webMove: (fromHost: String, to: String)? = nil,
                            onResult: (@MainActor (ServerListPublishOutcome) -> Void)? = nil) {
         // A desktop Vault's entries are its own switches' (Desktop Vaults P4,
         // DesktopVaultListEdit): this phone neither adds nor drops them here,
@@ -261,19 +259,14 @@ extension NostrService {
         // phone): another phone's servers and mesh entries stay; only the
         // servers this phone manages change. Public servers first (NIP-F1).
         var ownMesh: String?
-        var photoNpub: String?
         #if os(iOS)
         // This phone's own mesh npub is never listed (and is dropped from an
         // older list that had it): the main node is for the owner's devices.
         ownMesh = FipsMeshService.shared.ownMeshNpub
-        #else
-        // The Mac lists its photo node, so a photo post points viewers to the
-        // Mac with no setup; phones keep the entry through this same merge.
-        photoNpub = PhotoNode.npub()
         #endif
         let managedKey = "serverListManaged.\(owner)"
         let previouslyManaged = Set(Self.serverListManaged(owner: owner).filter(notVault))
-        let ownMeshNpub = ownMesh, photo = photoNpub, current = servers
+        let ownMeshNpub = ownMesh, current = servers
         let removed = Set(meshRemove)
         // What this phone manages: its https servers only (mergeServerList).
         let managed = servers.filter { !$0.hasPrefix("fipsmesh://") }
@@ -312,12 +305,11 @@ extension NostrService {
                 onResult?(.listNotKnown(answered: lookup.answered, asked: lookup.asked))
                 return
             }
-            guard var merged = HomeVaultLogic.mergeServerList(
+            guard let merged = HomeVaultLogic.mergeServerList(
                 existing: existing,
                 current: current,
                 previouslyManaged: previouslyManaged,
                 ownMeshNpub: ownMeshNpub,
-                photoNpub: photo,
                 removed: removed
             ) else {
                 #if DEBUG
@@ -325,9 +317,6 @@ extension NostrService {
                 #endif
                 onResult?(.noPublicServer)
                 return
-            }
-            if let webMove {
-                merged = YourDevicesLogic.movingWeb(urls: merged, from: webMove.fromHost, to: webMove.to)
             }
             // Nothing changed: no new signed event on the public relays (kiosk
             // mode republishes on every app switch; readers already hold this).
@@ -430,17 +419,3 @@ extension NostrService {
         #endif
     }
 }
-
-#if os(macOS)
-/// The Mac's photo node: its own mesh node (MacFipsMeshService), which also
-/// lets strangers read photos by hash through the public seeds, capped. Its
-/// npub goes in the owner's 10063.
-enum PhotoNode {
-    /// This Mac's mesh npub while its Mesh switch is on and the engine runs
-    /// (it starts only with a device added), else nil.
-    @MainActor static func npub() -> String? {
-        HomeVaultLogic.macPhotoNpub(MacFipsMeshService.photoNpub(), engineRunning: MacFipsMeshService.shared.running)
-            .flatMap { HomeVaultLogic.meshNpub(fromInput: $0) }
-    }
-}
-#endif

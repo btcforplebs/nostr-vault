@@ -253,9 +253,9 @@ extension HomeVaultLogic {
     ///   dropped if an older list carried it: the main node is for the owner's
     ///   own devices only, so naming it in public is never right (Logen, FIPS
     ///   photos, 2026-10-21).
-    /// - photoNpub: the photo node's npub (the Mac's blob node, which serves
-    ///   photos by hash to anyone), listed last. Nil lists nothing: there is no
-    ///   fallback to the main npub.
+    /// Nothing here adds a mesh entry on its own: the Mac's own entry is its
+    /// "Media over the Mesh" switch (Desktop Vaults P8, Beta, off by default),
+    /// which a publish keeps as published like any other mesh entry.
     /// Returns nil when the result has no https server: a list only mesh
     /// readers can use must not go out (NIP-F1).
     static func mergeServerList(
@@ -263,7 +263,6 @@ extension HomeVaultLogic {
         current: [String],
         previouslyManaged: Set<String>,
         ownMeshNpub: String?,
-        photoNpub: String? = nil,
         removed: Set<String> = []
     ) -> [String]? {
         func key(_ url: String) -> String {
@@ -296,27 +295,11 @@ extension HomeVaultLogic {
             // A vault the owner just added on Media Servers.
             if let npub = meshNpub(fromEntry: url), npub != ownMeshNpub { add(url) }
         }
-        if let photo = photoNpub.flatMap({ meshNpub(fromInput: $0) }), photo != ownMeshNpub { add("fipsmesh://\(photo)/") }
 
         // A list naming only home-network servers must not go out either: no
         // reader outside could open one, and it would publish the home address.
         guard out.contains(where: isPublicServer) else { return nil }
         return out
-    }
-
-    /// The photo node the Mac lists: its mesh npub only while its engine runs.
-    /// The engine starts only with a device in My Devices, so the switch on
-    /// with none added (or a start that failed) lists nothing: an entry
-    /// there would point readers at a node nobody can reach.
-    static func macPhotoNpub(_ npub: String?, engineRunning: Bool) -> String? {
-        engineRunning ? npub : nil
-    }
-
-    /// Whether the owner's kept 10063 still lacks the photo node, so the Mac
-    /// should republish. Nil list (none seen yet) or no photo node: no.
-    static func photoNodeMissing(from kept: [String]?, photoNpub: String?) -> Bool {
-        guard let kept, let photo = photoNpub.flatMap({ meshNpub(fromInput: $0) }) else { return false }
-        return !kept.contains { meshNpub(fromEntry: $0) == photo }
     }
 
     /// A server a reader without FIPS can reach: not a `fipsmesh://` entry, and
@@ -556,8 +539,6 @@ struct MeshMediaServerRow: Equatable, Identifiable {
     let role: MeshDeviceRole?
     /// On the owner's published media server list (10063) now.
     let listed: Bool
-    /// False for this Mac's own photo node: the Mesh switch lists it.
-    let removable: Bool
 
     var id: String { npub }
     var entry: String { "fipsmesh://\(npub)/" }
@@ -571,9 +552,9 @@ extension HomeVaultLogic {
 
     /// The section's rows: each vault in My Devices (listed or not, so it can
     /// be added), then every other mesh entry on the published list (so the
-    /// owner can take it off). `own` is this device's mesh npub, never shown.
-    /// `photoNpub` is this Mac's photo node, shown but not removable.
-    static func meshMediaServerRows(devices: [MeshDevice], listed: [String], own: String?, photoNpub: String?) -> [MeshMediaServerRow] {
+    /// owner can take it off). `own` is this device's mesh npub, never shown:
+    /// a Mac lists its own with its "Media over the Mesh" switch.
+    static func meshMediaServerRows(devices: [MeshDevice], listed: [String], own: String?) -> [MeshMediaServerRow] {
         let listedNpubs = listed.compactMap { meshNpub(fromEntry: $0) }
         let listedSet = Set(listedNpubs)
         var rows: [MeshMediaServerRow] = []
@@ -581,12 +562,12 @@ extension HomeVaultLogic {
         if let own { seen.insert(own) }
         for device in devices where listableRoles.contains(device.role) && seen.insert(device.npub).inserted {
             rows.append(.init(npub: device.npub, name: device.displayName, role: device.role,
-                              listed: listedSet.contains(device.npub), removable: device.npub != photoNpub))
+                              listed: listedSet.contains(device.npub)))
         }
         for npub in listedNpubs where seen.insert(npub).inserted {
             let device = devices.first { $0.npub == npub }
             rows.append(.init(npub: npub, name: device?.displayName, role: device?.role,
-                              listed: true, removable: npub != photoNpub))
+                              listed: true))
         }
         return rows
     }

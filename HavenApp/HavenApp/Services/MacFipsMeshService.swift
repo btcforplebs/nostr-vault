@@ -80,15 +80,9 @@ final class MacFipsMeshService: ObservableObject {
         enabled = on
         UserDefaults.standard.set(on, forKey: Self.enabledKey)
         sync()
-        // The photo node (PhotoNode) is listed while the switch is on.
-        if on { NostrService.shared.publishServerList() }
-    }
-
-    /// This Mac's mesh npub while the switch is on: the photo node strangers
-    /// read from. Any thread; nil before the key exists.
-    nonisolated static func photoNpub() -> String? {
-        guard UserDefaults.standard.bool(forKey: enabledKey) else { return nil }
-        return UserDefaults.standard.string(forKey: ownNpubKey)
+        // Nothing is listed: this Mac's mesh address goes in the media
+        // servers only with its "Media over the Mesh" switch (MacMeshMediaSwitch,
+        // Desktop Vaults P8, Beta, off by default).
     }
 
     /// Brings the engine in line with the switch and My Devices: starts it,

@@ -20,11 +20,13 @@ struct MeshMediaServersSection: View {
         // (Desktop Vaults P4), shown in "From your desktop Vaults".
         let vaultNpubs = Set(configService.config.desktopVaultMeshNpubs)
         return HomeVaultLogic.meshMediaServerRows(devices: FipsMeshDevices.current(configService.config), listed: listed,
-                                                  own: FipsMeshService.shared.ownMeshNpub, photoNpub: nil)
+                                                  own: FipsMeshService.shared.ownMeshNpub)
             .filter { !vaultNpubs.contains($0.npub) }
         #else
+        // This Mac's own entry is its "Media over the Mesh" switch
+        // (MacMeshMediaSwitch, Desktop Vaults P8), never a row here.
         return HomeVaultLogic.meshMediaServerRows(devices: configService.config.meshDevices, listed: listed,
-                                                         own: MacFipsMeshService.shared.ownNpub, photoNpub: PhotoNode.npub())
+                                                  own: MacFipsMeshService.shared.ownNpub)
         #endif
     }
 
@@ -66,19 +68,12 @@ struct MeshMediaServersSection: View {
                 Text("\(row.role?.label ?? "Mesh vault") · \(row.npub.prefix(12))…\(row.npub.suffix(6))")
                     .font(.appCaption)
                     .foregroundColor(.secondary)
-                if !row.removable {
-                    Text("Listed while Mesh is on")
-                        .font(.appCaption)
-                        .foregroundColor(.secondary)
-                }
             }
             Spacer()
             if shownListed {
-                if row.removable {
-                    Button("Remove", role: .destructive) { set(row, listed: false) }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel("Remove \(row.name ?? "mesh vault") from my media servers")
-                }
+                Button("Remove", role: .destructive) { set(row, listed: false) }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Remove \(row.name ?? "mesh vault") from my media servers")
             } else {
                 Button("Add to my media servers") { set(row, listed: true) }
                     .buttonStyle(.borderless)

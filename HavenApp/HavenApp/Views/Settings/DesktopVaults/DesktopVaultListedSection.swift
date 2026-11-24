@@ -16,8 +16,6 @@ struct DesktopVaultListedSection: View {
     @State private var busy: Set<String> = []
     @State private var line: String?
 
-    static let nipF1URL = URL(string: "https://nostrvault.app/docs/developers/#nips")!
-
     var body: some View {
         Section {
             if vault.httpsURL != nil {
@@ -90,7 +88,7 @@ struct DesktopVaultListedSection: View {
                 }
             }
             .disabled(lists[.media] == nil || busy.contains(key(.mesh, .media)))
-            Link("What is this? (NIP-F1)", destination: Self.nipF1URL)
+            Link("What is this? (NIP-F1)", destination: DesktopVaultText.nipF1URL)
                 .font(.appCaption)
         }
     }
