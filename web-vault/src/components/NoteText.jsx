@@ -18,12 +18,15 @@ import { BlossomMedia } from "./BlossomMedia.jsx"
 import { DmPhoto } from "./DmPhoto.jsx"
 import { isFileLink } from "../net/dm-file.js"
 import { parseBlossomUri } from "../net/blossom-uri.js"
+import { HtreeMedia } from "./HtreeMedia.jsx"
+import { parseHtree } from "../net/htree.js"
 import { liveDrops, liveRefs, trimAroundLive } from "../net/live-note.js"
 import { emojiMap } from "../net/custom-emoji.js"
 import { emojiNodes } from "./CustomEmoji.jsx"
 
 // A BUD-10 blossom:<sha256>.<ext>?… link is one token too, so its query never reads as text (BlossomMedia).
-const TOKEN = /(https?:\/\/[^\s<>"]+|nostr:[a-z0-9]+|blossom:[0-9a-fA-F]{64}\.[A-Za-z0-9]{1,10}(?:\?[^\s<>"]*)?)/gi
+// An htree://nhash1…/<name> link (Iris hashtree) is one token as well (HtreeMedia).
+const TOKEN = /(https?:\/\/[^\s<>"]+|nostr:[a-z0-9]+|blossom:[0-9a-fA-F]{64}\.[A-Za-z0-9]{1,10}(?:\?[^\s<>"]*)?|htree:\/\/nhash1[02-9ac-hj-np-z]{20,}(?:\/[^\s<>"]*)?)/gi
 const MAX_QUOTE_DEPTH = 1
 
 /** `dm`: the text is a private message, so nothing in it reaches the network on its own: video links stay links
@@ -71,6 +74,7 @@ export function NoteText(props) {
       {parts.map((s, i) => {
         if (i % 2 === 0) return withMarks(s, i, emoji)
         if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm, memoryOnly, trusted)
+        if (/^htree:/i.test(s)) { const h = parseHtree(s); return h ? <HtreeMedia key={i} h={h} author={author} images={images} /> : <span key={i}>{s}</span> }
         if (/^blossom:/i.test(s)) { const b = parseBlossomUri(s); return b ? <BlossomMedia key={i} b={b} author={author} images={images} dm={dm} /> : <span key={i}>{s}</span> }
         // A .fips link left in the text (a DM, or images off) stays plain text: as an <img>, <video> or <a> it would
         // send the name to DNS.
