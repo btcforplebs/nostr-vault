@@ -7,6 +7,13 @@ import XCTest
 final class TrustChainTests: XCTestCase {
     private func pk(_ c: Character) -> String { String(repeating: c, count: 64) }
     private var me: String { pk("a") }
+    /// Your live follows: b, as in the copy's `people`.
+    private var follows: Set<String> { [pk("b")] }
+
+    private func links(_ to: String, _ copy: TrustRankCopy?, follows: Set<String>? = nil,
+                       blocked: Set<String> = []) -> [String]? {
+        TrustChain.links(to: to, copy: copy, follows: follows ?? self.follows, blocked: blocked)
+    }
 
     private func file(people: String = "[[\"\(String(repeating: "b", count: 64))\",100,1]]",
                       globe: String, maxHop: Int = 6) -> Data {
@@ -27,40 +34,59 @@ final class TrustChainTests: XCTestCase {
 
     func testWalksViaBackToYourFollowNearestFirst() throws {
         let copy = try chainCopy()
-        XCTAssertEqual(TrustChain.links(to: pk("f"), copy: copy), [pk("b"), pk("c"), pk("d"), pk("e"), pk("f")])
-        XCTAssertEqual(TrustChain.links(to: pk("d"), copy: copy), [pk("b"), pk("c"), pk("d")])
-        XCTAssertEqual(TrustChain.links(to: pk("c"), copy: copy), [pk("b"), pk("c")], "a hop-2 link row")
-        XCTAssertEqual(TrustChain.links(to: pk("D"), copy: copy)?.last, pk("d"), "keys in any case")
+        XCTAssertEqual(links(pk("f"), copy), [pk("b"), pk("c"), pk("d"), pk("e"), pk("f")])
+        XCTAssertEqual(links(pk("d"), copy), [pk("b"), pk("c"), pk("d")])
+        XCTAssertEqual(links(pk("c"), copy), [pk("b"), pk("c")], "a hop-2 link row")
+        XCTAssertEqual(links(pk("D"), copy)?.last, pk("d"), "keys in any case")
     }
 
     func testTheChainReadsYouThenNames() throws {
-        let links = try XCTUnwrap(TrustChain.links(to: pk("d"), copy: try chainCopy()))
+        let chain = try XCTUnwrap(links(pk("d"), try chainCopy()))
         let names = [pk("b"): "Alice", pk("c"): "Bob", pk("d"): "Carol"]
-        XCTAssertEqual(TrustChain.text(links, name: { names[$0] ?? "?" }), "You > Alice > Bob > Carol")
+        XCTAssertEqual(TrustChain.text(chain, name: { names[$0] ?? "?" }), "You > Alice > Bob > Carol")
     }
 
     func testNoChainForSomeoneNotOnTheGlobeListOrABrokenChain() throws {
         let copy = try chainCopy()
-        XCTAssertNil(TrustChain.links(to: pk("9"), copy: copy))
-        XCTAssertNil(TrustChain.links(to: pk("b"), copy: copy), "ring 1 is in people, not the globe list")
-        XCTAssertNil(TrustChain.links(to: pk("d"), copy: nil))
+        XCTAssertNil(links(pk("9"), copy))
+        XCTAssertNil(links(pk("b"), copy), "ring 1 is in people, not the globe list")
+        XCTAssertNil(links(pk("d"), nil))
         // d's link is missing.
         let missing = try XCTUnwrap(TrustRankCopy.parse(file(globe: "[\(row("d", 40, 3, "c"))]"), account: me))
-        XCTAssertNil(TrustChain.links(to: pk("d"), copy: missing))
+        XCTAssertNil(links(pk("d"), missing))
         // e's via is two rings in, not one.
         let skip = try XCTUnwrap(TrustRankCopy.parse(
             file(globe: "[\(row("e", 20, 4, "c")),\(row("c", 70, 2, "b"))]"), account: me))
-        XCTAssertNil(TrustChain.links(to: pk("e"), copy: skip))
+        XCTAssertNil(links(pk("e"), skip))
         // c's via is not one of your follows (an unfollow since the rank).
         let unfollowed = try XCTUnwrap(TrustRankCopy.parse(
             file(people: "[]", globe: "[\(row("d", 40, 3, "c")),\(row("c", 70, 2, "b"))]"), account: me))
-        XCTAssertNil(TrustChain.links(to: pk("d"), copy: unfollowed))
+        XCTAssertNil(links(pk("d"), unfollowed))
+    }
+
+    func testAnUnfollowSinceTheRankBreaksTheChainEvenWhileTheCopyStillHasThem() throws {
+        // A real unfollow leaves the copy as it was: b is still hop 1 there.
+        let copy = try chainCopy()
+        XCTAssertEqual(copy[pk("b")]?.hop, 1)
+        XCTAssertNil(links(pk("d"), copy, follows: []))
+        XCTAssertNil(links(pk("d"), copy, follows: [pk("9")]))
+        let why = try XCTUnwrap(TrustWhy.of(pubkey: pk("e"), me: me, copy: copy, path: nil, follows: [], blocked: []))
+        XCTAssertNil(why.chain, "why? still opens, with no chain")
+    }
+
+    func testNoChainThroughSomeoneYouBlocked() throws {
+        let copy = try chainCopy()
+        XCTAssertNil(links(pk("f"), copy, blocked: [pk("d")]), "a link in the middle")
+        XCTAssertNil(links(pk("f"), copy, blocked: [pk("b")]), "your follow at the start")
+        XCTAssertNil(links(pk("f"), copy, blocked: [pk("f")]), "them")
+        XCTAssertNotNil(links(pk("f"), copy, blocked: [pk("9")]))
     }
 
     func testWhyGivesTheChainAndAScoreForSomeoneOnlyOnTheGlobeList() throws {
         let copy = try chainCopy()
         XCTAssertNil(copy[pk("e")], "e is under the floor: not in people")
-        let why = try XCTUnwrap(TrustWhy.of(pubkey: pk("e"), me: me, copy: copy, path: nil))
+        let why = try XCTUnwrap(TrustWhy.of(pubkey: pk("e"), me: me, copy: copy, path: nil,
+                                                  follows: follows, blocked: []))
         XCTAssertEqual(why.score, 20)
         XCTAssertEqual(why.hop, 4)
         XCTAssertEqual(why.chain, [pk("b"), pk("c"), pk("d"), pk("e")])

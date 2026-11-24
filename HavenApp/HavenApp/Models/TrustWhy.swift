@@ -39,7 +39,9 @@ struct TrustWhy: Equatable {
     /// Rows the sheet lists; the rest are counted.
     static let shown = 12
 
-    static func of(pubkey: String, me: String, copy: TrustRankCopy?, path: TrustPath?) -> TrustWhy? {
+    /// `follows` and `blocked` only check the chain (`TrustChain.links`).
+    static func of(pubkey: String, me: String, copy: TrustRankCopy?, path: TrustPath?,
+                   follows: Set<String>, blocked: Set<String>) -> TrustWhy? {
         guard let copy, pubkey.caseInsensitiveCompare(me) != .orderedSame,
               let person = copy[pubkey] ?? copy.globePerson(pubkey).map({ TrustRankCopy.Person(score: $0.score, hop: $0.hop) })
         else { return nil }
@@ -57,7 +59,7 @@ struct TrustWhy: Equatable {
                 let sa = a.score ?? -1, sb = b.score ?? -1
                 return sa != sb ? sa > sb : a.pubkey < b.pubkey
             }
-        let chain = hop >= 3 ? TrustChain.links(to: pubkey, copy: copy) : nil
+        let chain = hop >= 3 ? TrustChain.links(to: pubkey, copy: copy, follows: follows, blocked: blocked) : nil
         return TrustWhy(score: whole(person.score), hop: hop, bar: whole(copy.viewBar), rankedAt: copy.builtAt,
                         followers: followers, exact: path?.complete == true, reach: path?.reach, chain: chain)
     }

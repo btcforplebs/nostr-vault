@@ -44,8 +44,16 @@ struct TrustWhySheet: View {
     var onShow: (() -> Void)? = nil
     @EnvironmentObject var nostrService: NostrService
     @StateObject private var trust = LiveTrustPath()
+    /// Live follows and blocks: the chain's first link must still be a
+    /// follow, and nobody on it blocked (the copy can be a day old).
+    @ObservedObject private var feed = FeedService.shared
+    @ObservedObject private var config = ConfigService.shared
 
-    private var why: TrustWhy? { TrustWhy.of(pubkey: pubkey, me: me, copy: copy, path: trust.path) }
+    private var why: TrustWhy? {
+        TrustWhy.of(pubkey: pubkey, me: me, copy: copy, path: trust.path,
+                    follows: Set(feed.followedPubkeys.map { $0.lowercased() }),
+                    blocked: Set(config.activeAccountBlockedHexPubkeys.map { $0.lowercased() }))
+    }
 
     var body: some View {
         ScrollView {

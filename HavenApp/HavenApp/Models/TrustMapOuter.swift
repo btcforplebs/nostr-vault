@@ -52,10 +52,12 @@ struct TrustMapOuter: Equatable {
         }
         // The globe list's first `shownPeople` rows of a hop are that ring's
         // top, best first; any later ones are chain links (contract §5).
+        // The top leaves out anyone who shows 0 (haven-go `Globe`), so a
+        // 0 row is always a link, even in a ring with under 300 scored.
         var byHop: [Int: [String]] = [:]
         var seen: [Int: Int] = [:]
         for key in copy.globeOrder {
-            guard let person = copy.globe[key], rankedHops.contains(person.hop) else { continue }
+            guard let person = copy.globe[key], rankedHops.contains(person.hop), person.score > 0 else { continue }
             let n = seen[person.hop, default: 0]
             guard n < shownPeople else { continue }
             seen[person.hop] = n + 1

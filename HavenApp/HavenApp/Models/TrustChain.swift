@@ -10,8 +10,12 @@ enum TrustChain {
     /// From one of your follows (ring 1) out to `pubkey`, nearest first:
     /// `[A, B, them]` for someone three hops out. nil when `pubkey` is not
     /// in the globe list, or the chain breaks: a link that is missing, not
-    /// exactly one ring nearer, or a ring-1 link you no longer follow.
-    static func links(to pubkey: String, copy: TrustRankCopy?) -> [String]? {
+    /// exactly one ring nearer, a ring-1 link not in `follows` (your live
+    /// follow list: the copy can be a day old, so an unfollow since the rank
+    /// only shows there), or anyone on it in `blocked` (blocked on this device).
+    /// Both sets hold lowercase hex, as the copy does.
+    static func links(to pubkey: String, copy: TrustRankCopy?,
+                      follows: Set<String>, blocked: Set<String>) -> [String]? {
         guard let copy else { return nil }
         let start = pubkey.lowercased()
         guard let first = copy.globePerson(start) else { return nil }
@@ -23,8 +27,9 @@ enum TrustChain {
             out.append(at.via)
             at = next
         }
-        guard at.hop == 2, copy[at.via]?.hop == 1 else { return nil }
+        guard at.hop == 2, copy[at.via]?.hop == 1, follows.contains(at.via) else { return nil }
         out.append(at.via)
+        guard !out.contains(where: { blocked.contains($0) }) else { return nil }
         return out.reversed()
     }
 

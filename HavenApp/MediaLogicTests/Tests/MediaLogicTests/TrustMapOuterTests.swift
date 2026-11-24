@@ -49,6 +49,21 @@ final class TrustMapOuterTests: XCTestCase {
         XCTAssertEqual(TrustMapOuter.chipText(ring), "3 hops · top 300")
     }
 
+    func testAZeroRowIsALinkEvenInARingUnder300() throws {
+        // haven-go's top leaves out anyone who shows 0, so in a ring with
+        // fewer than 300 scored people a 0 row is a chain link.
+        let link = String(repeating: "c", count: 64)
+        let globe = ["[\"\(pk("d"))\",40,3,\"\(link)\"]", "[\"\(pk("e"))\",30,4,\"\(pk("9"))\"]",
+                     "[\"\(pk("9"))\",0,3,\"\(link)\"]", "[\"\(link)\",80,2,\"\(pk("b"))\"]"]
+        let text = "{\"account\":\"\(me)\",\"builtAt\":1,\"version\":2,\"maxHop\":6,"
+            + "\"people\":[[\"\(pk("b"))\",100,1]],\"globe\":[\(globe.joined(separator: ","))]}"
+        let copy = try XCTUnwrap(TrustRankCopy.parse(Data(text.utf8), account: me))
+        let outer = TrustMapOuter.make(copy: copy, desktopPaired: true)
+        XCTAssertEqual(outer.rings.first?.top, [pk("d")], "9 shows 0: a link to e, not a dot")
+        XCTAssertEqual(TrustMapOuter.countText(try XCTUnwrap(outer.rings.first)),
+                       "The 1 best-scored person in this ring, whatever their score.")
+    }
+
     func testFadesPerHop() {
         XCTAssertEqual(TrustMapOuter.fade(hop: 3), 1)
         XCTAssertEqual(TrustMapOuter.fade(hop: 4), 0.6)
