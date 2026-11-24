@@ -98,6 +98,8 @@ object AppModule {
                 add(com.nostrvault.service.RemoteVideoFrameFetcher.Factory())
                 // BUD-10 blossom: links, drawn only from bytes that hash to the link.
                 add(com.nostrvault.service.BlossomUriLoader.Fetcher.Factory())
+                // htree:// (Iris hashtree) photos, drawn only once decrypted and checked.
+                add(com.nostrvault.service.HtreeLoader.Fetcher.Factory())
                 // Locked DM photos (kind 15): drawn from the opened bytes, never the ciphertext.
                 add(com.nostrvault.service.DMFileLoader.Fetcher.Factory())
                 // ImageDecoder (API 28+) decodes animated GIF/WebP natively and
