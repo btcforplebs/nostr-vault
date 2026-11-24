@@ -121,11 +121,15 @@ enum DesktopVaultsLists {
     static func entry(for vault: DesktopVault, path: DesktopVaultPath, in list: DesktopVaultList) -> [String]? {
         switch path {
         case .web:
-            guard let host = vault.hostKey else { return nil }
+            // The whole base, path included: the engine serves `<base>` and
+            // `<base>/inbox` (macsync.go), so `wss://host` alone misses a
+            // Vault at `/haven`.
+            guard let url = vault.httpsURL, vault.hostKey != nil else { return nil }
+            let base = DesktopVaultsLogic.base(url)
             switch list {
-            case .relays: return ["r", "wss://\(host)"]
-            case .inbox: return ["relay", "wss://\(host)/inbox"]
-            case .media: return ["server", "https://\(host)"]
+            case .relays: return ["r", "wss://\(base)"]
+            case .inbox: return ["relay", "wss://\(base)/inbox"]
+            case .media: return ["server", "https://\(base)"]
             }
         case .mesh:
             guard let npub = vault.meshNpub.flatMap(HomeVaultLogic.meshNpub(fromInput:)) else { return nil }

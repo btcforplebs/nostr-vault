@@ -185,6 +185,47 @@ final class DesktopVaultsTests: XCTestCase {
         XCTAssertEqual(config.activeFeedRelays, [])
     }
 
+    /// Tron M1: a path edit on the same host reaches the Vault, so the lists
+    /// and MAC_RELAY_URL stay on one address.
+    func testOldTabPathEditOnSameHost() {
+        var config = HavenConfig()
+        config.feedRelays = []
+        config.blossomMirrors = []
+        config.macRelayURL = "https://mac.example.com/haven"
+        config.takeInDesktopVaultSlot()
+        config.macRelayURL = "https://mac.example.com/relay"
+        XCTAssertEqual(config.activeFeedRelays, [config.macRelayWssURL])
+        XCTAssertEqual(config.activeFeedRelays, ["wss://mac.example.com/relay"])
+        XCTAssertEqual(config.activeBlossomMirrors, ["https://mac.example.com/relay"])
+        config.takeInDesktopVaultSlot()
+        XCTAssertEqual(config.desktopVaults.map(\.httpsURL), ["https://mac.example.com/relay"])
+        XCTAssertEqual(config.activeFeedRelays, ["wss://mac.example.com/relay"])
+    }
+
+    /// Tron S2: a switch adds the Vault's whole base, path included.
+    func testEntryKeepsThePath() {
+        let vault = DesktopVault(id: "h", name: "", httpsURL: "https://mac.example.com/haven", order: 0)
+        XCTAssertEqual(DesktopVaultsLists.entry(for: vault, path: .web, in: .relays), ["r", "wss://mac.example.com/haven"])
+        XCTAssertEqual(DesktopVaultsLists.entry(for: vault, path: .web, in: .inbox), ["relay", "wss://mac.example.com/haven/inbox"])
+        XCTAssertEqual(DesktopVaultsLists.entry(for: vault, path: .web, in: .media), ["server", "https://mac.example.com/haven"])
+        let tags = [["r", "wss://mac.example.com/haven"]]
+        XCTAssertTrue(DesktopVaultsLists.isListed(vault, path: .web, in: .relays, tags: tags))
+    }
+
+    /// Tron S1: an unreadable list is migrated again from the slot.
+    func testUnreadableListIsMigratedAgain() throws {
+        var config = HavenConfig()
+        config.macRelayURL = "https://mac.example.com"
+        config.takeInDesktopVaultSlot()
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(config)) as? [String: Any])
+        json["desktopVaults"] = "not a list"
+        var back = try JSONDecoder().decode(HavenConfig.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(back.desktopVaults, [])
+        XCTAssertNil(back.desktopVaultsSlot)
+        back.takeInDesktopVaultSlot()
+        XCTAssertEqual(back.desktopVaults.map(\.httpsURL), ["https://mac.example.com"])
+    }
+
     func testConfigRoundTripAndUnknownVaultSkipped() throws {
         var config = HavenConfig()
         config.desktopVaults = [DesktopVault(id: "a", name: "Mac", kind: .box, httpsURL: "https://a.example.com", order: 0)]

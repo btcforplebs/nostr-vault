@@ -67,7 +67,15 @@ enum DesktopVaultsLogic {
             return vaults.isEmpty ? migrated(slot: slot, devices: devices, ownNpub: ownNpub) : ordered(vaults)
         }
         let old = SlotAddress(taken), new = SlotAddress(slot)
-        guard old != new else { return vaults }
+        guard old != new else {
+            // Same host, new path or spelling (`/haven` to `/relay`): the
+            // Vault takes the new address, as MAC_RELAY_URL does.
+            guard case .web(let host) = new, httpsURL(taken) != httpsURL(slot),
+                  let i = vaults.firstIndex(where: { $0.hostKey == host }) else { return vaults }
+            var out = vaults
+            out[i].httpsURL = httpsURL(slot)
+            return out
+        }
         var out = ordered(vaults)
         // The old address leaves the Vault that had it.
         switch old {

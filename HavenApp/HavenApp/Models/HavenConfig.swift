@@ -408,9 +408,16 @@ struct HavenConfig: Codable, Equatable {
         nwcURI = try container.decodeIfPresent(String.self, forKey: .nwcURI) ?? defaults.nwcURI
         macRelayURL = try container.decodeIfPresent(String.self, forKey: .macRelayURL) ?? defaults.macRelayURL
         // One Vault a newer app wrote that this one can't read is skipped on its own.
-        desktopVaults = (try? container.decodeIfPresent([LossyDesktopVault].self, forKey: .desktopVaults))?
-            .compactMap(\.vault) ?? defaults.desktopVaults
         desktopVaultsSlot = try container.decodeIfPresent(String.self, forKey: .desktopVaultsSlot)
+        do {
+            desktopVaults = try container.decodeIfPresent([LossyDesktopVault].self, forKey: .desktopVaults)?
+                .compactMap(\.vault) ?? defaults.desktopVaults
+        } catch {
+            // The whole list is unreadable: take the slot in again (§3), or
+            // the slot's Vault would drop out of every list for good.
+            desktopVaults = defaults.desktopVaults
+            desktopVaultsSlot = nil
+        }
         publicOnWeb = try container.decodeIfPresent(Bool.self, forKey: .publicOnWeb)
         keepFullCopy = try container.decodeIfPresent(Bool.self, forKey: .keepFullCopy)
         fullCopyWifiOnly = try container.decodeIfPresent(Bool.self, forKey: .fullCopyWifiOnly)
