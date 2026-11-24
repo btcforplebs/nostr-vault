@@ -294,15 +294,6 @@ extension VaultView {
                     outsideOnly: currentActivityFilter == .outside,
                     foldsOutsideLikes: true
                 )
-                // All's "N from outside your web" line: the likes and reposts
-                // All left out (Logen 2026-11-13, option A).
-                let outsideLikes = currentActivityFilter == .all
-                    ? VaultActivity.outsideLikeCount(
-                        VaultActivity.build(events: events, owner: owner, noteKinds: Set(NostrService.relayTabNoteKinds),
-                                            isBlocked: isBlocked, isOutside: isOutside,
-                                            outsideOnly: true, foldsOutsideLikes: true),
-                        zapsOnly: zapsOnly)
-                    : 0
                 // Filtered before the page cap, so a page of likes doesn't
                 // hide the mentions behind it.
                 let shown = Array(lines.lazy
@@ -319,7 +310,6 @@ extension VaultView {
                         Self.firstRowsMarked = true
                         RelayProcessManager.shared.startupMark("vault rows shown")
                     }
-                    if self.outsideLikeCount != outsideLikes { self.outsideLikeCount = outsideLikes }
                     self.activityHasLoadedOnce = true
                     self.displayPass &+= 1
                     self.nostrService.fetchMissingProfiles(for: missingProfiles)
