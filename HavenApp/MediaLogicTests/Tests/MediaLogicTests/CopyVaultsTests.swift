@@ -130,3 +130,24 @@ final class CopyVaultsTests: XCTestCase {
         XCTAssertEqual(out.compactMap { ($0["updatedAt"] as? NSNumber)?.int64Value }, [now, now])
     }
 }
+
+extension CopyVaultsTests {
+    /// A tombstone for a paired Mac's Vault stays applied: followingDevices
+    /// would re-add a Vault for a Mac in My Devices, so the delete must land
+    /// on desktopVaultsRemoved as a local delete does (Tron on #2521), and the
+    /// next export keeps the tombstone instead of reviving the Vault.
+    func testTombstoneForPairedMacStaysDeleted() throws {
+        let (mac, _) = try npubs()
+        var c = HavenConfig()
+        c.meshDevices = [MeshDevice(npub: mac, name: "Studio Mac", role: .mac)]
+        c.takeInDesktopVaultSlot(ownNpub: nil)
+        XCTAssertEqual(c.desktopVaultsInEffect(ownNpub: nil).compactMap(\.meshNpub), [mac], "positive control")
+        let id = try XCTUnwrap(c.desktopVaults.first?.id)
+        let file: [Any] = [["id": id, "deletedAt": 1_767_000_100]]
+        var applied = CopySettings.apply(["desktop_vaults": file], to: c, ownNpub: nil)
+        applied.takeInDesktopVaultSlot(ownNpub: nil)
+        XCTAssertTrue(applied.desktopVaultsInEffect(ownNpub: nil).isEmpty, "the paired Mac's Vault came back")
+        let out = CopySettings.vaultEntries(CopySettings.keys(applied, previousVaults: file, ownNpub: nil, now: now)["desktop_vaults"] as? [Any])
+        XCTAssertEqual((out.first?["deletedAt"] as? NSNumber)?.int64Value, 1_767_000_100, "the tombstone was overwritten")
+    }
+}

@@ -384,8 +384,16 @@ extension CopySettings {
     static func applyVaults(_ entries: [VaultEntry], to config: HavenConfig, ownNpub: String?) -> HavenConfig {
         var c = config
         let tombs = Set(entries.filter(isTomb).compactMap { $0["id"] as? String })
-        var vaults = c.desktopVaultsInEffect(ownNpub: ownNpub).filter { !tombs.contains($0.id) }
+        let inEffect = c.desktopVaultsInEffect(ownNpub: ownNpub)
+        var vaults = inEffect.filter { !tombs.contains($0.id) }
+        // A delete from another device lands where a delete here does, on
+        // desktopVaultsRemoved: followingDevices would otherwise bring a
+        // paired Mac's Vault straight back, and the next export revive it
+        // everywhere (Tron on #2521).
         var removed = c.desktopVaultsRemoved
+        for gone in inEffect where tombs.contains(gone.id) {
+            for key in DesktopVaultsEditing.removedKeys(of: gone) where !removed.contains(key) { removed.append(key) }
+        }
         for e in entries where !isTomb(e) {
             guard let id = e["id"] as? String else { continue }
             let mesh = e["meshNpub"] as? String

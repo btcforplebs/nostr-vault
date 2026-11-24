@@ -286,6 +286,11 @@ object CopyVaults {
 
         val out = mutableListOf<JsonObject>()
         for (v in local) {
+            // Until P7 (#2516) brings desktopVaultsRemoved, nothing here can add a Vault by hand, so a Vault the file
+            // holds a tombstone for was re-made by followingDevices (a paired Mac) or the slot: the delete from the
+            // other device stands, never revived by a stamp dated now (Tron on #2521). With P7 this becomes Apple's
+            // rule: the tombstone lands on desktopVaultsRemoved in [apply].
+            prevById[v.id]?.takeIf(::isTomb)?.let { out += it; continue }
             val e = record(v)
             val prev = prevById[v.id]?.takeIf { !isTomb(it) }
             val carried = prev?.str("meshNpub")

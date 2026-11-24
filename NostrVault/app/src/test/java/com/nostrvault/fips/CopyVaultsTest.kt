@@ -4,7 +4,9 @@ import com.nostrvault.fips.CopySettingsSync.Step
 import com.nostrvault.fips.MeshCopyFixtures.obj
 import com.nostrvault.relay.DesktopVault
 import com.nostrvault.relay.HavenConfig
+import com.nostrvault.relay.DesktopVaultsRules
 import com.nostrvault.relay.desktopVaultMeshNpubs
+import com.nostrvault.relay.desktopVaultsInEffect
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -143,5 +145,17 @@ class CopyVaultsTest {
         val merged = JsonObject(mine + ("desktop_vaults" to JsonArray(listOf(entry("https:new.example", https = "https://new.example")))))
         val s = CopySettingsSync.step(mine, CopySettings.file(merged, 100), mine.toString(), 100, now, setupDone = true)
         assertTrue("written over: the new Vault would read as deleted here", s is Step.Apply)
+    }
+
+    /** A tombstone for a paired Mac's Vault is kept: followingDevices re-makes the Vault, but the export never revives it. */
+    @Test
+    fun `a tombstone for a paired Mac's Vault is not revived`() {
+        val (mac, _) = npubs()
+        val c = HavenConfig(fipsMesh = FipsMeshSettings(devices = listOf(FipsDevice(npub = mac, role = DeviceRole.MAC, name = "Studio Mac"))))
+        val id = DesktopVaultsRules.idForMesh(mac)
+        assertTrue("positive control", c.desktopVaultsInEffect(null).any { it.id == id })
+        val file = listOf(tomb(id, 1767000100))
+        val applied = CopySettings.apply(c, JsonObject(mapOf("desktop_vaults" to JsonArray(file))), ownNpub = null)
+        assertEquals(1767000100L, out(applied, file)[id]!!["deletedAt"]!!.jsonPrimitive.long)
     }
 }
