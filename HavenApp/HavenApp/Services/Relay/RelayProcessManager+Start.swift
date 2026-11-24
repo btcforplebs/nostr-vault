@@ -145,7 +145,9 @@ extension RelayProcessManager {
     /// ws:// address and publish-for-me (Desktop Vaults P3, §2.2 rule 3).
     /// Dialed here, before the start, only when the slot is a mesh npub,
     /// inside one shared budget (Tron M1 on #2506); otherwise this start
-    /// takes what the background dial reached, if it asked for this start.
+    /// takes what the background dial reached, if it asked for this start,
+    /// or dials the mesh Vault it already held again on its own (Tron M2 on
+    /// #2513, DesktopVaultsLogic.afterStartPick).
     private func resolveMacMeshRelay(config: HavenConfig) async {
         let handedOver = RelayConfiguration.pendingMeshRelay
         RelayConfiguration.pendingMeshRelay = nil
@@ -153,7 +155,15 @@ extension RelayProcessManager {
         case .none:
             RelayConfiguration.macMeshRelay = nil
         case .afterStart:
-            RelayConfiguration.macMeshRelay = RelayConfiguration.dialedVault(config: config, mesh: handedOver)
+            switch DesktopVaultsLogic.afterStartPick(handedOver: handedOver?.npub, held: RelayConfiguration.macMeshRelay?.npub,
+                                                     meshNpubs: config.desktopVaultMeshNpubs) {
+            case .take:
+                RelayConfiguration.macMeshRelay = handedOver
+            case .redial(let npub):
+                RelayConfiguration.macMeshRelay = await dialMeshVaults([npub])
+            case .none:
+                RelayConfiguration.macMeshRelay = nil
+            }
         case .beforeStart:
             RelayConfiguration.macMeshRelay = await dialMeshVaults(config.desktopVaultMeshNpubs)
         }
