@@ -204,7 +204,6 @@ final class PairDeviceFlow: ObservableObject {
         if case .refuseOtherRole(let role) = MeshPairing.roleCheck(npub: payload.mesh, role: payload.role, existing: existing) {
             return MeshPairing.otherRoleText(role)
         }
-        if let refusal = storeRefusal(role: payload.role) { return refusal }
         let sB = MeshPairing.newSecret()
         guard let j = MeshPairingJoiner(qrA: payload, ownMeshHex: own.hex, ownSecret: sB, scannedAt: Self.now) else {
             return MeshPairing.unreadable
@@ -220,18 +219,6 @@ final class PairDeviceFlow: ObservableObject {
                             short: MeshPairing.shortAddress(payload.mesh))
         // The hello must go out while A's ack can still reach this side.
         startTicker()
-        return nil
-    }
-
-    /// Why this device couldn't store `role` at the end, asked before either
-    /// side stores or says anything (FipsMeshDevices.add would refuse it).
-    private func storeRefusal(role: MeshDeviceRole) -> String? {
-        #if os(iOS)
-        if MeshPairing.macSetByWebAddress(role: role, macRelayURL: config.config.macRelayURL,
-                                          macRelayMeshNpub: config.config.macRelayMeshNpub) {
-            return MeshPairing.macSetByWebAddressText
-        }
-        #endif
         return nil
     }
 
@@ -356,7 +343,6 @@ final class PairDeviceFlow: ObservableObject {
             sendAck()
             finish(device, already: true)
         case .add:
-            if let refusal = storeRefusal(role: device.role) { return fail(refusal) }
             pending = device
             step = .confirmRole(text: MeshPairing.roleConfirmText(role: device.role, name: device.name),
                                 short: MeshPairing.shortAddress(device.npub))

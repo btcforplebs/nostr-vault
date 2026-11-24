@@ -59,8 +59,8 @@ struct YourDevicesSettingsView: View {
             YourDevicesThisPhoneSection()
             Section {
                 NavigationLink("Mesh") { FipsMeshSettingsView().settingsPage("Mesh") }
-                NavigationLink("Desktop vault by web address") {
-                    MacRelaySettingsView().settingsPage("Desktop vault by web address")
+                NavigationLink("Desktop Vaults") {
+                    DesktopVaultsSettingsView().settingsPage("Desktop Vaults")
                 }
             } header: {
                 Text("Advanced")

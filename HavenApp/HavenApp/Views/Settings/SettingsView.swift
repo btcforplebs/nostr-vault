@@ -63,7 +63,7 @@ struct SettingsView: View {
         case relays = "Relays"
         case blossom = "Media Servers"
         case devices = "Your Devices"
-        case macRelay = "Desktop vault sync"
+        case desktopVaults = "Desktop Vaults"
         case relayAccess = "Who Can Reach You"
         case fipsMesh = "Mesh"
         case importNotes = "Import Notes"
@@ -79,7 +79,7 @@ struct SettingsView: View {
 
         var title: String {
             switch self {
-            case .macRelay:
+            case .desktopVaults:
                 #if os(macOS)
                 return "Public on the web"
                 #else
@@ -105,7 +105,7 @@ struct SettingsView: View {
             case .relays: return "point.3.connected.trianglepath.dotted"
             case .blossom: return "server.rack"
             case .devices: return "laptopcomputer.and.iphone"
-            case .macRelay:
+            case .desktopVaults:
                 #if os(macOS)
                 return "globe"
                 #else
@@ -147,7 +147,7 @@ struct SettingsView: View {
             ("Help", [.tutorials]),
             // Mesh and the desktop vault's web address: also under Your
             // Devices › Advanced; kept here so their deep links still land.
-            ("Advanced", [.fipsMesh, .macRelay, .proofOfWork, .advanced, .bitcoin, .logs]),
+            ("Advanced", [.fipsMesh, .desktopVaults, .proofOfWork, .advanced, .bitcoin, .logs]),
         ]
     }
 
@@ -227,7 +227,7 @@ struct SettingsView: View {
         var tabs: [SettingsTab] {
             switch self {
             case .account: return [.accounts, .wallet, .bitcoin, .privacy, .blocked]
-            case .vault: return [.startup, .devices, .relayAccess, .macRelay, .fipsMesh, .advanced]
+            case .vault: return [.startup, .devices, .relayAccess, .desktopVaults, .fipsMesh, .advanced]
             case .relaysMedia: return [.relays, .blossom]
             case .backups: return [.backup, .followingBackup, .listBackups, .recentlyDeleted, .importNotes]
             case .reading: return [.feed, .appearance, .pushNotifications, .proofOfWork]
@@ -827,7 +827,7 @@ struct SettingsView: View {
         // `havenOnline` here would give one settings row the vocabulary of a
         // health indicator.
         case .blossom: return .green
-        case .macRelay: return .teal
+        case .desktopVaults: return .teal
         case .devices: return .teal
         case .proofOfWork: return .purple
         case .advanced: return .gray
@@ -892,9 +892,9 @@ struct SettingsView: View {
             case .listBackups: ListBackupView()
             case .blossom: BlossomSettingsView(pushed: pushed)
             case .devices: YourDevicesSettingsView()
-            case .macRelay:
+            case .desktopVaults:
                 #if os(iOS)
-                MacRelaySettingsView()
+                DesktopVaultsSettingsView()
                 #else
                 PublicOnWebSettingsView()
                 #endif

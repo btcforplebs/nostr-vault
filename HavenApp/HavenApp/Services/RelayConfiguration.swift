@@ -64,7 +64,7 @@ enum RelayConfiguration {
     static func desktopVaultURLs(config: HavenConfig) -> String {
         #if os(iOS)
         return DesktopVaultsLogic.envList(config.desktopVaultsInEffect, slot: macRelayURL(config: config, mesh: macMeshRelay),
-                                          typed: config.macRelayURL)
+                                          typed: config.macRelayURLInEffect)
         #else
         return ""
         #endif
@@ -111,7 +111,7 @@ enum RelayConfiguration {
         if config.macRelayMeshNpub != nil { return "" }
         let base = config.macRelayNormalizedBase
         guard !base.isEmpty else { return "" }
-        let typed = config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let typed = config.macRelayURLInEffect.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let plain = typed.hasPrefix("ws://") || typed.hasPrefix("http://")
         return (plain ? "ws://" : "wss://") + base
     }
@@ -230,6 +230,14 @@ enum RelayConfiguration {
             case macURL = "mac_url", state, method, posts, mentions, missing, error
             case startedAt = "started_at", updatedAt = "updated_at", finishedAt = "finished_at"
         }
+    }
+
+    /// One desktop Vault's own status file (haven-go macSyncStatusFile), for
+    /// the relay URL it was handed (`wss://<base>`).
+    static func macSyncStatus(under root: URL, vaultURL: String) -> MacSyncStatus? {
+        let name = DesktopVaultsLogic.statusFileName(base: vaultURL)
+        guard let data = try? Data(contentsOf: root.appendingPathComponent(name)) else { return nil }
+        return try? JSONDecoder().decode(MacSyncStatus.self, from: data)
     }
 
     static func macSyncStatus(under root: URL) -> MacSyncStatus? {

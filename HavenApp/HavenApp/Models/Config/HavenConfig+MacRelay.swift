@@ -6,15 +6,17 @@ extension HavenConfig {
     /// The Mac's mesh npub when the Mac relay field holds one (`npub1…`,
     /// `nostr:npub1…` or `fipsmesh://npub1…/`) instead of a URL; nil otherwise.
     /// The relay reaches that Mac through FIPS (RelayConfiguration.macMeshRelay).
+    /// Read from `macRelayURLInEffect`: a slot whose Vault was deleted on
+    /// Desktop Vaults counts as empty everywhere (P4).
     var macRelayMeshNpub: String? {
-        HomeVaultLogic.meshNpub(fromInput: macRelayURL)
+        HomeVaultLogic.meshNpub(fromInput: macRelayURLInEffect)
     }
 
     /// Strips any scheme and trailing slashes from macRelayURL to give the bare host[:port].
     /// Empty for a mesh npub: that Mac has no address anyone else can use.
     var macRelayNormalizedBase: String {
         guard macRelayMeshNpub == nil else { return "" }
-        var url = macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        var url = macRelayURLInEffect.trimmingCharacters(in: .whitespacesAndNewlines)
         let schemes = ["wss://", "ws://", "https://", "http://"]
         for scheme in schemes {
             if url.lowercased().hasPrefix(scheme) {

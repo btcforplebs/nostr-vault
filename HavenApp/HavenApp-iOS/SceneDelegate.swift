@@ -258,7 +258,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             NostrService.shared.readVaultFromStore()
             let config = ConfigService.shared.config
             var urls = [config.nostrURL, config.nostrURL + "/inbox"].compactMap { URL(string: $0) }
-            let macURL = config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            // The slot as in effect (a deleted or moved Vault gives ""), the
+            // same address the catch-up below uses (Tron must-fix 2 on #2511).
+            let macURL = RelayConfiguration.macRelayURL(config: config)
             if !macURL.isEmpty, let macInbox = URL(string: macURL + "/inbox") {
                 urls.append(macInbox)
             }

@@ -70,12 +70,14 @@ struct MyWebDesktopVaultSection: View {
                 if let peer { copies.rankReady([peer]) }
             }
             .disabled(pulling || !canPull)
-            .accessibilityHint(Text("Asks your desktop Vault for its ranking now"))
+            .accessibilityHint(Text("Asks \(desktop?.displayName ?? "your desktop Vault") for its ranking now"))
         }
     }
 
     private func title(_ outer: TrustMapOuter) -> String {
-        outer.source == .ranked ? TrustMapOuter.foundLabel : TrustMapOuter.waitingLabel
+        guard outer.source == .ranked else { return TrustMapOuter.waitingLabel }
+        return DesktopVaultPick.foundBy(desktop, devices: FipsMeshDevices.current(configService.config))
+            ?? TrustMapOuter.foundLabel
     }
 
     private func detail(peer: String?, pulling: Bool, canPull: Bool) -> String {

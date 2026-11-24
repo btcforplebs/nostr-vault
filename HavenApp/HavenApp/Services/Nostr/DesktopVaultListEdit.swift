@@ -32,6 +32,10 @@ enum DesktopVaultListEdit {
         /// No signed-in account, the account changed during the lookup, or
         /// the signer said no.
         case notSigned
+        /// A delete's unlist stopped part way: these lists already went out
+        /// without the Vault, the rest weren't signed (Tron should-fix 5 on
+        /// #2511).
+        case partlyPublished([DesktopVaultList])
 
         /// The line the switch shows when it snaps back; nil for a change
         /// that went out or had nothing to do.
@@ -41,6 +45,9 @@ enum DesktopVaultListEdit {
             case .notLoaded: return DesktopVaultListEdit.notLoadedMessage
             case .refused(let list): return list.refusal
             case .notSigned: return "Your list wasn't signed, so it wasn't changed."
+            case .partlyPublished(let lists):
+                let names = lists.map(\.name).joined(separator: " and ")
+                return "It was taken out of your \(names) list, but the rest wasn't signed."
             }
         }
     }
@@ -80,6 +87,102 @@ enum DesktopVaultListEdit {
                 done?(await publish(tags, list: list, owner: owner, signer: signer, baseAt: base.createdAt, nostr: nostr))
             }
         }
+    }
+
+    /// The newest published list's tags for the switches to read (§2.1):
+    /// [] when the relays agree there is none, nil when that isn't known.
+    @MainActor
+    static func current(_ list: DesktopVaultList, nostr: NostrService = .shared) async -> [[String]]? {
+        let config = ConfigService.shared.config
+        guard let owner = Bech32.decode(config.ownerNpub)?.hexString.lowercased() else { return nil }
+        guard let base = await newest(list, owner: owner, config: config, nostr: nostr) else { return nil }
+        return base.tags ?? []
+    }
+
+    /// After a drag: each list whose Vault entries are now out of Desktop
+    /// Vaults order is republished with only those entries moved
+    /// (DesktopVaultsLists.reordered, rule 2). A list that didn't load is
+    /// left as it is; `done` gets the first line worth showing, nil when all
+    /// went out or had nothing to move.
+    @MainActor
+    static func reorder(vaults: [DesktopVault], nostr: NostrService = .shared,
+                        done: (@MainActor (String?) -> Void)? = nil) {
+        let config = ConfigService.shared.config
+        guard let owner = Bech32.decode(config.ownerNpub)?.hexString.lowercased() else {
+            done?(Outcome.notSigned.message)
+            return
+        }
+        Task { @MainActor in
+            var line: String?
+            for list in DesktopVaultList.allCases {
+                guard let base = await newest(list, owner: owner, config: config, nostr: nostr) else {
+                    line = line ?? notLoadedMessage
+                    continue
+                }
+                guard let tags = base.tags else { continue }
+                let moved = DesktopVaultsLists.reordered(tags, in: list, vaults: vaults)
+                guard moved != tags, sameOwner(owner) else { continue }
+                let outcome = await publish(moved, list: list, owner: owner, signer: config.ownerNpub,
+                                            baseAt: base.createdAt, nostr: nostr)
+                line = line ?? outcome.message
+            }
+            done?(line)
+        }
+    }
+
+    /// Deleting a Vault with "Also take it out of your public lists?"
+    /// answered yes (rule 5): every entry of it in all three lists, checked
+    /// together, so nothing is signed when any list didn't load or one would
+    /// be left unusable. `done` gets `.published` or `.unchanged` when the
+    /// lists are clean and the Vault may go.
+    @MainActor
+    static func remove(_ vault: DesktopVault, nostr: NostrService = .shared,
+                       done: @escaping @MainActor (Outcome) -> Void) {
+        let config = ConfigService.shared.config
+        guard let owner = Bech32.decode(config.ownerNpub)?.hexString.lowercased() else {
+            done(.notSigned)
+            return
+        }
+        Task { @MainActor in
+            var lists: [DesktopVaultList: [[String]]] = [:]
+            var bases: [DesktopVaultList: Int64] = [:]
+            for list in DesktopVaultList.allCases {
+                guard let base = await newest(list, owner: owner, config: config, nostr: nostr) else {
+                    done(.notLoaded)
+                    return
+                }
+                if let tags = base.tags { lists[list] = tags }
+                if let at = base.createdAt { bases[list] = at }
+            }
+            switch DesktopVaultsLists.removingVault(vault, from: lists) {
+            case .failure(let refusal):
+                done(.refused(refusal.list))
+            case .success(let changed):
+                guard sameOwner(owner) else {
+                    done(.notSigned)
+                    return
+                }
+                var outcome: Outcome = .unchanged
+                var sent: [DesktopVaultList] = []
+                for list in DesktopVaultList.allCases {
+                    guard let tags = changed[list] else { continue }
+                    let one = await publish(tags, list: list, owner: owner, signer: config.ownerNpub,
+                                            baseAt: bases[list], nostr: nostr)
+                    if one != .published {
+                        done(sent.isEmpty ? one : .partlyPublished(sent))
+                        return
+                    }
+                    sent.append(list)
+                    outcome = .published
+                }
+                done(outcome)
+            }
+        }
+    }
+
+    @MainActor
+    private static func sameOwner(_ owner: String) -> Bool {
+        Bech32.decode(ConfigService.shared.config.ownerNpub)?.hexString.lowercased() == owner
     }
 
     /// The newest published list: its tags (nil when the relays agree there

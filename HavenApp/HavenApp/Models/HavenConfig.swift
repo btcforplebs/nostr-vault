@@ -100,6 +100,9 @@ struct HavenConfig: Codable, Equatable {
     /// The `macRelayURL` value `desktopVaults` last took in
     /// (DesktopVaultsLogic.takingInSlot); nil until the one-time migration.
     var desktopVaultsSlot: String?
+    /// Addresses of Vaults deleted on Desktop Vaults (DesktopVaultsEditing
+    /// .removedKey), so the slot or a paired Mac doesn't bring them back.
+    var desktopVaultsRemoved: [String] = []
     /// Your Devices › Public on the web (Mac): list this vault's own domain in
     /// the owner's published lists. nil until the owner touches the switch:
     /// then a domain already set keeps being listed (`listsOwnDomain`).
@@ -355,7 +358,7 @@ struct HavenConfig: Codable, Equatable {
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags, showDMTextInNotifications
         case macRelayURL, publicOnWeb, keepFullCopy, fullCopyWifiOnly
-        case desktopVaults, desktopVaultsSlot
+        case desktopVaults, desktopVaultsSlot, desktopVaultsRemoved
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
         case outboxRelayName, outboxRelayDescription, outboxRelayIcon, outboxMaxEventsPerMinute, outboxMaxConnectionsPerMinute
@@ -409,6 +412,7 @@ struct HavenConfig: Codable, Equatable {
         macRelayURL = try container.decodeIfPresent(String.self, forKey: .macRelayURL) ?? defaults.macRelayURL
         // One Vault a newer app wrote that this one can't read is skipped on its own.
         desktopVaultsSlot = try container.decodeIfPresent(String.self, forKey: .desktopVaultsSlot)
+        desktopVaultsRemoved = (try? container.decodeIfPresent([String].self, forKey: .desktopVaultsRemoved)) ?? []
         do {
             desktopVaults = try container.decodeIfPresent([LossyDesktopVault].self, forKey: .desktopVaults)?
                 .compactMap(\.vault) ?? defaults.desktopVaults

@@ -24,7 +24,7 @@ enum FipsMeshDevices {
         let owner = NostrService.shared.activeHexPubkey
         let home = HomeVaultSender.shared.homeVault.flatMap { $0.ownerHex == owner ? $0.meshNpub : nil }
         let browser = BrowserRelaySender.shared.relay.flatMap { $0.ownerHex == owner ? $0.meshNpub : nil }
-        return (config.macRelayMeshNpub, home, browser)
+        return (HomeVaultLogic.meshNpub(fromInput: config.macRelayURL), home, browser)
     }
 
     private static func rolesNaming(_ npub: String, config: HavenConfig) -> [MeshDeviceRole] {
@@ -42,10 +42,6 @@ enum FipsMeshDevices {
         if let own = FipsMeshService.shared.ownMeshNpub ?? FipsMeshService.meshNpubFromKey(), npub == own {
             return "That is this phone's own address."
         }
-        if MeshPairing.macSetByWebAddress(role: role, macRelayURL: config.config.macRelayURL,
-                                          macRelayMeshNpub: config.config.macRelayMeshNpub) {
-            return MeshPairing.macSetByWebAddressText
-        }
         // One address, one role: the same address under another role leaves
         // that role's setting first, so only the new one sends to it.
         for old in rolesNaming(npub, config: config.config) where old != role {
@@ -56,9 +52,15 @@ enum FipsMeshDevices {
         config.config.meshDevices = MeshDevicesLogic.adding(device, to: config.config.meshDevices)
         switch role {
         case .mac:
-            // Another Mac adds a card (multi-Mac rules §4); the Mac setting
-            // keeps naming the first, which the relay's Mac sync uses.
-            if config.config.macRelayMeshNpub == nil { config.config.macRelayURL = npub }
+            // Another Mac joins Desktop Vaults (DesktopVaultsLogic
+            // .followingDevices), merged with the web Vault of its domain. The
+            // old slot is filled only while empty, for older builds; a web
+            // address in it stays (Desktop Vaults P4: no more refusal).
+            if config.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                config.config.macRelayURL = npub
+            }
+            // Pairing it again undoes an earlier delete of its Vault.
+            config.config.forgetRemovedDesktopVault(meshNpub: npub)
         case .homeVault:
             HomeVaultSender.shared.setHomeVault(.init(ownerHex: owner, meshNpub: npub))
         case .browser:
@@ -107,7 +109,7 @@ enum FipsMeshDevices {
     private static func clearSetting(_ role: MeshDeviceRole, npub: String, config: ConfigService) {
         switch role {
         case .mac:
-            if config.config.macRelayMeshNpub == npub { config.config.macRelayURL = "" }
+            if HomeVaultLogic.meshNpub(fromInput: config.config.macRelayURL) == npub { config.config.macRelayURL = "" }
         case .homeVault:
             if HomeVaultSender.shared.homeVault?.meshNpub == npub { HomeVaultSender.shared.setHomeVault(nil) }
         case .browser:

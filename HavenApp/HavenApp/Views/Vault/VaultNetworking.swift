@@ -76,7 +76,7 @@ extension VaultView {
         let since = VaultDirectRead.socketSince(
             full: needsFull,
             storeAnswered: nostrService.vaultStoreAnswered == nostrService.activeHexPubkey.lowercased(),
-            remoteRelay: !configService.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            remoteRelay: !configService.config.macRelayURLInEffect.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             newest: nostrService.events.map(\.created_at).max(),
             now: Int64(Date().timeIntervalSince1970))
 
@@ -93,7 +93,7 @@ extension VaultView {
 
         // Also query the Mac relay for tagged notes the local relay may
         // not have (e.g. due to shorter WoT depth or notes missed while suspended).
-        let macURL = config.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let macURL = config.config.macRelayURLInEffect.trimmingCharacters(in: .whitespacesAndNewlines)
         if !macURL.isEmpty {
             if let macRelay = URL(string: macURL) { urls.append(macRelay) }
             if let macInbox = URL(string: macURL + "/inbox") { urls.append(macInbox) }
@@ -180,7 +180,7 @@ extension VaultView {
 
         var urls = [configService.config.nostrURL, configService.config.nostrURL + "/inbox"].compactMap { URL(string: $0) }
         guard !urls.isEmpty else { return }
-        let macURL = configService.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let macURL = configService.config.macRelayURLInEffect.trimmingCharacters(in: .whitespacesAndNewlines)
         if !macURL.isEmpty, let macRelay = URL(string: macURL) {
             urls.append(macRelay)
         }
@@ -330,7 +330,7 @@ extension VaultView {
         #endif
         var urls = [configService.config.nostrURL, configService.config.nostrURL + "/inbox"].compactMap { URL(string: $0) }
         guard !urls.isEmpty else { return }
-        let macURL = configService.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let macURL = configService.config.macRelayURLInEffect.trimmingCharacters(in: .whitespacesAndNewlines)
         if !macURL.isEmpty, let macInbox = URL(string: macURL + "/inbox") {
             urls.append(macInbox)
         }

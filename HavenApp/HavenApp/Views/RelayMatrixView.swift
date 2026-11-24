@@ -53,7 +53,11 @@ struct RelayMatrixView: View {
     /// The lists the screen shows: the draft once loaded, else the saved ones.
     private var lists: RelayMatrix.Lists { draft?.draft ?? savedLists }
 
-    private var pinned: [String] { [ownRelay, configService.config.ownHavenDMInboxURL] }
+    /// Every desktop Vault address is pinned: Vault entries are their
+    /// switches' (Desktop Vaults P4), shown read only, never rows.
+    private var pinned: [String] {
+        [ownRelay] + configService.config.ownHavenDMInboxURLs + configService.config.desktopVaultWssURLs
+    }
 
     private var changes: Int { draft.map(RelayDraft.changeCount) ?? 0 }
 
@@ -80,8 +84,14 @@ struct RelayMatrixView: View {
     }
 
     private var plan: RelayDraft.Plan? {
+        // On a phone the Vault entries go out as published (Published
+        // .vaultRelays/.vaultInboxes), not from this device's own copy.
+        #if os(iOS)
+        draft.map { RelayDraft.plan($0, ownRelays: [], ownInbox: "") }
+        #else
         draft.map { RelayDraft.plan($0, ownRelays: configService.config.ownPublicRelays,
                                     ownInbox: configService.config.ownHavenDMInboxURL) }
+        #endif
     }
 
     /// The one place the relay lists are written and published. A Save that
@@ -183,6 +193,9 @@ struct RelayMatrixView: View {
             summarySection
             switch page {
             case .relays:
+                #if os(iOS)
+                if let draft { DesktopVaultEntryRows(relays: draft.published.vaultRelays, inboxes: draft.published.vaultInboxes) }
+                #endif
                 RelayDraftSections(
                     draft: draft, rows: rows, ownRow: ownRelay.isEmpty ? nil : AnyView(ownRow),
                     result: { probe.result(for: $0) },

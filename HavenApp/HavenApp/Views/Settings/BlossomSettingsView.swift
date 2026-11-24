@@ -78,62 +78,38 @@ struct BlossomSettingsView: View {
 
             // Section 1: Auto-Applied Blossom Server
             Section {
-                let macHttps = configService.config.macRelayHttpsURL
-                if !macHttps.isEmpty {
+                // Every HTTPS desktop Vault: uploads copy there. Whether it is
+                // on the public list is its own switch (Desktop Vaults P4).
+                ForEach(configService.config.desktopVaultsInEffect.filter { $0.httpsURL != nil }) { vault in
+                    let https = "https://" + DesktopVaultsLogic.base(vault.httpsURL ?? "")
                     HStack(spacing: 12) {
                         Image(systemName: "desktopcomputer")
                             .font(.appSystem(size: 18))
                             .foregroundColor(.havenOnline)
                             .frame(width: 24, height: 24)
-                        
                         VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 8) {
-                                Text("Desktop vault sync")
-                                    .font(.appSubheadline.bold())
-                                    .foregroundColor(.ink)
-                                
-                                Text("Active")
-                                    .font(.appSystem(size: 9, weight: .bold))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.havenOnline.opacity(0.15))
-                                    .foregroundColor(.havenOnline)
-                                    .cornerRadius(4)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .stroke(Color.havenOnline.opacity(0.3), lineWidth: 1)
-                                    )
-                            }
-                            Text(macHttps)
+                            Text(vault.displayName)
+                                .font(.appSubheadline.bold())
+                                .foregroundColor(.ink)
+                            Text(https)
                                 .font(.appSystem(size: 11, design: .monospaced))
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
-                            ServerHealthLine(server: health.servers.first { $0.id == macHttps }, missing: "Not checked yet") {
-                                Task { await health.test(macHttps) }
+                            ServerHealthLine(server: health.servers.first { $0.id == https }, missing: "Not checked yet") {
+                                Task { await health.test(https) }
                             }
-                        }
-                        Spacer()
-                    }
-                    .padding(.vertical, 4)
-                } else {
-                    HStack(spacing: 12) {
-                        Image(systemName: "desktopcomputer.badge.warning")
-                            .font(.appSystem(size: 18))
-                            .foregroundColor(.secondary)
-                            .frame(width: 24, height: 24)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("No desktop vault sync set up")
-                                .font(.appSubheadline.bold())
-                                .foregroundColor(.secondary)
-                            Text("Add it under Desktop vault sync and it's used here automatically.")
-                                .font(.appCaption)
-                                .foregroundColor(.secondary.opacity(0.7))
                         }
                         Spacer()
                     }
                     .padding(.vertical, 4)
                 }
+                #if os(iOS)
+                if configService.config.desktopVaultHttpsURLs.isEmpty {
+                    Text("No desktop Vault with a web address. Add one under Settings › Desktop Vaults and uploads copy there too.")
+                        .font(.appCaption)
+                        .foregroundColor(.secondary)
+                }
+                #endif
                 // Also used for uploads, but not typed in the list below
                 // (this device's own mesh address).
                 ForEach(extraServers) { server in
@@ -147,10 +123,13 @@ struct BlossomSettingsView: View {
                     .padding(.vertical, 2)
                 }
             } header: {
-                // The Mac and this device's own mesh address: used without
-                // being typed, and counted on the dashboard row.
+                // The desktop Vaults and this device's own mesh address: used
+                // without being typed, and counted on the dashboard row.
                 Text("Added for You")
             }
+            #if os(iOS)
+            DesktopVaultEntryRows(servers: listedServers)
+            #endif
             
             // Section 2: Additional Blossom Servers (Mirrors)
             Section {
@@ -364,7 +343,7 @@ struct BlossomSettingsView: View {
         // anything is stored, as web does, rather than save and publish nothing.
         let nostr = NostrService.shared
         if draft.leavesNoPublicServer(published: nostr.serverLists[nostr.activeHexPubkey],
-                                      others: [configService.config.macRelayHttpsURL].filter { !$0.isEmpty }) {
+                                      others: []) {
             publishOutcome = .noPublicServer
             retryPlan = nil
             return
@@ -397,6 +376,12 @@ struct BlossomSettingsView: View {
         }
     }
 
+    /// The published media server list, for its desktop Vault rows.
+    private var listedServers: [String] {
+        let nostr = NostrService.shared
+        return nostr.serverLists[nostr.activeHexPubkey] ?? []
+    }
+
     private func loadHealth() async {
         await health.load(configService: configService, nostrService: NostrService.shared)
     }
@@ -405,7 +390,7 @@ struct BlossomSettingsView: View {
     /// own row, typed servers theirs.
     private var extraServers: [MediaServersModel.Server] {
         let shown = Set(configService.config.blossomMirrors.compactMap(HavenConfig.blossomUploadServer)
-                        + [configService.config.macRelayHttpsURL])
+                        + configService.config.desktopVaultHttpsURLs)
         return health.servers.filter { !shown.contains($0.id) }
     }
 

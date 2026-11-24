@@ -9,6 +9,15 @@ enum DesktopVaultList: Int, CaseIterable, Codable {
     /// BUD-03 media servers: `["server", "https://host"]` and `["server", "fipsmesh://<npub>/"]`.
     case media = 10063
 
+    /// The list's name in a sentence ("your relays list").
+    var name: String {
+        switch self {
+        case .relays: return "relays"
+        case .inbox: return "DM inbox"
+        case .media: return "media servers"
+        }
+    }
+
     /// The message a refused change shows (§2.5 rule 5).
     var refusal: String {
         switch self {
