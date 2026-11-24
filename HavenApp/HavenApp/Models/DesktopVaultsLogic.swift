@@ -220,6 +220,24 @@ enum DesktopVaultsLogic {
         return .afterStart
     }
 
+    /// What a start in `.afterStart` mode uses, by npub. The background
+    /// dial's hand-over comes first. Otherwise, the mesh Vault the relay
+    /// already held is dialed again on its own, not dropped (Tron M2 on
+    /// #2513). A settings restart then stays on the mesh, instead of
+    /// starting on wss and needing a second restart once the dial after the
+    /// start finds it again. Either one only while it is still on the list.
+    enum AfterStartPick: Equatable {
+        case take(String)
+        case redial(String)
+        case none
+    }
+
+    static func afterStartPick(handedOver: String?, held: String?, meshNpubs: [String]) -> AfterStartPick {
+        if let handedOver, meshNpubs.contains(handedOver) { return .take(handedOver) }
+        if let held, meshNpubs.contains(held) { return .redial(held) }
+        return .none
+    }
+
     /// One total wait for all the dials of a start (Tron M1): one failed
     /// dial takes about this long, so N unreachable Macs no longer cost N×.
     static let meshDialBudget: TimeInterval = 10

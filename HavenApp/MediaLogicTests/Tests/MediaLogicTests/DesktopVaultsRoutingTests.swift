@@ -290,4 +290,13 @@ final class DesktopVaultsRoutingTests: XCTestCase {
         RelayConfiguration.droppingUnusedHandOver(found)
         XCTAssertEqual(RelayConfiguration.pendingMeshRelay, other)
     }
+
+    /// Tron M2 on #2513: a wss start takes the hand-over, else dials the held mesh Vault again alone, never one off the list.
+    func testAfterStartKeepsTheHeldMeshVault() {
+        XCTAssertEqual(DesktopVaultsLogic.afterStartPick(handedOver: macA, held: macB, meshNpubs: [macA, macB]), .take(macA))
+        XCTAssertEqual(DesktopVaultsLogic.afterStartPick(handedOver: nil, held: macB, meshNpubs: [macA, macB]), .redial(macB))
+        XCTAssertEqual(DesktopVaultsLogic.afterStartPick(handedOver: macB, held: macA, meshNpubs: [macA]), .redial(macA))
+        XCTAssertEqual(DesktopVaultsLogic.afterStartPick(handedOver: nil, held: macB, meshNpubs: [macA]), .none)
+        XCTAssertEqual(DesktopVaultsLogic.afterStartPick(handedOver: nil, held: nil, meshNpubs: [macA]), .none)
+    }
 }
