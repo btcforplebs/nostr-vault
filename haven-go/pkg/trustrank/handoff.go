@@ -54,7 +54,8 @@ func row(r [3]any) (pk string, shown float64, hop int, ok bool) {
 
 // Handoff is f with only the rows a device gets: the owner's own follows
 // (ring 1, always shown) and everyone at or over floor. Floor says what was
-// left out. f must have been through JSON (ReadResult).
+// left out. The globe list travels whole. f must have been through JSON
+// (ReadResult).
 func (f ResultFile) Handoff(floor float64) ResultFile {
 	out := f
 	out.Floor = floor
@@ -70,7 +71,8 @@ func (f ResultFile) Handoff(floor float64) ResultFile {
 // CheckHandoff: whether raw is a copy of account's result that a device
 // may keep. It refuses another account's file, a version this build does
 // not read, and any row that is not a hex pubkey with a 0-100 score in
-// rings 1 to CeilingHop.
+// rings 1 to CeilingHop, and any globe row that is not a hex pubkey with a
+// 0-100 score in rings 2 to GlobeHop and a hex via.
 func CheckHandoff(raw []byte, account string) (ResultFile, error) {
 	var f ResultFile
 	if !validAccount(account) || json.Unmarshal(raw, &f) != nil {
@@ -83,6 +85,15 @@ func CheckHandoff(raw []byte, account string) (ResultFile, error) {
 	for _, r := range f.People {
 		_, shown, hop, ok := row(r)
 		if !ok || shown < 0 || shown > 100 || hop < 1 || hop > f.MaxHop {
+			return f, ErrBadResult
+		}
+	}
+	if len(f.Globe) > maxGlobeRows {
+		return f, ErrBadResult
+	}
+	for _, r := range f.Globe {
+		_, shown, hop, _, ok := globeRow(r)
+		if !ok || shown < 0 || shown > 100 || hop < 2 || hop > GlobeHop || hop > f.MaxHop {
 			return f, ErrBadResult
 		}
 	}
