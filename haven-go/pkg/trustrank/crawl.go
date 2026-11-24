@@ -97,7 +97,7 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 		// New weights, no checkpoint, or a checkpoint of the other kind of
 		// pass: start this pass at hop 1.
 		st = State{Account: c.Owner, ParamsVersion: c.ParamsVersion, Hop: 1, Refresh: refresh,
-			FullAt: st.FullAt, RefreshAt: st.RefreshAt, DoneStart: st.DoneStart}
+			FullAt: st.FullAt, RefreshAt: st.RefreshAt, DoneStart: st.DoneStart, GlobeStep: st.GlobeStep}
 	}
 	if st.PassStart == 0 {
 		st.PassStart = c.now().Unix()
@@ -172,6 +172,7 @@ func (c *Crawler) RunPass(ctx context.Context, refresh bool) (*Result, error) {
 		st.RefreshAt, st.DoneStart = c.now().Unix(), st.PassStart
 	default:
 		st.FullAt, st.DoneStart = c.now().Unix(), st.PassStart
+		st.GlobeStep = true // the file now carries the globe rows
 	}
 	st.PassStart = 0
 	c.Store.Compact()

@@ -50,12 +50,19 @@ func TestTrustRankDue(t *testing.T) {
 		refresh, due bool
 	}{
 		{"never ran", trustrank.State{}, false, true},
-		{"fresh full pass", trustrank.State{Hop: 1, FullAt: now.Unix() - 3600}, false, false},
-		{"a day old: refresh", trustrank.State{Hop: 1, FullAt: now.Unix() - day - 1}, true, true},
-		{"refreshed today", trustrank.State{Hop: 1, FullAt: now.Unix() - 3*day, RefreshAt: now.Unix() - 60}, false, false},
-		{"a week: full", trustrank.State{Hop: 1, FullAt: now.Unix() - 7*day, RefreshAt: now.Unix() - 60}, false, true},
-		{"cut full pass resumes", trustrank.State{Hop: 2, FullAt: now.Unix() - 60}, false, true},
-		{"cut refresh resumes", trustrank.State{Hop: 1, Last: "ab", Refresh: true, FullAt: now.Unix() - 60}, true, true},
+		{"fresh full pass", trustrank.State{Hop: 1, FullAt: now.Unix() - 3600, GlobeStep: true}, false, false},
+		{"a day old: refresh", trustrank.State{Hop: 1, FullAt: now.Unix() - day - 1, GlobeStep: true}, true, true},
+		{"refreshed today", trustrank.State{Hop: 1, FullAt: now.Unix() - 3*day, RefreshAt: now.Unix() - 60, GlobeStep: true}, false, false},
+		{"a week: full", trustrank.State{Hop: 1, FullAt: now.Unix() - 7*day, RefreshAt: now.Unix() - 60, GlobeStep: true}, false, true},
+		{"cut full pass resumes", trustrank.State{Hop: 2, FullAt: now.Unix() - 60, GlobeStep: true}, false, true},
+		{"cut refresh resumes", trustrank.State{Hop: 1, Last: "ab", Refresh: true, FullAt: now.Unix() - 60, GlobeStep: true}, true, true},
+		// A checkpoint from before the globe step (build 50): the file has
+		// no globe rows, so a full pass is due now, not in a week.
+		{"fresh full pass before the globe step: full now", trustrank.State{Hop: 1, FullAt: now.Unix() - 3600}, false, true},
+		{"refreshed today before the globe step: full now", trustrank.State{Hop: 1, FullAt: now.Unix() - 3*day, RefreshAt: now.Unix() - 60}, false, true},
+		// A cut refresh from before it goes on as a refresh; the full pass
+		// comes right after it finishes.
+		{"cut refresh before the globe step resumes", trustrank.State{Hop: 1, Last: "ab", Refresh: true, FullAt: now.Unix() - 60}, true, true},
 	}
 	for _, c := range cases {
 		r, d := trustRankDue(c.st, now)

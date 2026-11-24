@@ -31,6 +31,12 @@ type State struct {
 	Refresh bool `json:"refresh,omitempty"`
 	// Capped: the last pass stopped at the store cap (not a finished pass).
 	Capped bool `json:"capped,omitempty"`
+	// GlobeStep: a full pass that ran the globe step has finished, so the
+	// result file was written with the globe rows. A checkpoint from before
+	// the globe step (build 50 and earlier) has it false, and the job runs a
+	// full pass at once instead of leaving the globe's outer rings empty
+	// for up to a week (Logen 2026-11-24).
+	GlobeStep bool `json:"globeStep,omitempty"`
 	// Unix seconds: last finished full pass, last daily refresh.
 	FullAt    int64 `json:"fullAt,omitempty"`
 	RefreshAt int64 `json:"refreshAt,omitempty"`
