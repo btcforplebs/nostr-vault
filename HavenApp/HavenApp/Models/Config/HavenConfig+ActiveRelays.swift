@@ -88,7 +88,9 @@ extension HavenConfig {
            let server = Self.blossomUploadServer(photoServer) {
             candidates.append(server)
         }
-        let homeVault = Set((desktopVaultHttpsURLs + [fipsBlossomURL(detectedNpub: detectedNpub) ?? ""])
+        // The slot stays a home until P4 retires it, so a lost Vault list can
+        // never send a delete to the owner's Mac (Tron M1, #2500).
+        let homeVault = Set((desktopVaultHttpsURLs + [macRelayHttpsURL, fipsBlossomURL(detectedNpub: detectedNpub) ?? ""])
             .filter { !$0.isEmpty }.map(Self.blossomServerKey))
         var seen = Set<String>()
         var targets: [String] = []

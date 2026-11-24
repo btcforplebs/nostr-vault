@@ -226,6 +226,37 @@ final class DesktopVaultsTests: XCTestCase {
         XCTAssertEqual(back.desktopVaults.map(\.httpsURL), ["https://mac.example.com"])
     }
 
+    /// Tron M1 on #2500: a stored list that loads empty after the slot was
+    /// taken in never loses the slot's Vault, so the owner's Mac stays in
+    /// the feed and Blossom lists and out of "Delete from mirrors".
+    /// Android lostListKeepsTheSlotVault.
+    func testLostListKeepsTheSlotVault() throws {
+        let mac = "https://mac.example.com"
+        var config = HavenConfig()
+        config.feedRelays = []
+        config.blossomMirrors = []
+        config.macRelayURL = mac
+        config.takeInDesktopVaultSlot()
+        let lost: [Any] = [NSNull(), [["id": 7, "httpsURL": mac]]]
+        for value in lost {
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(config)) as? [String: Any])
+            json["desktopVaults"] = value
+            var back = try JSONDecoder().decode(HavenConfig.self, from: JSONSerialization.data(withJSONObject: json))
+            XCTAssertEqual(back.desktopVaults, [], "\(value)")
+            XCTAssertEqual(back.desktopVaultsSlot, mac, "\(value)")
+            XCTAssertEqual(back.desktopVaultHttpsURLs, [mac], "\(value)")
+            XCTAssertTrue(back.activeBlossomMirrors().contains(mac), "\(value)")
+            XCTAssertEqual(back.blossomDeleteTargets(ownerServerList: [mac], photoURL: nil, includeHomeVault: false), [], "\(value)")
+            back.takeInDesktopVaultSlot()
+            let saved = try JSONDecoder().decode(HavenConfig.self, from: JSONEncoder().encode(back))
+            XCTAssertEqual(saved.desktopVaults.map(\.httpsURL), [mac], "\(value)")
+        }
+        // A mesh slot comes back the same way; this device's own npub never does.
+        let npub = "npub1" + String(repeating: "a", count: 58)
+        XCTAssertEqual(DesktopVaultsLogic.takingInSlot([], slot: npub, taken: npub, devices: []).map(\.meshNpub), [npub])
+        XCTAssertEqual(DesktopVaultsLogic.takingInSlot([], slot: npub, taken: npub, devices: [], ownNpub: npub), [])
+    }
+
     func testConfigRoundTripAndUnknownVaultSkipped() throws {
         var config = HavenConfig()
         config.desktopVaults = [DesktopVault(id: "a", name: "Mac", kind: .box, httpsURL: "https://a.example.com", order: 0)]
