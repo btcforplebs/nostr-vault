@@ -160,6 +160,10 @@ func run(args []string) error {
 	}
 
 	accounts := box.NewAccountStore(cfg)
+	// The box's own paired devices (box/paired.go): seeded once from the
+	// 10063s, then grown by two-scan pairing from the box web UI.
+	paired := &box.PairedSet{Path: filepath.Join(cfg.BoxDir(), "paired-devices.json")}
+	meshDial := box.MeshDial{Socket: filepath.Join(cfg.MeshRunDir, "dial.sock")}
 
 	api := &box.API{
 		Auth:       box.NewOwnerAuth(cfg.OwnerHex),
@@ -177,6 +181,7 @@ func run(args []string) error {
 
 			Mesh:        mesh,
 			DevicesFile: cfg.MeshDevicesFile,
+			Paired:      paired,
 			Source: &box.RelayServerLists{
 				VaultURL:  "ws://127.0.0.1:" + strconv.Itoa(cfg.EnginePort),
 				Directory: cfg.DirectoryRelays,
@@ -198,8 +203,18 @@ func run(args []string) error {
 		// every 15 minutes and on Sync now; a first copy when asked.
 		Sync: &box.Syncer{
 			Devices: engineDevices.Paired,
-			Dial:    box.MeshDial{Socket: filepath.Join(cfg.MeshRunDir, "dial.sock")},
+			Dial:    meshDial,
 			Engine:  box.EngineCopy{Socket: cfg.EngineControlSocket()},
+		},
+		// Two-scan pairing from the box web UI: nv-mesh opens the hello and
+		// signs the ack with the box's mesh key (dial.sock pair_open,
+		// pair_ack); the hello and ack travel the finder relays.
+		Pairing: &box.Pairing{
+			Mesh:     mesh,
+			Crypto:   meshDial,
+			Relays:   box.FinderRelays{URLs: cfg.FinderRelays},
+			Paired:   paired,
+			Accounts: accounts.Readers,
 		},
 	}
 	// The owner's 10063 decides which devices nv-mesh lets in: read it now

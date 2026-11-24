@@ -155,3 +155,14 @@ func cutColon(s string) (string, string, bool) {
 	}
 	return s, "", false
 }
+
+// Expired: the current step has run out at now, without an event to say so.
+func (s *PairingSession) Expired(now int64) bool {
+	switch s.state {
+	case "waiting":
+		return now-s.CreatedAt > pairCodeLifetime
+	case "camera":
+		return now-s.helloAt > pairScanWindow
+	}
+	return false
+}

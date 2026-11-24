@@ -36,6 +36,9 @@ type API struct {
 	// Sync catches up from the owner's other vaults (sync.go). Nil: the sync
 	// routes answer 503.
 	Sync *Syncer
+	// Pairing is the box's two-scan pairing (pairing_box.go). Nil: the pair
+	// routes answer 503.
+	Pairing *Pairing
 }
 
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {

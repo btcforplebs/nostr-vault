@@ -22,6 +22,7 @@ func TestRoutesRegistered(t *testing.T) {
 		"GET /api/box/logs",
 		"GET /api/box/media/auto-mirror",
 		"GET /api/box/media/copy",
+		"GET /api/box/pair",
 		"GET /api/box/status",
 		"GET /api/box/storage",
 		"GET /api/box/sync",
@@ -40,6 +41,9 @@ func TestRoutesRegistered(t *testing.T) {
 		"POST /api/box/media/copy",
 		"POST /api/box/media/copy/check",
 		"POST /api/box/move",
+		"POST /api/box/pair",
+		"POST /api/box/pair/cancel",
+		"POST /api/box/pair/confirm",
 		"POST /api/box/restart",
 		"POST /api/box/sync/first",
 		"POST /api/box/sync/now",
@@ -72,6 +76,9 @@ func TestRouteLevels(t *testing.T) {
 		"GET /api/box/trust": true, "POST /api/box/trust/refresh": true, "GET /api/box/blocklist": true,
 		"GET /api/box/media/auto-mirror": true, "POST /api/box/media/auto-mirror/run": true,
 		"POST /api/box/media/copy/check": true, "POST /api/box/media/copy": true, "GET /api/box/media/copy": true,
+		// Two-scan pairing (P9a): any signed-in account pairs its own devices,
+		// as its 10063 vouches for them today; the hello must name that account.
+		"GET /api/box/pair": true, "POST /api/box/pair": true, "POST /api/box/pair/confirm": true, "POST /api/box/pair/cancel": true,
 	}
 	for path, rt := range boxRoutes {
 		want := FirstAccount
