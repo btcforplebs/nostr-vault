@@ -54,7 +54,7 @@ func row(r [3]any) (pk string, shown float64, hop int, ok bool) {
 
 // Handoff is f with only the rows a device gets: the owner's own follows
 // (ring 1, always shown) and everyone at or over floor. Floor says what was
-// left out. The globe list travels whole. f must have been through JSON
+// left out. The globe list and the haze travel whole. f must have been through JSON
 // (ReadResult).
 func (f ResultFile) Handoff(floor float64) ResultFile {
 	out := f
@@ -72,7 +72,9 @@ func (f ResultFile) Handoff(floor float64) ResultFile {
 // may keep. It refuses another account's file, a version this build does
 // not read, and any row that is not a hex pubkey with a 0-100 score in
 // rings 1 to CeilingHop, and any globe row that is not a hex pubkey with a
-// 0-100 score in rings 2 to GlobeHop and a hex via.
+// 0-100 score in rings 2 to GlobeHop and a hex via. A haze that checkHaze
+// (haze.go) refuses is dropped and the rest is kept, so a later engine's
+// haze never stops a device from taking the copy.
 func CheckHandoff(raw []byte, account string) (ResultFile, error) {
 	var f ResultFile
 	if !validAccount(account) || json.Unmarshal(raw, &f) != nil {
@@ -96,6 +98,9 @@ func CheckHandoff(raw []byte, account string) (ResultFile, error) {
 		if !ok || shown < 0 || shown > 100 || hop < 2 || hop > GlobeHop || hop > f.MaxHop {
 			return f, ErrBadResult
 		}
+	}
+	if !checkHaze(f.Haze, f.Globe, f.MaxHop) {
+		f.Haze = nil
 	}
 	return f, nil
 }

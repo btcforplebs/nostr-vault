@@ -3,6 +3,7 @@ package trustrank
 import (
 	"context"
 	"sort"
+	"strconv"
 )
 
 // The globe step (Logen 2026-11-23, plan "Walking to hop 5"): the depth
@@ -98,26 +99,35 @@ func (c *Crawler) rankGlobe() (*Result, error) {
 	return Rank(g, c.Owner, blocks, p)
 }
 
-// globeRows is the file's globe list from rank B. Only the rows are kept,
-// so rank B's graph is gone before rank A builds its own.
-func (c *Crawler) globeRows() ([][4]any, error) {
+// globeRows is the file's globe list and haze (haze.go) from rank B. Only
+// the rows are kept, so rank B's graph is gone before rank A builds its own.
+func (c *Crawler) globeRows() ([][4]any, map[string][][2]any, error) {
 	if _, stored := c.Store.CreatedAt(c.Owner); !stored {
-		return nil, nil
+		return nil, nil, nil
 	}
 	res, err := c.rankGlobe()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return globeForFile(res.Globe(GlobePerRing)), nil
+	globe := globeForFile(res.Globe(GlobePerRing))
+	if globe == nil {
+		return nil, nil, nil // no haze without its globe top
+	}
+	return globe, hazeForFile(res.Haze(globe)), nil
 }
 
-// fileMaxHop: the file's maxHop is the furthest ring in `people` or
-// `globe` (rows as Result.Globe makes them). Devices refuse a copy with a
+// fileMaxHop: the file's maxHop is the furthest ring in `people`, `globe`
+// (rows as Result.Globe makes them) or `haze`. Devices refuse a copy with a
 // row past it.
-func fileMaxHop(feedHop int, globe [][4]any) int {
+func fileMaxHop(feedHop int, globe [][4]any, haze map[string][][2]any) int {
 	m := feedHop
 	for _, r := range globe {
 		if h, ok := r[2].(int); ok {
+			m = max(m, h)
+		}
+	}
+	for k, rows := range haze {
+		if h, err := strconv.Atoi(k); err == nil && len(rows) > 0 {
 			m = max(m, h)
 		}
 	}
