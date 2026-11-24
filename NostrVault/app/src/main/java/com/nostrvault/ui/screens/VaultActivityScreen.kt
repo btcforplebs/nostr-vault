@@ -56,7 +56,6 @@ import com.nostrvault.data.model.VaultAccountLine
 import com.nostrvault.data.model.VaultContentFilter
 import com.nostrvault.data.model.VaultMode
 import com.nostrvault.data.model.VaultNoteScope
-import com.nostrvault.data.model.VaultOutsideFold
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.FeedService
@@ -141,8 +140,6 @@ internal fun VaultActivityScreen(
         if (outside) outsideAll.take(shownCount)
         else all.filter { filter.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }.take(shownCount)
     }
-    // All's "N from outside your web" line: the likes and reposts All left out.
-    val outsideLikes = remember(outsideAll, zapsOnly) { VaultOutsideFold.count(outsideAll, zapsOnly) }
     // More than one account: "All · <acct> · <acct>" chips widen the list.
     val accountHexes by activity.accountHexes.collectAsState()
     val activeHex by activity.activeHex.collectAsState()
@@ -311,9 +308,8 @@ internal fun VaultActivityScreen(
         // No pull to refresh: the relay's inbox tick keeps the list current.
         Box(modifier = Modifier.fillMaxSize()) {
             val booting = relayStatus != RelayForegroundService.RelayStatus.RUNNING
-            val showsFold = !outside && !others && filter == VaultActivityFilter.ALL && outsideLikes > 0
             when {
-                rows.isEmpty() && !showsFold && (
+                rows.isEmpty() && (
                     if (others) otherLoading || (currentChip == VaultAccountChip.All && !hasLoadedOnce)
                     else !hasLoadedOnce || isRefreshing || booting
                     ) -> Column(
@@ -328,7 +324,7 @@ internal fun VaultActivityScreen(
                         color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold,
                     )
                 }
-                rows.isEmpty() && !showsFold -> Column(
+                rows.isEmpty() -> Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                     modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
@@ -365,15 +361,6 @@ internal fun VaultActivityScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    if (showsFold) {
-                        item(key = "outside-fold") {
-                            VaultOutsideFoldRow(
-                                count = outsideLikes,
-                                onOpen = { pick(VaultActivityFilter.ALL, toOutside = true) },
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                            )
-                        }
-                    }
                     items(rows, key = { if (others) it.key else it.line.id }) { row ->
                         val line = row.line
                         // New if newer than any of its accounts' seen marks (one row for an event that tagged several).
