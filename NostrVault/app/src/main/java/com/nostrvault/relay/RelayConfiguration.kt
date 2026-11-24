@@ -346,7 +346,7 @@ object RelayConfiguration {
      * never takes the hand-over meant for the next start.
      */
     fun comparedInputs(config: HavenConfig, relayDataDir: File): LaunchInputs =
-        inputs(config, relayDataDir, if (config.fipsMeshEnabled) dialedVault(config, pendingMeshRelay ?: macMeshRelay) else null)
+        inputs(config, relayDataDir, if (config.fipsMeshEnabled) dialedVault(config, freshHandOver() ?: macMeshRelay) else null)
 
     private fun inputs(config: HavenConfig, relayDataDir: File, mesh: MacMeshRelay?) = LaunchInputs(
         env = generateEnvDictionary(config, relayDataDir, mesh),
@@ -391,6 +391,23 @@ object RelayConfiguration {
      */
     @Volatile
     var pendingMeshRelay: MacMeshRelay? = null
+        set(value) {
+            pendingMeshRelayAt = System.currentTimeMillis()
+            field = value
+        }
+
+    @Volatile
+    private var pendingMeshRelayAt = 0L
+
+    /**
+     * How long a hand-over stays good. A restart that timed out and never started leaves it behind (Tron L3 on #2513);
+     * a start much later must not take a mesh address that may have died, or [MeshVaultDial.afterStart] never dials.
+     */
+    const val HAND_OVER_MAX_AGE_MS = 3 * 60_000L
+
+    /** [pendingMeshRelay] while it is younger than [HAND_OVER_MAX_AGE_MS], else null. */
+    fun freshHandOver(now: Long = System.currentTimeMillis()): MacMeshRelay? =
+        pendingMeshRelay?.takeIf { now - pendingMeshRelayAt < HAND_OVER_MAX_AGE_MS }
 
     /**
      * After the restart the background dial asked for (Tron F1 on #2506): a hand-over that start didn't take is
@@ -421,7 +438,7 @@ object RelayConfiguration {
         dial: (String) -> FipsIngress = FipsBridge::ingress,
         pause: (Long) -> Unit = Thread::sleep,
     ): MacMeshRelay? {
-        val handedOver = pendingMeshRelay
+        val handedOver = freshHandOver()
         pendingMeshRelay = null
         val held = macMeshRelay
         val npubs = config.desktopVaultMeshNpubs

@@ -393,4 +393,13 @@ class DesktopVaultsRoutingTest {
         kotlinx.coroutines.runBlocking { job!!.join() }
         assertEquals(RelayConfiguration.MacMeshRelay(macA, meshURL), RelayConfiguration.pendingMeshRelay)
     }
+
+    /** L3: a hand-over left by a restart that never started goes stale, so a much later start dials instead of taking it. */
+    @Test fun aStaleHandOverIsNotTaken() {
+        val found = RelayConfiguration.MacMeshRelay(macA, meshURL)
+        RelayConfiguration.pendingMeshRelay = found
+        val now = System.currentTimeMillis()
+        assertEquals(found, RelayConfiguration.freshHandOver(now))
+        assertNull(RelayConfiguration.freshHandOver(now + RelayConfiguration.HAND_OVER_MAX_AGE_MS + 1))
+    }
 }
