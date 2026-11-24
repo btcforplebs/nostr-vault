@@ -42,9 +42,8 @@ func globeForFile(rows [][4]any) [][4]any {
 // Within a hop the ring's top rows come before its chain-link rows. A top
 // row always shows above 0, and a full ring's links come after its first
 // perRing rows, so a hop's top is its first perRing rows that show above 0
-// (a short ring's links follow its top at once and show 0, or are
-// owner-muted, which the apps leave out with their own mute list). Hop-2 rows are only
-// ever chain links; ring-1 links are in `people` (always kept).
+// (a short ring's links follow its top at once and show 0). Hop-2 rows
+// are only ever chain links; ring-1 links are in `people` (always kept).
 func (r *Result) Globe(perRing int) [][4]any {
 	top := map[int][]int32{}
 	for _, p := range r.People() {
