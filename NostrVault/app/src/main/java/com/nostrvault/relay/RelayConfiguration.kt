@@ -169,6 +169,8 @@ object RelayConfiguration {
             // (iOS passes the same; see MacSync). A Mac on the mesh is its
             // dialed local address (macMeshRelay), "" until then.
             "MAC_RELAY_URL" to MacSync.macRelayURL(config),
+            // Every other HTTPS desktop Vault. Always set, "" when there is none: the engine never clears a host env key.
+            "DESKTOP_VAULT_URLS" to DesktopVaultsRules.envList(config.desktopVaultsInEffect, config.macRelayURL),
 
             // Backup
             "BACKUP_PROVIDER" to config.backupProvider,

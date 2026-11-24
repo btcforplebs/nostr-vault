@@ -37,6 +37,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
+import com.nostrvault.relay.takingInDesktopVaultSlot
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -202,7 +203,10 @@ class ConfigStore @Inject constructor(
             if (configFile.exists()) {
                 val text = configFile.readText()
                 keyInFile = ownerHexKeyIn(text)
-                json.decodeFromString<HavenConfig>(text)
+                json.decodeFromString<HavenConfig>(text).let {
+                    // A Vault list that read as empty because it is not a list: migrate the slot again (Tron S1, #2499).
+                    if (com.nostrvault.relay.DesktopVaultsRules.unreadableList(text)) it.copy(desktopVaultsSlot = null) else it
+                }
             } else {
                 HavenConfig.newInstall()
             }
@@ -303,8 +307,12 @@ class ConfigStore @Inject constructor(
         }
 
         ownerKeyFromFile = keyInFile
+        // The one-slot Mac setting into the desktop Vault list, once (plan §3); setConfig keeps it in step after.
+        val withVaults = loaded.takingInDesktopVaultSlot()
+        val vaultsTaken = withVaults != loaded
+        loaded = withVaults
         setConfig(loaded)
-        if (removedStarterPicks || droppedDamus || condensedLayouts != null || repliesBackOn || keyInFile != null || secretsInFile.isNotEmpty()) CoroutineScope(Dispatchers.IO).launch { save() }
+        if (vaultsTaken || removedStarterPicks || droppedDamus || condensedLayouts != null || repliesBackOn || keyInFile != null || secretsInFile.isNotEmpty()) CoroutineScope(Dispatchers.IO).launch { save() }
 
     }
 
@@ -315,7 +323,9 @@ class ConfigStore @Inject constructor(
      * owner yet the value setup chose with [setActiveAccount] is kept; an
      * account that can't be decoded clears it.
      */
-    private fun setConfig(new: HavenConfig) {
+    private fun setConfig(newConfig: HavenConfig) {
+        // The old Haven relay field still edits the slot until P7: the Vault from it follows (DesktopVaultsRules).
+        val new = newConfig.takingInDesktopVaultSlot()
         val oldBlocked = _config.value.allBlockedNpubsAcrossAccounts()
         _config.value = new
         // Any block or unblock, on any account, from any path (Block button,
