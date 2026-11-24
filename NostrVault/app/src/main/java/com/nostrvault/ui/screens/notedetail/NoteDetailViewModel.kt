@@ -19,6 +19,8 @@ import com.nostrvault.service.PendingPostManager
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.service.removeNote
 import com.nostrvault.service.retryMissingNote
+import com.nostrvault.service.threadTrustGateSet
+import com.nostrvault.service.threadTrustSet
 import com.nostrvault.ui.components.*
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -122,9 +124,12 @@ class NoteDetailViewModel @Inject constructor(
         .map { feedService.blockedHexForActiveAccount() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.blockedHexForActiveAccount())
 
-    /** Who passes [TrustGate] here: null = shield on Everyone, empty = web not loaded yet (nobody but you and the author). */
-    val trustedPubkeys: StateFlow<Set<String>?> = feedService.trustGateSet
-        .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.globalTrustSet())
+    /**
+     * Who passes [TrustGate] here: the feed's web, whatever Global's Everyone
+     * shield says ([threadTrustSet]). Empty = web not loaded yet (nobody but you and the author).
+     */
+    val trustedPubkeys: StateFlow<Set<String>> = feedService.threadTrustGateSet
+        .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.threadTrustSet())
 
     val activeHexPubkey: String get() = nostrService.activeHexPubkey
 
