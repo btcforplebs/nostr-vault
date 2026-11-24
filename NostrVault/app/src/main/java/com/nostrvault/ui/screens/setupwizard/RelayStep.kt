@@ -47,18 +47,18 @@ internal fun RelayStep(viewModel: SetupWizardViewModel) {
 
         Spacer(Modifier.height(20.dp))
 
-        // Haven relay section
+        // Desktop Vault section
         WizardCard {
             Column(modifier = Modifier.padding(4.dp)) {
                 Text(
-                    text = "Sync with Haven Relay",
+                    text = "Sync with your desktop Vault",
                     color = PrimaryText,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Medium,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "If you already run a Haven relay, enter its URL to stay synced.",
+                    text = "If you already run a desktop Vault, enter its URL to stay synced.",
                     color = SecondaryText,
                     fontSize = 13.sp,
                 )
@@ -76,7 +76,7 @@ internal fun RelayStep(viewModel: SetupWizardViewModel) {
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "This can be a Mac, Linux, or cloud-hosted Haven relay. Leave blank to skip.",
+                    text = "This can be a desktop Vault on a Mac or Linux, or a cloud-hosted relay. Leave blank to skip.",
                     color = TertiaryText,
                     fontSize = 11.sp,
                 )

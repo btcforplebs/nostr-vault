@@ -175,6 +175,12 @@ func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what stri
 		s.serveSyncDeletes(w, r, tokenHash)
 	case what == "device":
 		s.serveSyncDevice(w, r, tokenHash)
+	case what == "trust":
+		s.serveSyncTrust(w, r, tokenHash)
+	case what == "status":
+		s.serveSyncStatus(w, r)
+	case what == "distant":
+		s.serveSyncDistant(w, r)
 	case what == "settings" && r.Method == http.MethodGet:
 		raw, err := os.ReadFile(copySettingsFile)
 		if err != nil || copySettingsRefusal(raw, time.Now()) != "" {
@@ -491,6 +497,10 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 	res.Accounts, _ = c.syncAccounts(ctx)
 	// Each side's web domain, when it has one (copyv2_device.go).
 	c.syncDevice(ctx)
+	// The Haven's trust rank result next, own devices only
+	// (copyv2_trust.go): it is small and the WoT tab waits on it, so a run
+	// cut short later (a phone leaving the app) still brings it over.
+	c.syncTrust(ctx)
 	// The delete lists, before any note or file moves, on a light device
 	// too: a file the owner deleted goes everywhere (copyv2_deletes.go).
 	// Their own mark per peer: the first swap with a peer takes its whole
@@ -534,6 +544,7 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 		}
 	}
 	res.Settings, _ = c.syncSettings(ctx)
+	c.syncDistant(ctx) // its distant connections' posts, after the rank copy (copyv2_distant.go)
 	// Marked only when every listed page was read: otherwise the next round
 	// would start a week before now and never list the older notes and
 	// files again.

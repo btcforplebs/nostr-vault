@@ -94,7 +94,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
 
     /**
      * Called when a media URL is opened in the viewer. If the URL is hash-based and
-     * the blob is already in the local Blossom store, start in the "In vault" state
+     * the blob is already in the local Blossom store, start in the "In your vault" state
      * (on this phone, servers not checked); otherwise offer the mirror action.
      * Mirrors iOS FeedMediaViewer.updateMirrorStatus().
      */
@@ -117,7 +117,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
      * whose saveToLocalRelay pushes to activeBlossomMirrors after the local store.
      * Then, Android's addition (Logen 2026-11-11), each mesh device the owner's
      * 10063 lists as fipsmesh:// gets it over FIPS, signed with this phone's mesh
-     * key only. A file already in the vault ("In vault") is not downloaded again.
+     * key only. A file already in the vault ("In your vault") is not downloaded again.
      */
     fun mirror(url: String) {
         if (_state.value is MirrorState.Mirroring) return
@@ -151,8 +151,15 @@ class FeedMediaMirrorViewModel @Inject constructor(
     fun postsUsing(url: String): Int =
         extractSha256(url)?.let { nostrService.ownEvents(referencingBlob = it).size } ?: 0
 
-    /** Whether [url] names a Blossom blob, so the long-press delete bar can act on it. */
-    fun canDelete(url: String): Boolean = extractSha256(url) != null
+    /**
+     * Whether the long-press delete bar may open on [url]: it names a Blossom
+     * blob and [author] (the poster of the note it came from) is the active
+     * account. Delete signs with that account's key, so someone else's media,
+     * or media with no known poster, gets no Delete (MediaDeleteGate).
+     */
+    fun canDelete(url: String, author: String?): Boolean =
+        extractSha256(url) != null &&
+            MediaDeleteGate.showsDelete(author, blossomService.configStore.activeAccountHexPubkey.value)
 
     /**
      * Delete from the long-press bar. Port of iOS FeedMediaViewer

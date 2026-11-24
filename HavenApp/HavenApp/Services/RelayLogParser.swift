@@ -91,6 +91,10 @@ enum RelayLogParser {
         var importJobLines: [ImportJobs.Line] = []
         /// `COPY` lines (MeshCopyV2): the mesh vault copy moved.
         var copyLines: [MeshCopyV2.Progress] = []
+        /// `RANK_READY` lines (MeshRankNudge): devices with a new trust rank.
+        var rankReadyPeers: [String] = []
+        /// A `RANK_BUILT` line (MeshRankNudge): this Mac has a new trust rank.
+        var rankBuilt = false
     }
 
     /// Longest line handed to the parser. It runs ~50 substring scans, a
@@ -145,6 +149,8 @@ enum RelayLogParser {
             || !batch.listVersionMarkers.isEmpty
             || !batch.importJobLines.isEmpty
             || !batch.copyLines.isEmpty
+            || !batch.rankReadyPeers.isEmpty
+            || batch.rankBuilt
     }
 
     // Cached regex patterns for boot/import status parsing
@@ -200,6 +206,14 @@ enum RelayLogParser {
         }
         if let copy = MeshCopyV2.parseLine(line) {
             batch.copyLines.append(copy)
+            return
+        }
+        if let peer = MeshRankNudge.readyPeer(line) {
+            batch.rankReadyPeers.append(peer)
+            return
+        }
+        if MeshRankNudge.isBuilt(line) {
+            batch.rankBuilt = true
             return
         }
         if ListHistoryScan.collect(from: line, into: &batch) { return }
@@ -327,7 +341,7 @@ enum RelayLogParser {
                 batch.bootStatusMessage = "Subscribing to \(topic.trimmingCharacters(in: .punctuationCharacters))..."
             }
         } else if RelayLogBytes.contains(lowerLine, "is booting up") {
-            batch.bootStatusMessage = "Booting Haven..."
+            batch.bootStatusMessage = "Starting your vault..."
         } else if RelayLogBytes.contains(lowerLine, "starting deeper web of trust") {
             batch.bootStatusMessage = "Analyzing trust graph..."
         } else if RelayLogBytes.contains(lowerLine, "starting") {

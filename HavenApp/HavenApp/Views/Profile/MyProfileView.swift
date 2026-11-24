@@ -312,37 +312,38 @@ private struct MyProfileToolbar: ViewModifier {
     func body(content: Content) -> some View {
         #if os(iOS)
         content.toolbar {
+            // Each icon carries its own opaque disc (ProfileBarIcon) so a
+            // bright banner can't hide it; the system glass platter is off.
             ToolbarItem(placement: .navigationBarLeading) {
                 if isOwner {
                     Button(action: onWallet) {
-                        Image(systemName: "bolt.fill")
-                            .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(.accentText)
+                        ProfileBarIcon(systemName: "bolt.fill", color: .accentText)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Lightning")
                 }
             }
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
-                // Mesh: your devices and the mesh, beside Settings.
+            .hidingSharedToolbarBackground()
+            // Mesh: your devices and the mesh, beside Settings.
+            ToolbarItem(placement: .navigationBarTrailing) {
                 if isOwner {
                     Button(action: onMesh) {
-                        Image(systemName: "point.3.filled.connected.trianglepath.dotted")
-                            .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(.secondary)
+                        ProfileBarIcon(systemName: "point.3.filled.connected.trianglepath.dotted", color: .secondary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Mesh")
                 }
-                // Messages moved to the Vault tab's right pill.
+            }
+            .hidingSharedToolbarBackground()
+            // Messages moved to the Vault tab's right pill.
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: onSettings) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.appSystem(size: 16, weight: .semibold))
-                        .foregroundColor(.secondary)
+                    ProfileBarIcon(systemName: "gearshape.fill", color: .secondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Settings")
             }
+            .hidingSharedToolbarBackground()
         }
         #else
         content.toolbar {

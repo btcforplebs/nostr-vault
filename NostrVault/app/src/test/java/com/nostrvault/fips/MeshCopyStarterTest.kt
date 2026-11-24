@@ -127,8 +127,28 @@ class MeshCopyStarterTest {
         setupDone = true
         s.reconnectNow()
         assertEquals(listOf(peer to link.replaceFirst("ws://", "http://")), engine.syncs)
-        assertEquals(now, store.r.copied[peer])
+        assertEquals("stamped when it ends, not when it starts", now - MeshCopyV2.SYNC_EVERY_S, store.r.copied[peer])
         assertEquals("a full copy catches up on files too", listOf(true), engine.filesToo)
+        now += 60
+        s.onLogLine("COPY stage=done part=- bytes=0/0 items=5/5 source=mesh")
+        assertEquals(now, store.r.copied[peer])
+    }
+
+    @Test
+    fun `a catch-up cut short stays due and runs again at the next reconnect`() = runTest {
+        val s = starter()
+        s.start(peer, link, "Studio Mac")
+        s.onLogLine("COPY stage=done part=- bytes=0/0 items=5/5 source=mesh")
+        val copiedAt = now
+        now += MeshCopyV2.SYNC_EVERY_S
+        s.reconnectNow()
+        assertEquals(1, engine.syncs.size)
+        // The app left and the link closed under it (LogePhone, 2026-11-23).
+        s.onLogLine("COPY stage=failed part=- bytes=0/0 items=0/0 source=mesh error=unreachable")
+        assertEquals(copiedAt, store.r.copied[peer])
+        now += 60
+        s.reconnectNow()
+        assertEquals("tried again, not 15 min to an hour later", 2, engine.syncs.size)
     }
 
     @Test

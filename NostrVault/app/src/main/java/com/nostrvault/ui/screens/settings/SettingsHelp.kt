@@ -205,8 +205,8 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
     ),
     RELAY_WOT_DEPTH(
         "relay.wotDepth",
-        "Trust Depth",
-        "How many follows away someone can be and still reach your inbox. Lower is more private.",
+        "Follow Distance",
+        "How far from you someone can be and still reach your inbox. 1 hop is the people you follow. 2 hops adds the people they follow. Lower is more private.",
     ),
     RELAY_MIN_FOLLOWERS(
         "relay.minFollowers",

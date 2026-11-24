@@ -246,7 +246,8 @@ fun ProfileScreen(
                 } else if (isOwnerAccount) {
                     // The wallet is the owner account's; another account's
                     // profile shows no ⚡ (iOS isOwnerProfile).
-                    GlassPill {
+                    // Solid, not glass: a bright banner sits right behind it.
+                    GlassPill(opaque = true) {
                         IconButton(onClick = onOpenLightning, modifier = Modifier.size(40.dp)) {
                             Icon(NostrVaultIcons.Zap, "Lightning", tint = colors.primary, modifier = Modifier.size(25.dp))
                         }
@@ -258,7 +259,7 @@ fun ProfileScreen(
                 // Messages moved to the Vault tab's right pill. Your own
                 // profile opened from a note has nothing here (iOS isYou).
                 if (isMyTab) {
-                    GlassPill {
+                    GlassPill(opaque = true) {
                         IconButton(onClick = onNavigateToSettings, modifier = Modifier.size(40.dp)) {
                             Icon(NostrVaultIcons.Settings, "Settings", tint = PrimaryText, modifier = Modifier.size(25.dp))
                         }

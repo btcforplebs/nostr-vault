@@ -58,12 +58,14 @@ type Config struct {
 	ImportTaggedNotesFetchTimeoutSeconds int                 `json:"import_tagged_fetch_timeout_seconds"`
 	ImportSeedRelays                     []string            `json:"import_seed_relays"`
 	DmRelays                             []string            `json:"dm_relays"`
-	MacRelayURL                          string              `json:"mac_relay_url"`
+	DesktopVaultURLs                     []string            `json:"desktop_vault_urls"`
 	WebDomainProof                       string              `json:"-"` // Mac app only: own https host signed with the mesh key, told to own devices over the mesh (copyv2_device.go)
 	BackupProvider                       string              `json:"backup_provider"`
 	BackupIntervalHours                  int                 `json:"backup_interval_hours"`
 	WotDepth                             int                 `json:"wot_depth"`
 	WotMinimumFollowers                  int                 `json:"wot_minimum_followers"`
+	AccountReach                         reachByAccount      `json:"-"`
+	AccountBlocks                        blocksByAccount     `json:"-"`
 	WotFetchTimeoutSeconds               int                 `json:"wot_fetch_timeout_seconds"`
 	WotRefreshInterval                   time.Duration       `json:"wot_refresh_interval"`
 	WotCachePath                         string              `json:"wot_cache_path"`
@@ -144,18 +146,20 @@ func loadConfig() Config {
 		ImportTaggedNotesFetchTimeoutSeconds: getEnvInt("IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS", 120),
 		ImportSeedRelays:                     getRelayListFromFile(getEnv("IMPORT_SEED_RELAYS_FILE")),
 		DmRelays:                             getRelayListFromFile(getEnvString("DM_RELAYS_FILE", "")),
-		MacRelayURL:                          getEnvString("MAC_RELAY_URL", ""),
+		DesktopVaultURLs:                     desktopVaultURLList(getEnvString("MAC_RELAY_URL", ""), getEnvString("DESKTOP_VAULT_URLS", "")),
 		WebDomainProof:                       getEnvString("WEB_DOMAIN_PROOF", ""),
 		BackupProvider:                       getEnvString("BACKUP_PROVIDER", "none"),
 		BackupIntervalHours:                  getEnvInt("BACKUP_INTERVAL_HOURS", 24),
 		WotDepth:                             getEnvInt("WOT_DEPTH", defaultWotDepth),
 		WotMinimumFollowers:                  getEnvInt("WOT_MINIMUM_FOLLOWERS", 0),
+		AccountReach:                         loadAccountReach(getEnvString("ACCOUNT_REACH_FILE", "")),
 		WotFetchTimeoutSeconds:               getEnvInt("WOT_FETCH_TIMEOUT_SECONDS", 30),
 		WotRefreshInterval:                   getEnvDuration("WOT_REFRESH_INTERVAL", 24*time.Hour),
 		WotCachePath:                         getEnvString("WOT_CACHE_PATH", "wot_cache.json"),
 		WotCacheTTLMinutes:                   getEnvInt("WOT_CACHE_TTL_MINUTES", 4320),
 		WhitelistedPubKeys:                   getNpubsFromFile(getEnvString("WHITELISTED_NPUBS_FILE", "")),
 		BlacklistedPubKeys:                   getNpubsFromFile(getEnvString("BLACKLISTED_NPUBS_FILE", "")),
+		AccountBlocks:                        loadAccountBlocks(getEnvString("BLOCKS_BY_ACCOUNT_FILE", "")),
 		PrivateReaderPubKeys:                 privateReadersFromFile(getEnvString("PRIVATE_READER_NPUBS_FILE", "")),
 		LogLevel:                             getEnvString("HAVEN_LOG_LEVEL", "INFO"),
 		BlastrRelays:                         getRelayListFromFile(getEnv("BLASTR_RELAYS_FILE")),
@@ -185,11 +189,13 @@ func loadConfig() Config {
 		}
 	}
 
-	// The Mac relay's outbox is a seed relay for everything that reads them
-	// (import, WoT seeding, tally, catch-up), as the app's relay file used to
-	// make it. Its /inbox is added by the catch-up alone (subscribeInboxAndChat).
-	if base := macRelayBase(cfg.MacRelayURL); base != "" && !slices.Contains(cfg.ImportSeedRelays, base) {
-		cfg.ImportSeedRelays = append(cfg.ImportSeedRelays, base)
+	// Every desktop Vault's outbox is a seed relay for everything that reads
+	// them (import, WoT seeding, tally, catch-up), as the app's relay file used
+	// to make it. Their /inbox is added by the catch-up alone (inboxRelays).
+	for _, base := range cfg.DesktopVaultURLs {
+		if !slices.Contains(cfg.ImportSeedRelays, base) {
+			cfg.ImportSeedRelays = append(cfg.ImportSeedRelays, base)
+		}
 	}
 
 	// Clamp the catch-up interval regardless of which host app passed it in:
@@ -351,6 +357,11 @@ var blacklistOverride atomic.Pointer[map[string]struct{}]
 // blacklist checks should go through this rather than reading
 // config.BlacklistedPubKeys directly, so a live update actually takes effect.
 func isBlacklisted(pubkey string) bool {
+	// You cannot block your own accounts: the own-account check comes before
+	// any block list (Logen, 2026-11-22).
+	if isOwnKey(pubkey) {
+		return false
+	}
 	if m := blacklistOverride.Load(); m != nil {
 		_, ok := (*m)[pubkey]
 		return ok
@@ -377,6 +388,8 @@ func blacklistedPubkeys() []string {
 // next event processed, no relay restart required.
 func UpdateBlacklist(pubkeys map[string]struct{}) {
 	blacklistOverride.Store(&pubkeys)
+	// A blocked follow vouches for nobody (account_blocks.go).
+	retallyAccountWebs()
 }
 
 // getKindSet parses a comma-separated list of event kinds ("1,6,7,9735") into a

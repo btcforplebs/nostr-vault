@@ -29,7 +29,7 @@ sealed interface MirrorOutcome {
             Everywhere -> "Mirrored"
             is SomeServers -> "$accepted of $attempted servers"
             ServersFailed -> "On phone only"
-            OnPhoneOnly, InVault -> "In vault"
+            OnPhoneOnly, InVault -> "In your vault"
         }
 
     /** TalkBack text: what happened, in full. */

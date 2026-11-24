@@ -128,12 +128,8 @@ internal object VaultDashboardModel {
     fun lastMade(lastMs: Long?, nowMs: Long): String =
         lastMs?.let { "Last made ${relative(it, nowMs)}." } ?: "Never made."
 
-    fun hops(depth: Int): String = if (depth == 1) "1 hop" else "$depth hops"
-
     fun trustTitle(count: Int): String =
         if (count <= 0) "Trust list not built yet" else "${"%,d".format(Locale.US, count)} people can reach your inbox"
-
-    fun trustDetail(depth: Int): String = "People within ${hops(depth)} of you. Everyone else is kept out."
 
     fun blockedDetail(count: Int): String = when (count) {
         0 -> "Nobody blocked."
@@ -179,6 +175,18 @@ internal object VaultDashboardModel {
     fun importNotesDetail(importStartDate: String, lastImportMs: Long?, nowMs: Long): String =
         "Since ${importStartText(importStartDate)}. " +
             (lastImportMs?.let { "Last ran ${relative(it, nowMs)}." } ?: "Never ran.")
+
+    /**
+     * The Import notes row's detail (gap H, twin of web KeepFullSection and Apple #2444): the live status while an
+     * import runs, then how the last one ended (complete, partial, failed or cancelled) until the next run, and the
+     * "last ran" line only when none ended in this session.
+     */
+    fun importNotesRowDetail(isImporting: Boolean, liveStatus: String, lastOutcome: String?, idleDetail: String): String =
+        when {
+            isImporting -> liveStatus.ifEmpty { "Importing…" }
+            !lastOutcome.isNullOrEmpty() -> lastOutcome
+            else -> idleDetail
+        }
 
     fun importMediaDetail(lastImportMs: Long?, nowMs: Long): String =
         lastImportMs?.let { "Last ran ${relative(it, nowMs)}." } ?: "Copies the media in your notes here."

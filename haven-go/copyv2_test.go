@@ -118,9 +118,14 @@ func zipNames(t *testing.T, path string) map[string]*zip.File {
 	return out
 }
 
-// startProof: the owner's NIP-98 for POST /copy/v2/start.
+// startProof: the NIP-98 for POST /copy/v2/start. For the owner it is the
+// owner's paired device's proof (the account key never starts a copy,
+// copyv2_device_keys_test.go); anyone else signs it themselves.
 func startProof(t *testing.T, k testKey, at nostr.Timestamp, path string) string {
 	t.Helper()
+	if k.pk == config.OwnerPubKey {
+		return copyDeviceProof(t, testDevice, at, path)
+	}
 	ev := k.sign(t, nostr.Event{Kind: 27235, CreatedAt: at, Tags: nostr.Tags{{"u", "http://127.0.0.1:9/" + strings.TrimPrefix(path, "/")}, {"method", "POST"}, {"device", testDevice}}})
 	raw, _ := json.Marshal(ev)
 	return base64.StdEncoding.EncodeToString(raw)
@@ -244,7 +249,8 @@ func TestCopyStartAuth(t *testing.T) {
 		{"other path", startProof(t, owner, nostr.Now(), "/copy/v2/x"), nil, 401},
 		{"someone else", startProof(t, other, nostr.Now(), "/copy/v2/start"), nil, 403},
 		{"through a public tunnel", good, map[string]string{"Cf-Connecting-Ip": "1.2.3.4"}, 404},
-		{"the owner", good, nil, 200},
+		{"the account key itself", accountStartProof(t, owner, testDevice), nil, 403},
+		{"the owner's paired device", good, nil, 200},
 		{"the same proof again", good, nil, 401},
 	}
 	for _, c := range cases {
@@ -554,7 +560,7 @@ func TestCopyFromAToBEndToEndWithResume(t *testing.T) {
 	if raw, err := os.ReadFile(copySettingsFile); err != nil || !strings.Contains(string(raw), "wot_depth") {
 		t.Fatal("A's settings were not left for B's app")
 	}
-	if !strings.Contains(logs.String(), "COPY stage=done") {
+	if _, ok := parseCopyLine(lastLineWith(logs.String(), "COPY stage=done")); !ok {
 		t.Fatalf("no COPY done line:\n%s", logs.String())
 	}
 	if _, err := os.Stat(filepath.Join(aWD, copyCacheDir)); err == nil {

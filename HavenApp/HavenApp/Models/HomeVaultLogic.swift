@@ -214,8 +214,14 @@ enum HomeVaultLogic {
         // or Go's answer to plain HTTP on a TLS port (a kiosk build without
         // the own-devices port): about this attempt, not about the blob.
         case 400, 404, 405, 408, 409, 429: return .unreachable("HTTP \(status)")
-        // The vault answered and said no: 403 not the owner, 411 no length,
-        // 413 over the door's 256 MB.
+        // 401/403: the vault turned this phone's mesh key down (it does not
+        // know this phone yet, or is an older build with no paired set). The
+        // blob waits for it; it is never re-sent with the account key
+        // (Logen, 2026-11-19: fail closed), and dropping it would leave the
+        // vault without the photo and nothing saying so.
+        case 401, 403: return .unreachable("HTTP \(status): the vault does not take this phone's mesh key yet")
+        // The vault answered and said no: 411 no length, 413 over the door's
+        // 256 MB.
         case 400...499: return .rejected("HTTP \(status)")
         default: return .unreachable("HTTP \(status)")
         }
@@ -504,23 +510,8 @@ extension HomeVaultLogic {
 }
 
 extension HomeVaultLogic {
-    /// How long the owner's signed check of one blob is good for.
+    /// How long this phone's mesh-key check of one blob is good for.
     static let vaultCheckAuthLifetime: TimeInterval = 300
-
-    /// Tags of the owner's kind 24242 "get" for `sha256`. The mesh door
-    /// serves an unposted blob only to such a request (haven-go
-    /// mesh_safety.go); unsigned, the check answers 404 and the phone sends
-    /// a photo the vault already has.
-    static func vaultCheckAuthTags(sha256: String, now: Date = Date()) -> [[String]] {
-        [["t", "get"], ["x", sha256],
-         ["expiration", String(Int(now.timeIntervalSince1970 + vaultCheckAuthLifetime))]]
-    }
-
-    /// Only a key on this phone signs the check. A remote signer would ask
-    /// the owner to approve a "get" for every photo they post.
-    static func signsVaultCheck(signingMode: String) -> Bool {
-        signingMode != "nip46"
-    }
 
     /// HEAD /<sha256> on the vault, signed when `authBase64` is given.
     static func vaultCheckRequest(sha256: String, base: URL, authBase64: String?) -> URLRequest {

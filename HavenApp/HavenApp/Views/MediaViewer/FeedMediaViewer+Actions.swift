@@ -17,7 +17,18 @@ extension FeedMediaViewer {
             link: locked ? nil : shareableLink(),
             mirror: locked || !canMirror ? nil
                 : (isOnMirror ? .done : .offer(busy: isMirroring, action: mirrorToBlossomTapped)),
-            onDelete: locked ? nil : { pendingDelete = $0 }
+            onDelete: locked || !canDelete ? nil : { pendingDelete = $0 }
+        )
+    }
+
+    /// Delete signs with the active account's key, so it is only offered on
+    /// that account's own media, or when the screen brings its own delete.
+    /// The page's own note (profile grid) wins over the tapped note.
+    private var canDelete: Bool {
+        MediaDeleteGate.showsDelete(
+            screenOwnsDelete: extras?.onDelete != nil,
+            poster: extras?.meshNote(url)?.author ?? extras?.poster,
+            activePubkey: configService.activeAccountHexPubkey
         )
     }
 

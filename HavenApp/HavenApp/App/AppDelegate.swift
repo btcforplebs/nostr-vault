@@ -17,6 +17,10 @@ class AppDelegate: NSObject, ObservableObject {
     private var miniaturizeObserver: NSObjectProtocol?
     /// Set while a quit waits for a restore or backup to finish (QuitGuard).
     private var quitWhenIdle: AnyCancellable?
+    /// When the owner's published relay list was last looked up, and the
+    /// loop that looks it up again about once an hour (Logen 2026-11-23).
+    private var relayListCheckedAt: Date?
+    private var relayListRecheck: Task<Void, Never>?
     #endif
 
     @MainActor
@@ -108,7 +112,12 @@ class AppDelegate: NSObject, ObservableObject {
                 await NostrService.shared.adoptPublishedDMRelayList()
                 // The owner's own relay list (kind 10002) becomes the read
                 // and write relays, unless relays were edited here since.
+                self.relayListCheckedAt = Date()
                 await NostrService.shared.adoptPublishedRelayList()
+                // And again about once an hour, so an edit on another device
+                // arrives without a relaunch. Newest created_at still wins:
+                // an edit here is kept over an older published copy.
+                self.startRelayListRecheck()
                 // Media servers set in another app (kind 10063) become
                 // upload servers here too.
                 Task { await NostrService.shared.syncOwnerServerList() }
@@ -126,6 +135,31 @@ class AppDelegate: NSObject, ObservableObject {
     }
 
     #if os(macOS)
+    // MARK: - Relay list recheck
+
+    /// Looks up the owner's published relay list every few minutes once it is
+    /// `HavenConfig.relayListRecheckInterval` since the last lookup. Never
+    /// publishes; `adoptPublishedRelayList` keeps a newer edit made here.
+    private func startRelayListRecheck() {
+        guard relayListRecheck == nil else { return }
+        relayListRecheck = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5 * 60))
+                self?.recheckRelayListIfDue()
+            }
+        }
+    }
+
+    private func recheckRelayListIfDue() {
+        // Before the launch lookup ran (relayListCheckedAt nil) the launch
+        // task owns the first one.
+        guard let last = relayListCheckedAt,
+              HavenConfig.relayListRecheckDue(lastCheck: last),
+              ConfigService.shared.config.hasCompletedSetup else { return }
+        relayListCheckedAt = Date()
+        Task { await NostrService.shared.adoptPublishedRelayList() }
+    }
+
     // MARK: - Focus lifecycle
 
     /// Pause and resume background work when the app loses and regains focus.
@@ -171,7 +205,7 @@ class AppDelegate: NSObject, ObservableObject {
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
-        ) { _ in
+        ) { [weak self] _ in
             MainActor.assumeIsolated {
                 // Ends any absence for the catch-up summary (NotificationPolicy).
                 NotificationActivityLog.recordForeground()
@@ -180,6 +214,8 @@ class AppDelegate: NSObject, ObservableObject {
                 ReturnPillManager.shared.beginReturn()
                 // A list another app clobbered while we were away (docs/LIST_WIPE_ALARM.md).
                 ListWipeWatcher.shared.appCameForward()
+                // A Mac asleep for hours catches up on the relay list now.
+                self?.recheckRelayListIfDue()
                 NetworkSyncService.shared.start()
                 // Run in background with the window closed: opening the menu
                 // bar panel makes the app active, and must not bring the

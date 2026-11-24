@@ -231,7 +231,7 @@ object RelayLogParser {
                 }
             }
             lower.contains("is booting up") -> {
-                batch.bootStatusMessage = "Booting Haven..."
+                batch.bootStatusMessage = "Starting your vault..."
             }
             lower.contains("starting deeper web of trust") -> {
                 batch.bootStatusMessage = "Analyzing trust graph..."

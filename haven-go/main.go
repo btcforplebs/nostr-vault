@@ -86,7 +86,7 @@ func main() {
 	if !ensureImportRelays() {
 		log.Println("⚠️ No seed relays reachable — starting relay without inbox subscription")
 	}
-	wotModel := wot.NewSimpleInMemory(
+	wotModel := newWotModel(
 		pool,
 		whitelist(),
 		config.ImportSeedRelays,
@@ -112,7 +112,7 @@ func main() {
 
 			// See the identical check in cshared.go for why this is needed in
 			// addition to the wot.PeriodicRefresh ticker spawned below.
-			if time.Duration(cacheAgeMinutes)*time.Minute >= config.WotRefreshInterval || wotModel.MissingLinks() {
+			if time.Duration(cacheAgeMinutes)*time.Minute >= config.WotRefreshInterval || wotModel.MissingFiles() {
 				log.Println("  🔄 WoT cache is due for a refresh, updating in the background")
 				runsafe.Go("wot.Refresh.stale", func() { wotModel.Refresh(mainCtx) })
 			}
@@ -127,8 +127,12 @@ func main() {
 		runsafe.Go("ingestPopularEngagement", func() { ingestPopularEngagement(mainCtx) })
 		runsafe.Go("periodicCloudBackups", func() { startPeriodicCloudBackups(mainCtx) })
 		runsafe.Go("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(mainCtx, config.WotRefreshInterval) })
+		runsafe.Go("trustRank", func() { runTrustRank(mainCtx, pool, false) })
+		runsafe.Go("distantPosts", func() { runDistantPosts(mainCtx, pool, false) })
 		// havend as B: a first copy (or its resume) asked for at start.
 		startCopyFromEnv(mainCtx, hostGetenv, runsafe.Go)
+		// havend: Auto-Mirror and Copy to servers (auto_mirror.go, media_copy_job.go).
+		startMediaJobs(mainCtx, runsafe.Go)
 		runsafe.Go("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(mainCtx, wot.EmptyGraphRefreshInterval, ownerFollowListStamp) })
 		runsafe.Go("wot.RefreshOnFollowListChange", func() { wot.RefreshOnFollowListChange(mainCtx, wot.FollowListCheckInterval, ownerFollowListAt) })
 	})

@@ -142,6 +142,31 @@ func TestEngineEnvPassesTheCopyOrder(t *testing.T) {
 	}
 }
 
+// NV_TRUST_RANK reaches the engine as TRUST_RANK, so the off switch works
+// on a box; unset passes nothing (the engine's default, on).
+func TestEngineEnvPassesTrustRankSwitch(t *testing.T) {
+	k := newTestKey(t)
+	c, _ := ConfigFromEnv(envOf(map[string]string{"NV_OWNER": k.pk}))
+	list := EngineEnvList(c, "/v", envOf(map[string]string{"NV_TRUST_RANK": "off"}))
+	found := false
+	for _, kv := range list {
+		if kv == "TRUST_RANK=off" {
+			found = true
+		}
+		if strings.HasPrefix(kv, "NV_TRUST_RANK=") {
+			t.Fatalf("engine env leaks box name: %s", kv)
+		}
+	}
+	if !found {
+		t.Fatalf("engine env lacks TRUST_RANK=off:\n%s", strings.Join(list, "\n"))
+	}
+	for _, kv := range EngineEnvList(c, "/v", envOf(map[string]string{})) {
+		if strings.HasPrefix(kv, "TRUST_RANK=") {
+			t.Fatalf("unset switch passed %s", kv)
+		}
+	}
+}
+
 // The engine gets the box's mesh npub, so a mesh AUTH is pinned to it
 // (haven-go mesh_door_relays.go); none written yet is none passed.
 func TestMeshNpubReachesTheEngine(t *testing.T) {

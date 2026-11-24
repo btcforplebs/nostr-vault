@@ -252,6 +252,8 @@ enum RelayConfiguration {
         let dmRelays: [String]
         let whitelistedNpubs: [String]
         let privateReaderNpubs: [String]
+        /// Every other account's own Follow Distance (account_reach.json).
+        let accountReach: [String: AccountReach]
     }
 
     static func launchInputs(config: HavenConfig, relayDataDir: URL) -> LaunchInputs {
@@ -269,7 +271,8 @@ enum RelayConfiguration {
             // Every account, watch-only included (vaultWhitelistNpubs).
             whitelistedNpubs: config.vaultWhitelistNpubs,
             // Accounts with a key or signer here (vaultPrivateReaderNpubs).
-            privateReaderNpubs: config.vaultPrivateReaderNpubs
+            privateReaderNpubs: config.vaultPrivateReaderNpubs,
+            accountReach: config.relayAccountReach
         )
     }
 
@@ -369,6 +372,8 @@ enum RelayConfiguration {
 
             // Blacklisted Npubs
             "BLACKLISTED_NPUBS_FILE": config.blacklistedNpubsFile,
+            // Each account's own Follow Distance; the relay has no default path for it.
+            "ACCOUNT_REACH_FILE": HavenConfig.accountReachFile,
 
             // Private Relay
             "PRIVATE_RELAY_NAME": config.privateRelayName,
@@ -389,10 +394,13 @@ enum RelayConfiguration {
             "CHAT_RELAY_NPUB": config.ownerNpub,
             "CHAT_RELAY_DESCRIPTION": config.chatRelayDescription,
             "CHAT_RELAY_ICON": config.chatRelayIcon,
-            "CHAT_RELAY_WOT_DEPTH": String(config.chatRelayWotDepth),
+            "CHAT_RELAY_WOT_DEPTH": String(RelayAccessLimits.clampedFollowDistance(config.chatRelayWotDepth)),
             "CHAT_RELAY_WOT_REFRESH_INTERVAL_HOURS": String(config.chatRelayWotRefreshHours),
             "WOT_REFRESH_INTERVAL": config.wotRefreshInterval,
-            "WOT_DEPTH": String(config.chatRelayWotDepth),
+            // Clamped to what the screen can show. The relay runs level 0 as a
+            // public relay, so a stored 0 must never reach it while Who Can
+            // Reach You reads "Only you".
+            "WOT_DEPTH": String(RelayAccessLimits.clampedFollowDistance(config.chatRelayWotDepth)),
             "WOT_MINIMUM_FOLLOWERS": String(config.chatRelayMinFollowers),
             "CHAT_RELAY_MINIMUM_FOLLOWERS": String(config.chatRelayMinFollowers),
             "CHAT_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL": "50",

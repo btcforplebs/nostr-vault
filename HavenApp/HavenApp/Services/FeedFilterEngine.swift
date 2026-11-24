@@ -127,7 +127,7 @@ enum FeedFilterEngine {
                 // (Logen 2026-11-06), in its web, or one hop out where its
                 // reach allows (rationed below).
                 return !note.isReply && note.pubkey != ownPubkey && !followedPubkeys.contains(note.pubkey)
-                    && (v == .inside || v == .hop3)
+                    && (v == .inside || v == .loose)
             case .popular:
                 let isFollowed = followedPubkeys.contains(note.pubkey)
                 if popularFilter == .follows && !isFollowed { return false }
@@ -145,8 +145,9 @@ enum FeedFilterEngine {
             case .discovery:
                 // The wider web minus your follows. The feed also pulls in
                 // every note that tags you, so the gate drops anyone outside
-                // the web (Android FeedFilterEngine.kt DISCOVERY).
-                if followedPubkeys.contains(author) || v != .inside { return false }
+                // the web (Android FeedFilterEngine.kt DISCOVERY). Loose here
+                // is only a ranked distant connection (rationed below).
+                if followedPubkeys.contains(author) || (v != .inside && v != .loose) { return false }
             case .following:
                 // Your own notes stay although your list need not follow you.
                 // Excluding non-follows here makes an unfollowed author's notes
@@ -172,8 +173,8 @@ enum FeedFilterEngine {
             }
         }
 
-        if reach == .webAndHop3 {
-            filtered = WebGate.capHop3(filtered, verdict: verdict, author: { $0.repostedBy ?? $0.pubkey },
+        if reach == .webAndLoose || !gate.rankedLoose.isEmpty {
+            filtered = WebGate.capLoose(filtered, verdict: verdict, author: { $0.repostedBy ?? $0.pubkey },
                                        isReply: \.isReply)
         }
         return filtered

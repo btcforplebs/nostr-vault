@@ -5,6 +5,7 @@ import { readonlySignIn, namesAKey } from "../signer/readonly.js"
 import { searchPeople } from "../net/search.js"
 import { putProfile } from "../net/profiles.js"
 import { PersonRow } from "../screens/SearchScreen.jsx"
+import { GoButton } from "./GoButton.jsx"
 
 export function ReadOnlySignIn({ disabled, onSignedIn }) {
   const [who, setWho] = useState("")
@@ -35,12 +36,13 @@ export function ReadOnlySignIn({ disabled, onSignedIn }) {
   return (
     <form class="readonly-signin" onSubmit={submit}>
       <label class="field">
-        <span>Or just look: your name, npub or NIP-05 (read-only)</span>
-        <input value={who} onInput={e => { setWho(e.currentTarget.value); setPeople(null) }} placeholder="Your name, npub1… or you@example.com" autocapitalize="off" autocorrect="off" spellcheck={false} />
+        <span>Your name, npub or NIP-05 (read-only)</span>
+        <span class="field-inline">
+          <input value={who} onInput={e => { setWho(e.currentTarget.value); setPeople(null) }} placeholder="Your name, npub1… or you@example.com" autocapitalize="off" autocorrect="off" spellcheck={false} />
+          <GoButton label={namesAKey(who) ? "Sign in read-only" : "Find me"} disabled={disabled || !!busy || !who.trim()} busy={!!busy} />
+        </span>
       </label>
-      <button type="submit" disabled={disabled || !!busy || !who.trim()} aria-busy={!!busy || undefined}>
-        {busy === "search" ? "Searching…" : busy ? "Looking you up…" : namesAKey(who) ? "Sign in read-only" : "Find me"}
-      </button>
+      {busy && <p class="muted small field-status" aria-live="polite">{busy === "search" ? "Searching…" : "Looking you up…"}</p>}
       {people?.length === 0 && <p class="muted small">Nobody found by that name. Try your npub or NIP-05 instead.</p>}
       {people?.length > 0 && <>
         <p class="muted small">Tap yourself to look around read-only:</p>

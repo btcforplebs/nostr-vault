@@ -635,46 +635,35 @@ class HomeVaultSender @Inject constructor(
         val sha = item.key
         val file = queue.blobFile(sha)
         // Already there (sent before a crash, or uploaded on the kiosk itself).
-        // A bunker or Amber is never asked for a mesh send: without a local key the mesh key is the only form.
-        val meshOnly = HomeVaultRules.meshKeyOnly(item, signerIsLocal())
-        http.newCall(VaultCheck.request(base, sha, check ?: checkAuth(sha, receiver, meshOnly))).execute().use {
+        // Mesh sends are signed by this device's mesh key only, never the account key (Logen, 2026-11-19: fail closed).
+        http.newCall(VaultCheck.request(base, sha, check ?: checkAuth(sha, receiver))).execute().use {
             if (it.isSuccessful) return HomeVaultSend.SENT
         }
         if (!file.exists()) return HomeVaultSend.REJECTED
         val type = item.contentType ?: "application/octet-stream"
         val mediaType = type.toMediaTypeOrNull() ?: return HomeVaultSend.REJECTED
         // Signed per send, not when queued: Blossom auth expires. This phone's mesh key for this vault
-        // (docs/MESH_COPY_V2_CONTRACT.md §2.1); the owner's form only without one (TODO(mesh-key)).
-        val meshAuth = meshToken(MeshKeyAuth.Verb.UPLOAD, sha, receiver, "Upload to my vault", MeshKeyAuth.BLOSSOM_LIFETIME_S, file.length())
-        // A mesh-key-only item (feed Mirror) waits for this device's mesh key rather than sign as the owner.
-        if (meshAuth == null && meshOnly) {
-            problem("This phone has no mesh key yet")
-            return HomeVaultSend.RETRY
-        }
-        val auth = meshAuth ?: uploadAuth(sha) ?: run {
-            problem("Could not sign the upload")
-            return HomeVaultSend.RETRY
-        }
+        // (docs/MESH_COPY_V2_CONTRACT.md §2.1). Without one the blob waits for it.
+        val auth = meshToken(MeshKeyAuth.Verb.UPLOAD, sha, receiver, "Upload to my vault", MeshKeyAuth.BLOSSOM_LIFETIME_S, file.length())
+            ?: run {
+                problem("This phone has no mesh key yet")
+                return HomeVaultSend.RETRY
+            }
         fun put(auth: String) = Request.Builder()
             .url("$base/upload")
             .put(file.asRequestBody(mediaType))
             .header("Authorization", "Nostr $auth")
             .header("Content-Type", type)
             .build()
-        val (outcome, ownerRetry) = http.newCall(put(auth)).execute().use { response ->
+        // A refusal of the mesh key (401/403: the vault does not know this phone yet, or has no paired set) is a RETRY
+        // (HomeVaultRules.uploadOutcome): the blob waits, and is never re-sent with the account key.
+        return http.newCall(put(auth)).execute().use { response ->
             val outcome = HomeVaultRules.uploadOutcome(response.code)
             if (outcome != HomeVaultSend.SENT) {
                 Log.w(TAG, "home vault upload ${sha.take(8)}: HTTP ${response.code} ${response.reason(200)}")
             }
-            outcome to (meshAuth != null && MeshKeyAuth.retriesWithOwnerForm(response))
+            outcome
         }
-        // A vault without the paired set yet (an older build, or the box before havend passes it) turns the device
-        // form down: one retry with the owner's form while vaults accept it. A vault that has its set says so
-        // (X-Mesh-Devices), and its refusal stands. TODO(mesh-key).
-        if (!ownerRetry || meshOnly) return outcome
-        val ownerAuth = uploadAuth(sha) ?: return outcome
-        Log.w(TAG, "home vault did not take the device key for ${sha.take(8)}, sent with the owner's")
-        return http.newCall(put(ownerAuth)).execute().use { HomeVaultRules.uploadOutcome(it.code) }
     }
 
     private suspend fun uploadAuth(sha256: String, content: String = "Upload to home vault"): String? {
@@ -688,18 +677,12 @@ class HomeVaultSender @Inject constructor(
     }
 
     /**
-     * The owner's "get" for the "already on the vault" check, or null. Only with a local signer:
-     * Amber or a bunker would be asked once more per blob for a check that, unsigned, still works on
-     * the relay port My Devices reach. Only the mesh door needs it (#1050), for a sender the vault
-     * does not list (Tod, Tron #1048 #2).
+     * This phone's mesh-key "get" for the "already on the vault" check, or null without a mesh key: the check then goes
+     * unsigned, never with the account key (an unsigned check still works on the relay port My Devices reach). A HEAD
+     * does not spend it.
      */
-    private suspend fun checkAuth(sha256: String, receiver: String, meshKeyOnly: Boolean = false): String? {
-        // This phone's mesh key first, for this vault: a HEAD does not spend it. The owner's form only without a
-        // mesh key (TODO(mesh-key)), and never for a mesh-key-only item (an unsigned check still works on the relay port).
-        meshToken(MeshKeyAuth.Verb.GET, sha256, receiver, "Check my vault", VaultCheck.AUTH_LIFETIME_S, null)?.let { return it }
-        if (meshKeyOnly || !signerIsLocal()) return null
-        return signedAuth(VaultCheck.authTags(sha256, System.currentTimeMillis() / 1000), "Check home vault", "check")
-    }
+    private fun checkAuth(sha256: String, receiver: String): String? =
+        meshToken(MeshKeyAuth.Verb.GET, sha256, receiver, "Check my vault", VaultCheck.AUTH_LIFETIME_S, null)
 
     private suspend fun signedAuth(tags: List<List<String>>, content: String, what: String): String? {
         val signed = try {

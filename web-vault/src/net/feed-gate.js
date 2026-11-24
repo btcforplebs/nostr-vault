@@ -1,10 +1,10 @@
 // The feeds on the one web-of-trust gate (web-gate.js; RESEARCH/NV_ONE_WOT_GATE.md 2b, step 2): every note a feed
-// draws is judged once, here. Inside notes show; hop-3 notes show rationed (capHop3); outside notes go to the feed's
+// draws is judged once, here. Inside notes show; hop-3 notes show rationed (capLoose); outside notes go to the feed's
 // folded "Outside your web" section; blocked notes are hidden. The feed checks no web, block or mute list of its own.
 // Each feed has a Reach setting (Settings › Feed › Reach), kept in this browser: "Your web" or "Your web + a few one
 // hop out". A Global-style feed with the shield on Everyone reaches everyone (blocks still apply), and a list feed is
 // a list you picked, so it is never judged by the web either. iPhone/Mac twin: FeedReach in FeedFilterEngine.
-import { judgeNote, capHop3, VERDICTS } from "./web-gate.js"
+import { judgeNote, capLoose, VERDICTS } from "./web-gate.js"
 import { globalLike } from "./feeds.js"
 
 /** The feeds with a Reach setting, in the picker's order: the FeedScreen modes the gate judges. */
@@ -47,7 +47,7 @@ export function gateFeed(notes, web, { reach = "web", always = [] } = {}) {
   const authorOf = id => byId.get(id)?.pubkey
   const verdicts = new Map(notes.map(n => [n, judgeNote(n, web, { authorOf, reach, always })]))
   const outside = notes.filter(n => verdicts.get(n) === VERDICTS.outside)
-  const kept = notes.filter(n => verdicts.get(n) === VERDICTS.inside || verdicts.get(n) === VERDICTS.hop3)
-  const shown = capHop3(kept, { verdict: n => verdicts.get(n), author: n => n.pubkey })
+  const kept = notes.filter(n => verdicts.get(n) === VERDICTS.inside || verdicts.get(n) === VERDICTS.loose)
+  const shown = capLoose(kept, { verdict: n => verdicts.get(n), author: n => n.pubkey })
   return { shown, outside }
 }

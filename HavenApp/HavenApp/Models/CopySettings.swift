@@ -108,7 +108,12 @@ enum CopySettings {
         if let v = bool(keys["zaps_only"]) { c.zapsOnlyMode = v }
         if let v = bool(keys["auto_load_new_posts"]) { c.autoLoadNewPosts = v }
         if let v = bool(keys["new_posts_pill"]) { c.showNewPostsPill = v }
-        if let v = int(keys["wot_depth"]) { c.chatRelayWotDepth = RelayAccessLimits.clampedFollowDistance(v) }
+        if let v = int(keys["wot_depth"]) {
+            // The file's value is the first account's: the others keep theirs.
+            var first = c.reach(for: c.ownerNpub)
+            first.depth = v
+            c.setReach(first, for: c.ownerNpub)
+        }
         if let v = keys["blocked_relays"] as? [String] { c.blockedRelays = v }
         if let v = keys["dm_relays"] as? [String] { c.dmRelays = v }
         if let v = keys["media_servers"] as? [String] {

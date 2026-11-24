@@ -26,6 +26,8 @@ var (
 type savedReject struct {
 	TS     int64  `json:"ts"`
 	Pubkey string `json:"pk"`
+	// Accounts: the vault's accounts the event tagged (rejectEntry.accounts).
+	Accounts []string `json:"accounts,omitempty"`
 }
 
 type syncStateFile struct {
@@ -102,7 +104,7 @@ func (s *syncState) keepRejects(t *tempRejects) {
 	out := map[string]savedReject{}
 	t.m.Range(func(k, v any) bool {
 		e := v.(rejectEntry)
-		out[k.(string)] = savedReject{TS: int64(e.ts), Pubkey: e.pubkey}
+		out[k.(string)] = savedReject{TS: int64(e.ts), Pubkey: e.pubkey, Accounts: e.accounts}
 		return true
 	})
 	s.mu.Lock()
@@ -120,7 +122,7 @@ func (s *syncState) loadRejects(t *tempRejects, cutoff nostr.Timestamp) {
 	defer s.mu.Unlock()
 	for id, r := range s.data.Rejects {
 		if nostr.Timestamp(r.TS) >= cutoff {
-			t.add(id, nostr.Timestamp(r.TS), r.Pubkey)
+			t.add(id, nostr.Timestamp(r.TS), r.Pubkey, r.Accounts...)
 		}
 	}
 }

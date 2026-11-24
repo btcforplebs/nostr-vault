@@ -65,6 +65,8 @@ extension TrustWebView {
                     .fixedSize(horizontal: false, vertical: true)
                     .animation(Motion.fade, value: cardPath)
                 Spacer(minLength: 0)
+                // Score and who vouches, when your Haven has ranked them (discovery phase 4).
+                TrustWhyButton(pubkey: pubkey)
             }
             if opensInWOTTab {
                 // A profile's or a post's globe is a look, not a place to

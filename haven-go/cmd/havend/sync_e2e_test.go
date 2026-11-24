@@ -297,10 +297,6 @@ func TestBoxSyncEndToEnd(t *testing.T) {
 	if dev["needs"] != "first_copy" || dev["token"] != false {
 		t.Fatalf("before a first copy: %v", dev)
 	}
-	// Sync now with no token: nothing to catch up with, nothing runs.
-	if code, out := call(t, b.base, owner, "POST", "/api/box/sync/now", nil); code != 202 {
-		t.Fatalf("sync now %d %v", code, out)
-	}
 	// A stranger's device is refused.
 	stranger := newKey(t)
 	if code, _ := call(t, b.base, owner, "POST", "/api/box/sync/first", []byte(`{"device":"`+stranger.npub+`"}`)); code != 404 {
@@ -337,6 +333,10 @@ func TestBoxSyncEndToEnd(t *testing.T) {
 	started = time.Now().Unix()
 	if code, out := call(t, b.base, owner, "POST", "/api/box/sync/now", []byte(`{"device":"`+aMesh.npub+`"}`)); code != 202 {
 		t.Fatalf("sync now %d %v", code, out)
+	}
+	// Asked again at once: throttled (one Sync now per device per minute).
+	if code, out := call(t, b.base, owner, "POST", "/api/box/sync/now", []byte(`{"device":"`+aMesh.npub+`"}`)); code != 429 || out["retryAfter"] == nil {
+		t.Fatalf("second sync now %d %v, want 429 with retryAfter", code, out)
 	}
 	dev = waitRun(t, b, owner, aMesh.npub, "sync", started)
 	if last := dev["last"].(map[string]any); last["error"] != nil || last["files"] == nil {

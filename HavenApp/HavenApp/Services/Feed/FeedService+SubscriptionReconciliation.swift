@@ -115,7 +115,7 @@ extension FeedService {
         for key in feedClients.keys where !key.hasPrefix("page-") && !desiredKeys.contains(key) {
             feedClients[key]?.disconnect()
             feedClients.removeValue(forKey: key)
-            subscribedAuthorsByRelay[key] = nil
+            subscribedFeeds.forget(key)
         }
 
         let missing = desiredURLs.filter { feedClients[$0.absoluteString] == nil }
@@ -143,7 +143,7 @@ extension FeedService {
             guard !key.hasPrefix("page-"), client.connectionState == .connected else { continue }
             // nil-author relays (inbox/global/popular) never drift on follows.
             guard let desired = desiredPrimaryAuthors(forRelayKey: key) else { continue }
-            if let current = subscribedAuthorsByRelay[key], Set(current) == Set(desired) {
+            if subscribedFeeds.isInSync(key, authors: desired, distant: desiredDistantAuthors(forRelayKey: key)) {
                 continue   // already in sync
             }
             sendPrimaryFeedSubscription(client: client, label: key)

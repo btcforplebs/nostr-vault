@@ -158,33 +158,30 @@
 
                 <h2 id="new">Create an account</h2>
                 <ol class="steps">
-                    <li><strong>Welcome to Nostr.</strong> A short explanation of Nostr and your vault. Tap
-                        <span class="ui">Create My Account</span>.</li>
-                    <li><strong>Your Keys.</strong> Two keys replace a username and password. The <strong>public key</strong> is your
-                        name on Nostr; share it freely. The <strong>secret key</strong> is your password; anyone who has it can post as
-                        you. Tap <span class="ui">Copy</span> next to the secret key and save it in your password manager. Nobody can
-                        recover it for you. Tick <span class="ui">I saved my secret key</span>, then <span class="ui">Continue</span>.</li>
-                    <li><strong>Protect Your Key.</strong> Choose a password of at least 8 characters. This password locks the secret key you just saved.
-                        It stays on this device only and is never sent to us or any server. We cannot recover or reset it. If you forget it, the secret key you saved is your only way back in. Write it down and keep it with your secret key.</li>
-                    <li><strong>Your Profile.</strong> Add a photo and a name, or tap <span class="ui">Skip for Now</span>. You can
-                        change both later.</li>
-                    <li><strong>Choose where your posts go.</strong> The relays your posts go out to. The list starts empty: tap
-                        <span class="ui">Use recommended</span> for our suggestions, tap + on any one of them, or type the address of
-                        any server you like. Then tap <span class="ui">Use these</span> <em>N</em> servers. Nothing is shared until
-                        you do. <span class="ui">Skip for now</span> publishes nothing. You can change them any time in Settings
-                        &rarr; Relays.</li>
+                    <li><strong>Edit Profile.</strong> Tap the circle to add a photo, type your name, and tap
+                        <span class="ui">Next</span>. Both are optional, and you can change them any time. Your key is made for you in
+                        the background, and nothing is posted until setup ends.</li>
                     <li><strong>Who told you about Nostr Vault?</strong> See <a href="#who-told-you">below</a>.</li>
-                    <li><strong>Welcome to Nostr!</strong> Your account is made and your relay is running. Tap
-                        <span class="ui">Start Exploring</span>.</li>
+                    <li><strong>This key is you.</strong> Your secret key is your account: anyone who has it can post as you, and
+                        nobody can recover it for you. Tap <span class="ui">Show</span> to see it or <span class="ui">Copy my key</span> to copy it, then
+                        <span class="ui">Next</span>.</li>
+                    <li><strong>Back up your key.</strong> Tap <span class="ui">On paper</span> and write your key down, or tap
+                        <span class="ui">Copy my key</span> and paste it into your password manager within a minute (then the clipboard
+                        clears). Don't save it to Photos, Files or iCloud. Tick <span class="ui">I backed up my key</span>, then
+                        <span class="ui">Next</span>.</li>
+                    <li><strong>Lock it in.</strong> Choose a password of at least 8 characters. Your key is locked on this
+                        device behind it, guarded by its secure hardware (Secure Enclave). It never leaves the device and can't be reset by us. If you forget it,
+                        your backup is your only way back in. Write it down and keep it with your key backup. <span class="ui">Open</span>
+                        takes you straight to your feed.</li>
                     <li><strong>Fill your feed.</strong> Nostr starts empty: no algorithm picks for you. Tap
                         <span class="ui">Let's fill it</span>, pick a few topics, and follow people whose posts you like. Five follows
                         build your web of trust, which fills your feed and filters out spam. <span class="ui">Not now</span> skips
                         it.</li>
                 </ol>
                 <div class="shots">
-                    <figure><img src="/docs/img/ios/your-keys.webp" alt="Your Keys (secret key hidden here)" width="900" height="1957" loading="lazy"><figcaption>Your Keys (secret key hidden here)</figcaption></figure>
-                    <figure><img src="/docs/img/ios/protect-key.webp" alt="Protect Your Key" width="900" height="1957" loading="lazy"><figcaption>Protect Your Key</figcaption></figure>
-                    <figure><img src="/docs/img/ios/profile.webp" alt="Your Profile" width="900" height="1957" loading="lazy"><figcaption>Your Profile</figcaption></figure>
+                    <figure><img src="/docs/img/ios/profile.webp" alt="Edit Profile" width="900" height="1957" loading="lazy"><figcaption>Edit Profile</figcaption></figure>
+                    <figure><img src="/docs/img/ios/your-keys.webp" alt="This key is you" width="900" height="1957" loading="lazy"><figcaption>This key is you</figcaption></figure>
+                    <figure><img src="/docs/img/ios/protect-key.webp" alt="Lock it in" width="900" height="1957" loading="lazy"><figcaption>Lock it in</figcaption></figure>
                     <figure><img src="/docs/img/ios/feed-first.webp" alt="Fill your feed" width="900" height="1957" loading="lazy"><figcaption>Fill your feed</figcaption></figure>
                 </div>
 
@@ -255,14 +252,17 @@
 
                 <h2 id="who-told-you">Who told you about Nostr Vault?</h2>
                 <p>If you create an account, setup asks <strong>Who told you about Nostr
-                    Vault?</strong> It comes after the servers step (<strong>Choose where your posts go</strong>). Accounts brought from another Nostr app skip it.</p>
+                    Vault?</strong> It comes right after <strong>Edit Profile</strong>. Accounts brought from another Nostr app skip it.</p>
+                <p>A new account's posts go out to our recommended relays. Change them any time in Settings &rarr; Relays.</p>
                 <ol class="steps">
                     <li>Tap <span class="ui">Scan their profile code</span>, or paste their profile link or npub. Their link
                         comes from <strong>Share profile</strong>; see <a href="/docs/share-links/profile/">Share your profile</a>.
                         If you opened their link before setting up, they're already filled in.</li>
                     <li>Check their profile card, and follow them. <span class="ui">Not them? Try another</span> goes back.</li>
-                    <li>Up to 10 people they follow come next, the most followed first, all ticked. Untick anyone you don't want,
-                        and follow the rest.</li>
+                    <li><strong><em>Their</em> people</strong> come next: people they follow and people who follow them, the
+                        ones they talk with most first (replies, reactions, zaps and mentions). Nobody is ticked: tap someone to see
+                        their profile and recent notes, and tap <span class="ui">Follow</span> there if you like them. Tap a topic
+                        chip to see only the people who post about it. Then follow everyone you picked.</li>
                 </ol>
                 <p>Nobody told you? Tap <span class="ui">Skip, nobody told me</span>.</p>
 

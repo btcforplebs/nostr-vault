@@ -65,6 +65,10 @@ final class StreamingBlobDownload: NSObject, URLSessionDataDelegate, @unchecked 
         case disk(String)
         case network(String)
         case cancelled
+        /// Bigger than `maxBytes` (declared, or as it arrived).
+        case tooBig(limit: Int64)
+        /// A type `allowsType` refused (Auto-Mirror: no pages or scripts).
+        case typeNotAllowed(String)
 
         var reason: String {
             switch self {
@@ -74,22 +78,30 @@ final class StreamingBlobDownload: NSObject, URLSessionDataDelegate, @unchecked 
             case .disk(let why): return "could not write the file: \(why)"
             case .network(let why): return why
             case .cancelled: return "cancelled"
+            case .tooBig(let limit): return "file is over \(ByteCountFormatter.string(fromByteCount: limit, countStyle: .file))"
+            case .typeNotAllowed(let type): return "media type \(type) not allowed"
             }
         }
     }
 
     /// Fetches `request` into a new file in `directory`. `expectedSHA256`
     /// (lower-case hex) is checked when given. `freeBytes` is asked twice:
-    /// at the headers and once the file is down.
+    /// at the headers and once the file is down. `maxBytes`: refused at the
+    /// headers when declared bigger, and cut off as soon as more arrives (a
+    /// missing or false Content-Length). `allowsType`: (sent type, URL) ->
+    /// whether to take it, asked at the headers.
     static func fetch(_ request: URLRequest,
                       configuration: URLSessionConfiguration,
                       directory: URL = FileManager.default.temporaryDirectory,
                       expectedSHA256: String? = nil,
+                      maxBytes: Int64? = nil,
+                      allowsType: (@Sendable (String?, URL?) -> Bool)? = nil,
                       freeBytes: @escaping @Sendable () -> Int64? = { BlobImportRoom.freeBytes(at: FileManager.default.temporaryDirectory) },
                       challenge: Challenge? = nil,
                       observe: ((StreamingBlobDownload) -> Void)? = nil) async -> Result<File, Failure> {
         let target = directory.appendingPathComponent("import-\(UUID().uuidString).part")
         let download = StreamingBlobDownload(target: target, expected: expectedSHA256?.lowercased(),
+                                             maxBytes: maxBytes, allowsType: allowsType,
                                              freeBytes: freeBytes, challenge: challenge)
         observe?(download)
         let session = URLSession(configuration: configuration, delegate: download, delegateQueue: nil)
@@ -106,6 +118,8 @@ final class StreamingBlobDownload: NSObject, URLSessionDataDelegate, @unchecked 
 
     private let target: URL
     private let expected: String?
+    private let maxBytes: Int64?
+    private let allowsType: (@Sendable (String?, URL?) -> Bool)?
     private let freeBytes: @Sendable () -> Int64?
     private let challenge: Challenge?
     private let lock = NSLock()
@@ -119,10 +133,12 @@ final class StreamingBlobDownload: NSObject, URLSessionDataDelegate, @unchecked 
     /// The most body bytes this download ever held at once (one chunk), for tests.
     private(set) var peakChunkBytes = 0
 
-    private init(target: URL, expected: String?, freeBytes: @escaping @Sendable () -> Int64?,
-                 challenge: Challenge?) {
+    private init(target: URL, expected: String?, maxBytes: Int64?, allowsType: (@Sendable (String?, URL?) -> Bool)?,
+                 freeBytes: @escaping @Sendable () -> Int64?, challenge: Challenge?) {
         self.target = target
         self.expected = expected
+        self.maxBytes = maxBytes
+        self.allowsType = allowsType
         self.freeBytes = freeBytes
         self.challenge = challenge
     }
@@ -166,6 +182,19 @@ final class StreamingBlobDownload: NSObject, URLSessionDataDelegate, @unchecked 
             return
         }
         let declared = response.expectedContentLength >= 0 ? response.expectedContentLength : nil
+        if let maxBytes, let declared, declared > maxBytes {
+            fail(.tooBig(limit: maxBytes))
+            completionHandler(.cancel)
+            return
+        }
+        // The header as sent: with none, URLResponse.mimeType says
+        // application/octet-stream, which would hide the link's extension.
+        let sentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")
+        if let allowsType, !allowsType(sentType, response.url ?? dataTask.originalRequest?.url) {
+            fail(.typeNotAllowed(AutoMirrorGuard.mediaType(declared: sentType, url: response.url) ?? "unknown"))
+            completionHandler(.cancel)
+            return
+        }
         if let free = freeBytes() {
             let room = BlobImportRoom.decide(declared: declared, free: free)
             if room != .fits {
@@ -193,6 +222,10 @@ final class StreamingBlobDownload: NSObject, URLSessionDataDelegate, @unchecked 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive chunk: Data) {
         let ok = lock.withLock { () -> Bool in
             guard failure == nil, let handle else { return false }
+            if let maxBytes, written + Int64(chunk.count) > maxBytes {
+                failure = .tooBig(limit: maxBytes)
+                return false
+            }
             peakChunkBytes = max(peakChunkBytes, chunk.count)
             do {
                 try handle.write(contentsOf: chunk)

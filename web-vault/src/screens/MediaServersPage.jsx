@@ -12,6 +12,8 @@ import { SkeletonList } from "../components/Loading.jsx"
 import { MeshPhotosSwitch } from "../components/MeshPhotosSwitch.jsx"
 import { SuggestedServers } from "../components/SuggestedServers.jsx"
 import { MeshVaultRows } from "./MeshVaultRows.jsx"
+import { MediaCopyRows } from "./MediaCopyRows.jsx"
+import { BOX } from "../box/mode.js"
 import { Dialog } from "../components/Moderation.jsx"
 import { guardLeave } from "../net/leave-guard.js"
 import { changeCount, saveLabel, ONLY_SAVE, leaveQuestion, LEAVE_NOTE } from "../net/media-servers-draft.js"
@@ -128,6 +130,7 @@ export function MediaServersPage({ ctx }) {
       )}
       {status && <p class="settings-note muted small">{status}</p>}
       {err && <p class="settings-note small error">{err}</p>}
+      {BOX && <MediaCopyRows ctx={ctx} />}
       <MeshPhotosSwitch />
     </>
   )

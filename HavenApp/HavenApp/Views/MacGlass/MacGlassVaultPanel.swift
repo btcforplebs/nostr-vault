@@ -31,6 +31,9 @@ struct MacGlassVaultPanel: View {
                     .transition(.opacity)
             }
             tiles
+            MacVaultStatusCard(configService: configService, compact: true)
+                .padding(10)
+                .macContentTile()
             actions
             footer
         }

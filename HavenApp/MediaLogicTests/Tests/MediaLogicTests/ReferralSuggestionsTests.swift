@@ -11,7 +11,9 @@ final class ReferralSuggestionsTests: XCTestCase {
         XCTAssertEqual(ReferralSuggestions.follows(inContactListTags: tags), [k(1), k(2)])
     }
 
-    func testMostFollowedAmongTheReferrersFollowsComeFirst() {
+    private func keys(_ picks: [ReferralSuggestions.Pick]) -> [String] { picks.map(\.pubkey) }
+
+    func testWithNoMutualsMostFollowedAmongTheReferrersFollowsComeFirst() {
         let follows = [k(1), k(2), k(3), k(4)]
         let lists = [
             k(1): [k(3), k(4)],
@@ -19,16 +21,78 @@ final class ReferralSuggestionsTests: XCTestCase {
             k(3): [k(4), k(3)],            // following yourself doesn't count
             k(99): [k(1), k(1), k(1)],     // not one of the referrer's follows: ignored
         ]
-        // k4: 3 (from k1, k2, k3); k3: 2; k1 and k2: 0, in list order.
-        XCTAssertEqual(ReferralSuggestions.rank(referrerFollows: follows, lists: lists, exclude: []), [k(4), k(3), k(1), k(2)])
+        // Nobody follows the referrer (k50) back: k4: 3; k3: 2; k1 and k2: 0, in list order.
+        let ranked = ReferralSuggestions.rank(referrer: k(50), referrerFollows: follows, lists: lists, exclude: [])
+        XCTAssertEqual(keys(ranked), [k(4), k(3), k(1), k(2)])
+        XCTAssertEqual(ranked.map(\.close), [0, 0, 0, 0])
     }
 
-    func testExcludedNeverOfferedAndCappedAtTen() {
-        let follows = (1...30).map(k)
-        let ranked = ReferralSuggestions.rank(referrerFollows: follows, lists: [:], exclude: [k(1), k(3)])
-        XCTAssertEqual(ranked.count, 10)
-        XCTAssertEqual(ranked.first, k(2))
-        XCTAssertFalse(ranked.contains(k(1)) || ranked.contains(k(3)))
+    func testTheReferrersCloseCircleOutranksFame() {
+        let me = k(50)
+        // k1, k2 follow the referrer back (close). k3..k6 don't.
+        let follows = (1...8).map(k)
+        let lists = [
+            k(1): [me, k(7)],
+            k(2): [me, k(7), k(1)],
+            k(3): [k(8)], k(4): [k(8)], k(5): [k(8)], k(6): [k(8)], // k8 is famous: 4 follows, none close
+        ]
+        XCTAssertEqual(ReferralSuggestions.closeCircle(referrer: me, referrerFollows: follows, lists: lists), [k(1), k(2)])
+        let ranked = ReferralSuggestions.rank(referrer: me, referrerFollows: follows, lists: lists, exclude: [])
+        // k7: 2 close; k1: 1 close (from k2); then k8 by its 4 overall; then list order.
+        XCTAssertEqual(Array(keys(ranked).prefix(3)), [k(7), k(1), k(8)])
+        XCTAssertEqual(ranked.first?.close, 2)
+        XCTAssertEqual(ranked.first { $0.pubkey == k(8) }?.close, 0)
+    }
+
+    func testTopicsAreSharedHashtagsOfThePeopleOffered() {
+        let notes: [(author: String, tags: [[String]])] = [
+            (k(1), [["t", "Photography"], ["t", "bitcoin"]]),
+            (k(1), [["t", "photography"]]),           // one person counts once
+            (k(2), [["t", "#photography"], ["t", "2026"]]),
+            (k(3), [["t", "bitcoin"], ["t", "x"]]),    // too short
+            (k(4), [["t", "bitcoin"]]),
+            (k(9), [["t", "garden"], ["t", "garden"]]), // not offered
+            (k(2), [["t", "garden"]]),                   // one person only
+        ]
+        let topics = ReferralSuggestions.topics(notes: notes, among: [k(1), k(2), k(3), k(4)])
+        XCTAssertEqual(topics.map(\.topic), ["bitcoin", "photography"])
+        XCTAssertEqual(topics.first?.people, [k(1), k(3), k(4)])
+    }
+
+    func testExcludedNeverOfferedAndCappedAtThePool() {
+        let follows = (1...80).map(k)
+        let ranked = ReferralSuggestions.rank(referrer: k(99), referrerFollows: follows, lists: [:], exclude: [k(1), k(3)])
+        XCTAssertEqual(ranked.count, ReferralSuggestions.pool)
+        XCTAssertEqual(ranked.first?.pubkey, k(2))
+        XCTAssertFalse(keys(ranked).contains(k(1)) || keys(ranked).contains(k(3)))
+    }
+
+    func testInteractionsBothWaysWeightedAndZapsBySender() {
+        let me = k(50)
+        let zapRequest = "{\"pubkey\":\"\(me)\",\"kind\":9734}"
+        let activity: [ReferralSuggestions.Activity] = [
+            (me, 1, [["p", k(1)], ["p", k(1)], ["p", k(2)]]),   // my reply: k1 +3 once, k2 +3
+            (me, 7, [["p", k(1)]]),                             // my reaction: k1 +1
+            (k(3), 1, [["p", me]]),                             // k3 replies to me: +3
+            (k(4), 7, [["p", k(9)]]),                           // not about me: ignored
+            (k(77), 9735, [["p", k(5)], ["description", zapRequest]]), // I zapped k5: +4
+            (k(77), 9735, [["p", me], ["P", k(6)]]),            // k6 zapped me: +4
+            (me, 3, [["p", k(8)]]),                             // a follow list is not an interaction
+        ]
+        let score = ReferralSuggestions.interactions(referrer: me, activity: activity)
+        XCTAssertEqual(score, [k(1): 4, k(2): 3, k(3): 3, k(5): 4, k(6): 4])
+    }
+
+    func testInteractionsOutrankFameAndFollowersAreOffered() {
+        let me = k(50)
+        let follows = [k(1), k(2), k(3)]
+        let lists = [k(1): [k(2)], k(3): [k(2)]]          // k2 is the "famous" one
+        let ranked = ReferralSuggestions.rank(referrer: me, referrerFollows: follows,
+                                              followers: [k(3), k(4), me], interactions: [k(4): 3, k(1): 1],
+                                              lists: lists, exclude: [])
+        XCTAssertEqual(keys(ranked), [k(4), k(1), k(2), k(3)])
+        XCTAssertEqual(ranked.map(\.relation), [.follower, .follows, .follows, .mutual])
+        XCTAssertEqual(ranked.first?.interactions, 3)
     }
 
     func testBatchFollowAddsOnlyNewPeopleInOneEdit() {

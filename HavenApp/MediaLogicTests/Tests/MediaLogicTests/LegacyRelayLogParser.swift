@@ -177,7 +177,7 @@ enum LegacyRelayLogParser {
                 batch.bootStatusMessage = "Subscribing to \(topic.trimmingCharacters(in: .punctuationCharacters))..."
             }
         } else if lowerLine.contains("is booting up") {
-            batch.bootStatusMessage = "Booting Haven..."
+            batch.bootStatusMessage = "Starting your vault..."
         } else if lowerLine.contains("starting deeper web of trust") {
             batch.bootStatusMessage = "Analyzing trust graph..."
         } else if lowerLine.contains("starting") {

@@ -57,16 +57,4 @@ final class MeshDeleteTargetsTests: XCTestCase {
         XCTAssertFalse(MeshDeleteTargets.gone(deleteStatus: 200, checkStatus: nil))
         XCTAssertFalse(MeshDeleteTargets.gone(deleteStatus: 403, checkStatus: 404))
     }
-
-    /// Same tags as Android: delete + get, the blob, every device by its
-    /// `.fips` name, five minutes.
-    func testOneTokenNamesEveryDevice() {
-        let targets = MeshDeleteTargets.of(devices: devices, ownNpub: own, includeHomeVault: true)
-        let now = Date(timeIntervalSince1970: 1_000)
-        XCTAssertEqual(MeshDeleteTargets.authTags(sha256: blob, targets: targets, now: now), [
-            ["t", "delete"], ["t", "get"], ["x", blob],
-            ["server", "\(home).fips"], ["server", "\(mac).fips"], ["server", "\(phone).fips"],
-            ["expiration", "1300"],
-        ])
-    }
 }

@@ -30,6 +30,7 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
         // (the filter just omits `authors`). Same guards as the live REQ.
         if (mode == FeedMode.DISCOVERY && _extendedNetworkPubkeys.value.isEmpty()) return
         if (mode == FeedMode.FOLLOWING && _followedPubkeys.value.isEmpty()) return
+        if (mediaFollowsNobody()) return
         if (!isLoadingMore.compareAndSet(false, true)) return
         // The note list outlives a mode switch: Polls pages from its oldest
         // poll, as the live REQ does, or another feed's notes would skip polls.
@@ -87,7 +88,8 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
                         append(",\"limit\":100}")
                     }
 
-                    client.send("[\"REQ\",\"$subId\",$filter]")
+                    val filters = listOfNotNull(filter, distantPostsFilter(filter, relayUrl))
+                    client.send("[\"REQ\",\"$subId\",${filters.joinToString(",")}]")
                 }
 
                 // The follows' own relays, each asked only for the follows it

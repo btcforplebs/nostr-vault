@@ -15,6 +15,7 @@ struct ViewerActionBar: View {
     enum Mirror {
         /// Not on your media servers yet; the action copies it there.
         case offer(busy: Bool, action: () -> Void)
+        /// This device's vault already has it: the only copy we know of.
         case done
     }
 
@@ -118,8 +119,10 @@ struct ViewerActionBar: View {
                 }
                 .disabled(busy)
             case .done:
+                // `.done` only means this device's vault has the file
+                // (`updateMirrorStatus`); no media server was asked.
                 Button {} label: {
-                    Label("On your media servers", systemImage: "checkmark.circle")
+                    Label("In your vault", systemImage: "checkmark.circle")
                 }
                 .disabled(true)
             case nil:

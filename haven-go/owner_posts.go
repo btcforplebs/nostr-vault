@@ -90,6 +90,12 @@ func pointsAtPostBy(ctx context.Context, refs postRefs, authors map[string]struc
 // a reply deeper in the owner's thread qualifies too), a quote (q), or a
 // reply or comment on one of the owner's articles (a/A).
 func engagesOwnerPost(ctx context.Context, ev *nostr.Event) bool {
+	return engagesPostBy(ctx, ev, whitelist())
+}
+
+// engagesPostBy is engagesOwnerPost for the posts of authors only: one
+// account's gate asks about that account's own posts (account_gate.go).
+func engagesPostBy(ctx context.Context, ev *nostr.Event, authors map[string]struct{}) bool {
 	if ev.Kind != nostr.KindTextNote && ev.Kind != nostr.KindComment {
 		return false
 	}
@@ -100,7 +106,7 @@ func engagesOwnerPost(ctx context.Context, ev *nostr.Event) bool {
 		}
 		return false
 	})
-	return pointsAtPostBy(ctx, refs, whitelist())
+	return pointsAtPostBy(ctx, refs, authors)
 }
 
 // isReplyNote reports whether a text note answers another: it has an `e` tag

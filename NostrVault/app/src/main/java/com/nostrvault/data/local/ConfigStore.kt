@@ -302,6 +302,7 @@ class ConfigStore @Inject constructor(
             }
         }
 
+        ownerKeyFromFile = keyInFile
         setConfig(loaded)
         if (removedStarterPicks || droppedDamus || condensedLayouts != null || repliesBackOn || keyInFile != null || secretsInFile.isNotEmpty()) CoroutineScope(Dispatchers.IO).launch { save() }
 
@@ -361,10 +362,11 @@ class ConfigStore @Inject constructor(
                     store = { account, value -> try { secretVault.write(account, value) } catch (_: Exception) { false } },
                     delete = { account -> try { secretVault.delete(account) } catch (_: Exception) { false } },
                 )
+                val keepInFile = vaultOwnerKeyForSave(cfg)
                 val onDisk = ConfigSecrets.stripped(cfg, secretsInVault)
                 val tmp = File(configFile.parentFile, configFile.name + ".tmp")
                 tmp.outputStream().use { out ->
-                    out.write(encodeForDisk(onDisk, ownerKeyForFile(cfg)).toByteArray())
+                    out.write(encodeForDisk(onDisk, keepInFile).toByteArray())
                     out.fd.sync()
                 }
                 Files.move(tmp.toPath(), configFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
@@ -403,17 +405,46 @@ class ConfigStore @Inject constructor(
     private fun setAsideCopies(): List<File> =
         configFile.parentFile?.listFiles()?.filter { it.name.startsWith("${configFile.name}.unreadable-") }.orEmpty()
 
+    private val _ownerKeyNotSaved = MutableStateFlow(false)
+
     /**
-     * Puts the owner's key in [keyVault]. Returns the key only if the vault
-     * couldn't take it, so it stays in the file as before instead of being
-     * lost. A different key the vault already holds for the owner is never
-     * overwritten.
+     * True while the owner's key could not go into the credential store: it is
+     * then only in memory and gone when the app closes. The app warns
+     * (OwnerKeyNotSavedDialog); the key is never written to the config file
+     * instead.
      */
-    private fun ownerKeyForFile(cfg: HavenConfig): String? {
-        val key = cfg.ownerHexKey ?: return null
-        if (vaultOwnerKey(key, cfg.ownerNpub)) return null
-        Log.w("ConfigStore", "owner key not stored in the credential store; kept in config")
-        return key
+    val ownerKeyNotSaved: StateFlow<Boolean> = _ownerKeyNotSaved.asStateFlow()
+
+    /**
+     * The owner key an older build left in the file at load. Older builds only
+     * left it there when the credential store refused it, so for those installs
+     * the file is the only copy on disk: it stays in the file until the store
+     * takes it.
+     */
+    @Volatile private var ownerKeyFromFile: String? = null
+
+    /**
+     * Puts the owner's key in [keyVault]. A different key the vault already
+     * holds for the owner is never overwritten. A key is never added to the
+     * file: one the vault can't take is in memory only ([ownerKeyNotSaved]).
+     * The one exception is a key an older build left in the file
+     * ([ownerKeyFromFile]): returned here so it is written back, until the
+     * vault takes it and it comes out.
+     */
+    private fun vaultOwnerKeyForSave(cfg: HavenConfig): String? {
+        val key = cfg.ownerHexKey
+        val saved = key == null || vaultOwnerKey(key, cfg.ownerNpub)
+        _ownerKeyNotSaved.value = !saved
+        if (saved) {
+            ownerKeyFromFile = null
+            return null
+        }
+        if (key == ownerKeyFromFile) {
+            Log.w("ConfigStore", "owner key not stored in the credential store; left in config where an older build put it")
+            return key
+        }
+        Log.w("ConfigStore", "owner key not stored in the credential store; kept in memory only")
+        return null
     }
 
     /** Whether [key] is now in [keyVault], under [ownerNpub] or else its own pubkey. */
@@ -588,6 +619,7 @@ class ConfigStore @Inject constructor(
                 accountBunkerConfigs = cfg.accountBunkerConfigs - npub,
                 accountSigningModes = cfg.accountSigningModes - npub,
                 publishRelayListPerAccount = cfg.publishRelayListPerAccount - npub,
+                reachPerAccount = cfg.reachPerAccount - npub,
                 activeAccountNpub = if (cfg.activeAccountNpub == npub) null else cfg.activeAccountNpub,
             )
         }
@@ -643,6 +675,7 @@ class ConfigStore @Inject constructor(
             wipeAppFiles(context.filesDir)
             try { wipeOutsideFiles() } catch (_: Exception) { }
             vaulted = null
+            ownerKeyFromFile = null
             secretSync = ConfigSecretSync()
             secretsInVault = emptySet()
             plaintextSecrets.clear()

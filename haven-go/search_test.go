@@ -97,6 +97,14 @@ type havenUnderTest struct {
 
 func startHaven(t *testing.T) *havenUnderTest {
 	t.Helper()
+	return startHavenWith(t, nil)
+}
+
+// startHavenWith is startHaven with a chance to edit the config before
+// initRelays starts its background goroutines (files backfill and friends).
+// Config set after startHaven returns races with those goroutines.
+func startHavenWith(t *testing.T, edit func(c *Config, owner string)) *havenUnderTest {
+	t.Helper()
 	isolateTestStores(t)
 
 	ownerSK := nostr.GeneratePrivateKey()
@@ -119,6 +127,9 @@ func startHaven(t *testing.T) *havenUnderTest {
 		WhitelistedPubKeys: map[string]struct{}{owner: {}},
 		BlacklistedPubKeys: map[string]struct{}{},
 		BlossomPath:        "blossom/",
+	}
+	if edit != nil {
+		edit(&config, owner)
 	}
 	fs = afero.NewMemMapFs()
 	wot.MarkReady(wot.NewCycle(), stubWot{members: map[string]bool{owner: true}})

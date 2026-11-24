@@ -120,8 +120,6 @@ class VaultDashboardModelTest {
     fun `reach words`() {
         assertEquals("Trust list not built yet", m.trustTitle(0))
         assertEquals("1,234 people can reach your inbox", m.trustTitle(1234))
-        assertEquals("People within 1 hop of you. Everyone else is kept out.", m.trustDetail(1))
-        assertEquals("People within 3 hops of you. Everyone else is kept out.", m.trustDetail(3))
         assertEquals("Nobody blocked.", m.blockedDetail(0))
         assertEquals("1 person blocked.", m.blockedDetail(1))
         assertEquals("7 people blocked.", m.blockedDetail(7))
@@ -156,11 +154,5 @@ class VaultDashboardModelTest {
         assertEquals("Since Mar 2024. Last ran 5 minutes ago.", m.importNotesDetail("2024-03-15", ago(300), now))
         assertEquals("Copies the media in your notes here.", m.importMediaDetail(null, now))
         assertEquals("Last ran yesterday.", m.importMediaDetail(ago(86_400), now))
-    }
-
-    @Test
-    fun `hops`() {
-        assertEquals("1 hop", m.hops(1))
-        assertEquals("2 hops", m.hops(2))
     }
 }

@@ -198,7 +198,7 @@ export async function publishFollowList({ vault, signer, pubkey, template, write
   const first = await firstTaken(sends.slice(0, network.length))
   if (first < 0) throw new Error(`No relay took it (0 of ${network.length}), so nothing changed. Try again.`)
   const stored = await vault.outbox.event(event)
-  if (!stored.ok && !/^duplicate:/.test(stored.message)) throw new Error(`Sent, but Haven refused the follow list: ${stored.message}`)
+  if (!stored.ok && !/^duplicate:/.test(stored.message)) throw new Error(`Sent, but your vault refused the follow list: ${stored.message}`)
   return { event, taken: urls[first], settled }
 }
 

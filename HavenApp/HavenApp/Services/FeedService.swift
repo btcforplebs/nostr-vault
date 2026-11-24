@@ -216,6 +216,9 @@ class FeedService: ObservableObject {
     /// new one. Re-reading on every call re-filtered the whole feed each time
     /// and froze the app on an account with an empty graph.
     var wotCacheStamp: (path: String, modified: Date?)?
+    /// The pooled `wot_cache.json` last read for other accounts, while the
+    /// feed reads the open account's own file (`pooledWotPubkeys()`).
+    var pooledWotMemo: (modified: Date?, pubkeys: Set<String>)?
     /// The wot_links.json date last parsed into the account web, and a count
     /// so a slower, older parse can't land over a newer one.
     var wotLinksStamp: Date?
@@ -299,13 +302,12 @@ class FeedService: ObservableObject {
     /// pass the old feed's notes or EOSEs into the new one.
     var feedSubGeneration = 0
 
-    /// The author set the live primary REQ was last sent with, per relay key.
-    /// `nil`/absent for a relay key means no live primary subscription exists
-    /// there (e.g. we skipped sending because the follow set was empty). This is
-    /// the bookkeeping that makes `reconcileFeedSubscriptions()` a true reconcile:
-    /// when the authoritative follow set changes we compare against this and only
-    /// re-issue the REQ where it has actually drifted.
-    var subscribedAuthorsByRelay: [String: [String]] = [:]
+    /// The author set and distant list the live primary REQ was last sent
+    /// with, per relay key. This is the bookkeeping that makes
+    /// `reconcileFeedSubscriptions()` a true reconcile: when the authoritative
+    /// follow set changes we compare against this and only re-issue the REQ
+    /// where it has actually drifted.
+    var subscribedFeeds = FeedSubscriptionLedger()
     /// Re-entrancy guard — `reconcileFeedSubscriptions()` can be reached from a
     /// Combine sink, a Task continuation, and a view `onAppear` in the same runloop turn.
     var isReconciling = false

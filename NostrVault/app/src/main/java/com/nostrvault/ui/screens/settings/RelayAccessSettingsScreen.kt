@@ -20,6 +20,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.nostrvault.relay.AccountReach
+import com.nostrvault.relay.reachAccountNpub
+import com.nostrvault.relay.reachFor
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.WindowBackground
@@ -36,6 +39,10 @@ internal val WOT_REFRESH_OPTIONS = listOf(
  * same question. The old Rate Limits rows (events and connections per minute)
  * are gone: haven-go never read them, it uses its own fixed limits
  * (haven-go/limits.go).
+ *
+ * Follow Distance and Minimum Followers belong to the account you are on:
+ * each account has its own (AccountReach.kt), and switching account shows
+ * that account's values.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,12 +78,21 @@ fun RelayAccessSettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
+            // The account you are on: each account has its own (AccountReach.kt).
+            val reach = config.reachFor(config.reachAccountNpub)
             SectionLabel("Web of Trust")
-            StepperRow("Follow Distance", RelayAccessLimits.clampedFollowDistance(config.chatRelayWotDepth), RelayAccessLimits.FOLLOW_DISTANCE, 1, SettingsHelp.RELAY_WOT_DEPTH) {
+            StepperRow(
+                "Follow Distance", reach.depth, RelayAccessLimits.FOLLOW_DISTANCE, 1,
+                SettingsHelp.RELAY_WOT_DEPTH, valueText = FollowDistanceWords.short(reach.depth),
+            ) {
                 viewModel.setWotDepth(it)
             }
-            StepperRow("Minimum Followers", config.chatRelayMinFollowers, 0..100, 1, SettingsHelp.RELAY_MIN_FOLLOWERS) {
+            StepperRow("Minimum Followers", reach.minFollowers, AccountReach.MIN_FOLLOWERS, 1, SettingsHelp.RELAY_MIN_FOLLOWERS) {
                 viewModel.setWotMinFollowers(it)
+            }
+            // Only said when there is more than one account to tell apart.
+            if (config.allAccountNpubs().size > 1) {
+                Caption("These two settings are for the account you are on. Each of your accounts has its own.")
             }
             PickerRow("Refresh Trust List", WOT_REFRESH_OPTIONS, config.wotRefreshInterval, SettingsHelp.RELAY_WOT_REFRESH) {
                 viewModel.setWotRefresh(it)

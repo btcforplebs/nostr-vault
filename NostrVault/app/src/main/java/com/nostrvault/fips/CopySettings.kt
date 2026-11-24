@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
+import com.nostrvault.relay.reachFor
+import com.nostrvault.relay.withReach
 
 /**
  * The settings that travel with the mesh copy and stay synced after it (docs/MESH_COPY_V2_CONTRACT.md §5,
@@ -95,7 +97,9 @@ object CopySettings {
         bool(keys, "auto_load_new_posts")?.let { out = out.copy(autoLoadNewPosts = it) }
         bool(keys, "new_posts_pill")?.let { out = out.copy(showNewPostsPill = it) }
         (keys["wot_depth"] as? JsonPrimitive)?.longOrNull?.let {
-            out = out.copy(chatRelayWotDepth = RelayAccessLimits.clampedFollowDistance(it.toInt()))
+            // The file's value is the first account's: the others keep theirs.
+            val first = out.reachFor(out.ownerNpub)
+            out = out.withReach(first.copy(depth = it.toInt()), out.ownerNpub)
         }
         list(keys, "blocked_relays")?.let { out = out.copy(blockedRelays = it) }
         list(keys, "dm_relays")?.let { out = out.copy(dmRelays = it) }

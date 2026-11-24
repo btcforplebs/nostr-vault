@@ -31,10 +31,24 @@ type filesVault struct {
 
 func startFilesVault(t *testing.T) *filesVault {
 	t.Helper()
-	h := startHaven(t)
-	v := &filesVault{h: h, self: newTestKey(t), devA: newTestKey(t), devB: newTestKey(t), account: newTestKey(t)}
-	config.OwnerPubKey = h.owner
-	config.WhitelistedPubKeys[v.account.pk] = struct{}{}
+	v := &filesVault{self: newTestKey(t), devA: newTestKey(t), devB: newTestKey(t), account: newTestKey(t)}
+	// Owner and the second account go in before initRelays: its files
+	// backfill goroutine reads config.OwnerPubKey, so setting it afterwards
+	// is a data race (go test -race).
+	v.h = startHavenWith(t, func(c *Config, owner string) {
+		c.OwnerPubKey = owner
+		c.WhitelistedPubKeys[v.account.pk] = struct{}{}
+	})
+	// With an owner set, initRelays' own backfill runs: wait for its marker
+	// so it is finished before a test adds blobs or runs the backfill itself.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, err := os.Stat(filesBackfillFile); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the startup files backfill never finished")
+		}
+	}
 	pairMeshDevices(t, v.self, v.devA, v.devB)
 	return v
 }
@@ -314,6 +328,9 @@ func TestFilesNotServedThroughATunnel(t *testing.T) {
 
 func TestFilesBackfillRunsOnce(t *testing.T) {
 	v := startFilesVault(t)
+	if err := os.Remove(filesBackfillFile); err != nil { // the startup run's marker
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	x := fileHash("b")
 	rec := nostr.Event{Kind: 24242, PubKey: v.h.owner, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"x", x}, {"type", "image/png"}, {"size", "99"}}}

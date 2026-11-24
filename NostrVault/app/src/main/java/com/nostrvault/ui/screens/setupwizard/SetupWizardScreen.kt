@@ -23,7 +23,7 @@ import kotlinx.coroutines.flow.first
 
 /**
  * Setup wizard for first-run onboarding: two questions (PLANS/NV_FIRST_RUN_ENTRY_PLAN_2026_11_05.md).
- * New to Nostr (Create an account): relay choice → keys → password → profile → Who told you → starter relays → done.
+ * New to Nostr (Create an account): profile → Who told you → this key is you → back up your key → lock it in → feed (setup screens r3, iOS #2410).
  * I already use Nostr: relay choice → your key → New to Nostr Vault? → Yes: relay check → import tour;
  *   No: copy from the other vault (two scans), then the same relay check → import tour.
  * Port of SetupWizardView.swift.
@@ -108,15 +108,15 @@ fun SetupWizardScreen(
                     // Drawn outside this scrolling column; see FrontDoor above.
                     WizardStep.WELCOME -> Unit
                     WizardStep.RELAY_CHOICE -> RelayChoiceStep(viewModel)
-                    WizardStep.NOSTR_INTRO -> NostrIntroStep(viewModel)
-                    WizardStep.KEY_PASSWORD -> KeyPasswordStep(viewModel)
+                    WizardStep.NOSTR_INTRO -> KeyIsYouStep(viewModel)
+                    WizardStep.KEY_SPARE -> KeySpareStep(viewModel)
+                    WizardStep.KEY_PASSWORD -> KeyPasswordStep(viewModel, onComplete)
                     WizardStep.USE_NOSTR_KEY -> UseNostrKeyStep(viewModel)
                     WizardStep.REFERRER -> ReferrerStep(viewModel)
                     WizardStep.NEW_TO_VAULT -> NewToVaultStep(viewModel, onComplete)
                     WizardStep.RELAY_CHECK -> RelayCheckStep(viewModel)
                     WizardStep.IMPORT_TOUR -> ImportTourStep(viewModel, onComplete)
-                    WizardStep.PROFILE -> ProfileStep(viewModel)
-                    WizardStep.STARTER_RELAYS -> StarterRelaysStep(viewModel)
+                    WizardStep.PROFILE -> EditProfileStep(viewModel)
                     WizardStep.ACCOUNT -> AccountStep(viewModel)
                     WizardStep.RELAYS -> RelayStep(viewModel)
                     WizardStep.IMPORT_NOTES -> ImportNotesStep(viewModel)

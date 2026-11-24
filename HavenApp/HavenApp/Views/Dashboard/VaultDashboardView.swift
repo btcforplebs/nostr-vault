@@ -39,6 +39,9 @@ struct VaultDashboardView: View {
             VStack(alignment: .leading, spacing: 24) {
                 statusCard
                 YourDevicesSection(macDetail: macSyncDetail)
+                #if os(iOS)
+                DesktopVaultStatusCard(framed: true)
+                #endif
                 ListWipeBanner()
                 safetySection
                 reachSection
@@ -429,7 +432,7 @@ struct VaultDashboardView: View {
                 title: feedService.wotPubkeys.isEmpty
                     ? "Trust list not built yet"
                     : "\(feedService.wotPubkeys.count.formatted()) people can reach your inbox",
-                detail: "People within \(config.chatRelayWotDepth) \(config.chatRelayWotDepth == 1 ? "hop" : "hops") of you. Everyone else is kept out.",
+                detail: FollowDistanceWords.reachDetail(config.reach(for: config.reachAccountNpub).depth),
                 state: .info
             ) {
                 RelayAccessSettingsView().settingsPage("Who Can Reach You")
@@ -461,9 +464,13 @@ struct VaultDashboardView: View {
             DashboardRow(
                 icon: "arrow.down.circle.fill",
                 title: "Import notes",
-                detail: relayManager.isImporting
-                    ? relayManager.importStatusMessage
-                    : "Since \(importStartText). " + (VaultHistory.lastNotesImport.map { "Last ran \(relative($0))." } ?? "Never ran."),
+                detail: ImportRowDetail.text(
+                    isImporting: relayManager.isImporting,
+                    liveStatus: relayManager.importStatusMessage,
+                    outcome: relayManager.importOutcome,
+                    startFailed: relayManager.importStartFailed,
+                    couldNotStartLine: ImportStartGate.couldNotStart,
+                    idle: "Since \(importStartText). " + (VaultHistory.lastNotesImport.map { "Last ran \(relative($0))." } ?? "Never ran.")),
                 state: .info,
                 progress: relayManager.isImporting ? relayManager.importProgress : nil
             ) {
@@ -582,7 +589,7 @@ struct VaultDashboardView: View {
                 RelayMatrixView().settingsPage("Relays")
             }
             DashboardDivider()
-            SettingLink(icon: "person.badge.shield.checkmark", title: "Who Can Reach You", value: "\(config.chatRelayWotDepth) \(config.chatRelayWotDepth == 1 ? "hop" : "hops")") {
+            SettingLink(icon: "person.badge.shield.checkmark", title: "Who Can Reach You", value: FollowDistanceWords.short(config.reach(for: config.reachAccountNpub).depth)) {
                 RelayAccessSettingsView().settingsPage("Who Can Reach You")
             }
             DashboardDivider()

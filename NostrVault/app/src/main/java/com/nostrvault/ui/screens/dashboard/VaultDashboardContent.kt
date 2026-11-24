@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.SettingsInputAntenna
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -60,6 +61,7 @@ import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.tutorials.TutorialContent
 import com.nostrvault.tutorials.tutorialAnchor
 import com.nostrvault.ui.navigation.Screen
+import com.nostrvault.ui.screens.settings.FollowDistanceWords
 import com.nostrvault.ui.screens.dashboard.VaultDashboardModel.RunState
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
@@ -111,7 +113,8 @@ internal fun VaultDashboardContent(
     var lookForOldLists by rememberSaveable { mutableStateOf(com.nostrvault.service.ListHistoryScan.DEFAULT_ON) }
     val importProgress by vaultViewModel.importProgress.collectAsState()
     val importStatus by vaultViewModel.importStatusMessage.collectAsState()
-    val importCompleted by vaultViewModel.importCompleted.collectAsState()
+    /** How the last import ended; it stays as the Import notes row's detail until the next run (gap H). */
+    val importOutcome by vaultViewModel.importOutcome.collectAsState()
     val exportingNotes by vaultViewModel.isExportingJsonl.collectAsState()
     val exportingMedia by vaultViewModel.isExportingMedia.collectAsState()
     val exportStatus by vaultViewModel.exportStatus.collectAsState()
@@ -128,13 +131,6 @@ internal fun VaultDashboardContent(
         }
     }
     LaunchedEffect(history, followSavedAt, macSync) { now = System.currentTimeMillis() }
-    // A finished import's result stays a moment, then the row goes back to its "last ran" line.
-    LaunchedEffect(importCompleted) {
-        if (importCompleted) {
-            delay(3_000)
-            vaultViewModel.dismissImport()
-        }
-    }
 
     val isExternal = cfg.useExternalRelay
     val running = relayStatus == RelayForegroundService.RelayStatus.RUNNING
@@ -232,6 +228,9 @@ internal fun VaultDashboardContent(
             onOpenMesh = { onOpenScreen(Screen.MeshSettings) },
         )
 
+        // ── Your desktop Vault (its trust ranking, over the mesh) ──
+        DesktopVaultStatusCard()
+
         // ── Is it safe? ────────────────────────────────────────
         val backupAt = history.notesBackup
         DashSection(
@@ -290,7 +289,7 @@ internal fun VaultDashboardContent(
             DashRowLink(
                 icon = NostrVaultIcons.People,
                 title = VaultDashboardModel.trustTitle(wot.size),
-                detail = VaultDashboardModel.trustDetail(cfg.chatRelayWotDepth),
+                detail = FollowDistanceWords.reachDetail(cfg.chatRelayWotDepth),
                 state = RowState.INFO,
                 onClick = { onOpenScreen(Screen.RelayAccessSettings) },
             )
@@ -312,8 +311,12 @@ internal fun VaultDashboardContent(
             DashRow(
                 icon = Icons.Filled.ArrowCircleDown,
                 title = "Import notes",
-                detail = if (isImporting || importCompleted) importStatus.ifEmpty { "Importing…" }
-                else VaultDashboardModel.importNotesDetail(cfg.importStartDate, history.notesImport, now),
+                detail = VaultDashboardModel.importNotesRowDetail(
+                    isImporting = isImporting,
+                    liveStatus = importStatus,
+                    lastOutcome = importOutcome?.summary,
+                    idleDetail = VaultDashboardModel.importNotesDetail(cfg.importStartDate, history.notesImport, now),
+                ),
                 state = RowState.INFO,
                 progress = if (isImporting) importProgress else null,
             ) {
@@ -375,6 +378,11 @@ internal fun VaultDashboardContent(
                     onClick = { vaultViewModel.exportJsonl(context) },
                 )
             }
+            DashDivider()
+            // The backup zip left setup (Logen 2026-11-05): restored from here, as web's Keep it full does.
+            SettingLink(Icons.Filled.Restore, "Restore from a backup", null) {
+                onOpenScreen(Screen.BackupSettings)
+            }
             if (!actionsEnabled || exportStatus.isNotEmpty()) {
                 DashDivider()
                 Row(
@@ -405,7 +413,7 @@ internal fun VaultDashboardContent(
                 onOpenScreen(Screen.Relays)
             }
             DashDivider()
-            SettingLink(Icons.Filled.VerifiedUser, "Who Can Reach You", VaultDashboardModel.hops(cfg.chatRelayWotDepth)) {
+            SettingLink(Icons.Filled.VerifiedUser, "Who Can Reach You", FollowDistanceWords.short(cfg.chatRelayWotDepth)) {
                 onOpenScreen(Screen.RelayAccessSettings)
             }
             DashDivider()

@@ -73,11 +73,11 @@ SetMeshDevicesC({"self": "<this vault's mesh npub>", "devices": [{"npub": "<mesh
 - The signer is in A's paired set and is not A. Anyone else is 403.
 - The token is **bound to the signer**. A `device` tag is not needed; if present it must equal the signer (401).
 
-**Old form, kept until every app sends the device form** (marked `TODO(mesh-key)` in the engine, then removed): the
-owner signs, with `["device", <B's own mesh npub>]` instead of `p`; a proof without it is 401.
+**The account key never starts a copy** (Logen, 2026-11-19: fail closed). The old owner-signed form (with
+`["device", <B's mesh npub>]`) is gone: a proof signed by the owner's account key is 403.
 
 If the check fails: 401 for a missing, bad, stale, replayed or misaddressed proof; 403 for a valid proof from a key
-that is neither a paired device nor (old form) the owner.
+that is not a paired device (the account key included).
 
 ### 2.1 Blossom over the mesh (upload, get / check, delete)
 
@@ -106,7 +106,10 @@ short-lived; and the id has **not been seen before it expires** (no replay: 409,
 so §4 and `copyOwnMediaSet` count it. A device's delete removes only the owner's record: a blob whose records are by
 another key stays.
 
-The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
+**No account key over the mesh** (Logen, 2026-11-19: fail closed). On the ports only the mesh reaches (the door,
+the iPhone's own-devices port), a Blossom request signed by the account key is 403. On the relay port from loopback
+(Mac, Android, the box) the vault's own app arrives the same way, so the engine cannot refuse it there; the apps hold
+that line and never sign a mesh send with the account key: no mesh key, or a refusal, means the blob waits.
 
 ### 2.2 Publish for me (the vault sends the phone's posts)
 
@@ -391,9 +394,96 @@ The app calls the engine when a linked device comes into reach. The engine then:
    older files stay in the next round's window.
 4. **Settings** (§5).
 
+5. **Trust rank** (`haven-go/copyv2_trust.go`). A device that does not rank for itself (a phone) asks for each of
+   its signed-in accounts: `GET /copy/v2/sync/trust?account=<64 hex>&since=<builtAt of the copy it holds, or 0>`
+   (Bearer, the same copy token: a paired device's mesh key, never the account key; nothing is signed).
+   - `200`: the Haven's `wot_rank_<account>.json` with **only the rows a device can show**: the account's own
+     follows (ring 1) and everyone whose score is at or over `floor` (45; `trustrank.HandoffFloor`). The body is
+     `{account, builtAt, version: 2, params, maxHop, viewBar, floor, people: [[pubkey, score 0-100, ring], …]}`.
+     The whole trimmed file is sent; there is no changed-rows form yet.
+   - Optional `globe: [[pubkey, score 0-100, ring, via], …]` (`trustrank.Globe`), for the globe only; the feed never
+     reads it. It is not trimmed at `floor`. For each ring 3 to 5 (`GlobeFromHop`..`GlobeHop`, as far as `maxHop`)
+     it holds that ring's top 300 (`GlobePerRing`) by score, owner-muted people and score 0 left out, best first.
+     `via` is the person's highest-scored follower one ring in. Each `via` that is not already a row is added as a
+     row too (ring 2 rows are only these links), so every row walks back to a ring-1 person in `people` with no relay
+     call. Within a ring the top rows come first, so a ring's first 300 rows are its top and any later ones are
+     links. Older engines and apps ignore the field (version stays 2).
+   - `globe` comes from its own rank (`globewalk.go`, rank B): after the depth rule ends the feed walk, the Haven
+     reads the lists of the last ring's top 300, ring by ring, out to ring 5 (`GlobeHop`), and ranks every stored
+     list out to ring 5. A list the globe step stores for the first time is marked globe-only for that account
+     (each account has its own marks, `wot_deep/globe_only_<account>.bin`) and left out of the rank that makes
+     `people` (rank A); a list already in the store is never marked. So `people` and every feed score are what
+     they would be without the globe step. The marks go when the account signs out.
+   - `maxHop` is the furthest ring in `people` or `globe` (so a globe row is never past it); `params.maxHop` is
+     how far the feed's rank (`people`) reached.
+   - `204`: the device's copy is as new as the Haven's. `404`: the Haven does not rank that account, has no result
+     yet, or is an engine from before this.
+   - B keeps a copy only when it is for the account it asked for, `version` 2, newer than the one it holds, and
+     every row is a hex pubkey with a score 0-100 in rings 1 to `maxHop` (at most 6); and, when `globe` is there, at
+     most 2,700 globe rows (9 × 300: chain links need links of their own), each a hex pubkey with a score 0-100 in rings 2 to 5 (and `maxHop`) and a hex `via`. Anything else is dropped and
+     the last good copy stays. The file is kept next to the WoT cache and its `builtAt` is its age.
+   - A Mac or a box ranks for itself and never asks. Nothing is ever sent the other way: `PUT` is 404.
+   - It never fails or delays the catch-up's mark: a 404 or a refused copy just leaves the device without one.
+   - The `204` is answered from the start of the Haven's file (account and builtAt), without reading the rows.
+   - When an account signs out, its copy is removed at the next catch-up or engine start; on a Mac or box its own
+     result and crawl checkpoint go at the next round. Only when the app's account file (`copy-accounts.json`) is
+     readable: without it nothing is removed. The shared list store stays.
+
+6. **Distant posts** (`haven-go/copyv2_distant.go`, after 5). A Haven that ranks fetches, every 30 minutes and
+   only while the crawler may run, the feed notes (feed kinds plus kind 5, the last `FEED_SYNC_WINDOW_DAYS`) of
+   each account's top 500 **distant connections** (ring 3 and out, highest score first, ties by pubkey, the
+   account's public mutes left out: `trustrank.Distant`) from its seed relays into its feed store
+   (`haven-go/distant_posts_job.go`). A device that does not rank asks for each signed-in account:
+   `GET /copy/v2/sync/distant?account=<64 hex>&round=<tag>` (Bearer, the same copy token; nothing is signed).
+   - `round` is the tag of B's last whole answer (left out the first time). The tag changes when a round stores
+     new notes for that account, when A's result for it changes, and when A restarts. `204`: the tag is current,
+     nothing to send.
+   - `200`: the current tag in `X-Distant-Round`, then JSONL of the feed store's notes by that account's distant
+     connections in the feed window, kind 5 first, then newest first, at most 2,000 notes and 8 MB (about 250
+     notes, 267 KB on Logen's map). An empty body is a Haven with nobody distant. `404`: the Haven does not rank that account, has no result yet, or is an
+     engine from before this.
+   - B makes the same pick of 500 from its own rank copy (which step 5 just brought up to date) and keeps a
+     line only when its author is on that list, its kind is a feed kind or 5, and it passes the restore's checks
+     (id, signature, NIP-09). Kept notes go to B's feed store, where the age prune removes them like any other.
+   - B asks by A's round, not by time: the job may fetch a note hours after it was written (it waits while the
+     window is open or an import runs), so a time mark would skip it. B records the tag only after a whole
+     answer; a 404, a cut or over-long body is not recorded. It never fails or delays the catch-up's mark.
+
+7. **Desktop Vault status** (`haven-go/copyv2_status.go`, `haven-go/vault_status.go`). Not part of the
+   catch-up: a device asks when it shows "Your desktop Vault" in Your Space. `GET /copy/v2/sync/status` (Bearer,
+   the same copy token: a paired device's mesh key, never the account key; nothing is signed). Other methods are
+   404.
+   - `200`: `{version: 1, at, state, pausedWhy?, accounts: […]}`. `state` is `running`, `paused` (`pausedWhy`:
+     `app` = the Mac window is open or Run in background is off; `busy` = an import or copy is running or ran in
+     the last minute), `idle`, or `off` (this engine never ranks). Each account (only those this Haven ranks):
+     `{account, running, ring?, ringDone?, ringTotal?, listsRead?, refresh?, cut?, finishedAt, fullAt?,
+     refreshAt?, capped?, result?: {builtAt, people, maxHop, rings: [n per ring], distantByShown: [101 counts],
+     viewBar}, distantAtBar, distantFetchAt?, distantFetchPeople?, distantFetchNew?, handoffs: [{device, role,
+     tookAt?, builtAt?, checkedAt}]}`. Times are Unix seconds.
+   - `distantByShown[s]` counts ring-3-and-out people whose score rounds down to `s`, so a device can count the
+     distant connections at its own slider bar; `distantAtBar` is that count at `viewBar`.
+   - `handoffs` lists only devices paired now. `tookAt` is when A last sent that device a rank copy (step 5,
+     `200`); `checkedAt` when it last asked at all (written at most hourly for a `204`). A keeps these and the
+     last distant fetch in `vault_status_marks.json` next to the WoT cache.
+   - It carries no pubkeys of other people, no scores per person and no notes.
+   - B asks with `VaultStatusFromC(peer, base)` (`haven-go/copyv2_status_client.go`): `{status}` or `{error}` with
+     `not_paired` (no copy token for that peer yet), `auth_refused`, `not_found` (an engine from before this),
+     `bad_answer` or `unreachable`. The app keeps the last good answer and when it came, to say how old it is.
+   - On a Linux box the same answer also goes to `vault_status.json` in the vault folder every 15 s
+     (`haven-go/vault_status_file.go`); havend serves it to signed-in accounts as `GET /api/box/vault-status`
+     (`{status, writtenAt}`) for the box dashboard's Trust ranking card. Not over the mesh.
+
 Before the notes, **accounts** (§3.4): B `GET /copy/v2/sync/accounts` and takes A's, then `PUT`s its own, which A
 takes the same way. Each side **offers** the other's list to its app (copy-accounts.json) only when the lists share an
 account; neither adds an account by itself, and neither removes one.
+
+The **trust rank** (step 5) is fetched right after the accounts and the device set, before the notes: a phone that
+leaves the app cuts the link, and a cut run still leaves it ranked (LogePhone, 2026-11-23).
+
+A catch-up ends with one §3.3 line, `COPY stage=done part=- … source=mesh` or `COPY stage=failed part=- … source=mesh
+error=<code>` (#2480). The apps stamp the catch-up time from it, never at the start, so a cut run stays due. A catch-up
+that fails with `unreachable` or `cancelled` stays due; any other failure is stamped, so it waits the usual 15 min. A
+catch-up's line never changes another device's pending first copy.
 
 This is an id-list diff, not NIP-77. The engine has no owner key to answer NIP-42 for `/private` and `/chat`, so it
 uses the copy token on the own-device port instead.

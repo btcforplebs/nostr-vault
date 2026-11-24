@@ -43,7 +43,8 @@ extension TrustWebView {
                              // the frame clock at 30 fps (Logen, 11/18).
                              liveArcs: isWOTTab,
                              // Names off on every globe (Logen, 10/15).
-                             showsNames: false)
+                             showsNames: false,
+                             showsOuterRings: showsOuterRings)
                 .ignoresSafeArea(edges: isWOTTab ? .all : [])
             // Moving onto someone keeps the globe up: the trail's chip spins
             // instead. Only the very first globe has nothing to show.
@@ -62,6 +63,16 @@ extension TrustWebView {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, 14)
             }
+            // iPhone and iPad: what the outer rings are, and Pull, live in
+            // My Web (MyWebDesktopVaultSection), not over the globe (Logen,
+            // 11/24). The Mac has no My Web and is the desktop Vault itself.
+            #if os(macOS)
+            if showsOuterRings, card == nil, frame != nil, !mappingWeb, !loadingMyFollows {
+                GlobeOuterRingsBar(onPick: tapped)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, tabBarHeight + 14)
+            }
+            #endif
             if let card {
                 if cardIsSidePanel {
                     // iPad, wide: the card docks down the trailing side, where
@@ -84,6 +95,10 @@ extension TrustWebView {
         }
         .overlay(alignment: .top) { if !isWOTTab { refreshBar } }
     }
+
+    /// Your own globe on the WOT tab draws the rings past your circle
+    /// (`TrustMapOuter`).
+    private var showsOuterRings: Bool { isWOTTab && centerKey == me }
 
     /// Your own globe, before your follow list has come in.
     private var loadingMyFollows: Bool {

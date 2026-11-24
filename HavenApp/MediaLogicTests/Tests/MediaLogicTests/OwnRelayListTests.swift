@@ -146,4 +146,37 @@ final class OwnRelayListTests: XCTestCase {
         var config = HavenConfig(); config.relayListUpdatedAt = 42
         XCTAssertEqual(try JSONDecoder().decode(HavenConfig.self, from: JSONEncoder().encode(config)).relayListUpdatedAt, 42)
     }
+
+    // MARK: - Looking it up again about once an hour (Logen 2026-11-23)
+
+    func testTheRecheckIsDueHourly() {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertTrue(HavenConfig.relayListRecheckDue(lastCheck: nil, now: start))
+        XCTAssertFalse(HavenConfig.relayListRecheckDue(lastCheck: start, now: start))
+        XCTAssertFalse(HavenConfig.relayListRecheckDue(lastCheck: start, now: start.addingTimeInterval(59 * 60)))
+        XCTAssertTrue(HavenConfig.relayListRecheckDue(lastCheck: start, now: start.addingTimeInterval(60 * 60)))
+        XCTAssertTrue(HavenConfig.relayListRecheckDue(lastCheck: start, now: start.addingTimeInterval(9 * 60 * 60)))
+        // A clock set back doesn't hold the next lookup off for its gap.
+        XCTAssertTrue(HavenConfig.relayListRecheckDue(lastCheck: start, now: start.addingTimeInterval(-60)))
+    }
+
+    func testAnHourlyRecheckKeepsAMacEditOverAnOlderPublishedCopy() {
+        var config = HavenConfig()
+        // Launch: the published list is adopted.
+        XCTAssertTrue(config.adoptRelayList(read: theirRead, write: theirWrite, publishedAt: 1_000, now: 2_000))
+        // Edited on the Mac afterwards (RelayMatrixView.commit stamps now).
+        config.feedRelays = ["wss://mine.example.com"]
+        config.blastrRelays = ["wss://mine.example.com"]
+        config.relayListUpdatedAt = 3_000
+        // An hour later a relay still serves the older copy: the edit stays.
+        XCTAssertFalse(config.adoptRelayList(read: theirRead, write: theirWrite, publishedAt: 1_000, now: 6_600))
+        XCTAssertFalse(config.adoptRelayList(read: theirRead, write: theirWrite, publishedAt: 3_000, now: 6_600))
+        XCTAssertEqual(config.feedRelays, ["wss://mine.example.com"])
+        XCTAssertEqual(config.relayListUpdatedAt, 3_000)
+        // A list edited on the phone after that arrives at the next recheck.
+        XCTAssertTrue(config.adoptRelayList(read: ["wss://phone.example.com"], write: ["wss://phone.example.com"],
+                                            publishedAt: 5_000, now: 6_600))
+        XCTAssertEqual(config.feedRelays, ["wss://phone.example.com"])
+        XCTAssertEqual(config.relayListUpdatedAt, 5_000)
+    }
 }

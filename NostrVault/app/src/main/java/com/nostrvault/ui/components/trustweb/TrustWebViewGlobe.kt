@@ -141,6 +141,7 @@ internal fun TrustWebViewGlobe(
             live = live,
             keepsDrifting = isWOTTab,
             onNeedProfiles = { feedService.nostrService.fetchMissingProfiles(it) },
+            showsOuterRings = isWOTTab && centerKey == me,
         )
         // The WoT tutorial's first card points at the middle of the
         // globe, you and the faces nearest you. The whole globe is nearly
@@ -178,6 +179,7 @@ internal fun TrustWebViewGlobe(
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp),
                 )
         }
+        // What the outer rings are, and Pull, live in My Web (MyWebDesktopVaultSection), not over the globe (Logen 11/24).
         val followed by feedService.followedPubkeys.collectAsState()
         val shown = card
         if (shown != null) {

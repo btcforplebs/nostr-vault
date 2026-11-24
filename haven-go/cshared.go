@@ -287,7 +287,7 @@ func StartRelayC(importMode bool) {
 		cycle.spawn("background-setup", cycle.afterFirstVaultRead(func() {
 			// Initialize WOT (can take time, so run in background)
 			log.Println("  → Initializing Web of Trust")
-			wotModel := wot.NewSimpleInMemory(
+			wotModel := newFirstRunWotModel(
 				cycle.pool,
 				whitelist(),
 				config.ImportSeedRelays,
@@ -316,7 +316,7 @@ func StartRelayC(importMode bool) {
 				// while the follow list was briefly clobbered by an unrelated bug
 				// would otherwise keep silently rejecting real replies/reactions
 				// as "not in WoT" until the TTL fully expired.
-				if time.Duration(cacheAgeMinutes)*time.Minute >= config.WotRefreshInterval || wotModel.MissingLinks() {
+				if time.Duration(cacheAgeMinutes)*time.Minute >= config.WotRefreshInterval || wotModel.MissingFiles() {
 					log.Println("  🔄 WoT cache is due for a refresh, updating in the background")
 					cycle.spawn("wot.Refresh.stale", func() { wotModel.Refresh(cycle.ctx) })
 				}
@@ -330,7 +330,7 @@ func StartRelayC(importMode bool) {
 			cycle.spawn("syncFeed", func() { syncFeed(cycle.ctx) })
 			cycle.spawn("ingestPopularEngagement", func() { ingestPopularEngagement(cycle.ctx) })
 			cycle.spawn("periodicCloudBackups", func() { startPeriodicCloudBackups(cycle.ctx) })
-			cycle.spawn("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(cycle.ctx, config.WotRefreshInterval) })
+			spawnWotJobs(cycle.ctx, cycle.pool, cycle.spawn) // PeriodicRefresh + trust rank (trust_rank_job.go)
 			cycle.spawn("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(cycle.ctx, wot.EmptyGraphRefreshInterval, ownerFollowListStamp) })
 			cycle.spawn("wot.RefreshOnFollowListChange", func() { wot.RefreshOnFollowListChange(cycle.ctx, wot.FollowListCheckInterval, ownerFollowListAt) })
 			// A first-run job cut by the last stop picks up where it was.

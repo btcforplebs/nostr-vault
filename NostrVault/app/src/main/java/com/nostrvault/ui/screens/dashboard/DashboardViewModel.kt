@@ -143,7 +143,7 @@ class DashboardViewModel @Inject constructor(
     val isImporting = relayImportService.isImporting
     val importProgress = relayImportService.importProgress
     val importStatusMessage = relayImportService.importStatusMessage
-    val importCompleted = relayImportService.importCompleted
+    val importOutcome = relayImportService.importOutcome
 
     internal val _isExportingJsonl = MutableStateFlow(false)
     val isExportingJsonl = _isExportingJsonl.asStateFlow()

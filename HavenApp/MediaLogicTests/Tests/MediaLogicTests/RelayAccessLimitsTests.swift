@@ -33,6 +33,19 @@ final class RelayAccessLimitsTests: XCTestCase {
         XCTAssertEqual(RelayAccessLimits.followDistance.lowerBound, 1)
     }
 
+    /// The relay runs level 0 as a public relay. A stored 0 (or anything out
+    /// of range) must reach it as the level the screen shows, never raw.
+    func testRelayNeverGetsALevelTheScreenCannotShow() {
+        for (stored, sent) in [(0, "1"), (-1, "1"), (1, "1"), (2, "2"), (3, "3"), (5, "3")] {
+            var config = HavenConfig()
+            config.chatRelayWotDepth = stored
+            let env = RelayConfiguration.generateEnvDictionary(
+                config: config, relayDataDir: FileManager.default.temporaryDirectory)
+            XCTAssertEqual(env["WOT_DEPTH"], sent, "stored \(stored)")
+            XCTAssertEqual(env["CHAT_RELAY_WOT_DEPTH"], sent, "stored \(stored)")
+        }
+    }
+
     func testOlderSavedDistanceShowsAsWhatTheRelayUses() {
         XCTAssertEqual(RelayAccessLimits.clampedFollowDistance(5), 3)
         XCTAssertEqual(RelayAccessLimits.clampedFollowDistance(4), 3)

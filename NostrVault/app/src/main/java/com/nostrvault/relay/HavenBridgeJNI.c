@@ -113,6 +113,7 @@ extern int RunImportJobC(char* name);
 extern int StartCopyFromC(char* peer, char* base, char* startAuth);
 extern int CopySyncC(char* peer, char* base);
 extern int CopySyncNotesOnlyC(char* peer, char* base);
+extern char* CopyHeldPeersC(void);
 extern int SetMeshDevicesC(char* devices);
 extern int CancelImportJobC(char* name);
 extern char* GetNotifyLogC(void);
@@ -121,6 +122,7 @@ extern int ActiveConnectionsC(void);
 extern int RelayDrainingC(void);
 extern int SkipListHistoryScanC(void);
 extern char* ListHistoryScanStatusC(void);
+extern char* VaultStatusFromC(char* peer, char* base);
 
 // Helper: Convert Go C.CString result to jstring (and free the C memory)
 static jstring goStringToJstring(JNIEnv *env, char *goStr) {
@@ -680,6 +682,12 @@ Java_com_nostrvault_relay_HavenBridge_copySyncNotesOnly(JNIEnv *env, jobject thi
     return rc;
 }
 
+// The paired devices this one copied from, JSON npubs (haven-go copyv2_nudge.go).
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_copyHeldPeers(JNIEnv *env, jobject thiz) {
+    return goStringToJstring(env, CopyHeldPeersC());
+}
+
 // The last import's IMPORT_RESULT line (haven-go import_result.go).
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_getImportResult(JNIEnv *env, jobject thiz) {
@@ -733,4 +741,20 @@ Java_com_nostrvault_relay_VaultStoreRead_queryVaultNative(JNIEnv *env, jobject t
     if (out != NULL) (*env)->SetByteArrayRegion(env, out, 0, (jsize)len, (const jbyte*)answer);
     free(answer);
     return out;
+}
+
+// VaultStatusBridge.statusFrom: the desktop Vault's status over the mesh (copyv2_status_client.go). Blocks up to 15 s.
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_VaultStatusBridge_statusFrom(JNIEnv *env, jobject thiz, jstring peer, jstring base) {
+    const char *cPeer = GET_CSTR(env, peer);
+    const char *cBase = GET_CSTR(env, base);
+    if (cPeer == NULL || cBase == NULL) {
+        if (cBase) REL_CSTR(env, base, cBase);
+        if (cPeer) REL_CSTR(env, peer, cPeer);
+        return NULL;
+    }
+    char *answer = VaultStatusFromC((char*)cPeer, (char*)cBase);
+    REL_CSTR(env, base, cBase);
+    REL_CSTR(env, peer, cPeer);
+    return goStringToJstring(env, answer);
 }

@@ -28,6 +28,14 @@ class SetupWizardRelayChoiceTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
+        // Create an account makes its key when it is picked; no native library here.
+        io.mockk.mockkObject(com.nostrvault.relay.HavenBridge)
+        every { com.nostrvault.relay.HavenBridge.generateKeypair() } returns "11".repeat(32) + ":" + "22".repeat(32)
+        every { com.nostrvault.relay.HavenBridge.hexToNpub(any()) } returns "npub1new"
+        every { com.nostrvault.relay.HavenBridge.encodeNsec(any()) } returns "nsec1new"
+        every { com.nostrvault.relay.HavenBridge.decodeNpub("npub1new") } returns "22".repeat(32)
+        io.mockk.mockkObject(com.nostrvault.service.NIP49Service)
+        every { com.nostrvault.service.NIP49Service.encrypt(any(), any()) } returns "ncryptsec1new"
         val configStore = mockk<ConfigStore>(relaxed = true)
         every { configStore.update(any()) } answers {
             saved = firstArg<(HavenConfig) -> HavenConfig>()(saved)
@@ -47,7 +55,10 @@ class SetupWizardRelayChoiceTest {
     }
 
     @After
-    fun tearDown() = Dispatchers.resetMain()
+    fun tearDown() {
+        io.mockk.unmockkObject(com.nostrvault.relay.HavenBridge, com.nostrvault.service.NIP49Service)
+        Dispatchers.resetMain()
+    }
 
     @Test
     fun `built-in relay keeps the import steps`() {
@@ -58,7 +69,7 @@ class SetupWizardRelayChoiceTest {
 
     @Test
     fun `external relay skips every step that boots the built-in relay`() {
-        for (path in listOf(SetupPath.FULL, SetupPath.BROWSE, SetupPath.NEW_TO_NOSTR, SetupPath.USE_NOSTR)) {
+        for (path in listOf(SetupPath.FULL, SetupPath.BROWSE, SetupPath.USE_NOSTR)) {
             viewModel.setSetupPath(path)
             viewModel.setUseExternalRelay(true)
             assertFalse(WizardStep.IMPORT_NOTES in viewModel.activeSteps)
@@ -107,16 +118,24 @@ class SetupWizardRelayChoiceTest {
     }
 
     @Test
-    fun `new-to-nostr continues to the intro`() {
+    fun `create an account skips the relay choice and makes its key at once`() {
+        saved = saved.copy(useExternalRelay = true)
+        viewModel.setUseExternalRelay(true)
         viewModel.choosePath(SetupPath.NEW_TO_NOSTR)
-        viewModel.advanceFromRelayChoice()
-        assertEquals(WizardStep.NOSTR_INTRO, viewModel.step.value)
+        assertEquals(WizardStep.PROFILE, viewModel.step.value)
         assertFalse(saved.useExternalRelay)
+        assertFalse(viewModel.useExternalRelay.value)
+        assertEquals("nsec1new", viewModel.generatedNsec.value)
+        assertEquals("npub1new", saved.ownerNpub)
+        // Nothing is locked before the lock step.
+        assertEquals(null, saved.ownerNcryptsec)
+        viewModel.goBack()
+        assertEquals(WizardStep.WELCOME, viewModel.step.value)
     }
 
     @Test
-    fun `every front door choice goes to the relay choice and back to the front door`() {
-        for (path in listOf(SetupPath.FULL, SetupPath.BROWSE, SetupPath.NEW_TO_NOSTR, SetupPath.USE_NOSTR)) {
+    fun `every other front door choice goes to the relay choice and back to the front door`() {
+        for (path in listOf(SetupPath.FULL, SetupPath.BROWSE, SetupPath.USE_NOSTR)) {
             viewModel.choosePath(path)
             assertEquals(path, viewModel.setupPath.value)
             assertEquals(WizardStep.RELAY_CHOICE, viewModel.step.value)
@@ -126,25 +145,50 @@ class SetupWizardRelayChoiceTest {
     }
 
     @Test
-    fun `new to nostr is keys, password, profile, who told you, starter relay list, done`() {
+    fun `new to nostr is profile, who told you, your key, spare, lock, then the feed`() {
         viewModel.setSetupPath(SetupPath.NEW_TO_NOSTR)
         assertEquals(
-            listOf(
-                WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.REFERRER,
-                WizardStep.STARTER_RELAYS, WizardStep.COMPLETE,
-            ),
-            viewModel.activeSteps.drop(2),
+            listOf(WizardStep.PROFILE, WizardStep.REFERRER, WizardStep.NOSTR_INTRO, WizardStep.KEY_SPARE, WizardStep.KEY_PASSWORD),
+            viewModel.activeSteps.drop(1),
         )
     }
 
     @Test
-    fun `the keys page goes to the password page and back`() {
+    fun `profile, people, key, spare and lock go forward and back in order`() {
         viewModel.choosePath(SetupPath.NEW_TO_NOSTR)
-        viewModel.advanceFromRelayChoice()
+        viewModel.advanceFromProfile()
+        assertEquals(WizardStep.REFERRER, viewModel.step.value)
+        viewModel.advanceFromReferrer()
+        assertEquals(WizardStep.NOSTR_INTRO, viewModel.step.value)
         viewModel.advanceFromNostrIntro()
+        assertEquals(WizardStep.KEY_SPARE, viewModel.step.value)
+        viewModel.advanceFromKeySpare()
         assertEquals(WizardStep.KEY_PASSWORD, viewModel.step.value)
         viewModel.goBack()
+        assertEquals(WizardStep.KEY_SPARE, viewModel.step.value)
+        viewModel.goBack()
         assertEquals(WizardStep.NOSTR_INTRO, viewModel.step.value)
+        viewModel.goBack()
+        assertEquals(WizardStep.REFERRER, viewModel.step.value)
+        viewModel.goBack()
+        assertEquals(WizardStep.PROFILE, viewModel.step.value)
+    }
+
+    @Test
+    fun `the lock step finishes setup instead of a done screen`() {
+        viewModel.choosePath(SetupPath.NEW_TO_NOSTR)
+        viewModel.advanceFromProfile()
+        viewModel.advanceFromReferrer()
+        viewModel.advanceFromNostrIntro()
+        viewModel.advanceFromKeySpare()
+        viewModel.setPassphrase("longenough")
+        viewModel.setConfirmPassphrase("longenough")
+        var finished = false
+        viewModel.advanceFromKeyPassword { finished = true }
+        assertTrue(finished)
+        assertTrue(saved.hasCompletedSetup)
+        assertNotNull(saved.ownerNcryptsec)
+        assertEquals(WizardStep.KEY_PASSWORD, viewModel.step.value)
     }
 
     @Test
@@ -222,9 +266,12 @@ class SetupWizardRelayChoiceTest {
         viewModel.setUseNostrInput("nsec1abc")
         viewModel.setUseNostrPassword("secretpass")
         viewModel.choosePath(SetupPath.NEW_TO_NOSTR)
-        assertEquals(null, viewModel.generatedNsec.value)
         assertEquals("", viewModel.useNostrInput.value)
         assertEquals("", viewModel.useNostrPassword.value)
+        // Create an account made its own key; another way in drops it.
+        assertEquals("nsec1new", viewModel.generatedNsec.value)
+        viewModel.choosePath(SetupPath.USE_NOSTR)
+        assertEquals(null, viewModel.generatedNsec.value)
     }
 
     @Test

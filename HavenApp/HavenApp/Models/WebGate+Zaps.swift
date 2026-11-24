@@ -18,7 +18,7 @@ extension WebGate {
         switch verdict {
         case .inside: return .whole
         case .blocked: return .hidden
-        case .outside, .hop3: return .amountOnly
+        case .outside, .loose: return .amountOnly
         }
     }
 

@@ -3,6 +3,7 @@ package com.nostrvault.relay
 import android.util.Log
 import com.nostrvault.fips.FipsBridge
 import com.nostrvault.fips.FipsIngress
+import com.nostrvault.ui.screens.settings.RelayAccessLimits
 import java.io.File
 
 /**
@@ -82,6 +83,9 @@ object RelayConfiguration {
 
             // Blacklisted Npubs
             "BLACKLISTED_NPUBS_FILE" to config.blacklistedNpubsFile,
+            // Each account's own Follow Distance; the relay has no default path for it.
+            // writeRelayListFiles points it at the file by absolute path.
+            "ACCOUNT_REACH_FILE" to AccountReach.FILE_NAME,
 
             // Private Relay
             "PRIVATE_RELAY_NAME" to config.privateRelayName,
@@ -102,10 +106,13 @@ object RelayConfiguration {
             "CHAT_RELAY_NPUB" to config.ownerNpub,
             "CHAT_RELAY_DESCRIPTION" to config.chatRelayDescription,
             "CHAT_RELAY_ICON" to config.chatRelayIcon,
-            "CHAT_RELAY_WOT_DEPTH" to config.chatRelayWotDepth.toString(),
+            "CHAT_RELAY_WOT_DEPTH" to RelayAccessLimits.clampedFollowDistance(config.chatRelayWotDepth).toString(),
             "CHAT_RELAY_WOT_REFRESH_INTERVAL_HOURS" to config.chatRelayWotRefreshHours.toString(),
             "WOT_REFRESH_INTERVAL" to config.wotRefreshInterval,
-            "WOT_DEPTH" to config.chatRelayWotDepth.toString(),
+            // Clamped to what the screen can show. The relay runs level 0 as a
+            // public relay, so a stored 0 must never reach it while Who Can
+            // Reach You reads "Only you".
+            "WOT_DEPTH" to RelayAccessLimits.clampedFollowDistance(config.chatRelayWotDepth).toString(),
             "WOT_MINIMUM_FOLLOWERS" to config.chatRelayMinFollowers.toString(),
             "CHAT_RELAY_MINIMUM_FOLLOWERS" to config.chatRelayMinFollowers.toString(),
             "CHAT_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL" to "50",
@@ -304,6 +311,8 @@ object RelayConfiguration {
         val dmRelays: List<String>,
         /** The vault's own keys besides the owner ([VaultWhitelist]): a key or signer added or removed restarts the relay. */
         val whitelist: List<String> = emptyList(),
+        /** Every other account's own Follow Distance (account_reach.json, [relayAccountReach]): a change restarts the relay. */
+        val accountReach: Map<String, AccountReach> = emptyMap(),
     )
 
     /** Name of the DM relay list file the relay reads (DM_RELAYS_FILE). */
@@ -330,6 +339,7 @@ object RelayConfiguration {
             blastrRelays = blastrRelays(config, macMeshRelay),
             dmRelays = config.dmRelays,
             whitelist = VaultWhitelist.npubs(config),
+            accountReach = config.relayAccountReach,
         )
     }
 
@@ -442,6 +452,10 @@ object RelayConfiguration {
         // The vault's own keys besides the owner, rebuilt from the rule at every start (VaultWhitelist): stale
         // entries and watch-only accounts never survive a launch.
         write("WHITELISTED_NPUBS_FILE", WHITELIST_FILE_NAME, inputs.whitelist)
+        // Written at every start, with no entries too, so a stale file never outlives its accounts.
+        val reachFile = File(relayDataDir, AccountReach.FILE_NAME)
+        reachFile.writeText(AccountReach.fileJson(inputs.accountReach))
+        HavenBridge.setEnv("ACCOUNT_REACH_FILE", reachFile.absolutePath)
     }
 
     /** A JSON array of plain strings (npubs, relay URLs), as the relay reads it. */

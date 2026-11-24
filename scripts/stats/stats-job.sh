@@ -3,13 +3,14 @@
 # Lives in the repo at scripts/stats/stats-job.sh; the box runs a copy at ~/.buzz/REPOS/nv-stats-job/stats-job.sh,
 # and that copy keeps itself and stats/ in step with master (step 1), so nobody copies it by hand again.
 #
-# 1. When a scan is due (stats.json missing or more than 23 hours old), first refresh the code from master: fetch
+# 1. When a scan is due (no scan has written stats.json yet this UTC day; see below), first refresh the code from master: fetch
 #    master into a bare clone (repo.git), git-archive scripts/stats and website/stats (the page test imports the
 #    page's script) into a staging dir, run `node --test` on scripts/stats/test there, and swap staging into stats/
 #    only if every test passes. Any failure (fetch, archive, tests) logs why and keeps the last good stats/.
 #    A changed stats-job.sh from a passing master is installed over this file for the next run.
 # 2. Run the scan (scripts/stats/run.mjs, about 10 min). A scan that fails its relay gate writes nothing and the old
 #    totals stay; the next try waits 3 hours (scan.tried), so a failing day costs the relays a scan every 3 hours.
+#    A scan that wrote stats.json records its UTC start day in scan.day, so the day gets no second scan.
 #    After a scan that wrote stats.json, stats/history.mjs appends that day's public totals (no keys) to
 #    stats-history.jsonl, at most one line per day.
 # 3. Copy stats.json and stats-history.jsonl into the running site container whenever the live copy differs, so a redeploy (which starts
@@ -74,9 +75,16 @@ if [ "$1" = "--refresh-only" ]; then
   refresh; exit $?
 fi
 
+# One scan per UTC day, from the first tick after 00:00 UTC (7 PM US Eastern in winter). scan.day holds the UTC
+# day of the last scan that wrote stats.json; without it (first run of this version), stats.json's own UTC day counts.
+today="$(date -u +%F)"
+last="$(cat scan.day 2>/dev/null)"
+[ -z "$last" ] && [ -f stats.json ] && last="$(date -u -r stats.json +%F 2>/dev/null)"
 due=0
-{ [ ! -f stats.json ] || [ -n "$(find stats.json -mmin +1380 2>/dev/null)" ]; } && due=1
-[ -f scan.tried ] && [ -z "$(find scan.tried -mmin +180 2>/dev/null)" ] && due=0
+[ "$last" != "$today" ] && due=1
+# A failed try today waits 3 hours. A try from yesterday never holds back today's first scan.
+[ -f scan.tried ] && [ "$(date -u -r scan.tried +%F 2>/dev/null)" = "$today" ] \
+  && [ -z "$(find scan.tried -mmin +180 2>/dev/null)" ] && due=0
 if [ "$due" = 1 ]; then
   # A lock left by a killed scan (a run takes about 10 minutes) is cleared after an hour.
   find scan.lock -maxdepth 0 -mmin +60 -exec rmdir {} \; 2>/dev/null
@@ -89,6 +97,7 @@ if [ "$due" = 1 ]; then
     rc=$?
     log "scan exit $rc"
     # One line per day of public totals (no keys) after a scan that wrote stats.json.
+    [ "$rc" = 0 ] && echo "$today" > scan.day
     [ "$rc" = 0 ] && [ -f stats/history.mjs ] && node stats/history.mjs stats.json stats-history.jsonl >> "$LOG" 2>&1
     rmdir scan.lock
   fi

@@ -502,8 +502,8 @@ func initRelays(ctx context.Context) error {
 	if !chatRelayLimits.AllowComplexFilters {
 		chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.NoComplexFilters)
 	}
-	chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.MustAuth, MustBeInWotToQuery)
-	chatRelay.RejectCountFilter = append(chatRelay.RejectCountFilter, policies.MustAuth, MustBeInWotToQuery)
+	chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.MustAuth, MustBeInWotToQuery, MustReadOnlyOwnChat)
+	chatRelay.RejectCountFilter = append(chatRelay.RejectCountFilter, policies.MustAuth, MustBeInWotToQuery, MustReadOnlyOwnChat)
 
 	chatRelay.RejectEvent = append(chatRelay.RejectEvent,
 		policies.PreventTimestampsInTheFuture(maxFutureSkew),
@@ -761,8 +761,7 @@ func initRelays(ctx context.Context) error {
 		return nil
 	})
 	// Queries (plain and NIP-50 search) and counts; see search.go.
-	enableSearch(inboxRelay, inboxDB)
-	hideBroughtOnInbox(inboxRelay)
+	wireInboxReads(inboxRelay, inboxDB)
 	// The mesh door serves /inbox too (mesh_door_relays.go): gift wraps in, no reads, mesh caps.
 	wireMeshReadCaps(inboxRelay)
 	inboxRelay.DeleteEvent = append(inboxRelay.DeleteEvent, inboxDB.DeleteEvent)

@@ -22,8 +22,8 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
- * Sends to the home vault are signed by this phone's mesh key for that vault (contract §2.1, Apple #1803). The owner's
- * form only without a mesh key, or once after a 401/403 that does not carry X-Mesh-Devices (#1804).
+ * Sends to the home vault are signed by this phone's mesh key for that vault (contract §2.1, Apple #1803), never the
+ * account key (Logen, 2026-11-19: fail closed). No mesh key, or a vault that refuses it: the blob waits (RETRY).
  */
 class HomeVaultSenderMeshKeyTest {
     @get:Rule
@@ -86,56 +86,34 @@ class HomeVaultSenderMeshKeyTest {
     }
 
     @Test
-    fun `a vault that has its paired set refuses for good`() {
+    fun `a vault that has its paired set and refuses keeps the blob waiting, no owner retry`() {
         server.enqueue(MockResponse().setResponseCode(404))
         server.enqueue(MockResponse().setResponseCode(401).addHeader("X-Mesh-Devices", "set"))
-        val outcome = send(sender(meshKey = true))
+        assertEquals(HomeVaultSend.RETRY, send(sender(meshKey = true)))
         assertEquals(listOf("HEAD Nostr device-get", "PUT Nostr device-upload"), auths(2))
         assertEquals(2, server.requestCount)
         assertEquals(emptyList<Any>(), ownerSigned)
-        assertEquals(HomeVaultRules.uploadOutcome(401), outcome)
     }
 
     @Test
-    fun `a vault without the set gets one owner retry`() {
+    fun `a vault without the set that refuses keeps the blob waiting, no owner retry`() {
         server.enqueue(MockResponse().setResponseCode(404))
         server.enqueue(MockResponse().setResponseCode(403))
-        server.enqueue(MockResponse().setResponseCode(200))
-        assertEquals(HomeVaultSend.SENT, send(sender(meshKey = true)))
-        val seen = auths(3)
-        assertEquals(listOf("HEAD Nostr device-get", "PUT Nostr device-upload"), seen.take(2))
-        assertEquals("PUT", seen[2].substringBefore(' '))
-        assertEquals(1, ownerSigned.size)
-        assertEquals(listOf("t", "upload"), ownerSigned.single().first())
+        assertEquals(HomeVaultSend.RETRY, send(sender(meshKey = true)))
+        assertEquals(listOf("HEAD Nostr device-get", "PUT Nostr device-upload"), auths(2))
+        assertEquals(2, server.requestCount)
+        assertEquals(emptyList<Any>(), ownerSigned)
     }
 
     @Test
-    fun `without a mesh key the owner's form is used`() {
-        server.enqueue(MockResponse().setResponseCode(404))
-        server.enqueue(MockResponse().setResponseCode(200))
-        assertEquals(HomeVaultSend.SENT, send(sender(meshKey = false)))
-        assertEquals(2, ownerSigned.size) // the check and the upload
+    fun `without a mesh key the blob waits, even with the account key on this phone`() {
+        for (local in listOf(true, false)) {
+            server.enqueue(MockResponse().setResponseCode(404))
+            assertEquals(HomeVaultSend.RETRY, send(sender(meshKey = false, localSigner = local)))
+            assertNull("the check went out unsigned", server.takeRequest().getHeader("Authorization"))
+        }
+        assertEquals("only the two unsigned checks went out", 2, server.requestCount)
+        assertEquals(emptyList<Any>(), ownerSigned)
         assertNull(minted.firstOrNull())
-    }
-
-    // A bunker or Amber is never asked for a mesh send (build 26: lane photos held for a tap since Nov 8).
-
-    @Test
-    fun `with a remote signer and no mesh key the blob waits, nothing asks the owner`() {
-        server.enqueue(MockResponse().setResponseCode(404))
-        assertEquals(HomeVaultSend.RETRY, send(sender(meshKey = false, localSigner = false)))
-        assertEquals("only the unsigned check went out", 1, server.requestCount)
-        assertEquals(emptyList<Any>(), ownerSigned)
-    }
-
-    @Test
-    fun `with a remote signer a vault without the set gets no owner retry`() {
-        server.enqueue(MockResponse().setResponseCode(404))
-        server.enqueue(MockResponse().setResponseCode(403))
-        val outcome = send(sender(meshKey = true, localSigner = false))
-        assertEquals(listOf("HEAD Nostr device-get", "PUT Nostr device-upload"), auths(2))
-        assertEquals(2, server.requestCount)
-        assertEquals(emptyList<Any>(), ownerSigned)
-        assertEquals(HomeVaultRules.uploadOutcome(403), outcome)
     }
 }

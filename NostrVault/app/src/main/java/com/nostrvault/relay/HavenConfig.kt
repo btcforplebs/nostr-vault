@@ -66,6 +66,8 @@ data class HavenConfig(
     val chatRelayWotDepth: Int = 3,
     val chatRelayWotRefreshHours: Int = 24,
     val chatRelayMinFollowers: Int = 3,
+    /** Every other account's own Follow Distance, keyed by npub ([AccountReach], AccountReach.kt). */
+    val reachPerAccount: Map<String, AccountReach> = emptyMap(),
     val wotRefreshInterval: String = "24h",
 
     // Outbox Relay
@@ -275,6 +277,18 @@ data class HavenConfig(
     val globalFeedLanguages: List<String> = emptyList(),
     /** Global (and Media's Global) shows everyone, not only your Web of Trust. Off by default. Mirrors iOS. */
     val globalShowsEveryone: Boolean = false,
+    /**
+     * Settings › Feed › Reach: a feed's key (iOS FeedMode raw value) to a
+     * reach's stored word ([com.nostrvault.data.model.FeedReach]). Missing
+     * is the feed's default. Mirrors iOS `feedReach`.
+     */
+    val feedReach: Map<String, String> = emptyMap(),
+    /**
+     * Settings › Feed › Discovery Reach: the shown score (0-100) Underrated and
+     * Discover admit from the desktop Vault's rank. Null: the rank file's own
+     * starting bar ([com.nostrvault.data.model.DiscoveryReach.bar]). Mirrors iOS `discoveryBar`.
+     */
+    val discoveryBar: Double? = null,
     /** A "Translate" button under notes written in another language (on-device, Mozilla Bergamot). On by default. */
     val showTranslateButton: Boolean = true,
     /** ISO 639-1 code notes translate into. Empty follows the device language. */

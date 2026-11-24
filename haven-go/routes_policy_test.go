@@ -182,6 +182,7 @@ const (
 	closedQueryAuth       = "auth-required:"
 	closedNotWhitelistedQ = "restricted: you must be whitelisted to query"
 	closedNotInWotQ       = "restricted: you must be in the web of trust to query"
+	closedNotOwnChat      = "restricted: you can only read messages addressed to you"
 )
 
 func note(sk string, tags nostr.Tags) func(t *testing.T) nostr.Event {
@@ -224,7 +225,12 @@ func TestRoutePolicyChat(t *testing.T) {
 	a.runQueryCases(t, "/chat", nostr.Filter{Kinds: []int{chatMsg}, Limit: 10}, []queryCase{
 		{name: "MustAuth/chat: unauthenticated REQ closed", closedBy: closedQueryAuth},
 		{name: "MustBeInWotToQuery/chat: authed as stranger, closed", authSK: a.strangerSK, closedBy: closedNotInWotQ},
-		{name: "MustBeInWotToQuery/chat: authed as friend, EOSE", authSK: a.friendSK},
+		{name: "MustReadOnlyOwnChat/chat: authed as friend, broad filter, closed", authSK: a.friendSK, closedBy: closedNotOwnChat},
+		{name: "chat: authed as owner, broad filter, EOSE", authSK: a.ownerSK},
+	})
+	a.runQueryCases(t, "/chat", nostr.Filter{Kinds: []int{chatMsg}, Tags: nostr.TagMap{"p": []string{a.friend}}, Limit: 10}, []queryCase{
+		{name: "MustBeInWotToQuery/chat: authed as friend, own messages, EOSE", authSK: a.friendSK},
+		{name: "MustBeInWotToQuery/chat: authed as stranger, closed", authSK: a.strangerSK, closedBy: closedNotInWotQ},
 	})
 }
 

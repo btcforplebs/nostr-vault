@@ -135,6 +135,8 @@ internal fun TrustCard(
                 fontSize = 13.sp,
                 modifier = Modifier.weight(1f),
             )
+            // Score and who vouches, when your Haven has ranked them (discovery phase 4).
+            TrustWhyButton(pubkey, accent)
         }
         // Brainstorm, so their trust can be checked off the device.
         val context = LocalContext.current

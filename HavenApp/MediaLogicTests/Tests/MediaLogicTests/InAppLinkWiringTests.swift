@@ -24,7 +24,7 @@ final class InAppLinkWiringTests: XCTestCase {
         "Views/PlatformCompat.swift",          // the helpers themselves
         "Views/WebViewer/InAppBrowser.swift",  // the browser's "Open in Safari" and non-web links
         "Views/Components/SignInWithClaveView.swift", // hands a request to the signer app
-        "Views/Dashboard/DashboardView.swift", // Mac: opens this Mac's own relay web UI
+        "Views/Dashboard/MacVaultAdvancedRows.swift", // Mac: opens this Mac's own relay web UI
     ]
 
     /// Every Swift file under Views/ that opens a URL with the system directly.

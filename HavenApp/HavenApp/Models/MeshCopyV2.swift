@@ -276,6 +276,17 @@ enum MeshCopyV2 {
         /// A finished `COPY` line from `peer`, applied to the record.
         mutating func finished(_ p: Progress, peer: String, now: Int) {
             guard p.isFinished else { return }
+            // A catch-up's line (the engine prints one since #2480) leaves
+            // another device's pending first copy alone. A catch-up that
+            // fails for good is stamped too, so it waits `syncEvery` instead
+            // of running at every open; a cut one (unreachable, cancelled)
+            // stays due.
+            if pending?.peer != peer {
+                if p.stage == "done" || (copied[peer] != nil && !Self.cutShort.contains(p.error)) {
+                    copied[peer] = now
+                }
+                return
+            }
             if p.stage == "done" {
                 pending = nil
                 unreachableSince = nil
@@ -297,6 +308,9 @@ enum MeshCopyV2 {
                 pending = nil
             }
         }
+
+        /// A catch-up stopped by a lost link or a stop: due again at once.
+        static let cutShort: Set<String> = ["unreachable", "cancelled"]
 
         /// A device taken out of My Devices: no resume, no catch-up with it.
         mutating func forget(_ peer: String) {
@@ -321,6 +335,16 @@ enum MeshCopyV2 {
         func retry(now: Int) -> Retry {
             guard pending != nil, let since = unreachableSince else { return .none }
             return now - since >= MeshCopyV2.unreachableRetryFor ? .gaveUp : .after(MeshCopyV2.unreachableRetryEvery)
+        }
+
+        /// Devices the engine copied from (CopyHeldPeersC) that this record
+        /// lost: a first copy whose done line the app could not read (before
+        /// 2026-11-23) never landed in `copied`, so the device was never
+        /// caught up with. They come back due now.
+        mutating func adopt(_ held: [String]) {
+            for peer in held where copied[peer] == nil && pending?.peer != peer {
+                copied[peer] = 0
+            }
         }
 
         /// The linked devices due a catch-up now: copied before, not the one

@@ -52,7 +52,9 @@ enum MeshKeyAuth {
     }
 
     /// The JSON for SetMeshDevicesC: this device's mesh npub and My Devices
-    /// without it, each once, roles kept. Nil when this device has no mesh
+    /// without it, each once, roles kept, with the name the owner gave each
+    /// (left out when none; the desktop Vault status shows it to the owner's
+    /// devices, haven-go vault_status.go). Nil when this device has no mesh
     /// key yet: the engine then keeps the set it has (none at first, which
     /// accepts no device).
     static func deviceSet(selfNpub: String?, devices: [MeshDevice]) -> String? {
@@ -61,33 +63,14 @@ enum MeshKeyAuth {
         var seen = Set<String>()
         var list: [[String: String]] = []
         for device in devices where device.npub != own && seen.insert(device.npub).inserted {
-            list.append(["npub": device.npub, "role": device.role.rawValue])
+            var entry = ["npub": device.npub, "role": device.role.rawValue]
+            let name = device.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty { entry["name"] = name }
+            list.append(entry)
         }
         let body: [String: Any] = ["self": own, "devices": list]
         guard let data = try? JSONSerialization.data(withJSONObject: body, options: .sortedKeys) else { return nil }
         return String(data: data, encoding: .utf8)
-    }
-
-    /// The header a vault adds to a 401/403 for a Blossom request over the
-    /// mesh once it has its paired set (haven-go mesh_devices_signal.go,
-    /// PR #1804). Its refusal is then final for the device key.
-    static let pairedSetHeader = "X-Mesh-Devices"
-
-    /// The vault turned the device form down and has no paired set yet (an
-    /// older build, or a box before havend passes the set): one retry with
-    /// the owner's form, for as long as vaults accept it. A vault that has
-    /// its set says so (`pairedSetHeader`) and gets no account-key token
-    /// (Tron, #1803). TODO(mesh-key): remove with the owner form.
-    static func retriesWithOwnerForm(status: Int, headers: [AnyHashable: Any] = [:]) -> Bool {
-        guard status == 401 || status == 403 else { return false }
-        // HTTP header names are case-insensitive.
-        return !headers.keys.contains { ($0 as? String)?.caseInsensitiveCompare(pairedSetHeader) == .orderedSame }
-    }
-
-    /// `retriesWithOwnerForm` for a URLSession answer.
-    static func retriesWithOwnerForm(_ response: URLResponse?) -> Bool {
-        guard let http = response as? HTTPURLResponse else { return false }
-        return retriesWithOwnerForm(status: http.statusCode, headers: http.allHeaderFields)
     }
 
     private static func unique(_ values: [String]) -> [String] {

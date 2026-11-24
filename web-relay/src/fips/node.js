@@ -2,26 +2,22 @@
 // (offers accepted only from owners). Serves NIP-01 over TCP/FIPS on RELAY_SERVICE_PORT to owners, Haven's mesh door
 // on port 80 to anyone (mesh-door.js), and reads photos from the owners' vaults on their port 80 (blob-get.js).
 // Runs on the main thread: WebRTC needs RTCPeerConnection, which workers don't have.
-import { FipsNode, identityFromSecretKey, encodeNpub, toHex } from "@fips/core"
+import { FipsNode, identityFromSecretKey, encodeNpub } from "@fips/core"
 import { WebSocketTransport } from "@fips/transport-websocket"
 import { WebRtcTransport } from "@fips/transport-webrtc"
 import { isOwner, xOnly } from "./owners.js"
 import { TcpFipsRelayServer, RELAY_SERVICE_PORT } from "./tcp-server.js"
 import { MeshBlobClient } from "./blob-get.js"
 import { MeshDoorServer } from "./mesh-door.js"
+import { loadMeshSecret } from "./mesh-key.js"
 
 export const PUBLIC_SEEDS = ["wss://fips1.iris.to/fips", "wss://fips2.iris.to/fips"]
-const KEY_ITEM = "fips-relay-key"
 const OWNER_DIAL_MS = 30_000
 
-/** The relay's own FIPS identity (never the owner's key), kept on this device in the page's storage (src/page-storage.js). */
+/** The relay's own FIPS identity (never the owner's key), kept on this device in the page's storage (src/page-storage.js),
+ *  sealed at rest (mesh-key.js). */
 export async function loadRelayIdentity(storage) {
-  let hex = storage.getItem(KEY_ITEM)
-  if (!hex) {
-    hex = toHex(crypto.getRandomValues(new Uint8Array(32)))
-    storage.setItem(KEY_ITEM, hex)
-  }
-  return identityFromSecretKey(Uint8Array.from(hex.match(/../g), b => parseInt(b, 16)))
+  return identityFromSecretKey(await loadMeshSecret(storage))
 }
 
 /**

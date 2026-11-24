@@ -105,6 +105,8 @@ extension ProfileContent {
                         .redacted(reason: .placeholder)
                         .accessibilityHidden(true)
                 }
+                // How far they are from you, in true hops (discovery phase 4).
+                ProfileHopLine(pubkey: pubkey).id(pubkey)
             }
         }
         .padding(.horizontal, 16)

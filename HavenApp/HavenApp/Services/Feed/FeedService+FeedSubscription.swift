@@ -288,11 +288,11 @@ extension FeedService {
         // that no live primary sub exists so `resubscribePrimaryIfNeeded()` re-sends
         // the moment the follow set / extended network arrives.
         if !isInbox && isFollowingLike && followedPubkeys.isEmpty {
-            subscribedAuthorsByRelay[label] = nil
+            subscribedFeeds.forget(label)
             return
         }
         if !isInbox && feedMode == .discovery && extendedNetworkPubkeys.isEmpty {
-            subscribedAuthorsByRelay[label] = nil
+            subscribedFeeds.forget(label)
             return
         }
 
@@ -326,21 +326,24 @@ extension FeedService {
             req.append(contentsOf: Self.trustScopedFilters(filter, trust: globalTrustSet()) as [Any])
         } else {
             req.append(filter)
+            if let distant = distantPostsFilter(filter, label: label) { req.append(distant) }
         }
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
             // Record the author set we just subscribed with so reconcile can detect
             // drift. Inbox/global/popular carry no author filter → record [].
+            let authors: [String]
             if isInbox {
-                subscribedAuthorsByRelay[label] = []
+                authors = []
             } else if isFollowingLike {
-                subscribedAuthorsByRelay[label] = followAuthors(forRelayKey: label)
+                authors = followAuthors(forRelayKey: label)
             } else if feedMode == .discovery {
-                subscribedAuthorsByRelay[label] = extendedNetworkPubkeys
+                authors = extendedNetworkPubkeys
             } else {
-                subscribedAuthorsByRelay[label] = []
+                authors = []
             }
+            subscribedFeeds.record(label, authors: authors, distant: desiredDistantAuthors(forRelayKey: label))
         }
     }
 
@@ -452,7 +455,8 @@ extension FeedService {
         filter["until"] = until
         let subId = feedSubId(for: label)
 
-        let req = ["REQ", subId, filter] as [Any]
+        var req = ["REQ", subId, filter] as [Any]
+        if let distant = distantPostsFilter(filter, label: label) { req.append(distant) }
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)

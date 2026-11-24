@@ -192,6 +192,7 @@ struct AccountSwitcherView: View {
                             #if os(iOS)
                             .textInputAutocapitalization(.never)
                             #endif
+                            .keySnapshotCover()
                         if importNsec.isEmpty {
                             Text("nsec1...")
                                 .font(.system(.body, design: .monospaced))

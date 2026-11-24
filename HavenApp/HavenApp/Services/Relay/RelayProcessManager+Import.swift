@@ -153,6 +153,7 @@ extension RelayProcessManager {
         if let data = try? encoder.encode(config.dmRelays) { try? data.write(to: relayDataDir.appendingPathComponent("relays_dm.json")) }
         HavenConfig.writeVaultAccountFiles(whitelist: config.vaultWhitelistNpubs, readers: config.vaultPrivateReaderNpubs,
                                            whitelistFile: "whitelisted_npubs.json", under: relayDataDir, encoder: encoder)
+        HavenConfig.writeAccountReachFile(config.relayAccountReach, under: relayDataDir)
         if let data = try? encoder.encode(config.allBlockedNpubsAcrossAccounts) { try? data.write(to: relayDataDir.appendingPathComponent("blacklisted_npubs.json")) }
         
         let envURL = relayDataDir.appendingPathComponent(".env")

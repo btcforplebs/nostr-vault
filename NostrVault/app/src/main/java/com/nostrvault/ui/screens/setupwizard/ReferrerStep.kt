@@ -1,8 +1,13 @@
 package com.nostrvault.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -32,7 +37,9 @@ import com.nostrvault.ui.theme.*
 
 /**
  * "Who told you about Nostr Vault?": scan their QR code or paste their npub
- * or link, follow them, then follow some of the people they follow. Skippable
+ * or link, follow them, then "<Name>'s people": their follows and followers,
+ * the people they interact with most first, each opening a preview with
+ * Follow, with topic chips (setup screens r3, iOS #2414). Skippable
  * at every point. On "Create an account" and "I already use Nostr" (with a key).
  */
 @Composable
@@ -43,10 +50,13 @@ internal fun ReferrerStep(
     val phase by step.phase.collectAsState()
     val ownHex = remember { viewModel.ownerHexNow() }
     val next = { viewModel.advanceFromReferrer() }
+    val referrer by step.referrer.collectAsState()
+    val profiles by step.profiles.collectAsState()
+    val referrerName = referrer?.let { nameOf(it, profiles[it]) }.orEmpty()
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            "Who told you about Nostr Vault?",
+            if (phase == ReferrerStepViewModel.Phase.SUGGEST) "$referrerName's people" else "Who told you about Nostr Vault?",
             color = PrimaryText,
             fontSize = 24.sp,
             fontWeight = FontWeight.SemiBold,
@@ -57,7 +67,7 @@ internal fun ReferrerStep(
             when (phase) {
                 ReferrerStepViewModel.Phase.ENTER -> "Scan their QR code or paste their link or npub. You'll follow them, and can follow people they follow."
                 ReferrerStepViewModel.Phase.FOUND -> "Follow them to see what they post."
-                ReferrerStepViewModel.Phase.SUGGEST -> "Some of the people they follow. Untick anyone you don't want."
+                ReferrerStepViewModel.Phase.SUGGEST -> "The people $referrerName talks with most come first. Tap someone to see who they are."
             },
             color = SecondaryText,
             fontSize = 15.sp,
@@ -71,7 +81,7 @@ internal fun ReferrerStep(
             ReferrerStepViewModel.Phase.SUGGEST -> SuggestFollows(
                 step,
                 onFollow = { step.finish(); next() },
-                onNotNow = { step.finishReferrerOnly(); next() },
+                onOnlyThem = { step.finishReferrerOnly(); next() },
             )
         }
     }
@@ -148,50 +158,110 @@ private fun FoundReferrer(step: ReferrerStepViewModel, onSkip: () -> Unit) {
 }
 
 @Composable
-private fun SuggestFollows(step: ReferrerStepViewModel, onFollow: () -> Unit, onNotNow: () -> Unit) {
+private fun SuggestFollows(step: ReferrerStepViewModel, onFollow: () -> Unit, onOnlyThem: () -> Unit) {
     val suggestions by step.suggestions.collectAsState()
+    val topics by step.topics.collectAsState()
+    val topic by step.topic.collectAsState()
     val ticked by step.ticked.collectAsState()
     val profiles by step.profiles.collectAsState()
+    val preview by step.preview.collectAsState()
+    val referrer = step.referrer.collectAsState().value
+    val referrerName = referrer?.let { nameOf(it, profiles[it]) }.orEmpty()
     val list = suggestions
     when {
         list == null -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 24.dp)) {
             CircularProgressIndicator(color = WizardAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
-            Text("Finding who they follow…", color = SecondaryText, fontSize = 14.sp)
+            Text("Finding their people…", color = SecondaryText, fontSize = 14.sp)
         }
         list.isEmpty() -> Text(
-            "Their follow list didn't load, so there's no one to suggest. You'll still follow them.",
+            "Their people didn't load, so there's no one to suggest. You'll still follow them.",
             color = SecondaryText, fontSize = 14.sp, textAlign = TextAlign.Center,
             modifier = Modifier.padding(vertical = 16.dp),
         )
-        else -> WizardCard {
-            list.forEach { pk ->
-                val profile = profiles[pk]
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().clickable { step.toggle(pk) }.padding(vertical = 6.dp),
-                ) {
-                    AvatarImage(url = profile?.pictureURL, pubkey = pk, size = 36.dp, displayName = profile?.bestName)
-                    Spacer(Modifier.width(12.dp))
-                    Text(nameOf(pk, profile), color = PrimaryText, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Checkbox(
-                        checked = pk in ticked,
-                        onCheckedChange = { step.toggle(pk) },
-                        colors = CheckboxDefaults.colors(checkedColor = WizardAccent),
-                    )
+        else -> {
+            if (topics.isNotEmpty()) {
+                PeopleTopicChips(topics.map { it.topic }, topic, step::pickTopic)
+                Spacer(Modifier.height(12.dp))
+            }
+            // Its own scroll, a fixed height inside the wizard's page scroll,
+            // so the Follow buttons stay a short scroll away under 100 people.
+            WizardCard {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 440.dp)) {
+                    items(step.shown(list, topics, topic), key = { it.pubkey }) { pick ->
+                        SuggestionRow(
+                            pick, profiles[pick.pubkey], referrerName, pick.pubkey in ticked,
+                            onOpen = { step.openPreview(pick.pubkey) },
+                            onToggle = { step.toggle(pick.pubkey) },
+                        )
+                    }
                 }
             }
         }
     }
     Spacer(Modifier.height(24.dp))
-    val count = list.orEmpty().count { it in ticked }
+    // The referrer and everyone ticked, hidden by a topic or not.
+    val count = 1 + list.orEmpty().count { it.pubkey in ticked }
     WizardPrimaryButton(
-        text = if (count == 0) "Continue" else "Follow $count ${if (count == 1) "person" else "people"}",
+        text = if (count == 1) "Follow 1 person" else "Follow $count people",
         enabled = list != null,
         onClick = onFollow,
     )
     Spacer(Modifier.height(4.dp))
-    WizardSecondaryButton(text = "Not now", onClick = onNotNow)
+    WizardSecondaryButton(text = "Only follow $referrerName", onClick = onOnlyThem)
+
+    val open = preview
+    val pick = open?.let { pk -> list.orEmpty().firstOrNull { it.pubkey == pk } }
+    if (pick != null) {
+        ReferrerPersonSheet(
+            pick = pick,
+            profile = profiles[pick.pubkey],
+            name = nameOf(pick.pubkey, profiles[pick.pubkey]),
+            relation = relationLine(pick, referrerName),
+            following = pick.pubkey in ticked,
+            onToggle = { step.toggle(pick.pubkey) },
+            onDismiss = step::closePreview,
+        )
+    }
+}
+
+/** How they and the referrer are linked, for the row and the preview. */
+internal fun relationLine(pick: com.nostrvault.setup.ReferrerFollows.Pick, referrerName: String): String = when {
+    pick.talks > 0 && pick.followedByReferrer -> "$referrerName talks with them often"
+    pick.talks > 0 -> "Talks with $referrerName often"
+    pick.close > 0 -> "Followed by ${pick.close} of $referrerName's close people"
+    pick.followedByReferrer -> "$referrerName follows them"
+    else -> "Follows $referrerName"
+}
+
+@Composable
+private fun SuggestionRow(
+    pick: com.nostrvault.setup.ReferrerFollows.Pick,
+    profile: FeedProfile?,
+    referrerName: String,
+    on: Boolean,
+    onOpen: () -> Unit,
+    onToggle: () -> Unit,
+) {
+    val pk = pick.pubkey
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clickable(onClickLabel = "Preview", onClick = onOpen).padding(vertical = 6.dp),
+    ) {
+        AvatarImage(url = profile?.pictureURL, pubkey = pk, size = 36.dp, displayName = profile?.bestName)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(nameOf(pk, profile), color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (pick.talks > 0) {
+                    Box(Modifier.padding(end = 6.dp).size(6.dp).clip(CircleShape).background(WizardAccent))
+                }
+                Text(relationLine(pick, referrerName), color = SecondaryText, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        ReferrerFollowPill(following = on, onClick = onToggle)
+    }
 }
 
 private fun nameOf(pk: String, profile: FeedProfile?): String =

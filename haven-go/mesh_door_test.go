@@ -89,7 +89,7 @@ func TestMeshUploadOwnerOnly(t *testing.T) {
 		t.Fatal("stranger's blob was stored")
 	}
 
-	if code := meshPut(t, door, blossomUploadAuth(t, h.ownerSK, body), body); code != http.StatusOK {
+	if code := meshPut(t, door, meshDeviceUploadAuth(t, body), body); code != http.StatusOK {
 		t.Fatalf("owner upload: got %d, want 200", code)
 	}
 	// No note names it yet, so a plain read over the mesh is a stranger's
@@ -102,14 +102,22 @@ func TestMeshUploadOwnerOnly(t *testing.T) {
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unsigned read of an unposted blob over the mesh: %d, want 404", resp.StatusCode)
 	}
-	getAuth := nostr.Event{Kind: 24242, CreatedAt: nostr.Now(), Content: "get",
+	// The account key reads nothing over the mesh; the paired phone's "get" does.
+	ownerGet := nostr.Event{Kind: 24242, CreatedAt: nostr.Now(), Content: "get",
 		Tags: nostr.Tags{{"t", "get"}, {"x", hash}, {"expiration", fmt.Sprint(time.Now().Add(10 * time.Minute).Unix())}}}
-	if err := getAuth.Sign(h.ownerSK); err != nil {
+	if err := ownerGet.Sign(h.ownerSK); err != nil {
 		t.Fatal(err)
 	}
-	gj, _ := json.Marshal(getAuth)
+	oj, _ := json.Marshal(ownerGet)
+	refused, _ := http.NewRequest(http.MethodGet, door+"/"+hash, nil)
+	refused.Header.Set("Authorization", "Nostr "+base64.StdEncoding.EncodeToString(oj))
+	if resp, err := http.DefaultClient.Do(refused); err != nil {
+		t.Fatal(err)
+	} else if resp.Body.Close(); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("account-signed read over the mesh: %d, want 403", resp.StatusCode)
+	}
 	req, _ := http.NewRequest(http.MethodGet, door+"/"+hash, nil)
-	req.Header.Set("Authorization", "Nostr "+base64.StdEncoding.EncodeToString(gj))
+	req.Header.Set("Authorization", meshDeviceBlobAuth(t, "get", hash, time.Now().Add(4*time.Minute)))
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +125,7 @@ func TestMeshUploadOwnerOnly(t *testing.T) {
 	got, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || !bytes.Equal(got, body) {
-		t.Fatalf("owner-signed read back over the mesh: %d %q", resp.StatusCode, got)
+		t.Fatalf("paired phone's read back over the mesh: %d %q", resp.StatusCode, got)
 	}
 
 	// HEAD /upload answers the pre-flight with the same whitelist.
@@ -136,9 +144,10 @@ func TestMeshUploadOwnerOnly(t *testing.T) {
 
 // Size is checked before khatru allocates Content-Length bytes.
 func TestMeshUploadSizeChecks(t *testing.T) {
-	h := startHaven(t)
+	startHaven(t)
 	door := startMeshDoor(t)
-	auth := blossomUploadAuth(t, h.ownerSK, []byte("x"))
+	// A device token is spent once: a fresh one per probe.
+	auth := func() string { return meshDeviceUploadAuth(t, []byte("x")) }
 	addr := strings.TrimPrefix(door, "http://")
 	status := func(head string) string {
 		conn, err := net.Dial("tcp", addr)
@@ -151,10 +160,10 @@ func TestMeshUploadSizeChecks(t *testing.T) {
 		line, _ := bufio.NewReader(conn).ReadString('\n')
 		return line
 	}
-	if got := status(fmt.Sprintf("PUT /upload HTTP/1.1\r\nHost: x\r\nAuthorization: %s\r\nContent-Length: %d\r\n\r\n", auth, meshMaxUploadBytes+1)); !strings.Contains(got, " 413 ") {
+	if got := status(fmt.Sprintf("PUT /upload HTTP/1.1\r\nHost: x\r\nAuthorization: %s\r\nContent-Length: %d\r\n\r\n", auth(), meshMaxUploadBytes+1)); !strings.Contains(got, " 413 ") {
 		t.Errorf("oversize upload: %q, want 413", got)
 	}
-	if got := status("PUT /upload HTTP/1.1\r\nHost: x\r\nAuthorization: " + auth + "\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"); !strings.Contains(got, " 411 ") {
+	if got := status("PUT /upload HTTP/1.1\r\nHost: x\r\nAuthorization: " + auth() + "\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"); !strings.Contains(got, " 411 ") {
 		t.Errorf("upload without length: %q, want 411", got)
 	}
 }
@@ -439,13 +448,13 @@ func TestMeshServerDropsSilentPeers(t *testing.T) {
 
 // One upload at a time: a second owner upload waits its turn (503 + Retry-After).
 func TestMeshOneUploadAtATime(t *testing.T) {
-	h := startHaven(t)
+	startHaven(t)
 	door := startMeshDoor(t)
 	meshUploadSlots <- struct{}{} // an upload is in progress
 	defer func() { <-meshUploadSlots }()
 	body := []byte("second photo")
 	r, _ := http.NewRequest(http.MethodPut, door+"/upload", bytes.NewReader(body))
-	r.Header.Set("Authorization", blossomUploadAuth(t, h.ownerSK, body))
+	r.Header.Set("Authorization", meshDeviceUploadAuth(t, body))
 	resp, err := http.DefaultClient.Do(r)
 	if err != nil {
 		t.Fatal(err)
@@ -473,11 +482,11 @@ func TestMeshReplayedAuthAllocatesNothing(t *testing.T) {
 	saved := meshIdleRead
 	meshIdleRead = 500 * time.Millisecond
 	defer func() { meshIdleRead = saved }()
-	h := startHaven(t)
+	startHaven(t)
 	door := startMeshDoor(t)
 	addr := strings.TrimPrefix(door, "http://")
 	const claimed = 250 << 20
-	auth := blossomUploadAuth(t, h.ownerSK, []byte("x"))
+	auth := meshDeviceUploadAuth(t, []byte("x"))
 
 	runtime.GC()
 	var before, after runtime.MemStats
@@ -508,7 +517,7 @@ func TestMeshReplayedAuthAllocatesNothing(t *testing.T) {
 }
 
 func TestMeshUploadAuthBinding(t *testing.T) {
-	h := startHaven(t)
+	startHaven(t)
 	door := startMeshDoor(t)
 	put := func(auth string, body []byte) int {
 		r, _ := http.NewRequest(http.MethodPut, door+"/upload", bytes.NewReader(body))
@@ -522,14 +531,14 @@ func TestMeshUploadAuthBinding(t *testing.T) {
 	}
 	a, b := []byte("blob a"), []byte("blob b")
 
-	if code := put(blossomUploadAuth(t, h.ownerSK, a), b); code != http.StatusForbidden {
+	if code := put(meshDeviceUploadAuth(t, a), b); code != http.StatusForbidden {
 		t.Errorf("auth for another blob: %d, want 403", code)
 	}
-	expired := signedUploadAuth(t, h.ownerSK, a, time.Now().Add(-time.Minute))
-	if code := put(expired, a); code != http.StatusForbidden {
-		t.Errorf("expired auth: %d, want 403", code)
+	expired := meshDeviceUploadAuthExp(t, a, time.Now().Add(-time.Minute))
+	if code := put(expired, a); code != http.StatusUnauthorized {
+		t.Errorf("expired auth: %d, want 401", code)
 	}
-	once := blossomUploadAuth(t, h.ownerSK, a)
+	once := meshDeviceUploadAuth(t, a)
 	if code := put(once, a); code != http.StatusOK {
 		t.Fatalf("first use (control): %d, want 200", code)
 	}
@@ -588,7 +597,7 @@ func TestMeshListenerCapAndLifetime(t *testing.T) {
 // A real upload streams to disk: it costs a few buffers, not the blob. On a
 // real disk (the test's in-memory filesystem would count its own copy).
 func TestMeshUploadAllocation(t *testing.T) {
-	h := startHaven(t)
+	startHaven(t)
 	door := startMeshDoor(t)
 	prevFs := fs
 	fs = afero.NewBasePathFs(afero.NewOsFs(), t.TempDir())
@@ -597,7 +606,7 @@ func TestMeshUploadAllocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := bytes.Repeat([]byte("v"), 32<<20)
-	auth := blossomUploadAuth(t, h.ownerSK, body)
+	auth := meshDeviceUploadAuth(t, body)
 	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
@@ -619,10 +628,10 @@ func TestMeshSlowUploadDropped(t *testing.T) {
 	savedGrace, savedRate := meshRateGrace, meshMinRate
 	meshRateGrace, meshMinRate = 200*time.Millisecond, 1<<20
 	defer func() { meshRateGrace, meshMinRate = savedGrace, savedRate }()
-	h := startHaven(t)
+	startHaven(t)
 	door := startMeshDoor(t)
 	body := bytes.Repeat([]byte("s"), 4<<20)
-	auth := blossomUploadAuth(t, h.ownerSK, body)
+	auth := meshDeviceUploadAuth(t, body)
 
 	conn, err := net.Dial("tcp", strings.TrimPrefix(door, "http://"))
 	if err != nil {
@@ -645,18 +654,18 @@ func TestMeshSlowUploadDropped(t *testing.T) {
 	if code := meshPut(t, door, auth, body); code != http.StatusConflict {
 		t.Fatalf("same token after a stalled try: %d, want 409", code)
 	}
-	if code := meshPut(t, door, blossomUploadAuth(t, h.ownerSK, body), body); code != http.StatusOK {
+	if code := meshPut(t, door, meshDeviceUploadAuth(t, body), body); code != http.StatusOK {
 		t.Fatalf("fresh token (control): %d, want 200", code)
 	}
 }
 
 // BUD-11 clients send base64url without padding (barrydeen/haven#138).
 func TestMeshUploadAcceptsBase64URLToken(t *testing.T) {
-	h := startHaven(t)
+	startHaven(t)
 	door := startMeshDoor(t)
 
 	body := []byte("photo signed by a BUD-11 client")
-	raw, err := base64.StdEncoding.DecodeString(blossomUploadAuth(t, h.ownerSK, body)[6:])
+	raw, err := base64.StdEncoding.DecodeString(meshDeviceUploadAuth(t, body)[6:])
 	if err != nil {
 		t.Fatal(err)
 	}

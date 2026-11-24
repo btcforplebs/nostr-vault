@@ -79,7 +79,19 @@ func NewCycle() *ReadyGate {
 // unnecessary.
 func MarkReady(g *ReadyGate, model Model) {
 	wotInstance.Store(model)
+	retallyInstalled(model)
 	g.markReady()
+}
+
+// retallyInstalled counts a just-installed model's account webs again if
+// its accounts' blocks are not the ones it was tallied with. A block change
+// that landed while the model was being built or loaded went to the model
+// installed before it (or to none), and would otherwise wait for the next
+// rebuild. It costs a compare when nothing changed.
+func retallyInstalled(model Model) {
+	if r, ok := model.(interface{ RetallyAccounts() }); ok {
+		r.RetallyAccounts()
+	}
 }
 
 // WaitReady blocks until the current cycle's WoT is ready or ctx is done.
@@ -104,6 +116,7 @@ func Initialize(ctx context.Context, model Model, g *ReadyGate) {
 	if ctx.Err() != nil {
 		return
 	}
+	retallyInstalled(model)
 	g.markReady()
 }
 

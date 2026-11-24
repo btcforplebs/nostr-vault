@@ -11,13 +11,12 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/puzpuzpuz/xsync/v4"
-
-	"github.com/barrydeen/haven/pkg/runsafe"
 )
 
 const DefaultWotLevel = 3
@@ -80,6 +79,9 @@ type SimpleInMemory struct {
 	pubkeys atomic.Pointer[map[string]bool]
 	// layers is the follows + vouches of the graph in pubkeys, saved with it.
 	layers atomic.Pointer[layers]
+	// webs is each account's own web (accounts.go), built beside the pooled
+	// graph in pubkeys.
+	webs atomic.Pointer[accountWebs]
 
 	// Dependencies for Refresh
 	Pool               *nostr.SimplePool
@@ -97,6 +99,17 @@ type SimpleInMemory struct {
 	// only the seed relays could get the list from before it and keep
 	// everyone the unfollowed account brought in. Nil asks only the seeds.
 	LocalFollowLists func() []*nostr.Event
+
+	// ReachFor returns one account's own Follow Distance, and false when the
+	// account has none of its own: it then uses WotDepth and MinFollowers.
+	// Nil means no account has its own.
+	ReachFor func(owner string) (AccountReach, bool)
+
+	// BlockedBy reports whether the account owner has blocked pubkey. A
+	// blocked follow vouches for nobody in that account's web. Nil: no blocks.
+	BlockedBy func(owner, pubkey string) bool
+	// accountsMu serializes the writers of webs (a build and RetallyAccounts).
+	accountsMu sync.Mutex
 
 	// builtAt is when the graph in pubkeys started building (unix seconds),
 	// or the saved cache's time. A follow list newer than this is not in it.
@@ -215,6 +228,7 @@ func (wt *SimpleInMemory) LoadFromCache() (ok bool, ageMinutes int64) {
 	wt.pubkeys.Store(&cache.Pubkeys)
 	wt.layers.Store(&layers{follows: cache.Follows, vouches: cache.Vouches})
 	wt.builtAt.Store(cache.Timestamp)
+	wt.loadAccountWebs()
 	slog.Info("💾 Loaded WoT from cache", "pubkeys", len(cache.Pubkeys), "age_minutes", age)
 	return true, age
 }
@@ -338,6 +352,12 @@ func (wt *SimpleInMemory) Init(ctx context.Context) {
 		}
 	}
 	if wt.WotDepth == 0 {
+		// A public relay builds no web, so nothing else would clear the
+		// files of an account removed since.
+		wt.removeOtherAccountFiles(func(owner string) bool {
+			_, own := wt.WhitelistedPubKeys[owner]
+			return own
+		})
 		return
 	}
 	wt.build(ctx)
@@ -391,7 +411,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		wt.builtAt.Store(started)
 		wt.SaveCache()
 		wt.saveLinks(nil, nil)
-		wt.saveLists(nil, 0, 0)
+		wt.buildAccounts(ctx, started, nil, true, nil)
 		phase, size = "saved", len(newWot)
 		return
 	}
@@ -400,33 +420,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	filter := nostr.Filter{
-		Authors: slices.Collect(maps.Keys(wt.WhitelistedPubKeys)),
-		Kinds:   []int{nostr.KindFollowList},
-	}
-
-	slog.Info("🛜 fetching Nostr events to build WoT")
-
-	// The owners' lists wait for every relay: no quorum cut. Every other
-	// list hangs off them, and a first build has no saved web to fall back
-	// on if the one relay holding them was cut.
-	got := fetchListsFromEvery(timeoutCtx, wt.Pool, wt.SeedRelays, filter)
-	ownersWhole := got.whole()
-	eventsAnalysed.Add(got.received)
-	ownerLists := got.lists
-	if wt.LocalFollowLists != nil {
-		for _, ev := range wt.LocalFollowLists() {
-			if _, owner := wt.WhitelistedPubKeys[ev.PubKey]; !owner || ev.Kind != nostr.KindFollowList {
-				continue
-			}
-			if old, ok := ownerLists[ev.PubKey]; !ok || ev.CreatedAt > old.CreatedAt {
-				if !ok {
-					eventsAnalysed.Add(1)
-				}
-				ownerLists[ev.PubKey] = ev
-			}
-		}
-	}
+	ownerLists, ownersWhole := wt.fetchOwnerLists(timeoutCtx, &eventsAnalysed)
 	for _, ev := range ownerLists {
 		for contact := range ev.Tags.FindAll("p") {
 			if len(contact) > 1 {
@@ -458,7 +452,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		wt.builtAt.Store(started)
 		wt.SaveCache()
 		wt.saveLinks(nil, nil)
-		wt.saveLists(nil, 0, 0)
+		wt.buildAccounts(ctx, started, ownerLists, ownersWhole, nil)
 		phase, size = "saved", len(newWot)
 		return
 	}
@@ -491,171 +485,8 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		}
 	}
 
-	// Start from the lists the last rebuild kept (wot_lists.json) and ask
-	// relays only for what changed since it, plus every list of a follow it
-	// has none for. A first build, a graph of just the owners, a week since
-	// the last full fetch, or a fetch that never completed asks for them all.
-	stored, since, fullAt, haveStored := wt.loadLists()
-	incremental := haveStored && since > 0 && hasPeople(previous, wt.WhitelistedPubKeys) &&
-		time.Since(time.Unix(fullAt, 0)) < fullListsEvery
-	lists := make(map[string]followList, len(follows))
-	var fresh, known []string
-	for _, pk := range follows {
-		if l, ok := stored[pk]; ok && incremental {
-			lists[pk] = l
-			known = append(known, pk)
-		} else {
-			fresh = append(fresh, pk)
-		}
-	}
-	type listJob struct {
-		authors []string
-		since   int64 // 0: every list, not only changes
-	}
-	var jobs []listJob
-	for batch := range slices.Chunk(fresh, listBatchSize) {
-		jobs = append(jobs, listJob{authors: batch})
-	}
-	for batch := range slices.Chunk(known, listBatchSize) {
-		jobs = append(jobs, listJob{authors: batch, since: max(since-sinceSlack, 1)})
-	}
-
-	slog.Info("🕸️ starting deeper Web of Trust analysis", "total_keys", len(keys), "incremental", incremental, "new_lists", len(fresh), "changed_since", len(known))
-	updateProgress(func(p *Progress) {
-		p.Phase = "lists"
-		p.Batches = len(jobs)
-		p.Lists = eventsAnalysed.Load()
-	})
-
-	// Every batch is in flight at once (up to maxParallelBatches), and each
-	// ends once enough relays have answered (fetchLatestLists). Results are
-	// counted here, on this goroutine, as each batch lands.
-	type listResult struct {
-		job listJob
-		got listFetch
-	}
-	results := make(chan listResult, len(jobs))
-	slots := make(chan struct{}, maxParallelBatches)
-	run := func(job listJob, relays []string, retry bool) {
-		go func() {
-			var got listFetch
-			// Always answer, even after a panic: the loops below wait for
-			// one result per batch.
-			defer func() { results <- listResult{job, got} }()
-			runsafe.Run("wot.listBatch", func() {
-				slots <- struct{}{}
-				defer func() { <-slots }()
-				wait := timeout
-				if retry {
-					wait = min(timeout, listRetryWait)
-				}
-				batchCtx, cancel := context.WithTimeout(ctx, wait)
-				defer cancel()
-				filter := nostr.Filter{Authors: job.authors, Kinds: []int{nostr.KindFollowList}}
-				if job.since > 0 {
-					s := nostr.Timestamp(job.since)
-					filter.Since = &s
-				}
-				if retry {
-					got = fetchListsFromEvery(batchCtx, wt.Pool, relays, filter)
-				} else {
-					got = fetchLatestLists(batchCtx, wt.Pool, relays, filter)
-				}
-			})
-		}()
-	}
-	// An owners' fetch that did not finish leaves the full pass unstamped,
-	// like an incomplete batch.
-	freshComplete, changesComplete := ownersWhole, true
-	incomplete := func(job listJob) {
-		if job.since > 0 {
-			changesComplete = false
-		} else {
-			freshComplete = false
-		}
-	}
-	fetched := 0
-	merge := func(got listFetch) {
-		eventsAnalysed.Add(got.received)
-		for pk, ev := range got.lists {
-			if _, isFollow := followIndex[pk]; !isFollow {
-				continue
-			}
-			if old, ok := lists[pk]; ok && int64(ev.CreatedAt) <= old.at {
-				continue
-			}
-			lists[pk] = listFromEvent(ev)
-			fetched++
-			if !incremental {
-				tally(pk, lists[pk])
-			}
-		}
-		updateProgress(func(p *Progress) {
-			p.BatchesDone++
-			p.Lists = eventsAnalysed.Load()
-		})
-		slog.Info("🕸️ verified identities in community", "count", eventsAnalysed.Load())
-	}
-	for _, job := range jobs {
-		run(job, wt.SeedRelays, false)
-	}
-	// A quorum may cut the one relay holding a list (a follow's kind 3 is
-	// only on the relays it was sent to). Each batch that cut relays asks
-	// just those once more, waiting for them: a full batch for the follows
-	// still without a list, a changes batch for its whole window, so its
-	// since stamp can move.
-	type retryJob struct {
-		job    listJob
-		relays []string
-	}
-	var retries []retryJob
-	for range jobs {
-		r := <-results
-		merge(r.got)
-		if !r.got.complete {
-			incomplete(r.job)
-			continue
-		}
-		if len(r.got.cut) == 0 {
-			continue
-		}
-		retry := listJob{since: r.job.since}
-		if r.job.since > 0 {
-			retry.authors = r.job.authors
-		} else {
-			for _, pk := range r.job.authors {
-				if _, ok := lists[pk]; !ok {
-					retry.authors = append(retry.authors, pk)
-				}
-			}
-		}
-		if len(retry.authors) > 0 {
-			retries = append(retries, retryJob{retry, r.got.cut})
-		}
-	}
-	if len(retries) > 0 {
-		updateProgress(func(p *Progress) { p.Batches += len(retries) })
-		slog.Info("🕸️ asking the relays a quorum cut", "batches", len(retries))
-	}
-	for _, r := range retries {
-		run(r.job, r.relays, true)
-	}
-	for range retries {
-		r := <-results
-		merge(r.got)
-		if len(r.got.cut) > 0 {
-			incomplete(r.job)
-		}
-	}
-	// Changed lists replace stored ones, so the counts start over from the
-	// merged set once everything has landed.
-	if incremental {
-		for _, pk := range follows {
-			if l, ok := lists[pk]; ok {
-				tally(pk, l)
-			}
-		}
-	}
+	lists, fetched, incremental, freshComplete, changesComplete, since, fullAt := wt.fetchFollowLists(
+		ctx, timeout, follows, followIndex, previous, ownersWhole, &eventsAnalysed, tally)
 
 	// Same rule for the follows' lists: a pass that was cut short, or a full
 	// pass that fetched none of them and would leave a smaller web, keeps the
@@ -771,6 +602,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		since = 0
 	}
 	wt.saveLists(lists, since, fullAt)
+	wt.buildAccounts(ctx, started, ownerLists, ownersWhole, lists)
 	phase, size = "saved", len(newWot)
 	debug.FreeOSMemory()
 }

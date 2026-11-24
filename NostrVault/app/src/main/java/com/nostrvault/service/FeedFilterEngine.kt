@@ -1,11 +1,13 @@
 package com.nostrvault.service
 
+import com.nostrvault.data.model.DiscoveryReach
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.isLocalDvm
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.poll
 import com.nostrvault.data.model.RecipeTopics
+import com.nostrvault.data.model.WebGate
 
 /**
  * Port of FeedFilterEngine.swift -- pure feed filtering and sorting.
@@ -88,7 +90,21 @@ object FeedFilterEngine {
         pollStatus: com.nostrvault.data.model.PollStatusFilter = com.nostrvault.data.model.PollStatusFilter.ALL,
         languageOf: (FeedNote) -> String? = { null },
         authorOf: (String) -> String? = { null },
+        /** One hop past [wotPubkeys] ([WebGate.loose]), ideally already [WebGate.cleanLoose]d. */
+        loosePubkeys: Set<String> = emptySet(),
+        /** How far this feed reaches ([FeedReach]); only Underrated reads it today, as on iOS. */
+        reach: WebGate.Reach = WebGate.Reach.WEB,
+        /** This device's accounts: always inside the gate. */
+        ownPubkeys: Set<String> = emptySet(),
+        /** Who the Discovery reach bar lets in (Underrated and Discover only, [DiscoveryReach]). */
+        discovery: DiscoveryReach.Admitted = DiscoveryReach.Admitted.NONE,
     ): List<FeedNote> {
+        val (ranked, rankedLoose) = if (mode in DiscoveryReach.modes) DiscoveryReach.gateSets(discovery) else emptySet<String>() to emptySet()
+        // Built only for a feed that reads it (Underrated, Discover's ranked people): it scans the web and the loose set.
+        val gateWeb by lazy {
+            WebGate.Web(own = ownPubkeys, web = wotPubkeys, loose = loosePubkeys, ranked = ranked, rankedLoose = rankedLoose)
+        }
+        fun verdict(note: FeedNote): WebGate.Verdict = WebGate.judge(note.repostedBy ?: note.pubkey, gateWeb, reach)
         // Articles and Recipes: Following keeps to follows; Global follows
         // the same Web of Trust / Everyone rule as Global, failing closed.
         fun longFormAdmits(pubkey: String): Boolean =
@@ -114,7 +130,12 @@ object FeedFilterEngine {
 
             when (mode) {
                 FeedMode.FOLLOWING -> authorForMembership in followedPubkeys
-                FeedMode.DISCOVERY -> authorForMembership !in followedPubkeys && authorForMembership in wotPubkeys
+                // Your web or ranked over the Discovery reach bar, and never a key
+                // anyone can post with: the gate's public-key check runs for
+                // every Discover note, as iOS (FeedFilterEngine.swift `.discovery`).
+                FeedMode.DISCOVERY -> authorForMembership !in followedPubkeys &&
+                    (authorForMembership in wotPubkeys || isRanked(authorForMembership, ranked, rankedLoose)) &&
+                    verdict(note) != WebGate.Verdict.OUTSIDE
                 FeedMode.GLOBAL -> {
                     // Web of Trust by default, judged on the note's author
                     // (iOS parity). Fails CLOSED: an empty graph means "not
@@ -144,8 +165,11 @@ object FeedFilterEngine {
                 // Posts, never replies, as the relay picked them.
                 FeedMode.CATCH_UP -> !note.isReply
                 // Underrated is only people this account doesn't follow (iOS
-                // filterFeedNotes; Logen 2026-11-06).
-                FeedMode.UNDERRATED -> !note.isReply && note.pubkey !in followedPubkeys
+                // filterFeedNotes; Logen 2026-11-06), in its web, or one hop
+                // out where its reach allows (rationed below). Fails closed:
+                // with no graph yet, nobody (LocalDvmFeeds says it's building).
+                FeedMode.UNDERRATED -> !note.isReply && note.pubkey !in followedPubkeys &&
+                    verdict(note).let { it == WebGate.Verdict.INSIDE || it == WebGate.Verdict.LOOSE }
                 FeedMode.MEDIA -> note.mediaURLs.isNotEmpty()
                 FeedMode.ARTICLES -> note.kind == LONG_FORM_KIND && longFormAdmits(note.pubkey)
                 FeedMode.RECIPES -> note.kind == LONG_FORM_KIND && RecipeTopics.matches(note.tags) &&
@@ -173,7 +197,17 @@ object FeedFilterEngine {
             filtered.sortedByDescending { it.createdAt }
         }
 
+        if ((mode == FeedMode.UNDERRATED && reach == WebGate.Reach.WEB_AND_LOOSE) || rankedLoose.isNotEmpty()) {
+            filtered = WebGate.capLoose(filtered, ::verdict, author = { it.repostedBy ?: it.pubkey }, isReply = { it.isReply })
+        }
         return filtered
+    }
+
+    /** [signer] is one of the Discovery reach bar's people (the gate's sets are lowercase). */
+    private fun isRanked(signer: String, ranked: Set<String>, rankedLoose: Set<String>): Boolean {
+        if (ranked.isEmpty() && rankedLoose.isEmpty()) return false
+        val key = signer.lowercase()
+        return key in ranked || key in rankedLoose
     }
 
     /**

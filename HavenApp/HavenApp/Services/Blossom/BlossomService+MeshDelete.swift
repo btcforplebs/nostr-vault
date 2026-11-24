@@ -20,35 +20,17 @@ extension BlossomService {
             .flatMap { MeshKeySigner.authorization(kind: 24242, content: "Delete blob \(sha256.prefix(8))...", tags: $0) }
         let deviceCheck = MeshKeyAuth.blossomTags(verb: .get, sha256s: [sha256], receivers: receivers)
             .flatMap { MeshKeySigner.authorization(kind: 24242, content: "Check blob \(sha256.prefix(8))...", tags: $0) }
-        // TODO(mesh-key): the owner's token, only for a vault that turns the
-        // device form down (or with no mesh key here); signed once if needed.
-        var ownerAuth: String??
-        func owner() async -> String? {
-            if let ownerAuth { return ownerAuth }
-            let tags = MeshDeleteTargets.authTags(sha256: sha256, targets: targets)
-            let signed: String? = await {
-                guard let event = await nostrService.signEventAsync(
-                    kind: 24242, content: "Delete blob \(sha256.prefix(8))...", tags: tags, forceOwner: true),
-                      let json = try? JSONEncoder().encode(event) else { return nil }
-                return json.base64EncodedString()
-            }()
-            ownerAuth = .some(signed)
-            return signed
+        // Never the account key (Logen, 2026-11-19, fail closed): without a
+        // mesh key here, or for a vault that turns this device down, the
+        // blob stays there and the device is listed as failed.
+        guard let deviceDelete else {
+            logger.error("Mesh delete: this device has no mesh key yet")
+            result.failed = targets.map(\.key)
+            return result
         }
-
         for target in targets {
-            var outcome: (gone: Bool, ownerRetry: Bool)?
-            if let deviceDelete {
-                outcome = await Self.deleteOverMesh(npub: target.npub, sha256: sha256, auth: deviceDelete, checkAuth: deviceCheck)
-            }
-            if outcome == nil || (outcome?.gone == false && outcome?.ownerRetry == true) {
-                if let auth = await owner() {
-                    outcome = await Self.deleteOverMesh(npub: target.npub, sha256: sha256, auth: auth, checkAuth: auth)
-                } else {
-                    logger.error("Mesh delete: no mesh key and no owner's token")
-                }
-            }
-            if outcome?.gone == true { result.deleted.append(target.key) } else { result.failed.append(target.key) }
+            let gone = await Self.deleteOverMesh(npub: target.npub, sha256: sha256, auth: deviceDelete, checkAuth: deviceCheck)
+            if gone { result.deleted.append(target.key) } else { result.failed.append(target.key) }
         }
         return result
     }
@@ -79,14 +61,14 @@ extension BlossomService {
     /// Right after the engine starts the link may still be coming up and drop
     /// the first tries, so a dropped connection is tried again for a while.
     /// The ingress URL carries a token: logged by npub only.
-    private static func deleteOverMesh(npub: String, sha256: String, auth: String, checkAuth: String?) async -> (gone: Bool, ownerRetry: Bool) {
+    private static func deleteOverMesh(npub: String, sha256: String, auth: String, checkAuth: String?) async -> Bool {
         let giveUp = Date().addingTimeInterval(30)
         let session = URLSession(configuration: .ephemeral)
         defer { session.finishTasksAndInvalidate() }
         while true {
             guard let base = await ingress(npub) else {
                 print("Mesh delete \(npub.prefix(12)): vault not reachable")
-                return (false, false)
+                return false
             }
             var delete = URLRequest(url: base.appendingPathComponent(sha256))
             delete.httpMethod = "DELETE"
@@ -102,13 +84,11 @@ extension BlossomService {
                 if !gone {
                     print("Mesh delete \(npub.prefix(12)): DELETE \(deleteStatus), then HEAD \(checkStatus.map(String.init) ?? "no answer")")
                 }
-                // A vault with its paired set marks its refusal final
-                // (MeshKeyAuth.retriesWithOwnerForm): no owner token for it.
-                return (gone, MeshKeyAuth.retriesWithOwnerForm(deleteResponse))
+                return gone
             } catch {
                 guard Date().addingTimeInterval(2) < giveUp else {
                     print("Mesh delete \(npub.prefix(12)) failed: \(error.localizedDescription)")
-                    return (false, false)
+                    return false
                 }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }

@@ -43,7 +43,8 @@ class RelayConfigApplierTest {
         val relayFacing = listOf(
             base.copy(outboxMaxEventsPerMinute = base.outboxMaxEventsPerMinute + 10),
             base.copy(outboxMaxConnectionsPerMinute = base.outboxMaxConnectionsPerMinute + 1),
-            base.copy(chatRelayWotDepth = base.chatRelayWotDepth + 1),
+            // One level down, not up: the relay never gets a level past 3 (RelayAccessLimits), so 3 -> 4 changes nothing.
+            base.copy(chatRelayWotDepth = base.chatRelayWotDepth - 1),
             base.copy(chatRelayMinFollowers = base.chatRelayMinFollowers + 1),
             base.copy(wotRefreshInterval = "1h"),
             base.copy(importStartDate = "2024-01-01"),
@@ -126,7 +127,7 @@ class RelayConfigApplierTest {
     @Test
     fun `app-side saves do not starve a pending restart`() = runTest {
         val h = Harness(this)
-        val changed = base.copy(chatRelayWotDepth = base.chatRelayWotDepth + 1)
+        val changed = base.copy(chatRelayWotDepth = base.chatRelayWotDepth - 1)
         h.save(changed)
         repeat(10) { n ->
             advanceTimeBy(500)

@@ -5,26 +5,56 @@ import SwiftUI
 /// although both answer the same question. The old Rate Limits rows (events
 /// and connections per minute) are gone: haven-go never read them, it uses
 /// its own fixed limits (haven-go/limits.go).
+///
+/// Follow Distance and Minimum Followers belong to the account you are on:
+/// each account has its own (HavenConfig+AccountReach), and switching account
+/// shows that account's values.
 struct RelayAccessSettingsView: View {
     @EnvironmentObject var configService: ConfigService
+
+    private var account: String { configService.config.reachAccountNpub }
+    private var reach: AccountReach { configService.config.reach(for: account) }
+
+    /// The open account's level; writing it changes that account alone.
+    private var depth: Binding<Int> {
+        Binding(get: { reach.depth }, set: { value in
+            var next = reach
+            next.depth = value
+            configService.config.setReach(next, for: account)
+        })
+    }
+
+    private var minFollowers: Binding<Int> {
+        Binding(get: { reach.minFollowers }, set: { value in
+            var next = reach
+            next.minFollowers = value
+            configService.config.setReach(next, for: account)
+        })
+    }
+
+    /// Only said when there is more than one account to tell apart.
+    private var perAccountNote: String? {
+        configService.config.vaultWhitelistNpubs.isEmpty
+            ? nil : "These two settings are for the account you are on. Each of your accounts has its own."
+    }
 
     var body: some View {
         Form {
             Section {
-                Stepper(value: $configService.config.chatRelayWotDepth, in: RelayAccessLimits.followDistance) {
+                Stepper(value: depth, in: RelayAccessLimits.followDistance) {
                     HStack {
                         Text("Follow Distance").settingInfo(.relayWotDepth)
                         Spacer()
-                        Text("\(configService.config.chatRelayWotDepth)")
+                        Text(FollowDistanceWords.short(reach.depth))
                             .foregroundColor(.secondary)
                             .monospacedDigit()
                     }
                 }
-                Stepper(value: $configService.config.chatRelayMinFollowers, in: 0...100) {
+                Stepper(value: minFollowers, in: AccountReach.minFollowersRange) {
                     HStack {
                         Text("Minimum Followers").settingInfo(.relayMinFollowers)
                         Spacer()
-                        Text("\(configService.config.chatRelayMinFollowers)")
+                        Text("\(reach.minFollowers)")
                             .foregroundColor(.secondary)
                             .monospacedDigit()
                     }
@@ -39,11 +69,14 @@ struct RelayAccessSettingsView: View {
                 }
             } header: {
                 Text("Web of Trust")
+            } footer: {
+                if let perAccountNote { Text(perAccountNote) }
             }
         }
         .warmFormBackground()
         .groupedFormStyleCompat()
         .onAppear {
+            // A level saved by an older build (up to 5) is stored as what the relay runs.
             let depth = configService.config.chatRelayWotDepth
             let clamped = RelayAccessLimits.clampedFollowDistance(depth)
             if clamped != depth { configService.config.chatRelayWotDepth = clamped }

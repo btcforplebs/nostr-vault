@@ -275,6 +275,9 @@ object MeshCopyV2 {
     const val UNREACHABLE_RETRY_EVERY_S = 15L
     const val UNREACHABLE_RETRY_FOR_S = 5 * 60L
 
+    /** A catch-up stopped by a lost link or a stop: due again at once. */
+    val CUT_SHORT = setOf("unreachable", "cancelled")
+
     /** What B does next about a copy it can't reach. */
     sealed interface Retry {
         /** Nothing to retry: no copy pending, or it isn't unreachable. */
@@ -308,6 +311,13 @@ object MeshCopyV2 {
         /** A finished `COPY` line from [peer], applied. */
         fun finished(l: Line, peer: String, now: Long): Record {
             if (l.stage != "done" && l.stage != "failed") return this
+            // A catch-up's line (the engine prints one since #2480) leaves another device's pending first copy alone.
+            // A catch-up that fails for good is stamped too, so it waits [SYNC_EVERY_S] instead of running at every
+            // open; a cut one (unreachable, cancelled) stays due. Twin of Apple's `Record.finished`.
+            if (pending?.peer != peer) {
+                val stamp = l.stage == "done" || (peer in copied && l.error !in CUT_SHORT)
+                return if (stamp) copy(copied = copied + (peer to now)) else this
+            }
             if (l.stage == "done") return Record(null, copied + (peer to now))
             val since = if (l.error == "unreachable" && pending?.peer == peer) unreachableSince ?: now else null
             return when (action(l.error)) {
@@ -330,6 +340,15 @@ object MeshCopyV2 {
             val since = unreachableSince
             if (pending == null || since == null) return Retry.None
             return if (now - since >= UNREACHABLE_RETRY_FOR_S) Retry.GaveUp else Retry.After(UNREACHABLE_RETRY_EVERY_S)
+        }
+
+        /**
+         * Devices the engine copied from ([MeshCopyStarter.Engine.heldPeers]) that this record lost: a first copy whose
+         * done line the app could not read (before 2026-11-23) never landed in [copied]. They come back due now.
+         */
+        fun adopt(held: List<String>): Record {
+            val lost = held.filter { it !in copied && it != pending?.peer }
+            return if (lost.isEmpty()) this else copy(copied = copied + lost.associateWith { 0L })
         }
 
         /** The linked devices due a catch-up: copied before, not the one a copy is pending with, not in [SYNC_EVERY_S]. */

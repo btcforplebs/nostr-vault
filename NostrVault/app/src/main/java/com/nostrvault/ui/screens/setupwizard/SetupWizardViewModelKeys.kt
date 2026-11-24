@@ -98,7 +98,8 @@ import kotlinx.coroutines.launch
 
     // ── New to Nostr ──────────────────────────────────────────────
 
-    /** Generate keys for a new user. Stays on NOSTR_INTRO to show nsec backup. */
+    /** Makes the new user's key when Create an account is picked; the key
+     *  step shows it later. Nothing is signed before the lock step. */
     fun SetupWizardViewModel.generateNewUserKeys() {
         viewModelScope.launch {
             _isLoading.value = true
@@ -123,7 +124,6 @@ import kotlinx.coroutines.launch
                     blossomMirrors = it.blossomMirrors.ifEmpty { RelayConfiguration.newAccountBlossomMirrors },
                 ) }
                 configStore.setActiveAccount(pkHex)
-                // Stay on NOSTR_INTRO so user can see/copy their nsec
             } catch (e: Exception) {
                 _error.value = e.message ?: "Setup failed"
             }
@@ -131,14 +131,21 @@ import kotlinx.coroutines.launch
         }
     }
 
-    /** Keys page → password page, once they've ticked that the nsec is saved. */
+    /** This key is you → back up your key. */
     fun SetupWizardViewModel.advanceFromNostrIntro() {
         _error.value = null
         _step.value = stepAfter(WizardStep.NOSTR_INTRO)
     }
 
-    /** Password page: encrypts the new key with it (NIP-49), then the profile. */
-    fun SetupWizardViewModel.advanceFromKeyPassword() {
+    /** Back up your key → the lock, once they have ticked that the nsec is backed up. */
+    fun SetupWizardViewModel.advanceFromKeySpare() {
+        _error.value = null
+        _step.value = stepAfter(WizardStep.KEY_SPARE)
+    }
+
+    /** Password page: encrypts the new key with it (NIP-49). It is the last
+     *  new-account step, so setup finishes and the feed opens. */
+    fun SetupWizardViewModel.advanceFromKeyPassword(onComplete: () -> Unit) {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
@@ -176,7 +183,12 @@ import kotlinx.coroutines.launch
                     npub = configStore.config.value.ownerNpub,
                 )
 
-                _step.value = stepAfter(WizardStep.KEY_PASSWORD)
+                val steps = activeSteps
+                if (steps.last() == WizardStep.KEY_PASSWORD) {
+                    completeSetup(onComplete)
+                } else {
+                    _step.value = stepAfter(WizardStep.KEY_PASSWORD)
+                }
             } catch (e: Exception) {
                 _error.value = e.message ?: "Encryption failed"
             }

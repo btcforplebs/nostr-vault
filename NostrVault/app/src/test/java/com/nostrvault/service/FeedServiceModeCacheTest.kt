@@ -64,6 +64,7 @@ class FeedServiceModeCacheTest {
             notificationManager = mockk(relaxed = true),
             followingBackupService = mockk(relaxed = true),
             lookupPool = mockk(relaxed = true),
+            discoveryReach = mockk(relaxed = true) { every { admitted } returns com.nostrvault.data.model.DiscoveryReach.Admitted.NONE },
         )
     }
 

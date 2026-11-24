@@ -158,23 +158,22 @@
                 <p class="eyebrow">The settings</p>
                 <h2 id="follow-distance-minimum-followers-refresh-trust-list">Follow Distance, Minimum Followers, Refresh Trust List</h2>
                 <h3>Follow Distance</h3>
-                <p>How many follows away someone can be and still reach you. Lower is more private. Follow Distance counts
-                    you as 1, so each number is one more than the "hops" on a trust card.</p>
+                <p>How far from you someone can be and still reach you. Lower is more private. A hop is one follow away from
+                    you, and you are never a hop, so the setting reads the same as a trust card.</p>
                 <div class="docs-table-wrap">
                 <table>
-                    <tr><th>Distance</th><th>Who can reach you</th><th>On a trust card</th></tr>
-                    <tr><td>1</td><td>Only you and your other accounts on this device.</td><td>&ndash;</td></tr>
-                    <tr><td>2</td><td>Also the people you follow.</td><td>1 hop</td></tr>
-                    <tr><td>3 (default)</td><td>Also the people they follow, if enough of your follows follow them (see
+                    <tr><th>Follow Distance</th><th>Who can reach you</th><th>On a trust card</th></tr>
+                    <tr><td>Only you</td><td>Only you and your other accounts on this device.</td><td>&ndash;</td></tr>
+                    <tr><td>1 hop</td><td>Also the people you follow.</td><td>1 hop</td></tr>
+                    <tr><td>2 hops (default)</td><td>Also the people they follow, if enough of your follows follow them (see
                         Minimum Followers).</td><td>2 hops</td></tr>
                 </table>
                 </div>
-                <p>The control stops at 3. An older setting of 4 or 5 shows as 3, which is how the relay always ran it.
-                    Nobody three hops out (a friend of a friend of a friend) gets into your inbox at any setting, unless they
+                <p>The control stops at 2 hops. An older, higher setting shows as 2 hops, which is how the relay always ran
+                    it. Nobody three hops out (a friend of a friend of a friend) gets into your inbox at any setting, unless they
                     reply to or quote your own posts.</p>
-                <p>The Vault Dashboard counts the same way as this setting: at 3 its line reads "People within 3 hops of
-                    you", meaning you, your follows and their follows. A trust card calls that same friend of a friend
-                    "2 hops".</p>
+                <p>The Vault Dashboard counts the same way: at the default its line reads "People within 2 hops of you",
+                    meaning your follows and their follows. A trust card calls that same friend of a friend "2 hops".</p>
 
                 <h3>Minimum Followers</h3>
                 <p>At distance 3, how many of the people you follow must also follow someone before they can reach you.

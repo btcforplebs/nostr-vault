@@ -13,3 +13,4 @@
 .box-action[disabled] { opacity: 0.6; cursor: default; }
 .box-form { padding: 10px 16px; display: grid; gap: 10px; }
 .box-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+.box-fold .box-lines p { margin: 3px 0; }

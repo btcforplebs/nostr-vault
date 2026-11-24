@@ -87,7 +87,7 @@ extension FeedService {
         // clear the previous account's author-set bookkeeping explicitly here —
         // otherwise a reconcile could see a "matching" stale set and skip the
         // resubscribe the new account needs.
-        subscribedAuthorsByRelay.removeAll()
+        subscribedFeeds.forgetAll()
         // The removeAll() above just orphaned every surviving feed client's sink
         // (see subscribedClientKeys) — clear so subscribeToAllRelays() knows to
         // re-establish them instead of silently dropping this account's events.
@@ -119,6 +119,13 @@ extension FeedService {
             newSinceLastView = Date()
             didRestoreCachedFeed = restored
         }
+
+        // The web in memory is the previous account's own file
+        // (wot_cache_<hex>.json); snapshots don't carry it, and only a
+        // Global-like top-up reloads it. Its path changes, so this re-reads
+        // (Tron 2472 must-fix 1: Following-mode switch kept A's web for B's
+        // Vault rows, alerts and DM requests).
+        Task { [weak self] in await self?.loadWotPubkeysInBackgroundIfChanged() }
 
         // 5. Kick off relay traffic.
         dvmRevealed = 0
@@ -428,7 +435,7 @@ extension FeedService {
             relayStateSinks.removeValue(forKey: key)
             relayStates.removeValue(forKey: Self.relayStateKey(key))
         }
-        subscribedAuthorsByRelay.removeAll()
+        subscribedFeeds.forgetAll()
         subscribedClientKeys.removeAll()
         contactRetryScheduled = false
     }
@@ -479,7 +486,7 @@ extension FeedService {
         relayStates.removeAll()
         // No live subscriptions remain — drop the author-set bookkeeping so a
         // later reconcile doesn't think a relay is still subscribed.
-        subscribedAuthorsByRelay.removeAll()
+        subscribedFeeds.forgetAll()
         subscribedClientKeys.removeAll()
         contactRetryScheduled = false
     }

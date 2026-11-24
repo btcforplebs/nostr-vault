@@ -1,9 +1,12 @@
 package com.nostrvault.ui.screens
 
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -26,6 +29,12 @@ class SetupWizardNewToVaultTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
+        // New to Nostr makes a key at once. The native library is not on the
+        // plain JVM, so the call threw UnsatisfiedLinkError inside a coroutine;
+        // coroutines-test kept it and failed the next runTest in the suite
+        // (FeedAncestorBatchTest). These tests only read the steps, so no key.
+        mockkObject(HavenBridge)
+        every { HavenBridge.generateKeypair() } returns null
         val configStore = mockk<ConfigStore>(relaxed = true)
         every { configStore.update(any()) } answers {
             saved = firstArg<(HavenConfig) -> HavenConfig>()(saved)
@@ -46,7 +55,10 @@ class SetupWizardNewToVaultTest {
     }
 
     @After
-    fun tearDown() = Dispatchers.resetMain()
+    fun tearDown() {
+        unmockkObject(HavenBridge)
+        Dispatchers.resetMain()
+    }
 
     @Test
     fun `the second question comes right after your key and before the relay check`() {

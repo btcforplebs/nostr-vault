@@ -128,6 +128,15 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         else -> false
     }
 
+    /**
+     * Media's Following for an account that follows nobody. The filter builder
+     * omits an empty `authors`, so a REQ here would ask for everyone's media:
+     * send none, as Following sends none (iOS asks nothing either).
+     */
+    internal fun FeedService.mediaFollowsNobody(): Boolean =
+        _feedMode.value == FeedMode.MEDIA && _mediaFeedMode.value == MediaFeedMode.FOLLOWING &&
+            _followedPubkeys.value.isEmpty()
+
     /** Cancel a feed client's collectors and disconnect it. */
     internal fun FeedService.teardownFeedClient(relayUrl: String) {
         feedClientJobs.remove(relayUrl)?.forEach { it.cancel() }
@@ -349,16 +358,29 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
     /**
      * [resume] false asks as wide as before even when the list is this feed's:
      * a changed author set needs the new authors' older notes too.
+     * [withDeletes] false leaves the owner's deletion REQ alone: a re-send
+     * that only changes the authors has nothing new to ask it.
      */
-    internal fun FeedService.sendPrimaryFeedSubscription(relayUrl: String, subId: String, resume: Boolean = true) {
+    internal fun FeedService.sendPrimaryFeedSubscription(
+        relayUrl: String,
+        subId: String,
+        resume: Boolean = true,
+        withDeletes: Boolean = true,
+    ) {
         // Reels, Live, Marketplace, Music and Hashtags run their own queries.
         // The feed connections stay up for mentions, but the note timeline
         // idles underneath rather than streaming a list nobody sees.
-        if (_feedMode.value in OWN_SERVICE_MODES) {
+        val followsNobody = mediaFollowsNobody()
+        if (_feedMode.value in OWN_SERVICE_MODES || followsNobody) {
             // No REQ means no EOSE, which is what sends the follows'
             // reactions and zaps subscriptions: send them now instead.
             if (feedClients[relayUrl] != null && relayUrl !in outboxPlan && auxSubsSent.add(relayUrl)) {
                 sendAuxiliarySubscriptions(relayUrl)
+            }
+            // Nothing was asked, so nothing is loading: the empty state shows.
+            if (followsNobody) {
+                _isLoadingFeed.value = false
+                _isSyncing.value = false
             }
             return
         }
@@ -398,14 +420,16 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         // Global under the Web of Trust asks twice, once naming trusted authors
         // and once open. Asked open only, a new account's small web matched
         // almost nothing in a page of strangers and Global rendered blank
-        // (iOS #824). Not the local relay: it holds your own vault.
+        // (iOS #824). Not the local relay: it holds your own vault and the
+        // posts the Haven fetched from your distant connections (hop 3+),
+        // people your web already picked.
         val filters = if (_feedMode.value == FeedMode.GLOBAL &&
             relayUrl != configStore.config.value.localRelayURL("feed")
         ) {
             val trust = globalTrustSet()
             globalTrustScopedFilters(primaryFeedKinds(), filter, trust, resumeSince ?: trustedSince(trust))
         } else {
-            listOf(filter)
+            listOfNotNull(filter, distantPostsFilter(filter, relayUrl))
         }
 
         if (BuildConfig.DEBUG) Log.d(TAG, "sendPrimaryFeedSubscription: $relayUrl subId=$subId followedPubkeys=${_followedPubkeys.value.size}")
@@ -414,7 +438,7 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         // Your own deletion requests (kind 5), so a post deleted on another
         // device leaves this one too. Its own subId: the primary's EOSE is
         // matched exactly, so this one never triggers the auxiliary REQs.
-        if (ownerHex.isNotEmpty()) {
+        if (withDeletes && ownerHex.isNotEmpty()) {
             client.send("[\"REQ\",\"del-$subId\",${deleteRequestsFilter(ownerHex)}]")
         }
     }

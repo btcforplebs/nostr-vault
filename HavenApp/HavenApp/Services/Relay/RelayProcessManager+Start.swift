@@ -188,6 +188,7 @@ extension RelayProcessManager {
         // whitelisted_npubs.json and private_reader_npubs.json
         HavenConfig.writeVaultAccountFiles(whitelist: inputs.whitelistedNpubs, readers: inputs.privateReaderNpubs,
                                            whitelistFile: "whitelisted_npubs.json", under: relayDataDir, encoder: encoder)
+        HavenConfig.writeAccountReachFile(inputs.accountReach, under: relayDataDir)
         
         // Write blacklisted_npubs.json
         let blacklistURL = relayDataDir.appendingPathComponent("blacklisted_npubs.json")

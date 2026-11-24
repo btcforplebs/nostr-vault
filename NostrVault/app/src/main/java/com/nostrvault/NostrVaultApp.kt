@@ -116,6 +116,8 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         copySettingsSync.start()
         // And the accounts list it carries (§3.4): this device's own kept current, a copy's offered, never added unasked.
         copyAccountsSync.start()
+        // And every hour, so a Mac's new trust rank its nudge missed still comes down (MeshRankNudge).
+        meshCopyStarter.startHourlyCheck()
         // The same when the relay comes up; a stopped relay ends its copy run (the engine keeps the state).
         applicationScope.launch {
             com.nostrvault.relay.RelayForegroundService.relayStatus.collect { st ->

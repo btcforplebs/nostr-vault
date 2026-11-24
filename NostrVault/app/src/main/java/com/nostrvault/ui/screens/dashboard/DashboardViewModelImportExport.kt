@@ -140,8 +140,6 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
         }
     }
 
-    fun DashboardViewModel.dismissImport() { relayImportService.dismissImportProgress() }
-
     // ── Local relay notes ────────────────────────────────────────
 
     // ── Local relay notes (persistent connections) ──────────────

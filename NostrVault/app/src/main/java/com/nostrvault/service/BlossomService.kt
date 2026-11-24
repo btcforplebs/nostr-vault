@@ -718,14 +718,8 @@ class BlossomService @Inject constructor(
                 if (gone) Outcome.GONE else Outcome.LEFT
             }
         }
-        // This device's mesh key for the mesh devices (MeshDeleteAuth). The owner's fallback names every mesh vault
-        // (`<npub>.fips`, which a vault takes as itself) and covers the DELETE and the HEAD; owner's devices only.
-        val meshAuth = MeshDeleteAuth.of(sha256, mesh.map { it.npub }) {
-            signAuthHeader(
-                "delete+get", sha256,
-                BlossomDeleteAuth.tags(sha256, "", operations = listOf("delete", "get"), servers = mesh.map { "${it.npub}.fips" }),
-            ).takeIf { it.isNotEmpty() }
-        }
+        // This device's mesh key for the mesh devices (MeshDeleteAuth), never the owner's.
+        val meshAuth = meshDeleteAuth(sha256, mesh.map { it.npub })
         val meshOutcomes = mesh.map { target -> async { target.key to deleteOnMeshDevice(target.npub, sha256, meshAuth) } }
         val served = mirrors.zip(outcomes.awaitAll())
         val all = served.filter { it.second != Outcome.SKIPPED }.map { it.first to (it.second == Outcome.GONE) } + meshOutcomes.awaitAll()
@@ -798,6 +792,8 @@ class BlossomService @Inject constructor(
     internal var meshIngress: (String) -> String? = { com.nostrvault.fips.FipsMediaRouter.ingressBase(it) }
     internal var meshForget: (String) -> Unit = { com.nostrvault.fips.FipsMediaRouter.forget(it) }
     internal var meshRetryDelayMs = MESH_DELETE_RETRY_MS
+    /** This device's mesh-key delete + get tokens for the mesh targets ([MeshDeleteAuth.of]); swapped in tests. */
+    internal var meshDeleteAuth: (sha256: String, receivers: List<String>) -> MeshDeleteAuth = MeshDeleteAuth::of
 
     /** @return true if the file is gone from this device (deleted, or never stored here). */
     fun deleteFromLocal(sha256: String): Boolean {

@@ -35,12 +35,20 @@ import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.*
 
 /**
- * The password that encrypts the new nsec (NIP-49). Its own page so the
- * fields sit above the keyboard without scrolling. While a field has focus
- * the icon and subtitle step aside. Same as iOS (#399).
+ * Lock it in: the last key step (setup screens r3, Way 1c). The password
+ * encrypts a NIP-49 copy of the new nsec (the ncryptsec, in app config); the
+ * password is kept in the AndroidKeyStore-backed CredentialStore. The hex key
+ * is also saved by CredentialStore.saveNsec and signing reads that first, so
+ * the key is not behind the password and not in secure hardware: the text
+ * says only that the store is sealed by the Keystore and the password
+ * encrypts a copy. Open
+ * finishes setup. It sits under the VaultMark with the key in
+ * its keyhole. Its own page so the fields sit above the keyboard without
+ * scrolling. While a field has focus the picture and subtitle step aside.
+ * Twin of iOS KeyPasswordStep (#2416).
  */
 @Composable
-internal fun KeyPasswordStep(viewModel: SetupWizardViewModel) {
+internal fun KeyPasswordStep(viewModel: SetupWizardViewModel, onComplete: () -> Unit) {
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
     val passphrase by viewModel.passphrase.collectAsState()
@@ -54,17 +62,18 @@ internal fun KeyPasswordStep(viewModel: SetupWizardViewModel) {
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         AnimatedVisibility(visible = !isTyping) {
-            Icon(
-                Icons.Default.Lock,
-                contentDescription = null,
-                tint = WizardAccent,
-                modifier = Modifier.padding(bottom = 8.dp).size(40.dp),
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(Modifier.height(8.dp))
+                KeyStepsStrip(KeyStepPart.LOCK)
+                Spacer(Modifier.height(14.dp))
+                VaultMarkWithKey()
+                Spacer(Modifier.height(10.dp))
+            }
         }
-        Text("Protect Your Key", color = PrimaryText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Text("Lock it in", color = PrimaryText, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         AnimatedVisibility(visible = !isTyping) {
             Text(
-                text = "Choose a password to lock your secret key on this device.",
+                text = "Your key is stored encrypted on this device, sealed by Android Keystore. This password encrypts a copy of it (NIP-49). It never leaves this device, and we can't reset the password.",
                 color = SecondaryText,
                 fontSize = 15.sp,
                 textAlign = TextAlign.Center,
@@ -112,7 +121,7 @@ internal fun KeyPasswordStep(viewModel: SetupWizardViewModel) {
             } else null,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = {
-                if (isPasswordValid && !isLoading) viewModel.advanceFromKeyPassword()
+                if (isPasswordValid && !isLoading) viewModel.advanceFromKeyPassword(onComplete)
             }),
             colors = wizardTextFieldColors(),
             modifier = Modifier
@@ -130,10 +139,10 @@ internal fun KeyPasswordStep(viewModel: SetupWizardViewModel) {
         // warning was already read before a field took focus.
         Spacer(Modifier.height(16.dp))
         WizardPrimaryButton(
-            text = "Continue",
+            text = "Open",
             enabled = isPasswordValid,
             isLoading = isLoading,
-            onClick = viewModel::advanceFromKeyPassword,
+            onClick = { viewModel.advanceFromKeyPassword(onComplete) },
         )
         Spacer(Modifier.height(16.dp))
         Row(
@@ -149,11 +158,29 @@ internal fun KeyPasswordStep(viewModel: SetupWizardViewModel) {
             Icon(Icons.Default.Shield, contentDescription = null, tint = WizardAccent, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
             Text(
-                "This password locks the secret key you just saved. It stays on this device only and is never sent to us or any server. We cannot recover or reset it. If you forget it, the secret key you saved is your only way back in.",
+                "Write this password down and keep it with your key backup.",
                 color = SecondaryText,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
             )
         }
+    }
+}
+
+/** The VaultMark arch with the key sitting in its glowing keyhole. */
+@Composable
+private fun VaultMarkWithKey() {
+    Box(contentAlignment = Alignment.BottomCenter, modifier = Modifier.padding(vertical = 4.dp)) {
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(com.nostrvault.R.drawable.vault_mark),
+            contentDescription = null,
+            modifier = Modifier.size(92.dp).clip(RoundedCornerShape(20.dp)),
+        )
+        Icon(
+            Icons.Default.Key,
+            contentDescription = null,
+            tint = WizardAccent,
+            modifier = Modifier.offset(y = 6.dp).size(26.dp),
+        )
     }
 }
