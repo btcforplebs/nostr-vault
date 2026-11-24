@@ -398,10 +398,18 @@ The app calls the engine when a linked device comes into reach. The engine then:
      follows (ring 1) and everyone whose score is at or over `floor` (45; `trustrank.HandoffFloor`). The body is
      `{account, builtAt, version: 2, params, maxHop, viewBar, floor, people: [[pubkey, score 0-100, ring], …]}`.
      The whole trimmed file is sent; there is no changed-rows form yet.
+   - Optional `globe: [[pubkey, score 0-100, ring, via], …]` (`trustrank.Globe`), for the globe only; the feed never
+     reads it. It is not trimmed at `floor`. For each ring 3 to 5 (`GlobeFromHop`..`GlobeHop`, as far as `maxHop`)
+     it holds that ring's top 300 (`GlobePerRing`) by score, owner-muted people and score 0 left out, best first.
+     `via` is the person's highest-scored follower one ring in. Each `via` that is not already a row is added as a
+     row too (ring 2 rows are only these links), so every row walks back to a ring-1 person in `people` with no relay
+     call. Within a ring the top rows come first, so a ring's first 300 rows are its top and any later ones are
+     links. Older engines and apps ignore the field (version stays 2).
    - `204`: the device's copy is as new as the Haven's. `404`: the Haven does not rank that account, has no result
      yet, or is an engine from before this.
    - B keeps a copy only when it is for the account it asked for, `version` 2, newer than the one it holds, and
-     every row is a hex pubkey with a score 0-100 in rings 1 to `maxHop` (at most 6). Anything else is dropped and
+     every row is a hex pubkey with a score 0-100 in rings 1 to `maxHop` (at most 6); and, when `globe` is there, at
+     most 2,700 globe rows (9 × 300: chain links need links of their own), each a hex pubkey with a score 0-100 in rings 2 to 5 (and `maxHop`) and a hex `via`. Anything else is dropped and
      the last good copy stays. The file is kept next to the WoT cache and its `builtAt` is its age.
    - A Mac or a box ranks for itself and never asks. Nothing is ever sent the other way: `PUT` is 404.
    - It never fails or delays the catch-up's mark: a 404 or a refused copy just leaves the device without one.

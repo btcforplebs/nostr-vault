@@ -270,6 +270,9 @@ type ResultFile struct {
 	// Floor is set only on a copy handed to a device (handoff.go): people
 	// who show under it were left out.
 	Floor float64 `json:"floor,omitempty"`
+	// Globe: [pubkey, shown, hop, via] for the globe only (globe.go). Travels
+	// whole; the feed never reads it. Older apps ignore it.
+	Globe [][4]any `json:"globe,omitempty"`
 }
 
 // ResultPath is the result's file for account in dir.
@@ -286,6 +289,7 @@ func writeResult(dir string, r *Result, now time.Time) error {
 		}
 		f.People = append(f.People, [3]any{p.Pubkey, s, p.Hop})
 	}
+	f.Globe = globeForFile(r.Globe(GlobePerRing))
 	b, err := json.Marshal(f)
 	if err != nil {
 		return err
