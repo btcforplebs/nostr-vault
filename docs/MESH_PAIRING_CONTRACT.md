@@ -179,8 +179,11 @@ What stays where:
 - **Confirm carries the role shown** (`{"role":"phone"}`), so a confirm never adds a device under another role than the
   hello's. The stored entry keeps the hello's name and role and the account that confirmed it.
 - **Stored where:** the box's own paired set, `box/paired-devices.json`. It is seeded once from the devices the box
-  trusts today, only after a settled 10063 read and never from an empty result. Until the box UI ships pair and Remove
-  (P9b), `mesh-devices.json` keeps following the 10063s; after that the paired set alone decides who the mesh lets in.
+  trusts today, only after a settled 10063 read and never from an empty result. Before the seed, `mesh-devices.json`
+  follows the 10063s; from the seed on, the paired set alone decides who the mesh lets in, and the 10063s are shown
+  only as who vouches. **Remove** in the box UI (`POST /api/box/devices/remove`) takes a device out of the set, writes
+  `mesh-devices.json` and the engine's file without it at once, and the engine revokes its copy tokens
+  (`MESH_COPY_V2_CONTRACT.md` §2: refused on its next copy, after a restart too).
 - **Relays:** the hello comes in and the ack goes out on the finder relays (`NV_MESH_RELAYS`, the same three nv-mesh
   and the apps use).
 - **Nothing is published** but the ack, and no account key is used anywhere in this flow.
