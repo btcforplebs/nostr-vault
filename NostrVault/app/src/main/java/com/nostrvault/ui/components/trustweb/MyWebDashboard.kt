@@ -174,6 +174,8 @@ internal fun MyWebSheet(
     filters: WotFilters,
     liveArcs: LiveArcsState,
     newcomers: @Composable () -> Unit,
+    /** What the outer rings are, and Pull ([MyWebDesktopVaultSection]). */
+    desktopVault: @Composable () -> Unit,
     onLayer: (TrustMap.Layer) -> Unit,
     onRebuild: () -> Unit,
     onDismiss: () -> Unit,
@@ -225,6 +227,7 @@ internal fun MyWebSheet(
                         onDismiss()
                     }
                 }
+                desktopVault()
                 DashSection(title = "Live stars") {
                     SwitchRow(Icons.Filled.SettingsInputAntenna, "Live stars",
                         "Your web's posts fly across the globe as they happen", liveArcs.on, enabled = true,

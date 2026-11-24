@@ -63,11 +63,16 @@ extension TrustWebView {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, 14)
             }
+            // iPhone and iPad: what the outer rings are, and Pull, live in
+            // My Web (MyWebDesktopVaultSection), not over the globe (Logen,
+            // 11/24). The Mac has no My Web and is the desktop Vault itself.
+            #if os(macOS)
             if showsOuterRings, card == nil, frame != nil, !mappingWeb, !loadingMyFollows {
                 GlobeOuterRingsBar(onPick: tapped)
                     .padding(.horizontal, 16)
                     .padding(.bottom, tabBarHeight + 14)
             }
+            #endif
             if let card {
                 if cardIsSidePanel {
                     // iPad, wide: the card docks down the trailing side, where

@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// Under your own globe on the WOT tab: what the outer rings are. With a
+/// Under your own globe on the Mac's WOT tab: what the outer rings are
+/// (iPhone and iPad show it in My Web, `MyWebDesktopVaultSection`). With a
 /// rank, "Found by your desktop Vault" and one chip per ring ("3 hops ·
 /// top 300": the best of the ring, whatever their score), each opening
 /// that ring as a community (`OuterRingSheet`). A paired desktop Vault
 /// that has not ranked yet says so. With no desktop Vault, the invite
-/// (`HavenInviteCard`) until "Not now". Android twin:
-/// `ui/components/trustweb/GlobeOuterRingsBar.kt`.
+/// (`HavenInviteCard`) until "Not now". Android has no Mac; its twin is
+/// `ui/components/trustweb/MyWebDesktopVaultSection.kt`.
 struct GlobeOuterRingsBar: View {
     /// Opens a person from a ring's sheet.
     let onPick: (String) -> Void

@@ -1367,6 +1367,7 @@
 		8D8D9BAF05CB5768059EEC5C /* FipsMeshSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A14D54AE60E4D733FE7152F9 /* FipsMeshSettingsView.swift */; };
 		8DABBA60D7746B1EF0F490B5 /* LiveStatusBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8181D15CA118AFF70A6E02A0 /* LiveStatusBook.swift */; };
 		8E4D715FC9DA25CBB47B5A9C /* VaultToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FE41D591439EC1513D51DAF /* VaultToolbar.swift */; };
+		8E63DF6E71F310F5141A235B /* MyWebDesktopVaultSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E6A02A5FB1321CF4419E657 /* MyWebDesktopVaultSection.swift */; };
 		8E89D5831299C64C0ABCDA36 /* MacShellLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ECE84EDD7380E2DB9C2FFBE /* MacShellLayout.swift */; };
 		8ECF8568B8F80F5213816DF7 /* MeshDevices.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDFEEEE3A5F4A53B832E01EE /* MeshDevices.swift */; };
 		8EF83AE93E1EC2D3D44EAC15 /* HashtagFeedModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9BF8915977BBEB966F333A8 /* HashtagFeedModel.swift */; };
@@ -2268,6 +2269,7 @@
 		E9E1B0EF2629614F4D3F33F8 /* NostrService+MessageProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE000450336CCC4829F6DEE1 /* NostrService+MessageProcessing.swift */; };
 		EA504EA152656C3746B69926 /* LiveNoteCleanup+Lookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B18E40719FE3CAA3BFDDB0F /* LiveNoteCleanup+Lookup.swift */; };
 		EA5478A4A9A6765B7594AA85 /* NostrService+ListPublishing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E037E60F09160D6697CB3C /* NostrService+ListPublishing.swift */; };
+		EA6BE3A2ECEC4DCD6D263144 /* MyWebDesktopVaultSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E6A02A5FB1321CF4419E657 /* MyWebDesktopVaultSection.swift */; };
 		EA6BF2AB2DB87BD6861864F2 /* LiveChatRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86AC01DAD7028DC8F433F5B5 /* LiveChatRowView.swift */; };
 		EA95B3157AC9FA5D0A9ADE1F /* AttachmentUploadBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D05FB0D610DC4D3AB482115 /* AttachmentUploadBadge.swift */; };
 		EAC4A84A849CA8EEF43F89E5 /* NativeVideoPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55F125A57F69F4E0C782BF80 /* NativeVideoPlayer.swift */; };
@@ -2826,6 +2828,7 @@
 		3DEFE8FD51A67D177C07A118 /* WotNewcomers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WotNewcomers.swift; sourceTree = "<group>"; };
 		3E18F538AEEE5F1324B1A390 /* RelayCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayCheck.swift; sourceTree = "<group>"; };
 		3E36D157E04EFBA9F2C2C802 /* ComposeView+Drafts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ComposeView+Drafts.swift"; sourceTree = "<group>"; };
+		3E6A02A5FB1321CF4419E657 /* MyWebDesktopVaultSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyWebDesktopVaultSection.swift; sourceTree = "<group>"; };
 		3E9FD98954DE731EAA50FFEB /* ProfileContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileContent.swift; sourceTree = "<group>"; };
 		3EC8D4A0D7C68FF72B9CCF4D /* LeaveNostrService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeaveNostrService.swift; sourceTree = "<group>"; };
 		3F09A7ACE2A79E039958840B /* FipsMeshShareSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FipsMeshShareSection.swift; sourceTree = "<group>"; };
@@ -3987,6 +3990,7 @@
 				03DBB409E343A8D2FF2B53D1 /* GlobeStormProbe.swift */,
 				627B6A3D0FCAFC4B49356337 /* HavenInviteCard.swift */,
 				B4901D3001ED79FFAF378060 /* LiveStarsSwitches.swift */,
+				3E6A02A5FB1321CF4419E657 /* MyWebDesktopVaultSection.swift */,
 				CD2C089572442DEA69010C02 /* OuterRingSheet.swift */,
 				CCE61C621EC79CB4E00F63F9 /* TrustGlobeCanvas.swift */,
 				6D36F3CFEC85EB25E524B13D /* TrustPathText.swift */,
@@ -6656,6 +6660,7 @@
 				5CD2FC6F43509E54FFE1E4AE /* MyDevicesPanelModel.swift in Sources */,
 				292899C69F326043A00AAF4C /* MyDevicesStatus.swift in Sources */,
 				5ACED3DC08D71D9754190597 /* MyProfileView.swift in Sources */,
+				EA6BE3A2ECEC4DCD6D263144 /* MyWebDesktopVaultSection.swift in Sources */,
 				CA497CFA23450F95D10AA7F8 /* NIP04Service.swift in Sources */,
 				9184E1F83695DECDCF056AD5 /* NIP10Thread.swift in Sources */,
 				907AA19454BFF43EBC887A8F /* NIP17Service.swift in Sources */,
@@ -7907,6 +7912,7 @@
 				2E753EEDBAA72E05D88ED434 /* MyDevicesCheckGate.swift in Sources */,
 				32A4EFC561EE35CE57FE33D4 /* MyDevicesStatus.swift in Sources */,
 				D438A7C7A163F62FD69AE216 /* MyProfileView.swift in Sources */,
+				8E63DF6E71F310F5141A235B /* MyWebDesktopVaultSection.swift in Sources */,
 				1C825DA9B33BBA981AE9C5AA /* NIP04Service.swift in Sources */,
 				882F2AC7BF561F047511CDA1 /* NIP10Thread.swift in Sources */,
 				BA28A725680810BA41A69746 /* NIP17Service.swift in Sources */,

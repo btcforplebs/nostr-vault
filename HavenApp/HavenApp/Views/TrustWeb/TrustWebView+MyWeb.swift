@@ -109,7 +109,11 @@ extension TrustWebView {
                 jump(to: 0)
                 if picked != me { openCard(picked) }
             },
-            onRebuild: { refresh() }
+            onRebuild: { refresh() },
+            onRingPick: { picked in
+                myWebOpen = false
+                tapped(picked)
+            }
         )
     }
 }
@@ -137,6 +141,8 @@ struct MyWebDashboardView: View {
     /// A face in New in your web: close the page and show their card.
     let onPerson: (String) -> Void
     let onRebuild: () -> Void
+    /// A face in an outer ring's sheet (Desktop Vault).
+    let onRingPick: (String) -> Void
 
     @Environment(\.openURL) private var openURL
     static let plebsVsZombiesURL = URL(string: "https://plebsvszombies.cc")!
@@ -176,6 +182,7 @@ struct MyWebDashboardView: View {
                              detail: followsBackDetail,
                              count: followsBack, selected: filters.contains(.followsBack)) { onFilter(.followsBack) }
                 }
+                MyWebDesktopVaultSection(onPick: onRingPick)
                 DashboardSection(title: "Live stars") { LiveStarsSwitches() }
                 DashboardSection(title: "Upkeep") {
                     DashboardRow(icon: "arrow.clockwise", title: "Rebuild your web",
