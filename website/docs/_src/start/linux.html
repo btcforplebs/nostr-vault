@@ -1,11 +1,11 @@
 <!--page
 {
   "title": "Get started on Linux",
-  "nav": "Linux (beta)",
+  "nav": "Linux",
   "section": "start",
   "order": 5,
-  "description": "Install the Nostr Vault beta on a Linux machine: the .deb for Debian, Ubuntu and Raspberry Pi OS, the .rpm for Fedora, the Arch package, the Alpine apk, the Flatpak for desktops (arm64 or amd64), Nix and NixOS, the desktop window and tray, and what works in the beta.",
-  "checked": "Nostr Vault 3.2.3 for Linux (beta 10)",
+  "description": "Install Nostr Vault on a Linux machine: the .deb for Debian, Ubuntu and Raspberry Pi OS, the .rpm for Fedora, the Arch package, the Alpine apk, the Flatpak for desktops (arm64 or amd64), Nix and NixOS, the desktop window and tray, and what works today.",
+  "checked": "Nostr Vault 3.3.0 for Linux",
   "aliases": ["#linux"],
   "labels": {
     "web": ["This Box", "Status, storage, mesh, devices and updates", "My Devices", "Check for update and install"]
@@ -17,9 +17,8 @@
     also has a window and a tray icon, like the Mac app. Your phones and computers reach it on your home network and
     over the <a href="/docs/mesh/">mesh</a>.</p>
 <div class="note">
-    <p><strong>This is a beta.</strong> Linux is new in 3.2.3 and comes as a GitHub pre-release,
-        <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.10">v3.2.3-linux-beta.10</a>.
-        What works and what doesn't yet is at the <a href="#beta">end of this page</a>.</p>
+    <p><strong>3.3.0 is the first stable Linux release.</strong> Every package is on the GitHub release
+        <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.3.0">v3.3.0</a>. What works and what doesn't yet is at the <a href="#beta">end of this page</a>.</p>
 </div>
 
 <h2 id="needs">What you need</h2>
@@ -34,7 +33,7 @@
             <li><strong>Arch Linux</strong> and Arch Linux ARM: the <code>.pkg.tar.zst</code>.</li>
             <li><strong>Alpine</strong> 3.22 or newer: the <code>.apk</code> (OpenRC, no window or tray).</li>
             <li>Any desktop with <strong>Flatpak</strong> (Steam Deck, Fedora Silverblue, Bazzite and others): the
-                <code>.flatpak</code>. It has <a href="#flatpak">no mesh</a> in this beta.</li>
+                <code>.flatpak</code>. It has <a href="#flatpak">no mesh</a> for now.</li>
             <li><strong>NixOS</strong>: the flake's NixOS module, <a href="#nix">below</a>.</li>
         </ul></li>
     <li>Your <strong>npub</strong>, the public key of the account that owns the vault. The machine never gets your
@@ -45,33 +44,34 @@
 
 <h2 id="install">Install the .deb (Debian, Ubuntu, Raspberry Pi OS)</h2>
 <p>Open a terminal on the machine (or ssh into it) and download the file for your machine from the
-    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.10">beta release</a>:
+    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.3.0">3.3.0 release</a>:
     <code>…_arm64.deb</code> for a Raspberry Pi or other ARM board, <code>…_amd64.deb</code> for a normal PC. Then:</p>
-<pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>sudo apt install ./nostr-vault_3.2.3+7009_arm64.deb
+<pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>sudo apt install ./nostr-vault_3.3.0+NNNN_arm64.deb
 sudo nostr-vault-setup --owner npub1…</code></pre>
 <p>On a machine with no screen, add <code>--no-install-recommends</code> to the first line so apt skips the window's
     libraries. <code>nostr-vault-setup</code> also takes <code>--data /path</code> for where the vault lives (a USB
     SSD is much better than an SD card) and <code>--port</code> (8080 to start). It starts the vault and prints the
-    address to open, for example <code>http://192.168.1.20:8080/</code>.</p>
+    address to open, for example <code>http://192.168.1.20:8080/</code>. Use the file name you downloaded: the
+    number after <code>3.3.0+</code> is the build.</p>
 <p>Check the file first against <code>SHA256SUMS</code> in the release:
     <code>sha256sum -c --ignore-missing SHA256SUMS</code>.</p>
 
 <h2 id="other">Fedora, Arch and Alpine</h2>
 <p>Download the package for your system and machine from the
-    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.10">beta release</a>
+    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.3.0">3.3.0 release</a>
     (<code>x86_64</code> for a normal PC, <code>aarch64</code> for ARM), then install it and set the owner:</p>
 <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code># Fedora
-sudo dnf install ./nostr-vault-3.2.3+7009-1.x86_64.rpm
+sudo dnf install ./nostr-vault-3.3.0+NNNN-1.x86_64.rpm
 # Arch Linux
-sudo pacman -U ./nostr-vault-3.2.3+7009-1-x86_64.pkg.tar.zst
+sudo pacman -U ./nostr-vault-3.3.0+NNNN-1-x86_64.pkg.tar.zst
 # Alpine (as root)
-apk add --allow-untrusted ./nostr-vault-3.2.3_p7009-r0.x86_64.apk
+apk add --allow-untrusted ./nostr-vault-3.3.0_pNNNN-r0.x86_64.apk
 
 sudo nostr-vault-setup --owner npub1…   # on Alpine, as root: nostr-vault-setup --owner npub1…</code></pre>
 <p>Each one is the same vault as the <code>.deb</code>, with the mesh, and runs the vault and the mesh as their own
     users, <code>nvvault</code> and <code>nvmesh</code>. On Fedora the package labels its programs for SELinux, so they
     run as an ordinary service. The <code>.rpm</code> and Arch package have the window and tray like the
-    <code>.deb</code> (from beta 6, <code>pacman -U</code> brings the window's packages with it on Arch); the Alpine
+    <code>.deb</code> (on Arch, <code>pacman -U</code> brings the window's packages with it on Arch); the Alpine
     apk has none, so open the vault from another device. On Alpine the services are
     OpenRC's: <code>rc-service nostr-vault stop</code>, and the logs are in <code>/var/log/nostr-vault/</code>.</p>
 <p>The Alpine apk is signed with a throwaway key made for this build, so <code>apk</code> needs
@@ -79,8 +79,8 @@ sudo nostr-vault-setup --owner npub1…   # on Alpine, as root: nostr-vault-setu
 
 <h2 id="flatpak">Flatpak, for desktops (no mesh)</h2>
 <p>Download <code>nostr-vault-…-x86_64.flatpak</code> (or <code>aarch64</code>) from the
-    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.2.3-linux-beta.10">beta release</a>, then:</p>
-<pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>flatpak install --user ./nostr-vault-3.2.3+7009-x86_64.flatpak</code></pre>
+    <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.3.0">3.3.0 release</a>, then:</p>
+<pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>flatpak install --user ./nostr-vault-3.3.0+NNNN-x86_64.flatpak</code></pre>
 <p>Open <strong>Nostr Vault</strong> from your apps. The Flatpak is different from the packages above:</p>
 <ul>
     <li><strong>No mesh.</strong> Device sync is off in the Flatpak for now. Your phones reach this vault on your
@@ -94,7 +94,7 @@ sudo nostr-vault-setup --owner npub1…   # on Alpine, as root: nostr-vault-setu
 
 <h2 id="nix">NixOS (flake and module)</h2>
 <p>On NixOS, add the flake and turn on its module instead of installing a package. In your system flake:</p>
-<pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>inputs.nostr-vault.url = "github:btcforplebs/nostr-vault/v3.2.3-linux-beta.10";
+<pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>inputs.nostr-vault.url = "github:btcforplebs/nostr-vault/v3.3.0";
 
 # in your nixosSystem modules:
 nostr-vault.nixosModules.default
@@ -124,25 +124,24 @@ nostr-vault.nixosModules.default
     stop the vault. The tray icon shows the vault's status (for example <strong>Vault running · 2 devices on the
     mesh</strong>) and has <strong>Open Nostr Vault</strong>, <strong>New Note</strong>, Feed, Vault, My Devices,
     Settings and <strong>Copy box npub</strong>. Notes you post from the window say <strong>Nostr Vault on
-    Linux</strong> (from beta 5); the same vault opened in a web browser posts as <strong>Nostr Vault on Web</strong>.
-    From beta 7, a wide window shows the same screens as the phone app and the website, not the new desktop pages
-    that are still being tested.</p>
+    Linux</strong>; the same vault opened in a web browser posts as <strong>Nostr Vault on Web</strong>.
+    A wide window shows the same screens as the phone app and the website.</p>
 <p><strong>A black or blank window?</strong> First check the vault itself: open <code>http://127.0.0.1:8080/</code>
-    in your web browser. If the vault shows there, only the window is stuck. From beta 10 the window checks that it
-    draws: if nothing shows within about 45 seconds it starts over with another way of drawing (up to three), keeps
-    the one that works for next time, and if none does it shows a page with <strong>Open in browser</strong> and
+    in your web browser. If the vault shows there, only the window is stuck. The window checks that it draws: if
+    nothing shows within about 45 seconds it starts over with another way of drawing (up to three), keeps the one
+    that works for next time, and if none does it shows a page with <strong>Open in browser</strong> and
     <strong>Try the window again</strong>. That can take a couple of minutes the first time; you don't need to change
-    anything. Updating the .deb also restarts an open window on the new version. On an older beta, quit the window
-    from the tray (or run <code>pkill -f nostr-vault-desktop</code>), then start it with
+    anything. Updating the .deb, .rpm or Arch package also restarts an open window on the new version. To choose yourself, quit the
+    window from the tray (or run <code>pkill -f nostr-vault-desktop</code>), then start it with
     <code>WEBKIT_DISABLE_DMABUF_RENDERER=1 nostr-vault-desktop</code>; setting that yourself turns the automatic
     choice off. If the window ever says <strong>The window
-    stopped drawing</strong>, click <strong>Reload</strong>. If the page crashes again right away, beta 5 and newer
-    stop trying and keep that message up until you click <strong>Reload</strong> (or press Ctrl+R, from beta 6); open
-    the vault in your browser meanwhile. Your vault keeps running either way.</p>
+    stopped drawing</strong>, click <strong>Reload</strong>. If the page crashes again right away, the window stops
+    trying and keeps that message up until you click <strong>Reload</strong> (or press Ctrl+R); open the vault in
+    your browser meanwhile. Your vault keeps running either way.</p>
 <p><strong>The window closed when you pasted?</strong> WebKitGTK 2.54.0 and 2.54.1, the web view the window is
     built on, crash on a paste when the clipboard is empty. Some distros still ship 2.54.1 (Omarchy did in November
-    2026). Beta 6 and newer don't pass a paste to the web view while the clipboard is empty, so the window stays open.
-    If a window freezes or closes, its log is <code>~/.cache/nostr-vault-desktop/window.log</code>: from beta 6 it
+    2026). Nostr Vault doesn't pass a paste to the web view while the clipboard is empty, so the window stays open.
+    If a window freezes or closes, its log is <code>~/.cache/nostr-vault-desktop/window.log</code>: it
     says where the window was stuck. Please send it with your report.</p>
 
 <h2 id="open">Open your vault and link it</h2>
@@ -152,8 +151,9 @@ nostr-vault.nixosModules.default
     <li>In Settings, <span class="ui">This Box</span> &rarr; <span class="ui">Status, storage, mesh, devices and
         updates</span> shows the box's own page. Copy <strong>This box</strong> under
         <span class="ui">My Devices</span>.</li>
-    <li>On your phone or Mac, add the box to My Devices by that address. The steps are on
-        <a href="/docs/mesh/linux-box/#link">A Linux box in My Devices</a>.</li>
+    <li>Under <span class="ui">My Devices</span> on the box's page, tap <span class="ui">Add a device</span> and scan
+        the code with your phone. The steps are on <a href="/docs/mesh/linux-box/#pair">A Linux box in My
+        Devices</a>.</li>
 </ol>
 <div class="done"><p><strong>You're done when</strong> your phone shows the box in reach under Your Devices, and the
     box's page lists your phone as <strong>Approved</strong>.</p></div>
@@ -173,7 +173,7 @@ nostr-vault.nixosModules.default
         Giving <code>nostr-vault-setup --data</code> a different folder starts an empty vault there instead.</li>
 </ul>
 
-<h2 id="beta">What works, and what's still beta</h2>
+<h2 id="beta">What works, and what's not there yet</h2>
 <p><strong>Works now:</strong></p>
 <ul>
     <li>Your vault as a relay and media server on your network, started on boot, with the web app on
@@ -186,8 +186,7 @@ nostr-vault.nixosModules.default
     <li>The desktop window and tray, on a machine with a desktop.</li>
     <li>The box's page: status, storage and <strong>Move vault to…</strong>, the mesh, your devices, and
         <a href="/docs/mesh/sync/#public-web">Public on the web</a> for a box with its own web address.</li>
-    <li>The box is one of your <a href="/docs/mesh/desktop-vaults/">Desktop Vaults</a>. From the release after beta 10
-        you pair and remove devices on the box's own page (<a href="/docs/mesh/linux-box/#pair">how</a>), and it ranks
+    <li>The box is one of your <a href="/docs/mesh/desktop-vaults/">Desktop Vaults</a>. You pair and remove devices on the box's own page (<a href="/docs/mesh/linux-box/#pair">how</a>), and it ranks
         your far rings for your paired phones.</li>
 </ul>
 <p><strong>Not yet:</strong></p>

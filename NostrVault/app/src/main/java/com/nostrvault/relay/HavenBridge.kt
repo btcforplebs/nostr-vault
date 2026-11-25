@@ -451,6 +451,9 @@ object HavenBridge {
     /** CopyHeldPeersC: the paired devices this one copied from, a JSON array of mesh npubs. */
     external fun copyHeldPeers(): String?
 
+    /** CopyRefusedPeersC: paired devices whose first copy stopped on a refused token, a JSON array of mesh npubs. */
+    external fun copyRefusedPeers(): String?
+
     /**
      * SetMeshDevicesC (docs/MESH_COPY_V2_CONTRACT.md §2): this vault's mesh npub and its paired devices,
      * `{"self":"npub1…","devices":[{"npub":"npub1…","role":"phone"}]}`. Only these devices' mesh keys may start a copy

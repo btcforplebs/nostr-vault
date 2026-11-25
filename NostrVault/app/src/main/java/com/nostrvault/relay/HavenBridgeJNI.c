@@ -114,6 +114,7 @@ extern int StartCopyFromC(char* peer, char* base, char* startAuth);
 extern int CopySyncC(char* peer, char* base);
 extern int CopySyncNotesOnlyC(char* peer, char* base);
 extern char* CopyHeldPeersC(void);
+extern char* CopyRefusedPeersC(void);
 extern int SetMeshDevicesC(char* devices);
 extern int CancelImportJobC(char* name);
 extern char* GetNotifyLogC(void);
@@ -686,6 +687,12 @@ Java_com_nostrvault_relay_HavenBridge_copySyncNotesOnly(JNIEnv *env, jobject thi
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_copyHeldPeers(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, CopyHeldPeersC());
+}
+
+// Paired devices whose first copy stopped on a refused token, JSON npubs (haven-go copyv2_refused.go).
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_copyRefusedPeers(JNIEnv *env, jobject thiz) {
+    return goStringToJstring(env, CopyRefusedPeersC());
 }
 
 // The last import's IMPORT_RESULT line (haven-go import_result.go).

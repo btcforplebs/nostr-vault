@@ -25,6 +25,8 @@ class MeshCopyStarterTest {
         val syncs = mutableListOf<Pair<String, String>>()
         val filesToo = mutableListOf<Boolean>()
         val answers = ArrayDeque<Int>()
+        var refused = emptyList<String>()
+        override fun refusedPeers() = refused
         override fun startCopyFrom(peer: String, base: String, startAuth: String): Int {
             starts += Triple(peer, base, startAuth)
             return answers.removeFirstOrNull() ?: MeshCopyV2.RUN_STARTED
@@ -59,8 +61,34 @@ class MeshCopyStarterTest {
         nowS = { now },
         io = StandardTestDispatcher(testScheduler),
         filesToo = { filesToo },
+        deviceName = { if (it == peer) "Studio Mac" else "" },
     )
     private var filesToo = true
+
+    @Test
+    fun `a first copy stopped on a refused token starts again on reconnect with a fresh mesh-key start`() = runTest {
+        val s = starter()
+        engine.refused = listOf(peer)
+        s.reconnectNow()
+        assertEquals(listOf(Triple(peer, link.replaceFirst("ws://", "http://"), "c2lnbmVk")), engine.starts)
+        assertEquals(1, signed.size)
+        assertEquals(MeshCopyV2.Record.Pending(peer, "Studio Mac", freshStart = false), store.r.pending)
+        assertTrue("no catch-up instead", engine.syncs.isEmpty())
+    }
+
+    @Test
+    fun `a refused device is not restarted before setup or once copied`() = runTest {
+        val s = starter()
+        engine.refused = listOf(peer)
+        setupDone = false
+        s.reconnectNow()
+        assertTrue(engine.starts.isEmpty())
+        setupDone = true
+        store.r = MeshCopyV2.Record(copied = mapOf(peer to now))
+        val copied = starter()
+        copied.reconnectNow()
+        assertTrue("a copied device gets catch-ups, not a new first copy", engine.starts.isEmpty())
+    }
 
     @Test
     fun `the start goes to the engine with the signed proof and the link's secret path`() = runTest {

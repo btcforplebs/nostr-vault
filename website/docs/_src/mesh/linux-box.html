@@ -1,11 +1,11 @@
 <!--page
 {
   "title": "A Linux box in My Devices",
-  "nav": "Linux box (beta)",
+  "nav": "Linux box",
   "section": "mesh",
   "order": 4.5,
-  "description": "Pair a Nostr Vault Linux box with your phone or Mac from the box's own page (or by its mesh address on beta 10 and earlier), what the box's own page shows, how the box keeps its own key, and what runs on it.",
-  "checked": "Nostr Vault 3.2.3 and Nostr Vault for Linux beta 1",
+  "description": "Pair a Nostr Vault Linux box with your phone or Mac from the box's own page (or by its mesh address on an older beta), what the box's own page shows, how the box keeps its own key, and what runs on it.",
+  "checked": "Nostr Vault 3.3.0 on every platform",
   "labels": {
     "ios": ["Add a device", "Paste instead", "This is", "Name (optional)", "Add", "Mobile vault · new posts", "Desktop vault · full history"],
     "android": ["Add a device", "Paste instead", "This is", "Add", "Mobile vault · new posts", "Desktop vault · full history"],
@@ -20,7 +20,7 @@
     your phone scans it.</p>
 
 <h2 id="pair">Pair from the box's page</h2>
-<p>From the Linux release after beta 10, the box keeps its own list of paired devices.</p>
+<p>The box keeps its own list of paired devices (Linux 3.3.0 and newer).</p>
 <ol class="steps">
     <li>On the box's page (Settings &rarr; <span class="ui">This Box</span>), under <span class="ui">My Devices</span>,
         tap <span class="ui">Add a device</span>. The box shows a pairing code for your phone. Only show it to your own
@@ -35,12 +35,12 @@
         pair.</li>
     <li><span class="ui">Remove</span> next to a device takes it off at once: it can't copy from the box again, even
         after a restart. This is the only way to take a device off the box: your media server list no longer decides.</li>
-    <li>After the update, the box first trusts the devices it already let in, then only its own list.</li>
+    <li>After an update from a beta, the box first trusts the devices it already let in, then only its own list.</li>
     <li>A paired box serves your far-ring rankings to the devices paired with it
         (<a href="/docs/mesh/desktop-vaults/#rankings">more</a>).</li>
 </ul>
 
-<h2 id="link">Beta 10 and earlier: link the box by its address</h2>
+<h2 id="link">Linux beta 10 and earlier: link the box by its address</h2>
 <ol class="steps">
     <li>Get the box's address. On the box's page (Settings &rarr; <span class="ui">This Box</span>) copy
         <span class="ui">This box</span> under <span class="ui">My Devices</span>. On a desktop, the tray's
@@ -76,8 +76,8 @@
         <span class="ui">Make this vault public on the web</span> puts it in your relay list and DM inbox, after your
         other Vaults. Other boxes and Macs can be public too. A box with no web address is reached only by your own
         devices over the mesh. More on <a href="/docs/mesh/sync/#public-web">Public on the web</a>.</li>
-    <li><span class="ui">Update</span>: <span class="ui">Check for update and install</span>. In the beta, updates are
-        manual: install the newer package on the box.</li>
+    <li><span class="ui">Update</span>: <span class="ui">Check for update and install</span>. Updates are manual for
+        now: install the newer package on the box.</li>
 </ul>
 
 <h2 id="keys">Keys: what the box holds</h2>
