@@ -241,6 +241,8 @@ class App(Gtk.Application):
         self.page = None  # "vault", "setup" or "waiting": what the window shows
         self.pending_route = None
         self.setup_running = False
+        self.root_running = 0  # run_root's pkexec runs still going (its failure notice needs this process)
+        self.restart_timer = 0  # restart_as_tray's timer, while one runs (GLib source id)
         self.crashed = False  # the waiting page shows a crashed page: wait for Reload, don't reload by itself
         self.crash_page_at = None  # when the last crash page was loaded (time.monotonic())
         self.stopped = None  # the GTK crash page, in place of the web view, after a crash loop
@@ -447,6 +449,7 @@ class App(Gtk.Application):
     # ---- window
 
     def make_window(self):
+        self.stop_restart_timer()
         ctx = WebKit2.WebContext.new_with_website_data_manager(WebKit2.WebsiteDataManager(
             base_data_directory=os.path.join(GLib.get_user_data_dir(), "nostr-vault-desktop"),
             base_cache_directory=os.path.join(GLib.get_user_cache_dir(), "nostr-vault-desktop")))
@@ -513,22 +516,35 @@ class App(Gtk.Application):
         win.destroy()
         GLib.idle_add(release_memory)
         if not fp:
+            self.stop_restart_timer()  # close, open, close within 3 s: one timer, one count
             self.restart_tries = 0
-            GLib.timeout_add_seconds(RESTART_AFTER_CLOSE_S, self.restart_as_tray)
+            self.restart_timer = GLib.timeout_add_seconds(RESTART_AFTER_CLOSE_S, self.restart_as_tray)
+
+    def stop_restart_timer(self):
+        if self.restart_timer:
+            GLib.source_remove(self.restart_timer)
+            self.restart_timer = 0
 
     def restart_as_tray(self):
         """A while after the window closed: start over as the tray alone (exec, the same process id). With its window
         gone this process still holds the pages of the WebKit and GTK code that window ran (~160 MB on a laptop,
         2026-11-25); a tray that never opened a window holds ~50 MB. The tray icon goes and comes back. Not while a
-        window is open again or setup runs, and never in a Flatpak, whose process runs the vault."""
-        if self.window is not None or self.setup_running or fp:
+        window is open again, and never in a Flatpak, whose process runs the vault. While setup or another pkexec
+        runs, wait for it (its result needs this process) and then start over."""
+        if self.window is not None or fp:
+            self.restart_timer = 0
             return False
+        if self.setup_running or self.root_running:
+            return True
         # WebKit's helpers (and their bwrap sandboxes) end a moment after the window: wait for them, up to 30 s, so
-        # none is left to end after the exec, when nothing would reap it (a zombie per window closed).
+        # none is left to end after the exec, when nothing would reap it (a zombie per window closed). Only those:
+        # other children (a pkexec, above) aren't the window's.
         live, dead = children()
+        live = [pid for pid in live if comm(pid).startswith("WebKit") or comm(pid) == "bwrap"]
         self.restart_tries += 1
         if live and self.restart_tries < 10:
             return True
+        self.restart_timer = 0
         for pid in dead:
             try:
                 os.waitpid(pid, os.WNOHANG)
@@ -804,8 +820,11 @@ class App(Gtk.Application):
         elif what == "start":
             self.run_root(["systemctl", "start", "nostr-vault.service"], "Couldn't start the vault")
         elif what == "logs":
-            subprocess.Popen(["x-terminal-emulator", "-e", "journalctl", "-fu", "nostr-vault", "-u", "nostr-vault-mesh"],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) if shutil.which("x-terminal-emulator") else None
+            # Through sh's "&", so the terminal isn't this process's child: it can stay open for hours, past the
+            # window and restart_as_tray's exec, after which nothing here would reap it.
+            if shutil.which("x-terminal-emulator"):
+                subprocess.run(["sh", "-c", 'x-terminal-emulator -e journalctl -fu nostr-vault -u nostr-vault-mesh &'],
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # ---- Flatpak: the window runs the vault (nv_flatpak.py)
 
@@ -859,7 +878,12 @@ class App(Gtk.Application):
             self.js("nvSetupResult", {"ok": False, "text": text.replace("nostr-vault-setup: ", "")})
 
     def run_root(self, argv, failed):
-        self.spawn(["pkexec"] + argv, lambda ok, out: None if ok else self.notify(failed, out.strip()[-200:]))
+        def done(ok, out):
+            self.root_running -= 1
+            if not ok:
+                self.notify(failed, out.strip()[-200:])
+        self.root_running += 1
+        self.spawn(["pkexec"] + argv, done)
 
     def spawn(self, argv, done):
         try:
@@ -894,6 +918,15 @@ def children():
         if fields[1] == me:
             (dead if fields[0] == "Z" else live).append(int(pid))
     return live, dead
+
+
+def comm(pid):
+    """A process's command name ("WebKitWebProcess", "bwrap"), or "" when it's gone."""
+    try:
+        with open(f"/proc/{pid}/comm") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
 
 
 def release_memory():
