@@ -31,6 +31,7 @@ import os
 import signal
 import sys
 import time
+import weakref
 
 MODES = ("dmabuf", "no-dmabuf", "no-compositing")
 DMABUF = "WEBKIT_DISABLE_DMABUF_RENDERER"
@@ -163,14 +164,26 @@ class Checker:
         self.app = app
         self.log = log
         self.supervisor = supervisor  # the Flatpak's havend: stopped before an exec, so the new process can start it
-        self.view = None
+        self._view = None  # a weak reference: a closed window's view must be free to go (and its WebKit processes)
         self.deadline = 0
         self.js_ok = False
         self.done = True
-        self.browser_window = None  # the window showing the browser page, while it does
+        self._browser = None  # (weak) the window showing the browser page, while it does
         self.restarting = False
         self.cairo_ok = True
         log(f"drawing mode {mode} ({why})" + (f"; failed before: {', '.join(tried)}" if tried else ""))
+
+    @property
+    def view(self):
+        return self._view() if self._view is not None else None
+
+    @view.setter
+    def view(self, v):
+        self._view = weakref.ref(v) if v is not None else None
+
+    @property
+    def browser_window(self):
+        return self._browser() if self._browser is not None else None
 
     # ---- the check
 
@@ -379,7 +392,7 @@ class Checker:
                 app.stopped = None
         win.add(box)
         box.show_all()
-        self.browser_window = win
+        self._browser = weakref.ref(win)
         if app.view is not None and hasattr(app.view, "terminate_web_process"):
             app.view.terminate_web_process()  # it draws nothing: don't leave it running (or hung) behind the page
 
