@@ -5,6 +5,8 @@ import com.nostrvault.fips.MeshCopyFixtures.obj
 import com.nostrvault.relay.DesktopVault
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.DesktopVaultsRules
+import com.nostrvault.relay.takingInDesktopVaultSlot
+import com.nostrvault.relay.DesktopVaultsEditing
 import com.nostrvault.relay.desktopVaultMeshNpubs
 import com.nostrvault.relay.desktopVaultsInEffect
 import kotlinx.serialization.json.JsonArray
@@ -147,15 +149,35 @@ class CopyVaultsTest {
         assertTrue("written over: the new Vault would read as deleted here", s is Step.Apply)
     }
 
-    /** A tombstone for a paired Mac's Vault is kept: followingDevices re-makes the Vault, but the export never revives it. */
+    /**
+     * A tombstone for a paired Mac's Vault stays deleted here: it lands on desktopVaultsRemoved, so followingDevices
+     * doesn't re-make the Vault, and the export keeps the file's tombstone. Apple testTombstoneForPairedMacStaysDeleted.
+     */
     @Test
-    fun `a tombstone for a paired Mac's Vault is not revived`() {
+    fun `a tombstone for a paired Mac's Vault stays deleted`() {
         val (mac, _) = npubs()
         val c = HavenConfig(fipsMesh = FipsMeshSettings(devices = listOf(FipsDevice(npub = mac, role = DeviceRole.MAC, name = "Studio Mac"))))
         val id = DesktopVaultsRules.idForMesh(mac)
         assertTrue("positive control", c.desktopVaultsInEffect(null).any { it.id == id })
         val file = listOf(tomb(id, 1767000100))
         val applied = CopySettings.apply(c, JsonObject(mapOf("desktop_vaults" to JsonArray(file))), ownNpub = null)
-        assertEquals(1767000100L, out(applied, file)[id]!!["deletedAt"]!!.jsonPrimitive.long)
+            .takingInDesktopVaultSlot(ownNpub = null)
+        assertTrue("the paired Mac's Vault came back", applied.desktopVaultsInEffect(null).isEmpty())
+        assertEquals("the tombstone was overwritten", 1767000100L, out(applied, file)[id]!!["deletedAt"]!!.jsonPrimitive.long)
+    }
+
+    /** A Vault the file holds again (newer than its tombstone elsewhere) undoes the delete here, as adding it by hand does. */
+    @Test
+    fun `a copied Vault takes its addresses off the removed list`() {
+        val (mac, _) = npubs()
+        val id = DesktopVaultsRules.idForMesh(mac)
+        val c = HavenConfig(
+            fipsMesh = FipsMeshSettings(devices = listOf(FipsDevice(npub = mac, role = DeviceRole.MAC, name = "Studio Mac"))),
+            desktopVaultsRemoved = listOf(DesktopVaultsEditing.removedKeyForMesh(mac), "https:other.example"),
+        )
+        assertTrue("positive control", c.desktopVaultsInEffect(null).isEmpty())
+        val applied = CopySettings.apply(c, JsonObject(mapOf("desktop_vaults" to JsonArray(listOf(entry(id, mesh = mac, at = 1767000200))))), ownNpub = null)
+        assertEquals(listOf("https:other.example"), applied.desktopVaultsRemoved)
+        assertEquals(listOf(id), applied.desktopVaultsInEffect(null).map { it.id })
     }
 }

@@ -2,6 +2,7 @@ package com.nostrvault.fips
 
 import com.nostrvault.relay.DesktopVault
 import com.nostrvault.relay.DesktopVaultKind
+import com.nostrvault.relay.DesktopVaultsEditing
 import com.nostrvault.relay.DesktopVaultsRules
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.OwnMeshNpub
@@ -319,11 +320,6 @@ object CopyVaults {
 
         val out = mutableListOf<JsonObject>()
         for (v in local) {
-            // Until P7 (#2516) brings desktopVaultsRemoved, nothing here can add a Vault by hand, so a Vault the file
-            // holds a tombstone for was re-made by followingDevices (a paired Mac) or the slot: the delete from the
-            // other device stands, never revived by a stamp dated now (Tron on #2521). With P7 this becomes Apple's
-            // rule: the tombstone lands on desktopVaultsRemoved in [apply].
-            prevById[v.id]?.takeIf(::isTomb)?.let { out += it; continue }
             val e = record(v)
             val prev = prevById[v.id]?.takeIf { !isTomb(it) }
             val carried = prev?.str("meshNpub")
@@ -348,7 +344,13 @@ object CopyVaults {
      */
     fun apply(c: HavenConfig, entries: List<JsonObject>, ownNpub: String?): HavenConfig {
         val tombs = entries.filter(::isTomb).map { it.id() }.toSet()
-        val vaults = c.desktopVaultsInEffect(ownNpub).filterNot { it.id in tombs }.toMutableList()
+        val inEffect = c.desktopVaultsInEffect(ownNpub)
+        val vaults = inEffect.filterNot { it.id in tombs }.toMutableList()
+        // A delete from another device lands where a delete here does, on desktopVaultsRemoved: followingDevices would
+        // otherwise bring a paired Mac's Vault straight back, and the next export revive it everywhere (Tron on
+        // #2521; Apple CopySettings.applyVaults).
+        val removed = c.desktopVaultsRemoved.toMutableList()
+        for (gone in inEffect) if (gone.id in tombs) DesktopVaultsEditing.removedKeys(gone).forEach { if (it !in removed) removed += it }
         for (e in entries) {
             if (isTomb(e)) continue
             val mesh = e.str("meshNpub")
@@ -360,8 +362,11 @@ object CopyVaults {
             )
             val i = vaults.indexOfFirst { it.id == vault.id }
             if (i >= 0) vaults[i] = vault else vaults += vault
+            // A copied Vault undoes an earlier delete of its addresses, as adding it here does.
+            removed.removeAll(DesktopVaultsEditing.removedKeys(vault).toSet())
         }
         val next = DesktopVaultsRules.ordered(vaults)
-        return if (next == c.desktopVaults) c else c.copy(desktopVaults = next)
+        if (next == c.desktopVaults && removed == c.desktopVaultsRemoved) return c
+        return c.copy(desktopVaults = next, desktopVaultsRemoved = removed)
     }
 }
