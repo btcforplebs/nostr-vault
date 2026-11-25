@@ -401,12 +401,12 @@ final class TrustMapTests: XCTestCase {
         XCTAssertGreaterThan(TrustMap.faceCandidateCount(for: .everyone), TrustMap.everyoneFaceCount)
     }
 
-    func testCloseLayerReadsVouched() {
+    func testCloseLayerReadsHop2() {
         // 10+ of your follows vouch for them; they're outside your follows, so not "Close".
-        XCTAssertEqual(TrustMap.Layer.close.title, "Vouched")
+        XCTAssertEqual(TrustMap.Layer.close.title, "Hop 2")
         // "Further out" is gone: the picker ends Hop 3, Hop 4, Hop 5 (Logen 2026-11-24).
         XCTAssertEqual(TrustMap.Layer.allCases.map(\.title),
-                       ["Everyone", "Following", "Vouched", "Hop 3", "Hop 4", "Hop 5"])
+                       ["Everyone", "Following", "Hop 2", "Hop 3", "Hop 4", "Hop 5"])
         XCTAssertEqual(TrustMap.Layer.allCases.compactMap(\.hop), [3, 4, 5])
         XCTAssertEqual(TrustMap.Layer.hop5.globeLayer, .everyone)
         XCTAssertEqual(TrustMap.Layer.close.globeLayer, .close)

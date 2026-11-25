@@ -320,7 +320,7 @@ enum TrustMap {
             switch self {
             case .everyone: "Everyone"
             case .following: "Following"
-            case .close: "Vouched"
+            case .close: "Hop 2"
             case .hop3, .hop4, .hop5: "Hop \(hop ?? 0)"
             }
         }
