@@ -135,7 +135,7 @@ func (s *copyServer) bearer(r *http.Request) (string, bool) {
 		// while its device is in it: an unpair while the engine was down, or
 		// one that lands between checkStart and the token being issued,
 		// leaves no live token (Tron, #1802).
-		if meshDevices.selfKey() != "" && !meshDevices.paired(t.Device) {
+		if !meshDevices.copyTokenDeviceOK(t.Device) {
 			return "", false
 		}
 		// Saved at most hourly: every chunk request would otherwise write the file.
