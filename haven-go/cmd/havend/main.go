@@ -38,7 +38,9 @@
 //	                    box/run under the data dir
 //	NV_DIRECTORY_RELAYS comma list, where to look for the owner's 10063
 //	NV_BACKUP_PROVIDER  "s3" to turn on backups, with NV_S3_* settings
-//	NV_TRUST_RANK       "off" stops the trust rank crawler (on by default)
+//	NV_TRUST_RANK       "off" stops the trust rank crawler (on by default; the
+//	                    result goes to the paired phones over the copy token,
+//	                    docs/MESH_COPY_V2_CONTRACT.md step 5)
 //
 // `havend device` prints the box's npub (the mesh's, from mesh/npub) and
 // exits: the npub the owner adds in My Devices. It fails until nv-mesh has
