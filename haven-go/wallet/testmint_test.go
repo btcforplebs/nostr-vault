@@ -65,6 +65,8 @@ type testMint struct {
 	actualFee   uint64         // what Lightning really costs
 	meltPending bool           // melts stay PENDING until settleMelt
 	noRestore   bool           // /v1/restore answers 400 (no NUT-09)
+	noChange    bool           // info does not list NUT-08
+	meltFail    bool           // Lightning payments fail (quote back to UNPAID)
 	badDLEQ     bool           // signatures carry a wrong DLEQ
 	dropReply   map[string]int // path -> how many replies to drop after doing the work
 	calls       map[string]int
@@ -167,6 +169,7 @@ func (m *testMint) info(w http.ResponseWriter, r *http.Request) {
 	mi.Name = "Test mint"
 	mi.Version = "test/1"
 	mi.Nuts.Nut07.Supported = true
+	mi.Nuts.Nut08.Supported = !m.noChange
 	mi.Nuts.Nut09.Supported = !m.noRestore
 	mi.Nuts.Nut11.Supported = true
 	mi.Nuts.Nut12.Supported = true
@@ -327,6 +330,11 @@ func (m *testMint) melt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q.inputs, q.outputs = req.Inputs, req.Outputs
+	if m.meltFail {
+		m.settleLocked(q, false)
+		reply(w, &nut05.PostMeltQuoteBolt11Response{Quote: req.Quote, Amount: q.amount, FeeReserve: q.feeReserve, State: q.state})
+		return
+	}
 	if m.meltPending {
 		for _, y := range ys {
 			m.pending[y] = true

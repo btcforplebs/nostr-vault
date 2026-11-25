@@ -77,6 +77,17 @@ func (w *Wallet) Melt(ctx context.Context, q MeltQuote) (MeltResult, error) {
 	if err != nil {
 		return MeltResult{}, err
 	}
+	// Anything above amount + fee reserve comes back only as NUT-08 change.
+	// A mint without NUT-08 would keep it, so refuse before journaling.
+	if over := inputs.Amount() - fee - st.Amount - st.FeeReserve; over > 0 {
+		info, err := c.Info(ctx)
+		if err != nil {
+			return MeltResult{}, fmt.Errorf("mint info: %w", err)
+		}
+		if !info.Nuts.Nut08.Supported {
+			return MeltResult{}, fmt.Errorf("%w: this mint can't return change (no NUT-08), so paying would give up %d extra sats", ErrNoChange, over)
+		}
+	}
 	change, err := blankOutputs(ks, inputs.Amount()-st.Amount-fee)
 	if err != nil {
 		return MeltResult{}, err

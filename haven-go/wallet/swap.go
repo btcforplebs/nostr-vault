@@ -238,7 +238,9 @@ func (w *Wallet) applySwap(op Op, proofs []cashu.Proof) error {
 }
 
 // swapRefused handles a definite "no" from the mint: the swap did not happen.
-// Our inputs go back, minus any the mint reports spent.
+// Our inputs go back, minus any the mint reports spent. If any input is
+// pending (another device's melt holds it), the op stays for Recover: that
+// input may come back unspent.
 func (w *Wallet) swapRefused(ctx context.Context, c *Client, op Op, mintErr error) error {
 	spent := map[string]bool{}
 	if isProofSpentErr(mintErr) {
@@ -248,7 +250,10 @@ func (w *Wallet) swapRefused(ctx context.Context, c *Client, op Op, mintErr erro
 			return fmt.Errorf("%w: %v", ErrPending, err)
 		}
 		for secret, st := range states {
-			if st != stateUnspent {
+			switch st {
+			case statePending:
+				return fmt.Errorf("%w: %v", ErrPending, mintErr)
+			case stateSpent:
 				spent[secret] = true
 			}
 		}

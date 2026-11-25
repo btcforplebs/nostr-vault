@@ -229,6 +229,9 @@ func TestMeltPendingThenFailed(t *testing.T) {
 		t.Fatalf("pending melt: %v", err)
 	}
 	m.settleMelt(q.ID, false)
+	// Recover sends the melt again (the first copy could still be in
+	// flight); this time the payment fails at once, so the op is undone.
+	m.meltPending, m.meltFail = false, true
 	if rep := w.Recover(ctx); rep.Undone != 1 {
 		t.Fatalf("recover after fail: %+v", rep)
 	}

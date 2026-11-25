@@ -71,20 +71,22 @@ func crashCases() []crashCase {
 	}
 	reclaimRun := func(w *Wallet, m *testMint, arg any) error { _, err := w.Reclaim(ctx, arg.(string)); return err }
 
+	// A crash before the mint call looks the same to Recover as a request
+	// still in flight, so Recover sends it again and the op finishes.
 	return []crashCase{
-		{"send/before-mint", send, sendRun, "swap:journaled", "", 100, 0},
+		{"send/before-mint", send, sendRun, "swap:journaled", "", 70, 30},
 		{"send/after-mint", send, sendRun, "swap:answered", "", 70, 30},
 		{"send/lost-reply", send, sendRun, "", "/v1/swap", 70, 30},
 		{"mint/before-mint", mintSetup, mintRun, "mint:journaled", "", 100, 0},
 		{"mint/after-mint", mintSetup, mintRun, "mint:answered", "", 100, 0},
 		{"mint/lost-reply", mintSetup, mintRun, "", "/v1/mint/bolt11", 100, 0},
-		{"melt/before-mint", meltSetup, meltRun, "melt:journaled", "", 100, 0},
+		{"melt/before-mint", meltSetup, meltRun, "melt:journaled", "", 89, 0},
 		{"melt/after-mint", meltSetup, meltRun, "melt:answered", "", 89, 0},
 		{"melt/lost-reply", meltSetup, meltRun, "", "/v1/melt/bolt11", 89, 0},
 		{"receive/before-mint", recvSetup, recvRun, "swap:journaled", "", 30, 0},
 		{"receive/after-mint", recvSetup, recvRun, "swap:answered", "", 30, 0},
 		{"receive/lost-reply", recvSetup, recvRun, "", "/v1/swap", 30, 0},
-		{"reclaim/before-mint", reclaimSetup, reclaimRun, "swap:journaled", "", 30, 20},
+		{"reclaim/before-mint", reclaimSetup, reclaimRun, "swap:journaled", "", 50, 0},
 		{"reclaim/after-mint", reclaimSetup, reclaimRun, "swap:answered", "", 50, 0},
 		{"reclaim/lost-reply", reclaimSetup, reclaimRun, "", "/v1/swap", 50, 0},
 	}

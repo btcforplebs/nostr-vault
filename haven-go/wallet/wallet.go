@@ -28,6 +28,9 @@ var (
 	ErrNotPaid = errors.New("wallet: invoice not paid yet")
 	// ErrBusy means the mint has an unfinished op; run Recover first.
 	ErrBusy = errors.New("wallet: an earlier operation at this mint is unfinished")
+	// ErrNoChange means paying would overshoot and the mint can't return
+	// change (no NUT-08). Nothing was spent.
+	ErrNoChange = errors.New("wallet: mint can't return change")
 )
 
 // errCrash is what a test hook returns to stop an op as if the app died.

@@ -92,9 +92,13 @@ func (w *Wallet) recoverMint(ctx context.Context, c *Client, op Op, sets map[str
 			return recLeft, err
 		}
 		return recFinished, w.applyMint(op, proofs)
-	default:
+	case nut04.Unpaid:
 		// Unpaid: nothing happened. Keep the quote, drop the op.
 		return recUndone, w.commit(func(s *State) error { s.removeOp(op.ID); return nil })
+	default:
+		// PENDING (the mint is issuing now) or a state we don't know: the
+		// mint may still sign our outputs. Keep the op.
+		return recLeft, nil
 	}
 }
 
@@ -115,18 +119,59 @@ func (w *Wallet) recoverMelt(ctx context.Context, c *Client, op Op, sets map[str
 			}
 		}
 		return w.restoreAndApply(ctx, c, op, sets)
-	case nut05.Pending:
-		return recLeft, nil
+	case nut05.Unpaid:
+		// Our first request may still be on its way to the mint, so unspent
+		// inputs prove nothing yet. Send the same melt again: the mint runs
+		// it at most once, and a definite answer to this copy is also the
+		// answer to the late one (same quote, inputs and outputs).
+		return w.resendMelt(ctx, c, op, sets)
 	default:
-		err := w.meltNotPaid(ctx, c, op, nil)
-		if errors.Is(err, ErrPending) {
-			return recLeft, nil
-		}
-		if err != nil {
+		return recLeft, nil
+	}
+}
+
+func (w *Wallet) resendMelt(ctx context.Context, c *Client, op Op, sets map[string]Keyset) (recResult, error) {
+	resp, err := c.Melt(ctx, op.Quote, op.Inputs, blinded(op.Outputs))
+	if err != nil {
+		if !IsDefinite(err) {
 			return recLeft, err
 		}
-		return recUndone, nil
+		// Refused. If the quote moved on (our first copy got there), the
+		// next Recover settles it from the quote state.
+		st, qerr := c.MeltQuoteState(ctx, op.Quote)
+		if qerr != nil {
+			return recLeft, qerr
+		}
+		if st.State != nut05.Unpaid {
+			return recLeft, nil
+		}
+		return w.meltUndo(ctx, c, op)
 	}
+	switch resp.State {
+	case nut05.Paid:
+		proofs, uerr := unblindAll(op.Outputs, resp.Change, sets, true)
+		if uerr != nil {
+			w.markStuck(op.ID, uerr.Error())
+			return recLeft, uerr
+		}
+		return recFinished, w.applyMint(op, proofs)
+	case nut05.Unpaid:
+		return w.meltUndo(ctx, c, op)
+	default:
+		return recLeft, nil
+	}
+}
+
+// meltUndo gives back the inputs of a melt the mint definitely did not pay.
+func (w *Wallet) meltUndo(ctx context.Context, c *Client, op Op) (recResult, error) {
+	err := w.meltNotPaid(ctx, c, op, nil)
+	if errors.Is(err, ErrPending) {
+		return recLeft, nil
+	}
+	if err != nil {
+		return recLeft, err
+	}
+	return recUndone, nil
 }
 
 func (w *Wallet) recoverSwap(ctx context.Context, c *Client, op Op, sets map[string]Keyset) (recResult, error) {
@@ -146,32 +191,37 @@ func (w *Wallet) recoverSwap(ctx context.Context, c *Client, op Op, sets map[str
 	if anySpent {
 		return w.restoreAndApply(ctx, c, op, sets)
 	}
-	// The mint never saw the swap.
-	if op.Kind == OpReceive {
-		// Not our proofs yet: try the swap again with the same outputs.
-		resp, err := c.Swap(ctx, op.Inputs, blinded(op.Outputs))
-		if err != nil {
-			if !IsDefinite(err) {
-				return recLeft, err
-			}
-			if rerr := w.swapRefused(ctx, c, op, err); errors.Is(rerr, ErrPending) {
-				return recLeft, rerr
-			}
-			return recUndone, nil
-		}
-		proofs, err := unblindAll(op.Outputs, resp.Signatures, sets, false)
-		if err != nil {
+	// No input is spent yet, but our first request may still be on its way
+	// to the mint, so this proves nothing. Send the same swap again: the
+	// mint runs it at most once, and a definite answer to this copy is also
+	// the answer to the late one (same inputs, same outputs).
+	resp, err := c.Swap(ctx, op.Inputs, blinded(op.Outputs))
+	if err != nil {
+		if !IsDefinite(err) {
 			return recLeft, err
 		}
-		return recFinished, w.applySwap(op, proofs)
+		return w.resendRefused(ctx, c, op, sets, err)
 	}
-	return recUndone, w.commit(func(s *State) error {
-		s.removeOp(op.ID)
-		if op.Kind == OpSwap {
-			s.addProofs(op.Mint, unspentOnly(op.Inputs, nil))
-		}
-		return nil
-	})
+	proofs, err := unblindAll(op.Outputs, resp.Signatures, sets, false)
+	if err != nil {
+		w.markStuck(op.ID, err.Error())
+		return recLeft, err
+	}
+	return recFinished, w.applySwap(op, proofs)
+}
+
+// resendRefused handles a definite refusal of a re-sent swap. "Already
+// spent" or "already signed" can mean our first copy won the race, so the
+// mint's NUT-09 restore decides; any other refusal applies to both copies.
+func (w *Wallet) resendRefused(ctx context.Context, c *Client, op Op, sets map[string]Keyset, mintErr error) (recResult, error) {
+	var me *MintError
+	if errors.As(mintErr, &me) && (me.Code == cashu.ProofAlreadyUsedErrCode || me.Code == cashu.BlindedMessageAlreadySignedErrCode) {
+		return w.restoreAndApply(ctx, c, op, sets)
+	}
+	if rerr := w.swapRefused(ctx, c, op, mintErr); errors.Is(rerr, ErrPending) {
+		return recLeft, rerr
+	}
+	return recUndone, nil
 }
 
 // restoreAndApply asks the mint (NUT-09) for signatures on the op's outputs.
