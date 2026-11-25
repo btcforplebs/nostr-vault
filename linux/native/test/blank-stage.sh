@@ -103,7 +103,9 @@ sleep 6
 if [ -n "$p" ] && [ -d "/proc/$p" ] && grep -q "updated: starting over" "$OUT/$MODE-blank-update.log" \
     && [ "$(grep -c 'nostr-vault-desktop: drawing mode ' "$OUT/$MODE-blank-update.log")" -ge 2 ]; then
   ok "$MODE: SIGUSR2 (the postinst's) starts the window over in place (pid $p)"
-else no "$MODE: SIGUSR2: pid '${p}', $(grep -c 'nostr-vault-desktop: drawing mode ' "$OUT/$MODE-blank-update.log") starts"; tail -10 "$OUT/$MODE-blank-update.log"; fi
+else no "$MODE: SIGUSR2: pid '${p}', $(grep -c 'nostr-vault-desktop: drawing mode ' "$OUT/$MODE-blank-update.log") starts"
+  echo "-- this user's processes:"; ps -u "$(id -u)" -o pid=,args= | grep -v -e 'ps -u' | cut -c1-160
+  grep "nostr-vault-desktop:" "$OUT/$MODE-blank-update.log" | tail -10; fi
 drawn "$OUT/$MODE-blank-6-after-update.png" "$MODE: and it draws again"
 stop; rm -f "$RJ"
 
