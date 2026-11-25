@@ -125,7 +125,7 @@ extension TrustWebView {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .accessibilityLabel("Showing: \(layer.title)")
-        .accessibilityValue("\((counts[layer] ?? 0).formatted()) people")
+        .accessibilityValue(counts[layer].map { "\($0.formatted()) people" } ?? "")
         .accessibilityHint("Pick which part of your web to light up, or rebuild it")
     }
 

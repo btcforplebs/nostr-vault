@@ -48,7 +48,16 @@ final class GlobeRingZoomTests: XCTestCase {
         XCTAssertLessThan(r(4), r(5))
         XCTAssertEqual(r(4) - r(3), r(5) - r(4), accuracy: 1e-9, "evenly spaced")
         XCTAssertEqual(GlobeRingZoom.visibility(hop: 3, level: 3), GlobeRingZoom.insideAlpha)
-        XCTAssertEqual(GlobeRingZoom.visibility(hop: 5, level: 1), 0)
+    }
+
+    func testRingsPastThePickedOneStayRoundItsSphere() {
+        let r = { GlobeRingZoom.radius(hop: $0, level: 1, outline: self.outline, half: self.half) }
+        XCTAssertEqual(GlobeRingZoom.visibility(hop: 4, level: 1), GlobeRingZoom.pastAlpha, "Hop 4 round Hop 3")
+        XCTAssertEqual(GlobeRingZoom.visibility(hop: 5, level: 2), GlobeRingZoom.pastAlpha, "Hop 5 round Hop 4")
+        XCTAssertLessThan(r(3), r(4))
+        XCTAssertLessThan(r(4), r(5))
+        XCTAssertLessThan(r(4), half, "on screen round the sphere")
+        XCTAssertEqual(GlobeRingZoom.sphere(hop: 4, level: 1), 0, "drawn as a flat ring")
         XCTAssertEqual(GlobeRingZoom.emphasis(hop: 3, level: 3), 0)
     }
 

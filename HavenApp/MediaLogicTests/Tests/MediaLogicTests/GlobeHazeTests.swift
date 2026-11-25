@@ -72,63 +72,45 @@ final class GlobeHazeTests: XCTestCase {
         XCTAssertEqual(outer.rings.first { $0.hop == 3 }?.count, 2, "the chip counts the tappable top only")
     }
 
-    func testTheBestSitNearestTheCentreAndEveryDotIsInTheField() {
-        let keys = (0..<2000).map(pk)
-        let p = GlobeHazeField.positions(keys)
-        let d = p.map { Double(hypot($0.x, $0.y)) }
-        let j = GlobeHazeField.jitter
-        for r in d {
-            XCTAssertGreaterThanOrEqual(r, GlobeHazeField.nearest - j - 1e-9)
-            XCTAssertLessThanOrEqual(r, GlobeHazeField.furthest + j + 1e-9)
-        }
-        let avg = { (s: ArraySlice<Double>) in s.reduce(0, +) / Double(s.count) }
-        XCTAssertLessThan(avg(d[..<200]), avg(d[1800...]), "best nearest the centre")
-        // A dot's angle is its key's, the same as the ring's dots.
-        let a = atan2(p[7].y, p[7].x)
-        let want = GlobeHazeField.hash(keys[7]).angle
-        XCTAssertEqual(cos(a), cos(want), accuracy: 1e-9)
-        XCTAssertEqual(sin(a), sin(want), accuracy: 1e-9)
-        XCTAssertEqual(GlobeHazeField.positions(keys), p, "it never moves")
-    }
-
-    func testRingsInsideThePickedOneSinkAndThePickedRingStaysCentred() {
+    func testRingsInsideThePickedOneNestCentredAndShrink() {
         let half = 200.0
-        XCTAssertEqual(GlobeRingZoom.sink(hop: 2, level: 0, half: half).drop, 0)
-        XCTAssertEqual(GlobeRingZoom.sink(hop: 2, level: 0, half: half).scale, 1)
+        XCTAssertEqual(GlobeRingZoom.nest(hop: 2, level: 0), 1)
         for hop in 3...5 {
             let level = GlobeRingZoom.level(hop: hop)
-            let picked = GlobeRingZoom.sink(hop: hop, level: level, half: half)
-            XCTAssertEqual(picked.drop, 0, "the picked ring stays centred")
-            XCTAssertEqual(picked.scale, 1)
-            for inner in 2..<hop {
-                let s = GlobeRingZoom.sink(hop: inner, level: level, half: half)
-                XCTAssertGreaterThan(s.drop, 0.3 * half, "hop \(inner) sinks down at Hop \(hop)")
-                XCTAssertLessThan(s.scale, 0.85)
-                // A sunk ring stays inside the picked one.
-                let r = inner < 3 ? GlobeRingZoom.innerOutline(level: level, outline: 0.5 * half)
-                    : GlobeRingZoom.radius(hop: inner, level: level, outline: 0.5 * half, half: half)
-                XCTAssertLessThan(s.drop + r * s.scale, GlobeRingZoom.fit * half, "hop \(inner) at Hop \(hop)")
+            XCTAssertEqual(GlobeRingZoom.nest(hop: hop, level: level), 1, "the picked ring keeps its size")
+            let picked = GlobeRingZoom.radius(hop: hop, level: level, outline: 0.5 * half, half: half)
+            var outside = picked
+            for inner in (2..<hop).reversed() {
+                let scale = GlobeRingZoom.nest(hop: inner, level: level)
+                XCTAssertLessThan(scale, 0.85, "hop \(inner) shrinks at Hop \(hop)")
+                // Onion layers: each sits inside the one round it.
+                let r = (inner < 3 ? GlobeRingZoom.innerOutline(level: level, outline: 0.5 * half)
+                    : GlobeRingZoom.radius(hop: inner, level: level, outline: 0.5 * half, half: half)) * scale
+                XCTAssertLessThan(r, outside, "hop \(inner) at Hop \(hop)")
+                outside = r
             }
         }
         // It eases: no jump between picks, both ways.
-        var last = GlobeRingZoom.sink(hop: 2, level: 0, half: half).drop
+        var last = GlobeRingZoom.nest(hop: 2, level: 0)
         for step in 1...300 {
-            let d = GlobeRingZoom.sink(hop: 2, level: Double(step) / 100, half: half).drop
-            XCTAssertLessThan(abs(d - last), 0.02 * half)
-            last = d
+            let n = GlobeRingZoom.nest(hop: 2, level: Double(step) / 100)
+            XCTAssertLessThan(abs(n - last), 0.02)
+            last = n
         }
     }
 
-    func testTheGlobeTransformShrinksAndDropsAndInvertsForTaps() {
+    func testTheGlobeTransformShrinksInPlaceAndInvertsForTaps() {
         let size = CGSize(width: 400, height: 800)
         XCTAssertTrue(GlobeRingZoom.innerTransform(level: 0, size: size).isIdentity)
-        let t = GlobeRingZoom.innerTransform(level: 1, size: size)
-        let mid = CGPoint(x: 200, y: 400).applying(t)
-        XCTAssertEqual(mid.x, 200, accuracy: 1e-9)
-        XCTAssertEqual(mid.y, 400 + GlobeRingZoom.sink(hop: 2, level: 1, half: 200).drop, accuracy: 1e-9)
-        XCTAssertEqual(t.a, GlobeRingZoom.innerScale(1) * GlobeRingZoom.sinkScales[1], accuracy: 1e-9)
-        let back = CGPoint(x: 230, y: 410).applying(t).applying(t.inverted())
-        XCTAssertEqual(back.x, 230, accuracy: 1e-9)
-        XCTAssertEqual(back.y, 410, accuracy: 1e-9)
+        for level in [1.0, 1.5, 2.0] {
+            let t = GlobeRingZoom.innerTransform(level: level, size: size)
+            let mid = CGPoint(x: 200, y: 400).applying(t)
+            XCTAssertEqual(mid.x, 200, accuracy: 1e-9, "stays centred")
+            XCTAssertEqual(mid.y, 400, accuracy: 1e-9, "never drops")
+            XCTAssertEqual(t.a, GlobeRingZoom.innerScale(level) * GlobeRingZoom.nest(hop: 2, level: level), accuracy: 1e-9)
+            let back = CGPoint(x: 230, y: 410).applying(t).applying(t.inverted())
+            XCTAssertEqual(back.x, 230, accuracy: 1e-9)
+            XCTAssertEqual(back.y, 410, accuracy: 1e-9)
+        }
     }
 }

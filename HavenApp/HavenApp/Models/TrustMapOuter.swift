@@ -20,11 +20,10 @@ struct TrustMapOuter: Equatable {
         let hop: Int
         /// The ring's top from the globe list, best first, at most `shownPeople`.
         let top: [String]
-        /// Each of `top`'s link one ring in (`TrustRankCopy.GlobePerson.via`):
-        /// the zoomed globe draws a line to them (`GlobeRingZoom`).
+        /// Each of `top`'s link one ring in (`TrustRankCopy.GlobePerson.via`).
         var via: [String: String] = [:]
         /// The people ranked after `top`, best first (`TrustRankCopy.haze`):
-        /// the zoomed-out ring's faint, untappable dots (`GlobeHaze`).
+        /// the picked hop sphere's faint, untappable dots (`GlobeHopSphere`).
         var haze: [String] = []
         var id: Int { hop }
         var count: Int { top.count }
@@ -104,6 +103,12 @@ struct TrustMapOuter: Equatable {
     /// A Mac is a desktop Vault itself.
     static func desktopPaired(_ devices: [MeshDevice], isDesktop: Bool) -> Bool {
         isDesktop || devices.contains { $0.role == .mac }
+    }
+
+    /// How many people a hop's sphere draws: its top and its haze. Nil while
+    /// the copy has no haze for it: then the ring is just its top 300, a cap.
+    static func shownCount(_ ring: Ring) -> Int? {
+        ring.haze.isEmpty ? nil : ring.top.count + ring.haze.count
     }
 
     /// "3 hops". The rank copy has no ring total, so no "best 300 of N";

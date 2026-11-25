@@ -34,7 +34,7 @@ extension TrustWebView {
                              running: !wotSheetOpen && !myWebOpen,
                              layer: isWOTTab && centerKey == me ? layer : .everyone,
                              summary: summary,
-                             avatar: avatar, name: name, onTap: tapped,
+                             avatar: avatar, name: name, hasPicture: hasPicture, onTap: tapped,
                              focus: card,
                              focusBridges: cardPath?.all ?? [],
                              onEmptyTap: { closeCard(); searchFocused = false },

@@ -175,7 +175,7 @@ struct MyWebDashboardView: View {
                         let isLocked = locked.contains(item)
                         countRow(icon: isLocked ? "lock.fill" : item.symbolName, title: item.title,
                                  detail: isLocked ? TrustMapOuter.lockedLine : detail(for: item),
-                                 count: isLocked ? nil : counts[item] ?? 0, selected: item == layer) { onLayer(item) }
+                                 count: isLocked || (item.hop != nil && counts[item] == nil) ? nil : counts[item] ?? 0, selected: item == layer) { onLayer(item) }
                             .opacity(isLocked ? 0.45 : 1)
                     }
                 }

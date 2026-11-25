@@ -1,4 +1,5 @@
 import SwiftUI
+import simd
 
 /// Draws the globe's outer rings (`TrustMapOuter`) behind the stars: one
 /// circle per hop past your circle, a dot on it for each of its best-ranked
@@ -19,82 +20,107 @@ enum GlobeOuterRings {
     static func angle(_ pubkey: String) -> Double { GlobeHazeField.hash(pubkey).angle }
 
     /// `level` is how far a Hop layer has zoomed out (`GlobeRingZoom`):
-    /// 0 draws the rings round the full globe; past it the picked ring
-    /// fills the frame with its haze (`GlobeHaze`) behind its dots, the rings
-    /// inside it close in on the shrunk globe and sink with it
-    /// (`GlobeRingZoom.sink`), and the picked ring's people get a line to
-    /// their link one ring in.
+    /// 0 draws the rings flat round the full globe. Past it the picked ring
+    /// becomes a sphere of its own (`drawSpheres`), so its flat circle and
+    /// dots fade out as `GlobeRingZoom.sphere` comes in; the rings past it
+    /// go. Only the hop label stays, on the sphere's top.
     static func draw(_ outer: TrustMapOuter, in context: inout GraphicsContext, size: CGSize,
                      zoom: Double, phone: Bool, ink: GlobeInk, level: Double = 0) {
         guard !outer.rings.isEmpty else { return }
         let base = outline(size: size, zoom: zoom, phone: phone)
         guard base.isFinite else { return }
-        let mid = CGPoint(x: size.width / 2, y: size.height / 2)
+        let grow = pinch(size: size, zoom: zoom, phone: phone)
         let half = Double(min(size.width, size.height)) / 2
         let faint = outer.isFaint
-        // A ring's centre and radius, sunk when it is inside the picked one.
-        func place(_ hop: Int) -> (centre: CGPoint, r: Double) {
-            let r = hop < TrustMapOuter.firstHop
-                ? GlobeRingZoom.innerOutline(level: level, outline: base)
-                : GlobeRingZoom.radius(hop: hop, level: level, outline: base, half: half)
-            let (drop, scale) = GlobeRingZoom.sink(hop: hop, level: level, half: half)
-            return (CGPoint(x: mid.x, y: mid.y + drop), r * scale)
-        }
-        func point(_ key: String, _ at: (centre: CGPoint, r: Double)) -> CGPoint {
-            let a = angle(key)
-            return CGPoint(x: at.centre.x + at.r * cos(a), y: at.centre.y + at.r * sin(a))
-        }
         for ring in outer.rings {
             let shown = GlobeRingZoom.visibility(hop: ring.hop, level: level)
             guard shown > 0.01 else { continue }
             let picked = GlobeRingZoom.emphasis(hop: ring.hop, level: level)
-            let at = place(ring.hop), r = at.r, c = at.centre
-            // The picked ring comes up to full strength, whatever its hop.
-            let ringFade = TrustMapOuter.fade(hop: ring.hop)
-            let fade = (faint ? 1 : ringFade + (1 - ringFade) * picked) * shown
-            // Its line steps back as its haze comes in.
-            let line = ring.haze.isEmpty || faint ? 1 : 1 - 0.55 * picked
-            let circle = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
-            context.stroke(circle, with: .color(ink.haze.opacity(((faint ? 0.10 : 0.28 * max(fade, 0.5 * shown)) + 0.14 * picked) * line)),
-                           style: StrokeStyle(lineWidth: (faint ? 0.8 : 1.1) + 0.5 * picked, dash: faint ? [3, 6] : []))
-            if !faint {
-                GlobeHaze.draw(ring, alpha: picked, mid: c, r: r, ref: GlobeRingZoom.fit * half, in: &context, ink: ink)
-                if picked > 0.01 { drawLinks(ring, alpha: picked, from: at, to: place(ring.hop - 1),
-                                             innerDots: outer.rings.first { $0.hop == ring.hop - 1 }.map { Set($0.top) },
-                                             point: point, in: &context, ink: ink) }
-                let dot = 1.6 * (1 + 0.5 * picked)
-                var dots = Path()
-                for key in ring.top {
-                    let p = point(key, at)
-                    dots.addEllipse(in: CGRect(x: p.x - dot, y: p.y - dot, width: dot * 2, height: dot * 2))
+            let flat = faint ? 1 : 1 - GlobeRingZoom.sphere(hop: ring.hop, level: level)
+            let at = place(ring.hop, level: level, base: base, size: size, half: half, grow: grow), r = at.r, c = at.centre
+            let fade = (faint ? 1 : fadeFor(ring.hop, picked: picked)) * shown
+            if flat > 0.01 {
+                let circle = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+                context.stroke(circle, with: .color(ink.haze.opacity((faint ? 0.10 : 0.28 * max(fade, 0.5 * shown)) * flat)),
+                               style: StrokeStyle(lineWidth: faint ? 0.8 : 1.1, dash: faint ? [3, 6] : []))
+                if !faint {
+                    let dot = 1.6
+                    var dots = Path()
+                    for key in ring.top {
+                        let a = angle(key)
+                        let p = CGPoint(x: c.x + r * cos(a), y: c.y + r * sin(a))
+                        dots.addEllipse(in: CGRect(x: p.x - dot, y: p.y - dot, width: dot * 2, height: dot * 2))
+                    }
+                    context.fill(dots, with: .color(ink.star.opacity(0.75 * fade * flat)))
                 }
-                context.fill(dots, with: .color(ink.star.opacity(0.75 * fade)))
             }
-            if let at = labelPoint(r: r, mid: c, size: size) {
+            // A ring nested inside a later pick loses its label.
+            let nested = GlobeRingZoom.inside(hop: ring.hop, level: level)
+            if nested < 0.99, let at = labelPoint(r: r, mid: c, size: size) {
                 let text = Text(faint ? "\(ring.hop) hops" : TrustMapOuter.chipText(ring))
                     .font(.system(size: 10 + 2 * picked, weight: .semibold))
-                    .foregroundColor(ink.label.opacity((faint ? 0.35 : 0.7 * max(fade, 0.5)) * shown))
+                    .foregroundColor(ink.label.opacity((faint ? 0.35 : 0.7 * max(fade, 0.5)) * shown * (1 - nested)))
                 context.draw(text, at: at, anchor: .bottomTrailing)
             }
         }
     }
 
-    /// Lines from the picked ring's best people to who links them in: on
-    /// the ring inside, or for Hop 3 on the shrunk globe's edge. Faint and
-    /// capped (`GlobeRingZoom.maxLinks`) so they read as threads, not a fan.
-    /// On an outer ring a line is drawn only when its far end is a dot
-    /// there (`innerDots`), so none ends in empty space.
-    private static func drawLinks(_ ring: TrustMapOuter.Ring, alpha: Double, from r: (centre: CGPoint, r: Double),
-                                  to inner: (centre: CGPoint, r: Double), innerDots: Set<String>?,
-                                  point: (String, (centre: CGPoint, r: Double)) -> CGPoint,
-                                  in context: inout GraphicsContext, ink: GlobeInk) {
-        var lines = Path()
-        for key in ring.top.prefix(GlobeRingZoom.maxLinks) {
-            guard let via = ring.via[key], innerDots?.contains(via) ?? true else { continue }
-            lines.move(to: point(key, r))
-            lines.addLine(to: point(via, inner))
+    /// The picked hop's sphere, and any picked before it now nested inside
+    /// it (`GlobeHopSphere`), turned by the inner globe's camera `turn`.
+    /// Drawn over the inner globe, which stays shrunk in the middle.
+    static func drawSpheres(_ outer: TrustMapOuter, in context: inout GraphicsContext, size: CGSize,
+                            zoom: Double, phone: Bool, ink: GlobeInk, level: Double,
+                            turn: simd_double3x3, pole: SIMD3<Double>, pictures: Set<String>,
+                            focus: String? = nil) {
+        GlobeHopSphere.clearTargets()
+        guard level > 0.001, !outer.isFaint else { return }
+        let base = outline(size: size, zoom: zoom, phone: phone)
+        guard base.isFinite else { return }
+        let grow = pinch(size: size, zoom: zoom, phone: phone)
+        let half = Double(min(size.width, size.height)) / 2
+        // The inner globe's disc, with room for its outer shell's faces:
+        // the picked sphere keeps its own faces and taps out of it.
+        let globe = place(TrustMapOuter.firstHop - 1, level: level, base: base, size: size, half: half, grow: grow)
+        let hole = (centre: globe.centre, r: globe.r * holeReach)
+        // Inner first, so the picked one is drawn over what is nested in it.
+        for ring in outer.rings {
+            let sphere = GlobeRingZoom.sphere(hop: ring.hop, level: level)
+            let shown = GlobeRingZoom.visibility(hop: ring.hop, level: level) * sphere
+            guard shown > 0.01 else { continue }
+            let picked = GlobeRingZoom.emphasis(hop: ring.hop, level: level)
+            let at = place(ring.hop, level: level, base: base, size: size, half: half, grow: grow)
+            GlobeHopSphere.draw(ring, centre: at.centre, r: at.r, shown: shown * fadeFor(ring.hop, picked: picked),
+                                picked: picked, turn: turn, pole: pole, pictures: pictures, focus: focus, hole: hole, in: &context, ink: ink)
         }
-        context.stroke(lines, with: .color(ink.haze.opacity(0.12 * alpha)), lineWidth: 0.6)
+    }
+
+    /// A ring's centre and radius at `level`, shrunk when it is nested inside the picked one.
+    private static func place(_ hop: Int, level: Double, base: Double, size: CGSize,
+                              half: Double, grow: Double) -> (centre: CGPoint, r: Double) {
+        let r = hop < TrustMapOuter.firstHop
+            ? GlobeRingZoom.innerOutline(level: level, outline: base)
+            : GlobeRingZoom.radius(hop: hop, level: level, outline: base, half: half, grow: grow)
+        return (CGPoint(x: size.width / 2, y: size.height / 2), r * GlobeRingZoom.nest(hop: hop, level: level))
+    }
+
+    /// How far a pinch has zoomed the whole nested view in: the inner
+    /// globe's outline against its size at zoom 1, so the picked sphere and
+    /// everything nested in it grow together (Logen 2026-11-25).
+    static func pinch(size: CGSize, zoom: Double, phone: Bool) -> Double {
+        let at1 = outline(size: size, zoom: 1, phone: phone)
+        let now = outline(size: size, zoom: zoom, phone: phone)
+        guard at1.isFinite, now.isFinite, at1 > 0 else { return 1 }
+        return now / at1
+    }
+
+    /// The nested globe's faces reach past its outline to its outer shells
+    /// (`TrustMap.outerRadius`): the hole the picked sphere leaves for it.
+    static let holeReach = 1.1
+
+    /// The picked ring comes up to full strength, whatever its hop.
+    private static func fadeFor(_ hop: Int, picked: Double) -> Double {
+        let ringFade = TrustMapOuter.fade(hop: hop)
+        return ringFade + (1 - ringFade) * picked
     }
 
     /// Up and to the right on the ring, where it is still on screen: the
