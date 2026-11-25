@@ -108,7 +108,10 @@ def opened():
 
 def gone():
     left = webkit_children()
-    if left and time.monotonic() - out["closed_at"] < 20:
+    # Also wait for the restart to be asked for (RESTART_AFTER_CLOSE_S after the close): opening the window again
+    # cancels it, so reopening before it fires would hide whether close asks for it at all.
+    waiting = left or (not hide and not out.get("restart_asked"))
+    if waiting and time.monotonic() - out["closed_at"] < 20:
         return True
     out["closed"] = left
     out["rss_closed"] = rss()
