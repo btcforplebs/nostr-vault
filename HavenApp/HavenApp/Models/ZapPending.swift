@@ -13,7 +13,9 @@ enum ZapWait {
     /// 15 s called most of them failed. Running out of time here means "may still pay", not failed.
     static let reply: TimeInterval = 90
     /// How long to look for our own zap receipt (kind 9735), from when the invoice is paid.
-    static let receipt: TimeInterval = 120
+    /// Push-woken wallets such as Minibits can pay minutes later (cashu design §6c), so this is
+    /// the pending zap's whole `ZapPendingGuard.window`, not 30 s past the reply wait.
+    static let receipt: TimeInterval = 600
     /// Between two looks for the receipt.
     static let receiptPoll: TimeInterval = 6
 }

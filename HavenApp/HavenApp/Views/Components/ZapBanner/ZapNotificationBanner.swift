@@ -7,6 +7,8 @@ struct ZapNotification: Identifiable {
     let recipientName: String
     let amountSats: Int
     var status: ZapStatus
+    /// The bolt11 sent over NWC, kept while pending so "Pay in wallet app" can open the same one.
+    var invoice: String?
 
     enum ZapStatus: Equatable {
         case sending
@@ -53,8 +55,9 @@ class ZapNotificationManager: ObservableObject {
     }
 
     /// Stays up until the receipt comes (markSuccess) or the wait ends (markUnconfirmed).
-    func markPending(id: UUID) {
+    func markPending(id: UUID, invoice: String) {
         guard let idx = notifications.firstIndex(where: { $0.id == id }) else { return }
+        notifications[idx].invoice = invoice
         withAnimation(Motion.fade) { notifications[idx].status = .pending }
     }
 
@@ -118,6 +121,7 @@ extension ZapNotification {
 struct ZapPill: View {
     let notification: ZapNotification
     @State private var pulseOpacity: Double = 1.0
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         HStack(spacing: 6) {
@@ -130,10 +134,24 @@ struct ZapPill: View {
             // Sats amount
             Text("\(notification.amountSats) sats")
                 .monospacedDigit()
+
+            if let payURL {
+                PillButton("Pay in wallet app") { openURL(payURL) }
+            }
         }
-        .pillCapsule(tone)
+        // With the button, its 44 pt sets the height (as UnlikePill).
+        .pillCapsule(tone, vertical: payURL == nil ? nil : 0)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(pillLabel), \(notification.amountSats) sats")
+        .modifier(PayInWalletAction(url: payURL, open: openURL))
+    }
+
+    /// The same invoice we sent over NWC, never a new one: an invoice pays once, so if the NWC
+    /// request also lands the second try fails at the wallet, and the receipt watch says Zapped.
+    /// "Wallet app", not a wallet's name: iOS picks whichever app claims `lightning:`.
+    private var payURL: URL? {
+        guard notification.status == .pending, let invoice = notification.invoice, !invoice.isEmpty else { return nil }
+        return URL(string: "lightning:\(invoice)")
     }
 
     @ViewBuilder
@@ -178,6 +196,20 @@ struct ZapPill: View {
         case .success: return .success
         case .unconfirmed: return .neutral
         case .failed:  return .error
+        }
+    }
+}
+
+/// VoiceOver reaches "Pay in wallet app" as an action, since the pill reads as one element.
+private struct PayInWalletAction: ViewModifier {
+    let url: URL?
+    let open: OpenURLAction
+
+    func body(content: Content) -> some View {
+        if let url {
+            content.accessibilityAction(named: "Pay in wallet app") { open(url) }
+        } else {
+            content
         }
     }
 }
