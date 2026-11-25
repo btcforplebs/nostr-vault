@@ -24,6 +24,7 @@ class CopySettingsTest {
         val types = mapOf(
             "bool" to CopySettings.Type.BOOL, "int" to CopySettings.Type.INT, "string[]" to CopySettings.Type.STRINGS,
             "object<string>" to CopySettings.Type.OBJECT_STRING, "object<bool>" to CopySettings.Type.OBJECT_BOOL,
+            "object[]" to CopySettings.Type.OBJECT_LIST,
         )
         assertEquals(keys.mapValues { types.getValue(it.value.obj()["type"]!!.jsonPrimitive.content) }, CopySettings.ALLOWLIST)
         val wot = keys["wot_depth"]!!.obj()

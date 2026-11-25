@@ -47,6 +47,26 @@
       "type": "object<bool>",
       "hex": false,
       "about": "notification switches, switch name -> on"
+    },
+    "desktop_vaults": {
+      "type": "object[]",
+      "hex": false,
+      "min": 0,
+      "max": 32,
+      "vault": {
+        "id": "string",
+        "name": "string?",
+        "kind": "string?",
+        "meshNpub": "npub?",
+        "httpsURL": "https?",
+        "order": "int",
+        "updatedAt": "int"
+      },
+      "tombstone": {
+        "id": "string",
+        "deletedAt": "int"
+      },
+      "about": "the Desktop Vault list: addresses only, never pairing; per-Vault newest wins, tombstones for deletes"
     }
   }
 }

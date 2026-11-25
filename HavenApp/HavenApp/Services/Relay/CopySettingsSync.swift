@@ -13,6 +13,11 @@ final class CopySettingsSync {
     private var watcher: AnyCancellable?
     /// Set while applying, so the save that follows doesn't write a file back.
     private var applying = false
+    /// The file as this app last wrote or read it. A file that differs was
+    /// left by the engine (a merge can keep the newer side's date while
+    /// changing the Vault list), so it is applied before anything is
+    /// written: writing first would read its new Vaults as deleted here.
+    private var lastSeen: Data?
 
     private var fileURL: URL {
         ConfigService.shared.relayDataDir.appendingPathComponent(CopySettings.fileName)
@@ -41,12 +46,36 @@ final class CopySettingsSync {
 
     private func writeIfChanged(_ config: HavenConfig) {
         guard !applying, config.hasCompletedSetup else { return }
+        if let lastSeen, let now = try? Data(contentsOf: fileURL), now != lastSeen {
+            takeInForeign(previous: lastSeen, config: config)
+            return
+        }
         guard CopySettings.differs(config, from: readFile()?.keys) else { return }
         write(config)
     }
 
+    /// A file the engine left (a peer's PUT, a catch-up) found when a setting
+    /// changed here. With no edit here since `previous`, it is applied as
+    /// usual. With one, only what the other device changed since `previous`
+    /// is taken in and then this device's edit is written over it, so the
+    /// newest change wins on each key and the edit isn't reverted (Tron on #2521).
+    private func takeInForeign(previous: Data, config: HavenConfig) {
+        guard case .success(let before) = CopySettings.check(previous, now: Self.now),
+              CopySettings.differs(config, from: before.keys) else { return applyFromFile() }
+        lastSeen = try? Data(contentsOf: fileURL)
+        guard let checked = readFile() else { return write(config) }
+        let next = CopySettings.apply(CopySettings.changedKeys(checked.keys, since: before.keys), to: config)
+        if CopySettings.differs(config, from: CopySettings.keys(next, previousVaults: checked.keys["desktop_vaults"] as? [Any])) {
+            applying = true
+            ConfigService.shared.config = next
+            ConfigService.shared.save()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.applying = false }
+        }
+        if CopySettings.differs(next, from: checked.keys) { write(next) }
+    }
+
     private func write(_ config: HavenConfig) {
-        let keys = CopySettings.keys(config)
+        let keys = CopySettings.keys(config, previousVaults: readFile()?.keys["desktop_vaults"] as? [Any])
         // No file yet: nothing here has changed since a copy, so the first
         // file is dated oldest and any real change on a linked device wins.
         let at: Int64 = FileManager.default.fileExists(atPath: fileURL.path) ? Self.now : 1
@@ -54,10 +83,12 @@ final class CopySettingsSync {
         guard let data = CopySettings.fileData(keys: keys, updatedAt: at),
               case .success = CopySettings.check(data, now: Self.now) else { return }
         try? data.write(to: fileURL, options: [.atomic])
+        lastSeen = data
     }
 
     /// Applies the file when it would change something here.
     func applyFromFile() {
+        lastSeen = try? Data(contentsOf: fileURL)
         guard let checked = readFile() else { return }
         let config = ConfigService.shared.config
         // A file with the retired "condensed" layout reads as expanded, so

@@ -1,6 +1,11 @@
 package com.nostrvault.fips
 
+import com.nostrvault.relay.DesktopVault
+import com.nostrvault.relay.DesktopVaultKind
+import com.nostrvault.relay.DesktopVaultsRules
 import com.nostrvault.relay.HavenConfig
+import com.nostrvault.relay.OwnMeshNpub
+import com.nostrvault.relay.desktopVaultsInEffect
 import com.nostrvault.ui.screens.settings.RelayAccessLimits
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -32,7 +37,7 @@ object CopySettings {
     fun holdsRetiredLayout(keys: JsonObject): Boolean =
         (keys["feed_layouts"] as? JsonObject)?.values?.any { (it as? JsonPrimitive)?.content == RETIRED_LAYOUT } == true
 
-    enum class Type { BOOL, INT, STRINGS, OBJECT_STRING, OBJECT_BOOL }
+    enum class Type { BOOL, INT, STRINGS, OBJECT_STRING, OBJECT_BOOL, OBJECT_LIST }
 
     /** settings-allowlist.json, key for key (a test checks they match). */
     val ALLOWLIST: Map<String, Type> = linkedMapOf(
@@ -45,6 +50,7 @@ object CopySettings {
         "dm_relays" to Type.STRINGS,
         "media_servers" to Type.STRINGS,
         "notifications" to Type.OBJECT_BOOL,
+        "desktop_vaults" to Type.OBJECT_LIST,
     )
     val WOT_DEPTH_RANGE = 0..3
 
@@ -54,7 +60,12 @@ object CopySettings {
     // ---- Export (this app's config → the contract keys) ----
 
     /** The allowlisted keys for [c]. A home vault or a Mac on the mesh (`.fips`) is this device's own, never sent. */
-    fun keys(c: HavenConfig): JsonObject = JsonObject(
+    fun keys(
+        c: HavenConfig,
+        previousVaults: JsonArray? = null,
+        ownNpub: String? = OwnMeshNpub.value,
+        nowS: Long = System.currentTimeMillis() / 1000,
+    ): JsonObject = JsonObject(
         linkedMapOf(
             "feed_layouts" to JsonObject(cleanLayouts(c.feedLayoutModes).mapValues { JsonPrimitive(it.value) }),
             "zaps_only" to JsonPrimitive(c.zapsOnlyMode),
@@ -65,8 +76,14 @@ object CopySettings {
             "dm_relays" to strings(c.dmRelays),
             "media_servers" to strings(c.blossomMirrors.filterNot(::onMesh)),
             "notifications" to JsonObject(notificationSwitches(c).mapValues { JsonPrimitive(it.value) }),
-        ),
+        ).also { k ->
+            // Left out when empty, so a device on an engine from before the Vault list still takes the file (Tron on
+            // #2521, contract §5).
+            CopyVaults.records(c, previousVaults.entries(), ownNpub, nowS).takeIf { it.isNotEmpty() }?.let { k["desktop_vaults"] = it }
+        },
     )
+
+    private fun JsonArray?.entries(): List<JsonObject> = this?.mapNotNull { it as? JsonObject }.orEmpty()
 
     /** The whole file: `{v:1, updated_at, keys}`. */
     fun file(keys: JsonObject, updatedAt: Long): String =
@@ -89,9 +106,28 @@ object CopySettings {
 
     // ---- Apply (a checked file → this app's config) ----
 
+    /**
+     * The file's [keys] that differ from [base] (the keys this device last wrote or applied), a Vault list cut to the
+     * Vaults that differ: what another device changed since. With no base, all of them. A foreign file takes in only
+     * these while an edit here is still unwritten, so the edit isn't reverted (Tron on #2521).
+     */
+    fun changedKeys(keys: JsonObject, base: JsonObject?): JsonObject {
+        if (base == null) return keys
+        val out = linkedMapOf<String, JsonElement>()
+        for ((k, v) in keys) {
+            if (k == "desktop_vaults") {
+                val before = (base[k] as? JsonArray).entries().associateBy { it["id"] }
+                val changed = (v as? JsonArray).entries().filter { e -> before[e["id"]]?.let { it != e } ?: true }
+                if (changed.isNotEmpty()) out[k] = JsonArray(changed)
+            } else if (base[k] != v) out[k] = v
+        }
+        return JsonObject(out)
+    }
+
     /** [c] with every key in [keys] applied; a key not in the file keeps this device's value. */
-    fun apply(c: HavenConfig, keys: JsonObject): HavenConfig {
+    fun apply(c: HavenConfig, keys: JsonObject, ownNpub: String? = OwnMeshNpub.value): HavenConfig {
         var out = c
+        (keys["desktop_vaults"] as? JsonArray)?.let { out = CopyVaults.apply(out, it.entries(), ownNpub) }
         keys["feed_layouts"]?.let { el -> out = out.copy(feedLayoutModes = cleanLayouts((el as JsonObject).mapValues { (it.value as JsonPrimitive).content })) }
         bool(keys, "zaps_only")?.let { out = out.copy(zapsOnlyMode = it) }
         bool(keys, "auto_load_new_posts")?.let { out = out.copy(autoLoadNewPosts = it) }
@@ -143,6 +179,11 @@ object CopySettings {
             val type = ALLOWLIST[k] ?: return null to "unknown_key"
             if (!typeOk(type, value)) return null to "bad_type"
         }
+        // A Vault dated past now + the slack would win every merge for its id (a tombstone so dated would never age
+        // out): refused, as the engine does (Tron on #2521).
+        if ((keys["desktop_vaults"] as? JsonArray).entries().any { CopyVaults.stamp(it) > nowS + FUTURE_SLACK_S }) {
+            return null to "bad_type"
+        }
         return Checked(at, keys) to null
     }
 
@@ -165,5 +206,162 @@ object CopySettings {
         Type.STRINGS -> v is JsonArray && v.all { it is JsonPrimitive && it.isString }
         Type.OBJECT_STRING -> v is JsonObject && v.values.all { it is JsonPrimitive && it.isString }
         Type.OBJECT_BOOL -> v is JsonObject && v.values.all { it is JsonPrimitive && !it.isString && it.booleanOrNull != null }
+        Type.OBJECT_LIST -> CopyVaults.ok(v)
+    }
+}
+
+/**
+ * The Desktop Vault list in the settings copy (`desktop_vaults`, Desktop Vaults P10, plan §2.6, contract §5): each
+ * Vault's addresses, name, kind and order, with an `updatedAt` per Vault and tombstones (`id`, `deletedAt`) for
+ * deletes, merged per Vault id (`settings-vault-merge-cases.json`). The stamps and tombstones live only in the file:
+ * export compares this device's list with the file's to date what changed here. Nothing here reads or writes My
+ * Devices, so a copied Vault can never pair (§2.6). iOS twin: the `desktop_vaults` extension in CopySettings.swift.
+ */
+object CopyVaults {
+    const val MAX = 32
+    const val TOMB_DAYS = 90L
+    val VAULT_FIELDS = mapOf(
+        "id" to "string", "name" to "string?", "kind" to "string?", "meshNpub" to "npub?", "httpsURL" to "https?",
+        "order" to "int", "updatedAt" to "int",
+    )
+    val TOMB_FIELDS = mapOf("id" to "string", "deletedAt" to "int")
+
+    private fun JsonObject.str(k: String) = (this[k] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    private fun JsonObject.num(k: String) = (this[k] as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull
+    private fun JsonObject.long(k: String) = num(k)?.toLong()
+    private fun JsonObject.id() = str("id").orEmpty()
+    fun isTomb(e: JsonObject) = "deletedAt" in e
+
+    /** A Vault's `updatedAt`, or a tombstone's `deletedAt`. */
+    fun stamp(e: JsonObject): Long = e.long("deletedAt") ?: e.long("updatedAt") ?: 0
+
+    /** The field-by-field check of the `object[]` type. */
+    fun ok(v: JsonElement): Boolean {
+        if (v !is JsonArray) return false
+        val seen = mutableSetOf<String>()
+        var vaults = 0
+        for (x in v) {
+            val e = x as? JsonObject ?: return false
+            val fields = if (isTomb(e)) TOMB_FIELDS else VAULT_FIELDS.also { vaults++ }
+            if (!e.keys.all { it in fields }) return false
+            for ((k, t) in fields) {
+                val value = e[k] ?: if (t.endsWith("?")) continue else return false
+                val str = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
+                val good = when (t.removeSuffix("?")) {
+                    "string" -> str != null && (k != "id" || str.isNotEmpty())
+                    "npub" -> str?.startsWith("npub1") == true
+                    "https" -> str?.startsWith("https://") == true
+                    else -> e.num(k)?.let { d -> d == Math.floor(d) && d >= (if (k == "order") 0.0 else 1.0) && d < 1e15 } == true
+                }
+                if (!good) return false
+            }
+            if (!isTomb(e) && "meshNpub" !in e && "httpsURL" !in e) return false
+            if (!seen.add(e.id())) return false
+        }
+        return vaults <= MAX
+    }
+
+    /**
+     * Per Vault id, the newer stamp wins; a tie keeps mine, and a tombstone removes a Vault only when newer.
+     * Tombstones past 90 days are dropped. Vaults by (order, id), then tombstones by id. The engine's copyVaultsMerge,
+     * held to the same fixture.
+     */
+    fun merge(mine: List<JsonObject>, theirs: List<JsonObject>, nowS: Long): List<JsonObject> {
+        val byId = LinkedHashMap<String, JsonObject>()
+        for (e in mine) byId[e.id()] = e
+        for (t in theirs) {
+            val m = byId[t.id()]
+            if (m == null || stamp(t) > stamp(m) || (stamp(t) == stamp(m) && isTomb(m) && !isTomb(t))) byId[t.id()] = t
+        }
+        val oldest = nowS - TOMB_DAYS * 86_400
+        val kept = byId.values.filter { !isTomb(it) || stamp(it) >= oldest }
+        // Past the cap, the last Vaults in (order, id) are left out, as the engine does, so a merge never makes a
+        // file every device refuses.
+        return kept.filterNot(::isTomb).sortedWith(compareBy({ it.long("order") ?: 0 }, { it.id() })).take(MAX) +
+            kept.filter(::isTomb).sortedBy { it.id() }
+    }
+
+    private fun record(v: DesktopVault): MutableMap<String, JsonElement> = linkedMapOf<String, JsonElement>(
+        "id" to JsonPrimitive(v.id), "name" to JsonPrimitive(v.name), "kind" to JsonPrimitive(v.kind.name.lowercase()),
+        "order" to JsonPrimitive(v.order),
+    ).also { e ->
+        v.meshNpub?.let { e["meshNpub"] = JsonPrimitive(it) }
+        v.httpsURL?.let { e["httpsURL"] = JsonPrimitive(it) }
+    }
+
+    private fun sameFields(a: JsonObject, b: Map<String, JsonElement>) =
+        a.filterKeys { it != "updatedAt" }.mapValues { norm(it.value) } == b.filterKeys { it != "updatedAt" }.mapValues { norm(it.value) }
+
+    /** Numbers compared by value (1767000000 and 1.767E9 alike). */
+    private fun norm(e: JsonElement): Any = (e as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull ?: e
+
+    /**
+     * This device's Vault list as file entries, dated against [previous] (the file's): an unchanged Vault keeps its
+     * stamp, a changed or new one is dated [nowS], and one deleted here becomes a tombstone. Left as the file has it,
+     * never deleted: this device's own entry (§2.6), and a mesh address this device isn't paired with, which it can't
+     * hold ([DesktopVaultsRules.followingDevices]) and so never removed. Order is kept unless reordered here.
+     */
+    fun records(c: HavenConfig, previous: List<JsonObject>, ownNpub: String?, nowS: Long): JsonArray {
+        val local = DesktopVaultsRules.ordered(c.desktopVaultsInEffect(ownNpub))
+        // The addresses followingDevices keeps; any other was dropped here because this device can't hold it, not
+        // deleted (Tron on #2521).
+        val holdable = DesktopVaultsRules.holdableMeshNpubs(c.fipsMesh.devices, c.macRelayURL, ownNpub, c.ownerNpub)
+        val prevById = previous.associateBy { it.id() }
+        fun heldElsewhere(npub: String?): Boolean {
+            val n = npub?.let { HomeVaultRules.meshNpubFromInput(it) ?: it } ?: return false
+            return n == ownNpub || n !in holdable
+        }
+        val prevVaults = previous.filterNot(::isTomb)
+        val prevOrder = prevVaults.sortedWith(compareBy({ it.long("order") ?: 0 }, { it.id() })).map { it.id() }
+        val localIds = local.map { it.id }
+        val reordered = prevOrder.filter { it in localIds } != localIds.filter { it in prevOrder }
+        var nextOrder = (prevVaults.mapNotNull { it.long("order") }.maxOrNull() ?: -1) + 1
+
+        val out = mutableListOf<JsonObject>()
+        for (v in local) {
+            // Until P7 (#2516) brings desktopVaultsRemoved, nothing here can add a Vault by hand, so a Vault the file
+            // holds a tombstone for was re-made by followingDevices (a paired Mac) or the slot: the delete from the
+            // other device stands, never revived by a stamp dated now (Tron on #2521). With P7 this becomes Apple's
+            // rule: the tombstone lands on desktopVaultsRemoved in [apply].
+            prevById[v.id]?.takeIf(::isTomb)?.let { out += it; continue }
+            val e = record(v)
+            val prev = prevById[v.id]?.takeIf { !isTomb(it) }
+            val carried = prev?.str("meshNpub")
+            if (v.meshNpub == null && heldElsewhere(carried)) e["meshNpub"] = JsonPrimitive(carried)
+            if (!reordered) e["order"] = JsonPrimitive(prev?.long("order") ?: nextOrder++)
+            e["updatedAt"] = if (prev != null && sameFields(prev, e)) prev["updatedAt"]!! else JsonPrimitive(nowS)
+            out += JsonObject(e)
+        }
+        for (p in previous) {
+            if (p.id() in localIds) continue
+            val mesh = p.str("meshNpub")
+            out += if (isTomb(p) || heldElsewhere(mesh) && ("httpsURL" !in p || mesh == ownNpub)) p
+            else JsonObject(mapOf("id" to JsonPrimitive(p.id()), "deletedAt" to JsonPrimitive(nowS)))
+        }
+        return JsonArray(merge(out, emptyList(), nowS))
+    }
+
+    /**
+     * [c] with the file's Vault list taken in, per Vault: a Vault replaces or joins this device's, a tombstone removes
+     * it, and this device's own entry is left out. It only ever sets addresses: My Devices is not touched, so a copied
+     * Vault pairs nothing.
+     */
+    fun apply(c: HavenConfig, entries: List<JsonObject>, ownNpub: String?): HavenConfig {
+        val tombs = entries.filter(::isTomb).map { it.id() }.toSet()
+        val vaults = c.desktopVaultsInEffect(ownNpub).filterNot { it.id in tombs }.toMutableList()
+        for (e in entries) {
+            if (isTomb(e)) continue
+            val mesh = e.str("meshNpub")
+            if (ownNpub != null && mesh == ownNpub) continue
+            val kind = DesktopVaultKind.entries.firstOrNull { it.name.lowercase() == e.str("kind") } ?: DesktopVaultKind.MAC
+            val vault = DesktopVault(
+                id = e.id(), name = e.str("name").orEmpty(), kind = kind, meshNpub = mesh, httpsURL = e.str("httpsURL"),
+                order = e.long("order")?.toInt() ?: 0,
+            )
+            val i = vaults.indexOfFirst { it.id == vault.id }
+            if (i >= 0) vaults[i] = vault else vaults += vault
+        }
+        val next = DesktopVaultsRules.ordered(vaults)
+        return if (next == c.desktopVaults) c else c.copy(desktopVaults = next)
     }
 }

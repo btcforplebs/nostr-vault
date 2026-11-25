@@ -373,6 +373,1136 @@
         "ok": false,
         "reason": "bad_version"
       }
+    },
+    {
+      "name": "vault list, clean",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            },
+            {
+              "id": "mesh:npub1x2m22fk9t9n83ch4xy6qrkkssacspswg3h94c6n7nyvnr78gzgfqe70k6r",
+              "name": "Box",
+              "kind": "box",
+              "order": 1,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1x2m22fk9t9n83ch4xy6qrkkssacspswg3h94c6n7nyvnr78gzgfqe70k6r"
+            },
+            {
+              "id": "https:old.example",
+              "deletedAt": 1767000000
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "vault list, empty",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": []
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "vault list, 32 Vaults and a tombstone",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "https:v0.example",
+              "name": "",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v0.example"
+            },
+            {
+              "id": "https:v1.example",
+              "name": "",
+              "kind": "mac",
+              "order": 1,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v1.example"
+            },
+            {
+              "id": "https:v2.example",
+              "name": "",
+              "kind": "mac",
+              "order": 2,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v2.example"
+            },
+            {
+              "id": "https:v3.example",
+              "name": "",
+              "kind": "mac",
+              "order": 3,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v3.example"
+            },
+            {
+              "id": "https:v4.example",
+              "name": "",
+              "kind": "mac",
+              "order": 4,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v4.example"
+            },
+            {
+              "id": "https:v5.example",
+              "name": "",
+              "kind": "mac",
+              "order": 5,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v5.example"
+            },
+            {
+              "id": "https:v6.example",
+              "name": "",
+              "kind": "mac",
+              "order": 6,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v6.example"
+            },
+            {
+              "id": "https:v7.example",
+              "name": "",
+              "kind": "mac",
+              "order": 7,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v7.example"
+            },
+            {
+              "id": "https:v8.example",
+              "name": "",
+              "kind": "mac",
+              "order": 8,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v8.example"
+            },
+            {
+              "id": "https:v9.example",
+              "name": "",
+              "kind": "mac",
+              "order": 9,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v9.example"
+            },
+            {
+              "id": "https:v10.example",
+              "name": "",
+              "kind": "mac",
+              "order": 10,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v10.example"
+            },
+            {
+              "id": "https:v11.example",
+              "name": "",
+              "kind": "mac",
+              "order": 11,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v11.example"
+            },
+            {
+              "id": "https:v12.example",
+              "name": "",
+              "kind": "mac",
+              "order": 12,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v12.example"
+            },
+            {
+              "id": "https:v13.example",
+              "name": "",
+              "kind": "mac",
+              "order": 13,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v13.example"
+            },
+            {
+              "id": "https:v14.example",
+              "name": "",
+              "kind": "mac",
+              "order": 14,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v14.example"
+            },
+            {
+              "id": "https:v15.example",
+              "name": "",
+              "kind": "mac",
+              "order": 15,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v15.example"
+            },
+            {
+              "id": "https:v16.example",
+              "name": "",
+              "kind": "mac",
+              "order": 16,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v16.example"
+            },
+            {
+              "id": "https:v17.example",
+              "name": "",
+              "kind": "mac",
+              "order": 17,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v17.example"
+            },
+            {
+              "id": "https:v18.example",
+              "name": "",
+              "kind": "mac",
+              "order": 18,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v18.example"
+            },
+            {
+              "id": "https:v19.example",
+              "name": "",
+              "kind": "mac",
+              "order": 19,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v19.example"
+            },
+            {
+              "id": "https:v20.example",
+              "name": "",
+              "kind": "mac",
+              "order": 20,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v20.example"
+            },
+            {
+              "id": "https:v21.example",
+              "name": "",
+              "kind": "mac",
+              "order": 21,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v21.example"
+            },
+            {
+              "id": "https:v22.example",
+              "name": "",
+              "kind": "mac",
+              "order": 22,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v22.example"
+            },
+            {
+              "id": "https:v23.example",
+              "name": "",
+              "kind": "mac",
+              "order": 23,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v23.example"
+            },
+            {
+              "id": "https:v24.example",
+              "name": "",
+              "kind": "mac",
+              "order": 24,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v24.example"
+            },
+            {
+              "id": "https:v25.example",
+              "name": "",
+              "kind": "mac",
+              "order": 25,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v25.example"
+            },
+            {
+              "id": "https:v26.example",
+              "name": "",
+              "kind": "mac",
+              "order": 26,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v26.example"
+            },
+            {
+              "id": "https:v27.example",
+              "name": "",
+              "kind": "mac",
+              "order": 27,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v27.example"
+            },
+            {
+              "id": "https:v28.example",
+              "name": "",
+              "kind": "mac",
+              "order": 28,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v28.example"
+            },
+            {
+              "id": "https:v29.example",
+              "name": "",
+              "kind": "mac",
+              "order": 29,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v29.example"
+            },
+            {
+              "id": "https:v30.example",
+              "name": "",
+              "kind": "mac",
+              "order": 30,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v30.example"
+            },
+            {
+              "id": "https:v31.example",
+              "name": "",
+              "kind": "mac",
+              "order": 31,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v31.example"
+            },
+            {
+              "id": "https:gone.example",
+              "deletedAt": 1767000000
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "vault list, 33 Vaults",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "https:v0.example",
+              "name": "",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v0.example"
+            },
+            {
+              "id": "https:v1.example",
+              "name": "",
+              "kind": "mac",
+              "order": 1,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v1.example"
+            },
+            {
+              "id": "https:v2.example",
+              "name": "",
+              "kind": "mac",
+              "order": 2,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v2.example"
+            },
+            {
+              "id": "https:v3.example",
+              "name": "",
+              "kind": "mac",
+              "order": 3,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v3.example"
+            },
+            {
+              "id": "https:v4.example",
+              "name": "",
+              "kind": "mac",
+              "order": 4,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v4.example"
+            },
+            {
+              "id": "https:v5.example",
+              "name": "",
+              "kind": "mac",
+              "order": 5,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v5.example"
+            },
+            {
+              "id": "https:v6.example",
+              "name": "",
+              "kind": "mac",
+              "order": 6,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v6.example"
+            },
+            {
+              "id": "https:v7.example",
+              "name": "",
+              "kind": "mac",
+              "order": 7,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v7.example"
+            },
+            {
+              "id": "https:v8.example",
+              "name": "",
+              "kind": "mac",
+              "order": 8,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v8.example"
+            },
+            {
+              "id": "https:v9.example",
+              "name": "",
+              "kind": "mac",
+              "order": 9,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v9.example"
+            },
+            {
+              "id": "https:v10.example",
+              "name": "",
+              "kind": "mac",
+              "order": 10,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v10.example"
+            },
+            {
+              "id": "https:v11.example",
+              "name": "",
+              "kind": "mac",
+              "order": 11,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v11.example"
+            },
+            {
+              "id": "https:v12.example",
+              "name": "",
+              "kind": "mac",
+              "order": 12,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v12.example"
+            },
+            {
+              "id": "https:v13.example",
+              "name": "",
+              "kind": "mac",
+              "order": 13,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v13.example"
+            },
+            {
+              "id": "https:v14.example",
+              "name": "",
+              "kind": "mac",
+              "order": 14,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v14.example"
+            },
+            {
+              "id": "https:v15.example",
+              "name": "",
+              "kind": "mac",
+              "order": 15,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v15.example"
+            },
+            {
+              "id": "https:v16.example",
+              "name": "",
+              "kind": "mac",
+              "order": 16,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v16.example"
+            },
+            {
+              "id": "https:v17.example",
+              "name": "",
+              "kind": "mac",
+              "order": 17,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v17.example"
+            },
+            {
+              "id": "https:v18.example",
+              "name": "",
+              "kind": "mac",
+              "order": 18,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v18.example"
+            },
+            {
+              "id": "https:v19.example",
+              "name": "",
+              "kind": "mac",
+              "order": 19,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v19.example"
+            },
+            {
+              "id": "https:v20.example",
+              "name": "",
+              "kind": "mac",
+              "order": 20,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v20.example"
+            },
+            {
+              "id": "https:v21.example",
+              "name": "",
+              "kind": "mac",
+              "order": 21,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v21.example"
+            },
+            {
+              "id": "https:v22.example",
+              "name": "",
+              "kind": "mac",
+              "order": 22,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v22.example"
+            },
+            {
+              "id": "https:v23.example",
+              "name": "",
+              "kind": "mac",
+              "order": 23,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v23.example"
+            },
+            {
+              "id": "https:v24.example",
+              "name": "",
+              "kind": "mac",
+              "order": 24,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v24.example"
+            },
+            {
+              "id": "https:v25.example",
+              "name": "",
+              "kind": "mac",
+              "order": 25,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v25.example"
+            },
+            {
+              "id": "https:v26.example",
+              "name": "",
+              "kind": "mac",
+              "order": 26,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v26.example"
+            },
+            {
+              "id": "https:v27.example",
+              "name": "",
+              "kind": "mac",
+              "order": 27,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v27.example"
+            },
+            {
+              "id": "https:v28.example",
+              "name": "",
+              "kind": "mac",
+              "order": 28,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v28.example"
+            },
+            {
+              "id": "https:v29.example",
+              "name": "",
+              "kind": "mac",
+              "order": 29,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v29.example"
+            },
+            {
+              "id": "https:v30.example",
+              "name": "",
+              "kind": "mac",
+              "order": 30,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v30.example"
+            },
+            {
+              "id": "https:v31.example",
+              "name": "",
+              "kind": "mac",
+              "order": 31,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v31.example"
+            },
+            {
+              "id": "https:v32.example",
+              "name": "",
+              "kind": "mac",
+              "order": 32,
+              "updatedAt": 1767000000,
+              "httpsURL": "https://v32.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault list, not a list",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": {
+            "a": {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            }
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault list, an entry not an object",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            "https://a.example"
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault with a field that isn't listed",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example",
+              "paired": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault carrying My Devices",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example",
+              "meshDevices": []
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault with the mesh key",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example",
+              "meshNsec": "x"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault with no id",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault with an empty id",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "two entries with one id",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            },
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "deletedAt": 1767000000
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault with no address",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "https:a.example",
+              "name": "",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault with no updatedAt",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault order not whole",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 1.5,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault order below 0",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": -1,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault name not a string",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": 3,
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault mesh address not an npub",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:x",
+              "name": "",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "fipsmesh://x.fips"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault web address not https",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "https:a.example",
+              "name": "",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "httpsURL": "wss://a.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "tombstone with a Vault field",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "https:a.example",
+              "deletedAt": 1767000000,
+              "httpsURL": "https://a.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "tombstone date not whole",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "https:a.example",
+              "deletedAt": 1.5
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "vault mesh address as a raw hex key",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:x",
+              "name": "",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "secret_value"
+      }
+    },
+    {
+      "name": "vault named with an nsec",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "nsec1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "secret_value"
+      }
+    },
+    {
+      "name": "vault dated 11 minutes ahead",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000960,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "tombstone dated 11 minutes ahead",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "https:a.example",
+              "deletedAt": 1767000960
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "first file dated 1, its Vaults dated now",
+      "settings": {
+        "v": 1,
+        "updated_at": 1,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000300,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "vault web address with a bunker string",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000000,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://a.example/?bunker://x"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "secret_value"
+      }
     }
   ],
   "newest_wins": [

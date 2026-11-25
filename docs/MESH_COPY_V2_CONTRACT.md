@@ -360,14 +360,42 @@ A refused file is never served or applied. The copy goes on without it, and B's 
 `error=settings_refused`.
 
 **Synced after the first copy (pick 1).** Each catch-up asks `GET /copy/v2/sync/settings` and sends its own with
-`PUT /copy/v2/sync/settings`. Newest `updated_at` wins. A tie keeps the receiver's. The winner is written as the
-loser's `copy-settings.json`, and its app applies it on change.
+`PUT /copy/v2/sync/settings`. Newest `updated_at` wins for every key but `desktop_vaults`. A tie keeps the
+receiver's. Each side writes the merge as its `copy-settings.json` only when it changes something there, and its app
+applies it on change. An app tells a file it did not write by its content, not only by `updated_at`: a merge can
+change the Vault list and keep the newer side's date.
+
+**The Desktop Vault list (`desktop_vaults`, Desktop Vaults P10, `settings-vault-merge-cases.json`).** Type
+`object[]`, checked field by field:
+- a **Vault** is `{id, name?, kind?, meshNpub?, httpsURL?, order, updatedAt}`, with `meshNpub` an `npub1…`,
+  `httpsURL` an `https://…`, at least one of the two, `order` a whole number from 0, `updatedAt` from 1;
+- a **tombstone** is `{id, deletedAt}`, for a Vault deleted on some device;
+- refused as `bad_type`: any other field, an empty or repeated `id`, a Vault with no address, more than 32 Vaults,
+  an `updatedAt` or `deletedAt` later than now plus the 10-minute slack (it would win every merge for its id, and
+  such a tombstone would never age out). Not bounded by the file's `updated_at`: an app's first file is dated 1.
+  A raw hex key, `nsec1…` or `bunker:` anywhere is `secret_value`, as for every key.
+- **left out when empty.** An engine from before P10 has no `desktop_vaults` in its allowlist and refuses the whole
+  file as `unknown_key`, so neither the apps nor the engine's merge ever write `"desktop_vaults": []`.
+
+It merges **per Vault id**, never whole-file, on every write from another device (first copy and catch-up alike):
+the newer stamp (`updatedAt`, or a tombstone's `deletedAt`) wins for each id, and a tie keeps the receiver's. A
+tombstone removes a Vault only when it is newer. Tombstones older than 90 days are dropped. The list comes out
+Vaults by (`order`, `id`), then tombstones by `id`. Two lists that each pass can merge to more than 32 Vaults;
+the merge then keeps the first 32 in that order, the same on every device, so it never makes a file that is
+refused. So a Vault added on one device survives another device's newer
+edit of a different Vault.
+
+**A copied Vault grants nothing.** The list holds addresses only. Taking it in never adds a device to the engine's
+paired set (`mesh_devices.go`) or the app's My Devices. A Vault whose `meshNpub` is not paired here gets no mesh
+sync and no copy v2 trust until the user pairs it. A device that is itself one of the Vaults leaves its own entry
+out when it applies the list, matched by its own mesh npub, and never deletes it from the file.
 
 **Never in it:**
 - nsec, ncryptsec, bunker secrets;
 - NWC strings;
 - the mesh key;
-- My Devices, the device name, the home vault choice.
+- My Devices or any pairing, the device name, the home vault choice. The Desktop Vault list (`desktop_vaults`)
+  copies addresses only, and pairing still never copies.
 - accounts: they travel as their own `accounts.json` (§3.4), never as a settings key, so the settings secret check
   (no 64-hex) stays as strict as it is.
 

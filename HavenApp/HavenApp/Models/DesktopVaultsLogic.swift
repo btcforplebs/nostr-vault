@@ -169,12 +169,11 @@ enum DesktopVaultsLogic {
     /// removing it from My Devices is what turns it off.
     static func followingDevices(_ vaults: [DesktopVault], devices: [MeshDevice], slot: String,
                                  ownNpub: String?) -> [DesktopVault] {
-        let slotNpub: String? = { if case .mesh(let npub) = SlotAddress(slot) { return npub } else { return nil } }()
-        let macs = Set(devices.filter { $0.role == .mac && $0.npub != ownNpub }.map(\.npub))
+        let holdable = holdableMeshNpubs(devices: devices, slot: slot, ownNpub: ownNpub)
         var out = ordered(vaults)
         for i in out.indices {
             guard let npub = out[i].meshNpub.flatMap(HomeVaultLogic.meshNpub(fromInput:)) else { continue }
-            if npub == ownNpub || (!macs.contains(npub) && npub != slotNpub) { out[i].meshNpub = nil }
+            if !holdable.contains(npub) { out[i].meshNpub = nil }
         }
         out.removeAll { $0.meshNpub == nil && $0.httpsURL == nil }
         for npub in MeshDevicesLogic.macs(devices, macNpub: nil, ownNpub: ownNpub)
@@ -189,6 +188,17 @@ enum DesktopVaultsLogic {
             }
         }
         return renumbered(out)
+    }
+
+    /// The mesh addresses `followingDevices` lets a Vault keep: a `.mac` in
+    /// My Devices, or the slot's npub, never this device's own. The settings
+    /// copy reads the same set to tell an address this device dropped (can't
+    /// hold, so carried as the file has it) from one it deleted (#2521).
+    static func holdableMeshNpubs(devices: [MeshDevice], slot: String, ownNpub: String?) -> Set<String> {
+        var out = Set(devices.filter { $0.role == .mac }.map(\.npub))
+        if case .mesh(let npub) = SlotAddress(slot) { out.insert(npub) }
+        if let ownNpub { out.remove(ownNpub) }
+        return out
     }
 
     /// The mesh npubs of the Vaults reachable over FIPS, in list order. The

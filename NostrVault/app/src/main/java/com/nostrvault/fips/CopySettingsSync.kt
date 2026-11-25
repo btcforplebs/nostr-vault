@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import java.io.File
 import javax.inject.Inject
@@ -54,8 +55,11 @@ class CopySettingsSync internal constructor(
          * [FIRST_FILE_AT], since nothing here changed before it and any real change on a linked device must win.
          */
         data class Write(val at: Long) : Step
-        /** The engine left a file this device didn't write: apply it. */
-        data class Apply(val file: CopySettings.Checked, val rewriteAt: Long? = null) : Step
+        /**
+         * The engine left a file this device didn't write: apply it, or only [only] of it when an edit here is still
+         * unwritten (then [rewriteAt] writes the edit over it).
+         */
+        data class Apply(val file: CopySettings.Checked, val rewriteAt: Long? = null, val only: JsonObject? = null) : Step
     }
 
     private val lock = Mutex()
@@ -76,7 +80,8 @@ class CopySettingsSync internal constructor(
         val file = File(dataDir(), CopySettings.FILE)
         val raw = runCatching { file.takeIf { it.exists() }?.readText() }.getOrNull()
         val config = configStore.config.value
-        val current = CopySettings.keys(config)
+        val previousVaults = raw?.let { CopySettings.check(it, nowS()).first?.keys?.get("desktop_vaults") as? JsonArray }
+        val current = CopySettings.keys(config, previousVaults)
         when (val s = step(current, raw, baseline.keys, baseline.at, nowS(), config.hasCompletedSetup)) {
             Step.Nothing -> Unit
             is Step.Write -> {
@@ -86,9 +91,9 @@ class CopySettingsSync internal constructor(
                 baseline.at = at
             }
             is Step.Apply -> {
-                configStore.updateAsync { CopySettings.apply(it, s.file.keys) }
+                configStore.updateAsync { CopySettings.apply(it, s.only ?: s.file.keys) }
                 // What this device holds now (its own mesh servers kept), so applying is not read as a change here.
-                val applied = CopySettings.keys(configStore.config.value)
+                val applied = CopySettings.keys(configStore.config.value, s.file.keys["desktop_vaults"] as? JsonArray)
                 s.rewriteAt?.let { write(file, CopySettings.file(applied, it)) }
                 baseline.keys = applied.toString()
                 baseline.at = s.rewriteAt ?: s.file.updatedAt
@@ -120,13 +125,26 @@ class CopySettingsSync internal constructor(
         fun step(current: JsonObject, raw: String?, baselineKeys: String?, baselineAt: Long, nowS: Long, setupDone: Boolean): Step {
             val write = if (setupDone) Step.Write(if (raw == null) FIRST_FILE_AT else nowS) else Step.Nothing
             val checked = raw?.let { CopySettings.check(it, nowS).first } ?: return write
-            val foreign = baselineKeys == null || checked.updatedAt != baselineAt
+            // A merge in the engine can change the Vault list and keep the newer side's date (contract §5), so a
+            // Vault list this device didn't write or apply last is foreign too.
+            val foreign = baselineKeys == null || checked.updatedAt != baselineAt ||
+                !sameVaults(baselineKeys, checked.keys)
             // A file with the retired "condensed" layout is applied, then written over clean (dated now), so it stops
             // reaching linked devices (11/14). Not during setup: nothing is written then.
-            if (foreign) return if (checked.keys == current) Step.Nothing
-            else Step.Apply(checked, rewriteAt = nowS.takeIf { setupDone && CopySettings.holdsRetiredLayout(checked.keys) })
+            if (foreign && checked.keys == current) return Step.Nothing
+            // An edit here not yet written (a setting changed while the engine stored a peer's file): take in only
+            // what the other device changed since the baseline, then write the edit over it, so the newest change
+            // wins on each key and the edit isn't reverted (Tron on #2521).
+            if (foreign && setupDone && baselineKeys != null && !sameKeys(baselineKeys, current)) {
+                val base = runCatching { Json.parseToJsonElement(baselineKeys) as JsonObject }.getOrNull()
+                if (base != null) return Step.Apply(checked, rewriteAt = nowS, only = CopySettings.changedKeys(checked.keys, base))
+            }
+            if (foreign) return Step.Apply(checked, rewriteAt = nowS.takeIf { setupDone && CopySettings.holdsRetiredLayout(checked.keys) })
             return if (sameKeys(baselineKeys!!, current)) Step.Nothing else write
         }
+
+        private fun sameVaults(a: String, b: JsonObject) =
+            runCatching { (Json.parseToJsonElement(a) as JsonObject)["desktop_vaults"] == b["desktop_vaults"] }.getOrDefault(false)
 
         private fun sameKeys(a: String, b: JsonObject) = runCatching { Json.parseToJsonElement(a) == b }.getOrDefault(false)
     }
