@@ -34,6 +34,8 @@
   border-radius: 10px; color: var(--text); font: var(--t-sub); text-align: left; }
 .wot-menu button:hover:not(:disabled) { background: var(--s2); }
 .wot-menu button:disabled { background: none; color: var(--text-3); }
+.wot-menu button.locked { color: var(--text-3); }
+.wot-menu button.locked svg { color: var(--text-3); }
 .wot-menu button svg { flex: none; color: var(--accent-text); }
 .wot-menu button span:last-child { flex: 1; display: grid; }
 .wot-menu small { color: var(--text-2); font: var(--t-cap); }
