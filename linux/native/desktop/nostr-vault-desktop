@@ -573,6 +573,8 @@ class App(Gtk.Application):
         return False
 
     def show(self, route):
+        if self.window is None and self.paint.hold(lambda: self.show(route)):
+            return  # the old window's WebKit processes still run, on the same storage (nv_paint.py)
         if self.window is None:
             self.make_window()
         if self.paint.showing_browser_page():
