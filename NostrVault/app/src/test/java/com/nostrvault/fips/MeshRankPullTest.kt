@@ -19,6 +19,8 @@ class MeshRankPullTest {
     private var arrived = 0
     /** Dials that find no link yet, by peer (the mesh still finding it right after the relay starts). */
     private val missesLeft = mutableMapOf<String, Int>()
+    /** The engine's live mesh peers. */
+    private var live = emptyList<String>()
 
     private class Engine : MeshCopyStarter.Engine {
         val syncs = mutableListOf<String>()
@@ -50,10 +52,59 @@ class MeshRankPullTest {
         io = StandardTestDispatcher(testScheduler),
         desktops = { listOf(mac, box) },
         rankArrived = { arrived++ },
+        connected = { live },
     )
 
     private fun pulled(peer: String, got: Int, error: String = "") =
         "2026/11/25 10:00:00 RANK_PULLED peer=$peer got=$got" + if (error.isEmpty()) "" else " error=$error"
+
+    @Test
+    fun `Pull tries every paired desktop, the one with a live link first`() = runTest {
+        live = listOf(box)
+        val s = starter(Store(MeshCopyV2.Record()))
+        s.pullAll()
+        runCurrent()
+        assertEquals(listOf(box), engine.pulls.map { it.first })
+        assertEquals(listOf(mac), s.sync.value.queued)
+        s.onLogLine(pulled(box, 3)); runCurrent()
+        assertEquals("the other desktop still gets its turn", listOf(box, mac), engine.pulls.map { it.first })
+    }
+
+    @Test
+    fun `Pull with the shown desktop out of reach still pulls from the one that answers`() = runTest {
+        // Logen's Pull 22:38Z: the card's desktop (.99) is not reached, .155 is.
+        live = listOf(box)
+        missesLeft[mac] = Int.MAX_VALUE
+        val s = starter(Store(MeshCopyV2.Record()))
+        s.pullAll()
+        runCurrent()
+        assertEquals(listOf(box), engine.pulls.map { it.first })
+        s.onLogLine(pulled(box, 5)); runCurrent()
+        assertEquals(1, arrived)
+        advanceTimeBy(OtherVaultCopy.DIAL_WINDOW_S * 1000); runCurrent()
+        assertEquals("unreachable", s.sync.value.failed[mac])
+        assertTrue(box !in s.sync.value.failed)
+    }
+
+    @Test
+    fun `Pull catches up with a desktop copied from and rank-pulls the rest`() = runTest {
+        val s = starter(Store(MeshCopyV2.Record(copied = mapOf(mac to now - 60))))
+        s.pullAll()
+        runCurrent()
+        assertEquals(listOf(mac), engine.syncs)
+        s.onLogLine("COPY stage=done part=- bytes=0/0 items=1/1 source=mesh"); runCurrent()
+        assertEquals(listOf(box), engine.pulls.map { it.first })
+    }
+
+    @Test
+    fun `the hourly check tries the desktops with a live link first`() = runTest {
+        live = listOf(box)
+        val s = starter(Store(MeshCopyV2.Record()))
+        s.reconnectNow()
+        runCurrent()
+        assertEquals(listOf(box), engine.pulls.map { it.first })
+        assertEquals(listOf(mac), s.sync.value.queued)
+    }
 
     @Test
     fun `a rank ask that finds no link right after relay start dials again before it fails`() = runTest {

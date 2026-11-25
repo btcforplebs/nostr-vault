@@ -58,6 +58,8 @@ class MeshCopyStarter internal constructor(
     private val desktops: () -> List<String> = { emptyList() },
     /** A rank pull brought a new rank: read it now. */
     private val rankArrived: () -> Unit = {},
+    /** The mesh npubs with a live link now (the engine's peers): tried first, as the ones that answer. */
+    private val connected: () -> Collection<String> = { emptyList() },
 ) {
     @Inject constructor(
         @ApplicationContext context: Context,
@@ -65,6 +67,7 @@ class MeshCopyStarter internal constructor(
         otherVaultLink: OtherVaultLink,
         @ApplicationScope scope: CoroutineScope,
         reach: dagger.Lazy<com.nostrvault.service.DiscoveryReachStore>,
+        mesh: dagger.Lazy<FipsMeshManager>,
     ) : this(
         link = { npub -> otherVaultLink.open(npub)?.takeIf(::answers) },
         sign = { tags -> MeshKeySigner.authorization(MeshKeyAuth.START_KIND, "", tags) },
@@ -87,6 +90,7 @@ class MeshCopyStarter internal constructor(
                 .filter { it.role == DeviceRole.MAC }.map { it.npub }
         },
         rankArrived = { reach.get().refresh() },
+        connected = { mesh.get().status.value.peers },
     )
 
     /** The libhaven copy calls (a fake in the tests). Codes: [MeshCopyV2.RUN_STARTED] and the rest. */
@@ -291,7 +295,9 @@ class MeshCopyStarter internal constructor(
                 // Rank only: every paired desktop never copied from, hourly (queued: syncQueued takes the lock).
                 val due = synchronized(this) { MeshRankPull.due(desktops(), record.copied, record.pending?.peer, rankPulledAt, nowS()) }
                 if (due.isEmpty()) return
-                _sync.update { s -> s.copy(queued = (s.queued + due).distinct().filter { it != s.running }) }
+                val order = reachableFirst(due)
+                Log.i(TAG, "rank check: picked ${order.joinToString { short(it) }}")
+                _sync.update { s -> s.copy(queued = (s.queued + order).distinct().filter { it != s.running }) }
                 scope.launch(io) { syncQueued() }
                 return
             }
@@ -322,7 +328,7 @@ class MeshCopyStarter internal constructor(
                 peer != record.pending?.peer &&
                     (peer in record.copied || peer in MeshRankPull.peers(desktops(), record.copied, record.pending?.peer))
             }
-            if (!known) return@launch
+            if (!known) { Log.i(TAG, "rank ready: ${short(peer)} is no desktop to pull from, skipped"); return@launch }
             _sync.update { s -> s.copy(queued = (s.queued + peer).distinct().filter { it != s.running }) }
             syncQueued()
         }
@@ -354,6 +360,30 @@ class MeshCopyStarter internal constructor(
     }
 
     /**
+     * My Web › Desktop Vault › Pull: every paired desktop, the ones with a live mesh link first, each in turn (a
+     * catch-up for one copied from, a rank pull for the rest). Not only the one the card shows: that one may be out
+     * of reach while another that has the rank answers (Logen's Pull 2026-11-25 22:38Z, Tod 417659c3).
+     */
+    fun pullAll() {
+        scope.launch(io) {
+            if (!setupDone()) { Log.i(TAG, "pull: setup not done"); return@launch }
+            adoptHeld()
+            val all = synchronized(this@MeshCopyStarter) { desktops().filter { it != record.pending?.peer }.distinct() }
+            if (all.isEmpty()) { Log.i(TAG, "pull: no paired desktop"); return@launch }
+            val order = reachableFirst(all)
+            Log.i(TAG, "pull: picked ${order.joinToString { short(it) }}")
+            _sync.update { s -> s.copy(queued = (s.queued + order).distinct().filter { it != s.running }) }
+            syncQueued()
+        }
+    }
+
+    /** [peers] with the ones that have a live mesh link first, order kept otherwise. */
+    private fun reachableFirst(peers: List<String>): List<String> {
+        val live = runCatching { connected().toSet() }.getOrDefault(emptySet())
+        return peers.sortedBy { it !in live }
+    }
+
+    /**
      * Starts the next queued catch-up, unless one is running (its end comes back here through [onLogLine]). A device
      * that can't be dialed or that the engine refuses is marked and skipped; a busy engine keeps the queue.
      */
@@ -361,9 +391,12 @@ class MeshCopyStarter internal constructor(
         while (current == null) {
             val peer = _sync.value.queued.firstOrNull() ?: return@withLock
             val split = linkSoon(peer)?.let(MeshCopyV2::splitLink)
+            if (split == null) Log.w(TAG, "sync ${short(peer)}: link null, not reached")
+            val catchUp = peer in record.copied
             val code = split?.let { (base, prefix) ->
-                if (peer in record.copied) engine.copySync(peer, base + prefix, filesToo()) else rankPull(peer, base, prefix)
+                if (catchUp) engine.copySync(peer, base + prefix, filesToo()) else rankPull(peer, base, prefix)
             }
+            if (code != null) Log.i(TAG, "sync ${short(peer)}: ${if (catchUp) "catch-up" else "rank pull"} engine code $code")
             if (code == MeshCopyV2.RUN_BUSY) return@withLock
             _sync.update { it.copy(queued = it.queued - peer) }
             if (code == MeshCopyV2.RUN_STARTED) {
@@ -422,7 +455,8 @@ class MeshCopyStarter internal constructor(
 
     /** Hands one rank pull to the engine, with a fresh start signed by this device's mesh key for when it holds no token. */
     private suspend fun rankPull(peer: String, base: String, prefix: String): Int {
-        val auth = MeshRankPull.startTags(base, peer)?.let { sign(it) } ?: return NOT_SIGNED
+        val auth = MeshRankPull.startTags(base, peer)?.let { sign(it) }
+            ?: return NOT_SIGNED.also { Log.w(TAG, "rank pull ${short(peer)}: sign failed") }
         val code = engine.rankPull(peer, base + prefix, auth)
         if (code == MeshCopyV2.RUN_STARTED) rankPulledAt[peer] = nowS()
         return code
@@ -463,6 +497,9 @@ class MeshCopyStarter internal constructor(
         private const val PROBE_TIMEOUT_S = 8L
         /** No mesh key to sign a rank start with: shown as not started. */
         private const val NOT_SIGNED = -1
+
+        /** Enough of a mesh npub to tell devices apart in a log (public: no address, no token). */
+        private fun short(npub: String): String = npub.take(16)
 
         private val probe by lazy {
             okhttp3.OkHttpClient.Builder()

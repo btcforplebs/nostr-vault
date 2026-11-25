@@ -100,8 +100,11 @@ class MyWebDesktopVaultViewModel @Inject constructor(
     /** The rank copy, for a ring's sheet. */
     val copy = reach.copy
 
-    /** The same catch-up (or, never copied from, rank pull) the desktop's new-rank nudge starts ([MeshCopyStarter.rankReady]). */
-    fun pull(peer: String) = copies.rankReady(peer)
+    /**
+     * Every paired desktop, the reachable ones first: a catch-up for one copied from, else a rank pull
+     * ([MeshCopyStarter.pullAll]). Not only the shown one, which may be out of reach while another answers.
+     */
+    fun pull() = copies.pullAll()
 
     /** A pull's catch-up rewrote the rank file: read it now. */
     fun reread() = reach.refresh()
@@ -148,7 +151,7 @@ internal fun MyWebDesktopVaultSection(
                 )
                 DashRow(Icons.Filled.DesktopMac, MyWebDesktopVaultWords.title(outer.source, foundBy), detail, RowState.INFO) {
                     Row(Modifier.semantics { contentDescription = MyWebDesktopVaultWords.pullHint(foundBy) }) {
-                        RowButton("Pull", isLoading = pulling, enabled = canPull) { peer?.let(viewModel::pull) }
+                        RowButton("Pull", isLoading = pulling, enabled = canPull) { viewModel.pull() }
                     }
                 }
                 if (outer.source == TrustMapOuter.Source.RANKED && outer.rings.isNotEmpty()) {
