@@ -82,6 +82,10 @@ type copyClient struct {
 	syncDB func(string) DBBackend
 	// freeBytes, swapped in tests.
 	free func(string) (uint64, bool)
+	// trustRefused, trustErr: how the last syncTrust's asks went (a rank
+	// pull, copyv2_rank_only.go, needs to tell a refused token from no answer).
+	trustRefused bool
+	trustErr     error
 	// notesOnly: a light device's catch-up, with no file pass (multi-Mac
 	// rules §3: a phone without full copy fetches files when opened).
 	notesOnly bool

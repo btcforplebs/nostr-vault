@@ -68,7 +68,10 @@ type copyToken struct {
 	Hash  string `json:"hash"`
 	Owner string `json:"owner"`
 	// Device: B's mesh pubkey (hex), named in the owner's start proof.
-	Device   string `json:"device"`
+	Device string `json:"device"`
+	// Scope: "" a copy token; copyScopeRank reads the trust rank only
+	// (copyv2_rank_only.go).
+	Scope    string `json:"scope,omitempty"`
 	Created  int64  `json:"created"`
 	LastUsed int64  `json:"last_used"`
 }
@@ -182,9 +185,9 @@ func copyIsHex(s string, n int) bool {
 // name the same mesh link by different loopback addresses). 401 for no, bad,
 // stale or replayed proof; 403 for a good proof by a key that is not a paired
 // device. Returns the device the token is bound to.
-func (s *copyServer) checkStart(r *http.Request) (int, string, string) {
+func (s *copyServer) checkStart(r *http.Request, path string) (int, string, string) {
 	now := s.now()
-	ev, code, why := copySignedPost(r, "/copy/v2/start", now)
+	ev, code, why := copySignedPost(r, path, now)
 	if code != 0 {
 		return code, why, ""
 	}
@@ -392,9 +395,15 @@ func (s *copyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, "/copy/v2/")
+	if rest != "sync/trust" && s.rankOnlyBearer(r) {
+		http.Error(w, "auth_refused", http.StatusUnauthorized)
+		return
+	}
 	switch {
 	case rest == "start" && r.Method == http.MethodPost:
 		s.start(w, r)
+	case "/copy/v2/"+rest == copyRankStartPath && r.Method == http.MethodPost:
+		s.startRank(w, r) // copyv2_rank_only.go
 	case rest == "nudge" && r.Method == http.MethodPost:
 		s.nudge(w, r) // copyv2_nudge.go
 	case strings.HasPrefix(rest, "sync/"):
@@ -406,7 +415,7 @@ func (s *copyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *copyServer) start(w http.ResponseWriter, r *http.Request) {
-	code, why, device := s.checkStart(r)
+	code, why, device := s.checkStart(r, "/copy/v2/start")
 	if code != 0 {
 		http.Error(w, why, code)
 		return
