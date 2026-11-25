@@ -499,6 +499,8 @@ class App(Gtk.Application):
         win.add(view)
         win.connect("delete-event", lambda *_: (self.close_window(), True)[1])
         win.show_all()
+        if fp:
+            fp.wayland_app_id(win, log)  # the app ID its .desktop file has, not the bus name (nv_flatpak.py)
         self.window, self.view = win, view
         self.start_watchdog()
         self.paint.watch(view)

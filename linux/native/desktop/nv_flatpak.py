@@ -28,6 +28,31 @@ NPUB = re.compile(r"^npub1[02-9ac-hj-np-z]{58}$")
 LOG_MAX = 5 * 1024 * 1024
 
 
+def wayland_app_id(win, log):
+    """On Wayland, give the shown window the app ID its .desktop file is named after. GTK 3 sends the GApplication's
+    ID (BUS_NAME here) as the window's xdg_toplevel app_id, and a desktop that finds the window's icon and name by
+    app_id (KDE, and others that don't read the Flatpak's sandbox ID) found no app.nostrvault.Desktop.Flatpak.desktop.
+    gdk_wayland_window_set_application_id (GTK 3.24.22+) has no introspection, so through ctypes: the GdkWindow
+    pointer read from PyGObject's wrapper (after the object header), used only when PyGObject's hash() of it (also
+    the pointer) agrees. Anything missing: GTK's choice stays, logged."""
+    from gi.repository import Gdk
+    disp = Gdk.Display.get_default()
+    gw = win.get_window()
+    if disp is None or "Wayland" not in type(disp).__name__ or gw is None:
+        return
+    try:
+        import ctypes
+        f = ctypes.CDLL("libgdk-3.so.0").gdk_wayland_window_set_application_id
+        f.argtypes, f.restype = (ctypes.c_void_p, ctypes.c_char_p), None
+        ptr = ctypes.c_void_p.from_address(id(gw) + 2 * ctypes.sizeof(ctypes.c_void_p)).value  # PyGObject's obj
+        if not ptr or ptr != hash(gw):
+            log("couldn't find the window's GdkWindow: its Wayland app ID stays GTK's")
+            return
+        f(ptr, APP_ID.encode())
+    except (OSError, AttributeError) as e:
+        log("couldn't set the window's Wayland app ID: " + repr(e))
+
+
 def active():
     return os.path.exists("/.flatpak-info") or os.environ.get("NV_FLATPAK") == "1"
 
