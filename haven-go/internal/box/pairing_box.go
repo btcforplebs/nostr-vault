@@ -133,7 +133,7 @@ func (p *Pairing) Start(ctx context.Context, byHex string) (PairStatus, error) {
 	}
 	run := &pairRun{
 		session: NewPairingSession(secret, now, boxHex, byNpub, accounts),
-		code:    BuildPairCode(PairCodeArgs{M: npub, N: name, R: "homeVault", O: byNpub, S: secret}),
+		code:    BuildPairCode(PairCodeArgs{M: npub, N: name, R: "mac", O: byNpub, S: secret}),
 		by:      byNpub,
 		byHex:   byHex,
 		started: now,

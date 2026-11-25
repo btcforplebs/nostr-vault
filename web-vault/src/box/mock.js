@@ -37,7 +37,7 @@ export function mockBox({ now = () => Date.now(), store } = {}) {
       if (state.pair?.state === "waiting") state.pair = { ...state.pair, state: "hello", code: undefined, device: { npub: npub("w"), name: "Logen's iPhone", role: "phone" }, words: [172, 696, 1627, 1557], confirmText: "Add Logen's iPhone as another of your phones.", expiresAt: Math.floor(now() / 1000) + 180 }
       return answer(200, pairStatus())
     }
-    if (method === "POST" && name === "pair") { state.pair = { state: "waiting", code: `nvpair:v1?m=${npub("z")}&n=Nostr%20Vault%20box&r=homeVault&o=${npub("o")}&s=MfL-vrRY_QiUhuVK2cwvQQ`, startedAt: Math.floor(now() / 1000), expiresAt: Math.floor(now() / 1000) + 180 }; return answer(200, pairStatus()) }
+    if (method === "POST" && name === "pair") { state.pair = { state: "waiting", code: `nvpair:v1?m=${npub("z")}&n=Nostr%20Vault%20box&r=mac&o=${npub("o")}&s=MfL-vrRY_QiUhuVK2cwvQQ`, startedAt: Math.floor(now() / 1000), expiresAt: Math.floor(now() / 1000) + 180 }; return answer(200, pairStatus()) }
     if (method === "POST" && name === "pair/confirm") {
       if (state.pair?.state !== "hello") return answer(409, { error: "no device is waiting to be added", pairing: pairStatus() })
       state.devices.push({ ...state.pair.device, approved: true, pairedAt: Math.floor(now() / 1000) })

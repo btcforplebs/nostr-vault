@@ -173,7 +173,7 @@ What stays where:
   check and open one kind-21195 event to the box (`pair_open`) and to seal and sign the ack (`pair_ack`). `pair_ack`
   takes exactly `{"v":1,"ack":true,"d":"<64 hex>","w":true}` and nothing else, so the socket cannot get another event
   signed. Neither op needs the other device to be paired: that is the point of pairing.
-- **The code names the box as `homeVault`**, with `o` the account signed in to the box UI (the one that asked for the
+- **The code names the box as `mac`** (a Desktop Vault: it keeps a full copy, like a Mac), with `o` the account signed in to the box UI (the one that asked for the
   code). The hello's `o` is checked against every account signed in to the box: another one is `switchTo`, as on a
   phone with several accounts.
 - **Confirm carries the role shown** (`{"role":"phone"}`), so a confirm never adds a device under another role than the

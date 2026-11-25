@@ -73,7 +73,7 @@ func TestDevicesApprovalFollowsTheNewestList(t *testing.T) {
 		t.Fatalf("listed: %+v", r)
 	}
 	// Screens' fields: listed = approved; only this box has a known role.
-	if !r.Devices[0].Approved || !r.Devices[1].Approved || r.Devices[1].Role != "homeVault" || r.Devices[0].Role != "" {
+	if !r.Devices[0].Approved || !r.Devices[1].Approved || r.Devices[1].Role != "mac" || r.Devices[0].Role != "" {
 		t.Fatalf("devices shape %+v", r.Devices)
 	}
 

@@ -162,7 +162,7 @@ func buildAccountsReport(boxNpub, boxPubkey string, accounts []string, lists map
 			if !seen {
 				e.Approved = true
 				if boxPubkey != "" && e.Pubkey == boxPubkey {
-					e.Role, e.This = "homeVault", true
+					e.Role, e.This = "mac", true
 				}
 				r.Devices = append(r.Devices, e)
 				j = len(r.Devices) - 1

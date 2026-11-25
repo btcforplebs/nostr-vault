@@ -374,7 +374,7 @@ func BuildDevicesReport(boxNpub, boxPubkey string, list *nostr.Event, src string
 		for _, e := range MeshEntries(list) {
 			e.Approved = true
 			if boxPubkey != "" && e.Pubkey == boxPubkey {
-				e.Role = "homeVault"
+				e.Role = "mac"
 				e.This = true
 				r.Box.Approved = true
 			}
