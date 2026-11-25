@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>What's new — Nostr Vault Docs</title>
-    <meta name="description" content="Nostr Vault release notes for iPhone, iPad, Mac, Android, the web and Linux: 3.2.3 with private block, nuclear unfollow, one web-of-trust gate, zaps and messages you can count on, light mode and the Linux beta, 3.2.2 with the in-app browser, Your Devices and encrypted drafts, 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.">
+    <meta name="description" content="Nostr Vault release notes for iPhone, iPad, Mac, Android, the web and Linux: 3.3.0 with Desktop Vaults, a trust rank out to six hops, Hop 3 to 5 on the globe and the first stable Linux release, 3.2.3 with private block, nuclear unfollow, one web-of-trust gate, zaps and messages you can count on, light mode and the Linux beta, 3.2.2 with the in-app browser, Your Devices and encrypted drafts, 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.">
     <link rel="canonical" href="https://nostrvault.app/docs/whats-new/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/whats-new/">
     <meta property="og:title" content="What's new — Nostr Vault Docs">
-    <meta property="og:description" content="Nostr Vault release notes for iPhone, iPad, Mac, Android, the web and Linux: 3.2.3 with private block, nuclear unfollow, one web-of-trust gate, zaps and messages you can count on, light mode and the Linux beta, 3.2.2 with the in-app browser, Your Devices and encrypted drafts, 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.">
+    <meta property="og:description" content="Nostr Vault release notes for iPhone, iPad, Mac, Android, the web and Linux: 3.3.0 with Desktop Vaults, a trust rank out to six hops, Hop 3 to 5 on the globe and the first stable Linux release, 3.2.3 with private block, nuclear unfollow, one web-of-trust gate, zaps and messages you can count on, light mode and the Linux beta, 3.2.2 with the in-app browser, Your Devices and encrypted drafts, 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -61,8 +61,8 @@
                     <li><a href="/docs/start/android/">Android</a></li>
                     <li><a href="/docs/start/mac/">Mac</a></li>
                     <li><a href="/docs/start/web/">Web browser</a></li>
-                    <li><a href="/docs/start/linux/">Linux (beta)</a></li>
-                    <li><a href="/docs/start/raspberry-pi/">Raspberry Pi (beta)</a></li>
+                    <li><a href="/docs/start/linux/">Linux</a></li>
+                    <li><a href="/docs/start/raspberry-pi/">Raspberry Pi</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -90,7 +90,7 @@
                     <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
                     <li><a href="/docs/mesh/desktop-vaults/">Desktop Vaults</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
-                    <li><a href="/docs/mesh/linux-box/">Linux box (beta)</a></li>
+                    <li><a href="/docs/mesh/linux-box/">Linux box</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
@@ -135,9 +135,84 @@
             <p class="eyebrow">Help</p>
             <h1>What's new in <span>Nostr Vault</span></h1>
             <p class="docs-lede">The release notes for iPhone, iPad, Mac, Android, the web and Linux, newest first. Where a change is on only some of the apps, it says which.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#3-2-3">3.2.3</a></li><li><a href="#3-2-2">3.2.2</a></li><li><a href="#3-2-0">3.2.0</a></li><li><a href="#3-1-0">3.1.0</a></li><li><a href="#3-0-0">3.0.0</a></li><li><a href="#2-7-2-build-40">2.7.2 (build 40)</a></li><li><a href="#2-7-2-build-39">2.7.2 (build 39)</a></li><li><a href="#2-7-2-first-builds">2.7.2 (first builds)</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#3-3-0">3.3.0</a></li><li><a href="#3-2-3">3.2.3</a></li><li><a href="#3-2-2">3.2.2</a></li><li><a href="#3-2-0">3.2.0</a></li><li><a href="#3-1-0">3.1.0</a></li><li><a href="#3-0-0">3.0.0</a></li><li><a href="#2-7-2-build-40">2.7.2 (build 40)</a></li><li><a href="#2-7-2-build-39">2.7.2 (build 39)</a></li><li><a href="#2-7-2-first-builds">2.7.2 (first builds)</a></li></ul></div>
 
             <article class="docs-article">
+                <section id="v3-3-0">
+                <p class="eyebrow">iPhone, iPad and Mac &middot; Android &middot; the web &middot; Linux, now stable</p>
+                <h2 id="3-3-0">3.3.0</h2>
+                <p>3.3.0 lets you run as many home vaults as you like, ranks the people far beyond your follows, and brings Nostr
+                    Vault for Linux out of beta.</p>
+                <ul>
+                    <li><strong>Desktop Vaults.</strong> Keep any number of Macs and Linux boxes as your vaults, each reached over
+                        the mesh, by web address, or both. Settings &rarr; <strong>Desktop Vaults</strong> lists them, shows each
+                        one's status, and lets you add, move or delete one. Your media servers and relay list carry every Vault. (iPhone, iPad, Mac and Android.) See
+                        <a class="inline" href="/docs/mesh/desktop-vaults/">Desktop Vaults</a>.</li>
+                    <li><strong>Pair a Linux box from its own page.</strong> The box shows a code, your phone scans it, and both
+                        screens show the same check words before anything is added. The box keeps its own list of paired devices,
+                        and <strong>Remove</strong> takes one off for good. See <a class="inline" href="/docs/mesh/linux-box/#pair">A
+                        Linux box in My Devices</a>.</li>
+                    <li><strong>One box, several accounts.</strong> A Linux box can keep more than one account's vault: add an
+                        account with a one-time code, and remove it again, from the box's page. The box's page in the web app also
+                        runs imports, backups, a restore, a trust rebuild, Auto-Mirror and a restart, and the box catches up from
+                        your other vaults by itself.</li>
+                    <li><strong>A trust rank for the far reaches.</strong> Your always-on Vault (a Mac or a Linux box) reads the
+                        follow lists around you slowly, in the background, and gives everyone up to six hops out a rank from 0 to
+                        100. It hands the result to your phones, so they never do the heavy work. The status and a
+                        <strong>Pull</strong> button are in My Web.</li>
+                    <li><strong>Hop 3, Hop 4 and Hop 5 on the globe.</strong> The rings in My Web now go out to three, four and five
+                        hops (labelled "3 hops" and so on), and picking one zooms the globe out to it, with the nearer globe fading
+                        back in a haze. On iPhone, iPad, Mac and the web a far hop becomes its own spinning sphere, and a person on it
+                        shows the path in to you. A profile says how many hops away someone is, and <strong>Why?</strong> shows the
+                        chain of people that links you.</li>
+                    <li><strong>Follow Distance, per account, in hops.</strong> Each account has its own Follow Distance, and it now
+                        reads <strong>Only you</strong>, <strong>1 hop</strong> or <strong>2 hops</strong>. Your own accounts can
+                        never be blocked or muted by each other. (All apps.)</li>
+                    <li><strong>Sign in with a code.</strong> <strong>Show a code for another device</strong> on the sign-in screen
+                        shows a Nostr Connect QR code to scan with Amber or another signer. The web app's sign-in has the same QR,
+                        and takes a pasted bunker link. (iPhone, iPad, Android and the web.)</li>
+                    <li><strong>A friendlier first run.</strong> A new account goes profile, people, key, lock, feed, with the key
+                        steps as three picture steps. <strong>Who told you about Nostr Vault?</strong> fills your first follows with
+                        the people closest to whoever invited you, and their welcome card leads your new feed. (iPhone, iPad and
+                        Android.)</li>
+                    <li><strong>Your secret key never goes out.</strong> Every app refuses to publish a note that holds an nsec,
+                        and marks accounts you only have the public key for. Over the mesh, your account key is never used: your
+                        devices sign with their own mesh keys. (Android has refused nsec notes since build 109.)</li>
+                    <li><strong>One Vault on the Mac.</strong> The Mac's side rail is Feed, Search, Profile, WoT and Vault: Media,
+                        Emoji and the relay console now live inside Vault, laid out like the phone's. <strong>Run in
+                        background</strong> keeps only the vault running when you close the window.</li>
+                    <li><strong>Zaps wait longer.</strong> After you zap, the app looks for the zap receipt for up to 10 minutes,
+                        and the waiting pill has <strong>Pay in wallet app</strong> to open the same invoice in your wallet.
+                        (iPhone, iPad and Mac.)</li>
+                    <li><strong>More in Media.</strong> An <strong>Audio</strong> filter sits next to Photo, Video and GIF, and
+                        photos with an <code>htree://</code> (Iris hashtree) address show and save, up to 2 MiB. (All apps; the Audio filter came to Android in build 109.)</li>
+                    <li><strong>Faces for everyone.</strong> A profile with no picture, or one whose picture won't load, gets its
+                        own constellation face. (All apps; on Android since build 109.)</li>
+                    <li><strong>The web app.</strong> New <strong>Catch Up</strong> and <strong>Underrated</strong> feeds, a front
+                        door with <strong>Create an account</strong> and <strong>Bring an account</strong>, more of Settings (Who Can
+                        Reach You, Feed, Translation and a Recommended tab under Relays), and a much faster globe, Search, Vault and
+                        Notifications.</li>
+                    <li><strong>iPad.</strong> A live chat window, the reply keyboard, Picture in Picture and minimise work as on
+                        iPhone, the open note stays put when you switch account, and the feed runs under the status bar and the
+                        dock.</li>
+                    <li><strong>Android on more phones.</strong> A 32-bit APK sits next to the 64-bit one for older budget phones,
+                        and small and 32-bit phones no longer crash when the app opens (both first in build 109). See
+                        <a class="inline" href="/docs/start/android/">Get started on Android</a>.</li>
+                    <li><strong>Nostr Vault for Linux 3.3.0, stable.</strong> The first stable Linux release: a <code>.deb</code>,
+                        <code>.rpm</code>, Arch package, Alpine apk and Flatpak for arm64 and amd64, and a Nix flake with a NixOS
+                        module. The tray uses the Mac's menu bar glyph. See <a class="inline" href="/docs/start/linux/">Get started on Linux</a>.</li>
+                </ul>
+                <h3>Fixes</h3>
+                <ul>
+                    <li>A first copy from your other vault that was refused once now starts again by itself instead of stopping.</li>
+                    <li>A mesh catch-up gets your trust rank first and keeps going while the app is in the background.</li>
+                    <li>Note threads keep to your web on Android, whatever Global's shield is set to.</li>
+                    <li>The feed's media viewer offers Delete only on your own media.</li>
+                    <li>The Vault list no longer shows an "N from outside your web" row under All.</li>
+                    <li>The Linux window frees its memory when you close it.</li>
+                </ul>
+                </section>
+
                 <section id="v3-2-3">
                 <p class="eyebrow">Android (build 108) &middot; iPhone, iPad and Mac (build 37) &middot; the web &middot; Linux beta</p>
                 <h2 id="3-2-3">3.2.3</h2>
