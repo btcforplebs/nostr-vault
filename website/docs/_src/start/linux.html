@@ -46,7 +46,7 @@
 <p>Open a terminal on the machine (or ssh into it) and download the file for your machine from the
     <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.3.0">3.3.0 release</a>:
     <code>…_arm64.deb</code> for a Raspberry Pi or other ARM board, <code>…_amd64.deb</code> for a normal PC. Then:</p>
-<pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>sudo apt install ./nostr-vault_3.3.0+NNNN_arm64.deb
+<pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>sudo apt install ./nostr-vault_3.3.0+7181_arm64.deb
 sudo nostr-vault-setup --owner npub1…</code></pre>
 <p>On a machine with no screen, add <code>--no-install-recommends</code> to the first line so apt skips the window's
     libraries. <code>nostr-vault-setup</code> also takes <code>--data /path</code> for where the vault lives (a USB
@@ -61,11 +61,11 @@ sudo nostr-vault-setup --owner npub1…</code></pre>
     <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.3.0">3.3.0 release</a>
     (<code>x86_64</code> for a normal PC, <code>aarch64</code> for ARM), then install it and set the owner:</p>
 <pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code># Fedora
-sudo dnf install ./nostr-vault-3.3.0+NNNN-1.x86_64.rpm
+sudo dnf install ./nostr-vault-3.3.0+7181-1.x86_64.rpm
 # Arch Linux
-sudo pacman -U ./nostr-vault-3.3.0+NNNN-1-x86_64.pkg.tar.zst
+sudo pacman -U ./nostr-vault-3.3.0+7181-1-x86_64.pkg.tar.zst
 # Alpine (as root)
-apk add --allow-untrusted ./nostr-vault-3.3.0_pNNNN-r0.x86_64.apk
+apk add --allow-untrusted ./nostr-vault-3.3.0_p7181-r0.x86_64.apk
 
 sudo nostr-vault-setup --owner npub1…   # on Alpine, as root: nostr-vault-setup --owner npub1…</code></pre>
 <p>Each one is the same vault as the <code>.deb</code>, with the mesh, and runs the vault and the mesh as their own
@@ -80,7 +80,7 @@ sudo nostr-vault-setup --owner npub1…   # on Alpine, as root: nostr-vault-setu
 <h2 id="flatpak">Flatpak, for desktops (no mesh)</h2>
 <p>Download <code>nostr-vault-…-x86_64.flatpak</code> (or <code>aarch64</code>) from the
     <a href="https://github.com/btcforplebs/nostr-vault/releases/tag/v3.3.0">3.3.0 release</a>, then:</p>
-<pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>flatpak install --user ./nostr-vault-3.3.0+NNNN-x86_64.flatpak</code></pre>
+<pre style="overflow-x:auto;white-space:pre-wrap;word-break:break-all"><code>flatpak install --user ./nostr-vault-3.3.0+7181-x86_64.flatpak</code></pre>
 <p>Open <strong>Nostr Vault</strong> from your apps. The Flatpak is different from the packages above:</p>
 <ul>
     <li><strong>No mesh.</strong> Device sync is off in the Flatpak for now. Your phones reach this vault on your
