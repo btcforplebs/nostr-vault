@@ -86,6 +86,9 @@ if freeze "$L" "in any drawing mode" $((3 * (G + 15))); then
   if [ "$n" = 2 ]; then ok "$MODE: no mode draws: the window tried all three, then gave up"
   else no "$MODE: no mode draws: it started over $n times (want 2)"; fi
 else no "$MODE: no mode draws, and the window never gave up"; tail -20 "$L"; fi
+# It starts over into the browser page: kill the stopped web processes only after that (a web process that dies
+# before its handshake makes WebKit abort the process that started it, and the old image still has WebKit loaded).
+for i in $(seq 1 30); do grep -q "last time: showing the browser page" "$L" && break; sleep 1; done
 thaw
 drawn "$OUT/$MODE-blank-2-browser.png" "$MODE: then it draws its own 'open in browser' page (GTK, no web process)"
 if [ -n "$(works failed)" ]; then ok "$MODE: remembered that nothing draws with WebKitGTK $(works failed)"

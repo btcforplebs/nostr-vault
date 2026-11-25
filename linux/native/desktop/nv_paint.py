@@ -557,8 +557,8 @@ class Checker:
             if getattr(app, "ticking", False):
                 return True  # tick's thread may be inside systemctl: exec'd now, it would be a zombie
             web = [p for p, c, st in descendants(os.getpid()) if (c.startswith("WebKit") or c == "bwrap") and st != "Z"]
-            if web and time.monotonic() - began < KILL_AFTER_S:
-                return True
+            if web and not failing and time.monotonic() - began < KILL_AFTER_S:
+                return True  # (after a failed check, no wait: a hung web process that dies meanwhile aborts this one)
             if web:
                 self.log(f"{len(web)} WebKit process(es) still running after {KILL_AFTER_S} s: starting over anyway "
                          "(the new process reaps them)")
