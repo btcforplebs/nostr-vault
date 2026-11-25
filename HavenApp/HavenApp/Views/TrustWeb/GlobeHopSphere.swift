@@ -88,7 +88,7 @@ enum GlobeHopSphere {
         let slot = Slot(hop: ring.hop, first: ring.top.first ?? "", count: ring.top.count + ring.haze.count)
         if let b = built[slot], b.pole == pole, b.top == ring.top, b.haze == ring.haze { return b }
         let b = Built(top: ring.top, haze: ring.haze, pole: pole,
-                      points: GlobeSphereField.points(ring.top + ring.haze, pole: pole))
+                      points: GlobeSphereField.points(ring.top + ring.haze, top: ring.top.count, pole: pole))
         if built.count >= maxSlots { built.removeAll(keepingCapacity: true) }
         built[slot] = b
         return b

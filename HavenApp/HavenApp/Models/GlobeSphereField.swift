@@ -4,10 +4,12 @@ import simd
 /// Where a picked hop's people sit in its sphere (Logen 2026-11-25: "a 360
 /// 3d globe view of that ring", not a flat ring at the edge). Picking Hop 3
 /// or Hop 4 turns that ring into a globe of its own, round your nested inner
-/// one. Its people fill the ball, not just its skin (Logen 2026-11-25: a
-/// shell only reads as a thin ring at the edge): the best sit nearest the
-/// middle, round your globe, and lower scores drift out to the edge
-/// (`NV_GLOBE_HAZE_PLAN` §4). Each one's direction comes from a 2D
+/// one. Its people sit out on the sphere's skin the way the Vouched shell's
+/// do (Logen 2026-11-25: "fill the globe on the outer edge just like the
+/// vouched group"), so its faces cover the whole side facing you out to the
+/// rim, not a tight ring round the nested globe. The top are on the skin;
+/// the haze sits in a shallow band just under it, so the rim reads as a
+/// ball of dust, not one thin line. Each one's direction comes from a 2D
 /// low-discrepancy sequence that does not follow rank, so any run of the
 /// best (the faces) is spread all the way round, never in one cap.
 ///
@@ -29,30 +31,28 @@ enum GlobeSphereField {
         return simd_normalize(rest.inverse.act(SIMD3(0, 0, 1)))
     }
 
-    /// The best sit this far out (of the sphere's radius): clear of the
-    /// nested inner globe, and of a nested Hop 3 inside Hop 4.
-    static let innerRadius = 0.4
+    /// The haze sits from this far out (of the sphere's radius) to the
+    /// skin, by its key: deep enough that the rim is not one thin ring, and
+    /// still clear of the nested inner globe.
+    static let hazeDepth = 0.8
 
-    /// Points in the unit ball for `keys`, best first: the first nearest
-    /// the middle, the last at the edge, each shell of rank taking an equal
-    /// share of the volume so the ball fills evenly.
-    static func points(_ keys: [String], pole: SIMD3<Double>) -> [SIMD3<Double>] {
+    /// Points for `keys`, best first: the first `top` on the unit sphere's
+    /// skin, the rest (the haze) in the band from `hazeDepth` to the skin.
+    static func points(_ keys: [String], top: Int, pole: SIMD3<Double>) -> [SIMD3<Double>] {
         let p = simd_normalize(pole)
         // Any axis not along the pole gives the two directions across it.
         let helper = abs(p.y) < 0.9 ? SIMD3<Double>(0, 1, 0) : SIMD3<Double>(1, 0, 0)
         let u = simd_normalize(simd_cross(helper, p)), v = simd_cross(p, u)
-        let n = Double(max(keys.count, 1))
         // R2 sequence (plastic number): even over the sphere for any run of i.
         let g = 1.32471795724474602596
         let a1 = 1 / g, a2 = 1 / (g * g)
-        let r3 = innerRadius * innerRadius * innerRadius
         return keys.enumerated().map { i, key in
             let x = Double(i)
             let c = 1 - 2 * (0.5 + x * a1).truncatingRemainder(dividingBy: 1)
             let s = max(0, 1 - c * c).squareRoot()
             let wobble = GlobeHazeField.hash(key).wobble
             let a = 2 * Double.pi * (0.5 + x * a2).truncatingRemainder(dividingBy: 1) + twist * (2 * wobble - 1)
-            let rho = cbrt(r3 + (1 - r3) * (x + 0.5) / n)
+            let rho = i < top ? 1 : hazeDepth + (1 - hazeDepth) * wobble
             return (p * c + u * (s * cos(a)) + v * (s * sin(a))) * rho
         }
     }
