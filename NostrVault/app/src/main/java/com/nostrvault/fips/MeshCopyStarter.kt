@@ -60,6 +60,8 @@ class MeshCopyStarter internal constructor(
     private val rankArrived: () -> Unit = {},
     /** The mesh npubs with a live link now (the engine's peers): tried first, as the ones that answer. */
     private val connected: () -> Collection<String> = { emptyList() },
+    /** The setup or import dial's address, the one kept across restarts ([OtherVaultLink.open] keep). */
+    private val seedLink: (String) -> String? = link,
 ) {
     @Inject constructor(
         @ApplicationContext context: Context,
@@ -69,7 +71,7 @@ class MeshCopyStarter internal constructor(
         reach: dagger.Lazy<com.nostrvault.service.DiscoveryReachStore>,
         mesh: dagger.Lazy<FipsMeshManager>,
     ) : this(
-        link = { npub -> otherVaultLink.open(npub)?.takeIf(::answers) },
+        link = { npub -> otherVaultLink.open(npub, keep = false)?.takeIf(::answers) },
         sign = { tags -> MeshKeySigner.authorization(MeshKeyAuth.START_KIND, "", tags) },
         engine = BridgeEngine,
         records = PrefsRecordStore(context),
@@ -91,6 +93,7 @@ class MeshCopyStarter internal constructor(
         },
         rankArrived = { reach.get().refresh() },
         connected = { mesh.get().status.value.peers },
+        seedLink = { npub -> otherVaultLink.open(npub, keep = true)?.takeIf(::answers) },
     )
 
     /** The libhaven copy calls (a fake in the tests). Codes: [MeshCopyV2.RUN_STARTED] and the rest. */
@@ -133,6 +136,11 @@ class MeshCopyStarter internal constructor(
     private var retryJob: Job? = null
 
     private val lock = Mutex()
+    /**
+     * A check that found [lock] held (a queued pull may dial for about a minute): run again once it is let go, so a
+     * relay start or a pending copy's retry is not lost (Tron, #2550).
+     */
+    @Volatile private var checkAgain = false
     private var record = records.load()
         set(v) { if (v != field) { field = v; records.save(v); _sync.update { it.copy(lastAt = v.copied) } } }
 
@@ -193,7 +201,7 @@ class MeshCopyStarter internal constructor(
     suspend fun dial(meshNpub: String): String? {
         val startedAt = nowS()
         while (true) {
-            val url = withContext(Dispatchers.IO) { link(meshNpub) }
+            val url = withContext(Dispatchers.IO) { seedLink(meshNpub) }
             if (url != null) return url
             if (!OtherVaultCopy.dialsAgain(startedAt, nowS())) return null
             delay(OtherVaultCopy.DIAL_RETRY_S * 1000)
@@ -244,7 +252,8 @@ class MeshCopyStarter internal constructor(
 
     /** One more try at the pending copy with [peer]; a try that can't reach it counts as a miss. */
     internal suspend fun retryOnce(peer: String) {
-        if (current != null || !lock.tryLock()) return
+        if (current != null) return
+        if (!lock.tryLock()) { checkAgain = true; return }
         try {
             val p = record.pending?.takeIf { it.peer == peer } ?: return
             val url = link(p.peer) ?: return missed(peer)
@@ -252,6 +261,7 @@ class MeshCopyStarter internal constructor(
             if ((r as? Result.Failed)?.code == "unreachable") missed(peer)
         } finally {
             lock.unlock()
+            runAgainIfAsked()
         }
     }
 
@@ -268,7 +278,8 @@ class MeshCopyStarter internal constructor(
     }
 
     internal suspend fun reconnectNow() {
-        if (current != null || !lock.tryLock()) return
+        if (current != null) return
+        if (!lock.tryLock()) { checkAgain = true; return }
         try {
             val r = record
             r.pending?.let { p ->
@@ -306,6 +317,7 @@ class MeshCopyStarter internal constructor(
             if (engine.copySync(peer, base + prefix, filesToo()) == MeshCopyV2.RUN_STARTED) current = peer
         } finally {
             lock.unlock()
+            runAgainIfAsked()
         }
     }
 
@@ -387,7 +399,20 @@ class MeshCopyStarter internal constructor(
      * Starts the next queued catch-up, unless one is running (its end comes back here through [onLogLine]). A device
      * that can't be dialed or that the engine refuses is marked and skipped; a busy engine keeps the queue.
      */
-    internal suspend fun syncQueued() = lock.withLock {
+    internal suspend fun syncQueued() {
+        try {
+            syncQueuedLocked()
+        } finally {
+            runAgainIfAsked()
+        }
+    }
+
+    /** A check lost [lock] while it was held: run it now. */
+    private fun runAgainIfAsked() {
+        if (checkAgain) { checkAgain = false; scope.launch(io) { reconnectNow() } }
+    }
+
+    private suspend fun syncQueuedLocked() = lock.withLock {
         while (current == null) {
             val peer = _sync.value.queued.firstOrNull() ?: return@withLock
             val split = linkSoon(peer)?.let(MeshCopyV2::splitLink)

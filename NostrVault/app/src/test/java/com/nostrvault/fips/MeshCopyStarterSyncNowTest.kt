@@ -104,6 +104,22 @@ class MeshCopyStarterSyncNowTest {
     }
 
     @Test
+    fun `a check that finds a queued dial holding the lock runs once it is let go`() = runTest {
+        unreachableFor += box
+        val s = starter()
+        s.syncNow()
+        runCurrent()
+        s.reconnectNow() // the relay came up while Sync now dials the box
+        assertEquals(emptyList<String>(), engine.syncs)
+        unreachableFor -= box
+        engine.answers += listOf(9, 9) // neither starts: nothing runs after the queue
+        now += MeshCopyV2.SYNC_EVERY_S // both due by the time it runs again
+        advanceTimeBy(OtherVaultCopy.DIAL_RETRY_S * 1000)
+        runCurrent()
+        assertEquals("the lost check ran: the box is due again", listOf(box, mac, box), engine.syncs)
+    }
+
+    @Test
     fun `a failed catch-up is shown until the next one starts`() = runTest {
         val s = starter()
         s.syncNow()

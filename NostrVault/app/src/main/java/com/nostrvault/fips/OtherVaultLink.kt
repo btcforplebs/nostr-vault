@@ -34,10 +34,12 @@ import kotlin.concurrent.thread
 @Singleton
 class OtherVaultLink internal constructor(
     private val store: Store,
+    /** Now, ms: when a connection asks whether its address is past its day (the tests' clock in the tests). */
+    private val clock: () -> Long = System::currentTimeMillis,
     private val dial: (String) -> String?,
 ) {
     @Inject constructor(@ApplicationContext context: Context) :
-        this(PrefsStore(context), { npub -> FipsBridge.ingress(npub).url })
+        this(PrefsStore(context), dial = { npub -> FipsBridge.ingress(npub).url })
 
     /** Where the kept address lives between runs. */
     interface Store {
@@ -52,7 +54,7 @@ class OtherVaultLink internal constructor(
      * pull runs to another one, and one shared address closed the running one's port and token (Tao, nv-android
      * acefaeee). [store] keeps the newest one, the one an engine or app restart brings back.
      */
-    private class Link(val server: ServerSocket, val token: String, var until: Long) {
+    private class Link(val server: ServerSocket, val token: String, @Volatile var until: Long) {
         /** The current ingress for the npub (`host:port`), cached so a dial per connection doesn't open a port each. */
         @Volatile var target: InetSocketAddress? = null
         val open: Boolean get() = !server.isClosed
@@ -60,21 +62,25 @@ class OtherVaultLink internal constructor(
 
     private val links = HashMap<String, Link>()
 
-    /** B, once linked: the lasting ws:// address for [npub], kept until [OtherVaultCopy.KEEP_LINK_MS] from [now]. */
+    /**
+     * B, once linked: the lasting ws:// address for [npub], kept until [OtherVaultCopy.KEEP_LINK_MS] from [now].
+     * [keep]: the setup or import dial, whose address the relay saves (older_relays) and a restart brings back. A
+     * catch-up, rank pull or status read only lives this run, so it never takes the one kept slot (Tron, #2550).
+     */
     @Synchronized
-    fun open(npub: String, now: Long = System.currentTimeMillis()): String? {
+    fun open(npub: String, now: Long = System.currentTimeMillis(), keep: Boolean = true): String? {
         letGoExpired(now)
         val until = now + OtherVaultCopy.KEEP_LINK_MS
         links[npub]?.takeIf { it.open }?.let { l ->
             l.until = until
             l.target = null
-            keep(npub, l)
+            if (keep || store.npub == npub) keep(npub, l)
             return address(l.server.localPort, l.token)
         }
         // The kept one comes back with its port and token, so the relay's saved URL still answers; another is new.
         val kept = store.npub == npub && store.token != null
         val l = listen(npub, if (kept) store.token!! else newToken(), if (kept) store.port else 0, until) ?: return null
-        keep(npub, l)
+        if (keep || kept) keep(npub, l)
         return address(l.server.localPort, l.token)
     }
 
@@ -97,6 +103,13 @@ class OtherVaultLink internal constructor(
         links.values.forEach { runCatching { it.server.close() } }
         links.clear()
         clearStore()
+    }
+
+    /** The first copy from [npub] never started: that one device's address only. */
+    @Synchronized
+    fun closeDevice(npub: String) {
+        links.remove(npub)?.let { runCatching { it.server.close() } }
+        if (store.npub == npub) clearStore()
     }
 
     /** Nothing is left to read through [url] (an address [open] gave): that one device's address only. */
@@ -168,7 +181,8 @@ class OtherVaultLink internal constructor(
             client.soTimeout = REQUEST_LINE_TIMEOUT_MS
             readLine(client.getInputStream()).also { client.soTimeout = 0 }
         }.getOrNull()
-        val rewritten = line?.let { withoutToken(it, token) }
+        // Past its day the address forwards nothing, even before the next open or restart lets it go (Tron, #2550).
+        val rewritten = line?.takeIf { OtherVaultCopy.open(l.until, clock()) }?.let { withoutToken(it, token) }
         val upstream = rewritten?.let { connect(l, npub) }
         if (rewritten == null || upstream == null) {
             runCatching { client.close() }

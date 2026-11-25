@@ -30,7 +30,9 @@ class OtherVaultLinkTest {
     private var ingress: String? = null
     private var dials = 0
     private val store = MemStore()
-    private val link = OtherVaultLink(store) { dials++; ingress }
+    /** The links' clock, ms: the tests open at small times, so connections ask at 1. */
+    private var clockNow = 1L
+    private val link = OtherVaultLink(store, { clockNow }) { dials++; ingress }
 
     @After fun tearDown() {
         link.close()
@@ -81,7 +83,7 @@ class OtherVaultLinkTest {
         // An app restart: a fresh link object reads the store and comes back on the same port.
         val token = store.token
         link.close().also { store.npub = "npub1a"; store.port = URI(url).port; store.until = OtherVaultCopy.KEEP_LINK_MS; store.token = token }
-        val again = OtherVaultLink(store) { ingress }
+        val again = OtherVaultLink(store, { clockNow }) { ingress }
         again.restore(now = 1)
         assertEquals(url, again.url())
         assertEquals("second engine", read(url))
@@ -159,6 +161,42 @@ class OtherVaultLinkTest {
         assertEquals(b, link.url())
         assertEquals("vault", read(a))
         assertEquals("vault", read(b))
+    }
+
+    @Test fun `only the setup dial takes the kept slot, so a restart brings back its address`() {
+        fakeIngress("vault")
+        val seed = link.open("npub1a", now = 0)!!
+        link.open("npub1b", now = 0, keep = false)
+        link.open("npub1c", now = 60_000, keep = false)
+        assertEquals("npub1a", store.npub)
+        assertEquals(seed, link.url())
+        // An app restart: the relay's saved seed address answers again.
+        val port = URI(seed).port
+        val again = OtherVaultLink(store, { clockNow }) { ingress }
+        link.closeDevice("npub1a")
+        store.npub = "npub1a"; store.port = port; store.until = OtherVaultCopy.KEEP_LINK_MS; store.token = URI(seed).path.trim('/')
+        again.restore(now = 1)
+        assertEquals(seed, again.url())
+        assertEquals("vault", read(seed))
+        again.close()
+    }
+
+    @Test fun `an address past its day forwards nothing, even before it is let go`() {
+        fakeIngress("vault")
+        val url = link.open("npub1a", now = 0)!!
+        clockNow = OtherVaultCopy.KEEP_LINK_MS
+        assertNull(read(url))
+        assertEquals(0, dials)
+    }
+
+    @Test fun `a first copy that never started closes only that device`() {
+        fakeIngress("vault")
+        val a = link.open("npub1a", now = 0, keep = false)!!
+        val b = link.open("npub1b", now = 0)!!
+        link.closeDevice("npub1b")
+        assertNull(store.npub)
+        assertNull(read(b))
+        assertEquals("vault", read(a))
     }
 
     @Test fun `nothing kept, nothing restored`() {
