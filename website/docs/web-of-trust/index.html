@@ -88,6 +88,7 @@
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
                     <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
+                    <li><a href="/docs/mesh/desktop-vaults/">Desktop Vaults</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
                     <li><a href="/docs/mesh/linux-box/">Linux box (beta)</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
@@ -176,8 +177,10 @@
                     their place comes from their key.</p>
                 <ul>
                     <li><strong>Layers.</strong> The menu at the top left picks <strong>Everyone</strong>,
-                        <strong>Following</strong>, <strong>Vouched</strong> or <strong>Further out</strong>, each with a count.
-                        Vouched shows up once your vault has counted your web.</li>
+                        <strong>Following</strong> or <strong>Vouched</strong>, each with a count, and on iPhone, iPad, Mac and
+                        Android <strong>Hop 3</strong>, <strong>Hop 4</strong> and <strong>Hop 5</strong> (<a href="#far-rings">the far
+                        rings</a>). Vouched shows up once your vault has counted your web. The web app has
+                        <strong>Further out</strong> in place of the hops.</li>
                     <li><strong>Filters.</strong> <strong>Talk with you</strong> keeps people you've replied to, reposted, liked
                         or zapped, or who did that to you. <strong>Follow you back</strong> keeps follows who follow you too.</li>
                     <li><strong>Find someone.</strong> Tap the magnifier and type a name. Your follows come first, then your
@@ -187,6 +190,27 @@
                         flies. My Web has three switches for it: <strong>Live stars</strong>, <strong>Friends of friends</strong>
                         and <strong>Likes, reposts and zaps</strong> (on the Mac, the antenna menu in the WoT bar). (iPhone, iPad,
                         Mac and Android.)</li>
+                </ul>
+
+                <h3 id="far-rings">The far rings: Hop 3, Hop 4 and Hop 5</h3>
+                <p>Past your web are faint rings for the people three, four and five hops out. Your phone can't rank that many
+                    people itself, so a <a href="/docs/mesh/desktop-vaults/">desktop Vault</a> (a Mac or a Linux box) ranks them and
+                    sends the scores to your phone over the mesh. A Mac does this for itself.</p>
+                <ul>
+                    <li><strong>Picking a hop.</strong> Pick <strong>Hop 3</strong>, <strong>Hop 4</strong> or <strong>Hop 5</strong>
+                        in the layer menu and the globe zooms out to that ring: your inner globe shrinks to the middle and the ring
+                        fills the screen. Each ring shows its best-ranked people, up to 300, labelled
+                        <strong>Found by your desktop Vault</strong>. With more than one desktop paired, My Web names the one that
+                        ranked them.</li>
+                    <li><strong>Greyed hops.</strong> Until a desktop Vault's scores are on this device, the hops are greyed with a
+                        lock and <strong>Needs a desktop Vault</strong>. Tapping one says <strong>A desktop Vault unlocks the far
+                        rings</strong>. With no desktop Vault, a card offers <strong>Pair a desktop Vault</strong> to see distant
+                        connections; <strong>Not now</strong> puts it away, and
+                        <span class="path">Settings &rarr; Feed &rarr; Discovery Reach</span> brings it back. A paired Vault that
+                        hasn't sent its scores yet shows faint rings with nobody on them.</li>
+                    <li><strong>The haze.</strong> Zoomed out to Hop 3 or Hop 4, the people ranked after the ring's top 300 show as
+                        a faint haze of dots: the best near the middle, the lowest drifting out past the ring. Each dot keeps its
+                        place. Haze dots can't be tapped.</li>
                 </ul>
                 <p>The globe always draws on a dark sky, also in Light mode.</p>
                 </section>

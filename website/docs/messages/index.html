@@ -88,6 +88,7 @@
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
                     <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
+                    <li><a href="/docs/mesh/desktop-vaults/">Desktop Vaults</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
                     <li><a href="/docs/mesh/linux-box/">Linux box (beta)</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
@@ -227,7 +228,13 @@
                 <p>Your DM inbox is a list of relays (the DMs column under
                     <span class="path">Settings &rarr; Relays &rarr; Relays</span>, then tap Save). Other apps send your messages there. Keep at
                     least two: with <strong>No DM relay</strong> people can't message you, and with <strong>Only one DM
-                    relay</strong> nobody can if it goes down. If your Mac is your vault, its inbox is listed first.</p>
+                    relay</strong> nobody can if it goes down. Each desktop Vault whose <span class="ui">DM inbox</span> switch is
+                    on is listed first, in your <a class="inline" href="/docs/mesh/desktop-vaults/#order">Desktop Vaults</a> order,
+                    before your own entries.</p>
+                <p id="https">Direct messages and their files may travel over the web (HTTPS and wss), like on any Nostr app: they
+                    are encrypted end to end before they leave your device, so a relay or media server only ever holds scrambled
+                    bytes. Your phone reads your desktop Vaults' inboxes over the web, and over the mesh first when a Vault has both.
+                    Drafts, private notes and chats never go over the web.</p>
                 <p>When you send, Nostr Vault uses the other person's DM inbox, and falls back to their normal relays if they
                     don't have one.</p>
                 <p>Someone delivering straight to your vault's own inbox has to be in your

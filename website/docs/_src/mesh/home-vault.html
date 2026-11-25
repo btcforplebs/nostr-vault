@@ -21,7 +21,8 @@
 <h2 id="kinds">What each kind does</h2>
 <ul>
     <li><strong>Desktop vault &middot; full history</strong> (a Mac or a Linux box): keeps all your history and syncs both
-        ways with your phones. You can have more than one. See <a href="/docs/mesh/sync/">Your Devices and sync</a>.</li>
+        ways with your phones. You can have as many as you like, reached over the mesh, by web address, or both. See
+        <a href="/docs/mesh/desktop-vaults/">Desktop Vaults</a> and <a href="/docs/mesh/sync/">Your Devices and sync</a>.</li>
     <li><strong>Mobile vault &middot; new posts</strong> (a spare phone or a box): keeps a copy of your new posts and media, and
         a full copy of every file (Mobile vault mode keeps <strong>Keep a full copy on this phone</strong> on). Your phone
         still sends your notes to your relays itself. This page shows how to set one up on a spare phone.</li>
@@ -71,7 +72,9 @@
 <div class="note">
     <p><strong>What's public.</strong> Linking a vault doesn't list it. If you add it under
         <span class="path">Settings &rarr; Media Servers</span> &rarr; <span class="ui">Your Vaults</span>, its mesh address
-        is listed in your media server list, in public, so other apps can fetch your photos from it. Direct-message attachments are never sent there.</p>
+        is listed in your media server list, in public, so other apps can fetch your photos from it. Strangers on the
+        mesh can't fetch direct-message files from it. A desktop Vault's mesh address is listed only by its own
+        <a href="/docs/mesh/desktop-vaults/#mesh-media">Media over the Mesh</a> switch (Beta, off by default).</p>
     <p>Media goes to the mobile vault signed with this phone's mesh key, so it goes without a tap even if your key is in a
         remote signer.</p>
 </div>

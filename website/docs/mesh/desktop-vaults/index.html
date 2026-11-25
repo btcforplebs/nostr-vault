@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/mesh/desktop-vaults.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Desktop Vaults — Nostr Vault Docs</title>
+    <meta name="description" content="Desktop Vaults in Nostr Vault: any number of Macs and Linux boxes, each reached over the mesh, by web address, or both. What goes over which path, list order, the public list switches, Media over the Mesh (Beta), and how the list copies between your devices.">
+    <link rel="canonical" href="https://nostrvault.app/docs/mesh/desktop-vaults/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/mesh/desktop-vaults/">
+    <meta property="og:title" content="Desktop Vaults — Nostr Vault Docs">
+    <meta property="og:description" content="Desktop Vaults in Nostr Vault: any number of Macs and Linux boxes, each reached over the mesh, by web address, or both. What goes over which path, list order, the public list switches, Media over the Mesh (Beta), and how the list copies between your devices.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css?v=20261101">
+    <link rel="stylesheet" href="/menu.css?v=20261025">
+    <link rel="stylesheet" href="/docs/docs.css?v=20261025">
+    <script src="/docs/docs.js?v=20261025" defer></script>
+    <script src="/menu.js?v=20261107" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+        </div>
+        <div class="actions">
+            <a href="/docs/" class="pill pill-docs">Docs</a>
+            <a href="/vault/" class="pill pill-web">Open web app</a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Get started</p>
+                <ul>
+                    <li><a href="/docs/start/iphone/">iPhone and iPad</a></li>
+                    <li><a href="/docs/start/android/">Android</a></li>
+                    <li><a href="/docs/start/mac/">Mac</a></li>
+                    <li><a href="/docs/start/web/">Web browser</a></li>
+                    <li><a href="/docs/start/linux/">Linux (beta)</a></li>
+                    <li><a href="/docs/start/raspberry-pi/">Raspberry Pi (beta)</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/keys/">Keys and accounts</a></li>
+                    <li><a href="/docs/keys/signers/">Signers</a></li>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Using the app</p>
+                <ul>
+                    <li><a href="/docs/feeds/">Feeds</a></li>
+                    <li><a href="/docs/messages/">Messages</a></li>
+                    <li><a href="/docs/notifications/">How notifications arrive</a></li>
+                    <li><a href="/docs/web-of-trust/">Web of trust</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh</a></li>
+                    <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
+                    <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
+                    <li><a href="/docs/mesh/desktop-vaults/" aria-current="page">Desktop Vaults</a></li>
+                    <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
+                    <li><a href="/docs/mesh/linux-box/">Linux box (beta)</a></li>
+                    <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
+                    <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
+                    <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
+                    <li><a href="/docs/browser-relay/">Browser vault</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Your vault</p>
+                <ul>
+                    <li><a href="/docs/vault/">Your vault</a></li>
+                    <li><a href="/docs/vault/who-can-reach-you/">Who Can Reach You</a></li>
+                    <li><a href="/docs/backup/">Backup and restore</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                    <li><a href="/docs/share-links/">Share links</a></li>
+                    <li><a href="/docs/share-links/profile/">Share your profile</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
+                    <li><a href="/docs/faq/">FAQ</a></li>
+                    <li><a href="/docs/whats-new/">What's new</a></li>
+                    <li><a href="/docs/roadmap/">Roadmap</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Mesh and your devices</p>
+            <h1>Desktop Vaults</h1>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#open">Open Desktop Vaults</a></li><li><a href="#add">Add a desktop Vault</a></li><li><a href="#paths">What goes over which path</a></li><li><a href="#order">Several Vaults, and their order</a></li><li><a href="#listed">Listed publicly</a></li><li><a href="#mesh-media">Media over the Mesh (Beta)</a></li><li><a href="#delete">Delete a Vault</a></li><li><a href="#copy">Your Vault list on your other devices</a></li><li><a href="#rankings">Rankings for the far rings</a></li><li><a href="#mac-and-box">On a Mac or a Linux box</a></li><li><a href="#upgrade">After the update</a></li></ul></div>
+
+            <article class="docs-article">
+                <p>A <strong>desktop Vault</strong> is a Mac or a Linux box that keeps a copy of your vault and stays on. You can
+                    have as many as you like. Each one is reached <strong>over the mesh</strong>, <strong>by its web
+                    address</strong>, or <strong>both</strong>, and each gets its own sync and its own status. There is no "main"
+                    one any more. <span class="ui">Desktop Vaults</span> replaces the old one-address Desktop vault sync page.</p>
+
+                <h2 id="open">Open Desktop Vaults</h2>
+                <ul>
+                    <li><strong>iPhone and iPad:</strong> <span class="path">Settings &rarr; Your Vault &rarr; Desktop Vaults</span>,
+                        or <span class="path">Settings &rarr; Your Devices &rarr; Advanced &rarr; Desktop Vaults</span>.</li>
+                    <li><strong>Android:</strong> <span class="ui">Desktop Vaults</span> on your Vault page (it shows how many you
+                        have), or <span class="path">Settings &rarr; Your Devices &rarr; Advanced &rarr; Desktop Vaults</span>.</li>
+                    <li><strong>Mac:</strong> the Mac is a desktop Vault itself, so it has no list. Its own page is
+                        <span class="path">Settings &rarr; Public on the web</span> (<a href="#mac-and-box">below</a>).</li>
+                    <li><strong>Linux box:</strong> also a desktop Vault itself. Its page has <span class="ui">My Devices</span> and
+                        <span class="ui">Public on the web</span> (<a href="#mac-and-box">below</a>).</li>
+                </ul>
+
+                <h2 id="add">Add a desktop Vault</h2>
+                <p>Tap <span class="ui">Add a desktop Vault</span>. A Vault needs at least one way in:</p>
+                <ul>
+                    <li><span class="ui">Over the Mesh</span>: <span class="ui">Pair a new desktop over the Mesh</span> starts the two
+                        scans (<a href="/docs/mesh/my-devices/#add">Link a device</a>), or pick a desktop you already paired under
+                        <span class="ui">Paired desktop</span>. A desktop you pair joins your Vaults by itself.</li>
+                    <li><span class="ui">Web address</span>: type its <code>https://</code> address.</li>
+                    <li>Both. Then the mesh comes first and the web address is the fallback.</li>
+                </ul>
+                <p>An address or a desktop that is already one of your Vaults is refused, so each one is listed once. When a paired
+                    Mac tells your phone the web address it serves, and that matches a Vault you typed, the two become one Vault.</p>
+
+                <h2 id="paths">What goes over which path</h2>
+                <p>Each Vault's row says how it's reached: <span class="ui">Mesh only</span>, <strong>Web only</strong> or
+                    <strong>Mesh and web</strong>, with its address.</p>
+                <table>
+                    <thead><tr><th></th><th>Mesh only</th><th>Web only</th><th>Mesh and web</th></tr></thead>
+                    <tbody>
+                        <tr><td>Public posts, reactions, lists, profile</td><td>mesh</td><td>web</td><td>mesh first, web as fallback</td></tr>
+                        <tr><td>Photos and files in public posts</td><td>mesh</td><td>web</td><td>either</td></tr>
+                        <tr><td>Direct messages and their files</td><td>mesh</td><td>web</td><td>mesh first, web as fallback</td></tr>
+                        <tr><td>Drafts, private notes, chats, settings, accounts, private files</td><td>mesh</td><td><strong>never</strong></td><td>mesh only</td></tr>
+                    </tbody>
+                </table>
+                <ul>
+                    <li>A web-only Vault says so: "Holds your public posts, photos and messages. Drafts and private files need
+                        Mesh."</li>
+                    <li>Direct messages may go over the web, like on any Nostr app: they are encrypted end to end before they leave
+                        your phone. See <a href="/docs/messages/#relays">Messages</a>.</li>
+                    <li>The mesh never uses your Nostr key. Your devices use their own mesh keys
+                        (<a href="/docs/mesh/sync/#keys">more</a>).</li>
+                    <li>Every Vault catches up on its own. When your phone hands a new post to a Vault to send for you, it picks the
+                        first Vault in your list that answers over the mesh.</li>
+                </ul>
+
+                <h2 id="order">Several Vaults, and their order</h2>
+                <p>The list's order is the order your Vaults go into your public lists. On iPhone and iPad, drag a Vault to move
+                    it; on Android, use the up and down arrows. The first Vault comes first in your public lists, and other apps
+                    upload your media to the first media server. Moving a Vault republishes only the lists whose Vault entries
+                    change order.</p>
+                <ul>
+                    <li>Turning a list switch on puts this Vault after your other Vaults and before your own entries. It never moves
+                        an entry that is already there.</li>
+                    <li>Two Vaults can both be public on the web. Nothing asks you to move it from one to the other, and nothing turns
+                        itself off.</li>
+                    <li>Other apps may only use the first few: about 4 relays and 3 DM inboxes. The Vaults stay in your order, so you
+                        choose which come first.</li>
+                </ul>
+
+                <h2 id="listed">Listed publicly</h2>
+                <p>Open a Vault to see its name, kind, <span class="ui">How it's reached</span>, its <span class="ui">Last
+                    copy</span>, and <span class="ui">Listed publicly</span>. These switches put the Vault's web address in your
+                    public lists, so other apps can reach it:</p>
+                <ul>
+                    <li><span class="ui">Your relays</span>: others read your posts here (your relay list).</li>
+                    <li><span class="ui">DM inbox</span>: others send you messages here.</li>
+                    <li><span class="ui">Media servers</span>: others load and upload your media here.</li>
+                    <li><span class="ui">Media over the Mesh</span> <span class="ui">Beta</span>: <a href="#mesh-media">below</a>.</li>
+                </ul>
+                <p>The switches are read from the lists you published, so every device shows the same thing. Each tap fetches your
+                    newest list, changes only this Vault's entry, and publishes it. If your lists can't be loaded, nothing is
+                    published and the switch goes back.</p>
+                <ul>
+                    <li><strong>A bare IP address can't be listed</strong>, because it would make your home address public. Use a
+                        domain name. The Vault still syncs over that address.</li>
+                    <li>A switch that would leave a list empty is refused: add another relay or media server first.</li>
+                    <li>To change a Vault's web address, turn its list switches off first.</li>
+                    <li>On <span class="path">Settings &rarr; Relays</span> and <span class="path">Media Servers</span>, Vault entries
+                        show under <span class="ui">From your desktop Vaults</span>, and Media Servers lists each web Vault under
+                        <span class="ui">Added for You</span>: uploads also go to each of them. They're read only there: tap one to
+                        open its Vault's page and change it there. Saving those pages keeps them as they are.</li>
+                </ul>
+
+                <h2 id="mesh-media">Media over the Mesh (Beta)</h2>
+                <p><span class="ui">Media over the Mesh</span> lists the Vault's mesh address on your media servers, after the web
+                    ones. Apps that speak the mesh can load your media from it, and Auto-Mirror copies there over the mesh. It is
+                    <strong>off by default</strong> and marked <span class="ui">Beta</span>. <span class="ui">What is this?
+                    (NIP-F1)</span> opens <a href="/docs/developers/#nips">NIP-F1</a>, the draft it follows.</p>
+                <ul>
+                    <li>Your media server list always keeps at least one web server. A list of mesh entries only is refused.</li>
+                    <li>A Mac that already listed its own mesh address before this update shows the switch on. Turn it off if you
+                        don't want it public.</li>
+                    <li>Listing a Vault as a mesh <em>relay</em> is not offered yet.</li>
+                </ul>
+
+                <h2 id="delete">Delete a Vault</h2>
+                <p><span class="ui">Delete this Vault</span> asks "Also take &lt;name&gt; out of your public lists?"</p>
+                <ul>
+                    <li><span class="ui">Yes, take it out</span> (the default) removes its addresses from your relays, DM inbox and
+                        media servers, in every spelling, and nothing else.</li>
+                    <li><span class="ui">No, leave my lists as they are</span> leaves them there as ordinary entries.</li>
+                </ul>
+                <p>This phone stops syncing with it. A paired desktop stays in Your Devices until you
+                    <a href="/docs/mesh/remove-a-device/">remove it there</a>. You can unlist a Vault even while it is off.</p>
+
+                <h2 id="copy">Your Vault list on your other devices</h2>
+                <p>Your list of Vaults (names, kinds, addresses and order) copies between your own devices over the mesh, with your
+                    other settings. It is never in a public post. Each Vault is merged on its own, so a Vault added on one phone and
+                    another edited on a second both survive, and a deleted one stays deleted.</p>
+                <p><strong>A copied Vault grants nothing.</strong> If this device isn't paired with that desktop, it doesn't sync with
+                    it over the mesh until you pair them here (<span class="ui">Pair over the Mesh</span> on the Vault's page). The
+                    copy never adds a device to your paired devices.</p>
+
+                <h2 id="rankings">Rankings for the far rings</h2>
+                <p>A desktop Vault ranks the people three, four and five hops out from you and sends the scores to your paired phones
+                    over the mesh. That is what unlocks <strong>Hop 3</strong>, <strong>Hop 4</strong> and <strong>Hop 5</strong> on the
+                    <a href="/docs/web-of-trust/#far-rings">WoT globe</a>.</p>
+                <ul>
+                    <li>A Mac ranks while Nostr Vault is open on it.</li>
+                    <li>A Linux box ranks too, for the account it was set up with and each account signed in on it, and hands the
+                        scores only to the devices paired with it. Remove a device on the box and it gets no more. A box can't nudge
+                        your phone when it has new scores, so your phone picks them up at its hourly check or its next catch-up.</li>
+                </ul>
+
+                <h2 id="mac-and-box">On a Mac or a Linux box</h2>
+                <p>A Mac or a box is a Vault, so its page is about itself:</p>
+                <ul>
+                    <li><strong>Mac:</strong> <span class="path">Settings &rarr; Public on the web</span>. With your own domain and a
+                        tunnel, <span class="ui">Make this vault public on the web</span> puts this Mac in your relay list and DM inbox,
+                        after your other Vaults. Your other Macs can be public too. The same page has this Mac's
+                        <span class="ui">Media over the Mesh</span> switch, Beta and off by default. Mesh must be on with a device
+                        added first.</li>
+                    <li><strong>Linux box:</strong> the box's page has <span class="ui">Public on the web</span> with the same
+                        switch and the same rules, and <span class="ui">My Devices</span>, where you pair and remove your devices
+                        (<a href="/docs/mesh/linux-box/">A Linux box in My Devices</a>).</li>
+                    <li>When a Mac or a box applies the copied Vault list, it leaves itself out.</li>
+                </ul>
+
+                <h2 id="upgrade">After the update</h2>
+                <p>Your old setup becomes Vaults on its own, and nothing is republished:</p>
+                <ul>
+                    <li>A desktop vault you had by its mesh address becomes a <span class="ui">Mesh only</span> Vault.</li>
+                    <li>One you had by web address becomes a web Vault. If a paired Mac serves that address, the two become one
+                        Mesh and web Vault.</li>
+                    <li>Every other Mac you paired as <strong>Desktop vault &middot; full history</strong> becomes a mesh Vault,
+                        after the first one.</li>
+                    <li>The switches show exactly what your lists already say. Several Macs that were each public on the web stay
+                        that way.</li>
+                </ul>
+            </article>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/mesh/sync/"><span>Previous</span>Your Devices and sync</a>
+                <a class="next" href="/docs/mesh/home-vault/"><span>Next</span>Mobile and desktop vaults</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>
