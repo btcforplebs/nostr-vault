@@ -238,7 +238,7 @@ jobs:
         run: |
           # systemd, then what the test drives the window with: Xvfb, sway + grim, ImageMagick, dbus-run-session, a font.
           case ${{ matrix.distro }} in
-            ubuntu|debian) prep='apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends systemd systemd-sysv dbus dbus-user-session procps iproute2 curl ca-certificates xvfb sway grim imagemagick fonts-dejavu-core xdotool xclip && apt-get clean' ;;
+            ubuntu|debian) prep='apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends systemd systemd-sysv dbus dbus-user-session procps iproute2 curl ca-certificates xvfb sway grim imagemagick fonts-dejavu-core xdotool xclip libglib2.0-bin && apt-get clean' ;;
             fedora) prep='dnf install -y -q systemd procps-ng iproute util-linux curl findutils xorg-x11-server-Xvfb sway grim ImageMagick dbus-daemon dejavu-sans-fonts xdotool xclip && dnf clean all' ;;
             arch) prep="sed -i -e 's/^CheckSpace/#CheckSpace/' -e '/^\\[options\\]/a DisableSandbox' /etc/pacman.conf && pacman -Syu --noconfirm --needed systemd procps-ng iproute2 util-linux curl findutils xorg-server-xvfb sway grim imagemagick dbus ttf-dejavu xdotool xclip && pacman -Scc --noconfirm"
               # A dated Arch: every package as the Arch Linux Archive had it that day (-uu also downgrades).
@@ -301,6 +301,12 @@ jobs:
           r=0
           docker exec nv sh /w/linux/native/test/window-test.sh x11 vault /tmp/nvwt-out || r=1
           docker exec nv sh /w/linux/native/test/window-test.sh wayland vault /tmp/nvwt-out || r=1
+          exit $r
+      - name: X11 and Wayland - a closed window ends its WebKit processes, starts over as the tray, opens again signed in
+        run: |
+          r=0
+          docker exec nv sh /w/linux/native/test/window-test.sh x11 close /tmp/nvwt-out || r=1
+          docker exec nv sh /w/linux/native/test/window-test.sh wayland close /tmp/nvwt-out || r=1
           exit $r
       - name: X11 and Wayland - signed in, the desktop layout is the phone's screens, not the napplets (box build)
         run: |

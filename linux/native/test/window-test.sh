@@ -13,6 +13,11 @@
 #            2026-11-20). NV_WT_OWNER: the owner's pubkey hex. NV_WT_DESK_EXPECT=napplets checks the other way.
 #     narrow (x11 only) the window asked for 600x700, a half-width tile on a 1280 px screen (narrow-probe.py), must
 #            be 600 px wide or less, or the tile clips it; a copy with the old 800x640 minimum must not be (the control).
+#     close  the vault is set up: closing the window (as its close button does, with a tray) must end WebKit's web and
+#            network processes, and opening it again must work with the web app's storage (its sign-in) intact
+#            (close-probe.py); hiding it instead (what close did before 2026-11-25) must leave them running (the
+#            control). Then the installed window, closed with its Ctrl+W action over D-Bus: the same process must
+#            start over as the tray alone (--tray, much less memory) and open again from the launcher.
 #     paste  (x11 only) Ctrl+V, pressed with xdotool, into a text field in the window's own web view
 #            (paste-probe.py): with an empty clipboard the window must survive, and with text on the clipboard the
 #            text must arrive. Where WebKitGTK has the empty-clipboard crash (2.54.0, 2.54.1), a copy of the window
@@ -31,7 +36,7 @@ set -u
 MODE=${1:-}; STAGE=${2:-}; OUT=${3:-}
 CMD=${NV_WT_CMD:-nostr-vault-desktop}
 MIN_COLOURS=${NV_WT_MIN_COLOURS:-64} # a drawn page has hundreds (anti-aliased text); a blank window has 1 or 2
-case "$MODE.$STAGE" in x11.setup|x11.vault|x11.paste|x11.desk|x11.narrow|wayland.setup|wayland.vault|wayland.desk) ;; *) echo "usage: $0 <x11|wayland> <setup|vault> <out dir>  (or: x11 paste <out dir>)" >&2; exit 2 ;; esac
+case "$MODE.$STAGE" in x11.setup|x11.vault|x11.paste|x11.desk|x11.narrow|x11.close|wayland.setup|wayland.vault|wayland.desk|wayland.close) ;; *) echo "usage: $0 <x11|wayland> <setup|vault> <out dir>  (or: x11 paste <out dir>)" >&2; exit 2 ;; esac
 [ -n "$OUT" ] || { echo "no out dir" >&2; exit 2; }
 
 if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
@@ -42,8 +47,9 @@ if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
   cp "$(dirname "$0")/paste-probe.py" /tmp/nvwt-paste-probe.py && chmod 644 /tmp/nvwt-paste-probe.py
   cp "$(dirname "$0")/desk-probe.py" /tmp/nvwt-desk-probe.py && chmod 644 /tmp/nvwt-desk-probe.py
   cp "$(dirname "$0")/narrow-probe.py" /tmp/nvwt-narrow-probe.py && chmod 644 /tmp/nvwt-narrow-probe.py
+  cp "$(dirname "$0")/close-probe.py" /tmp/nvwt-close-probe.py && chmod 644 /tmp/nvwt-close-probe.py
   exec runuser -u nvwt -- env NV_WT_INNER=1 NV_WT_CMD="$CMD" NV_WT_CONTROL="${NV_WT_CONTROL:-1}" NV_WT_VAULT_URL="${NV_WT_VAULT_URL:-}" \
-    NV_WT_PROBE=/tmp/nvwt-ua-probe.py NV_WT_PASTE_PROBE=/tmp/nvwt-paste-probe.py NV_WT_DESK_PROBE=/tmp/nvwt-desk-probe.py NV_WT_NARROW_PROBE=/tmp/nvwt-narrow-probe.py \
+    NV_WT_PROBE=/tmp/nvwt-ua-probe.py NV_WT_PASTE_PROBE=/tmp/nvwt-paste-probe.py NV_WT_DESK_PROBE=/tmp/nvwt-desk-probe.py NV_WT_NARROW_PROBE=/tmp/nvwt-narrow-probe.py NV_WT_CLOSE_PROBE=/tmp/nvwt-close-probe.py \
     NV_WT_OWNER="${NV_WT_OWNER:-}" NV_WT_DESK_EXPECT="${NV_WT_DESK_EXPECT:-classic}" NV_WT_PY="${NV_WT_PY:-}" NV_WT_BIN="${NV_WT_BIN:-}" \
     NV_WT_MIN_COLOURS="$MIN_COLOURS" PATH="$PATH" HOME=/home/nvwt sh /tmp/nvwt-window-test.sh "$MODE" "$STAGE" "$OUT"
 fi
@@ -169,6 +175,49 @@ if [ "$STAGE" = desk ]; then
     napplets.*'"desk": true'*'"feed": false'*) case "$d" in *'"napplets": 0,'*) no "$MODE: no napplet frames ($d)" ;; *) ok "$MODE: the desktop layout draws the napplets ($d)" ;; esac ;;
     *) no "$MODE: want the ${NV_WT_DESK_EXPECT:-classic} desktop screens, the window drew: '${d}'"; tail -20 "$OUT/$MODE-desk-probe.log" ;;
   esac
+  echo "RESULT $MODE $STAGE pass=$pass fail=$fail"
+  [ "$fail" = 0 ]; exit
+fi
+
+if [ "$STAGE" = close ]; then
+  url=${NV_WT_VAULT_URL:-http://127.0.0.1:8080/}
+  for i in $(seq 1 60); do curl -fsS -o /dev/null "$url" 2>/dev/null && break; sleep 2; done
+  cprobe=${NV_WT_CLOSE_PROBE:-$(dirname "$0")/close-probe.py}
+  # probe <name> [hide]: one close-probe run in its own D-Bus session; sets cj (its CLOSE json).
+  probe() { cj=$(dbus-run-session -- ${NV_WT_PY:-python3 -I} "$cprobe" "$bin" ${2:-} 2>"$OUT/$MODE-close-$1.log" | sed -n 's/^CLOSE //p'); printf '%s\n' "$cj" >"$OUT/$MODE-close-$1.json"; }
+  field() { printf '%s' "$cj" | python3 -c "import json,sys; d=json.load(sys.stdin); print($1)" 2>/dev/null; }
+  probe close
+  if [ "$(field 'len(d["open"]) > 0 and d["closed"] == [] and len(d["reopened"]) > 0 and d["marker"] and d.get("restart_asked", False)')" = True ]; then
+    ok "$MODE: closed, its WebKit processes end ($(field '", ".join("%s %d MB" % (k["name"], k["rss"] // 1024) for k in d["open"])')); open again, still signed in"
+  else no "$MODE: close: '$cj'"; tail -15 "$OUT/$MODE-close-close.log"; fi
+  if [ "${NV_WT_CONTROL:-1}" = 1 ]; then
+    probe hide hide
+    if [ "$(field 'len(d["open"]) > 0 and len(d["closed"]) == len(d["open"])')" = True ]; then
+      ok "control: hiding the window leaves its WebKit processes running, so the check above can tell"
+    else no "control: hiding the window: '$cj', so the check above can't tell"; fi
+  fi
+  # The installed window, from start to tray and back, in one D-Bus session (the launcher's second run reaches it).
+  dbus-run-session -- sh -c '
+    rss() { awk "/^VmRSS/{print \$2}" /proc/$1/status 2>/dev/null; }
+    webkids() { n=0; for c in $(pgrep -P "$1"); do case $(cat /proc/$c/comm 2>/dev/null) in WebKit*) n=$((n+1)) ;; esac; done; echo $n; }
+    $0 --open feed & p=$!
+    for i in $(seq 1 30); do [ "$(webkids $p)" -ge 1 ] && break; sleep 2; done; sleep 5
+    echo "OPEN pid=$p rss=$(rss $p) webkit=$(webkids $p)"
+    gdbus call --session --dest app.nostrvault.Desktop --object-path /app/nostrvault/Desktop --method org.gtk.Actions.Activate close "[]" "{}" >/dev/null
+    for i in $(seq 1 30); do sleep 2; case "$(tr "\0" " " </proc/$p/cmdline 2>/dev/null)" in *--tray*) [ "$(webkids $p)" = 0 ] && break ;; esac; done; sleep 3
+    echo "CLOSED alive=$([ -d /proc/$p ] && echo 1 || echo 0) tray=$(tr "\0" " " </proc/$p/cmdline 2>/dev/null | grep -c -- --tray) rss=$(rss $p) webkit=$(webkids $p) zombies=$(ps -o stat= --ppid $p | grep -c Z)"
+    $0 --open feed
+    for i in $(seq 1 30); do [ "$(webkids $p)" -ge 1 ] && break; sleep 2; done
+    echo "REOPENED webkit=$(webkids $p)"
+    kill $p' "$CMD" >"$OUT/$MODE-close-installed.log" 2>&1
+  grep -E '^(OPEN|CLOSED|REOPENED)' "$OUT/$MODE-close-installed.log"
+  o=$(sed -n 's/^OPEN .*rss=\([0-9]*\).*/\1/p' "$OUT/$MODE-close-installed.log")
+  c=$(sed -n 's/^CLOSED .*rss=\([0-9]*\).*/\1/p' "$OUT/$MODE-close-installed.log")
+  if grep -q '^CLOSED alive=1 tray=1 rss=[0-9]* webkit=0 zombies=0' "$OUT/$MODE-close-installed.log" && [ -n "$o" ] && [ "$c" -lt $((o * 2 / 3)) ]; then
+    ok "$MODE: the installed window, closed, starts over as the tray alone ($((o / 1024)) MB -> $((c / 1024)) MB, no WebKit, no zombies)"
+  else no "$MODE: the installed window, closed: $(grep '^CLOSED' "$OUT/$MODE-close-installed.log")"; tail -15 "$OUT/$MODE-close-installed.log"; fi
+  grep -q '^REOPENED webkit=[1-9]' "$OUT/$MODE-close-installed.log" && ok "$MODE: the launcher opens it again from the tray" \
+    || no "$MODE: the launcher didn't open the window again: $(grep '^REOPENED' "$OUT/$MODE-close-installed.log")"
   echo "RESULT $MODE $STAGE pass=$pass fail=$fail"
   [ "$fail" = 0 ]; exit
 fi
