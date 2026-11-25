@@ -30,6 +30,8 @@ import { holdDark } from "../net/appearance.js"
 import { followersOfAmong } from "../net/nuclear-unfollow.js"
 import { NuclearPanel } from "./WotNuclear.jsx"
 import { useWotOuter } from "./useWotOuter.js"
+import { chainLinks } from "../net/globe-chain.js"
+import { rankCopyFor } from "../net/rank-copy-store.js"
 import { hopOf, globeLayerOf, isLocked, hopCounts, LOCKED_LINE } from "../net/wot-hop-layers.js"
 
 if (import.meta.env) import("../styles/wot.css")
@@ -183,8 +185,10 @@ export function WotScreen({ ctx, pubkey }) {
   const last = useRef(null)
   if (globeWeb && nodes) last.current = { web: globeWeb, nodes, root }
   const showing = last.current
-  // The open card's trust path, traced on your own globe.
+  // The open card's trust path, traced on your own globe. Someone on a hop's sphere gets their path in through the
+  // layers instead, from the rank copy's links (net/globe-chain.js); the globe draws it only while they're on a sphere.
   const path = useMemo(() => (picked && root === me ? trustPath(web, picked)?.all ?? [] : []), [picked, web, root])
+  const chain = useMemo(() => (picked && root === me && hopOf(layer) != null ? chainLinks(picked, rankCopyFor(me), new Set(follows)) : []), [picked, root, layer, outer, follows])
 
   // A tap on a face turns the globe to it and opens its card; on you, on the open card's face or on nothing, it closes
   // the card (TrustWebView.tapped).
@@ -212,7 +216,7 @@ export function WotScreen({ ctx, pubkey }) {
     <main class="screen wot" data-theme="dark">
       {showing && <WotGlobe key={showing.root} web={showing.web} nodes={showing.nodes} picked={picked} onPick={tapped} centre={centre} onCentred={() => setCentre(null)}
         layer={showing.root === me ? globeLayerOf(layer) : "everyone"} lit={lit} path={path} whose={showing.root === me ? null : nameOf(showing.root)}
-        outer={showing.root === me ? outer : null} hop={showing.root === me ? hopOf(layer) : null} />}
+        outer={showing.root === me ? outer : null} hop={showing.root === me ? hopOf(layer) : null} chain={chain} />}
       <div class="wot-top">
         <div class="wot-bar">
           <LayerMenu layer={layer} counts={counts} onPick={pickLayer} onRebuild={() => setRound(r => r + 1)} rebuilding={rebuilding} missing={missing}
