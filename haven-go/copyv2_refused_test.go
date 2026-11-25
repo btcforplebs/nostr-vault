@@ -92,3 +92,32 @@ func TestBusyNewStartIsOfferedAgain(t *testing.T) {
 		t.Fatalf("refused peers %v, want the Mac offered again after busy", got)
 	}
 }
+
+// Tron's second pass on #2537: an app too old for A's copy stops, so the new
+// start is marked. Unmarked, A would build a whole copy at every reconnect.
+func TestTooNewCopyIsNotOfferedAgain(t *testing.T) {
+	owner, self, mac := newTestKey(t), newTestKey(t), newTestKey(t)
+	openCopyVault(t, owner.pk)
+	pairMeshDevices(t, self, mac)
+	id := strings.Repeat("2", 32)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/copy/v2/start" {
+			copyJSON(w, http.StatusOK, map[string]string{"id": id, "token": strings.Repeat("ef", 32), "state": "building"})
+			return
+		}
+		copyJSON(w, http.StatusOK, map[string]any{"v": 3, "id": id, "state": "ready"})
+	}))
+	defer ts.Close()
+
+	peer := meshNpub(mac.pk)
+	c := newCopyClient(peer, ts.URL)
+	if err := c.run(context.Background(), "proof"); copyErrorCode(err) != "unsupported_version" {
+		t.Fatalf("a v3 copy: %v, want unsupported_version", err)
+	}
+	if _, err := os.Stat(filepath.Join(c.dir, copyStartFailedFile)); err != nil {
+		t.Fatal("unsupported_version left no mark: A would rebuild at every reconnect")
+	}
+	if got := copyRefusedPeers(); len(got) != 0 {
+		t.Fatalf("a device this app is too old for is offered again: %v", got)
+	}
+}

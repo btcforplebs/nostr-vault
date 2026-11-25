@@ -15,9 +15,13 @@ import (
 	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
-// copyStartRefusals: the codes that mean A turned a new signed start down
-// for good. Only these mark the folder with copyStartFailedFile.
-var copyStartRefusals = []string{"auth_refused", "not_owner", "wrong_owner"}
+// copyStartRetries: the codes after which a new signed start may be tried
+// again (cut short, A busy with or still on another copy, A lost the job).
+// Every other code (a refusal, an app too old for A's copy, a copy that
+// can't be read, A short of space) marks the folder with
+// copyStartFailedFile: the apps give up on those, and offering the device
+// again would have A build a whole copy at every reconnect (Tron, #2537).
+var copyStartRetries = []string{"unreachable", "cancelled", "busy", "building", "not_found"}
 
 // copyRefusedPeers: paired devices this one holds a copy token from with no
 // first copy or catch-up finished, and an empty copy folder (run() wipes it
