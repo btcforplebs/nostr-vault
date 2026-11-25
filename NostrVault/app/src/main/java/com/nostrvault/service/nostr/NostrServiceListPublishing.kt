@@ -81,11 +81,16 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     internal fun NostrService.cachedOwnerRelayListsImpl(): com.nostrvault.relay.RelayDraft.Published {
         val owner = ownerHexPubkey
         if (owner.isBlank()) return com.nostrvault.relay.RelayDraft.Published()
+        // The Vault entries split out as the lookup does, so the dashboard counts them as the Relays page does.
+        val (vaultRelays, read, write) = com.nostrvault.relay.DesktopVaultsEditing.splittingCached(
+            relayLists.value[owner].orEmpty(), outboxRelays.value[owner].orEmpty(), configStore.config.value.desktopVaultsInEffect,
+        )
         return com.nostrvault.relay.RelayDraft.Published(
-            read = relayLists.value[owner].orEmpty().filter(com.nostrvault.relay.RelayDraft::listable),
-            write = outboxRelays.value[owner].orEmpty().filter(com.nostrvault.relay.RelayDraft::listable),
+            read = read.filter(com.nostrvault.relay.RelayDraft::listable),
+            write = write.filter(com.nostrvault.relay.RelayDraft::listable),
             dms = configStore.config.value.dmInboxRelays.filterNot(::isLoopbackRelay),
             relayListAt = relayListCreatedAt[owner],
+            vaultRelays = vaultRelays,
         )
     }
 

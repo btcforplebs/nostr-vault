@@ -222,4 +222,21 @@ class DesktopVaultsEditingTest {
         assertEquals(listOf("https://blossom.primal.net"), config.blossomMirrors)
         assertEquals(config, config.droppingMirrorsOnHost(null))
     }
+
+    // Tron nit on #2516: the dashboard (cached lists) counts the slot's listed Vault relay as the Relays page does.
+    @Test fun theCachedListsCountTheVaultRelayAsTheLookupDoes() {
+        val config = migrated("https://vault.example.com")
+        val read = listOf("wss://vault.example.com", "wss://nostr.land")
+        val write = listOf("wss://vault.example.com")
+        val (vaultRelays, r, w) = DesktopVaultsEditing.splittingCached(read, write, config.desktopVaultsInEffect(null))
+        assertEquals(listOf(listOf("r", "wss://vault.example.com")), vaultRelays)
+        assertEquals(listOf("wss://nostr.land"), r)
+        assertEquals(emptyList<String>(), w)
+        val lists = RelayMatrix.Lists(read = listOf("wss://nostr.land"), write = emptyList(), dms = emptyList(), search = emptyList(), import = emptyList())
+        val pinned = listOf(config.macRelayWssURL)
+        val dashboard = RelayDraft.start(lists, RelayDraft.Published(read = r, write = w, vaultRelays = vaultRelays), pinned)
+        val page = RelayDraft.start(lists, RelayDraft.Published(read = r, write = w, relayListKnown = true, vaultRelays = vaultRelays), pinned)
+        assertEquals(2, RelayDraft.count(dashboard))
+        assertEquals(RelayDraft.count(page), RelayDraft.count(dashboard))
+    }
 }

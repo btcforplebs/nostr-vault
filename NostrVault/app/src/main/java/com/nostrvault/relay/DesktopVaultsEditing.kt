@@ -223,4 +223,14 @@ object DesktopVaultsEditing {
      */
     fun splitting(tags: List<List<String>>, list: DesktopVaultList, vaults: List<DesktopVault>): Pair<List<List<String>>, List<List<String>>> =
         tags.partition { it.size >= 2 && DesktopVaultsLists.owner(it, list, vaults) != null }
+
+    /**
+     * [splitting] for the cached kind 10002 (read and write URLs, no tags): the Vault entries as tags, then the other
+     * read and write relays. The dashboard's count then matches the Relays page's (Tron nit on #2516).
+     */
+    fun splittingCached(read: List<String>, write: List<String>, vaults: List<DesktopVault>): Triple<List<List<String>>, List<String>, List<String>> {
+        val vaultTags = splitting(PublicRelayList.tags(emptyList(), read, write), DesktopVaultList.RELAYS, vaults).first
+        val keys = vaultTags.map { RelayMatrix.key(it[1]) }.toSet()
+        return Triple(vaultTags, read.filterNot { RelayMatrix.key(it) in keys }, write.filterNot { RelayMatrix.key(it) in keys })
+    }
 }
