@@ -253,7 +253,7 @@ class MeshCopyStarter internal constructor(
     /** One more try at the pending copy with [peer]; a try that can't reach it counts as a miss. */
     internal suspend fun retryOnce(peer: String) {
         if (current != null) return
-        if (!lock.tryLock()) { checkAgain = true; return }
+        if (!lockOrAskAgain()) return
         try {
             val p = record.pending?.takeIf { it.peer == peer } ?: return
             val url = link(p.peer) ?: return missed(peer)
@@ -279,7 +279,7 @@ class MeshCopyStarter internal constructor(
 
     internal suspend fun reconnectNow() {
         if (current != null) return
-        if (!lock.tryLock()) { checkAgain = true; return }
+        if (!lockOrAskAgain()) return
         try {
             val r = record
             r.pending?.let { p ->
@@ -405,6 +405,18 @@ class MeshCopyStarter internal constructor(
         } finally {
             runAgainIfAsked()
         }
+    }
+
+    /**
+     * [lock], or a note to run the check again once its holder lets go. Tried twice: the holder may unlock and read
+     * [checkAgain] between this check's first try and the note, and then this check runs itself (Tron, #2550).
+     */
+    private fun lockOrAskAgain(): Boolean {
+        if (lock.tryLock()) return true
+        checkAgain = true
+        if (!lock.tryLock()) return false
+        checkAgain = false
+        return true
     }
 
     /** A check lost [lock] while it was held: run it now. */
