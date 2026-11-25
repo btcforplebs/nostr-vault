@@ -203,7 +203,7 @@ struct DesktopVaultDetailView: View {
             deleting = false
             switch outcome {
             case .published, .unchanged:
-                removeHere(vault)
+                removeHere(vault, unlisted: true)
             default:
                 deleteLine = (outcome.message ?? DesktopVaultListEdit.notLoadedMessage) + " The Vault was not deleted."
                 if case .partlyPublished = outcome { Task { await load() } }
@@ -211,8 +211,11 @@ struct DesktopVaultDetailView: View {
         }
     }
 
-    private func removeHere(_ vault: DesktopVault) {
-        configService.editDesktopVaults { $0.deleteDesktopVault(id: vault.id) }
+    private func removeHere(_ vault: DesktopVault, unlisted: Bool = false) {
+        configService.editDesktopVaults {
+            $0.deleteDesktopVault(id: vault.id)
+            if unlisted { $0.dropMirrors(onHost: vault.hostKey) }
+        }
         // Its media entry is no longer this phone's to drop: after "No, leave
         // my lists" a later Media Servers Save must keep it (should-fix 3).
         if let host = vault.hostKey { NostrService.forgetManagedServer(host: host) }

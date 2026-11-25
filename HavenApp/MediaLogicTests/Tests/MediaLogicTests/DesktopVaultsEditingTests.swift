@@ -203,4 +203,27 @@ final class DesktopVaultsEditingTests: XCTestCase {
         XCTAssertEqual(DesktopVaultPick.foundBy(a, devices: [a, b]), "Found by Studio")
         XCTAssertNil(DesktopVaultPick.foundBy(b, devices: [a, b]))
     }
+
+    // Tron must-fix 1 on #2516 (found on Android, same gap here): a second
+    // HTTPS Vault's host is never adopted as a mirror, and Delete with Yes drops it.
+    func testEveryVaultHostStaysOutOfTheAdoptedMirrorsAndLeavesOnDelete() {
+        var config = migrated(slot: "https://vault.example.com")
+        guard case .success(let b) = DesktopVaultsEditing.adding(name: "Attic", httpsTyped: "two.example.com", meshNpub: nil,
+                                                                kind: .linux, to: config.desktopVaultsInEffect(ownNpub: nil),
+                                                                ownNpub: nil) else { return XCTFail("add refused") }
+        config.addDesktopVault(b)
+        XCTAssertEqual(config.vaultMediaServers, ["https://vault.example.com", "https://two.example.com"])
+        let adopted = ServerListAdoption.adopt(
+            local: [], updatedAt: nil,
+            published: ["https://vault.example.com", "https://two.example.com", "https://blossom.primal.net"],
+            publishedAt: 100, base: nil, ownServers: config.vaultMediaServers)
+        XCTAssertEqual(adopted?.mirrors, ["https://blossom.primal.net"])
+        // A mirror adopted before the fix leaves with the Vault.
+        config.blossomMirrors = ["https://two.example.com/", "https://blossom.primal.net"]
+        config.deleteDesktopVault(id: b.id)
+        config.dropMirrors(onHost: b.hostKey)
+        XCTAssertEqual(config.blossomMirrors, ["https://blossom.primal.net"])
+        config.dropMirrors(onHost: nil)
+        XCTAssertEqual(config.blossomMirrors, ["https://blossom.primal.net"])
+    }
 }

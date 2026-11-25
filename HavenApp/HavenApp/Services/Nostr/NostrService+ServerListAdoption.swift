@@ -23,7 +23,7 @@ extension NostrService {
         }
 
         let current = configService.config
-        let own = [current.macRelayHttpsURL].filter { !$0.isEmpty }
+        let own = current.vaultMediaServers
         guard let result = ServerListAdoption.adopt(
             local: current.blossomMirrors,
             updatedAt: current.blossomMirrorsUpdatedAt,
