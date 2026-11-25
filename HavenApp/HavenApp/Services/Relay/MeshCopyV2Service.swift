@@ -138,8 +138,13 @@ final class MeshCopyV2Service: ObservableObject {
         defer { free(raw) }
         guard let data = String(cString: raw).data(using: .utf8),
               let refused = try? JSONDecoder().decode([String].self, from: data) else { return false }
+        #if os(iOS)
         let names = Dictionary(FipsMeshDevices.current(ConfigService.shared.config).map { ($0.npub, $0.displayName) },
                                uniquingKeysWith: { first, _ in first })
+        #else
+        // My Devices is iOS-only; names only fill in peerName for display.
+        let names: [String: String] = [:]
+        #endif
         record.restartRefused(refused, names: names)
         guard let p = record.pending else { return false }
         peerName = p.name
