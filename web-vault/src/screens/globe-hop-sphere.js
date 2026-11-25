@@ -26,6 +26,8 @@ const FITTED = 170
 /** Brightness steps per kind of dot, so 2,000 dots are a few fills. */
 const LEVELS = 16
 const HAZE = "158 140 230", STAR = "184 209 255"
+/** The pole the web's globe faces at rest: worked out once, so a ring's points cache by identity (Tron, #2530). */
+const REST_POLE = pole()
 
 export class HopSpheres {
   constructor() { this.built = new Map(); this.seated = new Set(); this.clear() }
@@ -53,7 +55,7 @@ export class HopSpheres {
     if (!(level > 0.001) || !outer || isFaint(outer)) return
     const base = baseOutline(cam, w, h)
     if (!Number.isFinite(base)) return
-    const grow = pinchGrow(cam, w, h), m = qMatrix(cam.q), p = pole()
+    const grow = pinchGrow(cam, w, h), m = qMatrix(cam.q), p = REST_POLE
     const globe = place(FIRST_HOP - 1, level, base, w, h, grow)
     this.hole = { x: globe.x, y: globe.y, r: globe.r * HOLE_REACH }
     // Inner first, so the picked one is drawn over what is nested in it.

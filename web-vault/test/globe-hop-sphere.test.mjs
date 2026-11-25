@@ -97,3 +97,14 @@ test("the card's person keeps a face even where the order would drop them", () =
   const at = s.screenPoint(target, 3)
   if (at.front >= 0.45) assert.ok(faces.some(f => f.pk === target), "focus seated when on the front")
 })
+
+test("a ring's points are built once, not every frame (Tron, #2530)", () => {
+  const s = new HopSpheres(), opts = { cam: newCamera(), w: W, h: H, level: levelFor(4), picture: () => false, face: () => false }
+  s.draw(recorder(), ranked, opts)
+  const first = s.built.get(4)
+  for (let i = 0; i < 5; i++) s.draw(recorder(), ranked, { ...opts, cam: { ...opts.cam, q: [Math.cos(i / 10), 0, Math.sin(i / 10), 0] } })
+  assert.equal(s.built.get(4), first, "the same points while the ring is the same")
+  const changed = { ...ranked, rings: [ranked.rings[0], ring(4, 299, 1700), ranked.rings[2]] }
+  s.draw(recorder(), changed, opts)
+  assert.notEqual(s.built.get(4), first, "a new ring builds again")
+})
