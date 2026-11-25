@@ -10,6 +10,7 @@ import { getProfile, putProfile } from "../net/profiles.js"
 import { pool } from "../net/pool.js"
 import { parseQuery, SEARCH_RELAYS } from "../net/search.js"
 import { LAYERS } from "../net/wot.js"
+import { HOP_LAYERS } from "../net/wot-hop-layers.js"
 
 /** A circle as path data, for the icons drawn from dots. */
 const dot = (x, y, r) => `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`
@@ -24,7 +25,14 @@ export const WOT_ICON = {
   rebuild: "M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5", // arrow.clockwise
   clear: "M15 9l-6 6M9 9l6 6",
 }
-export const WotIcon = ({ name, size = 18 }) => (
+/** Hop 3, 4 and 5: the digit in a circle (SF Symbol 3.circle). */
+const HopIcon = ({ digit, size }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" />
+    <text x="12" y="16.2" text-anchor="middle" font-size="11.5" font-weight="700" fill="currentColor" stroke="none" font-family="-apple-system, system-ui, sans-serif">{digit}</text>
+  </svg>
+)
+export const WotIcon = ({ name, size = 18 }) => /^hop\d$/.test(name) ? <HopIcon digit={name.slice(3)} size={size} /> : (
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
     stroke-linejoin="round" stroke-dasharray={name === "furtherOut" ? "2.6 2.4" : undefined} aria-hidden="true"><path d={WOT_ICON[name]} /></svg>
 )
@@ -43,13 +51,14 @@ function useDismiss(open, setOpen, ref) {
   }, [open])
 }
 
-/** The left pill (layerMenu): the picked layer; its menu lists each with "Title · 15K", then Rebuild your web. `missing`
- *  is how many follows' lists didn't come back, said under Rebuild. */
-export function LayerMenu({ layer, counts, onPick, onRebuild, rebuilding, missing }) {
+/** The left pill (layerMenu): the picked layer; its menu lists each with "Title · 15K", then Hop 3, 4 and 5 (greyed while
+ *  `locked(id)`: picking one calls `onLocked` instead), then Rebuild your web. A count that is null shows no number.
+ *  `missing` is how many follows' lists didn't come back, said under Rebuild. */
+export function LayerMenu({ layer, counts, onPick, onRebuild, rebuilding, missing, locked = () => true, onLocked = () => {} }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useDismiss(open, setOpen, ref)
-  const title = LAYERS.find(([id]) => id === layer)?.[1] ?? "Everyone"
+  const title = [...LAYERS, ...HOP_LAYERS].find(([id]) => id === layer)?.[1] ?? "Everyone"
   const n = counts?.[layer]
   return (
     <div class="wot-layer-menu" ref={ref}>
@@ -65,9 +74,20 @@ export function LayerMenu({ layer, counts, onPick, onRebuild, rebuilding, missin
           <button key={id} type="button" role="menuitemradio" aria-checked={layer === id} class={layer === id ? "on" : ""}
             onClick={() => { setOpen(false); onPick(id) }}>
             <span class="check" aria-hidden="true">{layer === id ? "✓" : ""}</span>
-            <WotIcon name={id} size={17} /><span>{name}{counts ? ` · ${compact(counts[id])}` : ""}</span>
+            <WotIcon name={id} size={17} /><span>{name}{counts?.[id] != null ? ` · ${compact(counts[id])}` : ""}</span>
           </button>
         ))}
+        {HOP_LAYERS.map(([id, name]) => {
+          const off = locked(id)
+          return (
+            <button key={id} type="button" role="menuitemradio" aria-checked={layer === id} aria-disabled={off || undefined}
+              class={[layer === id && "on", off && "locked"].filter(Boolean).join(" ")} title={off ? "A desktop Vault unlocks the far rings" : undefined}
+              onClick={() => { setOpen(false); off ? onLocked(id) : onPick(id) }}>
+              <span class="check" aria-hidden="true">{layer === id ? "✓" : ""}</span>
+              <WotIcon name={id} size={17} /><span>{name}{!off && counts?.[id] != null ? ` · ${compact(counts[id])}` : ""}</span>
+            </button>
+          )
+        })}
         <span class="wot-menu-sep" role="separator" />
         <button type="button" role="menuitem" disabled={rebuilding} onClick={() => { setOpen(false); onRebuild() }}>
           <span class="check" aria-hidden="true" />

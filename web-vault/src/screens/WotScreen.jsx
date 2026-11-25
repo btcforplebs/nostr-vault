@@ -29,6 +29,8 @@ import { fetchPersonLists } from "../net/person.js"
 import { holdDark } from "../net/appearance.js"
 import { followersOfAmong } from "../net/nuclear-unfollow.js"
 import { NuclearPanel } from "./WotNuclear.jsx"
+import { useWotOuter } from "./useWotOuter.js"
+import { hopOf, globeLayerOf, isLocked, hopCounts, LOCKED_LINE } from "../net/wot-hop-layers.js"
 
 if (import.meta.env) import("../styles/wot.css")
 
@@ -94,6 +96,10 @@ export function WotScreen({ ctx, pubkey }) {
   }, [lists])
   const built = useMemo(() => (lists ? fromLists : !follows.length && account.loaded ? buildWeb(me, [], new Map()) : null), [lists, fromLists, follows.length, account.loaded])
   const web = useMemo(() => (built ? filterWeb(built, lists ?? new Map(), blocked) : null), [built, blocked])
+  // The far rings round your own globe, and Hop 3/4/5 in the picker (net/wot-hop-layers.js): a ranking that goes away
+  // takes a picked hop back to Everyone.
+  const outer = useWotOuter(me, blocked)
+  useEffect(() => { if (isLocked(outer, layer)) setLayer("everyone") }, [outer, layer])
 
   // The address moved (see the top). Anything that isn't a step along the trail starts it again from you, with the
   // search, the card and My Web put away (openRequested).
@@ -146,12 +152,13 @@ export function WotScreen({ ctx, pubkey }) {
     if (cut) return new Set([...cut, pubkey])
     if (!web) return null
     const back = followsBackOn ? web.followsMe : null
-    const mine = root !== me && layer !== "everyone" ? new Set(layer === "following" ? web.follows : layer === "close" ? web.extended : web.further) : null
+    const circle = globeLayerOf(layer)
+    const mine = root !== me && circle !== "everyone" ? new Set(circle === "following" ? web.follows : circle === "close" ? web.extended : web.further) : null
     if (back && mine) return new Set([...back].filter(pk => mine.has(pk)))
     return back ?? mine
   }, [web, followsBackOn, layer, root, cut])
 
-  const globeLayer = root === me ? layer : "everyone"
+  const globeLayer = root === me ? globeLayerOf(layer) : "everyone"
   const shown = useMemo(() => (globeWeb ? { extended: shownByKey(globeWeb.extended, EXTENDED_CAP), further: shownByKey(globeWeb.further, FURTHER_CAP) } : null), [globeWeb])
   // Faces past the follows, by layer (TrustMap.faceCount): the candidates' profiles are fetched (strangers', so kept in
   // memory only), and the first with a picture, among the people the filter lights, become faces as they arrive.
@@ -182,7 +189,7 @@ export function WotScreen({ ctx, pubkey }) {
     if (!pk || pk === me || pk === picked) { setPicked(null); return }
     setPicked(pk); setCentre(pk); setSearchOpen(false)
   }
-  const counts = web ? layerCounts(web) : null
+  const counts = web ? { ...layerCounts(web), ...hopCounts(outer) } : null
   const pickLayer = id => setLayer(id)
   const flipFollowsBack = () => {
     const on = !followsBackOn
@@ -201,10 +208,12 @@ export function WotScreen({ ctx, pubkey }) {
   return (
     <main class="screen wot" data-theme="dark">
       {showing && <WotGlobe key={showing.root} web={showing.web} nodes={showing.nodes} picked={picked} onPick={tapped} centre={centre} onCentred={() => setCentre(null)}
-        layer={showing.root === me ? layer : "everyone"} lit={lit} path={path} whose={showing.root === me ? null : nameOf(showing.root)} />}
+        layer={showing.root === me ? globeLayerOf(layer) : "everyone"} lit={lit} path={path} whose={showing.root === me ? null : nameOf(showing.root)}
+        outer={showing.root === me ? outer : null} hop={showing.root === me ? hopOf(layer) : null} />}
       <div class="wot-top">
         <div class="wot-bar">
-          <LayerMenu layer={layer} counts={counts} onPick={pickLayer} onRebuild={() => setRound(r => r + 1)} rebuilding={rebuilding} missing={missing} />
+          <LayerMenu layer={layer} counts={counts} onPick={pickLayer} onRebuild={() => setRound(r => r + 1)} rebuilding={rebuilding} missing={missing}
+            locked={id => isLocked(outer, id)} onLocked={() => setNote(LOCKED_LINE)} />
           <WotToolbar searchOpen={searchOpen} onSearch={() => { setSearchOpen(!searchOpen); setPicked(null) }} followsBack={followsBackOn} onFollowsBack={flipFollowsBack}
             listOpen={listOpen} onList={() => { setListOpen(!listOpen); setPicked(null); setSearchOpen(false) }} />
         </div>
@@ -225,7 +234,7 @@ export function WotScreen({ ctx, pubkey }) {
         {(note || hint || noList) && <div class="wot-note" role="status">{note || noList || hint}</div>}
       </div>
       {middle && <div class="wot-middle" role="status"><span class="wot-spin" aria-hidden="true" />{middle}</div>}
-      {listOpen && showing && <WotList ctx={ctx} web={showing.web} layer={showing.root === me ? layer : "everyone"} lit={lit}
+      {listOpen && showing && <WotList ctx={ctx} web={showing.web} layer={showing.root === me ? globeLayerOf(layer) : "everyone"} lit={lit}
         title={showing.root === me ? "Your web" : `${nameOf(showing.root)}'s web`} onClose={() => setListOpen(false)}
         onPick={pk => { setListOpen(false); setPicked(pk); setCentre(pk) }} />}
       {picked && web && <TrustCard ctx={ctx} web={web} built={built} root={root} pubkey={picked} onPick={pk => { setPicked(pk); setCentre(pk) }} onSeeWeb={seeTheirWeb} onClose={() => setPicked(null)} />}

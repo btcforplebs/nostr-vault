@@ -8,7 +8,9 @@
 // card's bridges: threads run from the middle through each of them to the person whose card is open, and only they
 // and that person stay faces. `lit` (a Set, or null for everyone) is who the filter and, on someone else's globe, your
 // layer leave lit; the rest stay as dim stars. `whose` names the person in the middle when it isn't you (See their web),
-// written under the middle face as "You" is on yours.
+// written under the middle face as "You" is on yours. `outer` (your own globe only) is the far rings round it
+// (wot-outer-rings.js), and `hop` the picked Hop layer: the globe eases out to that ring and shrinks in place inside it
+// (net/globe-ring-zoom.js).
 import { useEffect, useRef } from "preact/hooks"
 import { getProfile, onProfiles } from "../net/profiles.js"
 import { faceCache, FACE_PX } from "../net/face-cache.js"
@@ -18,6 +20,8 @@ import {
   faceShown, faceRadius, dotLight, seatFade, faceSize, seats, hit, onScreen, OUTER_ALPHA, LAYER_WEIGHTS, SIZE, STAR, RIM, STAR_DAY, RIM_DAY, globeDay, starAlpha,
 } from "../net/wot-globe.js"
 import { lightBand, pointProjector, StarBands, GlStars, packStars } from "./wot-globe-stars.js"
+import { drawFlatRings } from "./wot-outer-rings.js"
+import { levelFor, easeLevel, innerShrink, innerAlpha } from "../net/globe-ring-zoom.js"
 
 /** New pictures a frame may start loading: a fast spin brings faces into seats faster than they need decoding at once;
  *  the rest show their coloured disc a frame or two longer. */
@@ -32,7 +36,7 @@ const NO_PATH = []
 /** Pictures already drawn into small round bitmaps, kept across globes (see `images` below). */
 const sharedImages = faceCache({ onDrop: e => { if (typeof e === "object") e.width = e.height = 0 } })
 
-export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer = "everyone", lit = null, path = NO_PATH, whose = null }) {
+export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer = "everyone", lit = null, path = NO_PATH, whose = null, outer = null, hop = null }) {
   const box = useRef(null), canvas = useRef(null), glCanvas = useRef(null)
   const glStars = useRef(null) // the stars' GPU layer under the canvas, or null to draw them on it (wot-globe-stars.js)
   const cam = useRef(newCamera())
@@ -50,12 +54,14 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
   const loadsLeft = useRef(0) // pictures this frame may still start loading
   const rims = useRef(RIM) // face rim colours for this frame: RIM, or RIM_DAY in Light
   const gesture = useRef(null)
+  const ring = useRef({ level: 0, target: 0 }) // the hop zoom, eased toward the picked hop's level
+  const dim = useRef(1) // how strongly the inner globe draws this frame (innerAlpha)
   const pickedRef = useRef(picked)
   pickedRef.current = picked
   // What the frames draw, read when each frame is drawn: a frame loop started on an earlier render (faces still
   // fading in) would otherwise go on drawing that render's people after the web under it has filled in.
   const scene = useRef(null)
-  scene.current = { web, nodes, weights: LAYER_WEIGHTS[layer] ?? LAYER_WEIGHTS.everyone, path, lit, label: whose ?? "You" }
+  scene.current = { web, nodes, weights: LAYER_WEIGHTS[layer] ?? LAYER_WEIGHTS.everyone, path, lit, label: whose ?? "You", outer }
 
   const draw = dt => {
     const c = canvas.current
@@ -68,7 +74,14 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     const k = cam.current, project = projector(k, w, h), reduce = reducedMotion()
     loadsLeft.current = LOADS_PER_FRAME
     images.current.frame() // pictures drawn from here on are on screen, and never dropped
-    const { web, nodes, weights, path, lit, label } = scene.current
+    const { web, nodes, weights, path, lit, label, outer } = scene.current
+    // The far rings behind everything; then the globe, shrunk in place and faded while a Hop layer is picked.
+    const level = outer ? ring.current.level : 0, shrink = innerShrink(level)
+    if (outer) drawFlatRings(g, outer, { cam: k, w, h, level })
+    dim.current = innerAlpha(level)
+    if (shrink < 0.999) g.setTransform(dpr * shrink, 0, 0, dpr * shrink, dpr * w / 2 * (1 - shrink), dpr * h / 2 * (1 - shrink))
+    g.globalAlpha = dim.current
+    if (glCanvas.current) glCanvas.current.style.opacity = dim.current === 1 ? "" : String(dim.current)
     // Light: a daytime sky behind (styles/wot.css), so deeper stars and rims, a sunlit halo, softer thread glow.
     const day = globeDay(), STARS = day ? STAR_DAY : STAR
     rims.current = day ? RIM_DAY : RIM
@@ -101,7 +114,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     const gl = glStars.current
     if (gl) {
       if (st.packed !== gl) { gl.load(packStars(nodes, st.stars, st.weight, STARS)); st.packed = gl }
-      gl.draw(k, w, h, dpr)
+      gl.draw(k, w, h, dpr, shrink)
     } else {
       const { bands } = st
       bands.reset()
@@ -185,8 +198,9 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
       if (f.shown > 0.01) face(g, f.pk, f.x, f.y, f.me ? f.r : faceRadius(f.r, f.shown), f.shown * f.alpha, f.kind, f.me || seated.has(f.pk))
       out.push({ node: f.node, x: f.x, y: f.y, depth: f.depth, r: f.r, shown: f.shown, face: true })
     }
-    // What a tap can land on: these faces, and the stars as this frame put them (worked out only on a tap, starsAt).
-    drawn.current = { faces: out, cam: k, w, h }
+    // What a tap can land on: these faces, and the stars as this frame put them (worked out only on a tap, starsAt), in
+    // the globe's own frame: a tap is taken back through `shrink` first.
+    drawn.current = { faces: out, cam: k, w, h, shrink }
 
     // The middle's name under it: "You", or whose web this is (GlobeScene: the core's label, 13pt bold).
     g.font = "700 13px -apple-system, BlinkMacSystemFont, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "top"
@@ -199,6 +213,8 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     if (pi !== undefined && seen(pi) && into.depth > -0.2) {
       g.beginPath(); g.arc(into.x, into.y, 9, 0, 2 * Math.PI); g.lineWidth = 2; g.strokeStyle = day ? "rgb(217 164 0)" : "rgb(255 214 10)"; g.stroke()
     }
+    g.globalAlpha = 1
+    g.setTransform(dpr, 0, 0, dpr, 0, 0)
   }
 
   // A face: the profile picture once it has loaded (asked for only when the face holds a seat and is big enough to see), a
@@ -220,7 +236,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
       im.onerror = () => images.current.set(url, "failed")
       im.src = url
     }
-    g.globalAlpha = alpha
+    g.globalAlpha = alpha * dim.current
     const rim = rims.current
     const [rr, rg, rb] = kind === "me" ? rim.bridge : rim[kind] ?? rim.follow
     g.beginPath(); g.arc(x, y, r + 1.5, 0, 2 * Math.PI)
@@ -236,7 +252,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     }
     g.beginPath(); g.arc(x, y, r, 0, 2 * Math.PI)
     g.lineWidth = Math.max(1.2, r * 0.12); g.strokeStyle = `rgb(${rr} ${rg} ${rb})`; g.stroke()
-    g.globalAlpha = 1
+    g.globalAlpha = dim.current
   }
 
   // One frame at a time, and only while the globe moves or a face is still fading.
@@ -245,8 +261,10 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     frame.current = 0
     const dt = last.current ? Math.min(0.05, (t - last.current) / 1000) : 1 / 60
     if (moving(cam.current)) cam.current = step(cam.current, dt, reducedMotion())
+    const rz = ring.current
+    rz.level = easeLevel(rz.level, rz.target, dt, reducedMotion())
     draw(dt)
-    if (moving(cam.current) || fading.current) { last.current = t; request() } else last.current = 0
+    if (moving(cam.current) || fading.current || rz.level !== rz.target) { last.current = t; request() } else last.current = 0
   }
 
   // Size: the canvas fills its box at the screen's pixel density.
@@ -270,7 +288,14 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
       glStars.current?.release(); glStars.current = null
     }
   }, [])
-  useEffect(request, [nodes, picked, layer, path, lit])
+  useEffect(request, [nodes, picked, layer, path, lit, outer])
+  // A Hop layer eases the globe out to its ring, from rest, so its best people face you (GlobeScene.focus).
+  useEffect(() => {
+    const target = outer ? levelFor(hop) : 0
+    if (target > 0 && target !== ring.current.target) cam.current = home(cam.current)
+    ring.current.target = target
+    request()
+  }, [hop, !!outer])
   useEffect(() => {
     if (!centre) return
     cam.current = centre === web.me ? home(cam.current) : flyTo(cam.current, facing(direction(centre)))
@@ -290,6 +315,11 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
   // Gestures: one finger or the mouse spins (a flick carries on), two fingers pinch, the wheel zooms, a double-click
   // goes home, a tap opens a card.
   const local = e => { const r = canvas.current.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top] }
+  // A point on screen in the globe's own frame: undoes the shrink a picked hop draws it with.
+  const globePoint = ([x, y]) => {
+    const d = drawn.current, s = d?.shrink ?? 1
+    return s < 0.999 ? [d.w / 2 + (x - d.w / 2) / s, d.h / 2 + (y - d.h / 2) / s] : [x, y]
+  }
   const pinchDist = () => { const [a, b] = [...pointers.current.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]) }
   const down = e => {
     canvas.current.setPointerCapture?.(e.pointerId)
@@ -324,7 +354,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     gesture.current = null
     cam.current = { ...cam.current, dragging: false }
     if (gs.moved < 6) {
-      const [x, y] = local(e)
+      const [x, y] = globePoint(local(e))
       const n = hit(starsAt(), x, y)
       onPick(n ? n.pk : null)
       request()

@@ -150,15 +150,16 @@ export class GlStars {
     gl.bufferData(gl.ARRAY_BUFFER, packed, gl.STATIC_DRAW)
     this.n = packed.length / STRIDE
   }
-  /** One frame for camera `cam` on a `width` x `height` (css px) globe. */
-  draw(cam, width, height, dpr) {
+  /** One frame for camera `cam` on a `width` x `height` (css px) globe. `shrink`: the globe drawn that much smaller round
+   *  the middle, nested inside a picked hop's ring (net/globe-ring-zoom.js innerShrink). */
+  draw(cam, width, height, dpr, shrink = 1) {
     const gl = this.gl, u = this.u, m = qMatrix(cam.q), camZ = DISTANCE / cam.zoom
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight)
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT)
     if (!this.n) return
     gl.uniform3f(u.r0, m[0], m[1], m[2]); gl.uniform3f(u.r1, m[3], m[4], m[5]); gl.uniform3f(u.r2, m[6], m[7], m[8])
-    gl.uniform1f(u.camZ, camZ); gl.uniform1f(u.unit, unit(width, height)); gl.uniform1f(u.dpr, dpr)
-    gl.uniform1f(u.zoomed, Math.min(cam.zoom, 1.8)); gl.uniform2f(u.view, width, height)
+    gl.uniform1f(u.camZ, camZ); gl.uniform1f(u.unit, unit(width, height) * shrink); gl.uniform1f(u.dpr, dpr)
+    gl.uniform1f(u.zoomed, Math.min(cam.zoom, 1.8) * shrink); gl.uniform2f(u.view, width, height)
     gl.drawArrays(gl.POINTS, 0, this.n)
   }
   /** Gives the GPU its memory back (a globe closing; browsers keep only a few contexts). */
