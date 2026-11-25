@@ -4,7 +4,7 @@
 # they never draw a frame or answer JavaScript: a hung renderer, for real, not a faked check. nv_paint.py must notice
 # and start the window over in its next drawing mode, remember the one that drew, and when none draws show its GTK
 # "open in browser" page and remember that. A copy of the window without the check (the control) must stay blank.
-# Then the update signal the .deb's postinst sends (SIGUSR1): the window starts over in place and draws again.
+# Then the update signal the .deb's postinst sends (SIGUSR2): the window starts over in place and draws again.
 # Runs before setup (the setup page is the window's page). NV_PAINT_GIVE_UP_S makes each try 15 s, not 45.
 G=15
 RJ=$HOME/.config/nostr-vault-desktop/renderer.json
@@ -91,13 +91,34 @@ fi
 rm -f "$RJ"
 start update $CMD
 drawn "$OUT/$MODE-blank-5-before-update.png" "$MODE: a window before the update" >/dev/null || true
+# Nothing frozen here: the check must pass in the first mode (a working window must not start over for nothing).
+for i in $(seq 1 30); do grep -q "the window draws (mode" "$OUT/$MODE-blank-update.log" && break; sleep 1; done
+if grep -q "the window draws (mode" "$OUT/$MODE-blank-update.log" && ! grep -q "trying the window again" "$OUT/$MODE-blank-update.log"; then
+  ok "$MODE: a working window passes the check in its first mode ($(sed -n 's/.*the window draws (mode \([a-z-]*\)).*/\1/p' "$OUT/$MODE-blank-update.log" | head -1))"
+else no "$MODE: a working window didn't pass the check"; grep "nostr-vault-desktop:" "$OUT/$MODE-blank-update.log" | tail -5; fi
 p=$(pgrep -u "$(id -u)" -f "$POSTINST_PATTERN" | head -1)
-pkill -USR1 -u "$(id -u)" -f "$POSTINST_PATTERN"
+pkill -USR2 -u "$(id -u)" -f "$POSTINST_PATTERN"
 for i in $(seq 1 20); do grep -q "updated: starting over" "$OUT/$MODE-blank-update.log" && break; sleep 1; done
 sleep 6
 if [ -n "$p" ] && [ -d "/proc/$p" ] && grep -q "updated: starting over" "$OUT/$MODE-blank-update.log" \
     && [ "$(grep -c 'nostr-vault-desktop: drawing mode ' "$OUT/$MODE-blank-update.log")" -ge 2 ]; then
-  ok "$MODE: SIGUSR1 (the postinst's) starts the window over in place (pid $p)"
-else no "$MODE: SIGUSR1: pid '${p}', $(grep -c 'nostr-vault-desktop: drawing mode ' "$OUT/$MODE-blank-update.log") starts"; tail -10 "$OUT/$MODE-blank-update.log"; fi
+  ok "$MODE: SIGUSR2 (the postinst's) starts the window over in place (pid $p)"
+else no "$MODE: SIGUSR2: pid '${p}', $(grep -c 'nostr-vault-desktop: drawing mode ' "$OUT/$MODE-blank-update.log") starts"; tail -10 "$OUT/$MODE-blank-update.log"; fi
 drawn "$OUT/$MODE-blank-6-after-update.png" "$MODE: and it draws again"
 stop; rm -f "$RJ"
+
+# 6. Control: a window without the handler (as every version before it) quits on the same signal, as the postinst
+# wants of an old window.
+if [ "${NV_WT_CONTROL:-1}" = 1 ]; then
+  sed '/nv_paint.listen_for_update(/d' "$bin" >"$RUN/no-update"
+  if cmp -s "$bin" "$RUN/no-update"; then no "control: couldn't take the update handler out of $bin"; else
+    start oldwin python3 -I "$RUN/no-update"
+    sleep 8
+    p=$(pgrep -u "$(id -u)" -f "$RUN/no-update" | head -1)
+    pkill -USR2 -u "$(id -u)" -f "$RUN/no-update"
+    sleep 4
+    if [ -n "$p" ] && [ ! -d "/proc/$p" ]; then ok "control: a window without the handler quits on SIGUSR2 (no old window lingers)"
+    else no "control: a window without the handler is still running after SIGUSR2 (pid '${p}')"; fi
+    stop
+  fi
+fi

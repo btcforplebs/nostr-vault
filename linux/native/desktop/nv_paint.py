@@ -18,8 +18,10 @@ person looking at it shouldn't have to change a setting. So:
     the browser, and remembers that for this WebKitGTK version (an update tries again; so does its button).
   - Someone who set either WEBKIT_ variable themselves keeps it: the check runs, and on a failure the window shows
     the browser page instead of changing their setting.
-The .deb's postinst sends the window SIGUSR1 after an update (listen_for_update): it starts over on the new code.
-Windows from before this file was shipped don't handle SIGUSR1 and quit, so no old window lingers after an update.
+The .deb's postinst sends the window SIGUSR2 after an update (listen_for_update): it starts over on the new code.
+(SIGUSR2, not SIGUSR1: JavaScriptCore takes SIGUSR1 in this process to pause its threads for garbage collection, and
+a SIGUSR1 from outside froze the window's main thread on CI.)
+Windows from before this file was shipped don't handle SIGUSR2 and quit, so no old window lingers after an update.
 
 Test knob: NV_PAINT_GIVE_UP_S (default 45), so the window test can run the whole ladder in a minute.
 """
@@ -448,7 +450,7 @@ class Checker:
 
 
 def listen_for_update(checker):
-    """SIGUSR1 (the .deb's postinst, after an update): start over on the new code, the window open if it was."""
+    """SIGUSR2 (the .deb's postinst, after an update): start over on the new code, the window open if it was."""
     from gi.repository import GLib
 
     def got():
@@ -456,4 +458,4 @@ def listen_for_update(checker):
         checker.restart([] if checker.app.window is not None else ["--tray"])
         return True
 
-    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, got)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR2, got)
