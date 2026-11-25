@@ -100,6 +100,9 @@ export function WotScreen({ ctx, pubkey }) {
   // takes a picked hop back to Everyone.
   const outer = useWotOuter(me, blocked)
   useEffect(() => { if (isLocked(outer, layer)) setLayer("everyone") }, [outer, layer])
+  // A picked hop's sphere shows faces for its top people whose picture is in: ask for their profiles (kept in memory).
+  const sphereTop = outer.rings.find(r => r.hop === hopOf(layer))?.top
+  useEffect(() => { if (sphereTop?.length) fetchProfiles(vault, sphereTop, uniq([...account.relays.read, ...DEFAULT_RELAYS]), { save: false }).catch(() => {}) }, [sphereTop])
 
   // The address moved (see the top). Anything that isn't a step along the trail starts it again from you, with the
   // search, the card and My Web put away (openRequested).
