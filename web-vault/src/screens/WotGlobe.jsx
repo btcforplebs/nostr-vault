@@ -10,7 +10,7 @@
 // layer leave lit; the rest stay as dim stars. `whose` names the person in the middle when it isn't you (See their web),
 // written under the middle face as "You" is on yours. `outer` (your own globe only) is the far rings round it
 // (wot-outer-rings.js), and `hop` the picked Hop layer: the globe eases out to that ring and shrinks in place inside it
-// (net/globe-ring-zoom.js).
+// (net/globe-ring-zoom.js), which becomes a full sphere of its own round it (globe-hop-sphere.js) that turns with it.
 import { useEffect, useRef } from "preact/hooks"
 import { getProfile, onProfiles } from "../net/profiles.js"
 import { faceCache, FACE_PX } from "../net/face-cache.js"
@@ -21,6 +21,7 @@ import {
 } from "../net/wot-globe.js"
 import { lightBand, pointProjector, StarBands, GlStars, packStars } from "./wot-globe-stars.js"
 import { drawFlatRings } from "./wot-outer-rings.js"
+import { HopSpheres } from "./globe-hop-sphere.js"
 import { levelFor, easeLevel, innerShrink, innerAlpha } from "../net/globe-ring-zoom.js"
 
 /** New pictures a frame may start loading: a fast spin brings faces into seats faster than they need decoding at once;
@@ -56,6 +57,8 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
   const gesture = useRef(null)
   const ring = useRef({ level: 0, target: 0 }) // the hop zoom, eased toward the picked hop's level
   const dim = useRef(1) // how strongly the inner globe draws this frame (innerAlpha)
+  const spheres = useRef(null) // the picked hop's sphere and those nested in it (globe-hop-sphere.js)
+  if (!spheres.current) spheres.current = new HopSpheres()
   const pickedRef = useRef(picked)
   pickedRef.current = picked
   // What the frames draw, read when each frame is drawn: a frame loop started on an earlier render (faces still
@@ -77,7 +80,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     const { web, nodes, weights, path, lit, label, outer } = scene.current
     // The far rings behind everything; then the globe, shrunk in place and faded while a Hop layer is picked.
     const level = outer ? ring.current.level : 0, shrink = innerShrink(level)
-    if (outer) drawFlatRings(g, outer, { cam: k, w, h, level })
+    if (outer) drawFlatRings(g, outer, { cam: k, w, h, level, spheres: true })
     dim.current = innerAlpha(level)
     if (shrink < 0.999) g.setTransform(dpr * shrink, 0, 0, dpr * shrink, dpr * w / 2 * (1 - shrink), dpr * h / 2 * (1 - shrink))
     g.globalAlpha = dim.current
@@ -215,6 +218,10 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     }
     g.globalAlpha = 1
     g.setTransform(dpr, 0, 0, dpr, 0, 0)
+    // A picked hop's sphere over the globe nested in its middle, turned by the same camera.
+    dim.current = 1
+    if (outer) spheres.current.draw(g, outer, { cam: k, w, h, level, focus: pickedRef.current, picture: pk => !!getProfile(pk)?.picture,
+      face: (pk, x, y, r, alpha) => face(g, pk, x, y, r, alpha, "follow", true, true) })
   }
 
   // A face: the profile picture once it has loaded (asked for only when the face holds a seat and is big enough to see), a
@@ -224,7 +231,8 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
   // until then a disc of its own colour with the first initial. The rim is tinted by kind (RIM) with a soft glow, as
   // GlobeScene draws faces. Each picture is drawn once into a small round bitmap and the frames draw that: a full-size
   // photo scaled down every frame is what makes a big web slow.
-  const face = (g, pk, x, y, r, alpha, kind, load) => {
+  // `pictureOnly`: draw nothing until the picture is in (a hop sphere's faces: no lettered stand-ins). -> drawn
+  const face = (g, pk, x, y, r, alpha, kind, load, pictureOnly = false) => {
     const p = getProfile(pk), url = p?.picture
     const img = url && images.current.get(url)
     if (url && !img && load && r >= 6 && loadsLeft.current > 0) {
@@ -236,6 +244,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
       im.onerror = () => images.current.set(url, "failed")
       im.src = url
     }
+    if (pictureOnly && !(img && typeof img === "object")) return false
     g.globalAlpha = alpha * dim.current
     const rim = rims.current
     const [rr, rg, rb] = kind === "me" ? rim.bridge : rim[kind] ?? rim.follow
@@ -253,6 +262,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     g.beginPath(); g.arc(x, y, r, 0, 2 * Math.PI)
     g.lineWidth = Math.max(1.2, r * 0.12); g.strokeStyle = `rgb(${rr} ${rg} ${rb})`; g.stroke()
     g.globalAlpha = dim.current
+    return true
   }
 
   // One frame at a time, and only while the globe moves or a face is still fading.
@@ -298,7 +308,8 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
   }, [hop, !!outer])
   useEffect(() => {
     if (!centre) return
-    cam.current = centre === web.me ? home(cam.current) : flyTo(cam.current, facing(direction(centre)))
+    // Someone on a hop's sphere turns to their spot there, not to their spot on the inner globe.
+    cam.current = centre === web.me ? home(cam.current) : flyTo(cam.current, facing(spheres.current.direction(centre) ?? direction(centre)))
     request()
     onCentred()
   }, [centre])
@@ -354,9 +365,10 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     gesture.current = null
     cam.current = { ...cam.current, dragging: false }
     if (gs.moved < 6) {
-      const [x, y] = globePoint(local(e))
-      const n = hit(starsAt(), x, y)
-      onPick(n ? n.pk : null)
+      const raw = local(e), [x, y] = globePoint(raw), sp = spheres.current
+      // A hop's sphere is in front, except over the inner globe nested in its middle: there the globe's faces come first.
+      const onGlobe = () => hit(starsAt(), x, y)?.pk ?? null
+      onPick(sp.inHole(...raw) ? onGlobe() ?? sp.hit(...raw) : sp.hit(...raw) ?? onGlobe())
       request()
       return
     }
