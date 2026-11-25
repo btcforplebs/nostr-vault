@@ -30,6 +30,8 @@ enum GlobeRingZoom {
     static let fit = 0.84
     /// Rings inside the picked one are drawn this strongly.
     static let insideAlpha = 0.6
+    /// Rings past the picked one, round its sphere, this strongly.
+    static let pastAlpha = 0.8
 
     /// How much `hop`'s ring is drawn as its own sphere (0 to 1) rather than
     /// a flat ring: once it is picked, and still while it is nested inside a
@@ -127,6 +129,11 @@ enum GlobeRingZoom {
         // the fit, and the rings between evenly spaced.
         let inner = outline * innerScales[whole]
         let fitted = fit * half * grow
+        // Rings past the picked one stay round its sphere, spaced as at
+        // your circle (`step` against `first`), the way Hop 3 and 4 sit round
+        // your globe on Vouched (Logen 2026-11-25).
+        let past = Double(hop - (TrustMapOuter.firstHop + whole - 1))
+        if past > 0 { return fitted * (1 + step / first * past) }
         let gap = (fitted - inner) / Double(whole)
         return inner + gap * (outward + 1)
     }
@@ -134,7 +141,7 @@ enum GlobeRingZoom {
     private static func visibility(hop: Int, whole: Int) -> Double {
         guard whole > 0 else { return 1 }
         let picked = TrustMapOuter.firstHop + whole - 1
-        return hop == picked ? 1 : hop < picked ? insideAlpha : 0
+        return hop == picked ? 1 : hop < picked ? insideAlpha : pastAlpha
     }
 
     private static func emphasis(hop: Int, whole: Int) -> Double {

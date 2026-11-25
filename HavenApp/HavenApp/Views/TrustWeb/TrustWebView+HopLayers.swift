@@ -21,12 +21,14 @@ extension TrustWebView {
         layer = item
     }
 
-    /// Layer counts with each unlocked hop's ring.
+    /// Layer counts with each unlocked hop's ring: everyone its sphere
+    /// draws (top plus haze). Without a haze the ring is only its top 300,
+    /// a cap rather than a count, so it shows no number (Logen 2026-11-25).
     func countsWithHops(_ counts: [TrustMap.Layer: Int]) -> [TrustMap.Layer: Int] {
         var out = counts
         for item in TrustMap.Layer.allCases {
             guard let hop = item.hop, !isLocked(item) else { continue }
-            out[item] = outerWatch.outer.rings.first { $0.hop == hop }?.count
+            out[item] = outerWatch.outer.rings.first { $0.hop == hop }.flatMap(TrustMapOuter.shownCount)
         }
         return out
     }

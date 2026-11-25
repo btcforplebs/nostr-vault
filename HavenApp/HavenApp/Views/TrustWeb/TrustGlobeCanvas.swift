@@ -81,6 +81,9 @@ struct TrustGlobeCanvas: View {
     @State private var onScreen = false
     @State private var lastDrag: CGSize = .zero
     @State private var pinchBase: CGFloat = 1
+    /// The picked hop sphere's people facing you, or coming round
+    /// (`GlobeHopSphere.windowIfChanged`): their pictures are symbols.
+    @State private var sphereWindow: [String] = []
     /// Reset by SwiftUI when a gesture ends *or is cancelled*; `onEnded` is
     /// skipped on cancel, so this is what puts the camera back to rest.
     @GestureState private var dragActive = false
@@ -251,14 +254,17 @@ struct TrustGlobeCanvas: View {
         GlobeOuterRings.drawSpheres(outer.outer, in: &context, size: size, zoom: zoom, phone: GlobeScene.isPhone,
                                     ink: scene.ink, level: level, turn: simd_double3x3(scene.camera.orientation),
                                     pole: GlobeSphereField.pole(center: center), pictures: Set(sphereFaces), focus: focus)
+        if let window = GlobeHopSphere.windowIfChanged(now: Date.timeIntervalSinceReferenceDate) {
+            // Not from inside the draw: the symbols publish on the next turn.
+            DispatchQueue.main.async { sphereWindow = window }
+        }
     }
 
-    /// Who on the picked hop's sphere may show a face: its best people
-    /// whose picture is in.
+    /// Who on the picked hop's sphere may show a face: those facing you or
+    /// coming round whose picture is in.
     private var sphereFaces: [String] {
-        guard showsOuterRings, let hop = layer.hop,
-              let ring = outer.outer.rings.first(where: { $0.hop == hop }) else { return [] }
-        return GlobeHopSphere.pictureKeys(ring).filter(hasPicture)
+        guard showsOuterRings, layer.hop != nil else { return [] }
+        return sphereWindow.filter(hasPicture)
     }
 
     /// Their symbols, less any the globe already registers (a tag must be

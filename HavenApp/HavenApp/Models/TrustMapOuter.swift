@@ -105,6 +105,12 @@ struct TrustMapOuter: Equatable {
         isDesktop || devices.contains { $0.role == .mac }
     }
 
+    /// How many people a hop's sphere draws: its top and its haze. Nil while
+    /// the copy has no haze for it: then the ring is just its top 300, a cap.
+    static func shownCount(_ ring: Ring) -> Int? {
+        ring.haze.isEmpty ? nil : ring.top.count + ring.haze.count
+    }
+
     /// "3 hops". The rank copy has no ring total, so no "best 300 of N";
     /// the sheet's `countText` says how many are shown. Never "people at
     /// 55 and up": the globe has no bar.

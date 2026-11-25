@@ -14,9 +14,6 @@ import simd
 /// and fills a handful of paths. Android twin (after Logen's OK):
 /// `ui/components/trustweb/GlobeHopSphere.kt`.
 enum GlobeHopSphere {
-    /// The best of a ring that can show a picture: the canvas registers these
-    /// as symbols (`pictureKeys`), the rest of the top stay stars.
-    static let maxPictures = 200
     /// A face's radius on the front of a fitted sphere, points: the inner
     /// globe's ring faces' size.
     static let faceSize = 11.0
@@ -36,8 +33,31 @@ enum GlobeHopSphere {
     /// Brightness steps per kind of dot, so 2,000 dots are a few fills.
     private static let levels = 16
 
-    static func pictureKeys(_ ring: TrustMapOuter.Ring) -> [String] {
-        Array(ring.top.prefix(maxPictures))
+    /// Whose profiles the picked sphere asks for: its whole top, so faces
+    /// come in all the way round, the back included.
+    static func pictureKeys(_ ring: TrustMapOuter.Ring) -> [String] { ring.top }
+
+    // MARK: Picture window
+
+    /// The picked sphere's top people now on, or coming round to, the side
+    /// facing you: the canvas keeps their pictures as symbols, so faces
+    /// load as the sphere turns rather than only those in front at rest
+    /// (Logen 2026-11-25), without holding all 300 at once.
+    private static var facing: Set<String> = []
+    private static var windowSent: Set<String> = []
+    private static var windowSentAt: TimeInterval = -.infinity
+    /// A point counts as coming round from here (front 0 is the back).
+    static let windowFrom = 0.3
+    /// The window is sent on at most this often while the sphere turns.
+    static let windowEvery: TimeInterval = 0.4
+
+    /// The new window when it changed since the last one sent and that was
+    /// long enough ago; nil otherwise.
+    static func windowIfChanged(now: TimeInterval) -> [String]? {
+        guard facing != windowSent, now - windowSentAt >= windowEvery else { return nil }
+        windowSent = facing
+        windowSentAt = now
+        return Array(facing)
     }
 
     // MARK: Positions
@@ -122,6 +142,7 @@ enum GlobeHopSphere {
         targets.removeAll(keepingCapacity: true)
         lastPicked = nil
         hole = nil
+        facing.removeAll(keepingCapacity: true)
     }
 
     // MARK: Drawing
@@ -177,6 +198,7 @@ enum GlobeHopSphere {
                 a = (0.06 + 0.22 * q.front) * shown * back
                 size = 1.2 * q.scale * zoomed * back
             }
+            if isTop, picked > 0.5, q.front >= windowFrom { facing.insert(b.top[i]) }
             if isTop, pictures.contains(b.top[i]), q.front >= faceFrom {
                 faces.append((b.top[i], at, faceSize * q.scale * zoomed, q.front, i))
             }
