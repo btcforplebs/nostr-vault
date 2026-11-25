@@ -21,6 +21,7 @@ sudo nostr-vault-setup --owner npub1…              # or open Nostr Vault from 
 | The mesh engine (`macEngineOptions`) | `nostr-vault-mesh.service`: nv-mesh, the same options (linux/mesh/README.md) |
 | The window | `nostr-vault-desktop`: the vault's web app in a WebKitGTK window: feed, vault, My Devices (`#/box`), settings |
 | Menu bar item | tray icon: status, Open, New Note, Feed / Vault / My Devices / Settings, Copy box npub |
+| Closing the window | the window and its web view end (WebKit's web and network processes with them); the tray starts over on its own, small, and Open makes a new window, still signed in |
 | Launch at login | the vault on boot (systemd); the tray at login (`/etc/xdg/autostart`) |
 | Update | `apt install` the newer `.deb`: data, owner and port stay |
 
