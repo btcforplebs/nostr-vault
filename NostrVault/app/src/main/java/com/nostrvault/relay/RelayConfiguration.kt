@@ -173,7 +173,7 @@ object RelayConfiguration {
             // Every other HTTPS desktop Vault, the dialed one's wss included (Tron M2 on #2506). Always set, "" when
             // there is none: the engine never clears a host env key.
             "DESKTOP_VAULT_URLS" to DesktopVaultsRules.envList(
-                config.desktopVaultsInEffect, MacSync.macRelayURL(config, mesh), typed = config.macRelayURL,
+                config.desktopVaultsInEffect, MacSync.macRelayURL(config, mesh), typed = config.macRelayURLInEffect,
             ),
 
             // Backup
@@ -442,7 +442,7 @@ object RelayConfiguration {
         pendingMeshRelay = null
         val held = macMeshRelay
         val npubs = config.desktopVaultMeshNpubs
-        val relay = when (DesktopVaultsRules.meshDial(config.fipsMeshEnabled, config.macRelayURL, npubs)) {
+        val relay = when (DesktopVaultsRules.meshDial(config.fipsMeshEnabled, config.macRelayURLInEffect, npubs)) {
             DesktopVaultsRules.MeshDial.NONE -> null
             // The Vault the relay already had is re-dialed alone, not dropped (Tron M2 on #2513): the compare predicted it.
             DesktopVaultsRules.MeshDial.AFTER_START ->

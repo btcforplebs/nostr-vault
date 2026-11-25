@@ -95,7 +95,11 @@ sealed class Screen(val route: String) {
     data object FollowingBackup : Screen("settings/following_backup")
     data object ListBackup : Screen("settings/list_backup")
     data object NotificationSettings : Screen("settings/notifications")
-    data object HavenRelaySettings : Screen("settings/haven_relay")
+    /** Settings › Desktop Vaults (P7): every desktop Vault; replaced the one-slot "Desktop vault sync" page. */
+    data object DesktopVaults : Screen("settings/desktop_vaults")
+    data object DesktopVaultDetail : Screen("settings/desktop_vaults/vault?id={id}") {
+        fun createRoute(id: String) = "settings/desktop_vaults/vault?id=${android.net.Uri.encode(id)}"
+    }
     /** Settings › Your Devices: your devices, the two-scan link, this phone as a vault; Mesh and by-address under Advanced. */
     data object YourDevices : Screen("settings/your_devices")
     /** Settings → Mesh → FIPS Mesh, and its device and Advanced pages. */

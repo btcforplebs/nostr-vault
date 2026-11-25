@@ -27,7 +27,9 @@ class ServerListRelaysTest {
         val src = File("src/main/java/com/nostrvault/service/nostr/NostrServiceListPublishing.kt").readText()
         val impl = src.substringAfter("fun NostrService.publishServerListImpl").substringBefore("\n    }\n")
         assertTrue("extra relays", impl.contains("ServerListRelays.extra(_outboxRelays.value[ownerHexPubkey]"))
-        assertTrue("publish passes them", impl.contains("publishOwnerEntryList(10063, \"server\", mirrors, extraRelays, publishedFirst = true, onPosted = cleared, onRefused = onRefused)"))
+        assertTrue("publish passes them", impl.contains("publishOwnerEntryList(10063, \"server\", mirrors.filterNot(isVault), extraRelays, publishedFirst = true, onPosted = cleared, onRefused = onRefused, keepAlso = isVault)"))
+        // Desktop Vaults P7: a Vault's media entry is its switch's, never added or dropped by a Save.
+        assertTrue("vault hosts", impl.contains("config.desktopVaultsInEffect.mapNotNull { it.hostKey }"))
         assertTrue("the owner's Media Servers choices", impl.contains("mergeServerList(servers, servers, add, drop)"))
     }
 }

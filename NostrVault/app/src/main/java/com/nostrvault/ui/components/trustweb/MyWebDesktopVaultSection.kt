@@ -51,6 +51,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
@@ -59,8 +60,13 @@ internal object MyWebDesktopVaultWords {
     const val TITLE = "Desktop Vault"
     const val PULL_HINT = "Asks your desktop Vault for its ranking now"
 
-    fun title(source: TrustMapOuter.Source): String =
-        if (source == TrustMapOuter.Source.RANKED) TrustMapOuter.FOUND_LABEL else TrustMapOuter.WAITING_LABEL
+    /** [foundBy]: "Found by <name>" when more than one desktop is paired ([DesktopVaultPick.foundBy]). */
+    fun title(source: TrustMapOuter.Source, foundBy: String? = null): String =
+        if (source == TrustMapOuter.Source.RANKED) foundBy ?: TrustMapOuter.FOUND_LABEL else TrustMapOuter.WAITING_LABEL
+
+    /** Pull names the desktop when there is more than one. */
+    fun pullHint(foundBy: String?): String =
+        foundBy?.removePrefix("Found by ")?.let { "Asks $it for its ranking now" } ?: PULL_HINT
 
     /** [lastAt] is the desktop's last catch-up (Unix s), null before one. */
     fun detail(hasDesktop: Boolean, pulling: Boolean, canPull: Boolean, failed: Boolean, lastAt: Long?, nowS: Long): String = when {
@@ -80,10 +86,15 @@ class MyWebDesktopVaultViewModel @Inject constructor(
     private val copies: MeshCopyStarter,
     private val reach: DiscoveryReachStore,
 ) : ViewModel() {
-    val desktop: StateFlow<String?> = combine(configStore.config, mesh.status, copies.sync) { cfg, st, sync ->
-        val list = MyDevicesRules.list(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, st.peers, cfg.ownerNpub)
-        DesktopVaultPick.desktop(list.filter { it.role == DeviceRole.MAC }, { it.npub }, sync.lastAt)?.npub
+    /** The picked desktop's npub, and "Found by <name>" when more than one desktop is paired (plan §6.1). */
+    private val picked: StateFlow<Pair<String, String?>?> = combine(configStore.config, mesh.status, copies.sync) { cfg, st, sync ->
+        val desktops = MyDevicesRules.list(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, st.peers, cfg.ownerNpub)
+            .filter { it.role == DeviceRole.MAC }
+        DesktopVaultPick.desktop(desktops, { it.npub }, sync.lastAt)?.let { it.npub to DesktopVaultPick.foundBy(it.name, desktops.size) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val desktop: StateFlow<String?> = picked.map { it?.first }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val foundBy: StateFlow<String?> = picked.map { it?.second }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val sync: StateFlow<MeshSyncState> = copies.sync
 
@@ -116,6 +127,7 @@ internal fun MyWebDesktopVaultSection(
     val copy by viewModel.copy.collectAsState()
     val inviteHidden by HavenInviteSetting.hidden(context).collectAsState()
     val desktop by viewModel.desktop.collectAsState()
+    val foundBy by viewModel.foundBy.collectAsState()
     val sync by viewModel.sync.collectAsState()
     var open by remember { mutableStateOf<TrustMapOuter.Ring?>(null) }
     var pulled by remember { mutableStateOf(false) }
@@ -134,8 +146,8 @@ internal fun MyWebDesktopVaultSection(
                     failed = peer != null && sync.failed[peer] != null,
                     lastAt = peer?.let { sync.lastAt[it] }, nowS = System.currentTimeMillis() / 1000,
                 )
-                DashRow(Icons.Filled.DesktopMac, MyWebDesktopVaultWords.title(outer.source), detail, RowState.INFO) {
-                    Row(Modifier.semantics { contentDescription = MyWebDesktopVaultWords.PULL_HINT }) {
+                DashRow(Icons.Filled.DesktopMac, MyWebDesktopVaultWords.title(outer.source, foundBy), detail, RowState.INFO) {
+                    Row(Modifier.semantics { contentDescription = MyWebDesktopVaultWords.pullHint(foundBy) }) {
                         RowButton("Pull", isLoading = pulling, enabled = canPull) { peer?.let(viewModel::pull) }
                     }
                 }

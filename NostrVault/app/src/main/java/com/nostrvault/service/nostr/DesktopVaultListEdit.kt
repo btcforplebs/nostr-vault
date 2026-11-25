@@ -27,8 +27,8 @@ import kotlinx.coroutines.CancellationException
  * indexers to answer ([RelayDraft.settled], as the Relays Save), 10063 goes through [ListMerge.editBase] (as
  * [publishMergedList]).
  *
- * There is no mesh relay (10002 `fipsmesh`) switch yet (Logen, 13:53Z): no caller turns one on. The screens that call
- * this are P7's.
+ * There is no mesh relay (10002 `fipsmesh`) switch yet (Logen, 13:53Z): no caller turns one on. The Desktop Vaults
+ * screens (P7, `ui/screens/settings/desktopvaults/`) call it; [reorder] and [remove] are iOS P4's (#2511).
  */
 object DesktopVaultListEdit {
     private const val TAG = "DesktopVaultListEdit"
@@ -43,6 +43,8 @@ object DesktopVaultListEdit {
         data class Refused(val list: DesktopVaultList) : Outcome()
         /** No signed-in account, the account changed during the lookup, or the signer said no. */
         object NotSigned : Outcome()
+        /** A delete's unlist stopped part way: these lists already went out without the Vault, the rest weren't signed. */
+        data class PartlyPublished(val lists: List<DesktopVaultList>) : Outcome()
 
         /** The line the switch shows when it snaps back; null for a change that went out or had nothing to do. */
         val message: String?
@@ -51,6 +53,7 @@ object DesktopVaultListEdit {
                 NotLoaded -> NOT_LOADED_MESSAGE
                 is Refused -> list.refusal
                 NotSigned -> "Your list wasn't signed, so it wasn't changed."
+                is PartlyPublished -> "It was taken out of your ${lists.joinToString(" and ") { it.title }} list, but the rest wasn't signed."
             }
     }
 
@@ -77,6 +80,73 @@ object DesktopVaultListEdit {
             is DesktopVaultListChange.Tags ->
                 if (change.tags == base.tags.orEmpty()) Outcome.Unchanged else publish(nostr, change.tags, list, owner, base.event)
         }
+    }
+
+    /**
+     * After a drag: each list whose Vault entries are now out of Desktop Vaults order is republished with only those
+     * entries moved ([DesktopVaultsLists.reordered], rule 2). A list that didn't load is left as it is. Returns the
+     * first line worth showing, null when all went out or had nothing to move.
+     */
+    suspend fun reorder(nostr: NostrService, vaults: List<DesktopVault>): String? {
+        val owner = nostr.ownerHexPubkey.lowercase()
+        if (owner.isBlank()) return Outcome.NotSigned.message
+        var line: String? = null
+        for (list in DesktopVaultList.entries) {
+            val base = newest(nostr, list, owner)
+            if (base == null) {
+                line = line ?: NOT_LOADED_MESSAGE
+                continue
+            }
+            val tags = base.tags ?: continue
+            val moved = DesktopVaultsLists.reordered(tags, list, vaults)
+            if (moved == tags || !nostr.ownerHexPubkey.equals(owner, ignoreCase = true)) continue
+            // Publish first: an earlier list's failure must not skip this one (Tron should-fix 2 on #2516).
+            val failed = publish(nostr, moved, list, owner, base.event).message
+            line = line ?: failed
+        }
+        return line
+    }
+
+    /**
+     * Deleting a Vault with "Also take it out of your public lists?" answered yes (rule 5): every entry of it in all
+     * three lists, checked together, so nothing is signed when any list didn't load or one would be left unusable.
+     * [Outcome.Published] or [Outcome.Unchanged] means the lists are clean and the Vault may go.
+     */
+    suspend fun remove(nostr: NostrService, vault: DesktopVault): Outcome {
+        val owner = nostr.ownerHexPubkey.lowercase()
+        if (owner.isBlank()) return Outcome.NotSigned
+        val bases = mutableMapOf<DesktopVaultList, Base>()
+        for (list in DesktopVaultList.entries) bases[list] = newest(nostr, list, owner) ?: return Outcome.NotLoaded
+        val lists = bases.mapNotNull { (list, base) -> base.tags?.let { list to it } }.toMap()
+        return when (val r = DesktopVaultsLists.removingVault(vault, lists)) {
+            is DesktopVaultsLists.Removal.Refused -> Outcome.Refused(r.list)
+            is DesktopVaultsLists.Removal.Changed -> {
+                if (!nostr.ownerHexPubkey.equals(owner, ignoreCase = true)) return Outcome.NotSigned
+                var outcome: Outcome = Outcome.Unchanged
+                val sent = mutableListOf<DesktopVaultList>()
+                for (list in DesktopVaultList.entries) {
+                    val tags = r.lists[list] ?: continue
+                    val one = publish(nostr, tags, list, owner, bases[list]?.event)
+                    if (one != Outcome.Published) return if (sent.isEmpty()) one else Outcome.PartlyPublished(sent)
+                    sent += list
+                    outcome = Outcome.Published
+                }
+                outcome
+            }
+        }
+    }
+
+    /**
+     * A deleted Vault's media entry is no longer this phone's to drop: after "No, leave my lists as they are", a later
+     * Media Servers Save must keep it (iOS `NostrService.forgetManagedServer`, should-fix 3 on #2511).
+     */
+    fun forgetManagedServer(nostr: NostrService, host: String) {
+        val dir = nostr.configStore.config.value.appSupportDir ?: return
+        val bases = ListMerge.Bases(java.io.File(dir, ListMerge.BASES_FILE))
+        val key = "10063:${nostr.ownerHexPubkey}"
+        val base = bases.get(key) ?: return
+        val kept = base.filterNot { DesktopVaultsLists.hostKey(it) == host }
+        if (kept != base) bases.put(key, kept)
     }
 
     /** The newest list's tags for the switches to read (§2.1): [] when the relays agree there is none, null when not known. */

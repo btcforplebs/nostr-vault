@@ -175,5 +175,13 @@ object DesktopVaultPick {
         return h.role?.let(roleLabel) ?: "A paired device"
     }
 
+    /**
+     * "Found by <name>" for My Web when more than one desktop is paired, so it says which one ranked (Desktop Vaults
+     * P7, plan §6.1); null with one desktop, or one with no name, where "your desktop Vault" is clear. iOS
+     * `DesktopVaultPick.foundBy`.
+     */
+    fun foundBy(name: String?, desktops: Int): String? =
+        name?.trim()?.takeIf { it.isNotEmpty() && desktops > 1 }?.let { "Found by $it" }
+
     fun updated(fetchedAt: Long, nowS: Long): String = "Updated ${VaultStatusText.ago(fetchedAt, nowS)}"
 }

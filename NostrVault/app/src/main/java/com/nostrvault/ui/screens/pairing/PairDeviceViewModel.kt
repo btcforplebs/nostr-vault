@@ -4,6 +4,7 @@ import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.relay.forgettingRemovedDesktopVault
 import com.nostrvault.di.ApplicationScope
 import com.nostrvault.fips.DeviceRole
 import com.nostrvault.fips.FipsMeshManager
@@ -428,7 +429,11 @@ class PairDeviceViewModel @Inject constructor(
             before.fipsPeers, before.homeVaultNpub, before.fipsMesh.devices, own, npub, role, name,
             linkedBy = activeNpub().orEmpty(), ownerNpub = before.ownerNpub,
         ) ?: return
-        configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(devices = change.labels)) }
+        // Pairing a desktop again undoes an earlier delete of its Vault (Desktop Vaults P7).
+        configStore.updateAsync {
+            val paired = it.copy(fipsMesh = it.fipsMesh.copy(devices = change.labels))
+            if (role == DeviceRole.MAC) paired.forgettingRemovedDesktopVault(npub) else paired
+        }
         if (change.peers != before.fipsPeers) mesh.setPeers(change.peers)
         if (change.homeVault != before.homeVaultNpub) homeVault.setHomeVault(change.homeVault)
         // The 10063 is left alone: the owner adds a vault to it on Media Servers (Logen 2026-11-08).

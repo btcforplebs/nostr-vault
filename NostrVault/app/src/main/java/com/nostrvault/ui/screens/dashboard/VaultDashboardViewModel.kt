@@ -340,12 +340,11 @@ class VaultDashboardViewModel @Inject constructor(
 
     /**
      * Counted the way Settings › Relays counts its "N relays" chip, so the
-     * two never disagree: every relay in any column, plus your own.
+     * two never disagree.
      */
     /** The Relays page's count: this device's lists joined with the published ones it has cached. */
     fun relayCount(cfg: HavenConfig): Int = RelayDraft.count(
         RelayDraft.start(RelayMatrix.lists(cfg), nostrService.cachedOwnerRelayLists(), RelayDraft.pinned(cfg)),
-        cfg.macRelayWssURL,
     )
 
     fun setAutoStart(enabled: Boolean) = configStore.update { it.copy(autoStartRelay = enabled) }

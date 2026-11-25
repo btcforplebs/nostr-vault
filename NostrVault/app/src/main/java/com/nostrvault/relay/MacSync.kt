@@ -51,15 +51,20 @@ object MacSync {
         // A dialed mesh Vault comes first (mesh before wss, §2.2; P6). Else a slot holding a mesh npub gives "" until
         // it has been dialed, and a web slot its address.
         RelayConfiguration.dialedVault(config, mesh)?.let { return it.url }
-        if (DesktopVaultsRules.SlotAddress.of(config.macRelayURL) is DesktopVaultsRules.SlotAddress.Mesh) return ""
+        val slot = config.macRelayURLInEffect
+        if (DesktopVaultsRules.SlotAddress.of(slot) is DesktopVaultsRules.SlotAddress.Mesh) return ""
         val base = config.macRelayNormalizedBase
         if (base.isEmpty()) return ""
-        val typed = config.macRelayURL.trim().lowercase()
+        val typed = slot.trim().lowercase()
         val plain = typed.startsWith("ws://") || typed.startsWith("http://")
         return (if (plain) "ws://" else "wss://") + base
     }
 
     fun parse(text: String): MacSyncStatus? = runCatching { json.decodeFromString<MacSyncStatus>(text) }.getOrNull()
+
+    /** One desktop Vault's status file ([DesktopVaultsRules.statusFileName], P1), by its `wss://<base>`. */
+    fun read(relayDataDir: File, vaultURL: String): MacSyncStatus? =
+        runCatching { File(relayDataDir, DesktopVaultsRules.statusFileName(vaultURL)).readText() }.getOrNull()?.let(::parse)
 
     fun read(relayDataDir: File): MacSyncStatus? =
         runCatching { File(relayDataDir, STATUS_FILE).readText() }.getOrNull()?.let(::parse)

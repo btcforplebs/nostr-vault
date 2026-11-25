@@ -51,6 +51,6 @@ class SettingsGroupsTest {
         fun groupsOf(screen: Screen) = SETTINGS_GROUPS.filter { g -> g.rows.any { it.screen == screen } }.map { it.title }
         assertEquals(listOf("Your Vault"), groupsOf(Screen.YourDevices))
         assertEquals(listOf("Advanced"), groupsOf(Screen.MeshSettings))
-        assertEquals(emptyList<String>(), groupsOf(Screen.HavenRelaySettings))
+        assertEquals(emptyList<String>(), groupsOf(Screen.DesktopVaults))
     }
 }

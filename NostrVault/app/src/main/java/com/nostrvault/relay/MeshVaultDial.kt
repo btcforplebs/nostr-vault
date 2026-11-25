@@ -94,7 +94,7 @@ object MeshVaultDial {
         ingress: (String) -> FipsIngress = FipsBridge::ingress,
     ): Job? {
         val npubs = config.desktopVaultMeshNpubs
-        when (DesktopVaultsRules.meshDial(config.fipsMeshEnabled, config.macRelayURL, npubs)) {
+        when (DesktopVaultsRules.meshDial(config.fipsMeshEnabled, config.macRelayURLInEffect, npubs)) {
             DesktopVaultsRules.MeshDial.NONE -> return null
             // A mesh-npub slot was dialed by the start itself; a save dials it again when that found nobody (Tron M1
             // on #2513: the save no longer runs launchInputs, so a Mac that woke up later was never reached).

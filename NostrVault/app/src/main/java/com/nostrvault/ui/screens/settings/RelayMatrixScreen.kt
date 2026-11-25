@@ -33,6 +33,9 @@ import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.PublicRelayList
 import com.nostrvault.relay.RelayBlocklist
 import com.nostrvault.relay.RelayDraft
+import com.nostrvault.relay.desktopVaultsInEffect
+import com.nostrvault.ui.screens.settings.desktopvaults.DesktopVaultEntryRows
+import com.nostrvault.ui.screens.settings.desktopvaults.desktopVaultEntries
 import com.nostrvault.relay.RelayMatrix
 import com.nostrvault.relay.RelayMatrix.Job
 import com.nostrvault.service.FeedService
@@ -213,8 +216,8 @@ class RelayMatrixViewModel @Inject constructor(
 
     fun plan(): RelayDraft.Plan? {
         val state = _draft.value ?: return null
-        val cfg = configStore.config.value
-        return RelayDraft.plan(state, cfg.macRelayWssURL, cfg.ownHavenDMInboxURL)
+        // The Vaults' entries are their switches' (Desktop Vaults P7): Save carries them, never adds the old slot.
+        return RelayDraft.plan(state, ownRelay = "", ownInbox = "")
     }
 
     /** The one place the relay lists are written and published. */
@@ -236,11 +239,11 @@ class RelayMatrixViewModel @Inject constructor(
         // Save edits the newest copy, fetched now; the published copy the screen opened with is what it changed.
         plan.relayListTags?.let {
             nostrService.publishOwnerRelayListTags(
-                it, before = PublicRelayList.tags(emptyList(), p.read, p.write) + p.kept, openedAt = p.relayListAt,
+                it, before = p.relayListBefore, openedAt = p.relayListAt,
                 onDone = notPublished("Relay list"),
             )
         }
-        plan.dmRelays?.let { nostrService.publishDMRelayList(it, before = p.dms, openedAt = p.dmListAt, onDone = notPublished("DM inbox")) }
+        plan.dmRelays?.let { nostrService.publishDMRelayList(it, before = p.dmsBefore, openedAt = p.dmListAt, onDone = notPublished("DM inbox")) }
         _draft.value = RelayDraft.saved(state, plan)
     }
 
@@ -321,6 +324,7 @@ private fun healthColor(result: RelayProbeResult?): Color = when (result) {
 fun RelayMatrixScreen(
     onBack: () -> Unit,
     onOpenMediaServers: () -> Unit,
+    onOpenVault: (String) -> Unit = {},
     /** After Save; true when it published a relay list (kind 10002). */
     onSaved: (publishedRelayList: Boolean) -> Unit = {},
     viewModel: RelayMatrixViewModel = hiltViewModel(),
@@ -422,7 +426,7 @@ fun RelayMatrixScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
-                    Chip("${state?.let { RelayDraft.count(it, ownRelay) } ?: 0} relays", SecondaryText)
+                    Chip("${state?.let { RelayDraft.count(it) } ?: 0} relays", SecondaryText)
                     if (times.isNotEmpty()) Chip("avg ${times.sum() / times.size} ms", SecondaryText)
                     if (fixCount > 0) {
                         Box(Modifier.clickable { recommended = true }) { Chip("⚠ $fixCount to fix", SlowAmber) }
@@ -552,20 +556,8 @@ fun RelayMatrixScreen(
 
                 item { SectionHeader("Yours", "Your published relay list and DM inbox, and relays you add") }
                 item { ColumnHeader() }
-                if (ownRelay.isNotEmpty()) {
-                    item {
-                        OwnRelayRow(ownRelay, results[RelayMatrix.key(ownRelay)], accent) {
-                            LockedDot(true, accent)
-                            LockedDot(true, accent)
-                            LockedDot(cfg.ownHavenDMInboxURL.isNotEmpty(), accent)
-                            val searching = lists.search.any { RelayMatrix.key(it) == RelayMatrix.key(ownRelay) }
-                            JobDot(searching, accent, "${Job.SEARCH.title}, ${RelayMatrix.label(ownRelay)}") {
-                                viewModel.setOwnJob(ownRelay, Job.SEARCH, !searching)
-                            }
-                            LockedDot(true, accent)
-                        }
-                    }
-                }
+                // Desktop Vault entries are their switches' (P7): read only here, each opens its Vault's page.
+                item { DesktopVaultEntryRows(desktopVaultEntries(published.vaultRelays, published.vaultInboxes, vaults = cfg.desktopVaultsInEffect), onOpenVault, Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
                 val mine = rows.filter { it.entry.section == RelayDraft.Section.YOURS }
                 items(mine, key = { it.entry.key }) { row ->
                     MatrixRow(row, results[row.entry.key], accent, viewModel, onName = { selectedKey = row.entry.key })
@@ -800,29 +792,6 @@ private fun MatrixRow(
     }
 }
 
-/** The vault's own relay: always Read, Write, DMs and Import; only Search can change. */
-@Composable
-private fun OwnRelayRow(url: String, result: RelayProbeResult?, accent: Color, dots: @Composable RowScope.() -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 2.dp, bottom = 2.dp),
-    ) {
-        Spacer(Modifier.width(RemoveWidth))
-        Box(Modifier.size(8.dp).background(healthColor(result), CircleShape))
-        Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
-            Text(RelayMatrix.label(url), color = PrimaryText, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val (text, tint) = subtitle(result, emptyList())
-                Text(text, color = tint, fontSize = 12.sp, maxLines = 1)
-                Spacer(Modifier.width(6.dp))
-                Badge("YOUR RELAY", accent)
-            }
-        }
-        dots()
-    }
-}
-
 @Composable
 private fun Badge(text: String, tint: Color) {
     Text(
@@ -883,20 +852,6 @@ private fun JobDot(on: Boolean, accent: Color, label: String, onClick: () -> Uni
                 .background(if (on) accent else Color.Transparent, CircleShape)
                 .border(1.5.dp, if (on) accent else TertiaryText, CircleShape),
         )
-    }
-}
-
-@Composable
-private fun LockedDot(on: Boolean, accent: Color) {
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.width(ColumnWidth).height(44.dp)) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.size(DotSize)
-                .background(if (on) accent else Color.Transparent, CircleShape)
-                .border(1.5.dp, if (on) accent else TertiaryText, CircleShape),
-        ) {
-            if (on) Icon(NostrVaultIcons.Lock, contentDescription = null, tint = OnAccent, modifier = Modifier.size(11.dp))
-        }
     }
 }
 

@@ -46,7 +46,20 @@ object RelayDraft {
          */
         val relayListAt: Long? = null,
         val dmListAt: Long? = null,
-    )
+        /**
+         * The desktop Vault entries of the kind 10002 / 10050, as published ([DesktopVaultsEditing.splitting]).
+         * Not rows: only a Vault's own switch adds or removes them, so Save carries them through untouched
+         * (Desktop Vaults P7, §2.4; iOS `Published.vaultRelays` / `vaultInboxes`).
+         */
+        val vaultRelays: List<List<String>> = emptyList(),
+        val vaultInboxes: List<String> = emptyList(),
+    ) {
+        /** The 10002 as published, for Save's rebase: the Vault entries first, as [plan] puts them. */
+        val relayListBefore: List<List<String>> get() = vaultRelays + PublicRelayList.tags(emptyList(), read, write) + kept
+
+        /** The 10050 as published, for Save's rebase. */
+        val dmsBefore: List<String> get() = vaultInboxes + dms
+    }
 
     /** Whether a relay can be a row of the published relay list: a wss:// address others can reach. */
     fun listable(url: String): Boolean = PublicRelayList.tags(listOf(url), emptyList(), emptyList()).isNotEmpty()
@@ -101,7 +114,8 @@ object RelayDraft {
      * (the vault's own relay and inbox) has its own row and is left out.
      */
     fun start(lists: Lists, published: Published, pinned: List<String> = emptyList()): State {
-        val pinnedKeys = pinned.filter { it.isNotBlank() }.map(RelayMatrix::key).toSet()
+        val vaultEntries = published.vaultRelays.mapNotNull { it.getOrNull(1) } + published.vaultInboxes
+        val pinnedKeys = (pinned + vaultEntries).filter { it.isNotBlank() }.map(RelayMatrix::key).toSet()
         fun join(job: Job, urls: List<String>, into: Lists) = urls
             .filter { DMInbox.normalizedRelayURL(it).isNotEmpty() && RelayMatrix.key(it) !in pinnedKeys }
             .fold(into) { acc, url -> RelayMatrix.setting(job, true, url, acc) }
@@ -130,11 +144,16 @@ object RelayDraft {
 
     /**
      * How many relays [state] lists, as the Relays page counts them: every row
-     * not removed, plus the vault's own relay when it has one. The Vault
-     * Dashboard's Relays row uses this too, so the two never disagree.
+     * not removed, plus each desktop Vault relay the published 10002 lists
+     * (those are not rows, P7; one switched off is not counted, Tron nit 3 on
+     * #2516). The Vault Dashboard's Relays row uses this too, so the two never disagree.
      */
-    fun count(state: State, ownRelay: String): Int =
-        rows(state).count { !it.removed } + if (ownRelay.isEmpty()) 0 else 1
+    fun count(state: State): Int {
+        val live = rows(state).filter { !it.removed }
+        val rowKeys = live.map { it.entry.key }.toSet()
+        val vaults = state.published.vaultRelays.mapNotNull { it.getOrNull(1) }.map(RelayMatrix::key).distinct()
+        return live.size + vaults.count { it !in rowKeys }
+    }
 
     /** The vault's own relay and DM inbox: rows of their own, left out of the lists. */
     fun pinned(cfg: HavenConfig): List<String> = listOf(cfg.macRelayWssURL, cfg.ownHavenDMInboxURL)
@@ -264,19 +283,18 @@ object RelayDraft {
         val writeNow = yoursOnly(draft.write, yours)
         val relayListEdited = keys(readNow) != keys(yoursOnly(start.read, yours)) ||
             keys(writeNow) != keys(yoursOnly(start.write, yours)) || movedAny(state, setOf(Job.READ, Job.WRITE))
-        val shown = PublicRelayList.tags(listOf(ownRelay), readNow, writeNow)
+        val vaultKeys = p.vaultRelays.mapNotNull { it.getOrNull(1) }.map(RelayMatrix::key).toSet()
+        val shown = PublicRelayList.tags(listOf(ownRelay), readNow, writeNow).filter { RelayMatrix.key(it[1]) !in vaultKeys }
         val shownKeys = shown.map { RelayMatrix.key(it[1]) }.toSet()
-        // The published entries the screen can't show go out again untouched.
-        val newTags = shown + p.kept.filter { RelayMatrix.key(it[1]) !in shownKeys }
-        val relayListChanges = if (relayListEdited) diff(
-            before = PublicRelayList.tags(emptyList(), p.read, p.write) + p.kept, after = newTags,
-        ) else emptyList()
+        // The Vault entries lead, as published; the published entries the screen can't show go out again untouched.
+        val newTags = p.vaultRelays + shown + p.kept.filter { RelayMatrix.key(it[1]) !in shownKeys && RelayMatrix.key(it[1]) !in vaultKeys }
+        val relayListChanges = if (relayListEdited) diff(before = p.relayListBefore, after = newTags) else emptyList()
         val publishRelayList = relayListEdited && p.relayListKnown && relayListChanges.isNotEmpty()
 
         val dmsNow = yoursOnly(draft.dms, yours)
         val dmEdited = keys(dmsNow) != keys(yoursOnly(start.dms, yours)) || movedAny(state, setOf(Job.DMS))
-        val newDMs = DMInbox.merged(ownInbox, dmsNow)
-        val dmChanges = if (dmEdited) setDiff(p.dms, newDMs, Job.DMS) else emptyList()
+        val newDMs = DMInbox.merged(p.vaultInboxes, DMInbox.merged(ownInbox, dmsNow))
+        val dmChanges = if (dmEdited) setDiff(p.dmsBefore, newDMs, Job.DMS) else emptyList()
         val publishDMs = dmEdited && p.dmListKnown && dmChanges.isNotEmpty()
 
         val localChanges = allRelays(state).mapNotNull { (k, url) ->

@@ -1,5 +1,7 @@
 package com.nostrvault.service
 
+import com.nostrvault.relay.desktopVaultsInEffect
+import com.nostrvault.relay.vaultMediaServers
 import android.util.Log
 import com.nostrvault.BuildConfig
 import com.nostrvault.data.model.MuteList
@@ -79,11 +81,16 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     internal fun NostrService.cachedOwnerRelayListsImpl(): com.nostrvault.relay.RelayDraft.Published {
         val owner = ownerHexPubkey
         if (owner.isBlank()) return com.nostrvault.relay.RelayDraft.Published()
+        // The Vault entries split out as the lookup does, so the dashboard counts them as the Relays page does.
+        val (vaultRelays, read, write) = com.nostrvault.relay.DesktopVaultsEditing.splittingCached(
+            relayLists.value[owner].orEmpty(), outboxRelays.value[owner].orEmpty(), configStore.config.value.desktopVaultsInEffect,
+        )
         return com.nostrvault.relay.RelayDraft.Published(
-            read = relayLists.value[owner].orEmpty().filter(com.nostrvault.relay.RelayDraft::listable),
-            write = outboxRelays.value[owner].orEmpty().filter(com.nostrvault.relay.RelayDraft::listable),
+            read = read.filter(com.nostrvault.relay.RelayDraft::listable),
+            write = write.filter(com.nostrvault.relay.RelayDraft::listable),
             dms = configStore.config.value.dmInboxRelays.filterNot(::isLoopbackRelay),
             relayListAt = relayListCreatedAt[owner],
+            vaultRelays = vaultRelays,
         )
     }
 
@@ -101,12 +108,16 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         }
         val rl = relayList.await()
         val dl = dmList.await()
-        val (read, write) = rl?.event?.let { profileRepository.parseRelayListTags(it.tags) }
+        // Desktop Vault entries are their switches' (P7, §2.4): split out, carried through by Save as published.
+        val vaults = config.desktopVaultsInEffect
+        val (vaultRelays, relayTags) = com.nostrvault.relay.DesktopVaultsEditing.splitting(rl?.event?.tags.orEmpty(), com.nostrvault.relay.DesktopVaultList.RELAYS, vaults)
+        val (vaultInboxes, dmTags) = com.nostrvault.relay.DesktopVaultsEditing.splitting(dl?.event?.tags.orEmpty(), com.nostrvault.relay.DesktopVaultList.INBOX, vaults)
+        val (read, write) = rl?.event?.let { profileRepository.parseRelayListTags(relayTags) }
             ?: (relayLists.value[owner].orEmpty() to outboxRelays.value[owner].orEmpty())
-        val dms = dl?.event?.let { profileRepository.parseDMRelayListTags(it.tags) } ?: emptyList()
+        val dms = dl?.event?.let { profileRepository.parseDMRelayListTags(dmTags) } ?: emptyList()
         // Entries the screen can't edit (ws://, home network) stay as published; loopback ones are dropped, they
         // never worked for anyone.
-        val kept = rl?.event?.tags.orEmpty().filter {
+        val kept = relayTags.filter {
             it.size >= 2 && it[0] == "r" && !com.nostrvault.relay.RelayDraft.listable(it[1]) && !isLoopbackRelay(it[1])
         }
         com.nostrvault.relay.RelayDraft.Published(
@@ -118,6 +129,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             kept = kept,
             relayListAt = rl?.event?.createdAt ?: relayListCreatedAt[owner],
             dmListAt = dl?.event?.createdAt,
+            vaultRelays = vaultRelays.filter { it[0] == "r" },
+            vaultInboxes = vaultInboxes.map { it[1] }.filterNot(::isLoopbackRelay),
         ).also {
             Log.i(TAG, "Relay lists looked up: 10002 ${rl?.answered}/${rl?.asked} found=${rl?.event != null}, " +
                 "10050 ${dl?.answered}/${dl?.asked} found=${dl?.event != null}")
@@ -197,7 +210,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val ask = (config.writeRelays + config.readRelays + NostrService.PROFILE_RELAYS).filterNot(::isLoopbackRelay).distinct()
         val event = lookupNewestReplaceable(10063, owner, ask).event ?: return
         val base = config.appSupportDir?.let { ListMerge.Bases(java.io.File(it, ListMerge.BASES_FILE)) }?.get("10063:$owner")
-        val own = listOf(config.macRelayHttpsURL).filter { it.isNotBlank() }
+        val own = config.vaultMediaServers
         var added = emptyList<String>()
         configStore.updateAsync { current ->
             val result = ServerListAdoption.adopt(
@@ -483,6 +496,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         publishedFirst: Boolean = false,
         onPosted: () -> Unit = {},
         onRefused: (String) -> Unit = {},
+        keepAlso: (String) -> Boolean = { false },
         adjust: (List<List<String>>) -> List<List<String>>? = { it },
     ) {
         val owner = ownerHexPubkey
@@ -490,7 +504,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val baseKey = "$kind:$owner"
         publishMergedList(kind, owner, forceOwner = true, extraRelays = extraRelays, onPosted = onPosted, onRefused = onRefused) { published ->
             val base = bases?.get(baseKey)?.map(ListMerge::key)?.toSet()
-            val keep = { value: String -> base == null || ListMerge.key(value) !in base }
+            val keep = { value: String -> base == null || ListMerge.key(value) !in base || keepAlso(value) }
             val tags = if (publishedFirst) {
                 ListMerge.tagsPublishedFirst(name, local, published?.tags.orEmpty(), keep)
             } else {
@@ -584,7 +598,10 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             configStore.update { it.copy(serverListAddMesh = it.serverListAddMesh - add.toSet(), serverListDropMesh = it.serverListDropMesh - drop.toSet()) }
             fetchServerList(ownerHexPubkey)
         }
-        publishOwnerEntryList(10063, "server", mirrors, extraRelays, publishedFirst = true, onPosted = cleared, onRefused = onRefused) { tags ->
+        // A desktop Vault's entry is its media switch's (Desktop Vaults P7, §2.4): a Save neither adds nor drops it.
+        val vaultHosts = config.desktopVaultsInEffect.mapNotNull { it.hostKey }.toSet()
+        val isVault = { url: String -> com.nostrvault.relay.DesktopVaultsLists.hostKey(url) in vaultHosts }
+        publishOwnerEntryList(10063, "server", mirrors.filterNot(isVault), extraRelays, publishedFirst = true, onPosted = cleared, onRefused = onRefused, keepAlso = isVault) { tags ->
             val servers = tags.filter { it.size >= 2 && it[0] == "server" }.map { it[1] }
             val merged = com.nostrvault.fips.HomeVaultRules.mergeServerList(servers, servers, add, drop)
                 ?: return@publishOwnerEntryList null

@@ -57,6 +57,8 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.ui.components.ListHistoryOptInRow
 import com.nostrvault.ui.components.ListHistoryScanStatus
 import com.nostrvault.relay.LogStore
+import com.nostrvault.relay.macRelayURLInEffect
+import com.nostrvault.relay.desktopVaultsInEffect
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.tutorials.TutorialContent
 import com.nostrvault.tutorials.tutorialAnchor
@@ -161,7 +163,7 @@ internal fun VaultDashboardContent(
     }
     val usesSigner = viewModel.usesSigner(cfg)
     val keyOk = hasLocalKey || usesSigner
-    val macConfigured = cfg.macRelayURL.isNotBlank()
+    val macConfigured = cfg.macRelayURLInEffect.isNotBlank()
     val exportBusy = exportingNotes || exportingMedia
     val actionsEnabled = running || isImporting
 
@@ -266,7 +268,7 @@ internal fun VaultDashboardContent(
                 title = "Second copy on your Mac",
                 detail = VaultDashboardModel.macSyncDetail(macConfigured, macSync?.finishedAt, now),
                 state = if (macConfigured) RowState.DONE else RowState.TODO,
-                onClick = { onOpenScreen(Screen.HavenRelaySettings) },
+                onClick = { onOpenScreen(Screen.DesktopVaults) },
             )
             DashDivider()
             DashRow(
@@ -421,8 +423,8 @@ internal fun VaultDashboardContent(
                 onOpenScreen(Screen.BlossomSettings)
             }
             DashDivider()
-            SettingLink(Icons.Filled.Laptop, "Desktop vault sync", if (macConfigured) "On" else "Off") {
-                onOpenScreen(Screen.HavenRelaySettings)
+            SettingLink(Icons.Filled.Laptop, "Desktop Vaults", "${cfg.desktopVaultsInEffect.size}") {
+                onOpenScreen(Screen.DesktopVaults)
             }
             DashDivider()
             Row(
