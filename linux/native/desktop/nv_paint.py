@@ -45,9 +45,9 @@ try:
     GIVE_UP_S = max(4, int(os.environ.get("NV_PAINT_GIVE_UP_S", "45")))
 except ValueError:
     GIVE_UP_S = 45
-KILL_AFTER_S = 4  # a restart waits this long for WebKit's processes (and bwrap) to end, then kills them (a hung or
-# stopped one won't end; the network process lives as long as this process would)
-WAIT_S = 10  # then this long for every other child (xdg-dbus-proxy ends once its sandbox is gone)
+KILL_AFTER_S = 4  # a restart waits this long for WebKit's processes (and bwrap) to end, then execs anyway
+LEFTOVER_KILL_S = 5  # the new process kills WebKit processes left from before the exec that are still running then
+LEFTOVER_WAIT_S = 60  # and reaps every leftover child for this long
 MIN_COLOURS = 8  # a drawn page has many (anti-aliased text); an empty view is one flat colour (or WebKit's background)
 
 mode = None
@@ -190,6 +190,42 @@ class Checker:
         self.restarting = False
         self.cairo_ok = True
         log(f"drawing mode {mode} ({why})" + (f"; failed before: {', '.join(tried)}" if tried else ""))
+        self.reap_leftovers()
+
+    def reap_leftovers(self):
+        """Children left from before this process started over (restart(), the shell's restart_as_tray): WebKit's
+        processes, their bwrap sandboxes, xdg-dbus-proxy. Nothing in the old image may kill a WebKit process: one
+        that hadn't finished its handshake made WebKit abort the process when it died, by WebKit's hand or ours
+        (g_error "failed to receive credentials", CI 2026-11-25). Here no WebKit of this image knows them. They
+        mostly end by themselves (their socket to the old image closed on exec): each is reaped as it ends, so none
+        is left a zombie, and a WebKit one still running after LEFTOVER_KILL_S (hung, or stopped) is killed."""
+        left = {p: c for p, c, _st in children()}
+        if not left:
+            return
+        from gi.repository import GLib
+        began = time.monotonic()
+
+        def step():
+            for pid in list(left):
+                try:
+                    if os.waitpid(pid, os.WNOHANG)[0] == pid:
+                        left.pop(pid)
+                except ChildProcessError:
+                    left.pop(pid)
+            if left and time.monotonic() - began >= LEFTOVER_KILL_S and not getattr(step, "killed", False):
+                step.killed = True
+                web = [p for p, c in left.items() if c.startswith("WebKit") or c == "bwrap"]
+                if web:
+                    self.log(f"killing {len(web)} WebKit process(es) left from before starting over, still running "
+                             f"after {LEFTOVER_KILL_S} s")
+                for pid in web:
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+            return bool(left) and time.monotonic() - began < LEFTOVER_WAIT_S
+
+        GLib.timeout_add(500, step)
 
     @property
     def view(self):
@@ -451,7 +487,7 @@ class Checker:
         """Start this program over (exec, the same process id) with args, once every child of this process has
         ended, so none is left for nothing to reap (as restart_as_tray: WebKit's helpers, their bwrap sandboxes and
         xdg-dbus-proxy). Waits for a running setup or pkexec (their results need this process) and for a tick's
-        systemctl. WebKit's own processes get KILL_AFTER_S, then are killed; every other child then gets WAIT_S.
+        systemctl. WebKit's own processes get KILL_AFTER_S; whatever is left, the new process reaps (reap_leftovers).
         failing: the check failed, so the page may be hung (see below)."""
         from gi.repository import GLib
         if self.restarting:
@@ -486,7 +522,6 @@ class Checker:
         if self.supervisor is not None:
             self.supervisor.stop()
         began = time.monotonic()
-        state = {}
 
         def step():
             if getattr(app, "setup_running", False) or getattr(app, "root_running", 0):
@@ -499,23 +534,15 @@ class Checker:
             if web and time.monotonic() - began < KILL_AFTER_S:
                 return True
             if web:
-                self.log(f"killing {len(web)} WebKit process(es) that didn't end in {KILL_AFTER_S} s")
-            for pid in web:
-                try:
-                    os.kill(pid, signal.SIGKILL)  # hung, or stopped: it won't end by itself
-                except OSError:
-                    pass
-            if web:
-                state["killed"] = time.monotonic()
-                return True  # next step: the rest
-            live = [p for p, _c, st in children() if st != "Z"]
-            if live and time.monotonic() - state.get("killed", began) < WAIT_S:
-                return True
-            for pid, _c, _st in children():
-                try:
-                    os.waitpid(pid, os.WNOHANG)
-                except ChildProcessError:
-                    pass
+                self.log(f"{len(web)} WebKit process(es) still running after {KILL_AFTER_S} s: starting over anyway "
+                         "(the new process reaps them)")
+            # Not killed here (see reap_leftovers); the ones already ended are reaped.
+            for pid, _c, st in children():
+                if st == "Z":
+                    try:
+                        os.waitpid(pid, os.WNOHANG)
+                    except ChildProcessError:
+                        pass
             sys.stdout.flush()
             sys.stderr.flush()
             try:

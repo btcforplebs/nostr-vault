@@ -339,7 +339,7 @@ else
   else no "$MODE: a page that crashes every time started $n web processes in 15 s (want 1 to 3)"; fi
   sleep 6
   w=$(webproc)
-  if [ -z "$w" ]; then ok "$MODE: after it stops, no web process is started again"; else no "$MODE: a web process ($w) started after the stop"; fi
+  if [ -z "$w" ]; then ok "$MODE: after it stops, no web process is started again"; else no "$MODE: a web process ($w) started after the stop"; ps -o pid=,ppid=,stat=,etimes=,args= -p "$w" 2>/dev/null | cut -c1-200; fi
   drawn "$OUT/$MODE-$STAGE-5-loop-stopped.png" "$MODE: the window draws its own crash page" "$OUT/$MODE-$STAGE-4-loop-vault.png"
   grep -q "not loading another page" "$OUT/$MODE-$STAGE-loop.log" && ok "$MODE: the window says why it stopped" \
     || no "$MODE: no 'not loading another page' line in the window's log"
