@@ -87,11 +87,12 @@ enum GlobeRingZoom {
 
     /// A ring's radius on screen. `outline` is the inner globe's outline
     /// radius unzoomed (`GlobeOuterRings.outline`); `half` is half the
-    /// frame's short side.
-    static func radius(hop: Int, level: Double, outline: Double, half: Double) -> Double {
+    /// frame's short side; `grow` is how far a pinch has zoomed in, so the
+    /// picked sphere grows with the globe nested in it.
+    static func radius(hop: Int, level: Double, outline: Double, half: Double, grow: Double = 1) -> Double {
         let (lo, hi, t) = bracket(level)
-        let a = radius(hop: hop, whole: lo, outline: outline, half: half)
-        let b = radius(hop: hop, whole: hi, outline: outline, half: half)
+        let a = radius(hop: hop, whole: lo, outline: outline, half: half, grow: grow)
+        let b = radius(hop: hop, whole: hi, outline: outline, half: half, grow: grow)
         return a + (b - a) * t
     }
 
@@ -119,13 +120,13 @@ enum GlobeRingZoom {
 
     // MARK: Whole levels
 
-    private static func radius(hop: Int, whole: Int, outline: Double, half: Double) -> Double {
+    private static func radius(hop: Int, whole: Int, outline: Double, half: Double, grow: Double) -> Double {
         let outward = Double(hop - TrustMapOuter.firstHop)
         guard whole > 0 else { return outline * (first + step * outward) }
         // Hop 2 (the inner globe) at the shrunk outline, the picked ring at
         // the fit, and the rings between evenly spaced.
         let inner = outline * innerScales[whole]
-        let fitted = fit * half
+        let fitted = fit * half * grow
         let gap = (fitted - inner) / Double(whole)
         return inner + gap * (outward + 1)
     }
