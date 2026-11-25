@@ -25,11 +25,12 @@ import traceback
 import urllib.error
 import urllib.request
 
-# WebKitGTK's DMA-BUF renderer draws nothing (a black window) on some graphics stacks: the NVIDIA driver, some
-# hybrid-GPU laptops, VMs without 3D (a Zorin OS 18 desktop showed only black, 2026-11-20). These pages don't need GPU
-# compositing, so it is off unless someone asks for it (WEBKIT_DISABLE_DMABUF_RENDERER=0). Set before WebKit loads:
-# its web processes read it when they start.
-os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+# How WebKit draws (DMA-BUF on, off, or no GPU compositing), picked before WebKit loads; the window then checks that it
+# draws and starts over in the next way if it doesn't (nv_paint.py).
+sys.path.insert(0, os.environ.get("NV_DESKTOP_SHARE", "/usr/share/nostr-vault/desktop"))
+import nv_paint  # noqa: E402
+
+nv_paint.choose()
 
 import gi  # noqa: E402
 
@@ -232,7 +233,9 @@ def drive_choices():
 
 class App(Gtk.Application):
     def __init__(self):
-        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        # The Flatpak's own bus name (its app ID's subname, which a Flatpak may own): with the .deb's on the same name,
+        # opening one with the other's window open handed the launch to the other's process.
+        super().__init__(application_id=fp.BUS_NAME if fp else APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         self.window = None
         self.view = None
         self.indicator = None
@@ -252,12 +255,14 @@ class App(Gtk.Application):
         self.beat = time.monotonic()  # the main loop's heartbeat (the stall watchdog)
         self.watching = False  # the stall watchdog runs (from the first window)
         self.paste_watched = False  # the paste guard's clipboard handlers are connected (once, not per window)
+        self.paint = nv_paint.Checker(self, log, SUPERVISOR if fp else None)  # does the window draw (nv_paint.py)
 
     # ---- start-up
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
         self.start_fault_log()
+        nv_paint.listen_for_update(self.paint)
         settings = Gtk.Settings.get_default()
         if settings:
             settings.set_property("gtk-application-prefer-dark-theme", True)
@@ -494,8 +499,11 @@ class App(Gtk.Application):
         win.add(view)
         win.connect("delete-event", lambda *_: (self.close_window(), True)[1])
         win.show_all()
+        if fp:
+            fp.wayland_app_id(win, log)  # the app ID its .desktop file has, not the bus name (nv_flatpak.py)
         self.window, self.view = win, view
         self.start_watchdog()
+        self.paint.watch(view)
 
     def close_window(self):
         """The window's close button and Ctrl+W. The window goes, and its web view with it, so WebKit's web process and
@@ -565,8 +573,13 @@ class App(Gtk.Application):
         return False
 
     def show(self, route):
+        if self.window is None and self.paint.hold(lambda: self.show(route)):
+            return  # the old window's WebKit processes still run, on the same storage (nv_paint.py)
         if self.window is None:
             self.make_window()
+        if self.paint.showing_browser_page():
+            self.window.present()
+            return
         self.env = read_env()
         if not self.env.get("NV_OWNER"):
             self.load_setup()
@@ -694,6 +707,8 @@ class App(Gtk.Application):
         log(f"the page's web process ended ({why})")
         if view is not self.view:
             return  # a closed window's: nothing to show it in
+        if self.paint.web_process_ended(view):
+            return  # before the window first drew: it starts over in another drawing mode (nv_paint.py)
         if self.crash_page_at is not None and time.monotonic() - self.crash_page_at < CRASH_LOOP_S:
             # It died again right after the last crash page: every page crashes. Loading another would start another
             # web process to die, so stop here until someone presses Reload.

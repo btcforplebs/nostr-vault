@@ -53,7 +53,7 @@ modules:
       - install -Dm755 out/haven-engine /app/lib/nostr-vault/haven-engine
       - mkdir -p /app/share/nostr-vault && cp -R web-vault/dist /app/share/nostr-vault/web
       - install -Dm755 linux/native/desktop/nostr-vault-desktop /app/bin/nostr-vault-desktop
-      - install -Dm644 -t /app/share/nostr-vault/desktop linux/native/desktop/nv_flatpak.py linux/native/desktop/setup.html
+      - install -Dm644 -t /app/share/nostr-vault/desktop linux/native/desktop/nv_flatpak.py linux/native/desktop/nv_paint.py linux/native/desktop/setup.html
       - install -Dm644 linux/native/desktop/nostr-vault-tray.svg /app/share/icons/hicolor/scalable/apps/app.nostrvault.Desktop-tray.svg
       - for s in 128 256 512; do install -Dm644 icons/icon_${s}x${s}.png /app/share/icons/hicolor/${s}x${s}/apps/app.nostrvault.Desktop.png; done
       - sed -e 's/^Icon=nostr-vault$/Icon=app.nostrvault.Desktop/' linux/native/desktop/app.nostrvault.Desktop.desktop > app.desktop && install -Dm644 app.desktop /app/share/applications/app.nostrvault.Desktop.desktop

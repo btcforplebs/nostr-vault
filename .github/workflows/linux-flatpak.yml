@@ -12,6 +12,7 @@ on:
       - "linux/flatpak/**"
       - "linux/native/desktop/**"
       - "linux/native/test/window-test.sh"
+      - "linux/native/test/blank-stage.sh"
       - "linux/native/test/ua-probe.py"
       - ".github/workflows/linux-flatpak.yml"
 
@@ -68,9 +69,23 @@ jobs:
           sudo apt-get install -y -q --no-install-recommends sway grim imagemagick
           r=0
           # (The setup stage also reads the user agent the window gives its pages, with the Flatpak's own Python.)
-          for m in x11 wayland; do NV_WT_CMD="flatpak run app.nostrvault.Desktop" NV_WT_CONTROL=0 \
+          # On Wayland with WAYLAND_DEBUG: the window's xdg_toplevel app_id must be the one its .desktop file is named
+          # after (GTK 3 sends the GApplication ID, here the bus name app.nostrvault.Desktop.Flatpak, unless the window
+          # sets it back: nv_flatpak.wayland_app_id).
+          for m in x11 wayland; do
+            dbg=""; [ $m = wayland ] && dbg="--env=WAYLAND_DEBUG=client"
+            NV_WT_CMD="flatpak run $dbg app.nostrvault.Desktop" NV_WT_CONTROL=0 \
             NV_WT_PY="flatpak run --command=python3 app.nostrvault.Desktop -I" NV_WT_BIN=/app/bin/nostr-vault-desktop \
             sh ../native/test/window-test.sh $m setup "$RUNNER_TEMP/window" || r=1; done
+          ids=$(cat "$RUNNER_TEMP"/window/wayland-setup-*.log 2>/dev/null | grep -o 'set_app_id("[^"]*")' | sort | uniq -c | tr -s ' \n' ' ')
+          last=$(cat "$RUNNER_TEMP"/window/wayland-setup-*.log 2>/dev/null | grep -o 'set_app_id("[^"]*")' | tail -1)
+          if [ "$last" = 'set_app_id("app.nostrvault.Desktop")' ]; then echo "PASS: the Flatpak window's Wayland app_id is app.nostrvault.Desktop ($ids)"
+          else echo "FAIL: the Flatpak window's Wayland app_id: '$last' ($ids)"; r=1; fi
+          # A page that never draws (its web processes stopped as they start), before setup: the window starts over
+          # in its next drawing mode, and gives up to its browser page (linux/native/test/blank-stage.sh). Inside a
+          # Flatpak the portal starts WebKit's web processes, not the window, so this is its own run.
+          for m in x11 wayland; do NV_WT_CMD="flatpak run app.nostrvault.Desktop" NV_WT_CONTROL=0 \
+            NV_WT_BIN=/app/bin/nostr-vault-desktop sh ../native/test/window-test.sh $m blank "$RUNNER_TEMP/window" || r=1; done
           xvfb-run -a flatpak run --env=NV_TEST_NPUB="$npub" --command=python3 app.nostrvault.Desktop -I - < test/smoke.py
           # The runtime's WebKitGTK (Tron, beta 6: not checked). 2.54.0 and 2.54.1 crash on a paste with an empty
           # clipboard: there the window's paste guard must be on. Read with the window's own code (webkit_version,

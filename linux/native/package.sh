@@ -25,6 +25,7 @@ find "$pkg/usr/share/nostr-vault/web" -type d -exec chmod 755 {} +; find "$pkg/u
 # The desktop window and tray (used only where there is a desktop).
 f 755 "$here/desktop/nostr-vault-desktop" usr/bin/nostr-vault-desktop
 f 644 "$here/desktop/setup.html" usr/share/nostr-vault/desktop/setup.html
+f 644 "$here/desktop/nv_paint.py" usr/share/nostr-vault/desktop/nv_paint.py
 f 644 "$here/desktop/app.nostrvault.Desktop.desktop" usr/share/applications/app.nostrvault.Desktop.desktop
 f 644 "$here/desktop/nostr-vault-tray.desktop" etc/xdg/autostart/nostr-vault-tray.desktop
 f 644 "$here/desktop/app.nostrvault.setup.policy" usr/share/polkit-1/actions/app.nostrvault.setup.policy
@@ -59,7 +60,7 @@ Homepage: https://github.com/btcforplebs/nostr-vault
 Section: net
 Priority: optional
 Depends: libc6 (>= $glibc), libgcc-s1, libnftnl11, libmnl0, libdbus-1-3, systemd, curl, ca-certificates, passwd
-Recommends: python3, python3-gi, gir1.2-gtk-3.0, gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0, pkexec | policykit-1, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1
+Recommends: python3, python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0, pkexec | policykit-1, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1
 Installed-Size: $(du -sk "$pkg" | cut -f1)
 Description: your own Nostr vault on this machine
  The vault (relay, Blossom media and the web app) and its FIPS mesh, run as

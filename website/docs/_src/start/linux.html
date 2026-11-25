@@ -127,10 +127,14 @@ nostr-vault.nixosModules.default
     Linux</strong>; the same vault opened in a web browser posts as <strong>Nostr Vault on Web</strong>.
     A wide window shows the same screens as the phone app and the website.</p>
 <p><strong>A black or blank window?</strong> First check the vault itself: open <code>http://127.0.0.1:8080/</code>
-    in your web browser. If the vault shows there, only the window is stuck. The window turns off the graphics
-    path that draws nothing on some graphics cards (the NVIDIA driver, some laptops, virtual machines). If it still
-    draws nothing, quit the window from the tray (or run <code>pkill -f nostr-vault-desktop</code>), then start it with
-    <code>WEBKIT_DISABLE_DMABUF_RENDERER=1 nostr-vault-desktop</code>. If the window ever says <strong>The window
+    in your web browser. If the vault shows there, only the window is stuck. The window checks that it draws: if
+    nothing shows within about 45 seconds it starts over with another way of drawing (up to three), keeps the one
+    that works for next time, and if none does it shows a page with <strong>Open in browser</strong> and
+    <strong>Try the window again</strong>. That can take a couple of minutes the first time; you don't need to change
+    anything. Updating the .deb, .rpm or Arch package also restarts an open window on the new version. To choose yourself, quit the
+    window from the tray (or run <code>pkill -f nostr-vault-desktop</code>), then start it with
+    <code>WEBKIT_DISABLE_DMABUF_RENDERER=1 nostr-vault-desktop</code>; setting that yourself turns the automatic
+    choice off. If the window ever says <strong>The window
     stopped drawing</strong>, click <strong>Reload</strong>. If the page crashes again right away, the window stops
     trying and keeps that message up until you click <strong>Reload</strong> (or press Ctrl+R); open the vault in
     your browser meanwhile. Your vault keeps running either way.</p>
