@@ -47,6 +47,18 @@ enum GlobeSphereField {
         }
     }
 
+    /// Which of a sphere's top (best first) keep their pictures loaded, by
+    /// index, from each one's 0-1 `fronts` (Tron on PR 2526): the best
+    /// `faces` that can show a face now (front at least `faceFrom`), and the
+    /// best `coming` just round the rim (from `comingFrom`), so a face is
+    /// ready as the sphere turns it in. Never the whole top.
+    static func window(fronts: [Double], faceFrom: Double, comingFrom: Double,
+                       faces: Int, coming: Int) -> [Int] {
+        let shown = fronts.indices.filter { fronts[$0] >= faceFrom }.prefix(faces)
+        let rim = fronts.indices.filter { fronts[$0] >= comingFrom && fronts[$0] < faceFrom }.prefix(coming)
+        return Array(shown) + Array(rim)
+    }
+
     /// How a point turned by the camera lands on screen, against the
     /// sphere's outline: `x`, `y` within -1...1 of its centre (y down), and
     /// `front` from 0 at the back to 1 at the front. Seen from `eye` radii

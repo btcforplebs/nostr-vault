@@ -278,16 +278,18 @@ struct TrustGlobeCanvas: View {
     /// as drawn this frame, ending at the core.
     private func drawChain(in context: inout GraphicsContext, size: CGSize) {
         guard !sphereChain.isEmpty, focus == sphereChain.first?.key else { return }
-        var points = sphereChain.compactMap { link -> (point: CGPoint, front: Double)? in
+        let found = sphereChain.map { link -> (point: CGPoint, front: Double)? in
             if let hop = link.hop, hop >= TrustMapOuter.firstHop {
                 return GlobeHopSphere.screenPoint(of: link.key, hop: hop)
             }
             return scene.screenPoint(of: link.key, in: size) ?? GlobeHopSphere.screenPoint(of: link.key, hop: nil)
         }
         guard let core = scene.screenPoint(of: nil, in: size) else { return }
+        var (points, startsAtTapped) = GlobeChain.path(found)
         points.append(core)
         let t = (Date.timeIntervalSinceReferenceDate - sphereChainBorn) / GlobeChainPainter.drawIn
-        GlobeChainPainter.draw(points, progress: min(1, t), in: &context, accent: .orange, ink: scene.ink)
+        GlobeChainPainter.draw(points, progress: min(1, t), ringsStart: startsAtTapped,
+                               in: &context, accent: .orange, ink: scene.ink)
     }
 
     /// Who on the picked hop's sphere may show a face: those facing you or

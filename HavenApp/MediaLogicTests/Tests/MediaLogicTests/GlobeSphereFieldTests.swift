@@ -54,4 +54,16 @@ final class GlobeSphereFieldTests: XCTestCase {
         XCTAssertEqual(GlobeRingZoom.sphere(hop: 3, level: 1.5), 1, "no flat flash between Hop 3 and Hop 4")
         XCTAssertEqual(GlobeRingZoom.sphere(hop: 3, level: 0.5), 0.5, accuracy: 1e-9, "grows out of the flat ring")
     }
+
+    func testTheWindowHoldsOnlyWhatCanBeDrawnPlusWhatIsComingRound() {
+        // 300 top, best first, spread front to back.
+        let fronts = (0..<300).map { 1 - Double($0) / 299 }
+        let w = GlobeSphereField.window(fronts: fronts, faceFrom: 0.45, comingFrom: 0.3, faces: 72, coming: 36)
+        XCTAssertEqual(w.count, 72 + 36, "not every one on the front")
+        XCTAssertEqual(Array(w.prefix(72)), Array(0..<72), "the best that can show a face")
+        XCTAssertTrue(w.dropFirst(72).allSatisfy { fronts[$0] >= 0.3 && fronts[$0] < 0.45 }, "the rest are at the rim")
+        XCTAssertEqual(Set(w).count, w.count, "no one twice")
+        XCTAssertEqual(GlobeSphereField.window(fronts: [0.1, 0.2], faceFrom: 0.45, comingFrom: 0.3, faces: 72, coming: 36), [],
+                       "nothing round the back")
+    }
 }

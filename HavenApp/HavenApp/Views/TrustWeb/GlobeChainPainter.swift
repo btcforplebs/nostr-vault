@@ -12,7 +12,9 @@ enum GlobeChainPainter {
 
     /// `points` run from the tapped person to you; `front` is each one's
     /// 0-1 nearness, so a stretch round the back is drawn fainter.
-    static func draw(_ points: [(point: CGPoint, front: Double)], progress: Double,
+    /// `ringsStart`: the first point is the tapped person's own, so it gets
+    /// the start ring; false when theirs was not found.
+    static func draw(_ points: [(point: CGPoint, front: Double)], progress: Double, ringsStart: Bool,
                      in context: inout GraphicsContext, accent: Color, ink: GlobeInk) {
         guard points.count >= 2, progress > 0 else { return }
         let legs = Double(points.count - 1)
@@ -36,11 +38,13 @@ enum GlobeChainPainter {
         }
         // A ring round the tapped person, so the line's start is clear even
         // before their face comes round.
-        let start = points[0].point, ring = 13.0
-        context.stroke(Path(ellipseIn: CGRect(x: start.x - ring, y: start.y - ring, width: 2 * ring, height: 2 * ring)),
-                       with: .color(accent.opacity(0.9)), lineWidth: 2)
+        if ringsStart {
+            let start = points[0].point, ring = 13.0
+            context.stroke(Path(ellipseIn: CGRect(x: start.x - ring, y: start.y - ring, width: 2 * ring, height: 2 * ring)),
+                           with: .color(accent.opacity(0.9)), lineWidth: 2)
+        }
         // A bead on each link reached, so the layers it passes are clear.
-        for (i, p) in points.enumerated().dropFirst().dropLast() where Double(i) <= progress * legs {
+        for (i, p) in points.enumerated().dropFirst(ringsStart ? 1 : 0).dropLast() where Double(i) <= progress * legs {
             let r = 2.6
             context.fill(Path(ellipseIn: CGRect(x: p.point.x - r, y: p.point.y - r, width: 2 * r, height: 2 * r)),
                          with: .color(accent.opacity(0.6 + 0.4 * p.front)))
