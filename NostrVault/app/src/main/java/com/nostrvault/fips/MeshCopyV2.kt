@@ -353,6 +353,18 @@ object MeshCopyV2 {
             return if (lost.isEmpty()) this else copy(copied = copied + lost.associateWith { 0L })
         }
 
+        /**
+         * Devices whose first copy stopped on a refused token ([MeshCopyStarter.Engine.refusedPeers], CopyRefusedPeersC)
+         * with nothing pending: the first one not copied from starts again with a fresh start signed by this device's
+         * mesh key, so its rank comes over. [name] is the device's name from My Devices, for the failure line. Twin of
+         * Apple's Record.restartRefused.
+         */
+        fun restartRefused(refused: List<String>, name: (String) -> String = { "" }): Record {
+            if (pending != null) return this
+            val peer = refused.firstOrNull { it !in copied } ?: return this
+            return copy(pending = Pending(peer, name(peer), freshStart = true), unreachableSince = null)
+        }
+
         /** The linked devices due a catch-up: copied before, not the one a copy is pending with, not in [SYNC_EVERY_S]. */
         fun syncDue(now: Long): List<String> =
             copied.filter { (peer, last) -> peer != pending?.peer && now - last >= SYNC_EVERY_S }.keys.sorted()

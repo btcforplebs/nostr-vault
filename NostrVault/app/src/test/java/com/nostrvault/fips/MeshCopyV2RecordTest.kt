@@ -13,6 +13,24 @@ class MeshCopyV2RecordTest {
     private fun line(s: String) = MeshCopyV2.parseLine(s)!!
 
     @Test
+    fun `a refused first copy becomes a fresh pending start, named, skipping devices already copied`() {
+        val r = MeshCopyV2.Record(copied = mapOf(mac to 1L), unreachableSince = 9L)
+            .restartRefused(listOf(mac, box)) { if (it == box) "Box" else "" }
+        assertEquals(MeshCopyV2.Record.Pending(box, "Box", freshStart = true), r.pending)
+        assertEquals(null, r.unreachableSince)
+        assertEquals(mapOf(mac to 1L), r.copied)
+    }
+
+    @Test
+    fun `a refused device waits while another copy is pending, and nothing refused changes nothing`() {
+        val pending = MeshCopyV2.Record(pending = MeshCopyV2.Record.Pending(mac, "Mac", freshStart = false))
+        assertEquals(pending, pending.restartRefused(listOf(box)))
+        val empty = MeshCopyV2.Record(copied = mapOf(mac to 1L))
+        assertEquals(empty, empty.restartRefused(emptyList()))
+        assertEquals(empty, empty.restartRefused(listOf(mac)))
+    }
+
+    @Test
     fun `a catch-up's done line leaves another device's pending first copy alone`() {
         val pending = MeshCopyV2.Record.Pending(box, "Box", freshStart = false)
         val r = MeshCopyV2.Record(pending = pending, copied = mapOf(mac to 1L), unreachableSince = 5L)
