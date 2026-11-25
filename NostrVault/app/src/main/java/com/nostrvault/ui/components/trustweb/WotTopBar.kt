@@ -102,7 +102,7 @@ internal fun WotTopBar(
                 modifier = Modifier
                     .clip(CircleShape)
                     .clickable(onClickLabel = "Pick a layer") { expanded = true }
-                    .semantics { contentDescription = "Showing: ${layer.title}, ${counts[layer] ?: 0} people" },
+                    .semantics { contentDescription = "Showing: ${layer.title}" + (counts[layer]?.let { ", $it people" } ?: "") },
             ) {
                 // iOS: 7 leading and 7 vertical around a 30 box (the pill
                 // gives 6 and 4), a 15 icon, 8 to the name, 3 to a 9pt chevron

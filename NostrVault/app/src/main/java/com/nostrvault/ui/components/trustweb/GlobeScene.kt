@@ -98,21 +98,12 @@ internal class GlobeScene(
     private var layerFaceSet: Set<String> = emptySet()
     /** With Everyone picked the shells' faces are a small, dim few that give way to your follows' faces. */
     private var dimLayerFaces = false
-    /**
-     * How far the shells' faces are dimmed and shrunk, easing toward
-     * [dimLayerFaces], so a layer change doesn't pop every face's size.
-     */
+    /** How far the shells' faces are dimmed and shrunk, easing toward [dimLayerFaces], so a layer change doesn't pop every face's size. */
     private var layerDim = 0.0
-    /**
-     * How brightly your follows, the Close shell and the rest of the shell
-     * are drawn, easing toward the picked layer's ([TrustMap.layerWeights]).
-     */
+    /** How brightly your follows, the Close shell and the rest of the shell are drawn, easing toward the picked layer's ([TrustMap.layerWeights]). */
     private var weights = TrustMap.Weights(1.0, 1.0, 1.0)
     private var weightTarget = weights
-    /**
-     * Who the filter icons light, easing from [filterFrom] to [filterTo] as
-     * [filterMix] runs 0 to 1. Null lights everyone.
-     */
+    /** Who the filter icons light, easing from [filterFrom] to [filterTo] as [filterMix] runs 0 to 1. Null lights everyone. */
     private var filterFrom: Set<String>? = null
     private var filterTo: Set<String>? = null
     private var filterMix = 1.0
@@ -529,9 +520,9 @@ internal class GlobeScene(
 
     /** Closest front-facing face to a tap, within reach of a fingertip. Zoomed in, plain stars can be tapped too. */
     fun hit(tap: Offset, w: Float, h: Float, density: Float): String? {
-        // Zoomed out to a ring, the globe is drawn shrunk and sunk ([GlobeRingZoom.unsink]).
-        val shrink = GlobeRingZoom.innerDrawScale(ringZoom, w.toDouble(), h.toDouble()).toFloat()
-        val at = GlobeRingZoom.unsink(tap.x, tap.y, w, h, ringZoom).let { Offset(it.first, it.second) }
+        // Zoomed out to a ring, the globe is drawn shrunk in place ([GlobeRingZoom.unnest]).
+        val shrink = GlobeRingZoom.innerDrawScale(ringZoom).toFloat()
+        val at = GlobeRingZoom.unnest(tap.x, tap.y, w, h, ringZoom).let { Offset(it.first, it.second) }
         val project = Projector(camera, w, h, phone)
         var best: String? = null
         var bestDistance = Double.MAX_VALUE
@@ -548,6 +539,14 @@ internal class GlobeScene(
             for (star in stars) if (!star.isFace && star.kind != Kind.HAZE && star.kind != Kind.CLOSE_HAZE) consider(star, 16.0 * density)
         }
         return best
+    }
+
+    /** Where [key] (the core when null) is drawn on screen, nesting included, and its 0-1 front: a hop sphere's path ([com.nostrvault.data.model.GlobeChain]). */
+    fun screenPoint(key: String?, w: Float, h: Float): Triple<Double, Double, Double>? {
+        val star = index[key ?: center]?.takeIf { key == null || it.alpha > 0.05 } ?: return null
+        val p = Projector(camera, w, h, phone).of(star) ?: return null
+        val (x, y) = GlobeRingZoom.nested(p.x, p.y, w.toDouble(), h.toDouble(), ringZoom)
+        return Triple(x, y, p.front)
     }
 
     // ── One frame's picture ──────────────────────────────────────────
@@ -643,8 +642,8 @@ internal class GlobeScene(
         originY = origin.y
         coreR = 22 * k * core.scale * min(zoom, 1.8) * density
         ready = true
-        // Shrunk and sunk to an outer ring, more of the globe fits: keep what now lands on screen.
-        val grow = GlobeRingZoom.cullGrow(ringZoom, w.toDouble(), h.toDouble())
+        // Shrunk to an outer ring, more of the globe fits: keep what now lands on screen.
+        val grow = GlobeRingZoom.cullGrow(ringZoom)
         val padX = 8 * density + w * grow
         val padY = 8 * density + h * grow
 

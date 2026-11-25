@@ -40,7 +40,7 @@ data class TrustRankCopy(
     /**
      * The haze (`haze` in the file): for ring 3 and ring 4, the people ranked
      * after the ring's globe top, best first. Drawn only as the zoomed-out
-     * ring's faint dots ([GlobeHazeField]), never tapped. Empty when the file
+     * picked hop sphere's faint dots ([GlobeSphereField]), never tapped. Empty when the file
      * has none, or a bad one.
      */
     val haze: Map<Int, List<String>> = emptyMap(),

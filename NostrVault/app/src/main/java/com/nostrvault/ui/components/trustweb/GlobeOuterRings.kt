@@ -3,7 +3,6 @@ package com.nostrvault.ui.components
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -43,89 +42,82 @@ internal object GlobeOuterRings {
 
     /**
      * [level] is how far a Hop layer has zoomed out ([GlobeRingZoom]): 0 draws
-     * the rings round the full globe; past it the picked ring fills the frame
-     * with its haze ([GlobeHaze]) behind its dots, the rings inside it close in
-     * on the shrunk globe and sink with it ([GlobeRingZoom.sink]), and the
-     * picked ring's people get a line to their link one ring in.
+     * the rings flat round the full globe. Past it the picked ring becomes a
+     * sphere of its own ([GlobeHopSphere]), so its flat circle and dots fade
+     * out as [GlobeRingZoom.sphere] comes in; the rings past it stay round it.
+     * A ring nested inside the picked one loses its label.
      */
-    fun draw(
-        scope: DrawScope, outer: TrustMapOuter, zoom: Double, phone: Boolean, measurer: TextMeasurer,
-        level: Double = 0.0, lite: Boolean = false,
-    ) = with(scope) {
+    fun draw(scope: DrawScope, outer: TrustMapOuter, zoom: Double, phone: Boolean, measurer: TextMeasurer, level: Double = 0.0) = with(scope) {
         if (outer.rings.isEmpty()) return@with
         val w = size.width.toDouble()
         val h = size.height.toDouble()
         val base = outline(w, h, zoom, phone)
         if (!base.isFinite()) return@with
-        val mid = Offset(size.width / 2, size.height / 2)
-        val half = min(w, h) / 2
+        val grow = pinch(w, h, zoom, phone)
         val faint = outer.isFaint
         val dash = if (faint) PathEffect.dashPathEffect(floatArrayOf(3.dp2px(density), 6.dp2px(density))) else null
-        // A ring's centre and radius, sunk when it is inside the picked one.
-        fun place(hop: Int): Place {
-            val r = if (hop < TrustMapOuter.FIRST_HOP) GlobeRingZoom.innerOutline(level, base)
-                else GlobeRingZoom.radius(hop, level, base, half)
-            val sink = GlobeRingZoom.sink(hop, level, half)
-            return Place(Offset(mid.x, mid.y + sink.drop.toFloat()), r * sink.scale)
-        }
-        fun point(key: String, at: Place): Offset {
-            val a = angle(key)
-            return Offset((at.centre.x + at.r * cos(a)).toFloat(), (at.centre.y + at.r * sin(a)).toFloat())
-        }
         for (ring in outer.rings) {
             val shown = GlobeRingZoom.visibility(ring.hop, level).toFloat()
             if (shown <= 0.01f) continue
             val picked = GlobeRingZoom.emphasis(ring.hop, level).toFloat()
-            val at = place(ring.hop)
+            val flat = if (faint) 1f else 1 - GlobeRingZoom.sphere(ring.hop, level).toFloat()
+            val at = place(ring.hop, level, base, w, h, grow)
             val r = at.r
-            // The picked ring comes up to full strength, whatever its hop.
-            val ringFade = TrustMapOuter.fade(ring.hop)
-            val fade = (if (faint) 1f else ringFade + (1 - ringFade) * picked) * shown
-            // Its line steps back as its haze comes in.
-            val line = if (ring.haze.isEmpty() || faint) 1f else 1 - 0.55f * picked
-            drawCircle(
-                color = HazeColor.copy(alpha = (((if (faint) 0.10f else 0.28f * maxOf(fade, 0.5f * shown)) + 0.14f * picked) * line).coerceAtMost(1f)),
-                radius = r.toFloat(), center = at.centre,
-                style = Stroke(width = ((if (faint) 0.8f else 1.1f) + 0.5f * picked) * density, pathEffect = dash),
-            )
-            if (!faint) {
-                GlobeHaze.draw(this, ring, picked, at.centre, r, GlobeRingZoom.FIT * half, lite)
-                if (picked > 0.01f) {
-                    // Lines from the picked ring's best to who links them in: on
-                    // the ring inside, or for Hop 3 on the shrunk globe's edge.
-                    // Faint and capped so they read as threads, not a fan.
-                    val inner = place(ring.hop - 1)
-                    // On an outer ring, only to a dot drawn there: no line ends in empty space.
-                    val innerDots = outer.rings.firstOrNull { it.hop == ring.hop - 1 }?.top?.toHashSet()
-                    val lines = Path()
-                    for (key in ring.top.take(GlobeRingZoom.MAX_LINKS)) {
-                        val via = ring.via[key] ?: continue
-                        if (innerDots != null && via !in innerDots) continue
-                        val from = point(key, at)
-                        val to = point(via, inner)
-                        lines.moveTo(from.x, from.y)
-                        lines.lineTo(to.x, to.y)
+            val fade = (if (faint) 1f else fadeFor(ring.hop, picked)) * shown
+            if (flat > 0.01f) {
+                drawCircle(
+                    color = HazeColor.copy(alpha = ((if (faint) 0.10f else 0.28f * maxOf(fade, 0.5f * shown)) * flat).coerceAtMost(1f)),
+                    radius = r.toFloat(), center = at.centre,
+                    style = Stroke(width = (if (faint) 0.8f else 1.1f) * density, pathEffect = dash),
+                )
+                if (!faint) {
+                    val dot = 1.6f * density
+                    val color = MutualStar.copy(alpha = 0.75f * fade * flat)
+                    for (key in ring.top) {
+                        val a = angle(key)
+                        drawCircle(color, radius = dot, center = Offset((at.centre.x + r * cos(a)).toFloat(), (at.centre.y + r * sin(a)).toFloat()))
                     }
-                    drawPath(lines, HazeColor.copy(alpha = 0.12f * picked), style = Stroke(width = 0.6f * density))
-                }
-                val dot = 1.6f * (1 + 0.5f * picked) * density
-                for (key in ring.top) {
-                    drawCircle(MutualStar.copy(alpha = 0.75f * fade), radius = dot, center = point(key, at))
                 }
             }
+            val nested = GlobeRingZoom.inside(ring.hop, level).toFloat()
+            if (nested >= 0.99f) continue
             labelPoint(r, at.centre, w, density)?.let { label ->
                 val layout = measurer.measure(
                     if (faint) "${ring.hop} hops" else TrustMapOuter.chipText(ring),
                     TextStyle(fontSize = (10 + 2 * picked).sp, fontWeight = FontWeight.SemiBold,
-                        color = GlobeLabel.copy(alpha = (if (faint) 0.35f else 0.7f * maxOf(fade, 0.6f)) * shown)),
+                        color = GlobeLabel.copy(alpha = (if (faint) 0.35f else 0.7f * maxOf(fade, 0.6f)) * shown * (1 - nested))),
                 )
                 drawText(layout, topLeft = Offset(label.x - layout.size.width, label.y - layout.size.height))
             }
         }
     }
 
+    /** A ring's centre and radius at [level], shrunk when it is nested inside the picked one. Hop 2 is the inner globe's outline. */
+    fun place(hop: Int, level: Double, base: Double, w: Double, h: Double, grow: Double): Place {
+        val r = if (hop < TrustMapOuter.FIRST_HOP) GlobeRingZoom.innerOutline(level, base)
+            else GlobeRingZoom.radius(hop, level, base, min(w, h) / 2, grow)
+        return Place(Offset((w / 2).toFloat(), (h / 2).toFloat()), r * GlobeRingZoom.nest(hop, level))
+    }
+
+    /**
+     * How far a pinch has zoomed the whole nested view in: the inner globe's
+     * outline against its size at zoom 1, so the picked sphere and everything
+     * nested in it grow together (Logen 2026-11-25).
+     */
+    fun pinch(w: Double, h: Double, zoom: Double, phone: Boolean): Double {
+        val at1 = outline(w, h, 1.0, phone)
+        val now = outline(w, h, zoom, phone)
+        return if (at1.isFinite() && now.isFinite() && at1 > 0) now / at1 else 1.0
+    }
+
+    /** The picked ring comes up to full strength, whatever its hop. */
+    fun fadeFor(hop: Int, picked: Float): Float {
+        val ringFade = TrustMapOuter.fade(hop)
+        return ringFade + (1 - ringFade) * picked
+    }
+
     /** A ring's centre on screen and its radius in px. */
-    private class Place(val centre: Offset, val r: Double)
+    class Place(val centre: Offset, val r: Double)
 
     /** Up and to the right on the ring, where it is still on screen and clear of the status bar and the WOT tab's top bar. */
     private fun labelPoint(r: Double, mid: Offset, w: Double, density: Float): Offset? {

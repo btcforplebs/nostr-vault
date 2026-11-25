@@ -29,11 +29,11 @@ data class TrustMapOuter(
         val hop: Int,
         /** The ring's best-ranked people, best first, at most [TrustRankCopy.GLOBE_PER_RING]. */
         val top: List<String>,
-        /** Each of [top]'s link one ring in: the zoomed globe draws a line to them ([GlobeRingZoom]). */
+        /** Each of [top]'s link one ring in ([TrustRankCopy.GlobeRow.via]). */
         val via: Map<String, String> = emptyMap(),
         /**
          * The people ranked after [top], best first ([TrustRankCopy.haze]): the
-         * zoomed-out ring's faint, untappable dots ([com.nostrvault.ui.components.GlobeHaze]).
+         * picked hop sphere's faint, untappable dots ([com.nostrvault.ui.components.GlobeHopSphere]).
          */
         val haze: List<String> = emptyList(),
     ) {
@@ -93,6 +93,13 @@ data class TrustMapOuter(
                 Ring(hop, top, via[hop].orEmpty(), haze)
             })
         }
+
+        /**
+         * How many people a hop's sphere draws: its top and its haze. Null while
+         * the copy has no haze for it: then the ring is just its top 300, a cap,
+         * so the picker shows no number (Logen 2026-11-25).
+         */
+        fun shownCount(ring: Ring): Int? = if (ring.haze.isEmpty()) null else ring.top.size + ring.haze.size
 
         /** How strongly a ring and its dots are drawn: hop 3 full, hop 4 about 60%, hop 5 about 35%. */
         fun fade(hop: Int): Float = when {

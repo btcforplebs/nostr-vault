@@ -15,12 +15,16 @@ internal object TrustWebHopLayers {
     fun locked(outer: TrustMapOuter): Set<TrustMap.Layer> =
         TrustMap.Layer.entries.filterTo(HashSet()) { item -> item.hop?.let { !outer.unlocks(it) } ?: false }
 
-    /** Layer counts with each unlocked hop's ring. */
+    /**
+     * Layer counts with each unlocked hop's ring: everyone its sphere draws
+     * (top plus haze). Without a haze the ring is only its top 300, a cap
+     * rather than a count, so it shows no number (Logen 2026-11-25).
+     */
     fun withHops(counts: Map<TrustMap.Layer, Int>, outer: TrustMapOuter): Map<TrustMap.Layer, Int> {
         val out = counts.toMutableMap()
         for (item in TrustMap.Layer.entries) {
             val hop = item.hop ?: continue
-            if (outer.unlocks(hop)) outer.rings.firstOrNull { it.hop == hop }?.let { out[item] = it.count }
+            if (outer.unlocks(hop)) outer.rings.firstOrNull { it.hop == hop }?.let(TrustMapOuter::shownCount)?.let { out[item] = it }
         }
         return out
     }

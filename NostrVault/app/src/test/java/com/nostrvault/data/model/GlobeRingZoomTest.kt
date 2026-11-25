@@ -42,14 +42,30 @@ class GlobeRingZoomTest {
         assertTrue(GlobeRingZoom.innerScale(1.0) > GlobeRingZoom.innerScale(3.0))
     }
 
-    @Test fun `rings inside the picked one close in and ones past it go`() {
+    @Test fun `rings inside the picked one close in and ones past it stay round it`() {
         fun r(hop: Int) = GlobeRingZoom.radius(hop, 3.0, outline, half)
         assertTrue(GlobeRingZoom.innerOutline(3.0, outline) < r(3))
         assertTrue(r(3) < r(4) && r(4) < r(5))
         assertEquals("evenly spaced", r(4) - r(3), r(5) - r(4), 1e-9)
         assertEquals(GlobeRingZoom.INSIDE_ALPHA, GlobeRingZoom.visibility(3, 3.0), 0.0)
-        assertEquals(0.0, GlobeRingZoom.visibility(5, 1.0), 0.0)
+        assertEquals(GlobeRingZoom.PAST_ALPHA, GlobeRingZoom.visibility(5, 1.0), 0.0)
         assertEquals(0.0, GlobeRingZoom.emphasis(3, 3.0), 0.0)
+        // On Hop 3, Hop 4 and 5 sit round its sphere spaced as round your globe on Vouched (Logen 2026-11-25).
+        val fitted = GlobeRingZoom.radius(3, 1.0, outline, half)
+        val step = GlobeRingZoom.STEP / GlobeRingZoom.FIRST
+        assertEquals(fitted * (1 + step), GlobeRingZoom.radius(4, 1.0, outline, half), 1e-9)
+        assertEquals(fitted * (1 + 2 * step), GlobeRingZoom.radius(5, 1.0, outline, half), 1e-9)
+        // A pinch grows the picked sphere and what is round it together.
+        assertEquals(1.5 * fitted, GlobeRingZoom.radius(3, 1.0, outline, half, grow = 1.5), 1e-9)
+    }
+
+    @Test fun `a ring is a sphere once picked and while nested in a later pick`() {
+        for (hop in 3..5) assertEquals(0.0, GlobeRingZoom.sphere(hop, 0.0), 0.0)
+        assertEquals(1.0, GlobeRingZoom.sphere(3, 1.0), 0.0)
+        assertEquals(0.0, GlobeRingZoom.sphere(4, 1.0), 0.0)
+        assertEquals(1.0, GlobeRingZoom.sphere(3, 2.0), 0.0)
+        assertEquals(1.0, GlobeRingZoom.sphere(4, 2.0), 0.0)
+        assertEquals(0.0, GlobeRingZoom.sphere(5, 2.0), 0.0)
     }
 
     @Test fun `it eases smoothly between levels`() {

@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -48,6 +49,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.GlobeCamera
+import com.nostrvault.data.model.GlobeChain
 import com.nostrvault.data.model.GlobeRingZoom
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.ui.theme.Motion
@@ -139,6 +142,10 @@ internal fun TrustGlobe(
     val phone = LocalConfiguration.current.smallestScreenWidthDp < 600
     // Kept on the WOT tab, so coming back finds the globe as it was left.
     val scene = rememberKept("scene:$phone") { GlobeScene(phone = phone) }
+    val sphere = rememberKept("sphere:$phone") { GlobeHopSphere() }
+    val outer = if (showsOuterRings) rememberTrustMapOuter() else null
+    val rankCopy = if (showsOuterRings) rememberRankCopy() else null
+    var chain by remember { mutableStateOf<SphereChain?>(null) }
     val textMeasurer = rememberTextMeasurer(cacheSize = 128)
     val haptic = LocalHapticFeedback.current
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
@@ -198,13 +205,37 @@ internal fun TrustGlobe(
         if (scene.hasLoaded && center != scene.center) scene.turn(center)
     }
 
-    LaunchedEffect(layer, showsOuterRings) { scene.focus(layer, zoomsToRings = showsOuterRings) }
+    LaunchedEffect(layer, showsOuterRings) {
+        // A hop's sphere puts its best people on the side that faces you at
+        // rest ([GlobeSphereField.pole]): turn back to rest as it zooms out.
+        if (showsOuterRings && layer.hop != null && scene.hasLoaded) scene.reset()
+        scene.focus(layer, zoomsToRings = showsOuterRings)
+    }
+
+    // A picked hop's sphere shows faces only for people whose picture is in: ask for its best people's profiles.
+    val sphereTop = outer?.rings?.firstOrNull { it.hop == layer.hop }?.top
+    LaunchedEffect(sphereTop) {
+        val missing = sphereTop?.filter { currentProfiles[it] == null }.orEmpty()
+        if (missing.isNotEmpty()) onNeedProfiles(missing)
+    }
 
     LaunchedEffect(filterLit) { scene.filter(filterLit) }
 
-    LaunchedEffect(focus) { focus?.let { scene.turn(it) } }
+    LaunchedEffect(focus) {
+        // Someone on a hop sphere turns to their spot there, and their path
+        // runs in through the layers ([GlobeChain]), not the inner globe's threads.
+        val onSphere = if (showsOuterRings) focus?.let(sphere::direction) else null
+        if (onSphere != null) {
+            scene.camera.fly(GlobeCamera.facing(onSphere), nowSeconds())
+            scene.wake()
+        } else focus?.let { scene.turn(it) }
+        chain = if (onSphere == null || focus == null) null
+            else SphereChain(GlobeChain.links(focus, rankCopy, currentFollows), nowSeconds()).takeIf { it.links.isNotEmpty() }
+    }
 
-    LaunchedEffect(focus, focusBridges) { scene.trace(focus, focusBridges) }
+    LaunchedEffect(focus, focusBridges, chain) {
+        if (chain == null) scene.trace(focus, focusBridges) else scene.trace(null, emptyList())
+    }
 
     // Reduce Motion turned off while the clock sleeps: nothing else wakes it.
     LaunchedEffect(scene) {
@@ -237,7 +268,10 @@ internal fun TrustGlobe(
                 detectTapGestures(
                     onDoubleTap = { scene.reset() },
                     onTap = { at ->
-                        val key = scene.hit(at, size.width.toFloat(), size.height.toFloat(), density)
+                        // A hop's sphere is in front, except over the inner globe
+                        // nested in its middle: there the globe's own faces come first.
+                        fun globe() = scene.hit(at, size.width.toFloat(), size.height.toFloat(), density)
+                        val key = if (sphere.inHole(at)) globe() ?: sphere.hit(at) else sphere.hit(at) ?: globe()
                         if (key == null) {
                             currentOnEmptyTap()
                         } else {
@@ -308,24 +342,22 @@ internal fun TrustGlobe(
                 )
             },
     ) {
-        val outer = if (showsOuterRings) rememberTrustMapOuter() else null
         outer?.let {
             Canvas(Modifier.fillMaxSize()) {
-                GlobeOuterRings.draw(this, it, scene.camera.zoom, phone, textMeasurer, scene.ringZoom, lite)
+                // Read the globe's frame, so a pinch grows the rings with it.
+                scene.prepare(size.width, size.height, density)
+                GlobeOuterRings.draw(this, it, scene.camera.zoom, phone, textMeasurer, scene.ringZoom)
             }
         }
         // Zoomed out to an outer ring (a Hop layer), the whole inner globe,
-        // faces too, shrinks round the middle, sinks down and fades ([GlobeRingZoom.sink]).
+        // faces too, shrinks in place round the middle and fades ([GlobeRingZoom.nest]).
         Box(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    val w = size.width.toDouble()
-                    val h = size.height.toDouble()
-                    val shrink = GlobeRingZoom.innerDrawScale(scene.ringZoom, w, h).toFloat()
+                    val shrink = GlobeRingZoom.innerDrawScale(scene.ringZoom).toFloat()
                     scaleX = shrink
                     scaleY = shrink
-                    translationY = GlobeRingZoom.innerSink(scene.ringZoom, w, h).drop.toFloat()
                     alpha = GlobeRingZoom.innerAlpha(scene.ringZoom).toFloat()
                 },
         ) {
@@ -392,5 +424,7 @@ internal fun TrustGlobe(
 
         Canvas(Modifier.fillMaxSize()) { scene.drawLabels(this, textMeasurer, currentName) }
         }
+        // A picked hop's own sphere, over the inner globe nested in it ([GlobeHopSphere]).
+        outer?.let { GlobeHopSphereLayer(sphere, scene, it, center, phone, lite, focus, chain, profiles) }
     }
 }

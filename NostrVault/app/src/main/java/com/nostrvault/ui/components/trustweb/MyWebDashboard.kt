@@ -213,7 +213,7 @@ internal fun MyWebSheet(
                         Box(Modifier.alpha(if (isLocked) 0.45f else 1f)) {
                             CountRow(if (isLocked) Icons.Filled.Lock else item.icon, item.title,
                                 if (isLocked) TrustMapOuter.LOCKED_LINE else MyWebWords.layerDetail(item, numbers.hasVouches),
-                                if (isLocked) null else numbers.counts[item] ?: 0, selected = item == numbers.layer) { onLayer(item) }
+                                if (isLocked || (item.hop != null && item !in numbers.counts)) null else numbers.counts[item] ?: 0, selected = item == numbers.layer) { onLayer(item) }
                         }
                     }
                 }
