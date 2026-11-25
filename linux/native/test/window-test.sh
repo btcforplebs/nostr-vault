@@ -102,8 +102,8 @@ if [ "$c" -lt "$MIN_COLOURS" ]; then ok "control: the empty display is flat ($c 
 
 # start <name> <command…>: the window, in its own D-Bus session (so it is its own app, not a message to another one).
 start() { n=$1; shift; dbus-run-session -- "$@" >"$OUT/$MODE-$STAGE-$n.log" 2>&1 & APID=$!; }
-stop() { kill "$APID" 2>/dev/null; pkill -u "$(id -u)" -f WebKitWebProcess 2>/dev/null; pkill -u "$(id -u)" -f nostr-vault-desktop 2>/dev/null; [ -n "${RUN:-}" ] && pkill -u "$(id -u)" -f "$RUN/" 2>/dev/null; APID=""; sleep 2; }
-# (The last: a control copy, python3 -I $RUN/<copy>, that started itself over in another drawing mode is no longer a
+stop() { kill "$APID" 2>/dev/null; pkill -u "$(id -u)" -f WebKitWebProcess 2>/dev/null; pkill -u "$(id -u)" -f nostr-vault-desktop 2>/dev/null; [ -n "${RUN:-}" ] && pkill -u "$(id -u)" -f "python3 -I $RUN/" 2>/dev/null; APID=""; sleep 2; }
+# (The last, only python3 -I $RUN/<copy> (sway's config is in $RUN too): a control copy that started itself over in another drawing mode is no longer a
 # child of its dbus-run-session, and its name doesn't say nostr-vault-desktop: left, it opened windows in later stages.)
 # drawn <png> <what> [<png before>]: up to 90 s for the window to draw something that isn't flat (and, given a
 # picture from before, isn't that picture: a dead view can keep showing its last frame).
