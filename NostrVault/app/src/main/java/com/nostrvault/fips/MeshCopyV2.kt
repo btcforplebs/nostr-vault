@@ -180,6 +180,7 @@ object MeshCopyV2 {
 
     private val ERRORS = mapOf(
         "auth_refused" to Err(401, Action.STOP, "Couldn't sign in to {name}"),
+        "token_refused" to Err(null, Action.RESTART, ""),
         "not_owner" to Err(403, Action.STOP, "{name} belongs to another account"),
         "not_found" to Err(404, Action.RESTART, ""),
         "building" to Err(409, Action.WAIT, ""),

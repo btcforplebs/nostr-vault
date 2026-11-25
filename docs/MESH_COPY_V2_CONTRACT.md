@@ -540,6 +540,7 @@ Every code, where it comes from, and what B does.
 | Code | Means | B does |
 |---|---|---|
 | `auth_refused` | 401 | stops; shows "Couldn't sign in to <name>" |
+| `token_refused` | a resume whose held token A refused (or B lost) | starts over with a new start signed by B's mesh key; a paired device whose first copy stopped this way, with nothing pending, starts it again (`CopyRefusedPeersC`) |
 | `not_owner` | 403 | stops |
 | `not_found` | 404 (expired or deleted copy) | starts over |
 | `building` | 409 | waits |

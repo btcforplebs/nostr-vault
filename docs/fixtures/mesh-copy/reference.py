@@ -278,6 +278,7 @@ write("media-own-uploads-cases.json", {"owner": OWNER, "other": OTHER,
 
 write("errors-v2.json", {"errors": [
     {"code": "auth_refused", "http": 401, "b": "stop", "line": "Couldn't sign in to {name}"},
+    {"code": "token_refused", "http": None, "b": "restart", "line": ""},
     {"code": "not_owner", "http": 403, "b": "stop", "line": "{name} belongs to another account"},
     {"code": "not_found", "http": 404, "b": "restart", "line": ""},
     {"code": "building", "http": 409, "b": "wait", "line": ""},
