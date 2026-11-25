@@ -145,7 +145,7 @@ enum GlobeHopSphere {
     /// of to their spot on the inner globe. Nil when they are not on it.
     static func direction(of key: String) -> SIMD3<Double>? {
         guard let b = lastPicked, let i = b.top.firstIndex(of: key) else { return nil }
-        return b.points[i]
+        return simd_normalize(b.points[i])
     }
     /// Who held a face last frame: they keep it while they still fit, so
     /// faces do not swap as the sphere turns.
@@ -214,7 +214,8 @@ enum GlobeHopSphere {
         var fronts: [Double] = []
         fronts.reserveCapacity(b.top.count)
         for (i, p) in b.points.enumerated() {
-            let q = GlobeSphereField.project(turn * p)
+            let turned = turn * p
+            let q = GlobeSphereField.project(turned), facing = GlobeSphereField.facing(turned)
             let at = CGPoint(x: centre.x + q.x * r, y: centre.y + q.y * r)
             let isTop = i < topCount
             let kind: Kind = isTop ? .top : .haze
@@ -228,11 +229,11 @@ enum GlobeHopSphere {
                 a = (0.06 + 0.22 * q.front) * shown * back
                 size = 1.2 * q.scale * zoomed * back
             }
-            if isTop { fronts.append(q.front) }
-            if isTop, pictures.contains(b.top[i]), q.front >= faceFrom {
-                faces.append((b.top[i], at, faceSize * q.scale * zoomed, q.front, i))
+            if isTop { fronts.append(facing) }
+            if isTop, pictures.contains(b.top[i]), facing >= faceFrom {
+                faces.append((b.top[i], at, faceSize * q.scale * zoomed, facing, i))
             }
-            if isTop, picked > 0.5, q.front > 0.55, clear(at, 0) { tapTargets.append(Target(key: b.top[i], at: at, reach: 14)) }
+            if isTop, picked > 0.5, facing > 0.55, clear(at, 0) { tapTargets.append(Target(key: b.top[i], at: at, reach: 14)) }
             let level = Int((min(1, a) * Double(levels)).rounded())
             guard level > 0 else { continue }
             buckets[kind.rawValue][min(levels, level)]
