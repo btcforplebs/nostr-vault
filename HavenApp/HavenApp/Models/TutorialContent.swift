@@ -165,7 +165,7 @@ enum TutorialContent {
         TutorialStep(
             anchor: wotLayers,
             title: "Layers and rebuild",
-            body: "Tap here to light up Everyone, Following or Vouched, or zoom out to Hop 3, 4 or 5. Rebuild your web sits at the bottom: it re-reads who you follow and loads pictures, and can take a few minutes."
+            body: "Tap here to light up Everyone, Following or Hop 2, or zoom out to Hop 3, 4 or 5. Rebuild your web sits at the bottom: it re-reads who you follow and loads pictures, and can take a few minutes."
         ),
     ]
 
