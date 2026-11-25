@@ -137,6 +137,11 @@ if [ -n "$p" ] && [ -d "/proc/$p" ] && grep -q "updated: starting over" "$OUT/$M
 else no "$MODE: SIGUSR2: pid '${p}', $(grep -c 'nostr-vault-desktop: drawing mode ' "$OUT/$MODE-blank-update.log") starts"
   echo "-- this user's processes:"; ps -u "$(id -u)" -o pid=,args= | grep -v -e 'ps -u' | cut -c1-160
   grep "nostr-vault-desktop:" "$OUT/$MODE-blank-update.log" | tail -10; fi
+# A healthy window's WebKit processes end by themselves on an update (the network process holds cookies and the page's
+# storage: killed, its unsaved writes are lost).
+if grep -q "updated: starting over" "$OUT/$MODE-blank-update.log" && ! grep -q "killing .* WebKit process" "$OUT/$MODE-blank-update.log"; then
+  ok "$MODE: on the update its WebKit processes ended by themselves (none killed)"
+else no "$MODE: on the update: $(grep -o 'killing .* WebKit process[^ ]*' "$OUT/$MODE-blank-update.log" | head -1)"; fi
 drawn "$OUT/$MODE-blank-6-after-update.png" "$MODE: and it draws again"
 stop; rm -f "$RJ"
 

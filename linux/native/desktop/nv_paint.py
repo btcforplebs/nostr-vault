@@ -25,6 +25,7 @@ Windows from before this file was shipped don't handle SIGUSR2 and quit, so no o
 
 Test knob: NV_PAINT_GIVE_UP_S (default 45), so the window test can run the whole ladder in a minute.
 """
+import gc
 import glob
 import json
 import os
@@ -428,7 +429,8 @@ class Checker:
         win.add(box)
         box.show_all()
         self._browser = weakref.ref(win)
-        if app.view is not None and hasattr(app.view, "terminate_web_process"):
+        if self.js_ok and app.view is not None and hasattr(app.view, "terminate_web_process"):
+            # Only a page that answered: ending one hung before its first message aborts this process (restart()).
             app.view.terminate_web_process()  # it draws nothing: don't leave it running (or hung) behind the page
 
     def try_again(self):
@@ -457,6 +459,7 @@ class Checker:
         self.restarting = True
         app = self.app
         win, view = app.window, app.view
+        answered = self.js_ok  # its web process finished its handshake: safe to end through WebKit
         app.window = app.view = None
         app.stopped = None
         app.page = None
@@ -468,13 +471,18 @@ class Checker:
         # process (g_error "failed to receive credentials", Flatpak aarch64 CI 2026-11-25). There the exec ends it:
         # its socket to this process closes on exec, and a web process exits on that from its IPC thread, even with
         # its main thread hung (a stopped one, as in the test, waits for its signals).
-        if not failing and view is not None and hasattr(view, "terminate_web_process"):
+        # And not before the page answered (a window opened just before an update's SIGUSR2 may be mid-handshake).
+        if not failing and answered and view is not None and hasattr(view, "terminate_web_process"):
             try:
                 view.terminate_web_process()
             except Exception as e:  # noqa: BLE001 - logged; the restart goes on
                 self.log("couldn't end the page's web process: " + repr(e))
         if win is not None:
             win.destroy()
+        del view, win
+        # As the shell's close_window (release_memory): a reference cycle around the view would keep its WebContext,
+        # and with it the network process (cookies, IndexedDB, localStorage), alive until killed.
+        gc.collect()
         if self.supervisor is not None:
             self.supervisor.stop()
         began = time.monotonic()
@@ -490,6 +498,8 @@ class Checker:
             web = [p for p, c, st in descendants(os.getpid()) if (c.startswith("WebKit") or c == "bwrap") and st != "Z"]
             if web and time.monotonic() - began < KILL_AFTER_S:
                 return True
+            if web:
+                self.log(f"killing {len(web)} WebKit process(es) that didn't end in {KILL_AFTER_S} s")
             for pid in web:
                 try:
                     os.kill(pid, signal.SIGKILL)  # hung, or stopped: it won't end by itself
