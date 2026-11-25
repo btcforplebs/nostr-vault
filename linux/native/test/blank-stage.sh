@@ -128,7 +128,9 @@ drewcheck "$(before "$OUT/$MODE-blank-update.log" "updated: starting over")" Tru
 p=$(pgrep -u "$(id -u)" -f "$POSTINST_PATTERN" | head -1)
 pkill -USR2 -u "$(id -u)" -f "$POSTINST_PATTERN"
 for i in $(seq 1 20); do grep -q "updated: starting over" "$OUT/$MODE-blank-update.log" && break; sleep 1; done
-sleep 6
+# Up to 30 s for it to start again (WebKit's processes get 4 s, every other child 10 s more).
+for i in $(seq 1 30); do [ "$(grep -c 'nostr-vault-desktop: drawing mode ' "$OUT/$MODE-blank-update.log")" -ge 2 ] && break; sleep 1; done
+sleep 2
 if [ -n "$p" ] && [ -d "/proc/$p" ] && grep -q "updated: starting over" "$OUT/$MODE-blank-update.log" \
     && [ "$(grep -c 'nostr-vault-desktop: drawing mode ' "$OUT/$MODE-blank-update.log")" -ge 2 ]; then
   ok "$MODE: SIGUSR2 (the postinst's) starts the window over in place (pid $p)"

@@ -44,8 +44,9 @@ try:
     GIVE_UP_S = max(4, int(os.environ.get("NV_PAINT_GIVE_UP_S", "45")))
 except ValueError:
     GIVE_UP_S = 45
-KILL_AFTER_S = 4  # a restart after a failed check waits this long for the window's children, then kills WebKit's
-WAIT_S = 30  # any other restart (an update, Try again) waits this long, as the shell's restart_as_tray does
+KILL_AFTER_S = 4  # a restart waits this long for WebKit's processes (and bwrap) to end, then kills them (a hung or
+# stopped one won't end; the network process lives as long as this process would)
+WAIT_S = 10  # then this long for every other child (xdg-dbus-proxy ends once its sandbox is gone)
 MIN_COLOURS = 8  # a drawn page has many (anti-aliased text); an empty view is one flat colour (or WebKit's background)
 
 mode = None
@@ -272,8 +273,7 @@ class Checker:
             cairo = None
         if cairo is not None and self.cairo_ok:
             try:
-                if self.drew_cairo(cairo, view, w, h):
-                    return True
+                return self.drew_cairo(cairo, view, w, h)  # its answer stands: it sees GL content, the readback doesn't
             except TypeError as e:  # pycairo without PyGObject's cairo support (python3-gi-cairo)
                 self.cairo_ok = False
                 self.log("no offscreen drawing check (%r): reading the window back instead" % e)
@@ -369,7 +369,13 @@ class Checker:
             st.pop("works", None)
             st["failed"] = webkit_version_string()
             save_state(st)
-            self.show_browser_page(True)
+            # Start over, and the new process shows the browser page (watch: "last time"), rather than ending this
+            # page's web process here: a web process hung before its first message made WebKit abort this process
+            # when it was ended (g_error "failed to receive credentials", Flatpak aarch64 CI 2026-11-25).
+            os.environ[TRIED] = ""
+            apply(ladder()[0])
+            route = self.app.pending_route
+            self.restart(["--open", route] if route else [], failing=True)
             return
         self.log(f"the window didn't draw in mode {mode} ({reason}): trying the window again with mode {nxt}")
         apply(nxt)
@@ -443,8 +449,8 @@ class Checker:
         """Start this program over (exec, the same process id) with args, once every child of this process has
         ended, so none is left for nothing to reap (as restart_as_tray: WebKit's helpers, their bwrap sandboxes and
         xdg-dbus-proxy). Waits for a running setup or pkexec (their results need this process) and for a tick's
-        systemctl. failing (the check failed: the page may be hung): waits KILL_AFTER_S, then kills WebKit's
-        processes; otherwise (an update, Try again) WAIT_S, as a healthy window's helpers can take a while."""
+        systemctl. WebKit's own processes get KILL_AFTER_S, then are killed; every other child then gets WAIT_S.
+        failing: the check failed, so the page may be hung (see below)."""
         from gi.repository import GLib
         if self.restarting:
             return
@@ -456,10 +462,13 @@ class Checker:
         app.page = None
         self.view = None
         self.done = True
-        # Through WebKit, not by process id: inside a Flatpak its web processes are started by the portal, not as
-        # this process's children, so descendants() can't see a hung one. (app.view is None first: the shell's
-        # web-process-terminated handler then leaves it alone.)
-        if view is not None and hasattr(view, "terminate_web_process"):
+        # A healthy page's web process: ended through WebKit (inside a Flatpak the portal starts it, so descendants()
+        # can't see it). app.view is None first, so the shell's web-process-terminated handler leaves it alone.
+        # Not after a failed check: ending a web process that hung before its first message made WebKit abort this
+        # process (g_error "failed to receive credentials", Flatpak aarch64 CI 2026-11-25). There the exec ends it:
+        # its socket to this process closes on exec, and a web process exits on that from its IPC thread, even with
+        # its main thread hung (a stopped one, as in the test, waits for its signals).
+        if not failing and view is not None and hasattr(view, "terminate_web_process"):
             try:
                 view.terminate_web_process()
             except Exception as e:  # noqa: BLE001 - logged; the restart goes on
@@ -469,6 +478,7 @@ class Checker:
         if self.supervisor is not None:
             self.supervisor.stop()
         began = time.monotonic()
+        state = {}
 
         def step():
             if getattr(app, "setup_running", False) or getattr(app, "root_running", 0):
@@ -477,17 +487,20 @@ class Checker:
                 return True  # the Flatpak's havend, ending
             if getattr(app, "ticking", False):
                 return True  # tick's thread may be inside systemctl: exec'd now, it would be a zombie
-            live = [p for p, _c, st in children() if st != "Z"]
-            if live and time.monotonic() - began < (KILL_AFTER_S if failing else WAIT_S):
-                return True
             web = [p for p, c, st in descendants(os.getpid()) if (c.startswith("WebKit") or c == "bwrap") and st != "Z"]
+            if web and time.monotonic() - began < KILL_AFTER_S:
+                return True
             for pid in web:
                 try:
                     os.kill(pid, signal.SIGKILL)  # hung, or stopped: it won't end by itself
                 except OSError:
                     pass
             if web:
-                time.sleep(0.3)
+                state["killed"] = time.monotonic()
+                return True  # next step: the rest
+            live = [p for p, _c, st in children() if st != "Z"]
+            if live and time.monotonic() - state.get("killed", began) < WAIT_S:
+                return True
             for pid, _c, _st in children():
                 try:
                     os.waitpid(pid, os.WNOHANG)
