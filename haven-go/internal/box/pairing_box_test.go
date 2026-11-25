@@ -142,7 +142,7 @@ func TestBoxPairingHappyPathStoresAndAcksWithTheWords(t *testing.T) {
 		t.Fatalf("start: %d %+v", st, ps)
 	}
 	code, refusal := ParsePairCode(ps.Code, "")
-	if refusal != "" || code.Mesh != meshNpub(t, api.Mesh) || code.Role != "homeVault" || code.Owner != ownerNpub || code.Name != "Nostr Vault box" || code.Secret == "" {
+	if refusal != "" || code.Mesh != meshNpub(t, api.Mesh) || code.Role != "mac" || code.Owner != ownerNpub || code.Name != "Nostr Vault box" || code.Secret == "" {
 		t.Fatalf("code %+v (%s): the box shows itself as the home vault for the caller's account", code, refusal)
 	}
 	<-relays.listening

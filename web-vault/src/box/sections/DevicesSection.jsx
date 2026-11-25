@@ -35,7 +35,7 @@ function Devices({ devices, api, onChanged }) {
       <Row label="This box" value={shortNpub(box.npub)} copy={box.npub} />
       {paired
         ? <p class="muted small box-pad">Devices you pair here reach the box over the mesh and the box keeps a copy of your vault from them. Remove one and it loses access at once. The box has no key of yours; it only stores and passes on what you sign.</p>
-        : <p class="muted small box-pad">To approve it, open My Devices on your phone or Mac and add this box as a mobile vault (Mobile vault · new posts). The box has no key of yours; it only stores and passes on what you sign.</p>}
+        : <p class="muted small box-pad">To approve it, open My Devices on your phone or Mac and add this box as a Desktop Vault (Desktop vault · full history). The box has no key of yours; it only stores and passes on what you sign.</p>}
       {list.length === 0 && <p class="muted small box-pad">{paired ? "No devices paired yet." : "No devices of yours have reached the box yet."}</p>}
       {list.map(d => (
         <div key={d.npub} class="settings-row box-row">
