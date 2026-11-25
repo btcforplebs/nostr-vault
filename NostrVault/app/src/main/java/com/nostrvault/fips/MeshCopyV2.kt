@@ -183,6 +183,7 @@ object MeshCopyV2 {
         "token_refused" to Err(null, Action.RESTART, ""),
         "not_owner" to Err(403, Action.STOP, "{name} belongs to another account"),
         "not_found" to Err(404, Action.RESTART, ""),
+        "busy" to Err(null, Action.RESTART, ""),
         "building" to Err(409, Action.WAIT, ""),
         "range" to Err(416, Action.REFETCH, ""),
         "no_space" to Err(507, Action.RELAYS, "{name} is short of space; copying from your relays instead"),

@@ -25,6 +25,12 @@
       "line": ""
     },
     {
+      "code": "busy",
+      "http": null,
+      "b": "restart",
+      "line": ""
+    },
+    {
       "code": "building",
       "http": 409,
       "b": "wait",

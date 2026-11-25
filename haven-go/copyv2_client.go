@@ -655,9 +655,11 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 			m, err = c.waitReady(ctx, id)
 		}
 		if err != nil {
-			if !slices.Contains([]string{"unreachable", "cancelled"}, copyErrorCode(err)) {
+			if slices.Contains(copyStartRefusals, copyErrorCode(err)) {
 				// A turned this new start down: marked, so copyRefusedPeers
-				// does not offer it again. A cut one may be tried again.
+				// does not offer it again. Anything else (cut, busy with
+				// another device's copy, a damaged reply) may be tried again:
+				// a mark there would strand the copy for good (Tron, #2537).
 				_ = os.WriteFile(filepath.Join(c.dir, copyStartFailedFile), nil, 0o600)
 			}
 			return err

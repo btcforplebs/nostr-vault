@@ -62,3 +62,33 @@ func TestRefusedTokenFirstCopyCanStartAgain(t *testing.T) {
 		t.Fatal("the held token was dropped")
 	}
 }
+
+// Tron's review of #2537: A builds one copy at a time, so a new start while
+// it builds another device's copy answers 200 and the job fails with busy.
+// That is not a refusal: no mark, and the device is offered again.
+func TestBusyNewStartIsOfferedAgain(t *testing.T) {
+	owner, self, mac := newTestKey(t), newTestKey(t), newTestKey(t)
+	openCopyVault(t, owner.pk)
+	pairMeshDevices(t, self, mac)
+	id := strings.Repeat("1", 32)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/copy/v2/start" {
+			copyJSON(w, http.StatusOK, map[string]string{"id": id, "token": strings.Repeat("cd", 32), "state": "building"})
+			return
+		}
+		copyJSON(w, http.StatusOK, map[string]any{"v": 2, "id": id, "state": "failed", "error": "busy"})
+	}))
+	defer ts.Close()
+
+	peer := meshNpub(mac.pk)
+	c := newCopyClient(peer, ts.URL)
+	if err := c.run(context.Background(), "proof"); copyErrorCode(err) != "busy" {
+		t.Fatalf("new start while A builds another copy: %v, want busy", err)
+	}
+	if _, err := os.Stat(filepath.Join(c.dir, copyStartFailedFile)); err == nil {
+		t.Fatal("busy left a refusal mark: the copy would be stranded for good")
+	}
+	if got := copyRefusedPeers(); !slices.Equal(got, []string{peer}) {
+		t.Fatalf("refused peers %v, want the Mac offered again after busy", got)
+	}
+}

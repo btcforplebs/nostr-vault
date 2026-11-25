@@ -15,6 +15,10 @@ import (
 	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
+// copyStartRefusals: the codes that mean A turned a new signed start down
+// for good. Only these mark the folder with copyStartFailedFile.
+var copyStartRefusals = []string{"auth_refused", "not_owner", "wrong_owner"}
+
 // copyRefusedPeers: paired devices this one holds a copy token from with no
 // first copy or catch-up finished, and an empty copy folder (run() wipes it
 // before it gives up for want of a new start). A folder holding a state is

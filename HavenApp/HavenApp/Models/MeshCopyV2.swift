@@ -88,6 +88,7 @@ enum MeshCopyV2 {
         .init(code: "token_refused", action: .restart, line: ""),
         .init(code: "not_owner", action: .stop, line: "{name} belongs to another account"),
         .init(code: "not_found", action: .restart, line: ""),
+        .init(code: "busy", action: .restart, line: ""),
         .init(code: "building", action: .wait, line: ""),
         .init(code: "range", action: .refetch, line: ""),
         .init(code: "no_space", action: .relays, line: "{name} is short of space; copying from your relays instead"),
@@ -351,9 +352,11 @@ enum MeshCopyV2 {
         /// Devices whose first copy stopped on a refused token
         /// (CopyRefusedPeersC) with nothing pending: the first one starts
         /// again, signed by this device's mesh key, so its rank comes over.
-        mutating func restartRefused(_ refused: [String]) {
+        /// `names` gives each device's name from My Devices, so a failure
+        /// line reads "Couldn't sign in to Studio Mac", not "to ".
+        mutating func restartRefused(_ refused: [String], names: [String: String] = [:]) {
             guard pending == nil, let peer = refused.first(where: { copied[$0] == nil }) else { return }
-            pending = .init(peer: peer, name: "", freshStart: true)
+            pending = .init(peer: peer, name: names[peer] ?? "", freshStart: true)
         }
 
         /// The linked devices due a catch-up now: copied before, not the one

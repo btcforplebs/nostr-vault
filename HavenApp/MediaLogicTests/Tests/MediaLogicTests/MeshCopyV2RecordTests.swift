@@ -226,12 +226,21 @@ final class MeshCopyV2UnreachableRetryTests: XCTestCase {
         XCTAssertNil(MeshCopyV2.message(for: try line("COPY stage=failed part=- bytes=0/0 items=0/0 source=mesh error=token_refused"), name: "Mac"))
     }
 
+    /// A is building another device's copy (one at a time): the start is
+    /// kept for the next reconnect, not dropped (Tron, #2537).
+    func testBusyKeepsTheCopyForAFreshStart() throws {
+        var r = pending()
+        r.pending?.freshStart = false
+        r.finished(try line("COPY stage=failed part=- bytes=0/0 items=0/0 source=mesh error=busy"), peer: peer, now: 1)
+        XCTAssertEqual(r.pending?.freshStart, true)
+    }
+
     /// A first copy already dropped that way starts again; nothing else moves.
     func testRefusedFirstCopyStartsAgainOnlyWhenNothingIsPending() {
         var r = MeshCopyV2.Record()
         r.copied = ["npub1old": 5]
-        r.restartRefused(["npub1old", peer])
-        XCTAssertEqual(r.pending, .init(peer: peer, name: "", freshStart: true))
+        r.restartRefused(["npub1old", peer], names: [peer: "Studio Mac"])
+        XCTAssertEqual(r.pending, .init(peer: peer, name: "Studio Mac", freshStart: true))
         var busy = pending()
         busy.pending?.peer = "npub1other"
         busy.restartRefused([peer])
