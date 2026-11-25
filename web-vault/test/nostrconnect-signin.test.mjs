@@ -26,6 +26,8 @@ test("the QR code's URI is what Amber reads: our key, relays, secret, perms and 
   const a = amberParse(req.uri)
   assert.equal(a.client, getPublicKey(sk))
   assert.deepEqual(a.relays, NOSTRCONNECT_RELAYS)
+  // Clave listens on powr.build only; Amber on nip46.com; damus as the fallback.
+  assert.deepEqual(NOSTRCONNECT_RELAYS, ["wss://relay.powr.build", "wss://relay.nip46.com", "wss://relay.damus.io"])
   assert.equal(a.fields.secret, "0123abcd")
   assert.equal(a.fields.name, "Nostr Vault")
   assert.equal(a.fields.perms, "sign_event,nip04_encrypt,nip04_decrypt,nip44_encrypt,nip44_decrypt")

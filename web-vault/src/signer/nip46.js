@@ -80,9 +80,10 @@ async function finishSignIn(signer, clientSk, bp) {
 // The way round a desktop with no extension needs: the bunker:// link lives on the phone, and there is no clipboard
 // between the two.
 
-// relay.nip46.com is one of Amber's own default relays and carries only NIP-46; damus is what the iPhone and Android
-// apps' nostrconnect requests use beside relay.powr.build (NIP46Service nostrConnectRelays), which was down on 11-13.
-export const NOSTRCONNECT_RELAYS = ["wss://relay.nip46.com", "wss://relay.damus.io"]
+// relay.powr.build is the relay Clave's push proxy watches: without it Clave answers connect but never the
+// get_public_key after it (.108, 11-25). The iPhone and Android apps use it too (NIP46Service nostrConnectRelays).
+// relay.nip46.com is one of Amber's own default relays and carries only NIP-46; damus is the wide fallback.
+export const NOSTRCONNECT_RELAYS = ["wss://relay.powr.build", "wss://relay.nip46.com", "wss://relay.damus.io"]
 // The same permissions the apps ask for. Amber drops a sign_event with no kind and asks each time instead.
 export const NOSTRCONNECT_PERMS = "sign_event,nip04_encrypt,nip04_decrypt,nip44_encrypt,nip44_decrypt"
 // How long a QR code is waited on before it is replaced by "Show a new code".
