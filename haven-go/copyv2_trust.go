@@ -91,6 +91,7 @@ func (c *copyClient) syncTrust(ctx context.Context) int {
 		return 0
 	}
 	dir, got := copyTrustKeepDir(), 0
+	c.trustRefused, c.trustErr = false, nil
 	pruneTrustRank(dir)
 	for _, account := range trustRankAccounts() {
 		since := int64(0)
@@ -101,6 +102,13 @@ func (c *copyClient) syncTrust(ctx context.Context) int {
 		}
 		resp, err := c.do(ctx, http.MethodGet, "/copy/v2/sync/trust?account="+account+"&since="+strconv.FormatInt(since, 10), nil, nil)
 		if err != nil {
+			c.trustErr = err
+			return got
+		}
+		if resp.StatusCode == http.StatusUnauthorized {
+			// The token is no longer good here: a rank pull asks for a new one.
+			resp.Body.Close()
+			c.trustRefused = true
 			return got
 		}
 		raw, rerr := io.ReadAll(io.LimitReader(resp.Body, copyTrustMaxSize+1))

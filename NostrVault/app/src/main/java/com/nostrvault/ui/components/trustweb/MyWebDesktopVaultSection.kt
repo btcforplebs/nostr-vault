@@ -69,9 +69,8 @@ internal object MyWebDesktopVaultWords {
         foundBy?.removePrefix("Found by ")?.let { "Asks $it for its ranking now" } ?: PULL_HINT
 
     /** [lastAt] is the desktop's last catch-up (Unix s), null before one. */
-    fun detail(hasDesktop: Boolean, pulling: Boolean, canPull: Boolean, failed: Boolean, lastAt: Long?, nowS: Long): String = when {
+    fun detail(pulling: Boolean, failed: Boolean, lastAt: Long?, nowS: Long): String = when {
         pulling -> "Pulling the ranking over the mesh…"
-        hasDesktop && !canPull -> "Copy your vault from it first, in Settings › Your Devices"
         failed -> "Couldn't reach it over the mesh. Try again"
         lastAt != null && lastAt > 0 -> "Read over the mesh ${VaultStatusText.ago(lastAt, nowS)}"
         else -> "Read over the mesh"
@@ -101,7 +100,7 @@ class MyWebDesktopVaultViewModel @Inject constructor(
     /** The rank copy, for a ring's sheet. */
     val copy = reach.copy
 
-    /** The same catch-up the desktop's new-rank nudge starts ([MeshCopyStarter.rankReady]). */
+    /** The same catch-up (or, never copied from, rank pull) the desktop's new-rank nudge starts ([MeshCopyStarter.rankReady]). */
     fun pull(peer: String) = copies.rankReady(peer)
 
     /** A pull's catch-up rewrote the rank file: read it now. */
@@ -140,9 +139,10 @@ internal fun MyWebDesktopVaultSection(
     when {
         outer.source == TrustMapOuter.Source.RANKED || outer.source == TrustMapOuter.Source.WAITING ->
             DashSection(title = MyWebDesktopVaultWords.TITLE) {
-                val canPull = peer != null && sync.lastAt[peer] != null
+                // Any paired desktop: one never copied from gets a rank pull ([com.nostrvault.fips.MeshRankPull]).
+                val canPull = peer != null
                 val detail = MyWebDesktopVaultWords.detail(
-                    hasDesktop = peer != null, pulling = pulling, canPull = canPull,
+                    pulling = pulling,
                     failed = peer != null && sync.failed[peer] != null,
                     lastAt = peer?.let { sync.lastAt[it] }, nowS = System.currentTimeMillis() / 1000,
                 )

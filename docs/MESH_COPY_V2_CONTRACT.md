@@ -469,6 +469,18 @@ The app calls the engine when a linked device comes into reach. The engine then:
      paired set then, so any unexpired token is still let in until the npub is readable. A box has no app to send the rank nudge, so a
      phone takes a box's new result at its hourly check or its next catch-up.
    - It never fails or delays the catch-up's mark: a 404 or a refused copy just leaves the device without one.
+   - **Rank only, no first copy** (Logen, 2026-11-25, `haven-go/copyv2_rank_only.go`). A phone paired with a Mac or a
+     box gets its rank before, or without, any vault copy. `POST /copy/v2/rank-start` takes the start's proof (§2:
+     B's mesh key, `p` = A, 60 s, one use, paired set; the account key is 403) with `u` naming
+     `/copy/v2/rank-start`, so a rank proof never starts a copy and a start proof never gets a rank token. It builds
+     nothing and answers `{"token": <64 hex>, "state": "rank"}`. That token reads `GET /copy/v2/sync/trust` and
+     nothing else (any other `/copy/v2/*` with it is 401). A second rank start replaces that device's rank token
+     only, never its copy token; Remove device and unpair drop it with the rest. B keeps it apart from the copy
+     token (`copy_peers.json` key `<peer>#rank`), so A never becomes a device B "copied from" (`CopyHeldPeersC`).
+     `RankPullC(peer, base, startAuth)` runs one pull in the copy runner: the copy token if B holds one, else the
+     rank token, else (or when A answers 401) a new rank token on `startAuth`. It ends with
+     `RANK_PULLED peer=<npub> got=<accounts with a new copy>[ error=<code>]`. A's rank nudge is answered for a device
+     holding only a rank token too. An engine from before this answers the rank start 401 (`auth_refused`).
    - The `204` is answered from the start of the Haven's file (account and builtAt), without reading the rows.
    - When an account signs out, its copy is removed at the next catch-up or engine start; on a Mac or box its own
      result and crawl checkpoint go at the next round. Only when the app's account file (`copy-accounts.json`) is

@@ -93,6 +93,8 @@ enum RelayLogParser {
         var copyLines: [MeshCopyV2.Progress] = []
         /// `RANK_READY` lines (MeshRankNudge): devices with a new trust rank.
         var rankReadyPeers: [String] = []
+        /// `RANK_PULLED` lines (MeshRankPull): rank pulls that ended.
+        var rankPulled: [MeshRankPull.Pulled] = []
         /// A `RANK_BUILT` line (MeshRankNudge): this Mac has a new trust rank.
         var rankBuilt = false
     }
@@ -150,6 +152,7 @@ enum RelayLogParser {
             || !batch.importJobLines.isEmpty
             || !batch.copyLines.isEmpty
             || !batch.rankReadyPeers.isEmpty
+            || !batch.rankPulled.isEmpty
             || batch.rankBuilt
     }
 
@@ -210,6 +213,10 @@ enum RelayLogParser {
         }
         if let peer = MeshRankNudge.readyPeer(line) {
             batch.rankReadyPeers.append(peer)
+            return
+        }
+        if let pulled = MeshRankPull.parse(line) {
+            batch.rankPulled.append(pulled)
             return
         }
         if MeshRankNudge.isBuilt(line) {

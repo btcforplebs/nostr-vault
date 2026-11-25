@@ -448,6 +448,13 @@ object HavenBridge {
     /** CopySyncNotesOnlyC: [copySync] for a light phone, notes, accounts, settings and web domains, no files. */
     external fun copySyncNotesOnly(peer: String, base: String): Int
 
+    /**
+     * RankPullC: one rank pull from the paired Mac or box [peer] through [base], with no first copy (haven-go
+     * copyv2_rank_only.go). [startAuth] is base64 of this device's mesh-key-signed kind 27235 for the rank start.
+     * 0 started · 2 busy · 3 relay not running. Ends with a `RANK_PULLED` log line.
+     */
+    external fun rankPull(peer: String, base: String, startAuth: String): Int
+
     /** CopyHeldPeersC: the paired devices this one copied from, a JSON array of mesh npubs. */
     external fun copyHeldPeers(): String?
 

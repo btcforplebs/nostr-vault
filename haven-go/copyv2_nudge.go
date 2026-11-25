@@ -79,6 +79,10 @@ func (s *copyServer) nudge(w http.ResponseWriter, r *http.Request) {
 	}
 	npub, held := copyHolds(peer)
 	if !held {
+		// A phone that pulls the rank with no first copy (copyv2_rank_only.go).
+		npub, held = copyRankHolds(peer)
+	}
+	if !held {
 		http.NotFound(w, r)
 		return
 	}

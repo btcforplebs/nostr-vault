@@ -61,15 +61,14 @@ struct MyWebDesktopVaultSection: View {
     private func pullRow(_ outer: TrustMapOuter) -> some View {
         let peer = desktop?.npub
         let pulling = peer.map { copies.syncState.running == $0 || copies.syncState.queued.contains($0) } ?? false
-        // Only a desktop this device copies from has a catch-up to run.
-        let canPull = peer.map { copies.syncState.lastAt[$0] != nil } ?? false
+        // Any paired desktop: one never copied from gets a rank pull (MeshRankPull).
         return DashboardRow(icon: "desktopcomputer", title: title(outer),
-                            detail: detail(peer: peer, pulling: pulling, canPull: canPull),
+                            detail: detail(peer: peer, pulling: pulling),
                             state: .info) {
             RowButton(title: "Pull", isLoading: pulling) {
                 if let peer { copies.rankReady([peer]) }
             }
-            .disabled(pulling || !canPull)
+            .disabled(pulling || peer == nil)
             .accessibilityHint(Text("Asks \(desktop?.displayName ?? "your desktop Vault") for its ranking now"))
         }
     }
@@ -80,9 +79,8 @@ struct MyWebDesktopVaultSection: View {
             ?? TrustMapOuter.foundLabel
     }
 
-    private func detail(peer: String?, pulling: Bool, canPull: Bool) -> String {
+    private func detail(peer: String?, pulling: Bool) -> String {
         if pulling { return "Pulling the ranking over the mesh…" }
-        if peer != nil, !canPull { return "Copy your vault from it first, in Settings › Your Devices" }
         if let peer, copies.syncState.failed[peer] != nil { return "Couldn't reach it over the mesh. Try again" }
         guard let peer, let at = copies.syncState.lastAt[peer], at > 0 else {
             return "Read over the mesh"

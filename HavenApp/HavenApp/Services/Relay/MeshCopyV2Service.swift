@@ -51,6 +51,9 @@ final class MeshCopyV2Service: ObservableObject {
     private var retryTask: Task<Void, Never>?
     /// The hourly check while the app is open (MeshRankNudge.recheckEvery).
     private var recheckTask: Task<Void, Never>?
+    /// When each paired desktop this device never copied from last had a
+    /// rank pull started, this run (MeshRankPull.due).
+    private var rankPulledAt: [String: Int] = [:]
 
     private static var now: Int { Int(Date().timeIntervalSince1970) }
 
@@ -116,7 +119,9 @@ final class MeshCopyV2Service: ObservableObject {
     func rankReady(_ peers: [String]) {
         guard RelayProcessManager.shared.isRunning else { return }
         adoptHeldPeers()
-        let known = peers.filter { record.copied[$0] != nil && record.pending?.peer != $0 }
+        // A paired desktop never copied from gets a rank pull instead (MeshRankPull).
+        let rankOnly = MeshRankPull.peers(Self.pairedDevices, copied: record.copied, pending: record.pending?.peer)
+        let known = peers.filter { (record.copied[$0] != nil || rankOnly.contains($0)) && record.pending?.peer != $0 }
         guard !known.isEmpty else { return }
         syncState.queued = MeshSyncStatus.queued(syncState.queued, adding: known, running: current)
         Task { await syncQueued() }
@@ -240,8 +245,54 @@ final class MeshCopyV2Service: ObservableObject {
         }
         adoptHeldPeers()
         if restartRefusedCopy() { return }
-        guard let peer = record.syncDue(now: Self.now).first else { return }
-        Task { await sync(peer: peer) }
+        if let peer = record.syncDue(now: Self.now).first {
+            Task { await sync(peer: peer) }
+            return
+        }
+        // Rank only: every paired desktop never copied from, hourly.
+        let due = MeshRankPull.due(Self.pairedDevices, copied: record.copied, pending: record.pending?.peer,
+                                   pulledAt: rankPulledAt, now: Self.now)
+        guard !due.isEmpty else { return }
+        syncState.queued = MeshSyncStatus.queued(syncState.queued, adding: due, running: current)
+        Task { await syncQueued() }
+    }
+
+    /// My Devices, for the rank pull (a Mac ranks for itself: none there).
+    private static var pairedDevices: [MeshDevice] {
+        #if os(iOS)
+        return FipsMeshDevices.current(ConfigService.shared.config)
+        #else
+        return []
+        #endif
+    }
+
+    /// Hands one rank pull to the engine (RankPullC), with a fresh start
+    /// signed by this device's mesh key for when it holds no token.
+    private func rankPull(peer: String, base: String) -> MeshCopyV2.StartResult {
+        guard let url = URL(string: base), let tags = MeshRankPull.startTags(base: url, receiver: peer),
+              let auth = MeshKeySigner.authorization(kind: 27235, content: "", tags: tags) else {
+            Self.log(.notSigned("no rank start"), peer: peer)
+            return .failed(-1)
+        }
+        let result = MeshCopyV2.StartResult(code: peer.withCString { p in base.withCString { b in
+            auth.withCString { a in RankPullC(mutating(p), mutating(b), mutating(a)) }
+        } })
+        if result == .started { rankPulledAt[peer] = Self.now }
+        return result
+    }
+
+    /// A rank pull ended (`RANK_PULLED`): its failure kept for My Web's
+    /// Desktop Vault, a new rank read now, then the next queued device.
+    func rankPulled(_ lines: [MeshRankPull.Pulled]) {
+        for line in lines {
+            if MeshRankPull.cutShort(line.error) { rankPulledAt[line.peer] = nil }
+            syncState.failed[line.peer] = line.error.isEmpty ? nil : line.error
+            #if os(iOS)
+            if line.got > 0 { DiscoveryReachStore.shared.refresh() }
+            #endif
+            if current == line.peer { current = nil }
+        }
+        if !syncState.queued.isEmpty { Task { await syncQueued() } }
     }
 
     private func sync(peer: String) async {
@@ -297,7 +348,7 @@ final class MeshCopyV2Service: ObservableObject {
             let base = await Self.base(peer)
             // Removed, or started by someone else, while the mesh dialled.
             guard syncState.queued.first == peer, current == nil, !starting else { continue }
-            let code = base.map { catchUp(peer: peer, base: $0) }
+            let code = base.map { record.copied[peer] != nil ? catchUp(peer: peer, base: $0) : rankPull(peer: peer, base: $0) }
             if code == .busy { return }
             syncState.queued.removeFirst()
             if code == .started {

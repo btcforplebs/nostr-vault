@@ -15,21 +15,22 @@ class MyWebDesktopVaultWordsTest {
 
     @Test fun pullingWinsOverEverything() {
         assertEquals("Pulling the ranking over the mesh…",
-            MyWebDesktopVaultWords.detail(hasDesktop = true, pulling = true, canPull = true, failed = true, lastAt = now, nowS = now))
+            MyWebDesktopVaultWords.detail(pulling = true, failed = true, lastAt = now, nowS = now))
     }
 
-    @Test fun aDesktopNeverCopiedFromCannotPull() {
-        assertEquals("Copy your vault from it first, in Settings › Your Devices",
-            MyWebDesktopVaultWords.detail(hasDesktop = true, pulling = false, canPull = false, failed = false, lastAt = null, nowS = now))
+    @Test fun aDesktopNeverCopiedFromStillReads() {
+        // Rank only (MeshRankPull): no first copy needed, so no "copy first" line.
+        assertEquals("Read over the mesh",
+            MyWebDesktopVaultWords.detail(pulling = false, failed = false, lastAt = null, nowS = now))
     }
 
     @Test fun aFailedPullSaysTryAgain() {
         assertEquals("Couldn't reach it over the mesh. Try again",
-            MyWebDesktopVaultWords.detail(hasDesktop = true, pulling = false, canPull = true, failed = true, lastAt = now - 60, nowS = now))
+            MyWebDesktopVaultWords.detail(pulling = false, failed = true, lastAt = now - 60, nowS = now))
     }
 
     @Test fun lastReadSaysHowLongAgo() {
         assertEquals("Read over the mesh 5 min ago",
-            MyWebDesktopVaultWords.detail(hasDesktop = true, pulling = false, canPull = true, failed = false, lastAt = now - 300, nowS = now))
+            MyWebDesktopVaultWords.detail(pulling = false, failed = false, lastAt = now - 300, nowS = now))
     }
 }
