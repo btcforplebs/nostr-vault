@@ -1,5 +1,7 @@
 package com.nostrvault.ui.screens.dashboard
 
+import com.nostrvault.BuildConfig
+
 import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -123,18 +125,8 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                 val recipesOnly = _noteScope.value == VaultNoteScope.ARTICLES && _recipesOnly.value
 
                 val filtered = noteEvents.filter { event ->
-                    // Log all events before kind filtering to see what we're dropping
-                    val hasUserPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == owner }
-                    if (hasUserPTag && event.pubkey != owner) {
-                        Log.d(TAG, "Event with user p-tag BEFORE filter: id=${event.id.take(8)}, kind=${event.kind}, from=${event.pubkey.take(8)}")
-                    }
-
-                    if (event.kind !in RELAY_TAB_NOTE_KINDS) {
-                        if (hasUserPTag && event.pubkey != owner) {
-                            Log.w(TAG, "DROPPING event kind ${event.kind} that tags user: id=${event.id.take(8)}")
-                        }
-                        return@filter false
-                    }
+                    // No per-event log here: it ran for every tagged note on each rebuild and filled logcat (Tao).
+                    if (event.kind !in RELAY_TAB_NOTE_KINDS) return@filter false
                     // Articles and highlights are listed apart in the Vault tab.
                     if (event.kind !in scopeKinds) return@filter false
                     if (recipesOnly && !VaultNoteScope.isRecipe(event.tags)) return@filter false
@@ -155,7 +147,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                         VaultContentFilter.OUTSIDE -> isOutside
                         VaultContentFilter.TAGGED -> {
                             val tagged = !isMine && isTagged && !isOutside
-                            if (tagged) {
+                            if (tagged && BuildConfig.DEBUG) {
                                 Log.d(TAG, "TAGGED note included: id=${event.id.take(8)}, from=${event.pubkey.take(8)}, kind=${event.kind}")
                             }
                             tagged

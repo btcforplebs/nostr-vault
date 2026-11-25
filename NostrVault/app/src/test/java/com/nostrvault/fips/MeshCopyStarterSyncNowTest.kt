@@ -2,6 +2,7 @@ package com.nostrvault.fips
 
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -44,7 +45,7 @@ class MeshCopyStarterSyncNowTest {
         records = store,
         setupDone = { setupDone },
         scope = this,
-        nowS = { now },
+        nowS = { now + testScheduler.currentTime / 1000 },
         io = StandardTestDispatcher(testScheduler),
     )
 
@@ -80,9 +81,42 @@ class MeshCopyStarterSyncNowTest {
         val s = starter()
         s.syncNow()
         runCurrent()
+        assertEquals("dialed again for a short while first", emptyList<String>(), engine.syncs)
+        advanceTimeBy(OtherVaultCopy.DIAL_WINDOW_S * 1000)
+        runCurrent()
         assertEquals(listOf(mac), engine.syncs)
         assertEquals("unreachable", s.sync.value.failed[box])
         assertEquals(mac, s.sync.value.running)
+    }
+
+    @Test
+    fun `a desktop found a few seconds after the relay starts still runs`() = runTest {
+        unreachableFor += box
+        val s = starter()
+        s.syncNow()
+        runCurrent()
+        unreachableFor -= box // the mesh found it
+        advanceTimeBy(OtherVaultCopy.DIAL_RETRY_S * 1000)
+        runCurrent()
+        assertEquals(listOf(box), engine.syncs)
+        assertEquals(box, s.sync.value.running)
+        assertTrue(box !in s.sync.value.failed)
+    }
+
+    @Test
+    fun `a check that finds a queued dial holding the lock runs once it is let go`() = runTest {
+        unreachableFor += box
+        val s = starter()
+        s.syncNow()
+        runCurrent()
+        s.reconnectNow() // the relay came up while Sync now dials the box
+        assertEquals(emptyList<String>(), engine.syncs)
+        unreachableFor -= box
+        engine.answers += listOf(9, 9) // neither starts: nothing runs after the queue
+        now += MeshCopyV2.SYNC_EVERY_S // both due by the time it runs again
+        advanceTimeBy(OtherVaultCopy.DIAL_RETRY_S * 1000)
+        runCurrent()
+        assertEquals("the lost check ran: the box is due again", listOf(box, mac, box), engine.syncs)
     }
 
     @Test

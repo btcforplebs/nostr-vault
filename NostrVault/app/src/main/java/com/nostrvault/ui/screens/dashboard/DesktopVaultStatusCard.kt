@@ -1,6 +1,7 @@
 package com.nostrvault.ui.screens.dashboard
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -76,7 +77,7 @@ internal fun DesktopVaultStatusCard(viewModel: DesktopVaultStatusViewModel = hil
             verticalArrangement = Arrangement.spacedBy(5.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp).semantics(mergeDescendants = true) {},
         ) {
-            Text(d.title, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(viewModel.title(d), color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val status = shown.status
             if (status == null) {
                 Line(if (shown.error == null) "Checking…" else reach(shown.error)?.replaceFirstChar { it.uppercase() } ?: "Checking…")
@@ -115,12 +116,7 @@ private fun age(shown: DesktopVaultStatusViewModel.Shown, nowS: Long): String? {
     return reach(shown.error)?.let { "$updated, $it now" } ?: updated
 }
 
-private fun reach(error: String?): String? = when (error) {
-    null -> null
-    "not_paired" -> "not caught up with yet"
-    "not_found" -> "update it to see this"
-    else -> "out of reach"
-}
+private fun reach(error: String?): String? = DashboardDeviceWords.statusReach(error)
 
 /** The role's name as the engine and iOS write it ("mac", "phone", …). */
 private fun DeviceRole.serialName(): String = when (this) {
@@ -154,6 +150,9 @@ class DesktopVaultStatusViewModel @Inject constructor(
         DesktopVaultPick.desktop(list.filter { it.role == DeviceRole.MAC }, { it.npub }, sync.lastAt)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** The desktop's title, told apart from another with the same name as Your devices does. */
+    fun title(d: MyDevice): String = DashboardDeviceWords.titles(devices.value)[d.npub] ?: d.title
+
     fun activeHex(): String = configStore.activeAccountHexPubkey.value
 
     fun bar(): Double? = configStore.config.value.discoveryBar?.takeIf { it in 0.0..100.0 }?.let { Math.round(it).toDouble() }
@@ -165,6 +164,7 @@ class DesktopVaultStatusViewModel @Inject constructor(
 
     /** Shown for [peer]: drop what was kept for another desktop. */
     fun show(peer: String) {
+        Log.i(TAG, "desktop picked: ${peer.take(LOG_NPUB)}")
         if (_shown.value.peer == peer) return
         _shown.value = Shown(peer = peer)
         prefs.edit().clear().apply()
@@ -180,7 +180,9 @@ class DesktopVaultStatusViewModel @Inject constructor(
             prefs.edit().putString(KEY_PEER, peer).putLong(KEY_AT, now).putString(KEY_JSON, ok.second).apply()
             Shown(peer, ok.first, now, null)
         } else {
-            _shown.value.copy(error = error ?: "bad_answer")
+            val code = error ?: "bad_answer"
+            Log.w(TAG, "desktop ${peer.take(LOG_NPUB)} status failed: $code")
+            _shown.value.copy(error = code)
         }
     }
 
@@ -194,5 +196,8 @@ class DesktopVaultStatusViewModel @Inject constructor(
         const val KEY_PEER = "peer"
         const val KEY_AT = "fetched_at"
         const val KEY_JSON = "json"
+        const val TAG = "DesktopVaultStatus"
+        /** Enough of a mesh npub to tell desktops apart in a log (public: no address, no token). */
+        const val LOG_NPUB = 16
     }
 }

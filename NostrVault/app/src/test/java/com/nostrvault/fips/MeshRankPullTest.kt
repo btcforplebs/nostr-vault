@@ -2,6 +2,7 @@ package com.nostrvault.fips
 
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -16,6 +17,10 @@ class MeshRankPullTest {
     private val link = "ws://127.0.0.1:41234/" + "t".repeat(32)
     private var now = 1_767_000_000L
     private var arrived = 0
+    /** Dials that find no link yet, by peer (the mesh still finding it right after the relay starts). */
+    private val missesLeft = mutableMapOf<String, Int>()
+    /** The engine's live mesh peers. */
+    private var live = emptyList<String>()
 
     private class Engine : MeshCopyStarter.Engine {
         val syncs = mutableListOf<String>()
@@ -34,20 +39,96 @@ class MeshRankPullTest {
     private val signed = mutableListOf<List<List<String>>>()
 
     private fun TestScope.starter(store: Store) = MeshCopyStarter(
-        link = { link },
+        link = { npub ->
+            val left = missesLeft[npub] ?: 0
+            if (left > 0) { missesLeft[npub] = left - 1; null } else link
+        },
         sign = { tags -> signed += tags; "c2lnbmVk" },
         engine = engine,
         records = store,
         setupDone = { true },
         scope = this,
-        nowS = { now },
+        nowS = { now + testScheduler.currentTime / 1000 },
         io = StandardTestDispatcher(testScheduler),
         desktops = { listOf(mac, box) },
         rankArrived = { arrived++ },
+        connected = { live },
     )
 
     private fun pulled(peer: String, got: Int, error: String = "") =
         "2026/11/25 10:00:00 RANK_PULLED peer=$peer got=$got" + if (error.isEmpty()) "" else " error=$error"
+
+    @Test
+    fun `Pull tries every paired desktop, the one with a live link first`() = runTest {
+        live = listOf(box)
+        val s = starter(Store(MeshCopyV2.Record()))
+        s.pullAll()
+        runCurrent()
+        assertEquals(listOf(box), engine.pulls.map { it.first })
+        assertEquals(listOf(mac), s.sync.value.queued)
+        s.onLogLine(pulled(box, 3)); runCurrent()
+        assertEquals("the other desktop still gets its turn", listOf(box, mac), engine.pulls.map { it.first })
+    }
+
+    @Test
+    fun `Pull with the shown desktop out of reach still pulls from the one that answers`() = runTest {
+        // Logen's Pull 22:38Z: the card's desktop (.99) is not reached, .155 is.
+        live = listOf(box)
+        missesLeft[mac] = Int.MAX_VALUE
+        val s = starter(Store(MeshCopyV2.Record()))
+        s.pullAll()
+        runCurrent()
+        assertEquals(listOf(box), engine.pulls.map { it.first })
+        s.onLogLine(pulled(box, 5)); runCurrent()
+        assertEquals(1, arrived)
+        advanceTimeBy(OtherVaultCopy.DIAL_WINDOW_S * 1000); runCurrent()
+        assertEquals("unreachable", s.sync.value.failed[mac])
+        assertTrue(box !in s.sync.value.failed)
+    }
+
+    @Test
+    fun `Pull catches up with a desktop copied from and rank-pulls the rest`() = runTest {
+        val s = starter(Store(MeshCopyV2.Record(copied = mapOf(mac to now - 60))))
+        s.pullAll()
+        runCurrent()
+        assertEquals(listOf(mac), engine.syncs)
+        s.onLogLine("COPY stage=done part=- bytes=0/0 items=1/1 source=mesh"); runCurrent()
+        assertEquals(listOf(box), engine.pulls.map { it.first })
+    }
+
+    @Test
+    fun `the hourly check tries the desktops with a live link first`() = runTest {
+        live = listOf(box)
+        val s = starter(Store(MeshCopyV2.Record()))
+        s.reconnectNow()
+        runCurrent()
+        assertEquals(listOf(box), engine.pulls.map { it.first })
+        assertEquals(listOf(mac), s.sync.value.queued)
+    }
+
+    @Test
+    fun `a rank ask that finds no link right after relay start dials again before it fails`() = runTest {
+        missesLeft[mac] = 2
+        val s = starter(Store(MeshCopyV2.Record()))
+        s.reconnectNow()
+        runCurrent()
+        assertEquals(emptyList<String>(), engine.pulls.map { it.first })
+        advanceTimeBy(OtherVaultCopy.DIAL_RETRY_S * 1000 * 2)
+        runCurrent()
+        assertEquals(listOf(mac), engine.pulls.map { it.first })
+        assertTrue(mac !in s.sync.value.failed)
+    }
+
+    @Test
+    fun `a desktop still not found after the dial window is marked unreachable`() = runTest {
+        missesLeft[mac] = Int.MAX_VALUE
+        val s = starter(Store(MeshCopyV2.Record()))
+        s.reconnectNow()
+        advanceTimeBy(OtherVaultCopy.DIAL_WINDOW_S * 1000)
+        runCurrent()
+        assertEquals("unreachable", s.sync.value.failed[mac])
+        assertEquals("the next desktop still runs", listOf(box), engine.pulls.map { it.first })
+    }
 
     @Test
     fun `no first copy - every paired desktop gets a rank pull, one at a time, hourly`() = runTest {

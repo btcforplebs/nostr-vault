@@ -223,7 +223,7 @@ class OtherDeviceViewModel @Inject constructor(
         _ui.value = Ui.Copying(name)
         viewModelScope.launch {
             val url = copyStarter.dial(a.mesh) ?: return@launch run {
-                otherVaultLink.close()
+                otherVaultLink.closeDevice(a.mesh)
                 fallBack()
             }
             when (val r = copyStarter.start(a.mesh, url, name)) {
@@ -232,7 +232,7 @@ class OtherDeviceViewModel @Inject constructor(
                     if (r.line.isNotEmpty()) notificationManager.showToast(r.line, PillTone.WARNING)
                     // Short of space here, or the other device is another account's: no copy from it at all.
                     if (MeshCopyV2.action(r.code) == MeshCopyV2.Action.STOP && r.code != "auth_refused") {
-                        otherVaultLink.close()
+                        otherVaultLink.close(url)
                         return@launch quietFallBack()
                     }
                 }

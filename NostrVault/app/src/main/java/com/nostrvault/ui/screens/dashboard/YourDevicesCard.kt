@@ -66,11 +66,12 @@ internal fun YourDevicesCard(
     }
     DashSection(
         title = "Your devices",
-        detail = if (devices.isEmpty()) null else "${devices.count { it.inReach }} of ${devices.size} in reach",
+        detail = DashboardDeviceWords.meshCount(devices),
     ) {
+        val titles = DashboardDeviceWords.titles(devices)
         devices.forEachIndexed { i, device ->
             if (i > 0) DashDivider()
-            DeviceRow(device, onClick = onOpenDevice)
+            DeviceRow(device, titles[device.npub] ?: device.title, onClick = onOpenDevice)
         }
         if (devices.isNotEmpty()) DashDivider()
         SettingLink(Icons.Filled.Hub, "Mesh settings", null, onClick = onOpenMesh)
@@ -87,22 +88,22 @@ internal fun YourDevicesCard(
 }
 
 @Composable
-private fun DeviceRow(device: MyDevice, onClick: () -> Unit) {
-    val reach = if (device.inReach) "In reach" else "Not in reach"
+private fun DeviceRow(device: MyDevice, title: String, onClick: () -> Unit) {
+    val reach = if (device.inReach) "On the mesh" else "Not on the mesh"
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = "${device.title}, ${device.role.label}, $reach" }
+            .semantics(mergeDescendants = true) { contentDescription = "$title, ${device.role.label}, $reach" }
             .padding(horizontal = 14.dp, vertical = 11.dp),
     ) {
         Box(Modifier.size(26.dp), contentAlignment = Alignment.Center) {
             Box(Modifier.size(10.dp).background(if (device.inReach) SuccessGreen else SecondaryText.copy(alpha = 0.5f), CircleShape))
         }
         Column(Modifier.weight(1f)) {
-            Text(device.title, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(device.role.label, color = SecondaryText, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
