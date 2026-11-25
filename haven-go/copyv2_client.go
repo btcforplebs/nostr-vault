@@ -33,6 +33,9 @@ const copyInDir = "copyin"
 // copyPeersFile: per peer, the copy token B was given (0600).
 const copyPeersFile = "copy_peers.json"
 
+// copyStartFailedFile: left in a copy folder whose new start A turned down.
+const copyStartFailedFile = "start_failed"
+
 // copyHeadroom: B keeps this much free beyond the parts and what they restore to.
 const copyHeadroom = 1 << 30
 
@@ -641,13 +644,23 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 	}
 	if st == nil {
 		if startAuth == "" {
-			return copyErr("auth_refused")
+			// Only a new signed start brings this copy back (A refused or
+			// lost the held token): token_refused asks the app for one, signed
+			// by this device's mesh key. auth_refused here would drop the
+			// pending copy for good, and with it the rank hand-off.
+			return copyErr("token_refused")
 		}
 		id, err := c.start(ctx, startAuth)
-		if err != nil {
-			return err
+		if err == nil {
+			m, err = c.waitReady(ctx, id)
 		}
-		if m, err = c.waitReady(ctx, id); err != nil {
+		if err != nil {
+			if !slices.Contains(copyStartRetries, copyErrorCode(err)) {
+				// This new start failed for good: marked, so copyRefusedPeers
+				// does not offer it again. A cut or busy one may be tried
+				// again: a mark there would strand the copy (Tron, #2537).
+				_ = os.WriteFile(filepath.Join(c.dir, copyStartFailedFile), nil, 0o600)
+			}
 			return err
 		}
 	}

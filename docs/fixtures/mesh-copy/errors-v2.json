@@ -7,6 +7,12 @@
       "line": "Couldn't sign in to {name}"
     },
     {
+      "code": "token_refused",
+      "http": null,
+      "b": "restart",
+      "line": ""
+    },
+    {
       "code": "not_owner",
       "http": 403,
       "b": "stop",
@@ -15,6 +21,12 @@
     {
       "code": "not_found",
       "http": 404,
+      "b": "restart",
+      "line": ""
+    },
+    {
+      "code": "busy",
+      "http": null,
       "b": "restart",
       "line": ""
     },

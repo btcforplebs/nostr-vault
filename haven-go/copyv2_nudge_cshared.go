@@ -15,3 +15,13 @@ func CopyHeldPeersC() *C.char {
 	raw, _ := json.Marshal(copyHeldPeers())
 	return C.CString(string(raw))
 }
+
+// CopyRefusedPeersC: paired devices whose first copy stopped on a refused
+// token (copyv2_refused.go), as a JSON array of mesh npubs. The app starts
+// those copies again with its mesh key. The caller frees the string.
+//
+//export CopyRefusedPeersC
+func CopyRefusedPeersC() *C.char {
+	raw, _ := json.Marshal(copyRefusedPeers())
+	return C.CString(string(raw))
+}

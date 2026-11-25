@@ -132,6 +132,21 @@ final class MeshCopyV2Service: ObservableObject {
         record.adopt(held)
     }
 
+    /// A first copy stopped on a refused token starts again (Record.restartRefused).
+    private func restartRefusedCopy() -> Bool {
+        guard let raw = CopyRefusedPeersC() else { return false }
+        defer { free(raw) }
+        guard let data = String(cString: raw).data(using: .utf8),
+              let refused = try? JSONDecoder().decode([String].self, from: data) else { return false }
+        let names = Dictionary(FipsMeshDevices.current(ConfigService.shared.config).map { ($0.npub, $0.displayName) },
+                               uniquingKeysWith: { first, _ in first })
+        record.restartRefused(refused, names: names)
+        guard let p = record.pending else { return false }
+        peerName = p.name
+        Task { await run(peer: p.peer, fresh: true) }
+        return true
+    }
+
     // MARK: Start
 
     /// Copies this vault from the linked device `peer` (its mesh npub).
@@ -219,6 +234,7 @@ final class MeshCopyV2Service: ObservableObject {
             return
         }
         adoptHeldPeers()
+        if restartRefusedCopy() { return }
         guard let peer = record.syncDue(now: Self.now).first else { return }
         Task { await sync(peer: peer) }
     }
