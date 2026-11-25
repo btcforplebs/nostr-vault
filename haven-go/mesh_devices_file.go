@@ -20,7 +20,8 @@ import (
 // as before.
 //
 // A missing file is an empty set: no self, no device (fail closed, like the
-// apps' empty set). A file that does not parse keeps the last good set, as
+// apps' empty set). Following a file also sets meshSelfRequired, so while
+// the set has no self the engine refuses every copy token. A file that does not parse keeps the last good set, as
 // SetMeshDevicesC does with bad input.
 
 const meshDevicesFileEvery = 5 * time.Second
@@ -61,6 +62,9 @@ func startMeshDevicesFile(ctx context.Context) {
 	if path == "" {
 		return
 	}
+	// From here on an empty self refuses every copy token
+	// (mesh_devices_self_required.go): set before the first read.
+	meshSelfRequired.Store(true)
 	f := &meshDevicesFile{path: path}
 	f.load()
 	go func() {
