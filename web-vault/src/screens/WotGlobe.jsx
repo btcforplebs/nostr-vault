@@ -11,6 +11,8 @@
 // written under the middle face as "You" is on yours. `outer` (your own globe only) is the far rings round it
 // (wot-outer-rings.js), and `hop` the picked Hop layer: the globe eases out to that ring and shrinks in place inside it
 // (net/globe-ring-zoom.js), which becomes a full sphere of its own round it (globe-hop-sphere.js) that turns with it.
+// `chain` (net/globe-chain.js) is the open card's path when they are on a hop sphere: a line from them through each
+// link's layer in to you.
 import { useEffect, useRef } from "preact/hooks"
 import { getProfile, onProfiles } from "../net/profiles.js"
 import { faceCache, FACE_PX } from "../net/face-cache.js"
@@ -22,6 +24,7 @@ import {
 import { lightBand, pointProjector, StarBands, GlStars, packStars } from "./wot-globe-stars.js"
 import { drawFlatRings } from "./wot-outer-rings.js"
 import { HopSpheres } from "./globe-hop-sphere.js"
+import { drawChain, chainPoints, DRAW_IN } from "./globe-chain-painter.js"
 import { levelFor, easeLevel, innerShrink, innerAlpha } from "../net/globe-ring-zoom.js"
 
 /** New pictures a frame may start loading: a fast spin brings faces into seats faster than they need decoding at once;
@@ -37,7 +40,7 @@ const NO_PATH = []
 /** Pictures already drawn into small round bitmaps, kept across globes (see `images` below). */
 const sharedImages = faceCache({ onDrop: e => { if (typeof e === "object") e.width = e.height = 0 } })
 
-export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer = "everyone", lit = null, path = NO_PATH, whose = null, outer = null, hop = null }) {
+export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer = "everyone", lit = null, path = NO_PATH, whose = null, outer = null, hop = null, chain = NO_PATH }) {
   const box = useRef(null), canvas = useRef(null), glCanvas = useRef(null)
   const glStars = useRef(null) // the stars' GPU layer under the canvas, or null to draw them on it (wot-globe-stars.js)
   const cam = useRef(newCamera())
@@ -59,12 +62,14 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
   const dim = useRef(1) // how strongly the inner globe draws this frame (innerAlpha)
   const spheres = useRef(null) // the picked hop's sphere and those nested in it (globe-hop-sphere.js)
   if (!spheres.current) spheres.current = new HopSpheres()
+  const chainBorn = useRef(0) // when the chain started drawing in (performance.now ms)
+  const byPk = useRef({ nodes: null, map: null }) // pk -> node, for the chain's links on the inner globe
   const pickedRef = useRef(picked)
   pickedRef.current = picked
   // What the frames draw, read when each frame is drawn: a frame loop started on an earlier render (faces still
   // fading in) would otherwise go on drawing that render's people after the web under it has filled in.
   const scene = useRef(null)
-  scene.current = { web, nodes, weights: LAYER_WEIGHTS[layer] ?? LAYER_WEIGHTS.everyone, path, lit, label: whose ?? "You", outer }
+  scene.current = { web, nodes, weights: LAYER_WEIGHTS[layer] ?? LAYER_WEIGHTS.everyone, path, lit, label: whose ?? "You", outer, chain }
 
   const draw = dt => {
     const c = canvas.current
@@ -222,6 +227,10 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     dim.current = 1
     if (outer) spheres.current.draw(g, outer, { cam: k, w, h, level, focus: pickedRef.current, picture: pk => !!getProfile(pk)?.picture,
       face: (pk, x, y, r, alpha) => face(g, pk, x, y, r, alpha, "follow", true, true) })
+    const { chain } = scene.current
+    if (outer && chain.length && chain[0].key === pickedRef.current) {
+      chainFrame.current = drawChainFrame(g, chain, k, w, h, nodes, shrink)
+    } else chainFrame.current = 1
   }
 
   // A face: the profile picture once it has loaded (asked for only when the face holds a seat and is big enough to see), a
@@ -265,6 +274,24 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     return true
   }
 
+  // The card's hop-sphere person's path, through each link's spot as drawn this frame, ending at you. -> its progress
+  const chainFrame = useRef(1)
+  const drawChainFrame = (g, chain, k, w, h, nodes, shrink) => {
+    if (byPk.current.nodes !== nodes) byPk.current = { nodes, map: new Map(nodes.map(n => [n.pk, n])) }
+    const put = pointProjector(k, w, h), into = { x: 0, y: 0, depth: 0, scale: 0 }, sp = spheres.current
+    const onGlobe = pk => {
+      const n = byPk.current.map.get(pk)
+      if (!n || !put(n.p, into)) return null
+      return { x: w / 2 + (into.x - w / 2) * shrink, y: h / 2 + (into.y - h / 2) * shrink, front: Math.min(1, Math.max(0, (into.depth + 1) / 2)) }
+    }
+    const pts = chainPoints(chain, (pk, hop) => sp.screenPoint(pk, hop), onGlobe)
+    if (!pts) return 1
+    pts.push({ x: w / 2, y: h / 2, front: 1 })
+    const progress = Math.min(1, (performance.now() - chainBorn.current) / 1000 / DRAW_IN)
+    drawChain(g, pts, progress)
+    return progress
+  }
+
   // One frame at a time, and only while the globe moves or a face is still fading.
   const request = () => { if (!frame.current) frame.current = requestAnimationFrame(tick) }
   const tick = t => {
@@ -274,7 +301,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     const rz = ring.current
     rz.level = easeLevel(rz.level, rz.target, dt, reducedMotion())
     draw(dt)
-    if (moving(cam.current) || fading.current || rz.level !== rz.target) { last.current = t; request() } else last.current = 0
+    if (moving(cam.current) || fading.current || rz.level !== rz.target || chainFrame.current < 1) { last.current = t; request() } else last.current = 0
   }
 
   // Size: the canvas fills its box at the screen's pixel density.
@@ -299,6 +326,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, layer 
     }
   }, [])
   useEffect(request, [nodes, picked, layer, path, lit, outer])
+  useEffect(() => { chainBorn.current = performance.now(); chainFrame.current = 0; request() }, [chain])
   // A Hop layer eases the globe out to its ring, from rest, so its best people face you (GlobeScene.focus).
   useEffect(() => {
     const target = outer ? levelFor(hop) : 0
