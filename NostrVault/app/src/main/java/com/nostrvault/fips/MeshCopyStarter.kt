@@ -360,7 +360,7 @@ class MeshCopyStarter internal constructor(
     internal suspend fun syncQueued() = lock.withLock {
         while (current == null) {
             val peer = _sync.value.queued.firstOrNull() ?: return@withLock
-            val split = link(peer)?.let(MeshCopyV2::splitLink)
+            val split = linkSoon(peer)?.let(MeshCopyV2::splitLink)
             val code = split?.let { (base, prefix) ->
                 if (peer in record.copied) engine.copySync(peer, base + prefix, filesToo()) else rankPull(peer, base, prefix)
             }
@@ -372,6 +372,20 @@ class MeshCopyStarter internal constructor(
             } else {
                 _sync.update { it.copy(failed = it.failed + (peer to if (split == null) "unreachable" else "not_started")) }
             }
+        }
+    }
+
+    /**
+     * [peer]'s address, dialed again every [OtherVaultCopy.DIAL_RETRY_S] for up to [OtherVaultCopy.DIAL_WINDOW_S]
+     * like [dial]: right after this relay starts the mesh is often still finding the desktop, and one miss marked it
+     * failed until the next hourly check (Tao, nv-android e9bfe229).
+     */
+    private suspend fun linkSoon(peer: String): String? {
+        val startedAt = nowS()
+        while (true) {
+            link(peer)?.let { return it }
+            if (!OtherVaultCopy.dialsAgain(startedAt, nowS())) return null
+            delay(OtherVaultCopy.DIAL_RETRY_S * 1000)
         }
     }
 

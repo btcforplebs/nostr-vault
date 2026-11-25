@@ -47,58 +47,102 @@ class OtherVaultLink internal constructor(
         var token: String?
     }
 
-    private var server: ServerSocket? = null
+    /**
+     * One address per device, by mesh npub: the status card reads a desktop every minute while a catch-up or rank
+     * pull runs to another one, and one shared address closed the running one's port and token (Tao, nv-android
+     * acefaeee). [store] keeps the newest one, the one an engine or app restart brings back.
+     */
+    private class Link(val server: ServerSocket, val token: String, var until: Long) {
+        /** The current ingress for the npub (`host:port`), cached so a dial per connection doesn't open a port each. */
+        @Volatile var target: InetSocketAddress? = null
+        val open: Boolean get() = !server.isClosed
+    }
 
-    /** The current ingress for the npub (`host:port`), cached so a dial per connection doesn't open a port each. */
-    @Volatile private var target: InetSocketAddress? = null
+    private val links = HashMap<String, Link>()
 
     /** B, once linked: the lasting ws:// address for [npub], kept until [OtherVaultCopy.KEEP_LINK_MS] from [now]. */
     @Synchronized
     fun open(npub: String, now: Long = System.currentTimeMillis()): String? {
-        if (store.npub != npub || store.token == null) {
-            closeServer()
-            store.port = 0
-            store.token = newToken()
+        letGoExpired(now)
+        val until = now + OtherVaultCopy.KEEP_LINK_MS
+        links[npub]?.takeIf { it.open }?.let { l ->
+            l.until = until
+            l.target = null
+            keep(npub, l)
+            return address(l.server.localPort, l.token)
         }
-        store.npub = npub
-        store.until = now + OtherVaultCopy.KEEP_LINK_MS
-        target = null
-        return listen(npub)
+        // The kept one comes back with its port and token, so the relay's saved URL still answers; another is new.
+        val kept = store.npub == npub && store.token != null
+        val l = listen(npub, if (kept) store.token!! else newToken(), if (kept) store.port else 0, until) ?: return null
+        keep(npub, l)
+        return address(l.server.localPort, l.token)
     }
 
     /** On an engine start: the kept address comes back on the same port; an expired one is let go. */
     @Synchronized
     fun restore(now: Long = System.currentTimeMillis()) {
+        links.values.forEach { it.target = null }  // the engine restarted: the old ingresses are gone
         val npub = store.npub ?: return
         // No token: an address from before the secret (Tron, #1777) is let go, never reopened open to any app.
-        if (!OtherVaultCopy.open(store.until, now) || store.token == null) return close()
-        target = null  // the engine restarted: the old ingress is gone
-        listen(npub)
+        val token = store.token
+        if (!OtherVaultCopy.open(store.until, now) || token == null) return close()
+        letGoExpired(now)
+        if (links[npub]?.open == true) return
+        listen(npub, token, store.port, store.until)?.let { store.port = it.server.localPort }
     }
 
-    /** Copied: nothing is left to read from the other vault. */
+    /** Copied: nothing is left to read from any other vault. */
     @Synchronized
     fun close() {
-        closeServer()
+        links.values.forEach { runCatching { it.server.close() } }
+        links.clear()
+        clearStore()
+    }
+
+    /** Nothing is left to read through [url] (an address [open] gave): that one device's address only. */
+    @Synchronized
+    fun close(url: String) {
+        val token = runCatching { URI(url).path.trim('/') }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return
+        val npub = links.entries.firstOrNull { it.value.token == token }?.key
+        if (npub != null) links.remove(npub)?.let { runCatching { it.server.close() } }
+        if (store.token == token) clearStore()
+    }
+
+    /** The kept address in use, or null. */
+    @Synchronized
+    fun url(): String? = store.npub?.let { links[it] }?.takeIf { it.open }?.let { address(it.server.localPort, it.token) }
+
+    /** How many device addresses are open: for the tests. */
+    @Synchronized
+    internal fun openCount(): Int = links.values.count { it.open }
+
+    private fun keep(npub: String, l: Link) {
+        store.npub = npub
+        store.port = l.server.localPort
+        store.token = l.token
+        store.until = l.until
+    }
+
+    private fun clearStore() {
         store.npub = null
         store.port = 0
         store.until = 0
         store.token = null
     }
 
-    /** The address in use, or null. */
-    @Synchronized
-    fun url(): String? = server?.takeIf { !it.isClosed }?.let { s -> store.token?.let { address(s.localPort, it) } }
+    private fun letGoExpired(now: Long) {
+        links.entries.removeAll { (_, l) ->
+            (!l.open || !OtherVaultCopy.open(l.until, now)).also { gone -> if (gone) runCatching { l.server.close() } }
+        }
+    }
 
-    private fun listen(npub: String): String? {
-        url()?.let { return it }
-        val token = store.token ?: return null
+    private fun listen(npub: String, token: String, port: Int, until: Long): Link? {
         // The same port as before when it is free, so the relay's saved URL still answers.
-        val s = bind(store.port) ?: bind(0) ?: return null
-        store.port = s.localPort
-        server = s
-        thread(name = "other-vault-link", isDaemon = true) { accept(s, npub, token) }
-        return address(s.localPort, token)
+        val s = (if (port != 0) bind(port) else null) ?: bind(0) ?: return null
+        val l = Link(s, token, until)
+        links[npub] = l
+        thread(name = "other-vault-link", isDaemon = true) { accept(l, npub) }
+        return l
     }
 
     private fun bind(port: Int): ServerSocket? = try {
@@ -110,26 +154,22 @@ class OtherVaultLink internal constructor(
         null
     }
 
-    private fun closeServer() {
-        runCatching { server?.close() }
-        server = null
-    }
-
-    private fun accept(s: ServerSocket, npub: String, token: String) {
-        while (!s.isClosed) {
-            val client = try { s.accept() } catch (e: Exception) { break }
-            thread(name = "other-vault-link-conn", isDaemon = true) { forward(client, npub, token) }
+    private fun accept(l: Link, npub: String) {
+        while (l.open) {
+            val client = try { l.server.accept() } catch (e: Exception) { break }
+            thread(name = "other-vault-link-conn", isDaemon = true) { forward(client, l, npub) }
         }
     }
 
-    private fun forward(client: Socket, npub: String, token: String) {
+    private fun forward(client: Socket, l: Link, npub: String) {
+        val token = l.token
         // The first request line, checked before anything is dialed: no token, no connection.
         val line = runCatching {
             client.soTimeout = REQUEST_LINE_TIMEOUT_MS
             readLine(client.getInputStream()).also { client.soTimeout = 0 }
         }.getOrNull()
         val rewritten = line?.let { withoutToken(it, token) }
-        val upstream = rewritten?.let { connect(npub) }
+        val upstream = rewritten?.let { connect(l, npub) }
         if (rewritten == null || upstream == null) {
             runCatching { client.close() }
             return
@@ -146,13 +186,13 @@ class OtherVaultLink internal constructor(
     }
 
     /** The cached ingress, else a fresh dial; once more on a refused connect (the engine restarted). */
-    internal fun connect(npub: String): Socket? {
+    private fun connect(l: Link, npub: String): Socket? {
         repeat(2) {
-            val t = target ?: resolve(npub)?.also { target = it } ?: return null
+            val t = l.target ?: resolve(npub)?.also { l.target = it } ?: return null
             try {
                 return Socket().apply { connect(t, CONNECT_TIMEOUT_MS) }
             } catch (e: Exception) {
-                target = null
+                l.target = null
             }
         }
         Log.w(TAG, "other vault not reached")  // never the address: the ingress is a capability

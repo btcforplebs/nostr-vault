@@ -116,6 +116,51 @@ class OtherVaultLinkTest {
         assertEquals("npub1b", store.npub)
     }
 
+    @Test fun `opening another desktop leaves the running one's address and secret alone`() {
+        fakeIngress("vault")
+        val a = link.open("npub1a", now = 0)!!
+        val b = link.open("npub1b", now = 0)!!
+        assertNotEquals(a, b)
+        assertEquals("a rank pull to A survives the status card reading B", "vault", read(a))
+        assertEquals("vault", read(b))
+        // The status card's next minute: B again, same address, and A still answers.
+        assertEquals(b, link.open("npub1b", now = 60_000))
+        assertEquals(a, link.open("npub1a", now = 60_000))
+        assertEquals("vault", read(a))
+        assertEquals(2, link.openCount())
+    }
+
+    @Test fun `closing one device's address leaves the others`() {
+        fakeIngress("vault")
+        val a = link.open("npub1a", now = 0)!!
+        val b = link.open("npub1b", now = 0)!!
+        link.close(a)
+        assertNull(read(a))
+        assertEquals("vault", read(b))
+        assertEquals("npub1b", store.npub)
+        link.close(b)
+        assertNull(store.npub)
+        assertEquals(0, link.openCount())
+    }
+
+    @Test fun `an address left unopened past its day is let go on the next open`() {
+        fakeIngress("vault")
+        val a = link.open("npub1a", now = 0)!!
+        link.open("npub1b", now = OtherVaultCopy.KEEP_LINK_MS)
+        assertNull(read(a))
+        assertEquals(1, link.openCount())
+    }
+
+    @Test fun `an engine restart keeps every open address`() {
+        fakeIngress("vault")
+        val a = link.open("npub1a", now = 0)!!
+        val b = link.open("npub1b", now = 0)!!
+        link.restore(now = 1)
+        assertEquals(b, link.url())
+        assertEquals("vault", read(a))
+        assertEquals("vault", read(b))
+    }
+
     @Test fun `nothing kept, nothing restored`() {
         link.restore(now = 0)
         assertNull(link.url())

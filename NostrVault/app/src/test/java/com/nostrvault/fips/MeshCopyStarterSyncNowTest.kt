@@ -2,6 +2,7 @@ package com.nostrvault.fips
 
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -44,7 +45,7 @@ class MeshCopyStarterSyncNowTest {
         records = store,
         setupDone = { setupDone },
         scope = this,
-        nowS = { now },
+        nowS = { now + testScheduler.currentTime / 1000 },
         io = StandardTestDispatcher(testScheduler),
     )
 
@@ -80,9 +81,26 @@ class MeshCopyStarterSyncNowTest {
         val s = starter()
         s.syncNow()
         runCurrent()
+        assertEquals("dialed again for a short while first", emptyList<String>(), engine.syncs)
+        advanceTimeBy(OtherVaultCopy.DIAL_WINDOW_S * 1000)
+        runCurrent()
         assertEquals(listOf(mac), engine.syncs)
         assertEquals("unreachable", s.sync.value.failed[box])
         assertEquals(mac, s.sync.value.running)
+    }
+
+    @Test
+    fun `a desktop found a few seconds after the relay starts still runs`() = runTest {
+        unreachableFor += box
+        val s = starter()
+        s.syncNow()
+        runCurrent()
+        unreachableFor -= box // the mesh found it
+        advanceTimeBy(OtherVaultCopy.DIAL_RETRY_S * 1000)
+        runCurrent()
+        assertEquals(listOf(box), engine.syncs)
+        assertEquals(box, s.sync.value.running)
+        assertTrue(box !in s.sync.value.failed)
     }
 
     @Test

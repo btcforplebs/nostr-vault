@@ -124,7 +124,7 @@ class FirstRunImport @Inject constructor(
                 if (now != null && !stillToRead(now, url)) break
                 delay(LINK_CHECK_MS)
             }
-            otherVaultLink.close()
+            otherVaultLink.close(url)
         }
     }
 
@@ -135,7 +135,7 @@ class FirstRunImport @Inject constructor(
         job?.cancel()
         _state.value = State.Idle
         linkWatch?.cancel()
-        if (otherVault != null) otherVaultLink.close()
+        otherVault?.let(otherVaultLink::close)
         otherVault = null
     }
 
