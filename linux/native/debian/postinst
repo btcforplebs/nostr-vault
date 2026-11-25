@@ -24,7 +24,9 @@ if [ "$1" = configure ]; then
   # one has no handler for it and quits, so nobody keeps an old window (beta 9's stayed up, and a newer install, or
   # the Flatpak, opened in it). Open Nostr Vault again from your apps then.
   if command -v pkill >/dev/null; then
-    pkill -USR2 -f '^/usr/bin/python3(\.[0-9]+)? -I /usr/bin/nostr-vault-desktop( |$)' || true
+    # /usr/sbin too: on Fedora and Arch it is /usr/bin under another name, first on PATH, so a launcher's
+    # "nostr-vault-desktop" runs as /usr/sbin/nostr-vault-desktop.
+    pkill -USR2 -f '^(/usr)?/s?bin/python3(\.[0-9]+)? -I (/usr)?/s?bin/nostr-vault-desktop( |$)' || true
   fi
   if [ -d /run/systemd/system ]; then
     systemctl daemon-reload

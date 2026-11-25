@@ -8,7 +8,7 @@
 # Runs before setup (the setup page is the window's page). NV_PAINT_GIVE_UP_S makes each try 15 s, not 45.
 G=15
 RJ=$HOME/.config/nostr-vault-desktop/renderer.json
-POSTINST_PATTERN='^/usr/bin/python3(\.[0-9]+)? -I /usr/bin/nostr-vault-desktop( |$)' # as linux/native/debian/postinst
+POSTINST_PATTERN='^(/usr)?/s?bin/python3(\.[0-9]+)? -I (/usr)?/s?bin/nostr-vault-desktop( |$)' # as linux/native/debian/postinst
 # freeze <log> <regex or ''> <s>: stop every web process the window starts, for up to s seconds or until the log
 # says regex (true then; with no regex, true after s seconds).
 freeze() {
@@ -83,7 +83,7 @@ if [ "${NV_WT_CONTROL:-1}" = 1 ]; then
     if [ "$c" -lt "$MIN_COLOURS" ] && ! grep -q "trying the window again" "$OUT/$MODE-blank-control.log"; then
       ok "control: without the check the frozen page leaves the window blank ($c colours after $((2 * G + 10)) s)"
     else no "control: without the check the window drew $c colours, so the checks above can't tell"; fi
-    stop; thaw
+    stop; pkill -u "$(id -u)" -f "$RUN/no-check" 2>/dev/null; thaw
   fi
 fi
 
