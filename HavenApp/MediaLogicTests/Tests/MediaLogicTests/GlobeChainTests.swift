@@ -33,4 +33,14 @@ final class GlobeChainTests: XCTestCase {
         XCTAssertEqual(GlobeChain.links(from: pk(4), copy: nil, follows: []), [])
         XCTAssertEqual(GlobeChain.links(from: pk(99), copy: try copy(), follows: []), [])
     }
+
+    func testThePathStartsOnTheTappedPersonOnlyWhenTheirPointIsFound() {
+        let all = GlobeChain.path([1, 2, nil, 4])
+        XCTAssertEqual(all.points, [1, 2, 4], "a missing link is skipped")
+        XCTAssertTrue(all.startsAtTapped)
+        let lost = GlobeChain.path([nil, 2, 3])
+        XCTAssertEqual(lost.points, [2, 3], "it still runs on to you")
+        XCTAssertFalse(lost.startsAtTapped, "no start ring on someone else")
+        XCTAssertFalse(GlobeChain.path([Int?]()).startsAtTapped)
+    }
 }

@@ -13,6 +13,14 @@ enum GlobeChain {
         let hop: Int?
     }
 
+    /// The points a path is drawn through, from each link's point where it is
+    /// on screen (nil where not), and whether the first is the tapped person
+    /// (Tron on PR 2526): when theirs is missing the line still runs from the
+    /// next known point, but no start ring marks someone else.
+    static func path<Point>(_ found: [Point?]) -> (points: [Point], startsAtTapped: Bool) {
+        (found.compactMap { $0 }, found.first.map { $0 != nil } ?? false)
+    }
+
     /// `key` first, then each `via` in, ending at one of your follows (hop
     /// 1) or wherever the copy stops knowing. Never loops, never longer than
     /// the rings there are.

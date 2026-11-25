@@ -39,15 +39,18 @@ enum GlobeHopSphere {
 
     // MARK: Picture window
 
-    /// The picked sphere's top people now on, or coming round to, the side
-    /// facing you: the canvas keeps their pictures as symbols, so faces
-    /// load as the sphere turns rather than only those in front at rest
-    /// (Logen 2026-11-25), without holding all 300 at once.
+    /// The picked sphere's top people who can show a face now (at most
+    /// `maxFaces`) or are just coming round (at most `maxComing`)
+    /// (`GlobeSphereField.window`): the canvas keeps only their pictures as
+    /// symbols, so faces load as the sphere turns (Logen 2026-11-25) without
+    /// holding every one on the front (Tron on PR 2526).
     private static var facing: Set<String> = []
     private static var windowSent: Set<String> = []
     private static var windowSentAt: TimeInterval = -.infinity
     /// A point counts as coming round from here (front 0 is the back).
     static let windowFrom = 0.3
+    /// At most this many coming round are kept ready.
+    static let maxComing = maxFaces / 2
     /// The window is sent on at most this often while the sphere turns.
     static let windowEvery: TimeInterval = 0.4
 
@@ -208,6 +211,8 @@ enum GlobeHopSphere {
         let back = 0.55 + 0.45 * picked
         let topCount = b.top.count
         var tapTargets: [Target] = []
+        var fronts: [Double] = []
+        fronts.reserveCapacity(b.top.count)
         for (i, p) in b.points.enumerated() {
             let q = GlobeSphereField.project(turn * p)
             let at = CGPoint(x: centre.x + q.x * r, y: centre.y + q.y * r)
@@ -223,7 +228,7 @@ enum GlobeHopSphere {
                 a = (0.06 + 0.22 * q.front) * shown * back
                 size = 1.2 * q.scale * zoomed * back
             }
-            if isTop, picked > 0.5, q.front >= windowFrom { facing.insert(b.top[i]) }
+            if isTop { fronts.append(q.front) }
             if isTop, pictures.contains(b.top[i]), q.front >= faceFrom {
                 faces.append((b.top[i], at, faceSize * q.scale * zoomed, q.front, i))
             }
@@ -237,6 +242,10 @@ enum GlobeHopSphere {
             for level in 1...levels where !buckets[kind.rawValue][level].isEmpty {
                 context.fill(buckets[kind.rawValue][level], with: .color(color.opacity(Double(level) / Double(levels))))
             }
+        }
+        if picked > 0.5 {
+            facing = Set(GlobeSphereField.window(fronts: fronts, faceFrom: faceFrom, comingFrom: windowFrom,
+                                                 faces: maxFaces, coming: maxComing).map { b.top[$0] })
         }
         fill(.haze, ink.haze)
         fill(.top, ink.ring)
