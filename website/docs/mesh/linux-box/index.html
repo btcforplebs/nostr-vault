@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>A Linux box in My Devices — Nostr Vault Docs</title>
-    <meta name="description" content="Pair a Nostr Vault Linux box with your phone or Mac from the box's own page (or by its mesh address on beta 10 and earlier), what the box's own page shows, how the box keeps its own key, and what runs on it.">
+    <meta name="description" content="Pair a Nostr Vault Linux box with your phone or Mac from the box's own page (or by its mesh address on an older beta), what the box's own page shows, how the box keeps its own key, and what runs on it.">
     <link rel="canonical" href="https://nostrvault.app/docs/mesh/linux-box/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/mesh/linux-box/">
     <meta property="og:title" content="A Linux box in My Devices — Nostr Vault Docs">
-    <meta property="og:description" content="Pair a Nostr Vault Linux box with your phone or Mac from the box's own page (or by its mesh address on beta 10 and earlier), what the box's own page shows, how the box keeps its own key, and what runs on it.">
+    <meta property="og:description" content="Pair a Nostr Vault Linux box with your phone or Mac from the box's own page (or by its mesh address on an older beta), what the box's own page shows, how the box keeps its own key, and what runs on it.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -61,8 +61,8 @@
                     <li><a href="/docs/start/android/">Android</a></li>
                     <li><a href="/docs/start/mac/">Mac</a></li>
                     <li><a href="/docs/start/web/">Web browser</a></li>
-                    <li><a href="/docs/start/linux/">Linux (beta)</a></li>
-                    <li><a href="/docs/start/raspberry-pi/">Raspberry Pi (beta)</a></li>
+                    <li><a href="/docs/start/linux/">Linux</a></li>
+                    <li><a href="/docs/start/raspberry-pi/">Raspberry Pi</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -90,7 +90,7 @@
                     <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
                     <li><a href="/docs/mesh/desktop-vaults/">Desktop Vaults</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
-                    <li><a href="/docs/mesh/linux-box/" aria-current="page">Linux box (beta)</a></li>
+                    <li><a href="/docs/mesh/linux-box/" aria-current="page">Linux box</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
@@ -134,7 +134,7 @@
         <main class="docs-main">
             <p class="eyebrow">Mesh and your devices</p>
             <h1>A Linux box in My Devices</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#pair">Pair from the box's page</a></li><li><a href="#link">Beta 10 and earlier: link the box by its address</a></li><li><a href="#page">The box's page</a></li><li><a href="#keys">Keys: what the box holds</a></li><li><a href="#services">What runs on the box</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#pair">Pair from the box's page</a></li><li><a href="#link">Linux beta 10 and earlier: link the box by its address</a></li><li><a href="#page">The box's page</a></li><li><a href="#keys">Keys: what the box holds</a></li><li><a href="#services">What runs on the box</a></li></ul></div>
 
             <article class="docs-article">
                 <p>A Linux box (see <a href="/docs/start/linux/">Get started on Linux</a>) joins your devices like a Mac does and is
@@ -142,7 +142,7 @@
                     your phone scans it.</p>
 
                 <h2 id="pair">Pair from the box's page</h2>
-                <p>From the Linux release after beta 10, the box keeps its own list of paired devices.</p>
+                <p>The box keeps its own list of paired devices (Linux 3.3.0 and newer).</p>
                 <ol class="steps">
                     <li>On the box's page (Settings &rarr; <span class="ui">This Box</span>), under <span class="ui">My Devices</span>,
                         tap <span class="ui">Add a device</span>. The box shows a pairing code for your phone. Only show it to your own
@@ -157,12 +157,12 @@
                         pair.</li>
                     <li><span class="ui">Remove</span> next to a device takes it off at once: it can't copy from the box again, even
                         after a restart. This is the only way to take a device off the box: your media server list no longer decides.</li>
-                    <li>After the update, the box first trusts the devices it already let in, then only its own list.</li>
+                    <li>After an update from a beta, the box first trusts the devices it already let in, then only its own list.</li>
                     <li>A paired box serves your far-ring rankings to the devices paired with it
                         (<a href="/docs/mesh/desktop-vaults/#rankings">more</a>).</li>
                 </ul>
 
-                <h2 id="link">Beta 10 and earlier: link the box by its address</h2>
+                <h2 id="link">Linux beta 10 and earlier: link the box by its address</h2>
                 <ol class="steps">
                     <li>Get the box's address. On the box's page (Settings &rarr; <span class="ui">This Box</span>) copy
                         <span class="ui">This box</span> under <span class="ui">My Devices</span>. On a desktop, the tray's
@@ -198,8 +198,8 @@
                         <span class="ui">Make this vault public on the web</span> puts it in your relay list and DM inbox, after your
                         other Vaults. Other boxes and Macs can be public too. A box with no web address is reached only by your own
                         devices over the mesh. More on <a href="/docs/mesh/sync/#public-web">Public on the web</a>.</li>
-                    <li><span class="ui">Update</span>: <span class="ui">Check for update and install</span>. In the beta, updates are
-                        manual: install the newer package on the box.</li>
+                    <li><span class="ui">Update</span>: <span class="ui">Check for update and install</span>. Updates are manual for
+                        now: install the newer package on the box.</li>
                 </ul>
 
                 <h2 id="keys">Keys: what the box holds</h2>
@@ -223,7 +223,7 @@
                     Settings are in <code>/etc/nostr-vault/vault.env</code> (no secrets in it). The details are in
                     <a href="https://github.com/btcforplebs/nostr-vault/blob/master/linux/native/README.md">linux/native/README.md</a>.</p>
             </article>
-            <p class="docs-checked">Checked against Nostr Vault 3.2.3 and Nostr Vault for Linux beta 1.</p>
+            <p class="docs-checked">Checked against Nostr Vault 3.3.0 on every platform.</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/mesh/home-vault/"><span>Previous</span>Mobile and desktop vaults</a>
                 <a class="next" href="/docs/mesh/photo-server/"><span>Next</span>Photo server</a>
