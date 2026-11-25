@@ -23,6 +23,13 @@ final class ZapPendingTests: XCTestCase {
         XCTAssertGreaterThan(ZapWait.receipt, ZapWait.reply, "the receipt is still looked for after the wallet's wait ends")
     }
 
+    /// Minibits answers NWC from a push and can take minutes to wake (cashu design §6c): after the
+    /// 90 s reply wait, the receipt is still looked for until the pending zap's 10 minutes are up.
+    func testReceiptIsLookedForTenMinutes() {
+        XCTAssertEqual(ZapWait.receipt, 600, "slow-waking wallets get 10 minutes")
+        XCTAssertEqual(ZapWait.receipt, ZapPendingGuard.window, "the pill and the second-zap guard end together")
+    }
+
     func testNoAnswerAfterSendingIsPendingNotFailed() {
         XCTAssertEqual(ZapWaitOutcome.noAnswer(requestSent: true), .pending)
         XCTAssertEqual(ZapWaitOutcome.noAnswer(requestSent: false), .failed, "nothing reached the wallet")

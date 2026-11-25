@@ -193,7 +193,7 @@ class ZapService: ObservableObject {
                 ZapNotificationManager.shared.markSuccess(id: notifId)
             case .mayStillSettle(let error, let watch):
                 RelayProcessManager.shared.addLog("Zap: \(error.localizedDescription) Waiting for the receipt.", level: "WARN")
-                ZapNotificationManager.shared.markPending(id: notifId)
+                ZapNotificationManager.shared.markPending(id: notifId, invoice: invoice)
                 Task { @MainActor [weak self] in
                     let found = await watch.value
                     self?.settlePending(found: found, key: pendingKey, notifId: notifId, noteId: noteId, amountSats: amountSats)
