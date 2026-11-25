@@ -20,11 +20,10 @@ struct TrustMapOuter: Equatable {
         let hop: Int
         /// The ring's top from the globe list, best first, at most `shownPeople`.
         let top: [String]
-        /// Each of `top`'s link one ring in (`TrustRankCopy.GlobePerson.via`):
-        /// the zoomed globe draws a line to them (`GlobeRingZoom`).
+        /// Each of `top`'s link one ring in (`TrustRankCopy.GlobePerson.via`).
         var via: [String: String] = [:]
         /// The people ranked after `top`, best first (`TrustRankCopy.haze`):
-        /// the zoomed-out ring's faint, untappable dots (`GlobeHaze`).
+        /// the picked hop sphere's faint, untappable dots (`GlobeHopSphere`).
         var haze: [String] = []
         var id: Int { hop }
         var count: Int { top.count }

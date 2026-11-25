@@ -72,25 +72,6 @@ final class GlobeHazeTests: XCTestCase {
         XCTAssertEqual(outer.rings.first { $0.hop == 3 }?.count, 2, "the chip counts the tappable top only")
     }
 
-    func testTheBestSitNearestTheCentreAndEveryDotIsInTheField() {
-        let keys = (0..<2000).map(pk)
-        let p = GlobeHazeField.positions(keys)
-        let d = p.map { Double(hypot($0.x, $0.y)) }
-        let j = GlobeHazeField.jitter
-        for r in d {
-            XCTAssertGreaterThanOrEqual(r, GlobeHazeField.nearest - j - 1e-9)
-            XCTAssertLessThanOrEqual(r, GlobeHazeField.furthest + j + 1e-9)
-        }
-        let avg = { (s: ArraySlice<Double>) in s.reduce(0, +) / Double(s.count) }
-        XCTAssertLessThan(avg(d[..<200]), avg(d[1800...]), "best nearest the centre")
-        // A dot's angle is its key's, the same as the ring's dots.
-        let a = atan2(p[7].y, p[7].x)
-        let want = GlobeHazeField.hash(keys[7]).angle
-        XCTAssertEqual(cos(a), cos(want), accuracy: 1e-9)
-        XCTAssertEqual(sin(a), sin(want), accuracy: 1e-9)
-        XCTAssertEqual(GlobeHazeField.positions(keys), p, "it never moves")
-    }
-
     func testRingsInsideThePickedOneSinkAndThePickedRingStaysCentred() {
         let half = 200.0
         XCTAssertEqual(GlobeRingZoom.sink(hop: 2, level: 0, half: half).drop, 0)
@@ -102,12 +83,14 @@ final class GlobeHazeTests: XCTestCase {
             XCTAssertEqual(picked.scale, 1)
             for inner in 2..<hop {
                 let s = GlobeRingZoom.sink(hop: inner, level: level, half: half)
-                XCTAssertGreaterThan(s.drop, 0.3 * half, "hop \(inner) sinks down at Hop \(hop)")
+                XCTAssertGreaterThan(s.drop, 0.9 * half, "hop \(inner) sinks down at Hop \(hop)")
                 XCTAssertLessThan(s.scale, 0.85)
-                // A sunk ring stays inside the picked one.
+                // A sunk ring sits underneath the picked sphere: its middle
+                // past the sphere's lower edge, and on screen.
                 let r = inner < 3 ? GlobeRingZoom.innerOutline(level: level, outline: 0.5 * half)
                     : GlobeRingZoom.radius(hop: inner, level: level, outline: 0.5 * half, half: half)
-                XCTAssertLessThan(s.drop + r * s.scale, GlobeRingZoom.fit * half, "hop \(inner) at Hop \(hop)")
+                XCTAssertGreaterThan(s.drop, GlobeRingZoom.fit * half, "hop \(inner) at Hop \(hop)")
+                XCTAssertLessThan(s.drop + r * s.scale, 2 * half, "hop \(inner) at Hop \(hop)")
             }
         }
         // It eases: no jump between picks, both ways.

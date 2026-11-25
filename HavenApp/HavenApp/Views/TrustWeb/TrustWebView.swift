@@ -237,8 +237,12 @@ struct TrustWebView: View {
         .onChange(of: layer) { _, _ in
             prepareLayerFaces()
             relightLayer()
+            fetchSphereProfiles()
         }
-        .onChange(of: outerWatch.outer) { _, _ in dropLockedLayer() }
+        .onChange(of: outerWatch.outer) { _, _ in
+            dropLockedLayer()
+            fetchSphereProfiles()
+        }
         // Back onto someone: their faces again, and their web if it failed.
         .onChange(of: centerKey) { _, key in
             guard key != me else { return }

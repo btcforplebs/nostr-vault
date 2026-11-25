@@ -2,9 +2,10 @@ import CoreGraphics
 import Foundation
 
 /// The WOT tab's Hop 3, Hop 4 and Hop 5 layers zoom your own globe out to
-/// that outer ring: the inner spheres shrink toward the middle and fade, the
-/// rings inside the picked one close up around them, and the picked ring
-/// grows to fill the frame (Logen 2026-11-24, "best visual effort").
+/// that outer ring: the inner globe shrinks, fades and sinks away
+/// underneath, and the picked ring grows into a sphere of its own that fills
+/// the frame (Logen 2026-11-24, "best visual effort"; a sphere, not a flat
+/// ring, 2026-11-25).
 ///
 /// `level` is a continuous zoom: 0 is your circle (Everyone, Following,
 /// Vouched), 1 is Hop 3, 2 is Hop 4, 3 is Hop 5. The globe eases it from
@@ -29,22 +30,24 @@ enum GlobeRingZoom {
     static let fit = 0.84
     /// Rings inside the picked one are drawn this strongly.
     static let insideAlpha = 0.6
-    /// At most this many of the picked ring's people get a line to the
-    /// person one ring in who links them to you (`TrustRankCopy.GlobePerson.via`).
-    /// 120 drew a web of chords right across the ring and over the shrunk
-    /// globe (a via's place on its ring has nothing to do with yours), so
-    /// only the best 40 get one, faint.
-    static let maxLinks = 40
 
-    /// The zoom level a hop layer asks for; nil (your circle) is 0.
+    /// How much `hop`'s ring is drawn as its own sphere (0 to 1) rather than
+    /// a flat ring: once it is picked, and still while it has sunk under a
+    /// later pick. Your circle (level 0) draws every ring flat.
+    static func sphere(hop: Int, level: Double) -> Double {
+        min(1, emphasis(hop: hop, level: level) + inside(hop: hop, level: level))
+    }
+
     // MARK: Sink (Logen 2026-11-24)
 
     /// Everything inside the picked ring (the inner globe, and the rings
     /// between it and the picked one) sinks down and gets smaller, so it
-    /// reads as pulling back into space; the picked ring and its haze
-    /// (`GlobeHazeField`) stay centred. How far down, as a share of half the
-    /// frame's short side, at each whole level.
-    static let sinkDrops: [Double] = [0, 0.34, 0.36, 0.38]
+    /// reads as pulling back into space; the picked ring's sphere
+    /// (`GlobeHopSphere`) stays centred. How far down, as a share of half the
+    /// frame's short side, at each whole level: far enough that what sank
+    /// sits underneath the picked sphere, at its bottom edge, not inside it
+    /// (Logen 2026-11-25, "translating with the one below").
+    static let sinkDrops: [Double] = [0, 0.95, 1.0, 1.04]
     /// How much smaller what sinks is drawn, on top of `innerScales`.
     static let sinkScales: [Double] = [1, 0.8, 0.74, 0.68]
 
@@ -79,6 +82,7 @@ enum GlobeRingZoom {
         whole > 0 && hop < TrustMapOuter.firstHop + whole - 1 ? 1 : 0
     }
 
+    /// The zoom level a hop layer asks for; nil (your circle) is 0.
     static func level(hop: Int?) -> Double {
         guard let hop else { return 0 }
         return Double(min(maxLevel, max(1, hop - TrustMapOuter.firstHop + 1)))

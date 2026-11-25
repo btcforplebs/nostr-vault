@@ -1,4 +1,5 @@
 import SwiftUI
+import simd
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -31,6 +32,9 @@ struct TrustGlobeCanvas: View {
     let summary: String
     let avatar: (String, CGFloat) -> AnyView
     let name: (String) -> String
+    /// Whether someone's picture is known: a hop sphere seats only those as
+    /// faces, so it never fills with lettered stand-ins.
+    var hasPicture: (String) -> Bool = { _ in true }
     let onTap: (String) -> Void
     /// The person the trust card is about: the globe turns to face them.
     var focus: String? = nil
@@ -119,21 +123,22 @@ struct TrustGlobeCanvas: View {
                 Canvas { context, size in
                     let now = timeline.date.timeIntervalSinceReferenceDate
                     scene.ink = day ? .day : .night
-                    if showsOuterRings {
-                        GlobeOuterRings.draw(outer.outer, in: &context, size: size, zoom: scene.camera.zoom,
-                                             phone: GlobeScene.isPhone, ink: scene.ink, level: scene.ringZoom)
-                    }
+                    // Ticked before anything is drawn, so a hop sphere turns
+                    // with this frame's camera, the same as the inner globe.
                     #if DEBUG
                     probe.frame(at: now, lines: { scene.arcsInFlight }) {
                         scene.tick(now: now)
-                        scene.draw(in: &context, size: size, accent: .orange, name: name)
+                        drawScene(in: &context, size: size)
                     }
                     #else
                     scene.tick(now: now)
-                    scene.draw(in: &context, size: size, accent: .orange, name: name)
+                    drawScene(in: &context, size: size)
                     #endif
                 } symbols: {
                     ForEach(scene.faceKeys, id: \.self) { key in
+                        avatar(key, GlobeScene.pictureSize).tag(key)
+                    }
+                    ForEach(spherePictures, id: \.self) { key in
                         avatar(key, GlobeScene.pictureSize).tag(key)
                     }
                 }
@@ -200,7 +205,7 @@ struct TrustGlobeCanvas: View {
         .onChange(of: filterLit) { _, lit in scene.filter(lit) }
         .onChange(of: outer.outer) { _, _ in if showsOuterRings { scene.wake() } }
         .onChange(of: focus) { _, key in
-            if let key { scene.turn(to: key) }
+            if let key { scene.turn(to: key, on: showsOuterRings ? GlobeHopSphere.direction(of: key) : nil) }
             scene.trace(to: key, through: focusBridges)
         }
         .onChange(of: focusBridges) { _, bridges in scene.trace(to: focus, through: bridges) }
@@ -231,6 +236,36 @@ struct TrustGlobeCanvas: View {
             scene.load(frame, me: me, author: author, myFollows: myFollows, haze: haze, closeHaze: closeHaze,
                        ringFaces: ringFaces, layerFaces: layerFaces, layer: layer)
         }
+    }
+
+    /// The flat rings behind the globe, the globe, then a picked hop's
+    /// sphere over it (`GlobeOuterRings.drawSpheres`).
+    private func drawScene(in context: inout GraphicsContext, size: CGSize) {
+        guard showsOuterRings else {
+            return scene.draw(in: &context, size: size, accent: .orange, name: name)
+        }
+        let zoom = scene.camera.zoom, level = scene.ringZoom
+        GlobeOuterRings.draw(outer.outer, in: &context, size: size, zoom: zoom,
+                             phone: GlobeScene.isPhone, ink: scene.ink, level: level)
+        scene.draw(in: &context, size: size, accent: .orange, name: name)
+        GlobeOuterRings.drawSpheres(outer.outer, in: &context, size: size, zoom: zoom, phone: GlobeScene.isPhone,
+                                    ink: scene.ink, level: level, turn: simd_double3x3(scene.camera.orientation),
+                                    pole: GlobeSphereField.pole(center: center), pictures: Set(sphereFaces), focus: focus)
+    }
+
+    /// Who on the picked hop's sphere may show a face: its best people
+    /// whose picture is in.
+    private var sphereFaces: [String] {
+        guard showsOuterRings, let hop = layer.hop,
+              let ring = outer.outer.rings.first(where: { $0.hop == hop }) else { return [] }
+        return GlobeHopSphere.pictureKeys(ring).filter(hasPicture)
+    }
+
+    /// Their symbols, less any the globe already registers (a tag must be
+    /// unique; a traced person is drawn from the globe's own symbol).
+    private var spherePictures: [String] {
+        let taken = Set(scene.faceKeys)
+        return sphereFaces.filter { !taken.contains($0) }
     }
 
     /// False while a sheet or another app covers the globe: the clock stops.
@@ -283,7 +318,9 @@ struct TrustGlobeCanvas: View {
         SpatialTapGesture(count: 2)
             .onEnded { _ in scene.reset() }
             .exclusively(before: SpatialTapGesture().onEnded { tap in
-                guard let key = scene.hit(tap.location, in: size) else { return onEmptyTap() }
+                // A hop's sphere is in front of the inner globe sunk under it.
+                let onSphere = showsOuterRings ? GlobeHopSphere.hit(tap.location) : nil
+                guard let key = onSphere ?? scene.hit(tap.location, in: size) else { return onEmptyTap() }
                 #if os(iOS)
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 #endif

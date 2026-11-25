@@ -296,8 +296,10 @@ final class GlobeScene: ObservableObject {
     }
 
     /// Turn toward someone tapped, before their globe has loaded.
-    func turn(to key: String) {
-        camera.fly(to: GlobeCamera.facing(TrustMap.direction(of: key)), at: Date.timeIntervalSinceReferenceDate)
+    /// `on` is where they sit when that is not their spot on this globe
+    /// (a picked hop's sphere, `GlobeHopSphere.direction`).
+    func turn(to key: String, on direction: SIMD3<Double>? = nil) {
+        camera.fly(to: GlobeCamera.facing(direction ?? TrustMap.direction(of: key)), at: Date.timeIntervalSinceReferenceDate)
         wake()
     }
 
@@ -334,7 +336,11 @@ final class GlobeScene: ObservableObject {
     func focus(_ layer: TrustMap.Layer, zoomsToRings: Bool = false) {
         weightTarget = TrustMap.layerWeights(layer)
         if reduceMotion { weights = weightTarget }
-        ringZoomTarget = zoomsToRings ? GlobeRingZoom.level(hop: layer.hop) : 0
+        let target = zoomsToRings ? GlobeRingZoom.level(hop: layer.hop) : 0
+        // A hop's sphere puts its best people on the side that faces you at
+        // rest (`GlobeSphereField.pole`): turn back to rest as it zooms out.
+        if target > 0, target != ringZoomTarget, hasLoaded { reset() }
+        ringZoomTarget = target
         if reduceMotion { ringZoom = ringZoomTarget }
         wake()
     }
@@ -886,3 +892,4 @@ final class GlobeScene: ObservableObject {
         CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
     }
 }
+

@@ -36,4 +36,17 @@ extension TrustWebView {
     func dropLockedLayer() {
         if isLocked(layer) { layer = .everyone }
     }
+
+    /// A picked hop's sphere shows faces only for people whose picture is
+    /// in (`GlobeHopSphere`): ask for its best people's profiles.
+    func fetchSphereProfiles() {
+        guard isWOTTab, let hop = layer.hop, let ring = outerWatch.outer.rings.first(where: { $0.hop == hop }) else { return }
+        nostrService.fetchMissingProfiles(for: GlobeHopSphere.pictureKeys(ring))
+    }
+
+    /// Whether `key`'s picture is known, so the sphere draws their face
+    /// rather than a lettered stand-in.
+    func hasPicture(_ key: String) -> Bool {
+        nostrService.profiles[key]?.pictureURL != nil
+    }
 }
