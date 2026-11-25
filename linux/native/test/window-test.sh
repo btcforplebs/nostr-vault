@@ -205,7 +205,7 @@ if [ "$STAGE" = close ]; then
     echo "OPEN pid=$p rss=$(rss $p) webkit=$(webkids $p)"
     gdbus call --session --dest app.nostrvault.Desktop --object-path /app/nostrvault/Desktop --method org.gtk.Actions.Activate close "[]" "{}" >/dev/null
     for i in $(seq 1 30); do sleep 2; case "$(tr "\0" " " </proc/$p/cmdline 2>/dev/null)" in *--tray*) [ "$(webkids $p)" = 0 ] && break ;; esac; done; sleep 3
-    echo "CLOSED alive=$([ -d /proc/$p ] && echo 1 || echo 0) tray=$(tr "\0" " " </proc/$p/cmdline 2>/dev/null | grep -c -- --tray) rss=$(rss $p) webkit=$(webkids $p) zombies=$(ps -o stat= --ppid $p | grep -c Z)"
+    echo "CLOSED alive=$([ -d /proc/$p ] && echo 1 || echo 0) tray=$(tr "\0" " " </proc/$p/cmdline 2>/dev/null | grep -c -- --tray) rss=$(rss $p) webkit=$(webkids $p) zombies=$(ps -o stat= --ppid $p | grep -c Z) kids=$(ps -o stat=,comm= --ppid $p | tr -s " " | tr "\n" ",")"
     $0 --open feed
     for i in $(seq 1 30); do [ "$(webkids $p)" -ge 1 ] && break; sleep 2; done
     echo "REOPENED webkit=$(webkids $p)"
