@@ -191,6 +191,7 @@ class Checker:
         self.cairo_ok = True
         self._web_left = set()  # leftover WebKit/bwrap processes from before starting over, still running
         self._held = None  # the window the shell asked for while they run (hold)
+        self._hold_until = 0  # hold never waits past this (monotonic): a killed process stuck in the kernel stays
         log(f"drawing mode {mode} ({why})" + (f"; failed before: {', '.join(tried)}" if tried else ""))
         self.reap_leftovers()
 
@@ -207,6 +208,7 @@ class Checker:
         from gi.repository import GLib
         began = time.monotonic()
         self._web_left = {p for p, c in left.items() if c.startswith("WebKit") or c == "bwrap"}
+        self._hold_until = began + LEFTOVER_KILL_S + 3
 
         def step():
             for pid in list(left):
@@ -232,7 +234,10 @@ class Checker:
                         os.kill(pid, signal.SIGKILL)
                     except OSError:
                         pass
-            return bool(left) and time.monotonic() - began < LEFTOVER_WAIT_S
+            going = bool(left) and time.monotonic() - began < LEFTOVER_WAIT_S
+            if not going:
+                self._web_left = set()
+            return going
 
         GLib.timeout_add(500, step)
 
@@ -269,7 +274,7 @@ class Checker:
         """The shell's show(): True (and fn runs later) while WebKit processes from before starting over still run.
         A new window's network process would open the same cookies, IndexedDB and localStorage as the old one, still
         shutting down (an update, a failed drawing mode): at most LEFTOVER_KILL_S, then they are killed."""
-        if not self._web_left:
+        if not self._web_left or time.monotonic() >= self._hold_until:
             return False
         if self._held is None:
             self.log(f"waiting for {len(self._web_left)} WebKit process(es) from before starting over to end, "
