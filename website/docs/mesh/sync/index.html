@@ -88,6 +88,7 @@
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
                     <li><a href="/docs/mesh/sync/" aria-current="page">Your Devices and sync</a></li>
+                    <li><a href="/docs/mesh/desktop-vaults/">Desktop Vaults</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
                     <li><a href="/docs/mesh/linux-box/">Linux box (beta)</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
@@ -150,12 +151,15 @@
                     phone</span> (<span class="ui">Connect a phone</span> on the Mac) turns the mesh on if needed and starts the two scans
                     on <a href="/docs/mesh/my-devices/#add">Link a device</a>.</p>
                 <p>Under <span class="ui">Advanced</span> are <span class="ui">Mesh</span> (rename or remove a device there) and
-                    <span class="ui">Desktop vault by web address</span>, for a Mac you reach by its web address instead of the mesh.</p>
+                    <span class="ui">Desktop Vaults</span>: every Mac and Linux box that keeps your vault, reached over the mesh, by
+                    web address, or both, in the order your public lists use. See <a href="/docs/mesh/desktop-vaults/">Desktop
+                    Vaults</a>.</p>
 
                 <h2 id="many-macs">More than one Mac</h2>
                 <p>Link as many Macs and Linux boxes as you like. Each one gets its own card and its own copy of everything your
-                    phone sends, and each is queued on its own, so one Mac being off doesn't hold up the others. Remove a Mac and its
-                    role moves to the next one on the list.</p>
+                    phone sends, and each is queued on its own, so one Mac being off doesn't hold up the others. There is no main one:
+                    each desktop Vault catches up on its own, and the order under <a href="/docs/mesh/desktop-vaults/#order">Desktop
+                    Vaults</a> sets which comes first in your public lists.</p>
 
                 <h2 id="full-copy">Full copy, on by default</h2>
                 <p>On iPhone, iPad and Android, <span class="ui">This phone</span> has <span class="ui">Keep a full copy on this
@@ -207,7 +211,8 @@
                     it again later and it comes back.</p>
 
                 <h2 id="publish">Your vault can send your posts</h2>
-                <p>When your iPhone or iPad reaches a desktop vault over the mesh, it hands each new post to the vault first. If the
+                <p>When your phone reaches a desktop Vault over the mesh, it hands each new post to the first one in your Desktop
+                    Vaults list that answers. If the
                     vault confirms within about 10 seconds, the vault sends it to your relays and the phone doesn't. If not, the phone
                     sends it itself, as before. Either way your post goes out once. Replies and reactions still go straight to the
                     other person's relays.</p>
@@ -218,14 +223,15 @@
                     <span class="ui">Make this vault public on the web</span>. It is off by default; off, your devices still reach it over
                     the mesh. A Linux box has the same switch on its own page.</p>
                 <ul>
-                    <li>Only one of your Macs is public on the web at a time. Turning it on while another Mac has it asks
-                        <strong>Move public web from &hellip; to &hellip;?</strong>. Tap <span class="ui">Move</span> and your lists name this Mac
-                        instead; the other one turns its switch off.</li>
-                    <li>The public Mac shows <span class="ui">Public on the web</span> on its card. It tells your other devices its web
+                    <li>Several Macs and boxes can be public at once. Each goes into your lists after your other Vaults, in your
+                        <a href="/docs/mesh/desktop-vaults/#order">Desktop Vaults order</a>. Nothing asks you to move it, and nothing
+                        turns itself off.</li>
+                    <li>A public Mac shows <span class="ui">Public on the web</span> on its card. It tells your other devices its web
                         address over the mesh, so they can use it. That address is never put in a public post by this; only the switch
                         lists it.</li>
-                    <li>Listing a vault in your media servers over the mesh is a separate choice, under
-                        <span class="path">Settings &rarr; Media Servers</span> &rarr; <span class="ui">Your Vaults</span>.</li>
+                    <li>Listing a Vault's mesh address in your media servers is a separate switch, <span class="ui">Media over the
+                        Mesh</span>, Beta and off by default: on the Mac's Public on the web page, or on a Vault's page under
+                        <a href="/docs/mesh/desktop-vaults/#mesh-media">Desktop Vaults</a>.</li>
                 </ul>
 
                 <h2 id="good-to-know">Good to know</h2>
@@ -238,7 +244,7 @@
             <p class="docs-checked">Checked against Nostr Vault 3.2.2.</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/mesh/my-devices/"><span>Previous</span>My Devices</a>
-                <a class="next" href="/docs/mesh/home-vault/"><span>Next</span>Mobile and desktop vaults</a>
+                <a class="next" href="/docs/mesh/desktop-vaults/"><span>Next</span>Desktop Vaults</a>
             </div>
         </main>
     </div>

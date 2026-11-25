@@ -4,20 +4,43 @@
   "nav": "Linux box (beta)",
   "section": "mesh",
   "order": 4.5,
-  "description": "Link a Nostr Vault Linux box to your phone or Mac by its mesh address, what the box's own page shows, how the box keeps its own key, and what runs on it.",
+  "description": "Pair a Nostr Vault Linux box with your phone or Mac from the box's own page (or by its mesh address on beta 10 and earlier), what the box's own page shows, how the box keeps its own key, and what runs on it.",
   "checked": "Nostr Vault 3.2.3 and Nostr Vault for Linux beta 1",
   "labels": {
     "ios": ["Add a device", "Paste instead", "This is", "Name (optional)", "Add", "Mobile vault · new posts", "Desktop vault · full history"],
     "android": ["Add a device", "Paste instead", "This is", "Add", "Mobile vault · new posts", "Desktop vault · full history"],
     "web": ["This Box", "Status", "Storage", "Mesh", "My Devices", "Public on the web", "Update", "This box", "Approved", "Waiting",
+            "Add a device", "Show a new code", "Check words", "Remove",
             "Move vault to…", "Mesh address", "Make this vault public on the web", "Check for update and install"]
   }
 }
 -->
-<p>A Linux box (see <a href="/docs/start/linux/">Get started on Linux</a>) joins your devices like a Mac does, but it
-    has no camera and no code to scan. You add it once, by its mesh address, from your phone or Mac.</p>
+<p>A Linux box (see <a href="/docs/start/linux/">Get started on Linux</a>) joins your devices like a Mac does and is
+    one of your <a href="/docs/mesh/desktop-vaults/">Desktop Vaults</a>. It has no camera, so the box shows a code and
+    your phone scans it.</p>
 
-<h2 id="link">Link the box</h2>
+<h2 id="pair">Pair from the box's page</h2>
+<p>From the Linux release after beta 10, the box keeps its own list of paired devices.</p>
+<ol class="steps">
+    <li>On the box's page (Settings &rarr; <span class="ui">This Box</span>), under <span class="ui">My Devices</span>,
+        tap <span class="ui">Add a device</span>. The box shows a pairing code for your phone. Only show it to your own
+        device; <span class="ui">Show a new code</span> makes another.</li>
+    <li>On your phone, start <a href="/docs/mesh/my-devices/#add">Link a device</a> and scan the code.</li>
+    <li>Both screens show four <span class="ui">Check words</span>. If they match, tap They match on the phone, then
+        tap <strong>They match: add this &hellip;</strong> on the box, which also confirms what the phone will be. The box
+        never accepts a device on its own.</li>
+</ol>
+<ul>
+    <li>Your Nostr key is never used and nothing is published. The box keeps a copy of your vault from each device you
+        pair.</li>
+    <li><span class="ui">Remove</span> next to a device takes it off at once: it can't copy from the box again, even
+        after a restart. This is the only way to take a device off the box: your media server list no longer decides.</li>
+    <li>After the update, the box first trusts the devices it already let in, then only its own list.</li>
+    <li>A paired box serves your far-ring rankings to the devices paired with it
+        (<a href="/docs/mesh/desktop-vaults/#rankings">more</a>).</li>
+</ul>
+
+<h2 id="link">Beta 10 and earlier: link the box by its address</h2>
 <ol class="steps">
     <li>Get the box's address. On the box's page (Settings &rarr; <span class="ui">This Box</span>) copy
         <span class="ui">This box</span> under <span class="ui">My Devices</span>. On a desktop, the tray's
@@ -31,8 +54,9 @@
         Mac.</li>
     <li>Give it a name if you like, and tap <span class="ui">Add</span>.</li>
 </ol>
-<p>This adds the box on that device only. Do it on each phone or Mac that should use the box. The box lets in the
-    devices your account lists, so there's nothing to approve on the box itself.</p>
+<p>This adds the box on that device only. Do it on each phone or Mac that should use the box. On beta 10 and
+    earlier the box lets in the devices your account lists in your media servers, so there's nothing to approve on the
+    box itself.</p>
 <div class="done"><p><strong>You're done when</strong> the box's page shows your device as
     <span class="ui">Approved</span> (<span class="ui">Waiting</span> until it has reached the box), and the box
     shows in reach under Your Devices.</p></div>
@@ -46,11 +70,12 @@
         <span class="ui">Move vault to…</span> another folder or drive. The box stops serving while it copies.</li>
     <li><span class="ui">Mesh</span>: whether the mesh is connected, how many peers, and the box's
         <span class="ui">Mesh address</span>.</li>
-    <li><span class="ui">My Devices</span>: the box's own address, and each of your devices that has reached it.</li>
+    <li><span class="ui">My Devices</span>: the box's own address, each of your devices, <span class="ui">Add a
+        device</span> and <span class="ui">Remove</span> (<a href="#pair">above</a>).</li>
     <li><span class="ui">Public on the web</span>: for a box with its own web address,
-        <span class="ui">Make this vault public on the web</span> puts it in your relay list and DM inbox. A box with no
-        web address is reached only by your own devices over the mesh. More on
-        <a href="/docs/mesh/sync/#public-web">Public on the web</a>.</li>
+        <span class="ui">Make this vault public on the web</span> puts it in your relay list and DM inbox, after your
+        other Vaults. Other boxes and Macs can be public too. A box with no web address is reached only by your own
+        devices over the mesh. More on <a href="/docs/mesh/sync/#public-web">Public on the web</a>.</li>
     <li><span class="ui">Update</span>: <span class="ui">Check for update and install</span>. In the beta, updates are
         manual: install the newer package on the box.</li>
 </ul>
