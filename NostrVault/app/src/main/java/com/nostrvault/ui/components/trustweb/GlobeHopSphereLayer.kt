@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -51,10 +52,12 @@ internal fun GlobeHopSphereLayer(
     profiles: Map<String, FeedProfile>,
 ) {
     val hasPicture = { key: String -> profiles[key]?.pictureURL != null }
+    // Leaving (no outer rings any more) drops the sphere's frame, so its targets stop catching taps.
+    DisposableEffect(sphere) { onDispose { sphere.leave() } }
     fun prep(w: Float, h: Float, density: Float) {
         // Read first: it subscribes this layer to the globe's frame clock.
         scene.prepare(w, h, density)
-        sphere.prepare(outer, scene.camera, scene.ringZoom, center, w, h, density, phone, lite, focus, hasPicture)
+        sphere.prepare(outer, scene.camera, scene.ringZoom, center, w, h, density, phone, lite, focus, profiles, hasPicture)
     }
     Canvas(Modifier.fillMaxSize()) {
         prep(size.width, size.height, density)

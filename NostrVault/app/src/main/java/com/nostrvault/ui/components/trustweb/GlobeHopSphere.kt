@@ -140,9 +140,11 @@ internal class GlobeHopSphere {
      */
     fun prepare(
         outer: TrustMapOuter, camera: GlobeCamera, level: Double, center: String, w: Float, h: Float, density: Float,
-        phone: Boolean, lite: Boolean, focus: String?, hasPicture: (String) -> Boolean,
+        phone: Boolean, lite: Boolean, focus: String?, profiles: Any?, hasPicture: (String) -> Boolean,
     ) {
-        val key = listOf(camera.orientation, camera.zoom, level, w, h, outer, focus, center, pictures)
+        // [profiles] is the map [hasPicture] reads: a picture arriving with the clock asleep
+        // (Reduce Motion) still re-seats faces.
+        val key = listOf(camera.orientation, camera.zoom, level, w, h, outer, focus, center, pictures, profiles)
         if (key == frameKey) return
         frameKey = key
         targets.clear(); placed.clear(); bodies.clear(); faceByKey.clear()
@@ -258,11 +260,45 @@ internal class GlobeHopSphere {
 
     /** The pictures to compose, sent on at most every [WINDOW_EVERY] (from the main looper, not mid-frame). */
     private fun publish(keys: List<String>) {
+        main.removeCallbacks(sendLater)
+        later = null
         if (keys == pictures) return
         val now = nowSeconds()
-        if (now - picturesSentAt < WINDOW_EVERY && keys.isNotEmpty()) return
+        val wait = WINDOW_EVERY - (now - picturesSentAt)
+        if (wait > 0 && keys.isNotEmpty()) {
+            // Held, not dropped: with the clock asleep no later frame would send it.
+            later = keys
+            main.postDelayed(sendLater, (wait * 1000).toLong() + 1)
+            return
+        }
         picturesSentAt = now
         main.post { pictures = keys }
+    }
+
+    private var later: List<String>? = null
+    private val sendLater = Runnable {
+        val keys = later ?: return@Runnable
+        later = null
+        picturesSentAt = nowSeconds()
+        pictures = keys
+    }
+
+    /**
+     * The layer has left (no outer rings, e.g. after "See their web"): drop this frame,
+     * so its targets and hole no longer catch taps meant for the globe now shown.
+     */
+    fun leave() {
+        main.removeCallbacks(sendLater)
+        later = null
+        frameKey = null
+        targets.clear(); placed.clear(); bodies.clear(); faceByKey.clear()
+        for (b in bucketOrder) b.count = 0
+        faces = emptyList()
+        hole = null
+        lastPicked = null
+        seated = emptySet()
+        picturesSentAt = Double.NEGATIVE_INFINITY
+        pictures = emptyList()
     }
 
     private fun clear(x: Double, y: Double, pad: Double, hole: Triple<Double, Double, Double>) =

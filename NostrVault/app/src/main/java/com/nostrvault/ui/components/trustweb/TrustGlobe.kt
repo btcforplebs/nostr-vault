@@ -158,6 +158,7 @@ internal fun TrustGlobe(
     val currentLayer by rememberUpdatedState(layer)
     val currentFollows by rememberUpdatedState(myFollows)
     val currentName by rememberUpdatedState(name)
+    val currentShowsOuter by rememberUpdatedState(showsOuterRings)
     val currentOnTap by rememberUpdatedState(onTap)
     val currentOnEmptyTap by rememberUpdatedState(onEmptyTap)
 
@@ -271,7 +272,12 @@ internal fun TrustGlobe(
                         // A hop's sphere is in front, except over the inner globe
                         // nested in its middle: there the globe's own faces come first.
                         fun globe() = scene.hit(at, size.width.toFloat(), size.height.toFloat(), density)
-                        val key = if (sphere.inHole(at)) globe() ?: sphere.hit(at) else sphere.hit(at) ?: globe()
+                        // No outer rings (e.g. after "See their web"): the sphere isn't shown, so only the globe answers.
+                        val key = when {
+                            !currentShowsOuter -> globe()
+                            sphere.inHole(at) -> globe() ?: sphere.hit(at)
+                            else -> sphere.hit(at) ?: globe()
+                        }
                         if (key == null) {
                             currentOnEmptyTap()
                         } else {
