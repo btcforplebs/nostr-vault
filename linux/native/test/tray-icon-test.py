@@ -30,7 +30,8 @@ except ValueError:
     got = None
 fails = []
 if got != want:
-    fails.append(f"the tray's path ({len(got) if got is not None else "unreadable"} commands) isn't the Mac glyph's ({len(want)} commands)")
+    n = "unreadable" if got is None else len(got)
+    fails.append(f"the tray's path ({n} commands) isn't the Mac glyph's ({len(want)} commands)")
 if 'viewBox="%s"' % " ".join(b.decode() for b in box) not in svg:
     fails.append("the tray's viewBox isn't the PDF's page (%s)" % b" ".join(box).decode())
 if 'transform="matrix(1 0 0 -1 0 %s)"' % box[3].decode() not in svg:
