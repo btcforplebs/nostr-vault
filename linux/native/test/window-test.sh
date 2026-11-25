@@ -36,7 +36,7 @@ set -u
 MODE=${1:-}; STAGE=${2:-}; OUT=${3:-}
 CMD=${NV_WT_CMD:-nostr-vault-desktop}
 MIN_COLOURS=${NV_WT_MIN_COLOURS:-64} # a drawn page has hundreds (anti-aliased text); a blank window has 1 or 2
-case "$MODE.$STAGE" in x11.setup|x11.vault|x11.paste|x11.desk|x11.narrow|x11.close|wayland.setup|wayland.vault|wayland.desk|wayland.close) ;; *) echo "usage: $0 <x11|wayland> <setup|vault> <out dir>  (or: x11 paste <out dir>)" >&2; exit 2 ;; esac
+case "$MODE.$STAGE" in x11.setup|x11.vault|x11.blank|wayland.blank|x11.paste|x11.desk|x11.narrow|x11.close|wayland.setup|wayland.vault|wayland.desk|wayland.close) ;; *) echo "usage: $0 <x11|wayland> <setup|vault> <out dir>  (or: x11 paste <out dir>)" >&2; exit 2 ;; esac
 [ -n "$OUT" ] || { echo "no out dir" >&2; exit 2; }
 
 if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
@@ -48,6 +48,7 @@ if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
   cp "$(dirname "$0")/desk-probe.py" /tmp/nvwt-desk-probe.py && chmod 644 /tmp/nvwt-desk-probe.py
   cp "$(dirname "$0")/narrow-probe.py" /tmp/nvwt-narrow-probe.py && chmod 644 /tmp/nvwt-narrow-probe.py
   cp "$(dirname "$0")/close-probe.py" /tmp/nvwt-close-probe.py && chmod 644 /tmp/nvwt-close-probe.py
+  cp "$(dirname "$0")/blank-stage.sh" /tmp/blank-stage.sh && chmod 644 /tmp/blank-stage.sh
   exec runuser -u nvwt -- env NV_WT_INNER=1 NV_WT_CMD="$CMD" NV_WT_CONTROL="${NV_WT_CONTROL:-1}" NV_WT_VAULT_URL="${NV_WT_VAULT_URL:-}" \
     NV_WT_PROBE=/tmp/nvwt-ua-probe.py NV_WT_PASTE_PROBE=/tmp/nvwt-paste-probe.py NV_WT_DESK_PROBE=/tmp/nvwt-desk-probe.py NV_WT_NARROW_PROBE=/tmp/nvwt-narrow-probe.py NV_WT_CLOSE_PROBE=/tmp/nvwt-close-probe.py \
     NV_WT_OWNER="${NV_WT_OWNER:-}" NV_WT_DESK_EXPECT="${NV_WT_DESK_EXPECT:-classic}" NV_WT_PY="${NV_WT_PY:-}" NV_WT_BIN="${NV_WT_BIN:-}" \
@@ -114,6 +115,7 @@ drawn() {
   no "$2: still flat or unchanged after 90 s ($c colours)"; return 1
 }
 webproc() { pgrep -u "$(id -u)" -f WebKitWebProcess | head -1; }
+wenv() { [ -n "$1" ] && tr '\0' '\n' <"/proc/$1/environ" 2>/dev/null | sed -n "s/^$2=//p"; } # wenv <pid> <name>
 # crashloop: for 15 s, kill every web process the window starts, as a GPU driver that kills each renderer would.
 # Prints how many different web processes it saw.
 crashloop() {
@@ -222,6 +224,12 @@ if [ "$STAGE" = close ]; then
   [ "$fail" = 0 ]; exit
 fi
 
+if [ "$STAGE" = blank ]; then
+  . "$(dirname "$0")/blank-stage.sh"
+  echo "RESULT $MODE $STAGE pass=$pass fail=$fail"
+  [ "$fail" = 0 ]; exit
+fi
+
 if [ "$STAGE" = paste ]; then
   command -v xdotool >/dev/null && command -v xclip >/dev/null || abort "no xdotool or xclip"
   pprobe=${NV_WT_PASTE_PROBE:-$(dirname "$0")/paste-probe.py}
@@ -292,12 +300,15 @@ else
   curl -fsS -o /dev/null "$url" 2>/dev/null || no "the vault never answered on $url"
   sleep 8
   drawn "$OUT/$MODE-$STAGE-1-vault.png" "$MODE: the window draws the vault's web app"
-  wp=$(webproc)
-  if [ -n "$wp" ] && tr '\0' '\n' <"/proc/$wp/environ" 2>/dev/null | grep -qx 'WEBKIT_DISABLE_DMABUF_RENDERER=1'; then
-    ok "$MODE: the page's web process runs with the DMA-BUF renderer off"
-  else
-    no "$MODE: the page's web process (${wp:-none}) doesn't have WEBKIT_DISABLE_DMABUF_RENDERER=1"
-  fi
+  # The web process draws in the mode the window chose (nv_paint.py): DMA-BUF off only in the no-dmabuf and
+  # no-compositing modes (first on the NVIDIA driver), and that mode remembered once the window drew.
+  wp=$(webproc); wm=$(wenv "$wp" NV_DESKTOP_RENDERER); wd=$(wenv "$wp" WEBKIT_DISABLE_DMABUF_RENDERER)
+  case "$wm.$wd" in
+    dmabuf.|no-dmabuf.1|no-compositing.1) ok "$MODE: the page's web process draws in mode $wm (DMA-BUF switch '${wd}')" ;;
+    *) no "$MODE: the page's web process (${wp:-none}) has mode '${wm}' and DMA-BUF switch '${wd}'" ;;
+  esac
+  grep -q "remembered drawing mode $wm\|the window draws (mode $wm)" "$OUT/$MODE-$STAGE-window.log" \
+    && ok "$MODE: the window checked that it draws (mode $wm)" || no "$MODE: no 'the window draws (mode $wm)' line"
   pkill -KILL -u "$(id -u)" -f WebKitWebProcess
   drawn "$OUT/$MODE-$STAGE-2-crashed.png" "$MODE: after its web process is killed, the window says it stopped drawing" "$OUT/$MODE-$STAGE-1-vault.png"
   stop

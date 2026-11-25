@@ -20,6 +20,12 @@ if [ "$1" = configure ]; then
   fi
   if command -v gtk-update-icon-cache >/dev/null; then gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true; fi
   if command -v update-desktop-database >/dev/null; then update-desktop-database -q /usr/share/applications || true; fi
+  # A window or tray still running the old version: SIGUSR1 starts it over on the new one (nv_paint.py); an older
+  # one has no handler for it and quits, so nobody keeps an old window (beta 9's stayed up, and a newer install, or
+  # the Flatpak, opened in it). Open Nostr Vault again from your apps then.
+  if command -v pkill >/dev/null; then
+    pkill -USR1 -f '^/usr/bin/python3(\.[0-9]+)? -I /usr/bin/nostr-vault-desktop( |$)' || true
+  fi
   if [ -d /run/systemd/system ]; then
     systemctl daemon-reload
     if grep -q '^NV_OWNER=npub1' /etc/nostr-vault/vault.env 2>/dev/null; then

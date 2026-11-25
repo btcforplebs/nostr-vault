@@ -253,10 +253,14 @@
                     From beta 7, a wide window shows the same screens as the phone app and the website, not the new desktop pages
                     that are still being tested.</p>
                 <p><strong>A black or blank window?</strong> First check the vault itself: open <code>http://127.0.0.1:8080/</code>
-                    in your web browser. If the vault shows there, only the window is stuck. Beta 4 and newer turn off the graphics
-                    path that draws nothing on some graphics cards (the NVIDIA driver, some laptops, virtual machines). On an older
-                    beta, quit the window from the tray (or run <code>pkill -f nostr-vault-desktop</code>), then start it with
-                    <code>WEBKIT_DISABLE_DMABUF_RENDERER=1 nostr-vault-desktop</code>. If the window ever says <strong>The window
+                    in your web browser. If the vault shows there, only the window is stuck. From beta 10 the window checks that it
+                    draws: if nothing shows within about 45 seconds it starts over with another way of drawing (up to three), keeps
+                    the one that works for next time, and if none does it shows a page with <strong>Open in browser</strong> and
+                    <strong>Try the window again</strong>. That can take a couple of minutes the first time; you don't need to change
+                    anything. Updating the .deb also restarts an open window on the new version. On an older beta, quit the window
+                    from the tray (or run <code>pkill -f nostr-vault-desktop</code>), then start it with
+                    <code>WEBKIT_DISABLE_DMABUF_RENDERER=1 nostr-vault-desktop</code>; setting that yourself turns the automatic
+                    choice off. If the window ever says <strong>The window
                     stopped drawing</strong>, click <strong>Reload</strong>. If the page crashes again right away, beta 5 and newer
                     stop trying and keep that message up until you click <strong>Reload</strong> (or press Ctrl+R, from beta 6); open
                     the vault in your browser meanwhile. Your vault keeps running either way.</p>

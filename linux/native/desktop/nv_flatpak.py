@@ -19,6 +19,7 @@ import socket
 from gi.repository import Gio, GLib
 
 APP_ID = "app.nostrvault.Desktop"
+BUS_NAME = APP_ID + ".Flatpak"  # GApplication's name on the session bus: the .deb's window has APP_ID
 APP = os.environ.get("NV_FLATPAK_PREFIX", "/app")
 HAVEND = os.path.join(APP, "lib", "nostr-vault", "havend")
 ENGINE = os.path.join(APP, "lib", "nostr-vault", "haven-engine")

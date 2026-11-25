@@ -276,6 +276,12 @@ jobs:
           docker exec nv sh /w/linux/native/test/window-test.sh x11 setup /tmp/nvwt-out || r=1
           docker exec nv sh /w/linux/native/test/window-test.sh wayland setup /tmp/nvwt-out || r=1
           exit $r
+      - name: Before setup, X11 and Wayland - a page that never draws (the window starts over, then the browser page)
+        run: |
+          r=0
+          docker exec nv sh /w/linux/native/test/window-test.sh x11 blank /tmp/nvwt-out || r=1
+          docker exec nv sh /w/linux/native/test/window-test.sh wayland blank /tmp/nvwt-out || r=1
+          exit $r
       - name: X11 - a half-width tile (600 px) doesn't clip the window
         run: docker exec nv sh /w/linux/native/test/window-test.sh x11 narrow /tmp/nvwt-out
       - name: X11 - Ctrl+V with an empty clipboard and with text (WebKitGTK 2.54.0/2.54.1 crash on the empty one)

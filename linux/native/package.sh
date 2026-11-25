@@ -25,6 +25,7 @@ find "$pkg/usr/share/nostr-vault/web" -type d -exec chmod 755 {} +; find "$pkg/u
 # The desktop window and tray (used only where there is a desktop).
 f 755 "$here/desktop/nostr-vault-desktop" usr/bin/nostr-vault-desktop
 f 644 "$here/desktop/setup.html" usr/share/nostr-vault/desktop/setup.html
+f 644 "$here/desktop/nv_paint.py" usr/share/nostr-vault/desktop/nv_paint.py
 f 644 "$here/desktop/app.nostrvault.Desktop.desktop" usr/share/applications/app.nostrvault.Desktop.desktop
 f 644 "$here/desktop/nostr-vault-tray.desktop" etc/xdg/autostart/nostr-vault-tray.desktop
 f 644 "$here/desktop/app.nostrvault.setup.policy" usr/share/polkit-1/actions/app.nostrvault.setup.policy

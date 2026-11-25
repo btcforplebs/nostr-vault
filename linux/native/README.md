@@ -22,6 +22,7 @@ sudo nostr-vault-setup --owner npub1…              # or open Nostr Vault from 
 | The window | `nostr-vault-desktop`: the vault's web app in a WebKitGTK window: feed, vault, My Devices (`#/box`), settings |
 | Menu bar item | tray icon: status, Open, New Note, Feed / Vault / My Devices / Settings, Copy box npub |
 | Closing the window | the window and its web view end (WebKit's web and network processes with them); the tray starts over on its own, small, and Open makes a new window, still signed in |
+| A window that draws nothing | it checks it draws (its page answers, WebKit put pixels in it); if not, it starts over with DMA-BUF switched, then GPU compositing off, keeps what worked in `~/.config/nostr-vault-desktop/renderer.json`, and last shows a GTK page that opens the vault in the browser (`nv_paint.py`). DMA-BUF starts off only on the NVIDIA driver. An update restarts an open window on the new version (postinst sends it SIGUSR1) |
 | Launch at login | the vault on boot (systemd); the tray at login (`/etc/xdg/autostart`) |
 | Update | `apt install` the newer `.deb`: data, owner and port stay |
 
