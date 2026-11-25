@@ -44,7 +44,9 @@ try:
     GIVE_UP_S = max(4, int(os.environ.get("NV_PAINT_GIVE_UP_S", "45")))
 except ValueError:
     GIVE_UP_S = 45
-KILL_AFTER_S = 4  # a restart waits this long for the window's WebKit processes, then kills them (a hung one won't end)
+KILL_AFTER_S = 4  # a restart after a failed check waits this long for the window's children, then kills WebKit's
+WAIT_S = 30  # any other restart (an update, Try again) waits this long, as the shell's restart_as_tray does
+MIN_COLOURS = 8  # a drawn page has many (anti-aliased text); an empty view is one flat colour (or WebKit's background)
 
 mode = None
 tried = []
@@ -157,6 +159,20 @@ def descendants(root):
     return out
 
 
+def children():
+    """This process's own children (every one, not just WebKit's): (pid, command name, state)."""
+    me = os.getpid()
+    return [k for k in descendants(me) if _parent(k[0]) == me]
+
+
+def _parent(pid):
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return int(f.read().rsplit(")", 1)[1].split()[1])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
 class Checker:
     """One per app: watches each new window's first 45 s, and starts the process over when it must."""
 
@@ -209,7 +225,9 @@ class Checker:
         if not view.get_mapped():
             self.deadline = time.monotonic() + GIVE_UP_S  # not on screen (minimised): nothing to judge yet
             return True
-        if self.js_ok and self.drew_or_unknown(view):
+        d = self.drew_or_unknown(view)
+        self.log(f"drawing check: js={'yes' if self.js_ok else 'no'} drew={d}")
+        if self.js_ok and d is not False:
             self.done = True
             self.worked()
             return False
@@ -230,21 +248,24 @@ class Checker:
         return True
 
     def drew_or_unknown(self, view):
-        """drew(), and True when the check itself fails: a bug here must not start a working window over."""
+        """drew(): True, False, or "unknown" when the check can't tell (or fails itself). Only False starts the
+        window over: a check that can't see must not walk a working window down the ladder."""
         try:
-            return self.drew(view)
+            d = self.drew(view)
         except Exception as e:  # noqa: BLE001 - logged; the window keeps running
             self.log("the drawing check failed (taken as drawn): " + repr(e))
-            return True
+            return "unknown"
+        return "unknown" if d is None else d
 
     def drew(self, view):
         """WebKit put pixels into the view: drawn into an offscreen picture filled with a colour no page uses (a
-        never-painting view leaves it untouched), or, without pycairo, read back from the window (an empty view
-        leaves the window's own flat background)."""
+        never-painting view leaves it untouched), or, without python3-gi-cairo, read back from the window (an empty
+        view leaves the window's own flat background). Drawn = at least MIN_COLOURS colours besides the sentinel, so
+        a view that paints only its flat background (the NVIDIA black window) is not drawn. None: can't tell."""
         a = view.get_allocation()
         w, h = a.width, a.height
         if w < 8 or h < 8:
-            return False
+            return None
         try:
             import cairo
         except ImportError:
@@ -267,32 +288,40 @@ class Checker:
         surf.flush()
         data, stride = bytes(surf.get_data()), surf.get_stride()
         sentinel = bytes((255, 0, 255, 255))  # ARGB32 little-endian: B, G, R, A
+        seen = set()
         for y in range(0, h, 9):
             for x in range(0, w, 9):
                 i = y * stride + x * 4
-                if data[i:i + 4] != sentinel:
-                    return True
+                c = data[i:i + 4]
+                if c != sentinel:
+                    seen.add(c)
+                    if len(seen) >= MIN_COLOURS:
+                        return True
         return False
 
     def drew_window(self, view, a, w, h):
+        """The window read back. None (can't tell) on Wayland, where the read misses what WebKit draws with GL, so
+        a working window would read as empty; and when there is nothing to read."""
         from gi.repository import Gdk
+        disp = Gdk.Display.get_default()
+        if disp is not None and "Wayland" in type(disp).__name__:
+            return None
         win = view.get_window()
         if win is None:
-            return False
+            return None
         x0, y0 = (0, 0) if view.get_has_window() else (a.x, a.y)
         pb = Gdk.pixbuf_get_from_window(win, x0, y0, w, h)
         if pb is None:
-            return False
+            return None
         px, stride, n = pb.get_pixels(), pb.get_rowstride(), pb.get_n_channels()
         seen = set()
         for y in range(0, pb.get_height(), 9):
             for x in range(0, pb.get_width(), 9):
                 i = y * stride + x * n
-                c = bytes(px[i:i + 3])
-                if c == b"\0\0\0":
-                    return True  # every page the window shows is black underneath; GTK's own background isn't
-                seen.add(c)
-        return len(seen) >= 8
+                seen.add(bytes(px[i:i + 3]))
+                if len(seen) >= MIN_COLOURS:
+                    return True
+        return False
 
     def web_process_ended(self, view):
         """The page's web process ended (the shell's web-process-terminated): True if that is this file's to handle.
@@ -346,7 +375,7 @@ class Checker:
         apply(nxt)
         os.environ[TRIED] = ",".join(done)
         route = self.app.pending_route
-        self.restart(["--open", route] if route else [])
+        self.restart(["--open", route] if route else [], failing=True)
 
     def show_browser_page(self, after_all):
         """A page drawn by GTK (no web process) in place of the web view: open the vault in the browser."""
@@ -410,19 +439,31 @@ class Checker:
 
     # ---- starting over
 
-    def restart(self, args):
-        """Start this program over (exec, the same process id) with args, once its window's WebKit processes are
-        gone. Waits for a running setup or pkexec (their results need this process)."""
+    def restart(self, args, failing=False):
+        """Start this program over (exec, the same process id) with args, once every child of this process has
+        ended, so none is left for nothing to reap (as restart_as_tray: WebKit's helpers, their bwrap sandboxes and
+        xdg-dbus-proxy). Waits for a running setup or pkexec (their results need this process) and for a tick's
+        systemctl. failing (the check failed: the page may be hung): waits KILL_AFTER_S, then kills WebKit's
+        processes; otherwise (an update, Try again) WAIT_S, as a healthy window's helpers can take a while."""
         from gi.repository import GLib
         if self.restarting:
             return
         self.restarting = True
         app = self.app
-        win = app.window
+        win, view = app.window, app.view
         app.window = app.view = None
         app.stopped = None
         app.page = None
         self.view = None
+        self.done = True
+        # Through WebKit, not by process id: inside a Flatpak its web processes are started by the portal, not as
+        # this process's children, so descendants() can't see a hung one. (app.view is None first: the shell's
+        # web-process-terminated handler then leaves it alone.)
+        if view is not None and hasattr(view, "terminate_web_process"):
+            try:
+                view.terminate_web_process()
+            except Exception as e:  # noqa: BLE001 - logged; the restart goes on
+                self.log("couldn't end the page's web process: " + repr(e))
         if win is not None:
             win.destroy()
         if self.supervisor is not None:
@@ -434,18 +475,20 @@ class Checker:
                 return True
             if self.supervisor is not None and self.supervisor.proc is not None and time.monotonic() - began < 10:
                 return True  # the Flatpak's havend, ending
-            kids = descendants(os.getpid())
-            web = [(p, c) for p, c, st in kids if (c.startswith("WebKit") or c == "bwrap") and st != "Z"]
-            if web and time.monotonic() - began < KILL_AFTER_S:
+            if getattr(app, "ticking", False):
+                return True  # tick's thread may be inside systemctl: exec'd now, it would be a zombie
+            live = [p for p, _c, st in children() if st != "Z"]
+            if live and time.monotonic() - began < (KILL_AFTER_S if failing else WAIT_S):
                 return True
-            for pid, _c in web:
+            web = [p for p, c, st in descendants(os.getpid()) if (c.startswith("WebKit") or c == "bwrap") and st != "Z"]
+            for pid in web:
                 try:
                     os.kill(pid, signal.SIGKILL)  # hung, or stopped: it won't end by itself
                 except OSError:
                     pass
             if web:
                 time.sleep(0.3)
-            for pid, _c, _st in descendants(os.getpid()):
+            for pid, _c, _st in children():
                 try:
                     os.waitpid(pid, os.WNOHANG)
                 except ChildProcessError:

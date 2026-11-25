@@ -46,11 +46,11 @@ for d, dirs, files in os.walk(root):
 deps = {
     "rpm": (["glibc >= " + glibc, "libgcc", "libnftnl", "libmnl", "dbus-libs", "systemd", "curl", "ca-certificates",
              "shadow-utils"],
-            ["python3", "python3-gobject", "gtk3", "webkit2gtk4.1", "polkit", "libayatana-appindicator-gtk3"]),
+            ["python3", "python3-gobject", "python3-cairo", "gtk3", "webkit2gtk4.1", "polkit", "libayatana-appindicator-gtk3"]),
     # pacman never installs optional deps (an .rpm's and a .deb's Recommends are installed by default), so on Arch the
     # window's packages are real depends: with them optional, a plain Arch install got a window that couldn't start.
     "archlinux": (["glibc>=" + glibc, "gcc-libs", "libnftnl", "libmnl", "dbus", "systemd", "curl", "ca-certificates",
-                   "shadow", "python", "python-gobject", "gtk3", "webkit2gtk-4.1", "polkit", "libayatana-appindicator"],
+                   "shadow", "python", "python-gobject", "python-cairo", "gtk3", "webkit2gtk-4.1", "polkit", "libayatana-appindicator"],
                   []),
 }[fmt]
 ext = {"rpm": "rpm", "archlinux": "arch"}[fmt]

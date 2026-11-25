@@ -7,7 +7,11 @@
 # Then the update signal the .deb's postinst sends (SIGUSR2): the window starts over in place and draws again.
 # Runs before setup (the setup page is the window's page). NV_PAINT_GIVE_UP_S makes each try 15 s, not 45.
 G=15
-RJ=$HOME/.config/nostr-vault-desktop/renderer.json
+case "$CMD" in
+  # A Flatpak's ~/.config is its own; and it has no postinst, so no update signal (stage 5).
+  "flatpak run "*) RJ=$HOME/.var/app/${CMD##* }/config/nostr-vault-desktop/renderer.json; UPDATE=0 ;;
+  *) RJ=$HOME/.config/nostr-vault-desktop/renderer.json; UPDATE=${NV_WT_UPDATE:-1} ;;
+esac
 POSTINST_PATTERN='^(/usr)?/s?bin/python3(\.[0-9]+)? -I (/usr)?/s?bin/nostr-vault-desktop( |$)' # as linux/native/debian/postinst
 # freeze <log> <regex or ''> <s>: stop every web process the window starts, for up to s seconds or until the log
 # says regex (true then; with no regex, true after s seconds).
@@ -21,6 +25,24 @@ freeze() {
   [ -z "$2" ]
 }
 thaw() { pkill -KILL -u "$(id -u)" -f WebKitWebProcess 2>/dev/null; sleep 1; }
+# before <log> <regex>: the log's lines before the first that says regex (the first process, before it started over).
+before() { sed "/$2/,\$d" "$1"; }
+# drewcheck <log part> <True|False> <what>: nv_paint.py's drawing check (its drew= on every poll). False: it said
+# False and never anything else, on a page that never draws. True: its last word was True, on a page that draws (it
+# may say False while the page is still loading). The pixel check is the only part that sees a page that answers
+# JavaScript and draws nothing, so it must be seen to fail as well as pass (a check that can't fail proves nothing);
+# "unknown" fails both, as it means the check couldn't look.
+drewcheck() {
+  said=$(printf '%s\n' "$1" | grep -o 'drew=[A-Za-z]*')
+  sum=$(printf '%s\n' "$said" | sort | uniq -c | tr -s ' \n' ' ')
+  if [ "$2" = False ]; then
+    good=$([ -n "$said" ] && ! printf '%s\n' "$said" | grep -qv 'drew=False' && echo y)
+  else
+    good=$([ "$(printf '%s\n' "$said" | tail -1)" = drew=True ] && echo y)
+  fi
+  if [ "$good" = y ]; then ok "$3: the pixel check says drew=$2 ($sum)"
+  else no "$3: the pixel check didn't say drew=$2 ($sum)"; fi
+}
 works() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ""))' "$RJ" "$1" 2>/dev/null; }
 
 # 1. The first mode never draws: the window starts over in the next one, which draws, and remembers it.
@@ -34,6 +56,7 @@ if freeze "$L" "trying the window again with mode" $((G + 30)); then
 else
   m2=""; no "$MODE: the window never noticed its page doesn't draw"; tail -20 "$L"
 fi
+drewcheck "$(before "$L" "trying the window again with mode")" False "$MODE: a frozen page, mode $m1"
 drawn "$OUT/$MODE-blank-1-retry.png" "$MODE: started over in mode $m2, the window draws its page"
 for i in $(seq 1 20); do grep -q "remembered drawing mode $m2" "$L" && break; sleep 1; done
 if [ -n "$m2" ] && grep -q "remembered drawing mode $m2" "$L" && [ "$(works works)" = "$m2" ]; then
@@ -45,9 +68,13 @@ stop; thaw
 start again $CMD
 sleep 10
 wp=$(webproc); wm=$(wenv "$wp" NV_DESKTOP_RENDERER)
-if [ -n "$m2" ] && [ "$wm" = "$m2" ] && ! grep -q "trying the window again" "$OUT/$MODE-blank-again.log"; then
+L="$OUT/$MODE-blank-again.log"
+if [ "$UPDATE" = 0 ]; then wm=$(sed -n 's/.*drawing mode \([a-z-]*\) (it worked last time).*/\1/p' "$L" | head -1); fi # a Flatpak's web process is the portal's, not ours to read
+if [ -n "$m2" ] && [ "$wm" = "$m2" ] && ! grep -q "trying the window again" "$L"; then
   ok "$MODE: the next start draws in the remembered mode $m2 at once"
-else no "$MODE: the next start's web process is in mode '$wm' (want '$m2')"; tail -10 "$OUT/$MODE-blank-again.log"; fi
+else no "$MODE: the next start's web process is in mode '$wm' (want '$m2')"; tail -10 "$L"; fi
+for i in $(seq 1 20); do grep -q "the window draws (mode" "$L" && break; sleep 1; done
+drewcheck "$(cat "$L")" True "$MODE: a page that draws, remembered mode $m2"
 stop
 
 # 3. No mode draws: after every one is tried, the window's GTK page opens the vault in the browser; remembered.
@@ -88,6 +115,7 @@ if [ "${NV_WT_CONTROL:-1}" = 1 ]; then
 fi
 
 # 5. The update signal (the .deb's postinst): the same process starts over on the code on disk and draws again.
+[ "$UPDATE" = 1 ] || return 0
 rm -f "$RJ"
 start update $CMD
 drawn "$OUT/$MODE-blank-5-before-update.png" "$MODE: a window before the update" >/dev/null || true
@@ -96,6 +124,7 @@ for i in $(seq 1 30); do grep -q "the window draws (mode" "$OUT/$MODE-blank-upda
 if grep -q "the window draws (mode" "$OUT/$MODE-blank-update.log" && ! grep -q "trying the window again" "$OUT/$MODE-blank-update.log"; then
   ok "$MODE: a working window passes the check in its first mode ($(sed -n 's/.*the window draws (mode \([a-z-]*\)).*/\1/p' "$OUT/$MODE-blank-update.log" | head -1))"
 else no "$MODE: a working window didn't pass the check"; grep "nostr-vault-desktop:" "$OUT/$MODE-blank-update.log" | tail -5; fi
+drewcheck "$(before "$OUT/$MODE-blank-update.log" "updated: starting over")" True "$MODE: a working window, first mode"
 p=$(pgrep -u "$(id -u)" -f "$POSTINST_PATTERN" | head -1)
 pkill -USR2 -u "$(id -u)" -f "$POSTINST_PATTERN"
 for i in $(seq 1 20); do grep -q "updated: starting over" "$OUT/$MODE-blank-update.log" && break; sleep 1; done
