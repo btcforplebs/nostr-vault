@@ -363,6 +363,7 @@
 		254FBC3A28AC80DA7B7851F6 /* MarketplaceSellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAE757A797972E778F02D705 /* MarketplaceSellView.swift */; };
 		256403FE52F8ACBFCD7C8AF8 /* FipsMeshDeviceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B164C72D0777F09A5D027B5 /* FipsMeshDeviceView.swift */; };
 		25890D9712ADB87040AE6DBE /* ComposeView+Attachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD189D3728C9702A5C95D0E2 /* ComposeView+Attachments.swift */; };
+		25A676263437F9E7E3CBAC09 /* GlobeChainPainter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D698C771B5C7B9BD8EFCDD /* GlobeChainPainter.swift */; };
 		25A894FF1DFCC84B17511AE0 /* SearchView+Recommendations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A6A21B92242B4E25D313103 /* SearchView+Recommendations.swift */; };
 		25A9B88F6613E3C34DB04DB6 /* ListWipeAlarmWording.swift in Sources */ = {isa = PBXBuildFile; fileRef = A26B400CA78D02446D6677B0 /* ListWipeAlarmWording.swift */; };
 		25AC009A9676E31F793F17CE /* UploadProgressDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81D090A7CDA296F45DA4F4DC /* UploadProgressDelegate.swift */; };
@@ -824,6 +825,7 @@
 		5384D881E60795935AD9044E /* DMService+ExternalFetch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 288BA92372A8506F03AF9217 /* DMService+ExternalFetch.swift */; };
 		538E81BF9631C8A4EE260577 /* ComposerDraftsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C46E8F1322A7D41B684A36 /* ComposerDraftsSheet.swift */; };
 		539D3D6266E27423491DEBF1 /* LocalRelaySearchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CE7BC31C983DC50BC5885B2 /* LocalRelaySearchSession.swift */; };
+		53B2199466FCCC3F4840B386 /* GlobeChain.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC3BAE9627F788A5FA3D30DE /* GlobeChain.swift */; };
 		53C50B31CC64B7088D4C6A9B /* VideoCaptionsMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E0BBB952FD78929353F558 /* VideoCaptionsMenu.swift */; };
 		53D20A98943D467A4CA6030B /* PlatformCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */; };
 		53D566C3FC581330CF97140E /* ListShrinkRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CF690589679CB773B651985 /* ListShrinkRule.swift */; };
@@ -1813,6 +1815,7 @@
 		B6A088A376BCD2B2695FC0B6 /* GlobeStorm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E33934D682D87D02C55AFF1 /* GlobeStorm.swift */; };
 		B6AE8AA4F41D4F016CC076AF /* View+SoftTopScrollEdge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA565C1761FBC06F35A11553 /* View+SoftTopScrollEdge.swift */; };
 		B6B74E11C59555335D991286 /* LandscapeCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FCDEF4330D928642D86C880 /* LandscapeCount.swift */; };
+		B6C1BC4BEE911125A7DDD8DB /* GlobeChain.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC3BAE9627F788A5FA3D30DE /* GlobeChain.swift */; };
 		B6D5A27E81C3E4922D42E0AA /* VideoPlayerControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A4FD3654AE750DE84204DB /* VideoPlayerControls.swift */; };
 		B7622AE4CFF8F61AEBB4CA98 /* TapLandingLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC4C2DFE093087D6AA0047DC /* TapLandingLine.swift */; };
 		B764BF0A8BA3B90BCBD9B52E /* Chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = D5F84F499115E83DCA24A989 /* Chime.mp3 */; };
@@ -2465,6 +2468,7 @@
 		F84ABA8D644EABA363E8A432 /* SearchRecommendationsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F9425ED11E6941459090BF /* SearchRecommendationsSection.swift */; };
 		F84FE0FB5ECCEBFEDB0A17E2 /* DMDrafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 822410AD281E73BA6C0862C1 /* DMDrafts.swift */; };
 		F8585D39FDCCC4F0D89EE6AF /* FeedReachSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 774373EF6E3A648B43B496F3 /* FeedReachSettingsSection.swift */; };
+		F85917E3A40DAA68DAD1977D /* GlobeChainPainter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D698C771B5C7B9BD8EFCDD /* GlobeChainPainter.swift */; };
 		F85CEC5CC4091C157D66E5B0 /* ProfileLookupBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9670761629748C0E0753F7FC /* ProfileLookupBatch.swift */; };
 		F8633031E20C6FFF4273B950 /* LiveStatusBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8181D15CA118AFF70A6E02A0 /* LiveStatusBook.swift */; };
 		F869E49FB6A5FA8DDFC1A20C /* StatsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E22622B26A3F1A5C9D0A2A /* StatsService.swift */; };
@@ -3473,6 +3477,7 @@
 		ABAAD88CEF9ECC233DEED6B0 /* LocalNetworkPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNetworkPermission.swift; sourceTree = "<group>"; };
 		ABC7040B1702C92C635F0E6D /* CollapsedNowPlayingButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollapsedNowPlayingButton.swift; sourceTree = "<group>"; };
 		ABD60255398375B7A8772D93 /* VaultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultView.swift; sourceTree = "<group>"; };
+		AC3BAE9627F788A5FA3D30DE /* GlobeChain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobeChain.swift; sourceTree = "<group>"; };
 		AC7C42A113F1DF2AA4AE3B00 /* BlossomUploadReply.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomUploadReply.swift; sourceTree = "<group>"; };
 		AC81643CEE8DEC2FD0B25C34 /* emoji.tsv */ = {isa = PBXFileReference; path = emoji.tsv; sourceTree = "<group>"; };
 		AD0687A6A56073C97159AF9B /* FeedTopFade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedTopFade.swift; sourceTree = "<group>"; };
@@ -3618,6 +3623,7 @@
 		C8B5671ABD01B4F4929AE5BB /* FileNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileNote.swift; sourceTree = "<group>"; };
 		C8C594764BD3CE92B69B0404 /* MediaRescanGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRescanGate.swift; sourceTree = "<group>"; };
 		C8D23388CEDEB6EF30250B5F /* NostrVaultShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NostrVaultShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C8D698C771B5C7B9BD8EFCDD /* GlobeChainPainter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobeChainPainter.swift; sourceTree = "<group>"; };
 		C91987BAC69FE261893A95BA /* Wavlake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Wavlake.swift; sourceTree = "<group>"; };
 		C941E98AF9A4C26BB5CB2CE4 /* ConfigService+VaultWhitelist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConfigService+VaultWhitelist.swift"; sourceTree = "<group>"; };
 		C955166884F1CE9A5BA4B36E /* MeshSiteIngress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshSiteIngress.swift; sourceTree = "<group>"; };
@@ -4055,6 +4061,7 @@
 			isa = PBXGroup;
 			children = (
 				7FDBFD96B130AC27F03D79C2 /* GlobeBoltPainter.swift */,
+				C8D698C771B5C7B9BD8EFCDD /* GlobeChainPainter.swift */,
 				5C8D1BF195C77B4C54656EFD /* GlobeHopSphere.swift */,
 				8B606E20973DDDD0093737DF /* GlobeOuterRings.swift */,
 				CDA80E82162D2393178B60C0 /* GlobeOuterRingsBar.swift */,
@@ -5037,6 +5044,7 @@
 				55988AB309029C613A94DC42 /* GIFStrip.swift */,
 				91CE4EF614B57F02C652177F /* GlobalSearchLogic.swift */,
 				D0F4B46B5C5EE525BDE1206A /* GlobeArcs.swift */,
+				AC3BAE9627F788A5FA3D30DE /* GlobeChain.swift */,
 				5F3BE28BF7980055E4D418F8 /* GlobeEdge.swift */,
 				FDBA3E984F6B15857CAAA399 /* GlobeHazeField.swift */,
 				4AED9F5C683DD139EDE3D72F /* GlobeHops.swift */,
@@ -6477,6 +6485,8 @@
 				F21AC6DF7BE3739513710028 /* GlobalSearchSession.swift in Sources */,
 				5FA1579C568CB14E0DB553D3 /* GlobeArcs.swift in Sources */,
 				C9C99A8E5942468C4B4278E3 /* GlobeBoltPainter.swift in Sources */,
+				53B2199466FCCC3F4840B386 /* GlobeChain.swift in Sources */,
+				25A676263437F9E7E3CBAC09 /* GlobeChainPainter.swift in Sources */,
 				F71EB0360DE279D578934433 /* GlobeEdge.swift in Sources */,
 				2BC723E23059013743EEE7E0 /* GlobeHazeField.swift in Sources */,
 				2E27D83FFDD51721A2436F56 /* GlobeHopSphere.swift in Sources */,
@@ -7759,6 +7769,8 @@
 				7570C4E14AA4FF93C3F233E9 /* GlobalSearchSession.swift in Sources */,
 				4FD379CC4F37E7B4B7C2F6B0 /* GlobeArcs.swift in Sources */,
 				4CF7AFF6BEB31CF89D9EA563 /* GlobeBoltPainter.swift in Sources */,
+				B6C1BC4BEE911125A7DDD8DB /* GlobeChain.swift in Sources */,
+				F85917E3A40DAA68DAD1977D /* GlobeChainPainter.swift in Sources */,
 				9BE3DC9CC895E8B0CE69AAF8 /* GlobeEdge.swift in Sources */,
 				96093DEF876EAC092FDC790E /* GlobeHazeField.swift in Sources */,
 				07CED97C37FD938D42D0BA75 /* GlobeHopSphere.swift in Sources */,

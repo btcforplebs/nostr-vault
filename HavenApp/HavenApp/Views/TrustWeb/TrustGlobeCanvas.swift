@@ -84,6 +84,10 @@ struct TrustGlobeCanvas: View {
     /// The picked hop sphere's people facing you, or coming round
     /// (`GlobeHopSphere.windowIfChanged`): their pictures are symbols.
     @State private var sphereWindow: [String] = []
+    /// The trust card's person when they are on a hop sphere: their path in
+    /// to you (`GlobeChain`), and when it started drawing in.
+    @State private var sphereChain: [GlobeChain.Link] = []
+    @State private var sphereChainBorn: TimeInterval = 0
     /// Reset by SwiftUI when a gesture ends *or is cancelled*; `onEnded` is
     /// skipped on cancel, so this is what puts the camera back to rest.
     @GestureState private var dragActive = false
@@ -208,10 +212,19 @@ struct TrustGlobeCanvas: View {
         .onChange(of: filterLit) { _, lit in scene.filter(lit) }
         .onChange(of: outer.outer) { _, _ in if showsOuterRings { scene.wake() } }
         .onChange(of: focus) { _, key in
-            if let key { scene.turn(to: key, on: showsOuterRings ? GlobeHopSphere.direction(of: key) : nil) }
-            scene.trace(to: key, through: focusBridges)
+            let onSphere = showsOuterRings ? key.flatMap(GlobeHopSphere.direction(of:)) : nil
+            if let key { scene.turn(to: key, on: onSphere) }
+            // Someone on a hop sphere: their path runs in through the layers
+            // (`GlobeChainPainter`), not the inner globe's own threads.
+            sphereChain = onSphere == nil ? [] : key.map {
+                GlobeChain.links(from: $0, copy: DiscoveryReachStore.shared.copy, follows: myFollows)
+            } ?? []
+            sphereChainBorn = Date.timeIntervalSinceReferenceDate
+            scene.trace(to: sphereChain.isEmpty ? key : nil, through: sphereChain.isEmpty ? focusBridges : [])
         }
-        .onChange(of: focusBridges) { _, bridges in scene.trace(to: focus, through: bridges) }
+        .onChange(of: focusBridges) { _, bridges in
+            if sphereChain.isEmpty { scene.trace(to: focus, through: bridges) }
+        }
         .onChange(of: reduceMotion) { _, reduced in
             scene.reduceMotion = reduced
             if reduced { scene.camera.spin = .zero }
@@ -254,10 +267,27 @@ struct TrustGlobeCanvas: View {
         GlobeOuterRings.drawSpheres(outer.outer, in: &context, size: size, zoom: zoom, phone: GlobeScene.isPhone,
                                     ink: scene.ink, level: level, turn: simd_double3x3(scene.camera.orientation),
                                     pole: GlobeSphereField.pole(center: center), pictures: Set(sphereFaces), focus: focus)
+        drawChain(in: &context, size: size)
         if let window = GlobeHopSphere.windowIfChanged(now: Date.timeIntervalSinceReferenceDate) {
             // Not from inside the draw: the symbols publish on the next turn.
             DispatchQueue.main.async { sphereWindow = window }
         }
+    }
+
+    /// The card's hop-sphere person's path to you, through each link's spot
+    /// as drawn this frame, ending at the core.
+    private func drawChain(in context: inout GraphicsContext, size: CGSize) {
+        guard !sphereChain.isEmpty, focus == sphereChain.first?.key else { return }
+        var points = sphereChain.compactMap { link -> (point: CGPoint, front: Double)? in
+            if let hop = link.hop, hop >= TrustMapOuter.firstHop {
+                return GlobeHopSphere.screenPoint(of: link.key, hop: hop)
+            }
+            return scene.screenPoint(of: link.key, in: size) ?? GlobeHopSphere.screenPoint(of: link.key, hop: nil)
+        }
+        guard let core = scene.screenPoint(of: nil, in: size) else { return }
+        points.append(core)
+        let t = (Date.timeIntervalSinceReferenceDate - sphereChainBorn) / GlobeChainPainter.drawIn
+        GlobeChainPainter.draw(points, progress: min(1, t), in: &context, accent: .orange, ink: scene.ink)
     }
 
     /// Who on the picked hop's sphere may show a face: those facing you or

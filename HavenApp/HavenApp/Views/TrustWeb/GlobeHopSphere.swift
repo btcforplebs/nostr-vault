@@ -106,6 +106,29 @@ enum GlobeHopSphere {
     /// reachable (`TrustGlobeCanvas` asks the globe first inside it).
     private static var hole: (centre: CGPoint, r: Double)?
 
+    /// Each sphere drawn last frame (picked and nested), so a path can find
+    /// where someone on it is now (`screenPoint`).
+    private struct Placed {
+        let built: Built
+        let centre: CGPoint
+        let r: Double
+        let turn: simd_double3x3
+    }
+    private static var placed: [Int: Placed] = [:]
+
+    /// Where `key` is on screen on the hop `hop` sphere drawn last frame (any
+    /// sphere when nil), with how far toward you (0 back, 1 front). Nil when
+    /// they are on none.
+    static func screenPoint(of key: String, hop: Int?) -> (point: CGPoint, front: Double)? {
+        for (h, p) in placed where hop == nil || hop == h {
+            let i = p.built.top.firstIndex(of: key) ?? p.built.haze.firstIndex(of: key).map { $0 + p.built.top.count }
+            guard let i else { continue }
+            let q = GlobeSphereField.project(p.turn * p.built.points[i])
+            return (CGPoint(x: p.centre.x + q.x * p.r, y: p.centre.y + q.y * p.r), q.front)
+        }
+        return nil
+    }
+
     /// Whether a tap lands on the nested inner globe.
     static func inHole(_ point: CGPoint) -> Bool {
         guard let hole else { return false }
@@ -143,6 +166,7 @@ enum GlobeHopSphere {
         lastPicked = nil
         hole = nil
         facing.removeAll(keepingCapacity: true)
+        placed.removeAll(keepingCapacity: true)
     }
 
     // MARK: Drawing
@@ -159,6 +183,7 @@ enum GlobeHopSphere {
                      in context: inout GraphicsContext, ink: GlobeInk) {
         guard shown > 0.01, r > 4, !(ring.top.isEmpty && ring.haze.isEmpty) else { return }
         let b = points(for: ring, pole: pole)
+        placed[ring.hop] = Placed(built: b, centre: centre, r: r, turn: turn)
         if picked > 0.5 {
             lastPicked = b
             self.hole = hole

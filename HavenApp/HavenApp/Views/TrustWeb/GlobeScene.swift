@@ -572,6 +572,15 @@ final class GlobeScene: ObservableObject {
         return best?.key
     }
 
+    /// Where `key` (or the core, when nil) is drawn on screen, zoom-out
+    /// nesting included, and how far toward you (0 back, 1 front). Nil when
+    /// they are not on this globe. For a hop sphere's path (`GlobeChain`).
+    func screenPoint(of key: String?, in size: CGSize) -> (point: CGPoint, front: Double)? {
+        guard let i = index[key ?? center], key == nil || alpha[i] > 0.05,
+              let p = Projector(camera, size: size)(dirs[i] * radius[i]) else { return nil }
+        return (p.point.applying(GlobeRingZoom.innerTransform(level: ringZoom, size: size)), p.front)
+    }
+
     /// Zoomed in this far, plain stars can be tapped too, not just faces.
     static let starTapZoom = 1.6
 
