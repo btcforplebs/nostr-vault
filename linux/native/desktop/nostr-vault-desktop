@@ -536,6 +536,10 @@ class App(Gtk.Application):
             return False
         if self.setup_running or self.root_running:
             return True
+        if self.ticking:
+            # tick's thread may be inside systemctl: exec'd now, that systemctl would end with nothing to reap it (a
+            # zombie, CI 2026-11-25). tick sets and clears this on the main loop, as this runs, so the next try is safe.
+            return True
         # WebKit's helpers (and their bwrap sandboxes) end a moment after the window: wait for them, up to 30 s, so
         # none is left to end after the exec, when nothing would reap it (a zombie per window closed). Wait on every
         # child, not just those named WebKit: the sandbox's helpers (xdg-dbus-proxy) are this process's children too,
