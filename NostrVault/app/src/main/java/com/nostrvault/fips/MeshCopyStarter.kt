@@ -52,6 +52,8 @@ class MeshCopyStarter internal constructor(
      * copy off) or a full one off Wi-Fi while Wi-Fi only is on ([YourDevicesRules.catchUpMovesFiles]).
      */
     private val filesToo: () -> Boolean = { true },
+    /** A paired device's name from My Devices (by mesh npub), or "" when it has none. */
+    private val deviceName: (String) -> String = { "" },
 ) {
     @Inject constructor(
         @ApplicationContext context: Context,
@@ -73,6 +75,7 @@ class MeshCopyStarter internal constructor(
                 onWiFi = onWiFi(context),
             )
         },
+        deviceName = { npub -> configStore.config.value.fipsMesh.devices.firstOrNull { it.npub == npub }?.name.orEmpty() },
     )
 
     /** The libhaven copy calls (a fake in the tests). Codes: [MeshCopyV2.RUN_STARTED] and the rest. */
@@ -83,6 +86,8 @@ class MeshCopyStarter internal constructor(
         fun copySync(peer: String, base: String, filesToo: Boolean): Int
         /** CopyHeldPeersC: the paired devices the engine copied from ([MeshCopyV2.Record.adopt]). */
         fun heldPeers(): List<String> = emptyList()
+        /** CopyRefusedPeersC: paired devices whose first copy stopped on a refused token ([MeshCopyV2.Record.restartRefused]). */
+        fun refusedPeers(): List<String> = emptyList()
     }
 
     interface RecordStore {
@@ -256,6 +261,14 @@ class MeshCopyStarter internal constructor(
             // A catch-up opens the link for its peer, which would close a setup seed's: none until setup is done.
             if (!setupDone()) return
             adoptHeld()
+            // A first copy stopped on a refused token starts again, signed by this device's mesh key.
+            val refused = engine.refusedPeers()
+            if (refused.isNotEmpty()) synchronized(this) { record = record.restartRefused(refused, deviceName) }
+            record.pending?.let { p ->
+                val url = link(p.peer) ?: return
+                run(p.peer, url, p.name, p.freshStart)
+                return
+            }
             val peer = record.syncDue(nowS()).firstOrNull() ?: return
             val (base, prefix) = link(peer)?.let(MeshCopyV2::splitLink) ?: return
             // Stamped by the done line ([MeshCopyV2.Record.finished]), not here: a run cut short is due again.
@@ -370,6 +383,8 @@ class MeshCopyStarter internal constructor(
             call { if (filesToo) HavenBridge.copySync(peer, base) else HavenBridge.copySyncNotesOnly(peer, base) }
         override fun heldPeers(): List<String> =
             if (!HavenBridge.isLoaded) emptyList() else MeshRankNudge.parseHeld(runCatching { HavenBridge.copyHeldPeers() }.getOrNull())
+        override fun refusedPeers(): List<String> =
+            if (!HavenBridge.isLoaded) emptyList() else MeshRankNudge.parseHeld(runCatching { HavenBridge.copyRefusedPeers() }.getOrNull())
         private fun call(f: () -> Int): Int =
             if (!HavenBridge.isLoaded) MeshCopyV2.RUN_RELAY_NOT_RUNNING else runCatching(f).getOrDefault(MeshCopyV2.RUN_RELAY_NOT_RUNNING)
     }
