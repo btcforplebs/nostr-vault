@@ -8,29 +8,41 @@ import simd
 final class GlobeSphereFieldTests: XCTestCase {
     private func pk(_ i: Int) -> String { String(format: "%064x", i) }
 
-    func testEveryPointIsOnTheSphereAndItNeverMoves() {
+    func testEveryPointFillsTheBallAndItNeverMoves() {
         let keys = (0..<2000).map(pk)
         let pole = GlobeSphereField.pole(center: pk(0xa))
         let p = GlobeSphereField.points(keys, pole: pole)
         XCTAssertEqual(p.count, 2000)
-        for v in p { XCTAssertEqual(simd_length(v), 1, accuracy: 1e-9) }
+        let lengths = p.map(simd_length)
+        XCTAssertTrue(lengths.allSatisfy { $0 >= GlobeSphereField.innerRadius - 1e-9 && $0 <= 1 + 1e-9 },
+                      "inside the ball, clear of the nested globe")
+        // Equal volume per person: about half the ball's volume lies past 0.8.
+        let pastShell = Double(lengths.filter { $0 > 0.8 }.count) / 2000
+        XCTAssertLessThan(pastShell, 0.6, "not a thin shell at the edge (Logen 2026-11-25)")
+        XCTAssertGreaterThan(pastShell, 0.4)
         XCTAssertEqual(GlobeSphereField.points(keys, pole: pole), p, "it never moves")
     }
 
-    func testTheBestSitNearestTheFrontAndCentreAtRest() {
-        let me = pk(0xa)
+    func testTheBestSitNearestTheMiddleAndSpreadAllRound() {
         let keys = (0..<1000).map(pk)
-        let p = GlobeSphereField.points(keys, pole: GlobeSphereField.pole(center: me))
-        // At rest the camera turns the core's direction up-right of the middle.
-        let rest = simd_double3x3(GlobeCamera.facing(TrustMap.direction(of: me)))
-        let fronts = p.map { GlobeSphereField.project(rest * $0).front }
-        let centres = p.map { v -> Double in let q = GlobeSphereField.project(rest * v); return hypot(q.x, q.y) }
-        XCTAssertGreaterThan(fronts[0], 0.999, "the best is dead front")
-        XCTAssertLessThan(centres[0], 0.08, "and dead centre")
-        let avg = { (s: ArraySlice<Double>) in s.reduce(0, +) / Double(s.count) }
-        XCTAssertGreaterThan(avg(fronts[..<300]), avg(fronts[300...]), "the top 300 face you, the haze wraps round")
-        XCTAssertLessThan(fronts[999], 0.01, "the lowest is round the back")
-        XCTAssertTrue(fronts[..<300].allSatisfy { $0 > 0.65 }, "every top-300 person is on the front of Hop 3's 1,000")
+        let p = GlobeSphereField.points(keys, pole: GlobeSphereField.pole(center: pk(0xa)))
+        let lengths = p.map(simd_length)
+        XCTAssertEqual(lengths, lengths.sorted(), "rank runs from the middle out")
+        XCTAssertTrue(lengths[..<300].allSatisfy { $0 < lengths[300] }, "the top 300 inside the haze")
+        // The best 40 (the faces) are not in one cap: every octant has some,
+        // and their mean direction is near the middle.
+        let best = p[..<40].map(simd_normalize)
+        var octants = Set<Int>()
+        for v in best { octants.insert((v.x > 0 ? 1 : 0) | (v.y > 0 ? 2 : 0) | (v.z > 0 ? 4 : 0)) }
+        XCTAssertEqual(octants.count, 8, "faces all round")
+        let mean = best.reduce(SIMD3<Double>(repeating: 0), +) / Double(best.count)
+        XCTAssertLessThan(simd_length(mean), 0.15, "no cap")
+    }
+
+    func testFacingIsTheDirectionNotTheDepth() {
+        XCTAssertEqual(GlobeSphereField.facing(SIMD3(0, 0, 0.4)), 1, accuracy: 1e-12)
+        XCTAssertEqual(GlobeSphereField.facing(SIMD3(0, 0, -0.4)), 0, accuracy: 1e-12)
+        XCTAssertEqual(GlobeSphereField.facing(SIMD3(0.4, 0, 0)), 0.5, accuracy: 1e-12)
     }
 
     func testTheOutlineLandsOnTheSphereEdge() {
