@@ -318,9 +318,15 @@ struct TrustGlobeCanvas: View {
         SpatialTapGesture(count: 2)
             .onEnded { _ in scene.reset() }
             .exclusively(before: SpatialTapGesture().onEnded { tap in
-                // A hop's sphere is in front of the inner globe sunk under it.
-                let onSphere = showsOuterRings ? GlobeHopSphere.hit(tap.location) : nil
-                guard let key = onSphere ?? scene.hit(tap.location, in: size) else { return onEmptyTap() }
+                // A hop's sphere is in front, except over the inner globe
+                // nested in its middle: there the globe's own faces come first.
+                let key: String?
+                if showsOuterRings, GlobeHopSphere.inHole(tap.location) {
+                    key = scene.hit(tap.location, in: size) ?? GlobeHopSphere.hit(tap.location)
+                } else {
+                    key = (showsOuterRings ? GlobeHopSphere.hit(tap.location) : nil) ?? scene.hit(tap.location, in: size)
+                }
+                guard let key else { return onEmptyTap() }
                 #if os(iOS)
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 #endif

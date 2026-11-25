@@ -2,9 +2,9 @@ import CoreGraphics
 import Foundation
 
 /// The WOT tab's Hop 3, Hop 4 and Hop 5 layers zoom your own globe out to
-/// that outer ring: the inner globe shrinks, fades and sinks away
-/// underneath, and the picked ring grows into a sphere of its own that fills
-/// the frame (Logen 2026-11-24, "best visual effort"; a sphere, not a flat
+/// that outer ring: the inner globe shrinks and fades in place, nested in
+/// the middle, and the picked ring grows into a sphere of its own round it
+/// that fills the frame (Logen 2026-11-24, "best visual effort"; a sphere, not a flat
 /// ring, 2026-11-25).
 ///
 /// `level` is a continuous zoom: 0 is your circle (Everyone, Following,
@@ -32,7 +32,7 @@ enum GlobeRingZoom {
     static let insideAlpha = 0.6
 
     /// How much `hop`'s ring is drawn as its own sphere (0 to 1) rather than
-    /// a flat ring: once it is picked, and still while it has sunk under a
+    /// a flat ring: once it is picked, and still while it is nested inside a
     /// later pick. Your circle (level 0) draws every ring flat.
     static func sphere(hop: Int, level: Double) -> Double {
         min(1, emphasis(hop: hop, level: level) + inside(hop: hop, level: level))
@@ -41,41 +41,35 @@ enum GlobeRingZoom {
     // MARK: Sink (Logen 2026-11-24)
 
     /// Everything inside the picked ring (the inner globe, and the rings
-    /// between it and the picked one) sinks down and gets smaller, so it
-    /// reads as pulling back into space; the picked ring's sphere
-    /// (`GlobeHopSphere`) stays centred. How far down, as a share of half the
-    /// frame's short side, at each whole level: far enough that what sank
-    /// sits underneath the picked sphere, at its bottom edge, not inside it
-    /// (Logen 2026-11-25, "translating with the one below").
-    static let sinkDrops: [Double] = [0, 0.95, 1.0, 1.04]
-    /// How much smaller what sinks is drawn, on top of `innerScales`.
-    static let sinkScales: [Double] = [1, 0.8, 0.74, 0.68]
+    /// between it and the picked one) stays centred and shrinks in place
+    /// inside the picked ring's sphere (`GlobeHopSphere`), nested like the
+    /// layers of an onion (Logen 2026-11-25: not dropping down below). How
+    /// much smaller it is drawn at each whole level, on top of `innerScales`.
+    static let nestScales: [Double] = [1, 0.8, 0.74, 0.68]
 
-    /// How much `hop`'s ring sinks (0 to 1): the inner globe (hop 2 and
-    /// in) once any hop is picked, an outer ring once a hop past it is.
+    /// How much `hop`'s ring is nested inside the picked one (0 to 1): the
+    /// inner globe (hop 2 and in) once any hop is picked, an outer ring once
+    /// a hop past it is.
     static func inside(hop: Int, level: Double) -> Double {
         let (lo, hi, t) = bracket(level)
         let a = inside(hop: hop, whole: lo), b = inside(hop: hop, whole: hi)
         return a + (b - a) * t
     }
 
-    /// Where `hop`'s ring is drawn at `level`: its centre `drop` points below
-    /// the frame's middle, and `scale` times its radius.
-    static func sink(hop: Int, level: Double, half: Double) -> (drop: Double, scale: Double) {
-        let a = inside(hop: hop, level: level)
-        return (a * lerp(sinkDrops, level) * half, 1 - a * (1 - lerp(sinkScales, level)))
+    /// How much smaller `hop`'s ring is drawn at `level`, round the frame's
+    /// middle: 1 unless it is nested inside the picked one.
+    static func nest(hop: Int, level: Double) -> Double {
+        1 - inside(hop: hop, level: level) * (1 - lerp(nestScales, level))
     }
 
     /// The inner globe's drawing transform at `level`: shrunk (`innerScale`
-    /// times the sink's scale) round the frame's middle, then dropped.
+    /// times the nest's scale) round the frame's middle, where it stays.
     static func innerTransform(level: Double, size: CGSize) -> CGAffineTransform {
-        let half = Double(min(size.width, size.height)) / 2
-        let (drop, scale) = sink(hop: TrustMapOuter.firstHop - 1, level: level, half: half)
-        let s = innerScale(level) * scale
+        let s = innerScale(level) * nest(hop: TrustMapOuter.firstHop - 1, level: level)
         let mx = Double(size.width) / 2, my = Double(size.height) / 2
         return CGAffineTransform(translationX: -mx, y: -my)
             .concatenating(CGAffineTransform(scaleX: s, y: s))
-            .concatenating(CGAffineTransform(translationX: mx, y: my + drop))
+            .concatenating(CGAffineTransform(translationX: mx, y: my))
     }
 
     private static func inside(hop: Int, whole: Int) -> Double {

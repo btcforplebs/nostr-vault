@@ -555,9 +555,9 @@ final class GlobeScene: ObservableObject {
     /// Zoomed in, plain stars can be tapped too.
     func hit(_ point: CGPoint, in size: CGSize) -> String? {
         let project = Projector(camera, size: size)
-        // Zoomed out to a ring, the globe is drawn shrunk and sunk (`innerTransform`).
-        let sunk = GlobeRingZoom.innerTransform(level: ringZoom, size: size)
-        let shrink = sunk.a, point = point.applying(sunk.inverted())
+        // Zoomed out to a ring, the globe is drawn shrunk in place (`innerTransform`).
+        let nested = GlobeRingZoom.innerTransform(level: ringZoom, size: size)
+        let shrink = nested.a, point = point.applying(nested.inverted())
         var best: (key: String, distance: CGFloat)?
         func consider(_ i: Int, reach: CGFloat) {
             guard alpha[i] * min(1, weight(i)) > 0.5, let p = project(dirs[i] * radius[i]), p.depth > -0.15 else { return }
@@ -588,15 +588,15 @@ final class GlobeScene: ObservableObject {
     /// Brightness steps for the threads, front to back.
     private static let threadBands = 12
 
-    /// Draws the globe, shrunk, sunk and faded while zoomed out to an outer
+    /// Draws the globe, shrunk in place and faded while zoomed out to an outer
     /// ring (`GlobeRingZoom.innerTransform`).
     func draw(in context: inout GraphicsContext, size: CGSize, accent: Color, name: (String) -> String) {
-        let sunk = GlobeRingZoom.innerTransform(level: ringZoom, size: size), shrink = sunk.a
+        let nested = GlobeRingZoom.innerTransform(level: ringZoom, size: size), shrink = nested.a
         guard shrink < 0.999 else {
             return drawGlobe(in: &context, size: size, shrink: 1, accent: accent, name: name)
         }
         var inner = context
-        inner.concatenate(sunk)
+        inner.concatenate(nested)
         inner.opacity *= GlobeRingZoom.innerAlpha(ringZoom)
         drawGlobe(in: &inner, size: size, shrink: shrink, accent: accent, name: name)
     }

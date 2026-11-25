@@ -53,20 +53,20 @@ enum GlobeOuterRings {
                     context.fill(dots, with: .color(ink.star.opacity(0.75 * fade * flat)))
                 }
             }
-            // A ring that sank under a later pick loses its label.
-            let sunk = GlobeRingZoom.inside(hop: ring.hop, level: level)
-            if sunk < 0.99, let at = labelPoint(r: r, mid: c, size: size) {
+            // A ring nested inside a later pick loses its label.
+            let nested = GlobeRingZoom.inside(hop: ring.hop, level: level)
+            if nested < 0.99, let at = labelPoint(r: r, mid: c, size: size) {
                 let text = Text(faint ? "\(ring.hop) hops" : TrustMapOuter.chipText(ring))
                     .font(.system(size: 10 + 2 * picked, weight: .semibold))
-                    .foregroundColor(ink.label.opacity((faint ? 0.35 : 0.7 * max(fade, 0.5)) * shown * (1 - sunk)))
+                    .foregroundColor(ink.label.opacity((faint ? 0.35 : 0.7 * max(fade, 0.5)) * shown * (1 - nested)))
                 context.draw(text, at: at, anchor: .bottomTrailing)
             }
         }
     }
 
-    /// The picked hop's sphere, and any picked before it that sank under it
-    /// (`GlobeHopSphere`), turned by the inner globe's camera `turn`. Drawn
-    /// over the inner globe: that has sunk away underneath.
+    /// The picked hop's sphere, and any picked before it now nested inside
+    /// it (`GlobeHopSphere`), turned by the inner globe's camera `turn`.
+    /// Drawn over the inner globe, which stays shrunk in the middle.
     static func drawSpheres(_ outer: TrustMapOuter, in context: inout GraphicsContext, size: CGSize,
                             zoom: Double, phone: Bool, ink: GlobeInk, level: Double,
                             turn: simd_double3x3, pole: SIMD3<Double>, pictures: Set<String>,
@@ -76,7 +76,11 @@ enum GlobeOuterRings {
         let base = outline(size: size, zoom: zoom, phone: phone)
         guard base.isFinite else { return }
         let half = Double(min(size.width, size.height)) / 2
-        // Inner first, so the picked one is drawn over what sank.
+        // The inner globe's disc, with room for its outer shell's faces:
+        // the picked sphere keeps its own faces and taps out of it.
+        let globe = place(TrustMapOuter.firstHop - 1, level: level, base: base, size: size, half: half)
+        let hole = (centre: globe.centre, r: globe.r * holeReach)
+        // Inner first, so the picked one is drawn over what is nested in it.
         for ring in outer.rings {
             let sphere = GlobeRingZoom.sphere(hop: ring.hop, level: level)
             let shown = GlobeRingZoom.visibility(hop: ring.hop, level: level) * sphere
@@ -84,19 +88,22 @@ enum GlobeOuterRings {
             let picked = GlobeRingZoom.emphasis(hop: ring.hop, level: level)
             let at = place(ring.hop, level: level, base: base, size: size, half: half)
             GlobeHopSphere.draw(ring, centre: at.centre, r: at.r, shown: shown * fadeFor(ring.hop, picked: picked),
-                                picked: picked, turn: turn, pole: pole, pictures: pictures, focus: focus, in: &context, ink: ink)
+                                picked: picked, turn: turn, pole: pole, pictures: pictures, focus: focus, hole: hole, in: &context, ink: ink)
         }
     }
 
-    /// A ring's centre and radius at `level`, sunk when it is inside the picked one.
+    /// A ring's centre and radius at `level`, shrunk when it is nested inside the picked one.
     private static func place(_ hop: Int, level: Double, base: Double, size: CGSize,
                               half: Double) -> (centre: CGPoint, r: Double) {
         let r = hop < TrustMapOuter.firstHop
             ? GlobeRingZoom.innerOutline(level: level, outline: base)
             : GlobeRingZoom.radius(hop: hop, level: level, outline: base, half: half)
-        let (drop, scale) = GlobeRingZoom.sink(hop: hop, level: level, half: half)
-        return (CGPoint(x: size.width / 2, y: size.height / 2 + drop), r * scale)
+        return (CGPoint(x: size.width / 2, y: size.height / 2), r * GlobeRingZoom.nest(hop: hop, level: level))
     }
+
+    /// The nested globe's faces reach past its outline to its outer shells
+    /// (`TrustMap.outerRadius`): the hole the picked sphere leaves for it.
+    static let holeReach = 1.35
 
     /// The picked ring comes up to full strength, whatever its hop.
     private static func fadeFor(_ hop: Int, picked: Double) -> Double {

@@ -5,9 +5,10 @@ import simd
 /// 2026-11-25): the ring's top 300 as bright stars, the best of them on the
 /// front as faces you can tap, and its haze (`TrustRankCopy.haze`) as faint
 /// dust over the rest of the surface. It turns with the inner globe's
-/// camera, so one drag spins both, and the inner globe sinks underneath it
-/// (`GlobeRingZoom.sink`). Picking a hop further out sinks this sphere in
-/// turn, smaller and fainter, round the inner globe.
+/// camera, so one drag spins both. The inner globe stays in the middle,
+/// shrunk inside it (`GlobeRingZoom.nest`), and its faces keep clear of the
+/// inner globe so that stays in view and tappable. Picking a hop further
+/// out nests this sphere in turn, smaller and fainter, round the inner globe.
 ///
 /// Positions are built once per ring and pole; a frame turns ~2,000 points
 /// and fills a handful of paths. Android twin (after Logen's OK):
@@ -72,6 +73,16 @@ enum GlobeHopSphere {
     }
 
     private static var targets: [Target] = []
+    /// The nested inner globe's disc on screen last frame: the sphere seats
+    /// no face and takes no tap there, so the globe's own faces stay
+    /// reachable (`TrustGlobeCanvas` asks the globe first inside it).
+    private static var hole: (centre: CGPoint, r: Double)?
+
+    /// Whether a tap lands on the nested inner globe.
+    static func inHole(_ point: CGPoint) -> Bool {
+        guard let hole else { return false }
+        return hypot(Double(point.x - hole.centre.x), Double(point.y - hole.centre.y)) < hole.r
+    }
     /// The picked sphere last drawn, so a tapped person can be turned to.
     private static var lastPicked: Built?
 
@@ -102,6 +113,7 @@ enum GlobeHopSphere {
     static func clearTargets() {
         targets.removeAll(keepingCapacity: true)
         lastPicked = nil
+        hole = nil
     }
 
     // MARK: Drawing
@@ -110,13 +122,22 @@ enum GlobeHopSphere {
     /// strongly (its ring fade times its sphere share), `picked` how much it
     /// is the picked hop: only then do faces show and taps land. `focus` is
     /// the trust card's person: the globe turns them to the front, and their
-    /// face always takes a seat there.
+    /// face always takes a seat there. `hole` is the nested inner globe's
+    /// disc: no face is seated and no star tapped inside it.
     static func draw(_ ring: TrustMapOuter.Ring, centre: CGPoint, r: Double, shown: Double, picked: Double,
                      turn: simd_double3x3, pole: SIMD3<Double>, pictures: Set<String>,
-                     focus: String? = nil, in context: inout GraphicsContext, ink: GlobeInk) {
+                     focus: String? = nil, hole: (centre: CGPoint, r: Double)? = nil,
+                     in context: inout GraphicsContext, ink: GlobeInk) {
         guard shown > 0.01, r > 4, !(ring.top.isEmpty && ring.haze.isEmpty) else { return }
         let b = points(for: ring, pole: pole)
-        if picked > 0.5 { lastPicked = b }
+        if picked > 0.5 {
+            lastPicked = b
+            self.hole = hole
+        }
+        func clear(_ p: CGPoint, _ pad: Double) -> Bool {
+            guard let hole else { return true }
+            return hypot(Double(p.x - hole.centre.x), Double(p.y - hole.centre.y)) >= hole.r + pad
+        }
         // The body: a faint glass ball, lit a little up and to the left, and
         // its outline, so it reads as a globe before its dots do.
         let disc = CGRect(x: centre.x - r, y: centre.y - r, width: 2 * r, height: 2 * r)
@@ -129,7 +150,7 @@ enum GlobeHopSphere {
         var buckets = Array(repeating: Array(repeating: Path(), count: levels + 1), count: 2)
         var faces: [(key: String, at: CGPoint, r: Double, front: Double, rank: Int)] = []
         let pictures = picked > 0.3 ? pictures : []
-        // A sphere that sank under a later pick steps back: smaller, fainter dots.
+        // A sphere nested inside a later pick steps back: smaller, fainter dots.
         let back = 0.55 + 0.45 * picked
         let topCount = b.top.count
         var tapTargets: [Target] = []
@@ -149,7 +170,7 @@ enum GlobeHopSphere {
             if isTop, pictures.contains(b.top[i]), q.front >= faceFrom {
                 faces.append((b.top[i], at, faceSize * q.scale * min(1, r / 160), q.front, i))
             }
-            if isTop, picked > 0.5, q.front > 0.55 { tapTargets.append(Target(key: b.top[i], at: at, reach: 14)) }
+            if isTop, picked > 0.5, q.front > 0.55, clear(at, 0) { tapTargets.append(Target(key: b.top[i], at: at, reach: 14)) }
             let level = Int((min(1, a) * Double(levels)).rounded())
             guard level > 0 else { continue }
             buckets[kind.rawValue][min(levels, level)]
@@ -173,7 +194,8 @@ enum GlobeHopSphere {
         let spots = faces.map { TrustMap.FaceSpot(key: $0.key, x: $0.at.x, y: $0.at.y, r: $0.r) }
         // The best-ranked of those that fit keep a face, up to `maxFaces`.
         let always: Set<String> = focus.map { [$0] } ?? []
-        let seats = Set(Array(TrustMap.seatFaces(spots, always: always, kept: seated)).sorted {
+        let blocked = hole.map { [TrustMap.FaceSpot(key: "", x: $0.centre.x, y: $0.centre.y, r: $0.r)] } ?? []
+        let seats = Set(Array(TrustMap.seatFaces(spots, always: always, kept: seated, blocked: blocked)).sorted {
             always.contains($0) != always.contains($1) ? always.contains($0) : (rank[$0] ?? .max) < (rank[$1] ?? .max)
         }.prefix(maxFaces))
         seated = seats
