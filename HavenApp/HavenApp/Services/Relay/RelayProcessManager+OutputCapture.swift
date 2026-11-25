@@ -165,6 +165,9 @@ extension RelayProcessManager {
         if !batch.rankReadyPeers.isEmpty {
             MeshCopyV2Service.shared.rankReady(batch.rankReadyPeers)
         }
+        if !batch.rankPulled.isEmpty {
+            MeshCopyV2Service.shared.rankPulled(batch.rankPulled)
+        }
         #if os(macOS)
         if batch.rankBuilt {
             MeshRankNudgeSender.shared.rankBuilt()

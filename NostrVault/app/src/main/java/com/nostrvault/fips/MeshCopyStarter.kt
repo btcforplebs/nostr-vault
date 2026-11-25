@@ -54,12 +54,17 @@ class MeshCopyStarter internal constructor(
     private val filesToo: () -> Boolean = { true },
     /** A paired device's name from My Devices (by mesh npub), or "" when it has none. */
     private val deviceName: (String) -> String = { "" },
+    /** The paired desktops (a Mac or a box) by mesh npub, for the rank pull ([MeshRankPull]). */
+    private val desktops: () -> List<String> = { emptyList() },
+    /** A rank pull brought a new rank: read it now. */
+    private val rankArrived: () -> Unit = {},
 ) {
     @Inject constructor(
         @ApplicationContext context: Context,
         configStore: ConfigStore,
         otherVaultLink: OtherVaultLink,
         @ApplicationScope scope: CoroutineScope,
+        reach: dagger.Lazy<com.nostrvault.service.DiscoveryReachStore>,
     ) : this(
         link = { npub -> otherVaultLink.open(npub)?.takeIf(::answers) },
         sign = { tags -> MeshKeySigner.authorization(MeshKeyAuth.START_KIND, "", tags) },
@@ -76,6 +81,12 @@ class MeshCopyStarter internal constructor(
             )
         },
         deviceName = { npub -> configStore.config.value.fipsMesh.devices.firstOrNull { it.npub == npub }?.name.orEmpty() },
+        desktops = {
+            val cfg = configStore.config.value
+            MyDevicesRules.list(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, emptyList(), cfg.ownerNpub)
+                .filter { it.role == DeviceRole.MAC }.map { it.npub }
+        },
+        rankArrived = { reach.get().refresh() },
     )
 
     /** The libhaven copy calls (a fake in the tests). Codes: [MeshCopyV2.RUN_STARTED] and the rest. */
@@ -88,6 +99,8 @@ class MeshCopyStarter internal constructor(
         fun heldPeers(): List<String> = emptyList()
         /** CopyRefusedPeersC: paired devices whose first copy stopped on a refused token ([MeshCopyV2.Record.restartRefused]). */
         fun refusedPeers(): List<String> = emptyList()
+        /** RankPullC: one rank pull from [peer] ([MeshRankPull]); [startAuth] is used only when no held token works. */
+        fun rankPull(peer: String, base: String, startAuth: String): Int = MeshCopyV2.RUN_RELAY_NOT_RUNNING
     }
 
     interface RecordStore {
@@ -126,6 +139,9 @@ class MeshCopyStarter internal constructor(
     private val _sync = MutableStateFlow(MeshSyncState(lastAt = record.copied))
     val sync: StateFlow<MeshSyncState> = _sync.asStateFlow()
 
+    /** When each paired desktop never copied from last had a rank pull started, this run ([MeshRankPull.due]). */
+    private val rankPulledAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     /** The peer the running copy or catch-up is with. */
     @Volatile private var current: String? = null
         set(v) { field = v; _sync.update { it.copy(running = v) } }
@@ -136,6 +152,7 @@ class MeshCopyStarter internal constructor(
     /** A relay log line: a `COPY` line becomes [progress] (and is returned); a finished one updates the record. */
     fun onLogLine(raw: String): MeshCopyV2.Line? {
         MeshRankNudge.readyPeer(raw)?.let { rankReady(it); return null }
+        MeshRankPull.parse(raw)?.let { rankPulled(it); return null }
         if (!raw.contains("COPY ")) return null
         val l = MeshCopyV2.parseLine(raw) ?: return null
         if (l.stage == "done" || l.stage == "failed") {
@@ -269,7 +286,15 @@ class MeshCopyStarter internal constructor(
                 run(p.peer, url, p.name, p.freshStart)
                 return
             }
-            val peer = record.syncDue(nowS()).firstOrNull() ?: return
+            val peer = record.syncDue(nowS()).firstOrNull()
+            if (peer == null) {
+                // Rank only: every paired desktop never copied from, hourly (queued: syncQueued takes the lock).
+                val due = synchronized(this) { MeshRankPull.due(desktops(), record.copied, record.pending?.peer, rankPulledAt, nowS()) }
+                if (due.isEmpty()) return
+                _sync.update { s -> s.copy(queued = (s.queued + due).distinct().filter { it != s.running }) }
+                scope.launch(io) { syncQueued() }
+                return
+            }
             val (base, prefix) = link(peer)?.let(MeshCopyV2::splitLink) ?: return
             // Stamped by the done line ([MeshCopyV2.Record.finished]), not here: a run cut short is due again.
             if (engine.copySync(peer, base + prefix, filesToo()) == MeshCopyV2.RUN_STARTED) current = peer
@@ -292,7 +317,11 @@ class MeshCopyStarter internal constructor(
         scope.launch(io) {
             if (!setupDone()) return@launch
             adoptHeld()
-            val known = synchronized(this@MeshCopyStarter) { peer in record.copied && peer != record.pending?.peer }
+            // A paired desktop never copied from gets a rank pull instead ([MeshRankPull]).
+            val known = synchronized(this@MeshCopyStarter) {
+                peer != record.pending?.peer &&
+                    (peer in record.copied || peer in MeshRankPull.peers(desktops(), record.copied, record.pending?.peer))
+            }
             if (!known) return@launch
             _sync.update { s -> s.copy(queued = (s.queued + peer).distinct().filter { it != s.running }) }
             syncQueued()
@@ -332,7 +361,9 @@ class MeshCopyStarter internal constructor(
         while (current == null) {
             val peer = _sync.value.queued.firstOrNull() ?: return@withLock
             val split = link(peer)?.let(MeshCopyV2::splitLink)
-            val code = split?.let { (base, prefix) -> engine.copySync(peer, base + prefix, filesToo()) }
+            val code = split?.let { (base, prefix) ->
+                if (peer in record.copied) engine.copySync(peer, base + prefix, filesToo()) else rankPull(peer, base, prefix)
+            }
             if (code == MeshCopyV2.RUN_BUSY) return@withLock
             _sync.update { it.copy(queued = it.queued - peer) }
             if (code == MeshCopyV2.RUN_STARTED) {
@@ -375,6 +406,23 @@ class MeshCopyStarter internal constructor(
         return Result.Started
     }
 
+    /** Hands one rank pull to the engine, with a fresh start signed by this device's mesh key for when it holds no token. */
+    private suspend fun rankPull(peer: String, base: String, prefix: String): Int {
+        val auth = MeshRankPull.startTags(base, peer)?.let { sign(it) } ?: return NOT_SIGNED
+        val code = engine.rankPull(peer, base + prefix, auth)
+        if (code == MeshCopyV2.RUN_STARTED) rankPulledAt[peer] = nowS()
+        return code
+    }
+
+    /** A rank pull ended (`RANK_PULLED`): its failure kept for My Web's Desktop Vault, a new rank read, the next device. */
+    private fun rankPulled(p: MeshRankPull.Pulled) {
+        if (MeshRankPull.cutShort(p.error)) rankPulledAt.remove(p.peer)
+        _sync.update { if (p.error.isEmpty()) it.copy(failed = it.failed - p.peer) else it.copy(failed = it.failed + (p.peer to p.error)) }
+        if (p.got > 0) rankArrived()
+        synchronized(this) { if (current == p.peer) current = null }
+        if (_sync.value.queued.isNotEmpty()) scope.launch(io) { syncQueued() }
+    }
+
     private fun fail(code: String, name: String) = Result.Failed(code, MeshCopyV2.errorLine(code, name))
 
     private object BridgeEngine : Engine {
@@ -385,6 +433,7 @@ class MeshCopyStarter internal constructor(
             if (!HavenBridge.isLoaded) emptyList() else MeshRankNudge.parseHeld(runCatching { HavenBridge.copyHeldPeers() }.getOrNull())
         override fun refusedPeers(): List<String> =
             if (!HavenBridge.isLoaded) emptyList() else MeshRankNudge.parseHeld(runCatching { HavenBridge.copyRefusedPeers() }.getOrNull())
+        override fun rankPull(peer: String, base: String, startAuth: String): Int = call { HavenBridge.rankPull(peer, base, startAuth) }
         private fun call(f: () -> Int): Int =
             if (!HavenBridge.isLoaded) MeshCopyV2.RUN_RELAY_NOT_RUNNING else runCatching(f).getOrDefault(MeshCopyV2.RUN_RELAY_NOT_RUNNING)
     }
@@ -398,6 +447,8 @@ class MeshCopyStarter internal constructor(
     companion object {
         private const val TAG = "MeshCopy"
         private const val PROBE_TIMEOUT_S = 8L
+        /** No mesh key to sign a rank start with: shown as not started. */
+        private const val NOT_SIGNED = -1
 
         private val probe by lazy {
             okhttp3.OkHttpClient.Builder()

@@ -112,6 +112,7 @@ extern char* ImportJobsC(void);
 extern int RunImportJobC(char* name);
 extern int StartCopyFromC(char* peer, char* base, char* startAuth);
 extern int CopySyncC(char* peer, char* base);
+extern int RankPullC(char* peer, char* base, char* startAuth);
 extern int CopySyncNotesOnlyC(char* peer, char* base);
 extern char* CopyHeldPeersC(void);
 extern char* CopyRefusedPeersC(void);
@@ -678,6 +679,19 @@ Java_com_nostrvault_relay_HavenBridge_copySyncNotesOnly(JNIEnv *env, jobject thi
     const char *cPeer = GET_CSTR(env, peer);
     const char *cBase = GET_CSTR(env, base);
     int rc = CopySyncNotesOnlyC((char*)cPeer, (char*)cBase);
+    REL_CSTR(env, base, cBase);
+    REL_CSTR(env, peer, cPeer);
+    return rc;
+}
+
+// One rank pull, no first copy (haven-go copyv2_rank_only.go).
+JNIEXPORT jint JNICALL
+Java_com_nostrvault_relay_HavenBridge_rankPull(JNIEnv *env, jobject thiz, jstring peer, jstring base, jstring startAuth) {
+    const char *cPeer = GET_CSTR(env, peer);
+    const char *cBase = GET_CSTR(env, base);
+    const char *cAuth = GET_CSTR(env, startAuth);
+    int rc = RankPullC((char*)cPeer, (char*)cBase, (char*)cAuth);
+    REL_CSTR(env, startAuth, cAuth);
     REL_CSTR(env, base, cBase);
     REL_CSTR(env, peer, cPeer);
     return rc;
