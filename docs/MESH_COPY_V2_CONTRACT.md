@@ -370,13 +370,19 @@ change the Vault list and keep the newer side's date.
 - a **Vault** is `{id, name?, kind?, meshNpub?, httpsURL?, order, updatedAt}`, with `meshNpub` an `npub1…`,
   `httpsURL` an `https://…`, at least one of the two, `order` a whole number from 0, `updatedAt` from 1;
 - a **tombstone** is `{id, deletedAt}`, for a Vault deleted on some device;
-- refused as `bad_type`: any other field, an empty or repeated `id`, a Vault with no address, more than 32 Vaults.
+- refused as `bad_type`: any other field, an empty or repeated `id`, a Vault with no address, more than 32 Vaults,
+  an `updatedAt` or `deletedAt` later than now plus the 10-minute slack (it would win every merge for its id, and
+  such a tombstone would never age out). Not bounded by the file's `updated_at`: an app's first file is dated 1.
   A raw hex key, `nsec1…` or `bunker:` anywhere is `secret_value`, as for every key.
+- **left out when empty.** An engine from before P10 has no `desktop_vaults` in its allowlist and refuses the whole
+  file as `unknown_key`, so neither the apps nor the engine's merge ever write `"desktop_vaults": []`.
 
 It merges **per Vault id**, never whole-file, on every write from another device (first copy and catch-up alike):
 the newer stamp (`updatedAt`, or a tombstone's `deletedAt`) wins for each id, and a tie keeps the receiver's. A
 tombstone removes a Vault only when it is newer. Tombstones older than 90 days are dropped. The list comes out
-Vaults by (`order`, `id`), then tombstones by `id`. So a Vault added on one device survives another device's newer
+Vaults by (`order`, `id`), then tombstones by `id`. Two lists that each pass can merge to more than 32 Vaults;
+the merge then keeps the first 32 in that order, the same on every device, so it never makes a file that is
+refused. So a Vault added on one device survives another device's newer
 edit of a different Vault.
 
 **A copied Vault grants nothing.** The list holds addresses only. Taking it in never adds a device to the engine's

@@ -16,7 +16,10 @@ final class CopySettingsTests: XCTestCase {
     /// Every allowlisted key is exported, and nothing else: a setting added
     /// to the allowlist but not to `keys(_:)` (or the reverse) fails the build.
     func testExportCoversExactlyTheAllowlist() throws {
-        let exported = CopySettings.keys(HavenConfig())
+        // One Vault, since an empty Vault list is left out (Tron on #2521).
+        var c = HavenConfig()
+        c.desktopVaults = [DesktopVault(id: "https:a.example", name: "", httpsURL: "https://a.example", order: 0)]
+        let exported = CopySettings.keys(c, now: 1_767_000_000)
         XCTAssertEqual(Set(exported.keys), Set(CopySettings.allowlist.keys))
         let data = try XCTUnwrap(CopySettings.fileData(keys: exported, updatedAt: 1_767_000_000))
         guard case .success = CopySettings.check(data, now: 1_767_000_000) else {

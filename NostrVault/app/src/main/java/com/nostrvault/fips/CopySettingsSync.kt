@@ -55,8 +55,11 @@ class CopySettingsSync internal constructor(
          * [FIRST_FILE_AT], since nothing here changed before it and any real change on a linked device must win.
          */
         data class Write(val at: Long) : Step
-        /** The engine left a file this device didn't write: apply it. */
-        data class Apply(val file: CopySettings.Checked, val rewriteAt: Long? = null) : Step
+        /**
+         * The engine left a file this device didn't write: apply it, or only [only] of it when an edit here is still
+         * unwritten (then [rewriteAt] writes the edit over it).
+         */
+        data class Apply(val file: CopySettings.Checked, val rewriteAt: Long? = null, val only: JsonObject? = null) : Step
     }
 
     private val lock = Mutex()
@@ -88,7 +91,7 @@ class CopySettingsSync internal constructor(
                 baseline.at = at
             }
             is Step.Apply -> {
-                configStore.updateAsync { CopySettings.apply(it, s.file.keys) }
+                configStore.updateAsync { CopySettings.apply(it, s.only ?: s.file.keys) }
                 // What this device holds now (its own mesh servers kept), so applying is not read as a change here.
                 val applied = CopySettings.keys(configStore.config.value, s.file.keys["desktop_vaults"] as? JsonArray)
                 s.rewriteAt?.let { write(file, CopySettings.file(applied, it)) }
@@ -128,8 +131,15 @@ class CopySettingsSync internal constructor(
                 !sameVaults(baselineKeys, checked.keys)
             // A file with the retired "condensed" layout is applied, then written over clean (dated now), so it stops
             // reaching linked devices (11/14). Not during setup: nothing is written then.
-            if (foreign) return if (checked.keys == current) Step.Nothing
-            else Step.Apply(checked, rewriteAt = nowS.takeIf { setupDone && CopySettings.holdsRetiredLayout(checked.keys) })
+            if (foreign && checked.keys == current) return Step.Nothing
+            // An edit here not yet written (a setting changed while the engine stored a peer's file): take in only
+            // what the other device changed since the baseline, then write the edit over it, so the newest change
+            // wins on each key and the edit isn't reverted (Tron on #2521).
+            if (foreign && setupDone && baselineKeys != null && !sameKeys(baselineKeys, current)) {
+                val base = runCatching { Json.parseToJsonElement(baselineKeys) as JsonObject }.getOrNull()
+                if (base != null) return Step.Apply(checked, rewriteAt = nowS, only = CopySettings.changedKeys(checked.keys, base))
+            }
+            if (foreign) return Step.Apply(checked, rewriteAt = nowS.takeIf { setupDone && CopySettings.holdsRetiredLayout(checked.keys) })
             return if (sameKeys(baselineKeys!!, current)) Step.Nothing else write
         }
 

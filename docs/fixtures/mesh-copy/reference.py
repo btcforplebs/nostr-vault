@@ -204,6 +204,9 @@ write("settings-refuse-cases.json", {"now": 1767000300, "cases": [
     {"name": "tombstone date not whole", "settings": s({"desktop_vaults": [{**tomb("https:a.example"), "deletedAt": 1.5}]}), "expect": {"ok": False, "reason": "bad_type"}},
     {"name": "vault mesh address as a raw hex key", "settings": s({"desktop_vaults": [vault("mesh:x", mesh=OWNER)]}), "expect": {"ok": False, "reason": "secret_value"}},
     {"name": "vault named with an nsec", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "name": nsec}]}), "expect": {"ok": False, "reason": "secret_value"}},
+    {"name": "vault dated 11 minutes ahead", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "updatedAt": 1767000300 + 660}]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "tombstone dated 11 minutes ahead", "settings": s({"desktop_vaults": [tomb("https:a.example", at=1767000300 + 660)]}), "expect": {"ok": False, "reason": "bad_type"}},
+    {"name": "first file dated 1, its Vaults dated now", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "updatedAt": 1767000300}]}, updated_at=1), "expect": {"ok": True}},
     {"name": "vault web address with a bunker string", "settings": s({"desktop_vaults": [{**VAULTS_OK[0], "httpsURL": "https://a.example/?bunker://x"}]}), "expect": {"ok": False, "reason": "secret_value"}},
 ], "newest_wins": [
     {"name": "theirs newer", "mine": 100, "theirs": 200, "expect": "theirs"},
@@ -228,7 +231,7 @@ def merge_vaults(mine, theirs, now):
     keep = [e for e in out.values() if "deletedAt" not in e or e["deletedAt"] >= now - TOMB_DAYS * 86400]
     vaults = sorted((e for e in keep if "deletedAt" not in e), key=lambda e: (e["order"], e["id"]))
     tombs = sorted((e for e in keep if "deletedAt" in e), key=lambda e: e["id"])
-    return vaults + tombs
+    return vaults[:32] + tombs
 
 NOW = 1767000300
 A = vault("mesh:" + MAC, mesh=MAC, order=0, name="Studio Mac")
@@ -250,6 +253,9 @@ merge_cases = [
     ("tombstone exactly 90 days old stays", [A, tomb(B["id"], at=NOW - 90 * 86400)], [A]),
     ("order tie breaks by id", [ed(C, order=0)], [A]),
     ("a changed mesh address merges as data", [ed(A, meshNpub=BOX, updatedAt=1767000100)], [A]),
+    ("a merge past 32 Vaults keeps the first 32 by (order, id)",
+     [vault(f"https:m{i:02}.example", https=f"https://m{i:02}.example", order=i) for i in range(20)],
+     [vault(f"https:t{i:02}.example", https=f"https://t{i:02}.example", order=i) for i in range(20)]),
 ]
 write("settings-vault-merge-cases.json", {"now": NOW, "tombstone_days": TOMB_DAYS, "cases": [
     {"name": n, "mine": m, "theirs": t, "expect": merge_vaults(m, t, NOW)} for n, m, t in merge_cases]})

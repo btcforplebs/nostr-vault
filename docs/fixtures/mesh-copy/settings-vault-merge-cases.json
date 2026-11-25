@@ -508,6 +508,591 @@
           "meshNpub": "npub1x2m22fk9t9n83ch4xy6qrkkssacspswg3h94c6n7nyvnr78gzgfqe70k6r"
         }
       ]
+    },
+    {
+      "name": "a merge past 32 Vaults keeps the first 32 by (order, id)",
+      "mine": [
+        {
+          "id": "https:m00.example",
+          "name": "",
+          "kind": "mac",
+          "order": 0,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m00.example"
+        },
+        {
+          "id": "https:m01.example",
+          "name": "",
+          "kind": "mac",
+          "order": 1,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m01.example"
+        },
+        {
+          "id": "https:m02.example",
+          "name": "",
+          "kind": "mac",
+          "order": 2,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m02.example"
+        },
+        {
+          "id": "https:m03.example",
+          "name": "",
+          "kind": "mac",
+          "order": 3,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m03.example"
+        },
+        {
+          "id": "https:m04.example",
+          "name": "",
+          "kind": "mac",
+          "order": 4,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m04.example"
+        },
+        {
+          "id": "https:m05.example",
+          "name": "",
+          "kind": "mac",
+          "order": 5,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m05.example"
+        },
+        {
+          "id": "https:m06.example",
+          "name": "",
+          "kind": "mac",
+          "order": 6,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m06.example"
+        },
+        {
+          "id": "https:m07.example",
+          "name": "",
+          "kind": "mac",
+          "order": 7,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m07.example"
+        },
+        {
+          "id": "https:m08.example",
+          "name": "",
+          "kind": "mac",
+          "order": 8,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m08.example"
+        },
+        {
+          "id": "https:m09.example",
+          "name": "",
+          "kind": "mac",
+          "order": 9,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m09.example"
+        },
+        {
+          "id": "https:m10.example",
+          "name": "",
+          "kind": "mac",
+          "order": 10,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m10.example"
+        },
+        {
+          "id": "https:m11.example",
+          "name": "",
+          "kind": "mac",
+          "order": 11,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m11.example"
+        },
+        {
+          "id": "https:m12.example",
+          "name": "",
+          "kind": "mac",
+          "order": 12,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m12.example"
+        },
+        {
+          "id": "https:m13.example",
+          "name": "",
+          "kind": "mac",
+          "order": 13,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m13.example"
+        },
+        {
+          "id": "https:m14.example",
+          "name": "",
+          "kind": "mac",
+          "order": 14,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m14.example"
+        },
+        {
+          "id": "https:m15.example",
+          "name": "",
+          "kind": "mac",
+          "order": 15,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m15.example"
+        },
+        {
+          "id": "https:m16.example",
+          "name": "",
+          "kind": "mac",
+          "order": 16,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m16.example"
+        },
+        {
+          "id": "https:m17.example",
+          "name": "",
+          "kind": "mac",
+          "order": 17,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m17.example"
+        },
+        {
+          "id": "https:m18.example",
+          "name": "",
+          "kind": "mac",
+          "order": 18,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m18.example"
+        },
+        {
+          "id": "https:m19.example",
+          "name": "",
+          "kind": "mac",
+          "order": 19,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m19.example"
+        }
+      ],
+      "theirs": [
+        {
+          "id": "https:t00.example",
+          "name": "",
+          "kind": "mac",
+          "order": 0,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t00.example"
+        },
+        {
+          "id": "https:t01.example",
+          "name": "",
+          "kind": "mac",
+          "order": 1,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t01.example"
+        },
+        {
+          "id": "https:t02.example",
+          "name": "",
+          "kind": "mac",
+          "order": 2,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t02.example"
+        },
+        {
+          "id": "https:t03.example",
+          "name": "",
+          "kind": "mac",
+          "order": 3,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t03.example"
+        },
+        {
+          "id": "https:t04.example",
+          "name": "",
+          "kind": "mac",
+          "order": 4,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t04.example"
+        },
+        {
+          "id": "https:t05.example",
+          "name": "",
+          "kind": "mac",
+          "order": 5,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t05.example"
+        },
+        {
+          "id": "https:t06.example",
+          "name": "",
+          "kind": "mac",
+          "order": 6,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t06.example"
+        },
+        {
+          "id": "https:t07.example",
+          "name": "",
+          "kind": "mac",
+          "order": 7,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t07.example"
+        },
+        {
+          "id": "https:t08.example",
+          "name": "",
+          "kind": "mac",
+          "order": 8,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t08.example"
+        },
+        {
+          "id": "https:t09.example",
+          "name": "",
+          "kind": "mac",
+          "order": 9,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t09.example"
+        },
+        {
+          "id": "https:t10.example",
+          "name": "",
+          "kind": "mac",
+          "order": 10,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t10.example"
+        },
+        {
+          "id": "https:t11.example",
+          "name": "",
+          "kind": "mac",
+          "order": 11,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t11.example"
+        },
+        {
+          "id": "https:t12.example",
+          "name": "",
+          "kind": "mac",
+          "order": 12,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t12.example"
+        },
+        {
+          "id": "https:t13.example",
+          "name": "",
+          "kind": "mac",
+          "order": 13,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t13.example"
+        },
+        {
+          "id": "https:t14.example",
+          "name": "",
+          "kind": "mac",
+          "order": 14,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t14.example"
+        },
+        {
+          "id": "https:t15.example",
+          "name": "",
+          "kind": "mac",
+          "order": 15,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t15.example"
+        },
+        {
+          "id": "https:t16.example",
+          "name": "",
+          "kind": "mac",
+          "order": 16,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t16.example"
+        },
+        {
+          "id": "https:t17.example",
+          "name": "",
+          "kind": "mac",
+          "order": 17,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t17.example"
+        },
+        {
+          "id": "https:t18.example",
+          "name": "",
+          "kind": "mac",
+          "order": 18,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t18.example"
+        },
+        {
+          "id": "https:t19.example",
+          "name": "",
+          "kind": "mac",
+          "order": 19,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t19.example"
+        }
+      ],
+      "expect": [
+        {
+          "id": "https:m00.example",
+          "name": "",
+          "kind": "mac",
+          "order": 0,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m00.example"
+        },
+        {
+          "id": "https:t00.example",
+          "name": "",
+          "kind": "mac",
+          "order": 0,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t00.example"
+        },
+        {
+          "id": "https:m01.example",
+          "name": "",
+          "kind": "mac",
+          "order": 1,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m01.example"
+        },
+        {
+          "id": "https:t01.example",
+          "name": "",
+          "kind": "mac",
+          "order": 1,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t01.example"
+        },
+        {
+          "id": "https:m02.example",
+          "name": "",
+          "kind": "mac",
+          "order": 2,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m02.example"
+        },
+        {
+          "id": "https:t02.example",
+          "name": "",
+          "kind": "mac",
+          "order": 2,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t02.example"
+        },
+        {
+          "id": "https:m03.example",
+          "name": "",
+          "kind": "mac",
+          "order": 3,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m03.example"
+        },
+        {
+          "id": "https:t03.example",
+          "name": "",
+          "kind": "mac",
+          "order": 3,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t03.example"
+        },
+        {
+          "id": "https:m04.example",
+          "name": "",
+          "kind": "mac",
+          "order": 4,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m04.example"
+        },
+        {
+          "id": "https:t04.example",
+          "name": "",
+          "kind": "mac",
+          "order": 4,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t04.example"
+        },
+        {
+          "id": "https:m05.example",
+          "name": "",
+          "kind": "mac",
+          "order": 5,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m05.example"
+        },
+        {
+          "id": "https:t05.example",
+          "name": "",
+          "kind": "mac",
+          "order": 5,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t05.example"
+        },
+        {
+          "id": "https:m06.example",
+          "name": "",
+          "kind": "mac",
+          "order": 6,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m06.example"
+        },
+        {
+          "id": "https:t06.example",
+          "name": "",
+          "kind": "mac",
+          "order": 6,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t06.example"
+        },
+        {
+          "id": "https:m07.example",
+          "name": "",
+          "kind": "mac",
+          "order": 7,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m07.example"
+        },
+        {
+          "id": "https:t07.example",
+          "name": "",
+          "kind": "mac",
+          "order": 7,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t07.example"
+        },
+        {
+          "id": "https:m08.example",
+          "name": "",
+          "kind": "mac",
+          "order": 8,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m08.example"
+        },
+        {
+          "id": "https:t08.example",
+          "name": "",
+          "kind": "mac",
+          "order": 8,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t08.example"
+        },
+        {
+          "id": "https:m09.example",
+          "name": "",
+          "kind": "mac",
+          "order": 9,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m09.example"
+        },
+        {
+          "id": "https:t09.example",
+          "name": "",
+          "kind": "mac",
+          "order": 9,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t09.example"
+        },
+        {
+          "id": "https:m10.example",
+          "name": "",
+          "kind": "mac",
+          "order": 10,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m10.example"
+        },
+        {
+          "id": "https:t10.example",
+          "name": "",
+          "kind": "mac",
+          "order": 10,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t10.example"
+        },
+        {
+          "id": "https:m11.example",
+          "name": "",
+          "kind": "mac",
+          "order": 11,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m11.example"
+        },
+        {
+          "id": "https:t11.example",
+          "name": "",
+          "kind": "mac",
+          "order": 11,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t11.example"
+        },
+        {
+          "id": "https:m12.example",
+          "name": "",
+          "kind": "mac",
+          "order": 12,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m12.example"
+        },
+        {
+          "id": "https:t12.example",
+          "name": "",
+          "kind": "mac",
+          "order": 12,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t12.example"
+        },
+        {
+          "id": "https:m13.example",
+          "name": "",
+          "kind": "mac",
+          "order": 13,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m13.example"
+        },
+        {
+          "id": "https:t13.example",
+          "name": "",
+          "kind": "mac",
+          "order": 13,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t13.example"
+        },
+        {
+          "id": "https:m14.example",
+          "name": "",
+          "kind": "mac",
+          "order": 14,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m14.example"
+        },
+        {
+          "id": "https:t14.example",
+          "name": "",
+          "kind": "mac",
+          "order": 14,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t14.example"
+        },
+        {
+          "id": "https:m15.example",
+          "name": "",
+          "kind": "mac",
+          "order": 15,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://m15.example"
+        },
+        {
+          "id": "https:t15.example",
+          "name": "",
+          "kind": "mac",
+          "order": 15,
+          "updatedAt": 1767000000,
+          "httpsURL": "https://t15.example"
+        }
+      ]
     }
   ]
 }

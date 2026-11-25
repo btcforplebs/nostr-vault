@@ -188,15 +188,21 @@ object DesktopVaultsRules {
      * Clearing the old field takes only the slot's address off (N3): a Mac still in My Devices stays a Vault.
      * iOS DesktopVaultsLogic.followingDevices.
      */
+    /**
+     * The mesh addresses [followingDevices] lets a Vault keep: an owner-linked `MAC` in My Devices, or the slot's npub,
+     * never this device's own. The settings copy reads the same set to tell an address this device dropped (can't hold,
+     * so carried as the file has it) from one it deleted (#2521).
+     */
+    fun holdableMeshNpubs(devices: List<FipsDevice>, slot: String, ownNpub: String?, ownerNpub: String = ""): Set<String> =
+        macs(devices, (SlotAddress.of(slot) as? SlotAddress.Mesh)?.npub, ownNpub, ownerNpub).toSet()
+
     fun followingDevices(
         vaults: List<DesktopVault>, devices: List<FipsDevice>, slot: String, ownNpub: String?, ownerNpub: String = "",
     ): List<DesktopVault> {
-        val slotNpub = (SlotAddress.of(slot) as? SlotAddress.Mesh)?.npub
-        val macs = devices.filter { it.role == DeviceRole.MAC && it.npub != ownNpub && MyDevicesRules.isOwners(it.linkedBy, ownerNpub) }
-            .map { it.npub }.toSet()
+        val holdable = holdableMeshNpubs(devices, slot, ownNpub, ownerNpub)
         val out = ordered(vaults).map { vault ->
             val npub = vault.meshNpub?.let(HomeVaultRules::meshNpubFromInput) ?: return@map vault
-            if (npub == ownNpub || (npub !in macs && npub != slotNpub)) vault.copy(meshNpub = null) else vault
+            if (npub !in holdable) vault.copy(meshNpub = null) else vault
         }.filterNot { it.meshNpub == null && it.httpsURL == null }.toMutableList()
         for (npub in macs(devices, null, ownNpub, ownerNpub)) {
             if (out.any { it.meshNpub?.let(HomeVaultRules::meshNpubFromInput) == npub }) continue

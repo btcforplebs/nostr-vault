@@ -62,7 +62,8 @@ enum CopySettings {
                      ownNpub: String? = HavenConfig.storedOwnMeshNpub,
                      now: Int64 = Int64(Date().timeIntervalSince1970)) -> [String: Any] {
         let prefs = config.notificationPrefsPerAccount[config.ownerNpub] ?? NotificationPreferences()
-        return [
+        let vaults = vaultRecords(config, previous: vaultEntries(previousVaults), ownNpub: ownNpub, now: now)
+        var out: [String: Any] = [
             "feed_layouts": cleanLayouts(config.feedLayoutModes),
             "zaps_only": config.zapsOnlyMode,
             "auto_load_new_posts": config.autoLoadNewPosts,
@@ -75,8 +76,11 @@ enum CopySettings {
                 "mentions": prefs.mentions, "replies": prefs.replies, "dms": prefs.dms, "zaps": prefs.zaps,
                 "reactions": prefs.reactions, "reposts": prefs.reposts, "follows": prefs.follows,
             ],
-            "desktop_vaults": vaultRecords(config, previous: vaultEntries(previousVaults), ownNpub: ownNpub, now: now),
         ]
+        // Left out when empty, so a device on an engine from before the Vault
+        // list still takes the file (Tron on #2521, contract §5).
+        if !vaults.isEmpty { out["desktop_vaults"] = vaults }
+        return out
     }
 
     /// The whole file: `{v:1, updated_at, keys}`, sorted for a stable diff.
@@ -98,6 +102,30 @@ enum CopySettings {
         let mine = keys(config, previousVaults: previous, ownNpub: ownNpub, now: now)
         let applied = apply(fileKeys, to: config, ownNpub: ownNpub)
         return !(NSDictionary(dictionary: mine).isEqual(to: keys(applied, previousVaults: previous, ownNpub: ownNpub, now: now)))
+    }
+
+    /// The file's keys that differ from `base` (the file as this device last
+    /// wrote or read it), a Vault list cut to the Vaults that differ: what
+    /// another device changed since. With no base, all of them. A foreign
+    /// file takes in only these while an edit here is still unwritten, so the
+    /// edit isn't reverted (Tron on #2521).
+    static func changedKeys(_ keys: [String: Any], since base: [String: Any]?) -> [String: Any] {
+        guard let base else { return keys }
+        var out: [String: Any] = [:]
+        for (k, v) in keys {
+            if k == "desktop_vaults" {
+                let before = Dictionary(vaultEntries(base[k] as? [Any]).compactMap { e in (e["id"] as? String).map { ($0, e) } },
+                                        uniquingKeysWith: { a, _ in a })
+                let changed = vaultEntries(v as? [Any]).filter { e in
+                    guard let id = e["id"] as? String, let b = before[id] else { return true }
+                    return !NSDictionary(dictionary: e).isEqual(to: b)
+                }
+                if !changed.isEmpty { out[k] = changed }
+            } else if !NSDictionary(dictionary: ["v": v]).isEqual(to: base[k].map { ["v": $0] } ?? [:]) {
+                out[k] = v
+            }
+        }
+        return out
     }
 
     /// A media server on the mesh (`fipsmesh://…` or a `.fips` host).
@@ -174,6 +202,12 @@ enum CopySettings {
         for (k, value) in keys {
             guard let type = allowlist[k] else { return .failure(.init(.unknownKey)) }
             guard typeOK(type, value) else { return .failure(.init(.badType)) }
+        }
+        // A Vault dated past now + the slack would win every merge for its id
+        // (a tombstone so dated would never age out): refused, as the engine
+        // does (Tron on #2521).
+        if vaultEntries(keys["desktop_vaults"] as? [Any]).contains(where: { stamp($0) > now + futureSlack }) {
+            return .failure(.init(.badType))
         }
         return .success(Checked(updatedAt: Int64(at), keys: keys))
     }
@@ -312,7 +346,9 @@ extension CopySettings {
             return a != b ? a < b : ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "")
         }
         let tombs = kept.filter(isTomb).sorted { ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "") }
-        return vaults + tombs
+        // Past the cap, the last Vaults in (order, id) are left out, as the
+        // engine does, so a merge never makes a file every device refuses.
+        return Array(vaults.prefix(vaultsMax)) + tombs
     }
 
     private static func record(_ v: DesktopVault) -> VaultEntry {
@@ -339,12 +375,15 @@ extension CopySettings {
     static func vaultRecords(_ config: HavenConfig, previous: [VaultEntry], ownNpub: String?,
                              now: Int64) -> [Any] {
         let local = DesktopVaultsLogic.ordered(config.desktopVaultsInEffect(ownNpub: ownNpub))
-        let paired = Set(config.meshDevices.map(\.npub))
+        // The addresses followingDevices keeps; any other was dropped here
+        // because this device can't hold it, not deleted (Tron on #2521).
+        let holdable = DesktopVaultsLogic.holdableMeshNpubs(devices: config.meshDevices, slot: config.macRelayURL,
+                                                            ownNpub: ownNpub)
         let prevByID = Dictionary(previous.compactMap { e in (e["id"] as? String).map { ($0, e) } },
                                   uniquingKeysWith: { a, _ in a })
         func heldElsewhere(_ npub: String?) -> Bool {
-            guard let npub else { return false }
-            return npub == ownNpub || !paired.contains(npub)
+            guard let npub = npub.flatMap(HomeVaultLogic.meshNpub(fromInput:)) ?? npub else { return false }
+            return npub == ownNpub || !holdable.contains(npub)
         }
         // Order: the file's, unless the Vaults both sides hold were reordered here.
         let prevVaults = previous.filter { !isTomb($0) }

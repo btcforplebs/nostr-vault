@@ -76,8 +76,11 @@ object CopySettings {
             "dm_relays" to strings(c.dmRelays),
             "media_servers" to strings(c.blossomMirrors.filterNot(::onMesh)),
             "notifications" to JsonObject(notificationSwitches(c).mapValues { JsonPrimitive(it.value) }),
-            "desktop_vaults" to CopyVaults.records(c, previousVaults.entries(), ownNpub, nowS),
-        ),
+        ).also { k ->
+            // Left out when empty, so a device on an engine from before the Vault list still takes the file (Tron on
+            // #2521, contract §5).
+            CopyVaults.records(c, previousVaults.entries(), ownNpub, nowS).takeIf { it.isNotEmpty() }?.let { k["desktop_vaults"] = it }
+        },
     )
 
     private fun JsonArray?.entries(): List<JsonObject> = this?.mapNotNull { it as? JsonObject }.orEmpty()
@@ -102,6 +105,24 @@ object CopySettings {
     private fun strings(l: List<String>) = JsonArray(l.map(::JsonPrimitive))
 
     // ---- Apply (a checked file → this app's config) ----
+
+    /**
+     * The file's [keys] that differ from [base] (the keys this device last wrote or applied), a Vault list cut to the
+     * Vaults that differ: what another device changed since. With no base, all of them. A foreign file takes in only
+     * these while an edit here is still unwritten, so the edit isn't reverted (Tron on #2521).
+     */
+    fun changedKeys(keys: JsonObject, base: JsonObject?): JsonObject {
+        if (base == null) return keys
+        val out = linkedMapOf<String, JsonElement>()
+        for ((k, v) in keys) {
+            if (k == "desktop_vaults") {
+                val before = (base[k] as? JsonArray).entries().associateBy { it["id"] }
+                val changed = (v as? JsonArray).entries().filter { e -> before[e["id"]]?.let { it != e } ?: true }
+                if (changed.isNotEmpty()) out[k] = JsonArray(changed)
+            } else if (base[k] != v) out[k] = v
+        }
+        return JsonObject(out)
+    }
 
     /** [c] with every key in [keys] applied; a key not in the file keeps this device's value. */
     fun apply(c: HavenConfig, keys: JsonObject, ownNpub: String? = OwnMeshNpub.value): HavenConfig {
@@ -157,6 +178,11 @@ object CopySettings {
         for ((k, value) in keys) {
             val type = ALLOWLIST[k] ?: return null to "unknown_key"
             if (!typeOk(type, value)) return null to "bad_type"
+        }
+        // A Vault dated past now + the slack would win every merge for its id (a tombstone so dated would never age
+        // out): refused, as the engine does (Tron on #2521).
+        if ((keys["desktop_vaults"] as? JsonArray).entries().any { CopyVaults.stamp(it) > nowS + FUTURE_SLACK_S }) {
+            return null to "bad_type"
         }
         return Checked(at, keys) to null
     }
@@ -249,7 +275,9 @@ object CopyVaults {
         }
         val oldest = nowS - TOMB_DAYS * 86_400
         val kept = byId.values.filter { !isTomb(it) || stamp(it) >= oldest }
-        return kept.filterNot(::isTomb).sortedWith(compareBy({ it.long("order") ?: 0 }, { it.id() })) +
+        // Past the cap, the last Vaults in (order, id) are left out, as the engine does, so a merge never makes a
+        // file every device refuses.
+        return kept.filterNot(::isTomb).sortedWith(compareBy({ it.long("order") ?: 0 }, { it.id() })).take(MAX) +
             kept.filter(::isTomb).sortedBy { it.id() }
     }
 
@@ -275,9 +303,14 @@ object CopyVaults {
      */
     fun records(c: HavenConfig, previous: List<JsonObject>, ownNpub: String?, nowS: Long): JsonArray {
         val local = DesktopVaultsRules.ordered(c.desktopVaultsInEffect(ownNpub))
-        val paired = c.fipsMesh.devices.map { it.npub }.toSet()
+        // The addresses followingDevices keeps; any other was dropped here because this device can't hold it, not
+        // deleted (Tron on #2521).
+        val holdable = DesktopVaultsRules.holdableMeshNpubs(c.fipsMesh.devices, c.macRelayURL, ownNpub, c.ownerNpub)
         val prevById = previous.associateBy { it.id() }
-        fun heldElsewhere(npub: String?) = npub != null && (npub == ownNpub || npub !in paired)
+        fun heldElsewhere(npub: String?): Boolean {
+            val n = npub?.let { HomeVaultRules.meshNpubFromInput(it) ?: it } ?: return false
+            return n == ownNpub || n !in holdable
+        }
         val prevVaults = previous.filterNot(::isTomb)
         val prevOrder = prevVaults.sortedWith(compareBy({ it.long("order") ?: 0 }, { it.id() })).map { it.id() }
         val localIds = local.map { it.id }

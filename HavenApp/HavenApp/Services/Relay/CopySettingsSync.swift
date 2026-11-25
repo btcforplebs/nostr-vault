@@ -47,11 +47,31 @@ final class CopySettingsSync {
     private func writeIfChanged(_ config: HavenConfig) {
         guard !applying, config.hasCompletedSetup else { return }
         if let lastSeen, let now = try? Data(contentsOf: fileURL), now != lastSeen {
-            applyFromFile()
+            takeInForeign(previous: lastSeen, config: config)
             return
         }
         guard CopySettings.differs(config, from: readFile()?.keys) else { return }
         write(config)
+    }
+
+    /// A file the engine left (a peer's PUT, a catch-up) found when a setting
+    /// changed here. With no edit here since `previous`, it is applied as
+    /// usual. With one, only what the other device changed since `previous`
+    /// is taken in and then this device's edit is written over it, so the
+    /// newest change wins on each key and the edit isn't reverted (Tron on #2521).
+    private func takeInForeign(previous: Data, config: HavenConfig) {
+        guard case .success(let before) = CopySettings.check(previous, now: Self.now),
+              CopySettings.differs(config, from: before.keys) else { return applyFromFile() }
+        lastSeen = try? Data(contentsOf: fileURL)
+        guard let checked = readFile() else { return write(config) }
+        let next = CopySettings.apply(CopySettings.changedKeys(checked.keys, since: before.keys), to: config)
+        if CopySettings.differs(config, from: CopySettings.keys(next, previousVaults: checked.keys["desktop_vaults"] as? [Any])) {
+            applying = true
+            ConfigService.shared.config = next
+            ConfigService.shared.save()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.applying = false }
+        }
+        if CopySettings.differs(next, from: checked.keys) { write(next) }
     }
 
     private func write(_ config: HavenConfig) {

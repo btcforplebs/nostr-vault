@@ -504,6 +504,13 @@ func copyVaultsMerge(mine, theirs []any, now time.Time) []any {
 		return strings.Compare(a["id"].(string), b["id"].(string))
 	})
 	slices.SortFunc(tombs, func(a, b map[string]any) int { return strings.Compare(a["id"].(string), b["id"].(string)) })
+	// Two lists that each pass can merge to more than copyVaultsMax Vaults;
+	// the file would then be refused and settings sync between the two
+	// devices stop. The Vaults past the cap, last in (order, id), are left
+	// out, the same on both sides (Tron on #2521).
+	if len(vaults) > copyVaultsMax {
+		vaults = vaults[:copyVaultsMax]
+	}
 	out := make([]any, 0, len(vaults)+len(tombs))
 	for _, e := range vaults {
 		out = append(out, e)
@@ -541,10 +548,14 @@ func copySettingsMerge(mine, theirs []byte, now time.Time) ([]byte, error) {
 	for k, v := range winner {
 		out.Keys[k] = v
 	}
-	mv, mHas := m.Keys["desktop_vaults"].([]any)
-	tv, tHas := t.Keys["desktop_vaults"].([]any)
-	if mHas || tHas {
-		out.Keys["desktop_vaults"] = copyVaultsMerge(mv, tv, now)
+	mv, _ := m.Keys["desktop_vaults"].([]any)
+	tv, _ := t.Keys["desktop_vaults"].([]any)
+	// An empty list is left out, so a device on an engine from before the
+	// Vault list (no desktop_vaults in its allowlist) still takes the file
+	// (Tron on #2521, contract §5).
+	delete(out.Keys, "desktop_vaults")
+	if merged := copyVaultsMerge(mv, tv, now); len(merged) > 0 {
+		out.Keys["desktop_vaults"] = merged
 	}
 	return json.Marshal(out)
 }
@@ -589,6 +600,18 @@ func copySettingsRefusal(raw []byte, now time.Time) string {
 		}
 		if !copyTypeOK(want, v) {
 			return "bad_type"
+		}
+	}
+	// A Vault dated further ahead than the file may be would win every merge
+	// for its id, and a tombstone so dated would never age out (Tron on
+	// #2521). Bounded by now, not the file's updated_at: an app's first file
+	// is dated 1 with its Vaults dated now.
+	if list, ok := (*s.Keys)["desktop_vaults"].([]any); ok {
+		limit := float64(now.Add(copySettingsFutureSlack).Unix())
+		for _, x := range list {
+			if at, _ := copyVaultStamp(x.(map[string]any)); at > limit {
+				return "bad_type"
+			}
 		}
 	}
 	return ""

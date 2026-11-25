@@ -1415,6 +1415,72 @@
       }
     },
     {
+      "name": "vault dated 11 minutes ahead",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000960,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "tombstone dated 11 minutes ahead",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "https:a.example",
+              "deletedAt": 1767000960
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "first file dated 1, its Vaults dated now",
+      "settings": {
+        "v": 1,
+        "updated_at": 1,
+        "keys": {
+          "desktop_vaults": [
+            {
+              "id": "mesh:npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "name": "Studio Mac",
+              "kind": "mac",
+              "order": 0,
+              "updatedAt": 1767000300,
+              "meshNpub": "npub1fza3j5hhg8w9sshn4pe50dzrc2dzn7pq9tdrxk54j3tk6czhw2dswxz89d",
+              "httpsURL": "https://mac.example"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
       "name": "vault web address with a bunker string",
       "settings": {
         "v": 1,

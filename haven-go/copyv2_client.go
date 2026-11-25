@@ -437,8 +437,15 @@ func applyCopySettings(file *zip.File) string {
 	return storeCopySettings(raw)
 }
 
+// copySettingsMu serialises storeCopySettings: an incoming PUT and this
+// device's own catch-up would otherwise each read, merge and rename, and one
+// side's merge would be lost (Tron on #2521).
+var copySettingsMu sync.Mutex
+
 // storeCopySettings: the one place settings from another device go in.
 func storeCopySettings(raw []byte) string {
+	copySettingsMu.Lock()
+	defer copySettingsMu.Unlock()
 	if why := copySettingsRefusal(raw, time.Now()); why != "" {
 		slog.Warn("copy: settings refused", "reason", why)
 		return "refused"
@@ -457,11 +464,19 @@ func storeCopySettings(raw []byte) string {
 	if mine != nil && copySettingsSame(mine, merged) {
 		return "included"
 	}
-	tmp := copySettingsFile + ".tmp"
-	if err := os.WriteFile(tmp, merged, 0o600); err != nil {
+	// A temp name of its own, so no other writer can tear it.
+	f, err := os.CreateTemp(filepath.Dir(copySettingsFile), filepath.Base(copySettingsFile)+".*.tmp")
+	if err != nil {
+		return "none"
+	}
+	tmp := f.Name()
+	_, werr := f.Write(merged)
+	if cerr := f.Close(); werr != nil || cerr != nil {
+		os.Remove(tmp)
 		return "none"
 	}
 	if err := os.Rename(tmp, copySettingsFile); err != nil {
+		os.Remove(tmp)
 		return "none"
 	}
 	return "included"
