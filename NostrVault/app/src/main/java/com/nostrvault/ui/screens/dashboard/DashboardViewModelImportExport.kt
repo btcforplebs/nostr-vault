@@ -51,6 +51,8 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
         viewModelScope.launch {
             try {
                 val outputDir = java.io.File(context.cacheDir, "exports")
+                // The zip an earlier export handed the share sheet (no close callback on Android).
+                withContext(Dispatchers.IO) { com.nostrvault.service.CacheSweep.clearExports(context.cacheDir) }
                 outputDir.mkdirs()
                 val outputFile = java.io.File(outputDir, "haven_backup_${System.currentTimeMillis()}.zip")
 
@@ -105,6 +107,8 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                 }
 
                 val outputDir = java.io.File(context.cacheDir, "exports")
+                // The zip an earlier export handed the share sheet (no close callback on Android).
+                withContext(Dispatchers.IO) { com.nostrvault.service.CacheSweep.clearExports(context.cacheDir) }
                 outputDir.mkdirs()
                 val outputFile = java.io.File(outputDir, "haven_media_${System.currentTimeMillis()}.zip")
 
