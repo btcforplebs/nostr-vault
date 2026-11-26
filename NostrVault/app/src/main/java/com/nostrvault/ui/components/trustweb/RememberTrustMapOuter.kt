@@ -27,3 +27,14 @@ internal fun rememberTrustMapOuter(): TrustMapOuter {
     val outer by watch.outer.collectAsState()
     return outer
 }
+
+/** The active account's rank copy, for a hop sphere person's path in to you ([com.nostrvault.data.model.GlobeChain]). */
+@Composable
+internal fun rememberRankCopy(): com.nostrvault.data.model.TrustRankCopy? {
+    val context = LocalContext.current
+    val store = remember(context) {
+        EntryPointAccessors.fromApplication(context.applicationContext, GlobeOuterRingsEntryPoint::class.java).discoveryReachStore()
+    }
+    val copy by store.copy.collectAsState()
+    return copy
+}

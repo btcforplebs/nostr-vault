@@ -118,4 +118,9 @@ class TrustMapOuterTest {
             assertFalse(text, text.contains("haven", ignoreCase = true))
         }
     }
+
+    @Test fun `a hop chip counts its sphere's top and haze, and nothing without a haze`() {
+        assertEquals(5, TrustMapOuter.shownCount(TrustMapOuter.Ring(3, listOf(pk('e'), pk('f')), haze = listOf(pk('1'), pk('2'), pk('3')))))
+        assertEquals(null, TrustMapOuter.shownCount(TrustMapOuter.Ring(3, listOf(pk('e'), pk('f')))))
+    }
 }

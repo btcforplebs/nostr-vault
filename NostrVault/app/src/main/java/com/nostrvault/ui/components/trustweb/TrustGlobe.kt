@@ -19,6 +19,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -27,6 +29,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -48,6 +51,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.GlobeChain
 import com.nostrvault.data.model.GlobeRingZoom
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.ui.theme.Motion
@@ -202,10 +206,24 @@ internal fun TrustGlobe(
 
     LaunchedEffect(filterLit) { scene.filter(filterLit) }
 
-    // Someone on a picked hop's sphere: turn to their spot there, not on the inner globe.
-    LaunchedEffect(focus) { focus?.let { scene.turn(it, if (showsOuterRings) GlobeHopSphere.direction(it) else null) } }
+    // Someone on a picked hop's sphere: turn to their spot there, not on the
+    // inner globe, and draw their path in through the layers ([GlobeChainLayer])
+    // rather than the inner globe's own threads. iOS `onChange(of: focus)`.
+    val copy = if (showsOuterRings) rememberRankCopy() else null
+    val currentCopy by rememberUpdatedState(copy)
+    var sphereChain by remember { mutableStateOf(emptyList<GlobeChain.Link>()) }
+    var chainBorn by remember { mutableDoubleStateOf(0.0) }
+    LaunchedEffect(focus) {
+        val onSphere = if (showsOuterRings) focus?.let(GlobeHopSphere::direction) else null
+        focus?.let { scene.turn(it, onSphere) }
+        sphereChain = if (focus == null || onSphere == null) emptyList() else GlobeChain.links(focus, currentCopy, currentFollows)
+        chainBorn = nowSeconds()
+        if (sphereChain.isNotEmpty()) scene.keepAwake(GlobeChainPainter.DRAW_IN + 0.1)
+    }
 
-    LaunchedEffect(focus, focusBridges) { scene.trace(focus, focusBridges) }
+    LaunchedEffect(focus, focusBridges, sphereChain) {
+        if (sphereChain.isEmpty()) scene.trace(focus, focusBridges) else scene.trace(null, emptyList())
+    }
 
     // Reduce Motion turned off while the clock sleeps: nothing else wakes it.
     LaunchedEffect(scene) {
@@ -333,6 +351,10 @@ internal fun TrustGlobe(
                     scaleX = shrink
                     scaleY = shrink
                     alpha = GlobeRingZoom.innerAlpha(scene.ringZoom).toFloat()
+                    // Faded with no offscreen buffer: one is only frame-sized
+                    // before the shrink, so a pinch past the frame cut the
+                    // nested globe into a box (Logen, Moto, 2026-11-26).
+                    compositingStrategy = CompositingStrategy.ModulateAlpha
                 },
         ) {
         Canvas(Modifier.fillMaxSize()) { scene.drawBack(this, accent) }
@@ -399,6 +421,9 @@ internal fun TrustGlobe(
         Canvas(Modifier.fillMaxSize()) { scene.drawLabels(this, textMeasurer, currentName) }
         }
         // A picked hop's sphere over the nested globe, turned by the same camera.
-        outer?.let { GlobeHopSphereLayer(scene, it, layer, phone, lite, profiles, focus, onNeedProfiles) }
+        outer?.let {
+            GlobeHopSphereLayer(scene, it, layer, phone, lite, profiles, focus, onNeedProfiles)
+            GlobeChainLayer(scene, sphereChain, chainBorn, focus, glowBlurred)
+        }
     }
 }

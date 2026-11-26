@@ -105,6 +105,13 @@ data class TrustMapOuter(
         fun desktopPaired(roles: List<DeviceRole>): Boolean = roles.any { it == DeviceRole.MAC }
 
         /**
+         * How many people a hop's sphere draws: its top and its haze. Null while
+         * the copy has no haze for it: then the ring is just its top 300, a cap,
+         * so the Hop chip shows no number (Logen 2026-11-25). iOS `TrustMapOuter.shownCount`.
+         */
+        fun shownCount(ring: Ring): Int? = if (ring.haze.isEmpty()) null else ring.top.size + ring.haze.size
+
+        /**
          * "3 hops". The rank copy has no ring total, so no "best 300 of N"; the
          * sheet's [countText] says how many are shown. Never "people at 55 and up".
          */
