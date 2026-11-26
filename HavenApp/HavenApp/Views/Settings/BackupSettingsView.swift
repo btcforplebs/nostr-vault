@@ -293,8 +293,12 @@ struct BackupSettingsView: View {
     private func shareFile(at path: String, onShared: @escaping () -> Void) {
         let fileURL = URL(fileURLWithPath: path)
         let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-        activityVC.completionWithItemsHandler = { _, completed, _, error in
+        activityVC.completionWithItemsHandler = { activity, completed, _, error in
             if completed && error == nil { onShared() }
+            // Shared, or the sheet itself closed: the zip in tmp/ is done
+            // with. A cancelled extension (activity set, not completed)
+            // leaves the sheet open to try another, so the file stays.
+            if completed || activity == nil { try? FileManager.default.removeItem(at: fileURL) }
         }
         
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,

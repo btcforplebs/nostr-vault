@@ -30,6 +30,8 @@ class AppDelegate: NSObject, ObservableObject {
         signal(SIGPIPE, SIG_IGN)
         // Settings › Appearance › Mode: dark unless picked otherwise.
         AppAppearance.apply()
+        // Leftovers in tmp/ older than a day that no job holds (TempFileSweep).
+        LaunchTempSweep.run()
 
         #if os(macOS)
         startFocusLifecycleObservers()

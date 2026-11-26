@@ -85,7 +85,7 @@ struct VaultDashboardView: View {
             TutorialCenter.shared.startIfEligible(.pocketRelay, account: NostrService.shared.activeHexPubkey)
         }
         #if os(iOS)
-        .sheet(isPresented: $showingShareSheet, onDismiss: { exporter.shareURL = nil }) {
+        .sheet(isPresented: $showingShareSheet, onDismiss: { exporter.shareClosed() }) {
             if let url = exporter.shareURL {
                 ShareSheet(activityItems: [url])
             }

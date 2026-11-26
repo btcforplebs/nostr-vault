@@ -104,6 +104,9 @@ final class StreamingBlobDownload: NSObject, URLSessionDataDelegate, @unchecked 
                                              maxBytes: maxBytes, allowsType: allowsType,
                                              freeBytes: freeBytes, challenge: challenge)
         observe?(download)
+        // The launch sweep never takes a download in flight (TempFileSweep).
+        TempFileLeases.shared.hold(target)
+        defer { TempFileLeases.shared.release(target) }
         let session = URLSession(configuration: configuration, delegate: download, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
         let task = session.dataTask(with: request)

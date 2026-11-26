@@ -99,6 +99,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         FipsHostBlocker.install()
         secureKeysAtRest(application)
         RelayProcessManager.shared.startupMark("app launch")
+        // Leftovers in tmp/ older than a day that no job holds (TempFileSweep).
+        LaunchTempSweep.run()
         // The engine starts when the window's scene connects
         // (SceneDelegate), not here: with scenes, applicationState is
         // .background in this handler on every launch, so a start gated on
