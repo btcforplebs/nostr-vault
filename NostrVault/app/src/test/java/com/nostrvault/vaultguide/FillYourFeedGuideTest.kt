@@ -31,6 +31,14 @@ class FillYourFeedGuideTest {
         }
     }
 
+    /** 5 follows before the # step: 1 to 4 (joined by scan) skip the topics. */
+    @Test fun afterIntroSkipsTopicsUnderFiveFollows() {
+        assertEquals(FillYourFeedPhase.TOPICS, FillYourFeedGuide.afterIntro(0))
+        for (n in 1..4) assertEquals("$n", FillYourFeedPhase.BROWSING, FillYourFeedGuide.afterIntro(n))
+        assertEquals(FillYourFeedPhase.TOPICS, FillYourFeedGuide.afterIntro(5))
+        assertEquals(FillYourFeedPhase.TOPICS, FillYourFeedGuide.afterIntro(12))
+    }
+
     @Test fun showPostsButton() {
         assertEquals("Pick at least one", FillYourFeedGuide.showPostsTitle(0))
         assertEquals("Show posts (3)", FillYourFeedGuide.showPostsTitle(3))

@@ -16,6 +16,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.net.URL
 
@@ -51,10 +53,6 @@ import java.net.URL
             // stays off until that answer, and is on only if it's yes.
             configStore.update { it.copy(hasCompletedSetup = true, notificationAskPending = true) }
 
-            // Who told you about Nostr Vault: follow them, and whoever of
-            // their follows stayed ticked, now that this key is active.
-            ownerHexNow()?.let { followReferrerPicks(it) }
-
             // An existing account's DM inbox list (kind 10050) becomes this
             // device's. Setup doesn't publish one: the owner picks DM relays
             // and saves them in Settings > Relays (Logen 2026-10-31).
@@ -65,7 +63,14 @@ import java.net.URL
             // An existing account's media servers (kind 10063) become upload servers.
             runCatching { nostrService.syncServerList() }
 
+            // A new key's relay list goes out before its first follows: a
+            // list saved without it (the guide's hashtags) has no relays of
+            // its own to check, and was refused "no relay list" (2026-11-26).
             if (_setupPath.value == SetupPath.NEW_TO_NOSTR && ownerIsGeneratedKey()) publishNewAccount()
+
+            // Who told you about Nostr Vault: follow them, and whoever of
+            // their follows stayed ticked, now that this key is active.
+            ownerHexNow()?.let { followReferrerPicks(it) }
 
             onComplete()
         }
@@ -78,9 +83,11 @@ import java.net.URL
      * follow, in the Fill your feed guide. Same as iOS. Runs once setup has
      * stored the key, because each event is signed by it, and only on New to
      * Nostr, whose key was generated in this run and so has none of these
-     * events anywhere yet. Outlives the wizard (app scope).
+     * events anywhere yet. The relay list is posted before this returns, so
+     * it goes out ahead of the referrer follows; the profile outlives the
+     * wizard (app scope), because its photo upload can take 30 s.
      */
-    internal fun SetupWizardViewModel.publishNewAccount() {
+    internal suspend fun SetupWizardViewModel.publishNewAccount() {
         val name = _profileName.value.trim()
         val photo = _profilePhotoJpeg.value
         val generated = generatedPkHex ?: return
@@ -92,15 +99,16 @@ import java.net.URL
         fun stillGenerated() = nostrService.activeHexPubkey == generated &&
             HavenBridge.decodeNpub(configStore.config.value.ownerNpub) == generated
 
+        // The recommended list; Settings > Relays changes it later.
+        val relayTags = StarterRelays.tags(configStore.config.value.activeFeedRelays)
+        if (relayTags.isNotEmpty() && stillGenerated()) withContext(Dispatchers.IO) {
+            withTimeoutOrNull(RELAY_LIST_SIGN_TIMEOUT_MS) {
+                runCatching { nostrService.signEventAsync(kind = 10002, content = "", tags = relayTags) }.getOrNull()
+            }?.takeIf { signedByNewKey(it.pubkey, generated) }?.let { nostrService.postEvent(it) }
+        }
+
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             if (!stillGenerated()) return@launch
-            // The recommended list; Settings > Relays changes it later.
-            val relayTags = StarterRelays.tags(configStore.config.value.activeFeedRelays)
-            if (relayTags.isNotEmpty()) {
-                runCatching { nostrService.signEventAsync(kind = 10002, content = "", tags = relayTags) }
-                    .getOrNull()?.takeIf { signedByNewKey(it.pubkey, generated) }?.let { nostrService.postEvent(it) }
-            }
-
             val profile = JSONObject()
             if (name.isNotEmpty()) {
                 profile.put("name", name)
@@ -118,6 +126,9 @@ import java.net.URL
                 .getOrNull()?.takeIf { signedByNewKey(it.pubkey, generated) }?.let { nostrService.postEvent(it) }
         }
     }
+
+/** A key setup just made signs locally; this only stops a stuck signer holding setup open. */
+internal const val RELAY_LIST_SIGN_TIMEOUT_MS = 10_000L
 
 /** A new account's relay list or profile goes out only if the new key signed it. */
 internal fun signedByNewKey(signedPubkey: String?, generatedHex: String): Boolean =

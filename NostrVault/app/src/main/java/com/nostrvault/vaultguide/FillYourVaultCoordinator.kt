@@ -132,16 +132,44 @@ object FillYourVaultCoordinator {
         meterStore?.set(true, account)
         _meterOn.value = true
         meterCollapsed.value = false
-        setPhase(FillYourFeedPhase.TOPICS)
+        // 5 follows before the # step (Logen 2026-11-26): someone who already
+        // follows a few (the scan-join people step) finds the rest on Discover,
+        // among their follows' follows. Only a key that follows no one picks
+        // topics: the # feed is where it finds its first people.
+        val next = FillYourFeedGuide.afterIntro(_meter.value.count)
+        if (next == FillYourFeedPhase.BROWSING) feed?.switchMode(FeedMode.DISCOVERY)
+        setPhase(next)
     }
 
-    /** Topics: "Show posts". Follows the picked hashtags and opens the topic feed behind the hint. */
+    private val _savingTopics = MutableStateFlow(false)
+    /** True while "Show posts" is saving the picked hashtags. */
+    val savingTopics: StateFlow<Boolean> = _savingTopics.asStateFlow()
+
+    private val _topicsError = MutableStateFlow<String?>(null)
+    /**
+     * Why the picked hashtags weren't saved, for the topics card to say. The
+     * card stays up with the picks still ticked, so they can try again; it
+     * used to open an empty topic feed while the chips quietly flipped back.
+     */
+    val topicsError: StateFlow<String?> = _topicsError.asStateFlow()
+
+    fun clearTopicsError() { _topicsError.value = null }
+
+    /** Topics: "Show posts". Follows the picked hashtags, then opens the topic feed behind the hint. */
     fun showPosts(topics: List<String>) {
+        if (_savingTopics.value) return
         val service = interests
-        if (service != null) {
-            val new = topics.filter { !service.isFollowing(it) }
-            if (new.isNotEmpty()) scope.launch { service.setFollowing(new, true) }
+        val new = service?.let { s -> topics.filter { !s.isFollowing(it) } }.orEmpty()
+        if (service == null || new.isEmpty()) return openTopicFeed()
+        _savingTopics.value = true
+        scope.launch {
+            val saved = try { service.setFollowing(new, true) } finally { _savingTopics.value = false }
+            if (saved) openTopicFeed() else _topicsError.value = service.failedText()
         }
+    }
+
+    private fun openTopicFeed() {
+        _topicsError.value = null
         feed?.switchMode(FeedMode.HASHTAGS)
         setPhase(FillYourFeedPhase.HINT)
     }

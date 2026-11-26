@@ -42,6 +42,15 @@ object FillYourFeedGuide {
         if (meterOn) FillYourFeedPhase.BROWSING else FillYourFeedPhase.INTRO
 
     /**
+     * Where "Let's fill it" goes. 5 follows come before the # step on every
+     * join path (Logen 2026-11-26): with 1 to 4 already followed (joined by
+     * scan) it skips the topics and goes to the feed with the meter. Only a
+     * key that follows no one, or one already past 5 (a replay), picks topics.
+     */
+    fun afterIntro(follows: Int): FillYourFeedPhase =
+        if (follows in 1 until VaultMeter.GOAL) FillYourFeedPhase.BROWSING else FillYourFeedPhase.TOPICS
+
+    /**
      * Whether the meter is drawn. It is on from "Let's fill it" until it is
      * hidden, so an account the guide finished quietly never sees one.
      */

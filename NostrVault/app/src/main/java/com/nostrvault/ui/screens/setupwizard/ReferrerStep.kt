@@ -67,7 +67,7 @@ internal fun ReferrerStep(
             when (phase) {
                 ReferrerStepViewModel.Phase.ENTER -> "Scan their QR code or paste their link or npub. You'll follow them, and can follow people they follow."
                 ReferrerStepViewModel.Phase.FOUND -> "Follow them to see what they post."
-                ReferrerStepViewModel.Phase.SUGGEST -> "The people $referrerName talks with most come first. Tap someone to see who they are."
+                ReferrerStepViewModel.Phase.SUGGEST -> "Follow at least 5 people to build your web of trust. The people $referrerName talks with most come first."
             },
             color = SecondaryText,
             fontSize = 15.sp,
@@ -200,15 +200,19 @@ private fun SuggestFollows(step: ReferrerStepViewModel, onFollow: () -> Unit, on
         }
     }
     Spacer(Modifier.height(24.dp))
-    // The referrer and everyone ticked, hidden by a topic or not.
-    val count = 1 + list.orEmpty().count { it.pubkey in ticked }
+    // The referrer and everyone ticked, hidden by a topic or not; 5 before
+    // setup goes on (ReferrerFollowGate).
+    val offered = list.orEmpty().size
+    val picked = list.orEmpty().count { it.pubkey in ticked }
     WizardPrimaryButton(
-        text = if (count == 1) "Follow 1 person" else "Follow $count people",
-        enabled = list != null,
+        text = com.nostrvault.setup.ReferrerFollowGate.buttonText(picked, offered),
+        enabled = list != null && com.nostrvault.setup.ReferrerFollowGate.canFollow(picked, offered),
         onClick = onFollow,
     )
-    Spacer(Modifier.height(4.dp))
-    WizardSecondaryButton(text = "Only follow $referrerName", onClick = onOnlyThem)
+    if (list != null && com.nostrvault.setup.ReferrerFollowGate.offersReferrerOnly(offered)) {
+        Spacer(Modifier.height(4.dp))
+        WizardSecondaryButton(text = "Only follow $referrerName", onClick = onOnlyThem)
+    }
 
     val open = preview
     val pick = open?.let { pk -> list.orEmpty().firstOrNull { it.pubkey == pk } }

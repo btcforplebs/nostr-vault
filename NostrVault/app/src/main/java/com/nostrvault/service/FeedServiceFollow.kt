@@ -35,7 +35,7 @@ import com.nostrvault.ui.notification.FollowKind
         lastExtendedNetworkLoadTime = 0L
         val owner = nostrService.activeHexPubkey
         // A key set up on this device has no list anywhere yet.
-        val freshKey = FreshAccountKeys.isFresh(appContext, owner)
+        val freshKey = FreshAccountKeys.isFresh(appContext, owner, 3)
         // Signed as the account this list belongs to: a switch while a signer
         // prompt is open must not put A's follows under B's key.
         val lock = nostrService.lockPostingAccount()
@@ -110,7 +110,7 @@ import com.nostrvault.ui.notification.FollowKind
                         } ?: return@withLock null
                     lastContactListCreatedAt.updateAndGet { maxOf(it, event.createdAt) }
                     // The key has a list now; from here on its load must find it.
-                    FreshAccountKeys.clear(appContext, owner)
+                    FreshAccountKeys.clear(appContext, owner, 3)
                     ContactManager.ListCopy(owner, tags, base.content, event.createdAt).also {
                         knownContactList = it
                         // Record the published list's created_at + a durable backup so a

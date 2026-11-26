@@ -413,12 +413,14 @@ private fun TopicsCard() {
         Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
             TopicChips(VaultTopics.starter + selected.filter { it !in VaultTopics.starter }, selected, onMore = { showingMore = true })
         }
+        val saving by guide.savingTopics.collectAsState()
         PrimaryButton(
-            FillYourFeedGuide.showPostsTitle(selected.size),
+            if (saving) "Saving…" else FillYourFeedGuide.showPostsTitle(selected.size),
             modifier = Modifier.fillMaxWidth(),
-            enabled = selected.isNotEmpty(),
+            enabled = selected.isNotEmpty() && !saving,
         ) { guide.showPosts(selected.toList()) }
     }
+    TopicsSaveFailedDialog()
     if (showingMore) {
         ModalBottomSheet(
             onDismissRequest = { showingMore = false },
