@@ -82,6 +82,7 @@ class ZapConfirmTest {
         var now = 0L
         val pending = PendingZaps { now }
         pending.begin("n")
+        pending.answered("n")
         pending.end("n")
         assertTrue(pending.mayZap("n"))
         pending.begin("m")
@@ -89,6 +90,23 @@ class ZapConfirmTest {
         now = PendingZaps.PENDING_MS + 1
         assertTrue(pending.mayZap("m"))
         assertTrue("other notes are not held", pending.mayZap("other"))
+    }
+
+    @Test fun `a second confirmed zap on a note stays pending when the first one ends`() {
+        var now = 0L
+        val pending = PendingZaps { now }
+        pending.begin("n")
+        assertFalse(pending.mayZap("n"))
+        assertTrue("confirmed second tap", pending.mayZap("n"))
+        pending.begin("n")
+        pending.answered("n")
+        pending.end("n")
+        assertTrue("the second is still paying", pending.isPending("n"))
+        now = 20_000
+        assertFalse("a third tap is asked first", pending.mayZap("n"))
+        pending.answered("n")
+        pending.end("n")
+        assertFalse(pending.isPending("n"))
     }
 
     @Test fun `a zap whose wallet hasn't answered stays pending past the window`() {

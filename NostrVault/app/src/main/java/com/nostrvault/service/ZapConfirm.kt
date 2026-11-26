@@ -75,10 +75,10 @@ class PendingZaps(private val now: () -> Long = { System.currentTimeMillis() }) 
      * that takes: a Cashu pay (recover, a quote per mint, melt) can outlast
      * [PENDING_MS], and a second tap then must still be asked first.
      */
-    private val paying = ConcurrentHashMap.newKeySet<String>()
+    private val paying = ConcurrentHashMap<String, Int>()
 
     private fun live(key: String, t: Long): Boolean =
-        key in paying || pending[key]?.let { t - it <= PENDING_MS } == true
+        (paying[key] ?: 0) > 0 || pending[key]?.let { t - it <= PENDING_MS } == true
 
     /** True when the zap should go ahead; false means "ask first" (the caller says so and stops). */
     fun mayZap(key: String): Boolean {
@@ -98,18 +98,22 @@ class PendingZaps(private val now: () -> Long = { System.currentTimeMillis() }) 
 
     fun begin(key: String) {
         pending[key] = now()
-        paying.add(key)
+        paying.merge(key, 1, Int::plus)
         asked.remove(key)
     }
 
     /** The wallet answered (or gave up): the pending window runs from now. */
     fun answered(key: String) {
-        if (paying.remove(key)) pending[key] = now()
+        // Counted per zap: a second confirmed tap on the same note stays
+        // pending when the first one's wallet answers.
+        if (paying[key] == null) return
+        paying.computeIfPresent(key) { _, n -> (n - 1).takeIf { it > 0 } }
+        pending[key] = now()
     }
 
+    /** The zap is settled. Call after [answered]; another zap still paying on the key stays pending. */
     fun end(key: String) {
         pending.remove(key)
-        paying.remove(key)
     }
 
     fun isPending(key: String): Boolean = live(key, now())
