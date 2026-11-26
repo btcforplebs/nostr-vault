@@ -85,9 +85,25 @@ class ZapConfirmTest {
         pending.end("n")
         assertTrue(pending.mayZap("n"))
         pending.begin("m")
+        pending.answered("m")
         now = PendingZaps.PENDING_MS + 1
         assertTrue(pending.mayZap("m"))
         assertTrue("other notes are not held", pending.mayZap("other"))
+    }
+
+    @Test fun `a zap whose wallet hasn't answered stays pending past the window`() {
+        var now = 0L
+        val pending = PendingZaps { now }
+        pending.begin("n")
+        now = PendingZaps.PENDING_MS + 60_000
+        assertTrue("still paying", pending.isPending("n"))
+        assertFalse("a tap is asked first", pending.mayZap("n"))
+        pending.answered("n")
+        now += PendingZaps.PENDING_MS
+        assertTrue("the window runs from the answer", pending.isPending("n"))
+        now += 1
+        assertFalse(pending.isPending("n"))
+        assertTrue(pending.mayZap("n"))
     }
 
     // ── The zap flow ──

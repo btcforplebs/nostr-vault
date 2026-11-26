@@ -119,7 +119,13 @@ class CashuWalletService internal constructor(
         // A stuck op doesn't count: its outcome is known (only the change is
         // missing), and counting it would block this wallet for good.
         if (pending().isNotEmpty()) {
-            runCatching { recover() }
+            // A failed recover is fine (the unsettled check below decides), but
+            // a cancelled one must stay cancelled.
+            try {
+                recover()
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+            }
             if (unsettledCount() > 0) throw CashuException("busy", "an earlier payment is still unsettled")
         }
         val order = payOrder(balance())

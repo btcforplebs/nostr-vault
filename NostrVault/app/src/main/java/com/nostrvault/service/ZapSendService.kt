@@ -207,7 +207,11 @@ class ZapSendService @Inject constructor(
         pendingZaps.begin(pendingKey)
         val receipt = receiptRelays.takeIf { zapRequestJson != null && it.isNotEmpty() }
             ?.let { relays -> ReceiptWatch(invoice, ZapConfirm.receiptFilter(notePubkey, noteId, requestedAt), relays) }
-        val payment = pay(invoice, payingAccount, receipt)
+        val payment = try {
+            pay(invoice, payingAccount, receipt)
+        } finally {
+            pendingZaps.answered(pendingKey)
+        }
         return when (payment) {
             Payment.Paid -> {
                 Log.i(TAG, "Zap paid ($amountSats sats)")

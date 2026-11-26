@@ -42,7 +42,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.local.ConfigStore
-import com.nostrvault.service.NWCService
+import com.nostrvault.service.NostrService
+import com.nostrvault.service.cashu.CashuException
+import com.nostrvault.service.cashu.ZapPayer
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.NostrVaultIcons
@@ -63,7 +65,8 @@ import java.text.NumberFormat
 @EntryPoint
 @InstallIn(SingletonComponent::class)
 interface InvoiceCardEntryPoint {
-    fun nwcService(): NWCService
+    fun zapPayer(): ZapPayer
+    fun nostrService(): NostrService
     fun configStore(): ConfigStore
 }
 
@@ -77,7 +80,7 @@ private sealed interface PayState {
 /**
  * A Lightning invoice someone pasted into a note, drawn as something you can
  * read and pay: what it costs, what it is for, and whether it has lapsed.
- * Pays through the connected wallet (NWC), the same path as a zap.
+ * Pays through the account's "Pay zaps with" wallet (ZapPayer), the same path as a zap.
  * Port of iOS LightningInvoiceCard (#1241).
  */
 @Composable
@@ -224,12 +227,16 @@ fun LightningInvoiceCard(match: NoteInvoices.Match, modifier: Modifier = Modifie
             confirmLabel = "Pay",
             onConfirm = {
                 state = PayState.Paying
+                // The account that tapped Pay: its "Pay zaps with" wallet pays,
+                // even if the account switches before the wallet answers.
+                val account = services.nostrService().activeHexPubkey
                 scope.launch {
                     state = try {
-                        services.nwcService().payInvoice(match.invoice)
+                        services.zapPayer().pay(match.invoice, account)
                         PayState.Paid
                     } catch (e: Exception) {
-                        PayState.Failed(e.message ?: "The payment failed.")
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        PayState.Failed((e as? CashuException)?.userMessage ?: e.message ?: "The payment failed.")
                     }
                 }
             },
