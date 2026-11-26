@@ -135,6 +135,7 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         applicationScope.launch {
             configStore.config.collect {
                 com.nostrvault.service.LocalBlossomCache.enabled = it.useLocalBlossomCache
+                com.nostrvault.service.media.UploadQuality.current = com.nostrvault.service.media.UploadQuality.from(it.uploadQuality)
             }
         }
         // Home-screen icon follows the accent when that is on (IconAccentApply; no-op when already right).

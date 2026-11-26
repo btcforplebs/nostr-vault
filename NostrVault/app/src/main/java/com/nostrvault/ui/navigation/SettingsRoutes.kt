@@ -16,6 +16,7 @@ import com.nostrvault.ui.screens.settings.FollowingBackupScreen
 import com.nostrvault.ui.screens.settings.listbackup.ListBackupScreen
 import com.nostrvault.ui.screens.settings.ImportSettingsScreen
 import com.nostrvault.ui.screens.settings.MediaSettingsScreen
+import com.nostrvault.ui.screens.settings.MediaUploadQualityScreen
 import com.nostrvault.ui.screens.settings.PrivacySettingsScreen
 import com.nostrvault.ui.screens.settings.RelayAccessSettingsScreen
 import com.nostrvault.ui.screens.settings.NotificationSettingsScreen
@@ -90,6 +91,13 @@ internal fun NavGraphBuilder.settingsRoutes(
 
     composable(Screen.MediaSettings.route) {
         MediaSettingsScreen(
+            onBack = { navController.popBackStack() },
+            onUploadQuality = { navController.navigate(Screen.MediaUploadQuality.route) },
+        )
+    }
+
+    composable(Screen.MediaUploadQuality.route) {
+        MediaUploadQualityScreen(
             onBack = { navController.popBackStack() },
         )
     }

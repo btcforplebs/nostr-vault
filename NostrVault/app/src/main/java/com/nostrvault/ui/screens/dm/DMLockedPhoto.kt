@@ -8,6 +8,7 @@ import com.nostrvault.service.DMFile
 import com.nostrvault.service.GifStrip
 import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.service.media.ImageCompressor
+import com.nostrvault.service.media.UploadQuality
 import com.nostrvault.service.uploadLocked
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -85,7 +86,7 @@ object DMLockedPhoto {
             }
             // Shrunk as Apple and web do for a DM (here 2048 px JPEG 82, no metadata, as every Android upload).
             val out = ImageCompressor.replacing(temp, resolver.getType(uri) ?: DMPastedImage.mimeType(uri) ?: "image/jpeg",
-                ImageCompressor.Quality.STANDARD, context.cacheDir)
+                UploadQuality.current, context.cacheDir)
             temp = out.file
             val type = out.mimeType
             if (!MediaPrivacy.removeLocation(temp, type)) throw Unsendable(UNREADABLE)
