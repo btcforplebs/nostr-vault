@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils"
 import { generateSecretKey, finalizeEvent, getPublicKey } from "nostr-tools/pure"
-import { extraRelays, fetchFromParentRelays, MAX_EXTRA, parentRefs } from "../src/net/parent-hints.js"
+import { extraRelays, fetchFromParentRelays, MAX_EXTRA, parentRefs, reachableHint } from "../src/net/parent-hints.js"
 import { syncThread } from "../src/net/thread.js"
 import { pool } from "../src/net/pool.js"
 
@@ -86,4 +86,18 @@ test("the Feed's thread roots ask the replies' hints for a root the user's relay
   assert.equal(found.get(root.id)?.id, root.id)
   assert.deepEqual(calls.map(c => c.ids), [[root.id]])
   assert.equal(calls[0].events[0].id, reply.id)
+})
+
+// 2026-11-26: an iPhone kind 1111 reply in a Mostr thread. Its parent `e` hint was the poster's own phone relay; only
+// the `E` root named relay.ditto.pub, and both authors sit in the fourth slot.
+test("a comment's E root hint is read, a loopback hint is dropped, fourth-slot authors count", () => {
+  const parentPk = "b".repeat(64), parentId = "c".repeat(64)
+  const comment = { kind: 1111, tags: [["E", root.id, HINT, authorPk], ["K", "1"], ["P", authorPk],
+    ["e", parentId, "wss://127.0.0.1:3355", parentPk], ["k", "1111"], ["p", parentPk]] }
+  assert.deepEqual(parentRefs([comment], [root.id, parentId]), { hints: [HINT], authors: [authorPk, parentPk] })
+  for (const lan of ["ws://127.0.0.1:3355", "wss://localhost:4869", "ws://192.168.1.20:3355", "wss://box.local", "ws://[::1]:3355", "wss://10.0.0.4", "wss://nas"])
+    assert.equal(reachableHint(lan), null, lan)
+  assert.equal(reachableHint("wss://relay.mostr.pub"), "wss://relay.mostr.pub")
+  // A NIP-10 marker is never an author.
+  assert.equal(parentRefs([{ tags: [["e", root.id, "", "reply"]] }], [root.id]).authors.length, 0)
 })

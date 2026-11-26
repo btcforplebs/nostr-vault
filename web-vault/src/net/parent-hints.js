@@ -1,8 +1,10 @@
 // Where a reply's ancestors may live besides the user's own relays: the relay hint in each ancestor's `e` tag and
 // the write relays of each ancestor's author (the tag's fifth slot, else the reply's `p` target), as Android
 // (FeedServiceNoteFetching.kt) and the iPhone (ParentLookupRelays.swift) ask. A parent that lives only on its
-// author's relay (a Mostr reply's parent on relay.ditto.pub) never loaded before.
-import { pool } from "./pool.js"
+// author's relay (a Mostr reply's parent on relay.ditto.pub) never loaded before. NIP-22 comments name their root only
+// in an uppercase `E` tag, with the author in the fourth slot, and a phone-only poster's hint is their own
+// ws://127.0.0.1 (2026-11-26 Mostr thread): `E` tags count and loopback/LAN hints are dropped.
+import { isLoopback, pool } from "./pool.js"
 import { followOutboxes } from "./relay-suggestions.js"
 import { replyToPubkey } from "./thread.js"
 
@@ -12,17 +14,37 @@ export const MAX_EXTRA = 8
 
 const key = url => String(url).trim().toLowerCase().replace(/\/+$/, "")
 
-/** The `e` hints and ancestor authors the `events` give for `ids`. -> { hints: [url], authors: [pubkey] } */
+const PRIVATE_V4 = /^(10|127|0)\.|^172\.(1[6-9]|2\d|3[01])\.|^192\.168\.|^169\.254\.|^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./
+const LAN_SUFFIX = /\.(localhost|local|lan|home\.arpa|internal|ts\.net)$/
+
+/** `url` when it is a websocket address others can reach: not loopback, a home network or a bare name. */
+export function reachableHint(url) {
+  const u = String(url ?? "").trim()
+  const m = /^wss?:\/\/(\[[^\]]*\]|[^/:?#]+)/i.exec(u)
+  if (!m || isLoopback(u)) return null
+  const host = m[1].replace(/^\[|\]$/g, "").toLowerCase().replace(/\.+$/, "")
+  if (host.includes(":")) return /^(::1?|f[cd]|fe[89ab])/.test(host) ? null : u
+  if (!host.includes(".") || LAN_SUFFIX.test(host) || PRIVATE_V4.test(host)) return null
+  return u
+}
+
+// NIP-10 puts the author fifth; NIP-22 (`e` and `E`) fourth, where NIP-10 has its marker, never 64 hex.
+const tagAuthor = t => HEX64.test(t[4] ?? "") ? t[4] : HEX64.test(t[3] ?? "") ? t[3] : null
+const isRef = t => (t[0] === "e" || t[0] === "E")
+
+/** The `e`/`E` hints and ancestor authors the `events` give for `ids`. -> { hints: [url], authors: [pubkey] } */
 export function parentRefs(events, ids) {
   const want = new Set(ids), hints = [], authors = []
   for (const ev of events) {
     let named = false
     for (const t of ev?.tags ?? []) {
-      if (t[0] !== "e" || !want.has(t[1]) || t[3] === "mention") continue
-      if (/^wss?:\/\//.test(t[2] ?? "")) hints.push(t[2])
-      if (HEX64.test(t[4] ?? "")) { authors.push(t[4]); named = true }
+      if (!isRef(t) || !want.has(t[1]) || t[3] === "mention") continue
+      const hint = reachableHint(t[2])
+      if (hint) hints.push(hint)
+      const a = tagAuthor(t)
+      if (a) { authors.push(a); named = true }
     }
-    const p = !named && (ev?.tags ?? []).some(t => t[0] === "e" && want.has(t[1])) ? replyToPubkey(ev) : null
+    const p = !named && (ev?.tags ?? []).some(t => isRef(t) && want.has(t[1])) ? replyToPubkey(ev) : null
     if (p) authors.push(p)
   }
   return { hints: [...new Set(hints)], authors: [...new Set(authors)] }
