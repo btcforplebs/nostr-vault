@@ -156,8 +156,9 @@ func nutzapTemplate(now int64, req NutzapRequest, r Reserved) (Template, error) 
 }
 
 // nutzapSharedMargin: a nutzap whose refund opens within this many seconds
-// is treated as Shared (count it only once redeemed).
-const nutzapSharedMargin = 3600
+// is treated as Shared (count it only once redeemed). A day, so a sender
+// who sets a short refund can't take back a nutzap the app has not yet redeemed.
+const nutzapSharedMargin = 24 * 3600
 
 // Nutzap is a 9321 that passed VerifyNutzap.
 type Nutzap struct {
@@ -278,7 +279,7 @@ func (w *Wallet) VerifyNutzap(ctx context.Context, ev nostr.Event, account strin
 		}
 		// Before its locktime only we can spend it (a refund key or, with
 		// none, anyone may spend after). Senders add a refund to themselves
-		// (NutzapRefundAfter), so only a near or past locktime is shared.
+		// (NutzapRefundAfter), so only a locktime within a day is shared.
 		if len(tags.Pubkeys) > 0 || (tags.Locktime > 0 && tags.Locktime <= w.now().Unix()+nutzapSharedMargin) {
 			nz.Shared = true
 		}
