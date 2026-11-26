@@ -400,6 +400,15 @@ internal class GlobeScene(
         private set
     private var ringZoomTarget = 0.0
 
+    /** The clock stays awake until this frame-clock second, for a drawing-in that nothing else moves ([GlobeChainPainter]). */
+    private var awakeUntil = 0.0
+
+    /** Keeps the frame clock running for [seconds] more. */
+    fun keepAwake(seconds: Double) {
+        awakeUntil = max(awakeUntil, nowSeconds() + seconds)
+        wake()
+    }
+
     fun wake() {
         if (!awake) {
             lastTick = null
@@ -472,7 +481,7 @@ internal class GlobeScene(
             busy = arcs.busy,
             onlyDrift = !settling && !fading && arcs.idle && camera.onlyDrifting,
         )
-        if (still && arcs.idle) awake = false
+        if (still && arcs.idle && now >= awakeUntil) awake = false
     }
 
     // ── Live arcs (GlobeSceneArcs.kt) ────────────────────────────────
@@ -536,6 +545,20 @@ internal class GlobeScene(
     }
 
     private fun Projector.of(star: Star) = project(star.dir, star.radius)
+
+    /**
+     * Where [key] (or the core, when null) is drawn on screen, the zoom-out
+     * nesting included ([GlobeRingZoom.innerDrawScale]), and how far toward
+     * you (0 back, 1 front). Null when they are not on this globe. For a hop
+     * sphere's path ([com.nostrvault.data.model.GlobeChain]). iOS `GlobeScene.screenPoint`.
+     */
+    fun screenPoint(key: String?, w: Float, h: Float): GlobeHopSphere.Point? {
+        val star = index[key ?: center] ?: return null
+        if (key != null && star.alpha <= 0.05) return null
+        val p = Projector(camera, w, h, phone).of(star) ?: return null
+        val s = GlobeRingZoom.innerDrawScale(ringZoom)
+        return GlobeHopSphere.Point(w / 2 + (p.x - w / 2) * s, h / 2 + (p.y - h / 2) * s, p.front)
+    }
 
     /** Closest front-facing face to a tap, within reach of a fingertip. Zoomed in, plain stars can be tapped too. */
     fun hit(tap: Offset, w: Float, h: Float, density: Float): String? {

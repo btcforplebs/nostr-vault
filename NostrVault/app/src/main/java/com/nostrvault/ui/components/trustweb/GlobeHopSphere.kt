@@ -99,6 +99,31 @@ internal object GlobeHopSphere {
     private var windowSentAt = Double.NEGATIVE_INFINITY
     private var preparedFor: Any? = null
 
+    /** Each sphere drawn this frame (picked and nested), by hop, so a path can find where someone on it is ([screenPoint]). */
+    private class Drawn(val built: Built, val centre: Offset, val r: Double, val m: DoubleArray)
+    private val drawn = HashMap<Int, Drawn>()
+
+    /** A spot on screen, with how far toward you (0 back, 1 front). */
+    class Point(val x: Double, val y: Double, val front: Double)
+
+    /**
+     * Where [key] is on screen on the hop [hop] sphere worked out last (any
+     * sphere when null). Null when they are on none. iOS `GlobeHopSphere.screenPoint`.
+     */
+    fun screenPoint(key: String, hop: Int?): Point? {
+        for ((h, d) in drawn) {
+            if (hop != null && hop != h) continue
+            val top = d.built.top.indexOf(key)
+            val i = if (top >= 0) top else d.built.haze.indexOf(key).takeIf { it >= 0 }?.plus(d.built.top.size) ?: continue
+            val p = d.built.points
+            val m = d.m
+            val x = p[3 * i]; val y = p[3 * i + 1]; val z = p[3 * i + 2]
+            val q = GlobeSphereField.project(m[0] * x + m[1] * y + m[2] * z, m[3] * x + m[4] * y + m[5] * z, m[6] * x + m[7] * y + m[8] * z)
+            return Point(d.centre.x + q.x * d.r, d.centre.y + q.y * d.r, q.front)
+        }
+        return null
+    }
+
     /** The face for [key] this frame, or null when they have no seat. */
     fun face(key: String): Face? = faces[key]
 
@@ -119,6 +144,7 @@ internal object GlobeHopSphere {
         hole = null
         lastPicked = null
         facing = emptySet()
+        drawn.clear()
     }
 
     /**
@@ -144,6 +170,7 @@ internal object GlobeHopSphere {
             val ring = s.ring
             if (s.shown <= 0.01 || s.r <= 4 || (ring.top.isEmpty() && ring.haze.isEmpty())) continue
             val b = points(ring, pole)
+            drawn[ring.hop] = Drawn(b, s.centre, s.r, m)
             val isPicked = s.picked > 0.5
             if (isPicked) lastPicked = b
             val back = 0.55 + 0.45 * s.picked
