@@ -27,9 +27,10 @@ enum GlobeHopSphere {
     /// 0-1 front-ness on a unit sphere).
     static let faceFrom = (1 + GlobeEdge.faceGone) / 2
     static let faceFull = (1 + GlobeEdge.faceFull) / 2
-    /// A picked sphere's radius on a phone at zoom 1, points: faces and dots
-    /// are drawn their own size there and grow with a pinch.
-    private static let fittedSize = 170.0
+    /// A picked sphere's radius on a phone at zoom 1, points (the Hop 2
+    /// globe's outline: `GlobeCamera.phoneFill` of a 402-point-wide phone):
+    /// faces and dots are drawn their own size there and grow with a pinch.
+    private static let fittedSize = 193.0
     /// Brightness steps per kind of dot, so 2,000 dots are a few fills.
     private static let levels = 16
 

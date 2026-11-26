@@ -78,14 +78,14 @@ final class GlobeHazeTests: XCTestCase {
         for hop in 3...5 {
             let level = GlobeRingZoom.level(hop: hop)
             XCTAssertEqual(GlobeRingZoom.nest(hop: hop, level: level), 1, "the picked ring keeps its size")
-            let picked = GlobeRingZoom.radius(hop: hop, level: level, outline: 0.5 * half, half: half)
+            let picked = GlobeRingZoom.radius(hop: hop, level: level, outline: 0.5 * half)
             var outside = picked
             for inner in (2..<hop).reversed() {
                 let scale = GlobeRingZoom.nest(hop: inner, level: level)
                 XCTAssertLessThan(scale, 0.85, "hop \(inner) shrinks at Hop \(hop)")
                 // Onion layers: each sits inside the one round it.
                 let r = (inner < 3 ? GlobeRingZoom.innerOutline(level: level, outline: 0.5 * half)
-                    : GlobeRingZoom.radius(hop: inner, level: level, outline: 0.5 * half, half: half)) * scale
+                    : GlobeRingZoom.radius(hop: inner, level: level, outline: 0.5 * half)) * scale
                 XCTAssertLessThan(r, outside, "hop \(inner) at Hop \(hop)")
                 outside = r
             }

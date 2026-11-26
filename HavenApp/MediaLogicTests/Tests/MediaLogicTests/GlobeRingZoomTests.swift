@@ -16,8 +16,8 @@ final class GlobeRingZoomTests: XCTestCase {
     func testLevelZeroIsTheGlobeAsItWas() {
         XCTAssertEqual(GlobeRingZoom.innerScale(0), 1)
         XCTAssertEqual(GlobeRingZoom.innerAlpha(0), 1)
-        XCTAssertEqual(GlobeRingZoom.radius(hop: 3, level: 0, outline: outline, half: half), outline * 1.72, accuracy: 1e-9)
-        XCTAssertEqual(GlobeRingZoom.radius(hop: 5, level: 0, outline: outline, half: half),
+        XCTAssertEqual(GlobeRingZoom.radius(hop: 3, level: 0, outline: outline), outline * 1.72, accuracy: 1e-9)
+        XCTAssertEqual(GlobeRingZoom.radius(hop: 5, level: 0, outline: outline),
                        outline * (1.72 + 2 * 0.26), accuracy: 1e-9)
         for hop in 3...5 {
             XCTAssertEqual(GlobeRingZoom.visibility(hop: hop, level: 0), 1)
@@ -28,8 +28,8 @@ final class GlobeRingZoomTests: XCTestCase {
     func testThePickedRingFillsTheFrameAndTheGlobeShrinksAndFades() {
         for hop in 3...5 {
             let level = GlobeRingZoom.level(hop: hop)
-            XCTAssertEqual(GlobeRingZoom.radius(hop: hop, level: level, outline: outline, half: half),
-                           GlobeRingZoom.fit * half, accuracy: 1e-9)
+            XCTAssertEqual(GlobeRingZoom.radius(hop: hop, level: level, outline: outline),
+                           outline, accuracy: 1e-9, "the picked sphere is the Hop 2 globe's size")
             XCTAssertEqual(GlobeRingZoom.emphasis(hop: hop, level: level), 1)
             XCTAssertEqual(GlobeRingZoom.visibility(hop: hop, level: level), 1)
             XCTAssertLessThan(GlobeRingZoom.innerScale(level), 0.5)
@@ -41,7 +41,7 @@ final class GlobeRingZoomTests: XCTestCase {
     }
 
     func testRingsInsideThePickedOneCloseInAndOnesPastItGo() {
-        let r = { GlobeRingZoom.radius(hop: $0, level: 3, outline: self.outline, half: self.half) }
+        let r = { GlobeRingZoom.radius(hop: $0, level: 3, outline: self.outline) }
         let inner = GlobeRingZoom.innerOutline(level: 3, outline: outline)
         XCTAssertLessThan(inner, r(3))
         XCTAssertLessThan(r(3), r(4))
@@ -51,7 +51,7 @@ final class GlobeRingZoomTests: XCTestCase {
     }
 
     func testRingsPastThePickedOneStayRoundItsSphere() {
-        let r = { GlobeRingZoom.radius(hop: $0, level: 1, outline: self.outline, half: self.half) }
+        let r = { GlobeRingZoom.radius(hop: $0, level: 1, outline: self.outline) }
         XCTAssertEqual(GlobeRingZoom.visibility(hop: 4, level: 1), GlobeRingZoom.pastAlpha, "Hop 4 round Hop 3")
         XCTAssertEqual(GlobeRingZoom.visibility(hop: 5, level: 2), GlobeRingZoom.pastAlpha, "Hop 5 round Hop 4")
         XCTAssertLessThan(r(3), r(4))
@@ -64,10 +64,10 @@ final class GlobeRingZoomTests: XCTestCase {
     func testItEasesSmoothlyBetweenLevels() {
         // Every value between two picks is drawn, both ways: no jump at a whole level.
         for hop in 3...5 {
-            var last = GlobeRingZoom.radius(hop: hop, level: 0, outline: outline, half: half)
+            var last = GlobeRingZoom.radius(hop: hop, level: 0, outline: outline)
             for step in 1...300 {
                 let level = Double(step) / 100
-                let now = GlobeRingZoom.radius(hop: hop, level: level, outline: outline, half: half)
+                let now = GlobeRingZoom.radius(hop: hop, level: level, outline: outline)
                 XCTAssertLessThan(abs(now - last), 6, "hop \(hop) jumped at \(level)")
                 last = now
             }
