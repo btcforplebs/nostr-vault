@@ -232,7 +232,7 @@ class DraftService: ObservableObject {
         ]
 
         if let parent = replyTo {
-            let relayHint = ConfigService.shared.config.nostrURL
+            let relayHint = ConfigService.shared.config.replyRelayHint
             let parentETags = parent.tags.filter { $0.count >= 2 && $0[0] == "e" }
             let rootTag = parentETags.first(where: { $0.count >= 4 && $0[3] == "root" })
 

@@ -118,7 +118,7 @@ extension ComposeView {
             // 2. Build Event
             var tags: [[String]] = []
             var eventKind = 1
-            let relayHint = ConfigService.shared.config.nostrURL
+            let relayHint = ConfigService.shared.config.replyRelayHint
 
             if let parent = effectiveReplyTo {
                 // NIP-10 tags — for reposts (kind 6), reply to the original note, not the repost

@@ -79,6 +79,25 @@ extension HavenConfig {
         return nostrURL
     }
 
+    /// The relay to name in a reply's `e`/`E` hint: this relay when the
+    /// world can reach it, else the first write relay others can reach. The
+    /// hint used to be `nostrURL`, so a phone-only poster pointed every
+    /// other client at their own `127.0.0.1` and the thread broke apart for
+    /// them (2026-11-26). Desktop Vaults are skipped: they may not serve
+    /// strangers. "" when nothing public is left.
+    var replyRelayHint: String {
+        let own = publicRelayHint
+        if !own.isEmpty { return own }
+        let write = blastrRelays.isEmpty ? Self.fallbackWriteRelays : blastrRelays
+        for raw in write {
+            let url = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard url.lowercased().hasPrefix("wss://") else { continue }
+            let hostPort = String(url.dropFirst("wss://".count))
+            if !hostPort.isEmpty, !Self.isPrivateNetworkHost(hostPort) { return url }
+        }
+        return ""
+    }
+
     /// Returns the appropriate Web/Blossom URL (https:// on iOS for Blossom, http:// on macOS)
     var webURL: String {
         if isLocal {
