@@ -3,21 +3,22 @@ import CoreMedia
 import Foundation
 
 /// Shrinks a video before it is uploaded (RESEARCH/NV_UPLOAD_COMPRESSION_2026_11_26.md §4.1, plan A3;
-/// Logen 2026-11-26: 720p, 5 Mbps, AAC). The twin of Android's `service/media/VideoCompressor.kt`
+/// Logen 2026-11-26: real 720p, 5 Mbps, AAC). The twin of Android's `service/media/VideoCompressor.kt`
 /// (#2559), with the same numbers:
 ///
 /// - **Standard** (notes, Share Portal posts, videos shared into the Vault): H.264 + AAC in MP4, the
-///   long edge at most `longEdge`, video at most `videoBitrate` and never above the clip's own, HDR
-///   toned down to SDR, laid out for streaming, no metadata written.
-/// - A clip already small (`plan`: H.264, long edge ≤ `longEdge`, ≤ `keepBitrate`) keeps its bytes.
+///   short edge at most `shortEdge` (1280×720 landscape, 720×1280 portrait, never enlarged), video
+///   at most `videoBitrate` and never above the clip's own, HDR toned down to SDR, laid out for
+///   streaming, no metadata written.
+/// - A clip already small (`plan`: H.264, short edge ≤ `shortEdge`, ≤ `keepBitrate`) keeps its bytes.
 /// - **Original** (the Media tab) keeps every byte.
 /// - When the clip can't be re-encoded, or the result isn't smaller, the source goes up as before.
 ///
 /// Callers still run `MediaPrivacy` on what this returns, so the location never goes up. DM videos and
 /// diVine keep their own size through `PreparedClip.export`.
 enum VideoCompressor {
-    /// Feed and share videos: the long edge at most this (Android `LONG_EDGE`).
-    static let longEdge = 720
+    /// Feed and share videos: the short edge at most this (Android `SHORT_EDGE`).
+    static let shortEdge = 720
     /// Video bitrate after compressing, at most.
     static let videoBitrate = 5_000_000
     /// A clip already H.264 and this small at or under this bitrate goes up as it is.
@@ -46,16 +47,15 @@ enum VideoCompressor {
     /// What to do with `source` at `quality`. Free of AVFoundation work so it can be tested alone.
     static func plan(_ source: Source, quality: ImageCompressor.Quality) -> Plan {
         guard quality == .standard else { return .keep }
-        let long = max(source.width, source.height)
         let short = min(source.width, source.height)
         guard short > 0 else { return .keep }
-        if source.isH264, long <= longEdge, (1...keepBitrate).contains(source.bitrate) { return .keep }
+        if source.isH264, short <= shortEdge, (1...keepBitrate).contains(source.bitrate) { return .keep }
         // Never more than the clip already has: a small clip must not grow.
         let bitrate = (1..<videoBitrate).contains(source.bitrate) ? source.bitrate : videoBitrate
-        guard long > longEdge else {
+        guard short > shortEdge else {
             return .encode(width: even(source.width), height: even(source.height), bitrate: bitrate)
         }
-        let scale = Double(longEdge) / Double(long)
+        let scale = Double(shortEdge) / Double(short)
         return .encode(width: even(Int((Double(source.width) * scale).rounded())),
                        height: even(Int((Double(source.height) * scale).rounded())),
                        bitrate: bitrate)
