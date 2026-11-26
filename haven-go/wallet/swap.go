@@ -137,6 +137,11 @@ func (w *Wallet) Receive(ctx context.Context, mint string, proofs cashu.Proofs, 
 func (w *Wallet) Reclaim(ctx context.Context, reservedID string) (uint64, error) {
 	w.opMu.Lock()
 	defer w.opMu.Unlock()
+	return w.reclaimLocked(ctx, reservedID)
+}
+
+// reclaimLocked is Reclaim; the caller holds w.opMu.
+func (w *Wallet) reclaimLocked(ctx context.Context, reservedID string) (uint64, error) {
 	w.mu.Lock()
 	i := w.state.findReserved(reservedID)
 	var r Reserved

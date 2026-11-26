@@ -210,8 +210,11 @@ type Balance struct {
 	Total    uint64            `json:"total"`
 	PerMint  map[string]uint64 `json:"per_mint"`
 	Reserved uint64            `json:"reserved"` // sent, not yet claimed
-	InFlight uint64            `json:"in_flight"`
-	Warn     bool              `json:"warn"`
+	// ReservedPerMint is Reserved by mint: the "Waiting for … to claim"
+	// amount on each mint row (exported tokens and unclaimed nutzaps).
+	ReservedPerMint map[string]uint64 `json:"reserved_per_mint,omitempty"`
+	InFlight        uint64            `json:"in_flight"`
+	Warn            bool              `json:"warn"`
 }
 
 func (w *Wallet) Balance() Balance {
@@ -224,7 +227,14 @@ func (w *Wallet) Balance() Balance {
 		b.Total += a
 	}
 	for _, r := range w.state.Reserved {
-		b.Reserved += r.Proofs.Amount()
+		a := r.Proofs.Amount()
+		b.Reserved += a
+		if a > 0 {
+			if b.ReservedPerMint == nil {
+				b.ReservedPerMint = map[string]uint64{}
+			}
+			b.ReservedPerMint[r.Mint] += a
+		}
 	}
 	for _, op := range w.state.Ops {
 		if op.Kind != OpReclaim { // reclaim inputs are still counted as Reserved

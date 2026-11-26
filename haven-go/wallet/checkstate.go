@@ -71,6 +71,11 @@ type CheckReport struct {
 	SpentDropped  uint64 `json:"spent_dropped"`   // sats removed from the balance (spent elsewhere)
 	Claimed       uint64 `json:"claimed"`         // sent (reserved) sats the receiver claimed
 	PendingAtMint uint64 `json:"pending_at_mint"` // sats the mint holds as pending (kept)
+	// Claims lists exported tokens the other wallet claimed since the last
+	// check, all or part (export.go). Publish each History as a 7376, then
+	// run Rollover: it re-publishes a part-claimed set's 7375 without the
+	// spent proofs, or deletes a fully claimed one.
+	Claims []Claim `json:"claims,omitempty"`
 }
 
 // CheckState asks the mint (NUT-07) about every proof we hold there and drops
@@ -131,14 +136,27 @@ func (w *Wallet) CheckState(ctx context.Context, mint string) (CheckReport, erro
 		}
 		ms.Proofs = kept
 		var reserved []Reserved
+		myLock := ""
+		if s.WalletKey != "" {
+			if pk, err := walletPubkey(s.WalletKey); err == nil {
+				myLock = "02" + pk
+			}
+		}
 		for _, r := range s.Reserved {
 			if r.Mint == mint && !reclaiming[r.ID] {
+				var claimed uint64
 				for _, p := range r.Proofs {
 					if spent[p.Secret] {
-						rep.Claimed += p.Amount
+						claimed += p.Amount
 					}
 				}
+				rep.Claimed += claimed
+				token := isTokenSet(r, myLock)
 				r.Proofs = unspentOnly(r.Proofs, spent)
+				if claimed > 0 && token {
+					rep.Claims = append(rep.Claims, *newClaim(r.ID, r.Mint, claimed, len(r.Proofs) == 0,
+						groupEventIDs(s, reservedGroup(r.ID))))
+				}
 				if len(r.Proofs) == 0 {
 					continue
 				}
