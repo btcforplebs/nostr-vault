@@ -177,12 +177,12 @@ class ZapService: ObservableObject {
                 break
             }
 
-            // 5. Pay via NWC, and look for our receipt at the same time: whichever says paid first
+            // 5. Pay (NWC or the built-in wallet, ZapPayer), and look for our receipt at the same time: whichever says paid first
             // wins. A wallet that hasn't answered may still pay (Minibits review, 2026-11-19).
             pending.begin(pendingKey)
             let receipt = ZapReceiptWatcher.Zap(zapRequest: signedZapReq, invoice: invoice, recipient: notePubkey,
                                                 noteId: noteId, publisher: lnurlResponse.nostrPubkey, relays: relayList)
-            switch await payAndWatch(invoice: invoice, receipt: receipt) {
+            switch await payAndWatch(invoice: invoice, account: signedZapReq.pubkey, receipt: receipt) {
             case .paid(let preimage):
                 RelayProcessManager.shared.addLog("Zap: Successfully paid! Preimage: \(preimage)", level: "INFO")
                 pending.end(pendingKey)
@@ -226,7 +226,8 @@ class ZapService: ObservableObject {
         var walletAnswered = false
     }
 
-    private func payAndWatch(invoice: String, receipt: ZapReceiptWatcher.Zap) async -> PayResult {
+    /// `account` is the zap request's signer: its "Pay zaps with" wallet pays.
+    private func payAndWatch(invoice: String, account: String, receipt: ZapReceiptWatcher.Zap) async -> PayResult {
         let once = Once()
         let watch = Task { @MainActor in
             await ZapReceiptWatcher.waitForReceipt(receipt, stop: { once.walletAnswered })
@@ -239,10 +240,10 @@ class ZapService: ObservableObject {
             }
             Task { @MainActor in
                 do {
-                    let preimage = try await NWCService.payInvoice(bolt11: invoice)
+                    let preimage = try await ZapPayer.pay(bolt11: invoice, accountHex: account)
                     once.walletAnswered = true
                     finish(.paid(preimage))
-                } catch let error as NWCService.NWCError where error.mayStillSettle {
+                } catch where ZapPayer.mayStillSettle(error) {
                     finish(.mayStillSettle(error, watch))
                 } catch {
                     once.walletAnswered = true

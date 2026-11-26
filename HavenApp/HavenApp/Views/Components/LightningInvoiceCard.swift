@@ -166,7 +166,7 @@ struct LightningInvoiceCard: View {
         let invoice = match.invoice
         Task {
             do {
-                _ = try await NWCService.payInvoice(bolt11: invoice)
+                _ = try await ZapPayer.pay(bolt11: invoice)
                 await MainActor.run { state = .paid }
             } catch {
                 await MainActor.run { state = .failed(error.localizedDescription) }

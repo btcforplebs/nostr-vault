@@ -54,7 +54,7 @@ extension PayShareHandler {
         guard !details.isExpired() else { throw PayError.expired }
         try requireActive(intent)
         PayShareAttempts.mark(intent.id, .tried)
-        _ = try await NWCService.payInvoice(bolt11: invoice)
+        _ = try await ZapPayer.pay(bolt11: invoice, accountHex: ZapPayer.hex(ofNpub: account(for: intent)))
         PayShareAttempts.mark(intent.id, .paid)
     }
 
@@ -76,7 +76,7 @@ extension PayShareHandler {
         try requireActive(intent)
         // From here on a retry could pay twice: the card never offers one.
         PayShareAttempts.mark(intent.id, .tried)
-        _ = try await NWCService.payInvoice(bolt11: invoice)
+        _ = try await ZapPayer.pay(bolt11: invoice, accountHex: ZapPayer.hex(ofNpub: account(for: intent)))
         PayShareAttempts.mark(intent.id, .paid)
     }
 

@@ -74,7 +74,7 @@ extension WalletLightningTab {
         sendResult = nil
         Task {
             do {
-                let preimage = try await NWCService.payInvoice(bolt11: invoice)
+                let preimage = try await ZapPayer.pay(bolt11: invoice, using: .nwc)
                 await MainActor.run {
                     sendResult = "Payment sent! Preimage: \(preimage.prefix(16))..."
                     invoiceToPay = ""

@@ -245,7 +245,7 @@ extension WalletLightningTab {
                     return
                 }
                 do {
-                    _ = try await NWCService.payInvoice(bolt11: invoice)
+                    _ = try await ZapPayer.pay(bolt11: invoice, using: .nwc)
                 } catch NWCService.NWCError.notConnected {
                     // The request may have reached the wallet and be paying
                     // right now. Retrying would fetch a NEW invoice from the
