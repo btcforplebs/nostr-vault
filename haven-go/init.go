@@ -650,6 +650,8 @@ func initRelays(ctx context.Context) error {
 	// A write cut off by a kill leaves `<sha>.tmp` behind; it is never served
 	// (load_blob.go), and an old one is cleared here.
 	sweepStaleBlobTemps(time.Now())
+	// Built copies past their 24 h: now, and hourly while the engine runs (copyv2_sweeper.go).
+	startCopySweeper(relayCtx)
 	blossomServer = blossom.New(outboxRelay, getHTTPScheme(config.RelayURL)+config.RelayURL)
 	// A paired device's upload or delete is filed under the owner (mesh_devices.go).
 	blossomServer.Store = meshOwnerIndex{blossom.EventStoreBlobIndexWrapper{Store: blossomDB, ServiceURL: blossomServer.ServiceURL}}

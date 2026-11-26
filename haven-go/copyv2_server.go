@@ -291,7 +291,8 @@ func (s *copyServer) cache() string {
 func (s *copyServer) sweep() {
 	now := s.now()
 	for id, j := range s.jobs {
-		if now.Sub(j.built) > copyKeepFor {
+		// A build still running is never cut off: its files are in use.
+		if now.Sub(j.built) > copyKeepFor && j.manifest.State != "building" {
 			_ = os.RemoveAll(j.dir)
 			delete(s.jobs, id)
 		}
@@ -300,6 +301,12 @@ func (s *copyServer) sweep() {
 	// read it any more, so it only holds disk.
 	entries, _ := os.ReadDir(s.cache())
 	for _, e := range entries {
+		// Only folders named like a copy id (copyRandomHex(16)): the folder
+		// is relative to the working directory, so a "copy" folder that is
+		// not ours (havend started elsewhere) loses nothing else.
+		if !e.IsDir() || !copyIDName(e.Name()) {
+			continue
+		}
 		if _, live := s.jobs[e.Name()]; !live {
 			_ = os.RemoveAll(filepath.Join(s.cache(), e.Name()))
 		}
