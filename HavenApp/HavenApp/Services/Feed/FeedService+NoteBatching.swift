@@ -285,13 +285,12 @@ extension FeedService {
             }
             if noteRelayHints.count > 5000 { noteRelayHints.removeAll() }
             if noteAuthorHints.count > 5000 { noteAuthorHints.removeAll() }
-            for tag in note.tags where tag.count >= 2 && tag[0] == "e" {
-                if tag.count >= 3, tag[2].hasPrefix("wss://") {
-                    noteRelayHints[tag[1]] = URL(string: tag[2])
-                }
-                if tag.count >= 5, tag[4].count == 64 {
-                    noteAuthorHints[tag[1]] = tag[4]
-                }
+            // `e` and NIP-22 `E` tags; loopback/LAN hints are dropped (a
+            // phone-only poster's hint is their own 127.0.0.1).
+            let hints = ParentLookupRelays.hints(note.tags)
+            for hint in hints {
+                if let relay = hint.relay { noteRelayHints[hint.id] = URL(string: relay) }
+                if let author = hint.author { noteAuthorHints[hint.id] = author }
             }
             rememberQuoteHints(in: note.content)
             // Older clients leave the e-tag pubkey slot empty; the direct
@@ -300,14 +299,15 @@ extension FeedService {
                let replyTo = note.replyToPubkey {
                 noteAuthorHints[parentId] = replyTo
             }
-            for tag in note.tags where tag.count >= 2 && tag[0] == "e" {
-                if let author = noteAuthorHints[tag[1]] { referencedAuthors.insert(author) }
+            for hint in hints {
+                if let author = noteAuthorHints[hint.id] { referencedAuthors.insert(author) }
             }
             // The thread root too: a deep reply's parent is not its root, and
             // threaded mode heads the card with the root. Waiting to walk the
             // chain one fetch at a time left cards on "Loading the start of
             // this thread…" for a second each.
-            if let rootId = note.tags.first(where: { $0.count >= 4 && $0[0] == "e" && $0[3] == "root" })?[1],
+            // NIP-22 names a comment's root only in its `E` tag.
+            if let rootId = NIP10Thread.rootEventId(kind: note.kind, tags: note.tags),
                rootId != note.parentEventId {
                 parentIdsToFetch.append(rootId)
             }
