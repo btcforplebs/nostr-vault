@@ -169,6 +169,16 @@ fun PairDeviceScreen(onBack: () -> Unit, viewModel: PairDeviceViewModel = hiltVi
                     Body("Hold this phone up to ${s.name}'s camera, or paste this code there. It finishes by itself.")
                     QrCode(s.uri)
                     CodeText(s.uri)
+                    if (s.words.isNotEmpty()) {
+                        Body("If ${s.name} asks, it shows these same words.")
+                        Text(
+                            s.words.joinToString("  "),
+                            color = PrimaryText, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                            modifier = Modifier.testTag("pair.words"),
+                        )
+                        Address(s.shortAddress)
+                        if (!s.tapped) Secondary("They match", viewModel::wordsMatch)
+                    }
                     Waiting("Waiting for ${s.name}…")
                 }
                 is PairDeviceViewModel.Ui.CheckWords -> {

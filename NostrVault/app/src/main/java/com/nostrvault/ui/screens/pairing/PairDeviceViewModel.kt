@@ -59,8 +59,19 @@ class PairDeviceViewModel @Inject constructor(
         data class ScanFirst(val note: String? = null) : Ui
         /** Either side: the person confirms the role in plain words before anything is stored (Tron 1). */
         data class ConfirmRole(val text: String, val shortAddress: String) : Ui
-        /** B: this phone's own code, for the other device to scan; waiting for its ack. */
-        data class ShowMyCode(val uri: String, val name: String, val secondsLeft: Long) : Ui
+        /**
+         * B: this phone's own code, for the other device to scan; waiting for its ack. [words]: the four check words,
+         * shown from the start like iOS, so they can be compared with the other device's "They match. Accept" screen;
+         * [tapped]: "They match" was tapped early, so a words ack links at once.
+         */
+        data class ShowMyCode(
+            val uri: String,
+            val name: String,
+            val secondsLeft: Long,
+            val words: List<String> = emptyList(),
+            val shortAddress: String = "",
+            val tapped: Boolean = false,
+        ) : Ui
         /** B: A linked by Accept, so this side checks the words too (Tron 2). */
         data class CheckWords(val words: List<String>, val shortAddress: String, val name: String, val tapped: Boolean) : Ui
         data class SwitchAccount(val text: String, val npub: String) : Ui
@@ -307,7 +318,10 @@ class PairDeviceViewModel @Inject constructor(
         val sent = h.send(a.meshHex, MeshPairing.helloJson(aSecret, deviceName(), DeviceRole.PHONE, activeNpub().orEmpty(), now(), accounts()))
         if (!sent) return stop(SEND_FAILED_TEXT)
         val myCode = MeshPairing.build(MeshPairing.npub(own), deviceName(), DeviceRole.PHONE, activeNpub().orEmpty(), MeshPairing.Code.Echo(aSecret, bSecret))
-        _ui.value = Ui.ShowMyCode(myCode, name, MeshPairing.ACK_WINDOW - (now() - scannedAt))
+        _ui.value = Ui.ShowMyCode(
+            myCode, name, MeshPairing.ACK_WINDOW - (now() - scannedAt),
+            words = PairDeviceRules.joinWords(a, own), shortAddress = MeshPairing.shortAddress(a.mesh),
+        )
         tick { t ->
             // The same hello again, byte for byte: a changed one would abort A (Tron 3).
             if (t % (MeshPairingHello.RESEND_EVERY_MS / 1000) == 0L) h.resend()
@@ -330,7 +344,7 @@ class PairDeviceViewModel @Inject constructor(
         }
     }
 
-    /** B: "They match", on the Accept path only. */
+    /** B: "They match", early under this phone's code or after A linked with the words (iOS `wordsMatch`). */
     fun wordsMatch() {
         val j = joiner ?: return
         val a = joined ?: return
@@ -338,7 +352,11 @@ class PairDeviceViewModel @Inject constructor(
         when (j.confirmWords(now())) {
             MeshPairingJoiner.Outcome.Linked -> linkedB(a)
             MeshPairingJoiner.Outcome.Expired -> stop(MeshPairing.EXPIRED_TEXT)
-            else -> (_ui.value as? Ui.CheckWords)?.let { _ui.value = it.copy(tapped = true) }
+            else -> when (val ui = _ui.value) {
+                is Ui.CheckWords -> _ui.value = ui.copy(tapped = true)
+                is Ui.ShowMyCode -> _ui.value = ui.copy(tapped = true)
+                else -> Unit
+            }
         }
     }
 
