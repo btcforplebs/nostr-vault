@@ -150,7 +150,7 @@ import java.util.concurrent.ConcurrentHashMap
                         // none had a list, or a key setup just made) may follow
                         // from empty; a timeout may not.
                         contactListConfirmed = fetched?.confirmed == true ||
-                            FreshAccountKeys.isFresh(appContext, nostrService.activeHexPubkey)
+                            FreshAccountKeys.isFresh(appContext, nostrService.activeHexPubkey, 3)
                         _hasAttemptedContactLoad.value = true
                         _isLoadingContacts.value = false
                     }

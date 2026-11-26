@@ -116,7 +116,7 @@ class InterestListService @Inject constructor(
         // 2026-10-31), not the one read at launch: a hashtag followed in
         // another app since is kept. A key setup just made has no list
         // anywhere: nothing to wait for.
-        if (FreshAccountKeys.isFresh(context, hex)) {
+        if (FreshAccountKeys.isFresh(context, hex, InterestList.KIND)) {
             confirmed = true
         } else {
             val pending = fetch ?: startFetch()
@@ -155,6 +155,8 @@ class InterestListService @Inject constructor(
         if (event == null || accountHex != hex) return@withContext revert(hex)
         accept(next.copy(createdAt = maxOf(event.createdAt, list.createdAt + 1)))
         nostrService.postEvent(event)
+        // The key has a hashtag list now; from here on a save must find it.
+        FreshAccountKeys.clear(context, hex, InterestList.KIND)
         true
     }
 
