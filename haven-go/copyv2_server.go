@@ -291,7 +291,8 @@ func (s *copyServer) cache() string {
 func (s *copyServer) sweep() {
 	now := s.now()
 	for id, j := range s.jobs {
-		if now.Sub(j.built) > copyKeepFor {
+		// A build still running is never cut off: its files are in use.
+		if now.Sub(j.built) > copyKeepFor && j.manifest.State != "building" {
 			_ = os.RemoveAll(j.dir)
 			delete(s.jobs, id)
 		}
