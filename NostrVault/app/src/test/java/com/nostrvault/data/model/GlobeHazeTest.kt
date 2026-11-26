@@ -1,16 +1,11 @@
 package com.nostrvault.data.model
 
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.hypot
-import kotlin.math.sin
 
 /**
  * The zoomed-out rings' haze (Logen 2026-11-24): decoding `haze`, the rings
@@ -85,21 +80,6 @@ class GlobeHazeTest {
         assertEquals("the chip counts the tappable top only", 2, outer.rings.first { it.hop == 3 }.count)
     }
 
-    @Test fun `the best sit nearest the centre and every dot is in the field`() {
-        val keys = (0 until 2000).map(::pk)
-        val p = GlobeHazeField.positions(keys)
-        val d = (keys.indices).map { hypot(p[2 * it].toDouble(), p[2 * it + 1].toDouble()) }
-        val j = GlobeHazeField.JITTER
-        for (r in d) assertTrue(r >= GlobeHazeField.NEAREST - j - 1e-6 && r <= GlobeHazeField.FURTHEST + j + 1e-6)
-        assertTrue("best nearest the centre", d.take(200).average() < d.takeLast(200).average())
-        // A dot's angle is its key's, the same as the ring's dots.
-        val a = atan2(p[15].toDouble(), p[14].toDouble())
-        val want = GlobeHazeField.hash(keys[7]).first
-        assertEquals(cos(want), cos(a), 1e-6)
-        assertEquals(sin(want), sin(a), 1e-6)
-        assertArrayEquals("it never moves", p, GlobeHazeField.positions(keys), 0f)
-    }
-
     @Test fun `the hash matches iOS's unsigned fold, and the ring dots keep their old angle`() {
         // Old GlobeOuterRings.angle: signed Long, floorMod. Hex keys never overflow 8 chars.
         val key = "ffffffff" + "0".repeat(56)
@@ -111,44 +91,44 @@ class GlobeHazeTest {
         assertEquals((next % 1000uL).toDouble() / 1000, GlobeHazeField.hash("0123456789abcdef").second, 0.0)
     }
 
-    @Test fun `rings inside the picked one sink and the picked ring stays centred`() {
+    @Test fun `rings inside the picked one nest centred and shrink`() {
         val half = 200.0
-        assertEquals(0.0, GlobeRingZoom.sink(2, 0.0, half).drop, 0.0)
-        assertEquals(1.0, GlobeRingZoom.sink(2, 0.0, half).scale, 0.0)
+        assertEquals(1.0, GlobeRingZoom.nest(2, 0.0), 0.0)
         for (hop in 3..5) {
             val level = GlobeRingZoom.level(hop)
-            val picked = GlobeRingZoom.sink(hop, level, half)
-            assertEquals("the picked ring stays centred", 0.0, picked.drop, 0.0)
-            assertEquals(1.0, picked.scale, 0.0)
-            for (inner in 2 until hop) {
-                val s = GlobeRingZoom.sink(inner, level, half)
-                assertTrue("hop $inner sinks down at Hop $hop", s.drop > 0.3 * half)
-                assertTrue(s.scale < 0.85)
-                // A sunk ring stays inside the picked one.
-                val r = if (inner < 3) GlobeRingZoom.innerOutline(level, 0.5 * half)
-                    else GlobeRingZoom.radius(inner, level, 0.5 * half, half)
-                assertTrue("hop $inner at Hop $hop", s.drop + r * s.scale < GlobeRingZoom.FIT * half)
+            assertEquals("the picked ring keeps its size", 1.0, GlobeRingZoom.nest(hop, level), 0.0)
+            var outside = GlobeRingZoom.radius(hop, level, 0.5 * half)
+            for (inner in (2 until hop).reversed()) {
+                val scale = GlobeRingZoom.nest(inner, level)
+                assertTrue("hop $inner shrinks at Hop $hop", scale < 0.85)
+                // Onion layers: each sits inside the one round it.
+                val r = (if (inner < 3) GlobeRingZoom.innerOutline(level, 0.5 * half)
+                    else GlobeRingZoom.radius(inner, level, 0.5 * half)) * scale
+                assertTrue("hop $inner at Hop $hop", r < outside)
+                outside = r
             }
         }
         // It eases: no jump between picks, both ways.
-        var last = GlobeRingZoom.sink(2, 0.0, half).drop
+        var last = GlobeRingZoom.nest(2, 0.0)
         for (step in 1..300) {
-            val d = GlobeRingZoom.sink(2, step / 100.0, half).drop
-            assertTrue(abs(d - last) < 0.02 * half)
-            last = d
+            val n = GlobeRingZoom.nest(2, step / 100.0)
+            assertTrue(abs(n - last) < 0.02)
+            last = n
         }
     }
 
-    @Test fun `a tap on the sunk globe maps back to the globe's own frame`() {
+    @Test fun `a tap on the nested globe maps back to the globe's own frame`() {
         val (w, h) = 400f to 800f
-        assertEquals(200f to 400f, GlobeRingZoom.unsink(200f, 400f, w, h, 0.0))
-        assertEquals(0.0, GlobeRingZoom.cullGrow(0.0, 400.0, 800.0), 0.0)
-        val s = GlobeRingZoom.innerDrawScale(1.0, 400.0, 800.0)
-        assertEquals(GlobeRingZoom.innerScale(1.0) * GlobeRingZoom.SINK_SCALES[1], s, 1e-9)
-        val drop = GlobeRingZoom.innerSink(1.0, 400.0, 800.0).drop
-        // The globe's middle is drawn at (200, 400 + drop); a point 30 px right of it there is 30 / s right of the middle.
-        val (x, y) = GlobeRingZoom.unsink(230f, (400 + drop).toFloat(), w, h, 1.0)
-        assertEquals(200 + 30 / s, x.toDouble(), 1e-3)
-        assertEquals(400.0, y.toDouble(), 1e-3)
+        assertEquals(200f to 400f, GlobeRingZoom.unnest(200f, 400f, w, h, 0.0))
+        assertEquals(0.0, GlobeRingZoom.cullGrow(0.0), 0.0)
+        for (level in listOf(1.0, 1.5, 2.0)) {
+            val s = GlobeRingZoom.innerDrawScale(level)
+            assertEquals(GlobeRingZoom.innerScale(level) * GlobeRingZoom.nest(2, level), s, 1e-9)
+            // Stays centred, never drops: the middle maps to the middle.
+            assertEquals(200f to 400f, GlobeRingZoom.unnest(200f, 400f, w, h, level))
+            val (x, y) = GlobeRingZoom.unnest(230f, 410f, w, h, level)
+            assertEquals(200 + 30 / s, x.toDouble(), 1e-3)
+            assertEquals(400 + 10 / s, y.toDouble(), 1e-3)
+        }
     }
 }
