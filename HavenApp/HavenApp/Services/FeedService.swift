@@ -667,6 +667,9 @@ extension FeedService {
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(1))
                 RelayProcessManager.shared.startupMark("feed rows shown")
+                #if os(iOS)
+                VideoWarmup.runOnce()
+                #endif
             }
         }
     }
