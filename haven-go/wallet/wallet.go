@@ -28,6 +28,9 @@ var (
 	ErrNotPaid = errors.New("wallet: invoice not paid yet")
 	// ErrBusy means the mint has an unfinished op; run Recover first.
 	ErrBusy = errors.New("wallet: an earlier operation at this mint is unfinished")
+	// ErrOwnProofs: the proofs are already ours (often our own waiting
+	// token pasted back). Take it back instead.
+	ErrOwnProofs = errors.New("wallet: these proofs are already in this wallet")
 	// ErrNoChange means paying would overshoot and the mint can't return
 	// change (no NUT-08). Nothing was spent.
 	ErrNoChange = errors.New("wallet: mint can't return change")
@@ -210,8 +213,11 @@ type Balance struct {
 	Total    uint64            `json:"total"`
 	PerMint  map[string]uint64 `json:"per_mint"`
 	Reserved uint64            `json:"reserved"` // sent, not yet claimed
-	InFlight uint64            `json:"in_flight"`
-	Warn     bool              `json:"warn"`
+	// ReservedPerMint is Reserved by mint: the "Waiting for … to claim"
+	// amount on each mint row (exported tokens and unclaimed nutzaps).
+	ReservedPerMint map[string]uint64 `json:"reserved_per_mint,omitempty"`
+	InFlight        uint64            `json:"in_flight"`
+	Warn            bool              `json:"warn"`
 }
 
 func (w *Wallet) Balance() Balance {
@@ -224,7 +230,14 @@ func (w *Wallet) Balance() Balance {
 		b.Total += a
 	}
 	for _, r := range w.state.Reserved {
-		b.Reserved += r.Proofs.Amount()
+		a := r.Proofs.Amount()
+		b.Reserved += a
+		if a > 0 {
+			if b.ReservedPerMint == nil {
+				b.ReservedPerMint = map[string]uint64{}
+			}
+			b.ReservedPerMint[r.Mint] += a
+		}
 	}
 	for _, op := range w.state.Ops {
 		if op.Kind != OpReclaim { // reclaim inputs are still counted as Reserved
@@ -276,6 +289,20 @@ func (w *Wallet) mintBusy(mint string) bool {
 		// A stuck op already holds its inputs out of the balance, so it can't
 		// clash with a new op; only an op whose answer is unknown blocks.
 		if op.Mint == mint && op.Stuck == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// reservedBusy reports an op (stuck or not) already reclaiming Reserved set
+// id: its inputs are that set's proofs, so a second reclaim would spend them
+// again and read our own swap as someone else's claim.
+func (w *Wallet) reservedBusy(id string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, op := range w.state.Ops {
+		if op.Reserved == id {
 			return true
 		}
 	}

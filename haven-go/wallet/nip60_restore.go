@@ -123,12 +123,21 @@ func (w *Wallet) Restore(ctx context.Context, in RestoreInput) (RestoreReport, e
 					Digest: tokenDigest(t.c.Proofs, t.c.ExportedAt)})
 				indexed[t.id] = true
 			}
-			var fresh cashu.Proofs
+			var fresh, moved cashu.Proofs
 			for _, p := range stripWitness(t.c.Proofs) {
 				if !known[p.Secret] {
 					known[p.Secret] = true
 					fresh = append(fresh, p)
+				} else if t.c.ExportedAt > 0 && inBalance(s, t.c.Mint, p.Secret) {
+					// Another device exported proofs our stale copy still
+					// counts as balance: the export wins, so no spend of ours
+					// can pick them and Rollover keeps its 7375.
+					moved = append(moved, p)
 				}
+			}
+			if len(moved) > 0 {
+				s.takeProofs(t.c.Mint, moved)
+				addReserved(s, strings.TrimPrefix(group, "r|"), t.c, moved)
 			}
 			if len(fresh) == 0 {
 				if s.Mints[t.c.Mint] == nil {
@@ -230,6 +239,20 @@ func localSecrets(s *State) map[string]bool {
 		}
 	}
 	return known
+}
+
+// inBalance reports a proof (by secret) in mint's spendable balance.
+func inBalance(s *State, mint, secret string) bool {
+	ms := s.Mints[mint]
+	if ms == nil {
+		return false
+	}
+	for _, p := range ms.Proofs {
+		if p.Secret == secret {
+			return true
+		}
+	}
+	return false
 }
 
 // restoreReservedID picks the Reserved id for an exported 7375: the local

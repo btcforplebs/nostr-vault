@@ -86,6 +86,9 @@ func (w *Wallet) Receive(ctx context.Context, mint string, proofs cashu.Proofs, 
 	if w.mintBusy(mint) {
 		return 0, ErrBusy
 	}
+	if w.holdsAny(proofs) {
+		return 0, ErrOwnProofs
+	}
 	sets, err := w.loadKeysets(ctx, c)
 	if err != nil {
 		return 0, err
@@ -130,6 +133,21 @@ func (w *Wallet) Receive(ctx context.Context, mint string, proofs cashu.Proofs, 
 	return total - fee, nil
 }
 
+// holdsAny reports any of proofs already in this wallet (balance, a sent
+// set such as our own waiting token, or an op). Receiving them would count
+// them twice and later read our own swap as someone else's claim.
+func (w *Wallet) holdsAny(proofs cashu.Proofs) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	known := localSecrets(w.state)
+	for _, p := range proofs {
+		if known[p.Secret] {
+			return true
+		}
+	}
+	return false
+}
+
 // Reclaim swaps a Reserved set (sent, never claimed) back into the balance.
 // If the mint says it was claimed meanwhile, the set is dropped and
 // ErrAlreadySpent returned. A nutzap we sent (locked to someone else) can
@@ -137,6 +155,11 @@ func (w *Wallet) Receive(ctx context.Context, mint string, proofs cashu.Proofs, 
 func (w *Wallet) Reclaim(ctx context.Context, reservedID string) (uint64, error) {
 	w.opMu.Lock()
 	defer w.opMu.Unlock()
+	return w.reclaimLocked(ctx, reservedID)
+}
+
+// reclaimLocked is Reclaim; the caller holds w.opMu.
+func (w *Wallet) reclaimLocked(ctx context.Context, reservedID string) (uint64, error) {
 	w.mu.Lock()
 	i := w.state.findReserved(reservedID)
 	var r Reserved
@@ -151,7 +174,7 @@ func (w *Wallet) Reclaim(ctx context.Context, reservedID string) (uint64, error)
 	if err != nil {
 		return 0, err
 	}
-	if w.mintBusy(r.Mint) {
+	if w.mintBusy(r.Mint) || w.reservedBusy(r.ID) {
 		return 0, ErrBusy
 	}
 	sets, err := w.loadKeysets(ctx, c)
