@@ -15,6 +15,12 @@ import (
 // (NUT-11 P2PK, for a nutzap). The sent proofs go into Reserved (not the
 // balance) and are returned; CheckState drops them once claimed.
 func (w *Wallet) Send(ctx context.Context, mint string, amount uint64, lockTo, memo string) (Reserved, error) {
+	return w.send(ctx, mint, amount, lockTo, nil, memo, nil)
+}
+
+// send is Send with NUT-11 lock tags and, for a nutzap, the request kept
+// with the journaled op and the Reserved set so its 9321 can be rebuilt.
+func (w *Wallet) send(ctx context.Context, mint string, amount uint64, lockTo string, lockTags [][]string, memo string, nz *NutzapRequest) (Reserved, error) {
 	if amount == 0 {
 		return Reserved{}, fmt.Errorf("wallet: amount must be above 0")
 	}
@@ -39,7 +45,7 @@ func (w *Wallet) Send(ctx context.Context, mint string, amount uint64, lockTo, m
 	if err != nil {
 		return Reserved{}, err
 	}
-	sendOuts, err := newOutputs(ks, splitAmount(amount), RoleSend, lockTo)
+	sendOuts, err := newLockedOutputs(ks, splitAmount(amount), RoleSend, lockTo, lockTags)
 	if err != nil {
 		return Reserved{}, err
 	}
@@ -48,7 +54,7 @@ func (w *Wallet) Send(ctx context.Context, mint string, amount uint64, lockTo, m
 		return Reserved{}, err
 	}
 	op := Op{ID: w.newID(), Kind: OpSwap, Mint: mint, Inputs: inputs,
-		Outputs: append(sendOuts, keepOuts...), Memo: memo, Created: w.now().Unix()}
+		Outputs: append(sendOuts, keepOuts...), Memo: memo, Created: w.now().Unix(), Nutzap: nz}
 	if err := w.runSwap(ctx, c, op, sets); err != nil {
 		return Reserved{}, err
 	}
@@ -126,8 +132,8 @@ func (w *Wallet) Receive(ctx context.Context, mint string, proofs cashu.Proofs, 
 
 // Reclaim swaps a Reserved set (sent, never claimed) back into the balance.
 // If the mint says it was claimed meanwhile, the set is dropped and
-// ErrAlreadySpent returned. Proofs locked to someone else's key can't be
-// reclaimed: the mint refuses and the set stays.
+// ErrAlreadySpent returned. A nutzap we sent (locked to someone else) can
+// only be reclaimed after its refund time (ErrRefundNotYet before it).
 func (w *Wallet) Reclaim(ctx context.Context, reservedID string) (uint64, error) {
 	w.opMu.Lock()
 	defer w.opMu.Unlock()
@@ -165,7 +171,11 @@ func (w *Wallet) Reclaim(ctx context.Context, reservedID string) (uint64, error)
 	if err != nil {
 		return 0, err
 	}
-	op := Op{ID: w.newID(), Kind: OpReclaim, Mint: r.Mint, Inputs: r.Proofs, Outputs: outs, Reserved: r.ID, Created: w.now().Unix()}
+	inputs, err := w.reclaimInputs(r)
+	if err != nil {
+		return 0, err
+	}
+	op := Op{ID: w.newID(), Kind: OpReclaim, Mint: r.Mint, Inputs: inputs, Outputs: outs, Reserved: r.ID, Created: w.now().Unix()}
 	if err := w.runSwap(ctx, c, op, sets); err != nil {
 		return 0, err
 	}
@@ -225,7 +235,7 @@ func (w *Wallet) applySwap(op Op, proofs []cashu.Proof) error {
 		}
 		s.addProofs(op.Mint, keep)
 		if len(send) > 0 {
-			s.Reserved = append(s.Reserved, Reserved{ID: op.ID, Mint: op.Mint, Proofs: send, Memo: op.Memo, Created: op.Created})
+			s.Reserved = append(s.Reserved, reservedFromOp(op, send))
 		}
 		if op.Kind == OpReclaim {
 			if i := s.findReserved(op.Reserved); i >= 0 {

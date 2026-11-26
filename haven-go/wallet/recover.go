@@ -325,7 +325,7 @@ func (w *Wallet) applyFound(op Op, found map[int]cashu.Proof, closeOp bool) erro
 					}
 				}
 			} else {
-				s.Reserved = append(s.Reserved, Reserved{ID: op.ID, Mint: op.Mint, Proofs: send, Memo: op.Memo, Created: op.Created})
+				s.Reserved = append(s.Reserved, reservedFromOp(op, send))
 			}
 		}
 		if !closeOp {

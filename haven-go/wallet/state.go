@@ -21,6 +21,33 @@ type State struct {
 	Ops        []Op                  `json:"ops,omitempty"`
 	MintQuotes []MintQuote           `json:"mint_quotes,omitempty"`
 	Reserved   []Reserved            `json:"reserved,omitempty"`
+
+	// NIP-60 event layer (E2). WalletKey is the 17375 wallet key (hex): NOT
+	// the account key; it only unlocks nutzaps locked to us. WalletDigest is
+	// what the last published 17375 held. Tokens indexes the 7375 events we
+	// know are live; QuoteEvents maps a mint quote id to its 7374 event.
+	WalletKey    string            `json:"wallet_key,omitempty"`
+	WalletDigest string            `json:"wallet_digest,omitempty"`
+	Tokens       []PublishedToken  `json:"tokens,omitempty"`
+	QuoteEvents  map[string]string `json:"quote_events,omitempty"`
+	// PendingDeletes are 7375 ids already replaced by a published 7375 (and
+	// named in its del), still owed a kind-5. A kind-5 is only ever sent for
+	// an id whose replacement is committed, so a failed publish never leaves
+	// the Vault without the proofs.
+	PendingDeletes []string `json:"pending_deletes,omitempty"`
+	// WalletHold stops Rollover from publishing a 17375: the last Vault read
+	// found a different wallet key, or a 17375 we can't open. Publishing ours
+	// would replace the Vault's key and strand every nutzap locked to it. A
+	// clean Restore clears it.
+	WalletHold string `json:"wallet_hold,omitempty"`
+}
+
+// PublishedToken is one live 7375 we know of.
+type PublishedToken struct {
+	EventID string `json:"event_id"`
+	Mint    string `json:"mint"`
+	Group   string `json:"group"`
+	Digest  string `json:"digest"`
 }
 
 // MintState is one mint and the proofs we hold there.
@@ -78,6 +105,9 @@ type Op struct {
 	// Stuck is set when Recover could not finish the op (for example the mint
 	// signed but has no NUT-09 restore). The op stays; nothing is dropped.
 	Stuck string `json:"stuck,omitempty"`
+	// Nutzap is the request behind a nutzap swap, carried into its Reserved
+	// set so the 9321 can be rebuilt after a crash.
+	Nutzap *NutzapRequest `json:"nutzap,omitempty"`
 }
 
 // MintQuote is a NUT-04 quote we asked for (the local twin of a 7374 event),
@@ -100,6 +130,19 @@ type Reserved struct {
 	Proofs  cashu.Proofs `json:"proofs"`
 	Memo    string       `json:"memo,omitempty"`
 	Created int64        `json:"created"`
+	// Nutzap is set for a nutzap whose 9321 is not yet committed as
+	// published (NutzapTemplateFor rebuilds it). NutzapSent is the 9321 id
+	// once CommitPublished saw it. RefundAfter is the NUT-11 locktime after
+	// which our wallet key can take the sats back (Reclaim).
+	Nutzap      *NutzapRequest `json:"nutzap,omitempty"`
+	NutzapSent  string         `json:"nutzap_sent,omitempty"`
+	RefundAfter int64          `json:"refund_after,omitempty"`
+}
+
+func reservedFromOp(op Op, send cashu.Proofs) Reserved {
+	r := Reserved{ID: op.ID, Mint: op.Mint, Proofs: send, Memo: op.Memo, Created: op.Created, Nutzap: op.Nutzap}
+	r.RefundAfter = refundAfter(send)
+	return r
 }
 
 func newState() *State {
