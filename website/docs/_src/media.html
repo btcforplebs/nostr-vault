@@ -188,6 +188,32 @@
     Blossom cache app on the same phone, when one is running. Uploads never go through it.</p>
 </section>
 
+<section id="htree">
+<p class="eyebrow">New in 3.3.0</p>
+<h2>htree photos</h2>
+<p>Some Nostr apps, such as Iris, post photos by an <code>htree://</code> (hashtree) address instead of a web
+    link. Nostr Vault shows those photos in the feed and in Media, and saves them to your vault like any other
+    photo, up to 2 MiB each. (All apps.)</p>
+</section>
+
+<section id="storage-sweep">
+<p class="eyebrow">Space on your device</p>
+<h2>Leftover files clear themselves</h2>
+<p>Uploads, imports, downloads and backups make temporary files while they run. If the app was closed half way,
+    those files used to stay and could take gigabytes. Since 3.3.0 the app clears its own leftovers:</p>
+<ul>
+    <li><strong>iPhone, iPad and Mac</strong> clear the app's own temporary files each time it opens. A backup zip
+        is removed as soon as its share sheet closes.</li>
+    <li><strong>Android</strong> does the same with its cache folder when the app starts, and a new dashboard export
+        clears the earlier export zips first.</li>
+    <li><strong>The vault itself</strong> (on every app and on a Linux box) clears a copy it built for another
+        device once that copy is a day old, when it starts and every hour after.</li>
+</ul>
+<p>Only files the app made itself, untouched for 24 hours and not in use, are removed. Your vault, your media,
+    thumbnails and the media cache are never touched by this. Clear the media cache yourself under
+    <a class="inline" href="#cache">Media &amp; Cache</a>.</p>
+</section>
+
 <section id="media-tab">
 <p class="eyebrow">Across your devices</p>
 <h2>The Media tab</h2>

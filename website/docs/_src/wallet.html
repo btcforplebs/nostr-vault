@@ -75,8 +75,10 @@
     <strong>Zap…</strong>. A one-tap zap is never less than 1 sat.</p>
 
 <h3 id="pending">When the wallet is slow</h3>
-<p>A wallet can take a minute or more to pay. Since 3.2.3 the app waits about 90 seconds for it and watches for
-    the zap's receipt, so a zap that went through no longer shows as failed.</p>
+<p>A wallet can take a minute or more to pay. The app waits about 90 seconds for it and watches for the zap's
+    receipt, so a zap that went through no longer shows as failed. Since 3.3.0 it keeps looking for the receipt for
+    up to 10 minutes, and the waiting pill has <strong>Pay in wallet app</strong>, which opens the same invoice in
+    your wallet app so you can finish there (iPhone, iPad and Mac).</p>
 <ul>
     <li>If the wallet hasn't answered yet, the pill says <strong>Sent, waiting for your wallet</strong> (Android:
         "Sent. Your wallet hasn't confirmed yet, so it may still arrive."). That means it may still pay, not that
