@@ -10,11 +10,13 @@ final class VideoCompressorTests: XCTestCase {
         VideoCompressor.Source(width: w, height: h, bitrate: bps, isH264: h264)
     }
 
-    func testFourKShrinksTo720LongEdgeAt5Mbps() {
+    func testFourKShrinksTo720ShortEdgeAt5Mbps() {
         XCTAssertEqual(VideoCompressor.plan(source(3840, 2160, bps: 45_000_000, h264: false), quality: .standard),
-                       .encode(width: 720, height: 404, bitrate: 5_000_000))
+                       .encode(width: 1280, height: 720, bitrate: 5_000_000))
         XCTAssertEqual(VideoCompressor.plan(source(2160, 3840, bps: 45_000_000), quality: .standard),
-                       .encode(width: 404, height: 720, bitrate: 5_000_000))
+                       .encode(width: 720, height: 1280, bitrate: 5_000_000))
+        XCTAssertEqual(VideoCompressor.plan(source(1440, 1080, bps: 20_000_000), quality: .standard),
+                       .encode(width: 960, height: 720, bitrate: 5_000_000))
     }
 
     func testOriginalKeepsEveryByte() {
@@ -22,20 +24,23 @@ final class VideoCompressorTests: XCTestCase {
     }
 
     func testSmallH264ClipKeepsItsBytes() {
-        XCTAssertEqual(VideoCompressor.plan(source(720, 404, bps: 6_000_000), quality: .standard), .keep)
+        XCTAssertEqual(VideoCompressor.plan(source(1280, 720, bps: 6_000_000), quality: .standard), .keep)
+        XCTAssertEqual(VideoCompressor.plan(source(720, 1280, bps: 6_000_000), quality: .standard), .keep)
         XCTAssertEqual(VideoCompressor.plan(source(640, 480, bps: 1_000_000), quality: .standard), .keep)
     }
 
-    func testSmallHEVCOrFastClipIsReencodedAtItsOwnSize() {
-        XCTAssertEqual(VideoCompressor.plan(source(720, 404, bps: 3_000_000, h264: false), quality: .standard),
-                       .encode(width: 720, height: 404, bitrate: 3_000_000))
-        XCTAssertEqual(VideoCompressor.plan(source(720, 404, bps: 9_000_000), quality: .standard),
-                       .encode(width: 720, height: 404, bitrate: 5_000_000))
+    func testSmallHEVCOrFastClipIsReencodedAtItsOwnSizeNeverEnlarged() {
+        XCTAssertEqual(VideoCompressor.plan(source(1280, 720, bps: 3_000_000, h264: false), quality: .standard),
+                       .encode(width: 1280, height: 720, bitrate: 3_000_000))
+        XCTAssertEqual(VideoCompressor.plan(source(1280, 720, bps: 9_000_000), quality: .standard),
+                       .encode(width: 1280, height: 720, bitrate: 5_000_000))
+        XCTAssertEqual(VideoCompressor.plan(source(640, 360, bps: 9_000_000, h264: false), quality: .standard),
+                       .encode(width: 640, height: 360, bitrate: 5_000_000))
     }
 
     func testBitrateNeverAboveTheClipsOwn() {
         XCTAssertEqual(VideoCompressor.plan(source(1920, 1080, bps: 2_000_000), quality: .standard),
-                       .encode(width: 720, height: 404, bitrate: 2_000_000))
+                       .encode(width: 1280, height: 720, bitrate: 2_000_000))
     }
 
     func testUnknownSizeIsLeftAlone() {
@@ -99,7 +104,7 @@ final class VideoCompressorTests: XCTestCase {
         XCTAssertEqual(out.pathExtension, "mp4")
         let track = try await AVURLAsset(url: out).loadTracks(withMediaType: .video).first!
         let (natural, formats) = try await track.load(.naturalSize, .formatDescriptions)
-        XCTAssertEqual(natural, CGSize(width: 720, height: 404))
+        XCTAssertEqual(natural, CGSize(width: 1280, height: 720))
         XCTAssertEqual(formats.first.map(CMFormatDescriptionGetMediaSubType), kCMVideoCodecType_H264)
         let duration = try await AVURLAsset(url: out).load(.duration).seconds
         XCTAssertEqual(duration, 2, accuracy: 0.1)
@@ -115,8 +120,8 @@ final class VideoCompressorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: out) }
         let track = try await AVURLAsset(url: out).loadTracks(withMediaType: .video).first!
         let (natural, transform) = try await track.load(.naturalSize, .preferredTransform)
-        XCTAssertEqual(natural.applying(transform).width.magnitude, 404)
-        XCTAssertEqual(natural.applying(transform).height.magnitude, 720)
+        XCTAssertEqual(natural.applying(transform).width.magnitude, 720)
+        XCTAssertEqual(natural.applying(transform).height.magnitude, 1280)
     }
 
     func testOriginalAndUnreadableGoUpAsTheyAre() async throws {
