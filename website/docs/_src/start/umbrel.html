@@ -1,0 +1,65 @@
+<!--page
+{
+  "title": "Nostr Vault on Umbrel",
+  "nav": "Umbrel",
+  "section": "start",
+  "order": 7,
+  "description": "Install Nostr Vault on umbrelOS from the Nostr Vault community app store: add the store, install, claim the box with your npub and the setup code, pair your phone, and what a restore means.",
+  "checked": "Nostr Vault 3.3.0 on umbrelOS 2.0.1"
+}
+-->
+<p>umbrelOS runs Nostr Vault as an app on your Umbrel: the same box as <a href="/docs/start/linux/">Nostr Vault for
+    Linux</a>, with umbrelOS doing the installs and updates. It comes from our own community app store, so you add the
+    store once and install from it.</p>
+
+<h2 id="install">Add the store and install</h2>
+<ol class="steps">
+    <li>On your Umbrel, open <span class="ui">App Store</span>, then the <span class="ui">⋯</span> menu at the top
+        right, then <span class="ui">Community App Stores</span>.</li>
+    <li>Paste <code>https://github.com/btcforplebs/umbrel-app-store</code> and tap <span class="ui">Add</span>.</li>
+    <li>Open <strong>Nostr Vault</strong> from the new store and tap <span class="ui">Install</span>. It runs on
+        Umbrel Home, Raspberry Pi and other x86 or arm64 Umbrels.</li>
+</ol>
+
+<h2 id="claim">Claim the box</h2>
+<p>A new box serves only a setup page until its owner claims it.</p>
+<ol class="steps">
+    <li>On the app's page in umbrelOS, look under <span class="ui">Default credentials</span>. The password there is
+        the box's <strong>setup code</strong>. It is also in the app's settings.</li>
+    <li>Open the app. Paste your account's <strong>npub</strong> (never your nsec: the box never holds your private
+        key) and the setup code, and tap <span class="ui">Claim this box</span>.</li>
+    <li>Sign in on the box's page with the same account (a signer extension or a bunker).</li>
+</ol>
+<ul>
+    <li>The first npub with the right code owns the box, and the setup page is gone after that. Only that account can
+        manage the box.</li>
+    <li>Too many wrong codes in a minute and the box waits before it accepts more.</li>
+</ul>
+
+<h2 id="pair">Pair your phone</h2>
+<p>Pair from the box's page, as for any Linux box: Settings &rarr; <span class="ui">This Box</span> &rarr;
+    <span class="ui">My Devices</span> &rarr; <span class="ui">Add a device</span>, scan the code with Nostr Vault on
+    your phone, and check that both show the same four words. The steps are in
+    <a href="/docs/mesh/linux-box/#pair">A Linux box in My Devices</a>.</p>
+<ul>
+    <li>At home your phone links to the box over your network. Away from home it reaches the box over the mesh, with
+        no router ports opened.</li>
+    <li>The app uses host networking so the mesh can offer your phone the Umbrel's real network address.</li>
+</ul>
+
+<h2 id="update">Updates</h2>
+<p>umbrelOS offers each new version under <span class="ui">Updates</span> in the App Store. The box's own
+    <span class="ui">Update</span> button says the same. Your data, owner and paired devices stay.</p>
+
+<h2 id="restore">Backups and restore</h2>
+<ul>
+    <li>umbrelOS backups copy the whole vault except the box's mesh key (with its old npub and mesh status).</li>
+    <li>After a restore the box makes a new mesh key, so it has a new npub. Your account, notes and media are all
+        there, but your phone still knows the old box: on the phone, remove the old box under My Devices
+        (<a href="/docs/mesh/remove-a-device/">Remove a device</a>) and pair the box again.</li>
+</ul>
+
+<h2 id="data">Where the data is</h2>
+<p>The vault lives in the app's data folder on your Umbrel
+    (<code>~/umbrel/app-data/nostrvault-nostr-vault/data</code>). Uninstalling the app deletes it, so back up
+    first. The box's <span class="ui">Move vault to…</span> is turned off here: umbrelOS owns the disk.</p>
