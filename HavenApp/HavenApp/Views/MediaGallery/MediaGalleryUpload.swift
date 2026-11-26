@@ -121,27 +121,11 @@ extension MediaGalleryView {
                             return
                         }
 
-                        var finalData = data
-                        var finalType = contentType
-
-                        // Convert HEIC/HEIF to JPEG
-                        if contentType.conforms(to: .heic) || contentType.conforms(to: .heif) {
-                            #if os(iOS)
-                            if let image = UIImage(data: data),
-                               let jpegData = image.jpegData(compressionQuality: 0.8) {
-                                finalData = jpegData
-                                finalType = .jpeg
-                            }
-                            #elseif os(macOS)
-                            if let image = NSImage(data: data),
-                               let tiffData = image.tiffRepresentation,
-                               let bitmapRep = NSBitmapImageRep(data: tiffData),
-                               let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
-                                finalData = jpegData
-                                finalType = .jpeg
-                            }
-                            #endif
-                        }
+                        // Your Vault keeps full quality: Original only turns
+                        // HEIC into JPEG (MediaPrivacy still takes the location out).
+                        let photo = ImageCompressor.prepare(data, type: contentType, quality: .original)
+                        var finalData = photo.data
+                        let finalType = photo.type
 
                         // Never upload where it was taken (MediaPrivacy).
                         guard let cleanData = MediaPrivacy.removingLocation(fromImageData: finalData) else {

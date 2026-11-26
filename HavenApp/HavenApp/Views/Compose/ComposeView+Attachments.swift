@@ -78,8 +78,10 @@ extension ComposeView {
             switch result {
             case .success(let data):
                 guard let data = data else { return }
+                // Off the main thread: a 48 MP photo takes a moment to shrink.
+                let photo = ImageCompressor.prepare(data, type: contentType, quality: .standard)
                 DispatchQueue.main.async {
-                    self.addImageData(data, type: contentType)
+                    self.addImage(photo)
                 }
             case .failure(let error):
                 #if DEBUG
@@ -107,7 +109,10 @@ extension ComposeView {
         for media in loaded {
             switch media {
             case .image(let data, let type):
-                addImageData(data, type: type)
+                let photo = await Task.detached(priority: .userInitiated) {
+                    ImageCompressor.prepare(data, type: type, quality: .standard)
+                }.value
+                addImage(photo)
             case .video(let url, let type):
                 let thumbnail = await generateVideoThumbnail(url: url)
                 appendAttachment(Attachment(data: nil, fileURL: url, type: type, thumbnail: thumbnail))
@@ -115,39 +120,17 @@ extension ComposeView {
         }
     }
 
-    /// An image from the photo picker or a drop: HEIC becomes JPEG, as the
-    /// readers of a note expect; everything else keeps its bytes.
-    private func addImageData(_ data: Data, type contentType: UTType) {
-        var finalData = data
-        var finalType = contentType
-
-        // Convert HEIC/HEIF to JPEG
-        if contentType.conforms(to: .heic) || contentType.conforms(to: .heif) {
-            #if os(iOS)
-            if let image = UIImage(data: data),
-               let jpegData = image.jpegData(compressionQuality: 0.8) {
-                finalData = jpegData
-                finalType = .jpeg
-            }
-            #elseif os(macOS)
-            if let image = NSImage(data: data),
-               let tiffData = image.tiffRepresentation,
-               let bitmapRep = NSBitmapImageRep(data: tiffData),
-               let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
-                finalData = jpegData
-                finalType = .jpeg
-            }
-            #endif
-        }
-
+    /// An image from the photo picker or a drop, already through
+    /// `ImageCompressor` (Standard: 2048 px JPEG, no metadata).
+    private func addImage(_ photo: ImageCompressor.Output) {
         self.appendAttachment(Attachment(
-            data: finalData,
+            data: photo.data,
             fileURL: nil,
-            type: finalType,
+            type: photo.type,
             thumbnail: nil
         ))
     }
-    
+
     /// Computes the SHA256 of a file by streaming it in 1 MB chunks so large
     /// videos don't sit fully in memory.
     nonisolated static func streamingSHA256(of url: URL) -> String? {
