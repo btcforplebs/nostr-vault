@@ -87,6 +87,11 @@ struct HavenConfig: Codable, Equatable {
     /// a post shows no fold row for replies and quotes from outside your
     /// web. They stay in Vault › ··· › Outside your web.
     var showsOutsideUnderPosts: Bool = true
+    /// Settings › Media Servers › Upload Quality (Logen 2026-11-26): "standard"
+    /// shrinks photos and videos for notes, share, live chat and DMs;
+    /// "original" sends them as they are. Location is removed either way. The
+    /// Media tab always sends originals. See UploadQuality.
+    var uploadQuality: String = UploadQuality.standard
     /// Settings › Feeds › Discovery reach: the shown score (0-100) Underrated
     /// and Discovery admit from the desktop Vault's rank. nil: the rank
     /// file's own starting bar (`DiscoveryReach.bar`).
@@ -356,7 +361,7 @@ struct HavenConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, autoplayVideos, vertexLookups, fanfaresAutoCheck, ownerNcryptsec, ownerNsec, showReplies, repliesBackOnV1, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
-        case useOLED, textSizeScale, appearanceMode, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge, feedReach, showsOutsideUnderPosts, discoveryBar
+        case useOLED, textSizeScale, appearanceMode, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge, feedReach, showsOutsideUnderPosts, discoveryBar, uploadQuality
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags, showDMTextInNotifications
         case macRelayURL, publicOnWeb, keepFullCopy, fullCopyWifiOnly
@@ -476,6 +481,7 @@ struct HavenConfig: Codable, Equatable {
         hideNostrVaultBadge = try container.decodeIfPresent(Bool.self, forKey: .hideNostrVaultBadge) ?? defaults.hideNostrVaultBadge
         feedReach = try container.decodeIfPresent([String: String].self, forKey: .feedReach) ?? defaults.feedReach
         showsOutsideUnderPosts = try container.decodeIfPresent(Bool.self, forKey: .showsOutsideUnderPosts) ?? defaults.showsOutsideUnderPosts
+        uploadQuality = try container.decodeIfPresent(String.self, forKey: .uploadQuality) ?? defaults.uploadQuality
         discoveryBar = try container.decodeIfPresent(Double.self, forKey: .discoveryBar)
 
         signingMode = try container.decodeIfPresent(String.self, forKey: .signingMode) ?? defaults.signingMode

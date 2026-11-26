@@ -74,12 +74,13 @@ extension ComposeView {
     }
 
     private func loadImageItem(_ item: PhotosPickerItem, contentType: UTType) {
+        let quality = UploadQuality.current
         item.loadTransferable(type: Data.self) { result in
             switch result {
             case .success(let data):
                 guard let data = data else { return }
                 // Off the main thread: a 48 MP photo takes a moment to shrink.
-                let photo = ImageCompressor.prepare(data, type: contentType, quality: .standard)
+                let photo = ImageCompressor.prepare(data, type: contentType, quality: quality)
                 DispatchQueue.main.async {
                     self.addImage(photo)
                 }
@@ -109,8 +110,9 @@ extension ComposeView {
         for media in loaded {
             switch media {
             case .image(let data, let type):
+                let quality = UploadQuality.current
                 let photo = await Task.detached(priority: .userInitiated) {
-                    ImageCompressor.prepare(data, type: type, quality: .standard)
+                    ImageCompressor.prepare(data, type: type, quality: quality)
                 }.value
                 addImage(photo)
             case .video(let url, let type):

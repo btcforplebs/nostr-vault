@@ -176,8 +176,8 @@ extension MediaGalleryView {
     }
 
     /// `quality` is Original for the Media tab's own picks (full size, your
-    /// backup); videos shared into the Vault from another app pass Standard
-    /// and go up at 720p (VideoCompressor), as on Android.
+    /// backup); videos shared into the Vault from another app pass the
+    /// Upload Quality setting (Standard: 720p, VideoCompressor), as on Android.
     func handleUploadFileURLs(_ urls: [URL], quality: ImageCompressor.Quality = .original) {
         guard !urls.isEmpty else { return }
 

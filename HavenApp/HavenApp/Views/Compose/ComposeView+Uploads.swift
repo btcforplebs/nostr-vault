@@ -84,11 +84,12 @@ extension ComposeView {
         var freshServers: [String]?
         if let pickedURL = attachment.fileURL {
             // A video goes up at 720p (VideoCompressor); one already small,
-            // or one that can't be re-encoded, goes up as it is.
+            // or one that can't be re-encoded, goes up as it is. Settings ›
+            // Upload Quality › Original sends it as it is too.
             var originalURL = pickedURL
             if attachment.isVideo {
                 note.update(id) { $0.upload = .compressing(progress: 0) }
-                let compressed = await VideoCompressor.compressed(fileAt: pickedURL, quality: .standard) { fraction in
+                let compressed = await VideoCompressor.compressed(fileAt: pickedURL, quality: UploadQuality.current) { fraction in
                     Task { @MainActor in
                         note.update(id) { if case .compressing = $0.upload { $0.upload = .compressing(progress: fraction) } }
                     }
