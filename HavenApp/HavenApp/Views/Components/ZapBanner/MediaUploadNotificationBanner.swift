@@ -9,6 +9,8 @@ struct MediaUploadNotification: Identifiable {
     var progress: Double
 
     enum UploadStatus: Equatable {
+        /// A video being shrunk to 720p before it goes up; `progress` is the compress.
+        case compressing
         case uploading
         case success
         case failed(String)
@@ -39,6 +41,28 @@ class MediaUploadNotificationManager: ObservableObject {
         if let idx = notifications.firstIndex(where: { $0.id == id }) {
             notifications[idx].progress = progress
         }
+    }
+
+    /// A video starts compressing before it uploads.
+    func markCompressing(id: UUID) {
+        guard let idx = notifications.firstIndex(where: { $0.id == id }) else { return }
+        notifications[idx].status = .compressing
+        notifications[idx].progress = 0
+    }
+
+    /// How far the compress has got, 0 to 1. Ignored once it has moved on,
+    /// so a late report can't put the compress line back.
+    func updateCompressing(id: UUID, progress: Double) {
+        guard let idx = notifications.firstIndex(where: { $0.id == id }),
+              notifications[idx].status == .compressing else { return }
+        notifications[idx].progress = progress
+    }
+
+    /// Compressed (or left as it was): now it uploads, from 0.
+    func markUploading(id: UUID) {
+        guard let idx = notifications.firstIndex(where: { $0.id == id }) else { return }
+        notifications[idx].status = .uploading
+        notifications[idx].progress = 0
     }
 
     func markSuccess(id: UUID) {
@@ -121,7 +145,7 @@ struct UploadPill: View {
     @ViewBuilder
     private var statusIcon: some View {
         switch notification.status {
-        case .uploading:
+        case .uploading, .compressing:
             ProgressView()
                 .controlSize(.small)
                 .tint(Color.onAccent)
@@ -136,6 +160,8 @@ struct UploadPill: View {
 
     private var label: String {
         switch notification.status {
+        case .compressing:
+            return "Compressing video… \(Int(notification.progress * 100))%"
         case .uploading:
             return "Uploading \(notification.filename)"
         case .success:
@@ -147,7 +173,7 @@ struct UploadPill: View {
 
     private var tone: PillTone {
         switch notification.status {
-        case .uploading: return .accent
+        case .uploading, .compressing: return .accent
         case .success:   return .success
         case .failed:    return .error
         }

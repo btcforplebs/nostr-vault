@@ -28,6 +28,8 @@ extension MediaPostShareHandler {
     }
 
     enum Step: Equatable {
+        /// A video being shrunk to 720p first (VideoCompressor), 0 to 1.
+        case compressing(progress: Double)
         case uploading(done: Int, of: Int)
         case signing
     }
@@ -47,7 +49,9 @@ extension MediaPostShareHandler {
             step(.uploading(done: index, of: files.count))
             // Uploads are signed by the active account: stop if it moved off the lock.
             guard NostrService.shared.activeHexPubkey == lock.hex else { throw ModePostPublisher.PublishError.accountChanged }
-            media.append(try await upload(entry.url, mime: entry.file.mime))
+            media.append(try await upload(entry.url, mime: entry.file.mime) { fraction in
+                if let fraction { step(.compressing(progress: fraction)) } else { step(.uploading(done: index, of: files.count)) }
+            })
         }
         step(.signing)
         let tags = MediaPostShareTags.tags(shape, media: media, title: title, caption: caption,
@@ -60,14 +64,34 @@ extension MediaPostShareHandler {
     /// One file up, described for its `imeta`. Pictures are shrunk by
     /// `ImageCompressor`; ones NIP-68 doesn't list (HEIC from the camera)
     /// that it leaves alone still go up as JPEG; the location comes out in
-    /// ModePostPublisher.upload either way.
+    /// ModePostPublisher.upload either way. A video is shrunk to 720p by
+    /// `VideoCompressor` (one already small, or one it can't re-encode, goes
+    /// as it is); `compressing` gets its progress, then nil once it's done.
     @MainActor
-    private static func upload(_ url: URL, mime: String) async throws -> MediaPostShareTags.Media {
+    private static func upload(_ url: URL, mime: String,
+                               compressing: @escaping (Double?) -> Void) async throws -> MediaPostShareTags.Media {
         var fileURL = url
         var type = mime.lowercased()
         var converted: URL?
         defer { if let converted { try? FileManager.default.removeItem(at: converted) } }
-        if MediaPostShareTags.isPicture(type),
+        if MediaPostShareTags.isVideo(type) {
+            let live = CompressingFlag()
+            compressing(0)
+            let compressed = await VideoCompressor.compressed(fileAt: url, quality: .standard) { fraction in
+                Task { @MainActor in if live.isOn { compressing(fraction) } }
+            }
+            live.isOn = false
+            compressing(nil)
+            try Task.checkCancellation()
+            if let compressed {
+                converted = compressed
+                fileURL = compressed
+                type = "video/mp4"
+            }
+        }
+        if converted != nil {
+            // Compressed: an .mp4 named by its type already.
+        } else if MediaPostShareTags.isPicture(type),
            let photo = await Task.detached(priority: .userInitiated, operation: {
                ImageCompressor.compressed(fileAt: url, type: UTType(mimeType: type) ?? .image, quality: .standard)
            }).value {
@@ -119,6 +143,12 @@ extension MediaPostShareHandler {
         return MediaPostShareTags.Media(url: blob.url.absoluteString, mime: type, sha256: blob.sha256,
                                         width: size.map { Int($0.width) }, height: size.map { Int($0.height) },
                                         bytes: blob.byteCount, duration: duration, alt: nil)
+    }
+
+    /// Stops late progress from a finished compress putting its line back.
+    @MainActor
+    private final class CompressingFlag {
+        var isOn = true
     }
 
     /// A JPEG of the picture at `url` (first frame), metadata kept so the

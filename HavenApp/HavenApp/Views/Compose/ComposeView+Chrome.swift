@@ -160,6 +160,7 @@ extension ComposeView {
         let open = note.unfinishedUploads
         let pct = Int(note.unfinishedProgress * 100)
         if open == 0 { return "Finishing uploads..." }
+        if let progress = note.compressingProgress { return "Compressing video… \(Int(progress * 100))%" }
         return open == 1 ? "Finishing 1 upload - \(pct)%..." : "Finishing \(open) uploads - \(pct)%..."
     }
 
@@ -224,7 +225,22 @@ extension ComposeView {
     
     var attachmentGrid: some View {
         let side: CGFloat = 72
-        return ScrollView(.horizontal) {
+        return VStack(alignment: .leading, spacing: 0) {
+            attachmentStrip(side: side)
+            if let progress = note.compressingProgress {
+                Text("Compressing video… \(Int(progress * 100))%")
+                    .font(.appSystem(size: 12, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+        }
+    }
+
+    private func attachmentStrip(side: CGFloat) -> some View {
+        ScrollView(.horizontal) {
             HStack(spacing: 8) {
                 ForEach(attachments) { attachment in
                     ZStack(alignment: .topTrailing) {
