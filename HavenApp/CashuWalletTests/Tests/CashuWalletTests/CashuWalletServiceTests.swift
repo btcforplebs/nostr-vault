@@ -114,6 +114,35 @@ final class CashuWalletServiceTests: XCTestCase {
         _ = try await control("/melt-pending?on=0")
     }
 
+    /// A paid melt whose change reply is bad stays as a stuck op forever.
+    /// It must not block later payments (only an unsettled op does).
+    func testStuckOpDoesNotBlockPayments() async throws {
+        let w = try await funded(100)
+        _ = try await control("/bad-dleq?on=1")
+        _ = try await control("/no-restore?on=1")
+        defer { Task { _ = try? await self.control("/bad-dleq?on=0"); _ = try? await self.control("/no-restore?on=0") } }
+        let first = try await control("/invoice?amount=10")
+        do {
+            _ = try await w.payInvoice(bolt11: first)
+            XCTFail("bad change came back as a clean payment")
+        } catch let e as CashuError {
+            XCTAssertEqual(e.code, "pending")
+        }
+        let ops = try await w.pending()
+        XCTAssertEqual(ops.count, 1)
+        XCTAssertFalse(ops[0].isUnsettled, "op should be stuck: \(ops)")
+        let unsettled = try await w.unsettledCount()
+        XCTAssertEqual(unsettled, 0)
+        _ = try await control("/bad-dleq?on=0")
+        let second = try await control("/invoice?amount=5")
+        let paid = try await w.payInvoice(bolt11: second)
+        XCTAssertGreaterThanOrEqual(paid.spent, 5)
+        let left = try await w.pending()
+        XCTAssertEqual(left.count, 1, "the stuck op is kept, nothing dropped")
+        XCTAssertFalse(left[0].isUnsettled)
+        _ = try await control("/no-restore?on=0")
+    }
+
     func testEmptyWalletRefuses() async throws {
         let w = try CashuWalletService.wallet(accountHex: Self.newAccount(), create: true, base: base)
         _ = try await w.addMint(harness.mint)

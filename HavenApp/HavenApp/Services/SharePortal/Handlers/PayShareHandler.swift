@@ -53,8 +53,9 @@ extension PayShareHandler {
         guard case .sats = details.amount else { throw PayError.noAmount }
         guard !details.isExpired() else { throw PayError.expired }
         try requireActive(intent)
+        let payer = try payerHex(intent)
         PayShareAttempts.mark(intent.id, .tried)
-        _ = try await ZapPayer.pay(bolt11: invoice, accountHex: ZapPayer.hex(ofNpub: account(for: intent)))
+        _ = try await ZapPayer.pay(bolt11: invoice, accountHex: payer)
         PayShareAttempts.mark(intent.id, .paid)
     }
 
@@ -75,9 +76,18 @@ extension PayShareHandler {
         if let details = Bolt11.details(invoice), details.isExpired() { throw PayError.expired }
         try requireActive(intent)
         // From here on a retry could pay twice: the card never offers one.
+        let payer = try payerHex(intent)
         PayShareAttempts.mark(intent.id, .tried)
-        _ = try await ZapPayer.pay(bolt11: invoice, accountHex: ZapPayer.hex(ofNpub: account(for: intent)))
+        _ = try await ZapPayer.pay(bolt11: invoice, accountHex: payer)
         PayShareAttempts.mark(intent.id, .paid)
+    }
+
+    /// The paying account as hex. An npub that doesn't decode throws: ""
+    /// would mean "no account" and fall back to NWC instead of failing closed.
+    private static func payerHex(_ intent: NVShareIntent) throws -> String {
+        let hex = ZapPayer.hex(ofNpub: account(for: intent))
+        guard !hex.isEmpty else { throw PayError.accountChanged }
+        return hex
     }
 
     private static func requireActive(_ intent: NVShareIntent) throws {

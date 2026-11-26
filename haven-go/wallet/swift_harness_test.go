@@ -7,6 +7,8 @@ package wallet
 //   GET /invoice?amount=N  -> a bolt11 the mint will melt for N sats
 //   GET /pay?quote=ID      -> marks a receive (mint) quote paid
 //   GET /melt-pending?on=1 -> melts stay PENDING (the "may still pay" case)
+//   GET /bad-dleq?on=1     -> signatures carry a wrong DLEQ (bad change -> stuck op)
+//   GET /no-restore?on=1   -> /v1/restore refuses (a stuck op stays stuck)
 //   GET /stop              -> ends the test
 
 import (
@@ -52,6 +54,16 @@ func TestSwiftHarnessMint(t *testing.T) {
 	mux.HandleFunc("GET /melt-pending", func(w http.ResponseWriter, r *http.Request) {
 		m.mu.Lock()
 		m.meltPending = r.URL.Query().Get("on") == "1"
+		m.mu.Unlock()
+	})
+	mux.HandleFunc("GET /bad-dleq", func(w http.ResponseWriter, r *http.Request) {
+		m.mu.Lock()
+		m.badDLEQ = r.URL.Query().Get("on") == "1"
+		m.mu.Unlock()
+	})
+	mux.HandleFunc("GET /no-restore", func(w http.ResponseWriter, r *http.Request) {
+		m.mu.Lock()
+		m.noRestore = r.URL.Query().Get("on") == "1"
 		m.mu.Unlock()
 	})
 	mux.HandleFunc("GET /stop", func(w http.ResponseWriter, r *http.Request) {

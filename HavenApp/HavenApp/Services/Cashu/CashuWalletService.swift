@@ -111,7 +111,14 @@ final class CashuWalletService: @unchecked Sendable {
 
     /// Spends the engine journaled but never heard back about (a melt in
     /// flight when the app died). Finishing them frees the mint for new spends.
-    func pendingCount() async throws -> Int { try await call("pending", as: [CashuIgnored]?.self)?.count ?? 0 }
+    /// Stuck ops (the engine could not finish them, for example a paid melt
+    /// whose change came back bad) are listed too: they stay forever and
+    /// already hold their inputs out of the balance.
+    func pending() async throws -> [CashuPendingOp] { try await call("pending", as: [CashuPendingOp]?.self) ?? [] }
+    func pendingCount() async throws -> Int { try await pending().count }
+    /// Ops whose answer from the mint is still unknown (not stuck): the same
+    /// rule the engine's mintBusy uses. Only these may still move money.
+    func unsettledCount() async throws -> Int { try await pending().filter(\.isUnsettled).count }
     func recover() async throws { try await run("recover") }
 
     // MARK: Paying an invoice
@@ -124,9 +131,11 @@ final class CashuWalletService: @unchecked Sendable {
         // An earlier payment the mint hasn't settled may be this same invoice
         // (a retry after "may still pay"). Starting another one, at any mint,
         // could pay it twice, so nothing new goes out until recover clears it.
+        // A stuck op doesn't count: its outcome is known (only the change is
+        // missing), and counting it would block this wallet for good.
         if try await pendingCount() > 0 {
             try? await recover()
-            if try await pendingCount() > 0 { throw CashuError(code: "busy", message: "an earlier payment is still unsettled") }
+            if try await unsettledCount() > 0 { throw CashuError(code: "busy", message: "an earlier payment is still unsettled") }
         }
         let balance = try await balance()
         let order = Self.payOrder(balance)
@@ -235,6 +244,15 @@ private struct CashuAmountArgs: Encodable {
 
 private struct CashuMeltArgs: Encodable {
     let melt: CashuMeltQuote
+}
+
+/// One journaled engine op (wallet.Op), only the fields the app reads.
+struct CashuPendingOp: Decodable, Equatable {
+    let id: String
+    let kind: String?
+    let mint: String?
+    let stuck: String?
+    var isUnsettled: Bool { (stuck ?? "").isEmpty }
 }
 
 /// Decodes any JSON value, keeping nothing.
