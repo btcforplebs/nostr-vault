@@ -2,7 +2,8 @@ name: Linux box image (ghcr)
 
 # Builds linux/Dockerfile ("nostr-vault-linux", the box image the Start9 and Umbrel packages run) for amd64 and arm64,
 # each arch on its own runner (nothing under emulation), and starts each one to check havend answers on NV_PORT.
-# On a published Linux release (a tag with "-linux" in it), or by hand with that tag, it then pushes both to
+# On a published Linux release (a tag with "-linux" in it), or by hand with any release tag (a stable one such as
+# v3.3.0 has no "-linux"), it then pushes both to
 #   ghcr.io/btcforplebs/nostr-vault-linux:<tag without the v>
 # as one multi-arch index, and writes the index digest into the release notes. Stores pin that digest. Pull requests
 # that touch the image only build and start it; they push nothing. The image is never tagged "latest".
@@ -12,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "An existing Linux release tag, for example v3.2.3-linux-beta.7"
+        description: "An existing Linux release tag, for example v3.3.0 or v3.2.3-linux-beta.7"
         required: true
   pull_request:
     paths:
@@ -32,7 +33,7 @@ env:
 
 jobs:
   build:
-    if: github.event_name == 'pull_request' || contains(github.event.release.tag_name || inputs.tag, '-linux')
+    if: github.event_name != 'release' || contains(github.event.release.tag_name, '-linux')
     strategy:
       fail-fast: true
       matrix:
