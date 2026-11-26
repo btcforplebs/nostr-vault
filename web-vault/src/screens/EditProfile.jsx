@@ -6,6 +6,7 @@ import { Avatar } from "../components/Avatar.jsx"
 import { formFields, hasChanges, latestProfile, localProfile, removedNotice, saveProfile } from "../net/profile-edit.js"
 import { showToast } from "../components/Toast.jsx"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
+import { PROFILE_BANNER, PROFILE_PICTURE, jpegOrAsIs } from "../net/image-compress.js"
 import "../styles/profile-edit.css"
 
 const GROUPS = [
@@ -59,7 +60,7 @@ export function EditProfile({ ctx, onClose }) {
   const upload = async (key, file) => {
     if (!file) return
     setUploading(key); setUploadErr("")
-    try { set(key, (await uploadPhoto(file, { ctx, servers: await mediaServers(ctx) })).url) } catch (e) { setUploadErr(String(e?.message ?? e)) } finally { setUploading("") }
+    try { set(key, (await uploadPhoto(await jpegOrAsIs(file, key === "banner" ? PROFILE_BANNER : PROFILE_PICTURE), { ctx, servers: await mediaServers(ctx) })).url) } catch (e) { setUploadErr(String(e?.message ?? e)) } finally { setUploading("") }
   }
 
   if (!form) return <main class="screen"><p class="empty">Loading…</p></main>
