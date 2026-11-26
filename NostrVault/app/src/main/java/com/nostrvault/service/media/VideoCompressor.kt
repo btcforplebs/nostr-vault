@@ -34,10 +34,11 @@ import kotlin.coroutines.resume
 
 /**
  * Shrinks a video before it is uploaded (RESEARCH NV_UPLOAD_COMPRESSION §4.1, plan D3; Logen
- * 2026-11-26: 720p long edge, 5 Mbps, AAC): H.264 + AAC in MP4, the long edge at most
- * [LONG_EDGE], video at most [VIDEO_BITRATE] and never above the clip's own, HDR toned to SDR.
+ * 2026-11-26: real 720p, 5 Mbps, AAC): H.264 + AAC in MP4, the short edge at most
+ * [SHORT_EDGE] (1280x720 landscape, 720x1280 portrait, never enlarged), video at most
+ * [VIDEO_BITRATE] and never above the clip's own, HDR toned to SDR.
  *
- * - A clip already small ([plan]: H.264, long edge ≤ [LONG_EDGE], ≤ [KEEP_BITRATE]) keeps its bytes.
+ * - A clip already small ([plan]: H.264, short edge ≤ [SHORT_EDGE], ≤ [KEEP_BITRATE]) keeps its bytes.
  * - [ImageCompressor.Quality.ORIGINAL] keeps every byte (the Media tab).
  * - When this phone can't re-encode it, or the result isn't smaller, the source comes back.
  *
@@ -49,8 +50,8 @@ import kotlin.coroutines.resume
  */
 @OptIn(UnstableApi::class)
 object VideoCompressor {
-    /** Feed/share videos: the long edge at most this (720p). */
-    const val LONG_EDGE = 720
+    /** Feed/share videos: the short edge at most this (720p: 1280x720, 720x1280). */
+    const val SHORT_EDGE = 720
 
     /** Video bitrate after compressing, at most. */
     const val VIDEO_BITRATE = 5_000_000
@@ -89,15 +90,14 @@ object VideoCompressor {
     /** What to do with [source] at [quality]. */
     fun plan(source: Source, quality: ImageCompressor.Quality): Plan {
         if (quality == ImageCompressor.Quality.ORIGINAL) return Plan.Keep
-        val long = maxOf(source.width, source.height)
         val short = minOf(source.width, source.height)
-        if (source.videoMime == MimeTypes.VIDEO_H264 && long in 1..LONG_EDGE && source.bitrate in 1..KEEP_BITRATE) {
+        if (source.videoMime == MimeTypes.VIDEO_H264 && short in 1..SHORT_EDGE && source.bitrate in 1..KEEP_BITRATE) {
             return Plan.Keep
         }
         // Never more than the clip already has: a small clip must not grow.
         val bitrate = if (source.bitrate in 1 until VIDEO_BITRATE) source.bitrate else VIDEO_BITRATE
-        // Even sizes: encoders want them.
-        val shortSide = if (long > LONG_EDGE && short > 0) maxOf(2, (short.toLong() * LONG_EDGE / long).toInt() and 1.inv()) else null
+        // Presentation.createForShortSide keeps the aspect: 1920x1080 -> 1280x720. Never enlarged.
+        val shortSide = if (short > SHORT_EDGE) SHORT_EDGE else null
         return Plan.Encode(shortSide, bitrate)
     }
 
