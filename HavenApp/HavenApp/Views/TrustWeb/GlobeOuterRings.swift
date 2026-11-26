@@ -29,15 +29,13 @@ enum GlobeOuterRings {
         guard !outer.rings.isEmpty else { return }
         let base = outline(size: size, zoom: zoom, phone: phone)
         guard base.isFinite else { return }
-        let grow = pinch(size: size, zoom: zoom, phone: phone)
-        let half = Double(min(size.width, size.height)) / 2
         let faint = outer.isFaint
         for ring in outer.rings {
             let shown = GlobeRingZoom.visibility(hop: ring.hop, level: level)
             guard shown > 0.01 else { continue }
             let picked = GlobeRingZoom.emphasis(hop: ring.hop, level: level)
             let flat = faint ? 1 : 1 - GlobeRingZoom.sphere(hop: ring.hop, level: level)
-            let at = place(ring.hop, level: level, base: base, size: size, half: half, grow: grow), r = at.r, c = at.centre
+            let at = place(ring.hop, level: level, base: base, size: size), r = at.r, c = at.centre
             let fade = (faint ? 1 : fadeFor(ring.hop, picked: picked)) * shown
             if flat > 0.01 {
                 let circle = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
@@ -76,11 +74,9 @@ enum GlobeOuterRings {
         guard level > 0.001, !outer.isFaint else { return }
         let base = outline(size: size, zoom: zoom, phone: phone)
         guard base.isFinite else { return }
-        let grow = pinch(size: size, zoom: zoom, phone: phone)
-        let half = Double(min(size.width, size.height)) / 2
         // The inner globe's disc, with room for its outer shell's faces:
         // the picked sphere keeps its own faces and taps out of it.
-        let globe = place(TrustMapOuter.firstHop - 1, level: level, base: base, size: size, half: half, grow: grow)
+        let globe = place(TrustMapOuter.firstHop - 1, level: level, base: base, size: size)
         let hole = (centre: globe.centre, r: globe.r * holeReach)
         // Inner first, so the picked one is drawn over what is nested in it.
         for ring in outer.rings {
@@ -88,29 +84,19 @@ enum GlobeOuterRings {
             let shown = GlobeRingZoom.visibility(hop: ring.hop, level: level) * sphere
             guard shown > 0.01 else { continue }
             let picked = GlobeRingZoom.emphasis(hop: ring.hop, level: level)
-            let at = place(ring.hop, level: level, base: base, size: size, half: half, grow: grow)
+            let at = place(ring.hop, level: level, base: base, size: size)
             GlobeHopSphere.draw(ring, centre: at.centre, r: at.r, shown: shown * fadeFor(ring.hop, picked: picked),
                                 picked: picked, turn: turn, pole: pole, pictures: pictures, focus: focus, hole: hole, in: &context, ink: ink)
         }
     }
 
     /// A ring's centre and radius at `level`, shrunk when it is nested inside the picked one.
-    private static func place(_ hop: Int, level: Double, base: Double, size: CGSize,
-                              half: Double, grow: Double) -> (centre: CGPoint, r: Double) {
+    private static func place(_ hop: Int, level: Double, base: Double,
+                              size: CGSize) -> (centre: CGPoint, r: Double) {
         let r = hop < TrustMapOuter.firstHop
             ? GlobeRingZoom.innerOutline(level: level, outline: base)
-            : GlobeRingZoom.radius(hop: hop, level: level, outline: base, half: half, grow: grow)
+            : GlobeRingZoom.radius(hop: hop, level: level, outline: base)
         return (CGPoint(x: size.width / 2, y: size.height / 2), r * GlobeRingZoom.nest(hop: hop, level: level))
-    }
-
-    /// How far a pinch has zoomed the whole nested view in: the inner
-    /// globe's outline against its size at zoom 1, so the picked sphere and
-    /// everything nested in it grow together (Logen 2026-11-25).
-    static func pinch(size: CGSize, zoom: Double, phone: Bool) -> Double {
-        let at1 = outline(size: size, zoom: 1, phone: phone)
-        let now = outline(size: size, zoom: zoom, phone: phone)
-        guard at1.isFinite, now.isFinite, at1 > 0 else { return 1 }
-        return now / at1
     }
 
     /// The nested globe's faces reach past its outline to its outer shells

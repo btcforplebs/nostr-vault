@@ -26,8 +26,6 @@ enum GlobeRingZoom {
     /// How strongly the inner globe is drawn at each whole level: faded,
     /// never gone, so the lines still have somewhere to land.
     static let innerAlphas: [Double] = [1, 0.6, 0.5, 0.42]
-    /// The picked ring's radius as a share of half the frame's short side.
-    static let fit = 0.84
     /// Rings inside the picked one are drawn this strongly.
     static let insideAlpha = 0.6
     /// Rings past the picked one, round its sphere, this strongly.
@@ -88,13 +86,14 @@ enum GlobeRingZoom {
     static func innerAlpha(_ level: Double) -> Double { lerp(innerAlphas, level) }
 
     /// A ring's radius on screen. `outline` is the inner globe's outline
-    /// radius unzoomed (`GlobeOuterRings.outline`); `half` is half the
-    /// frame's short side; `grow` is how far a pinch has zoomed in, so the
-    /// picked sphere grows with the globe nested in it.
-    static func radius(hop: Int, level: Double, outline: Double, half: Double, grow: Double = 1) -> Double {
+    /// radius at the camera's zoom (`GlobeOuterRings.outline`), unshrunk:
+    /// the picked ring's sphere is drawn exactly that big, the size of the
+    /// Hop 2 globe (Logen 2026-11-26: "same size"), and grows with it on a
+    /// pinch.
+    static func radius(hop: Int, level: Double, outline: Double) -> Double {
         let (lo, hi, t) = bracket(level)
-        let a = radius(hop: hop, whole: lo, outline: outline, half: half, grow: grow)
-        let b = radius(hop: hop, whole: hi, outline: outline, half: half, grow: grow)
+        let a = radius(hop: hop, whole: lo, outline: outline)
+        let b = radius(hop: hop, whole: hi, outline: outline)
         return a + (b - a) * t
     }
 
@@ -122,13 +121,13 @@ enum GlobeRingZoom {
 
     // MARK: Whole levels
 
-    private static func radius(hop: Int, whole: Int, outline: Double, half: Double, grow: Double) -> Double {
+    private static func radius(hop: Int, whole: Int, outline: Double) -> Double {
         let outward = Double(hop - TrustMapOuter.firstHop)
         guard whole > 0 else { return outline * (first + step * outward) }
         // Hop 2 (the inner globe) at the shrunk outline, the picked ring at
-        // the fit, and the rings between evenly spaced.
+        // the Hop 2 globe's full size, and the rings between evenly spaced.
         let inner = outline * innerScales[whole]
-        let fitted = fit * half * grow
+        let fitted = outline
         // Rings past the picked one stay round its sphere, spaced as at
         // your circle (`step` against `first`), the way Hop 3 and 4 sit round
         // your globe on Vouched (Logen 2026-11-25).
