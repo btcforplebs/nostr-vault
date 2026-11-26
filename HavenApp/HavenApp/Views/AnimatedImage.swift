@@ -336,11 +336,12 @@ struct AnimatedImage: UIViewRepresentable {
                 if self.shouldAnimate {
                     // A target size bounds every frame's decode, so a small
                     // animated thumbnail doesn't hold full-size frames.
-                    var maxPixelSize: Int?
-                    if let targetSize = self.targetSize {
-                        let scale = await MainActor.run { UIScreen.main.scale }
-                        maxPixelSize = Int(max(targetSize.width, targetSize.height) * scale)
+                    // No target: cap at the screen's longest side, so frames
+                    // are never decoded above what the screen can show.
+                    let (scale, screenPixels) = await MainActor.run {
+                        (UIScreen.main.scale, max(UIScreen.main.nativeBounds.width, UIScreen.main.nativeBounds.height))
                     }
+                    let maxPixelSize = self.targetSize.map { Int(max($0.width, $0.height) * scale) } ?? Int(screenPixels)
                     image = Self.makeAnimatedGIF(data: data, maxPixelSize: maxPixelSize)
                 } else {
                     image = UIImage(data: data)
@@ -388,20 +389,27 @@ struct AnimatedImage: UIViewRepresentable {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         let count = CGImageSourceGetCount(source)
         guard count > 1 else { return UIImage(data: data) }
+        // ShouldCacheImmediately decodes each frame here, in the caller's
+        // background task. Without it the frames stay undecoded and Core
+        // Animation decodes all of them on the main thread at the layer's
+        // first commit: 36-95 ms per GIF while the feed coasts (Tom, coast
+        // hitch 11-26 #2).
         let thumbnailOptions = maxPixelSize.map {
             [
                 kCGImageSourceCreateThumbnailFromImageAlways: kCFBooleanTrue,
                 kCGImageSourceCreateThumbnailWithTransform: kCFBooleanTrue,
+                kCGImageSourceShouldCacheImmediately: kCFBooleanTrue,
                 kCGImageSourceThumbnailMaxPixelSize: $0 as NSNumber
             ] as CFDictionary
         }
+        let fullOptions = [kCGImageSourceShouldCacheImmediately: kCFBooleanTrue] as CFDictionary
 
         var frames: [UIImage] = []
         var totalDuration: Double = 0
 
         for i in 0..<count {
             let frame = thumbnailOptions.map { CGImageSourceCreateThumbnailAtIndex(source, i, $0) }
-                ?? CGImageSourceCreateImageAtIndex(source, i, nil)
+                ?? CGImageSourceCreateImageAtIndex(source, i, fullOptions)
             guard let cgImage = frame else { continue }
             frames.append(UIImage(cgImage: cgImage))
             let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
