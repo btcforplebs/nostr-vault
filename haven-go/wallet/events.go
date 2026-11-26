@@ -71,6 +71,7 @@ type TemplateMeta struct {
 	Replaces []string `json:"replaces,omitempty"` // 7375: older 7375 ids it replaces (its del)
 	Deletes  []string `json:"deletes,omitempty"`  // kind 5: ids it deletes
 	Quote    string   `json:"quote,omitempty"`    // 7374: quote id
+	Reserved string   `json:"reserved,omitempty"` // 9321: the Reserved set it delivers
 }
 
 // OwnEvent is one of the account's own encrypted events as read from its

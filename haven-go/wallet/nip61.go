@@ -115,42 +115,6 @@ type NutzapRequest struct {
 	EventKind int        `json:"event_kind,omitempty"`
 }
 
-// SendNutzap swaps amount sats into proofs locked to the recipient's 10019
-// key, at the first mint in their list where we hold enough, and returns the
-// 9321 to sign and publish to their 10019 relays. The locked proofs stay in
-// Reserved until CheckState sees them claimed. If the 9321 is never
-// published the sats are gone to us (they are locked to the recipient), so
-// the app must publish it, and retry on failure, before anything else.
-func (w *Wallet) SendNutzap(ctx context.Context, req NutzapRequest) (Template, Reserved, error) {
-	if req.Info.Pubkey == "" || len(req.Info.Mints) == 0 {
-		return Template{}, Reserved{}, ErrNoNutzaps
-	}
-	if len(req.Recipient) != 64 {
-		return Template{}, Reserved{}, fmt.Errorf("wallet: recipient must be a hex pubkey")
-	}
-	mine := map[string]bool{}
-	for _, m := range w.Mints() {
-		mine[m] = true
-	}
-	var lastErr error = ErrNoSharedMint
-	for _, m := range req.Info.Mints {
-		if !mine[m] || !w.mintSupportsDLEQ(m) {
-			continue
-		}
-		r, err := w.Send(ctx, m, req.Amount, req.Info.Pubkey, "nutzap")
-		if errors.Is(err, ErrNotEnough) {
-			lastErr = err
-			continue
-		}
-		if err != nil {
-			return Template{}, Reserved{}, err
-		}
-		t, err := nutzapTemplate(w.now().Unix(), req, r)
-		return t, r, err
-	}
-	return Template{}, Reserved{}, lastErr
-}
-
 // mintSupportsDLEQ is a cheap pre-check: proofs we hold there carry DLEQ.
 // A nutzap without DLEQ can't be checked by the recipient (NIP-61), so a
 // mint whose proofs lack it is skipped before any swap.
@@ -168,7 +132,7 @@ func nutzapTemplate(now int64, req NutzapRequest, r Reserved) (Template, error) 
 	tags := nostr.Tags{}
 	for _, p := range r.Proofs {
 		if p.DLEQ == nil || p.DLEQ.R == "" {
-			return Template{}, fmt.Errorf("wallet: mint gave no DLEQ; the nutzap can't be checked")
+			return Template{}, ErrNutzapNoDLEQ
 		}
 		sec, err := nut10.DeserializeSecret(p.Secret)
 		if err != nil || sec.Kind != nut10.P2PK || !strings.EqualFold(sec.Data.Data, lock) {
@@ -187,8 +151,13 @@ func nutzapTemplate(now int64, req NutzapRequest, r Reserved) (Template, error) 
 	}
 	tags = append(tags, nostr.Tag{"p", req.Recipient})
 	return Template{Kind: KindNutzap, CreatedAt: now, Tags: tags, Content: req.Comment,
-		Where: WhereRecipient, Relays: append([]string(nil), req.Info.Relays...)}, nil
+		Where: WhereRecipient, Relays: append([]string(nil), req.Info.Relays...),
+		Meta: &TemplateMeta{Reserved: r.ID, Mint: r.Mint}}, nil
 }
+
+// nutzapSharedMargin: a nutzap whose refund opens within this many seconds
+// is treated as Shared (count it only once redeemed).
+const nutzapSharedMargin = 3600
 
 // Nutzap is a 9321 that passed VerifyNutzap.
 type Nutzap struct {
@@ -307,7 +276,10 @@ func (w *Wallet) VerifyNutzap(ctx context.Context, ev nostr.Event, account strin
 		if tags.Sigflag == nut11.SIGALL || tags.NSigs > 1 {
 			return bad("proof needs more than our one signature")
 		}
-		if len(tags.Pubkeys) > 0 || len(tags.Refund) > 0 || tags.Locktime > 0 {
+		// Before its locktime only we can spend it (a refund key or, with
+		// none, anyone may spend after). Senders add a refund to themselves
+		// (NutzapRefundAfter), so only a near or past locktime is shared.
+		if len(tags.Pubkeys) > 0 || (tags.Locktime > 0 && tags.Locktime <= w.now().Unix()+nutzapSharedMargin) {
 			nz.Shared = true
 		}
 		if p.DLEQ == nil || p.DLEQ.R == "" {

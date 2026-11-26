@@ -8,6 +8,7 @@ package wallet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -56,6 +57,7 @@ func (w *Wallet) Restore(ctx context.Context, in RestoreInput) (RestoreReport, e
 	if in.Wallet != nil {
 		wi, err := ParseWallet(*in.Wallet, in.Account)
 		if err != nil {
+			w.holdWallet("the Vault's wallet event can't be opened")
 			return rep, fmt.Errorf("wallet found but can't be opened: %w", err)
 		}
 		info = &wi
@@ -96,6 +98,7 @@ func (w *Wallet) Restore(ctx context.Context, in RestoreInput) (RestoreReport, e
 			if err := applyWalletInfo(s, *info); err != nil {
 				return err
 			}
+			s.WalletHold = "" // the Vault's 17375 opened and holds our key
 		}
 		known := localSecrets(s)
 		indexed := map[string]bool{}
@@ -173,6 +176,9 @@ func (w *Wallet) Restore(ctx context.Context, in RestoreInput) (RestoreReport, e
 		return nil
 	})
 	w.opMu.Unlock()
+	if errors.Is(err, ErrKeyConflict) {
+		w.holdWallet("the Vault holds a different wallet key")
+	}
 	if err != nil {
 		return rep, err
 	}
@@ -369,4 +375,16 @@ func (w *Wallet) mintsHolding() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// holdWallet records why Rollover must not publish our 17375 (see
+// State.WalletHold). Best effort: if the save fails, Restore still returned
+// the error and the app shows it.
+func (w *Wallet) holdWallet(why string) {
+	w.opMu.Lock()
+	defer w.opMu.Unlock()
+	_ = w.commit(func(s *State) error {
+		s.WalletHold = why
+		return nil
+	})
 }

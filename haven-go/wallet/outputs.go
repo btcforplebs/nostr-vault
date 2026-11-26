@@ -25,6 +25,12 @@ func randomHex(n int) (string, error) {
 // compressed (33-byte hex) or x-only (32-byte hex) pubkey: the outputs become
 // NUT-11 P2PK secrets locked to it (nutzaps).
 func newOutputs(ks Keyset, amounts []uint64, role OutputRole, lockTo string) ([]PendingOutput, error) {
+	return newLockedOutputs(ks, amounts, role, lockTo, nil)
+}
+
+// newLockedOutputs is newOutputs with NUT-11 tags (refund, locktime) on the
+// P2PK secrets.
+func newLockedOutputs(ks Keyset, amounts []uint64, role OutputRole, lockTo string, lockTags [][]string) ([]PendingOutput, error) {
 	out := make([]PendingOutput, 0, len(amounts))
 	for _, amt := range amounts {
 		if role != RoleChange {
@@ -38,7 +44,7 @@ func newOutputs(ks Keyset, amounts []uint64, role OutputRole, lockTo string) ([]
 			if lockTo, err = normalizeLockKey(lockTo); err != nil {
 				return nil, err
 			}
-			secret, err = nut10.NewSecretFromSpendingCondition(nut10.SpendingCondition{Kind: nut10.P2PK, Data: lockTo})
+			secret, err = nut10.NewSecretFromSpendingCondition(nut10.SpendingCondition{Kind: nut10.P2PK, Data: lockTo, Tags: lockTags})
 		} else {
 			secret, err = randomHex(32)
 		}

@@ -9,8 +9,9 @@ package wallet
 // published and returns the events that bring the Vault up to date.
 //
 // Money rules:
-//   - A mint with any unfinished op is skipped: its old 7375 (which still
-//     lists the op's inputs) stays until the op is settled.
+//   - A mint with an unfinished op (stuck or waiting on the mint) is still
+//     backed up: its balance 7375 lists the proofs plus the op's inputs, so
+//     the Vault never loses sats while an op can't finish.
 //   - A kind-5 is only sent for an id whose replacing 7375 was committed
 //     (CommitPublished), or for a group the wallet no longer holds at all.
 //     So a publish that fails half way never leaves the Vault without the
@@ -91,8 +92,11 @@ type tokenGroupNow struct {
 // 7375s come one round after their replacement is committed).
 type RolloverPlan struct {
 	Events []Template `json:"events"`
-	// Busy lists mints skipped because an op there is unfinished.
+	// Busy lists mints with an unfinished op. Their balance 7375 holds the
+	// proofs plus the op's inputs until the op is settled.
 	Busy []string `json:"busy,omitempty"`
+	// WalletHold, when set, is why no 17375 was planned (State.WalletHold).
+	WalletHold string `json:"wallet_hold,omitempty"`
 }
 
 // Rollover returns the events that bring the Vault copy up to date with the
@@ -110,13 +114,18 @@ func (w *Wallet) Rollover() (RolloverPlan, error) {
 		mints = append(mints, u)
 	}
 	sort.Strings(mints)
-	if s.WalletKey != "" && walletDigest(s.WalletKey, mints) != s.WalletDigest {
+	plan.WalletHold = s.WalletHold
+	if s.WalletKey != "" && s.WalletHold == "" && walletDigest(s.WalletKey, mints) != s.WalletDigest {
 		plan.Events = append(plan.Events, walletTemplate(now, s.WalletKey, mints))
 	}
 
 	busy := map[string]bool{}
+	inFlight := map[string]cashu.Proofs{}
 	for _, op := range s.Ops {
 		busy[op.Mint] = true
+		if op.Kind != OpReclaim { // reclaim inputs are still in their Reserved set
+			inFlight[op.Mint] = append(inFlight[op.Mint], stripWitness(op.Inputs)...)
+		}
 	}
 	for u := range busy {
 		plan.Busy = append(plan.Busy, u)
@@ -131,8 +140,22 @@ func (w *Wallet) Rollover() (RolloverPlan, error) {
 	}
 	cur := map[string]tokenGroupNow{}
 	for u, ms := range s.Mints {
-		if len(ms.Proofs) > 0 {
-			cur[balanceGroup(u)] = tokenGroupNow{mint: u, proofs: ms.Proofs}
+		// An unfinished op's inputs stay in the backup until the op is
+		// settled: they may still be ours (the mint never got the call), and
+		// a restore's checkstate drops the ones that were spent.
+		proofs := append(cashu.Proofs(nil), ms.Proofs...)
+		have := map[string]bool{}
+		for _, p := range proofs {
+			have[p.Secret] = true
+		}
+		for _, p := range inFlight[u] {
+			if !have[p.Secret] && !lockedToOther(p, myLock) {
+				have[p.Secret] = true
+				proofs = append(proofs, p)
+			}
+		}
+		if len(proofs) > 0 {
+			cur[balanceGroup(u)] = tokenGroupNow{mint: u, proofs: proofs}
 		}
 	}
 	for _, r := range s.Reserved {
@@ -167,13 +190,6 @@ func (w *Wallet) Rollover() (RolloverPlan, error) {
 	for _, g := range keys {
 		c, have := cur[g]
 		old := pubs[g]
-		mint := c.mint
-		if !have && len(old) > 0 {
-			mint = old[0].Mint
-		}
-		if busy[mint] {
-			continue
-		}
 		var oldIDs []string
 		for _, t := range old {
 			oldIDs = append(oldIDs, t.EventID)
@@ -267,6 +283,8 @@ func (w *Wallet) CommitPublished(t Template, eventID string) error {
 			s.Tokens = keepTokens(s.Tokens, gone)
 			s.Tokens = append(s.Tokens, PublishedToken{EventID: eventID, Mint: t.Meta.Mint, Group: t.Meta.Group, Digest: t.Meta.Digest})
 			s.PendingDeletes = dedupe(append(s.PendingDeletes, t.Meta.Replaces...))
+		case KindNutzap:
+			return commitNutzap(s, t.Meta.Reserved, eventID)
 		case KindQuote:
 			if s.QuoteEvents == nil {
 				s.QuoteEvents = map[string]string{}

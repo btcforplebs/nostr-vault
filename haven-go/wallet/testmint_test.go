@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -68,6 +69,8 @@ type testMint struct {
 	noChange    bool           // info does not list NUT-08
 	meltFail    bool           // Lightning payments fail (quote back to UNPAID)
 	badDLEQ     bool           // signatures carry a wrong DLEQ
+	noDLEQ      bool           // signatures carry no DLEQ
+	clock       int64          // unix time for NUT-11 locktimes; 0 = now
 	dropReply   map[string]int // path -> how many replies to drop after doing the work
 	calls       map[string]int
 }
@@ -127,6 +130,13 @@ func newTestMint(t testing.TB, inputFeePpk uint) *testMint {
 }
 
 func (m *testMint) URL() string { return m.srv.URL }
+
+func (m *testMint) nowUnix() int64 {
+	if m.clock != 0 {
+		return m.clock
+	}
+	return time.Now().Unix()
+}
 
 func (m *testMint) callCount(path string) int {
 	m.mu.Lock()
@@ -478,7 +488,13 @@ func (m *testMint) verifyInputsLocked(ps cashu.Proofs) ([]string, *cashu.Error) 
 				return nil, &nut11.NoSignaturesErr
 			}
 			h := sha256.Sum256([]byte(p.Secret))
-			if !nut11.HasValidSignatures(h[:], wit.Signatures, 1, []*secp256k1.PublicKey{pk}) {
+			ok := nut11.HasValidSignatures(h[:], wit.Signatures, 1, []*secp256k1.PublicKey{pk})
+			// NUT-11: after the locktime a refund key may sign instead.
+			if tags, err := nut11.ParseP2PKTags(secret.Data.Tags); !ok && err == nil &&
+				tags.Locktime > 0 && m.nowUnix() >= tags.Locktime && len(tags.Refund) > 0 {
+				ok = nut11.HasValidSignatures(h[:], wit.Signatures, 1, tags.Refund)
+			}
+			if !ok {
 				return nil, &nut11.NotEnoughSignaturesErr
 			}
 		}
@@ -513,6 +529,9 @@ func (m *testMint) signLocked(outs cashu.BlindedMessages) (cashu.BlindedSignatur
 		d := &cashu.DLEQProof{E: hex.EncodeToString(e.Serialize()), S: hex.EncodeToString(s.Serialize())}
 		if m.badDLEQ {
 			d.S = strings.Repeat("11", 32)
+		}
+		if m.noDLEQ {
+			d = nil
 		}
 		sigs[i] = cashu.BlindedSignature{Amount: o.Amount, C_: hex.EncodeToString(C_.SerializeCompressed()), Id: o.Id, DLEQ: d}
 	}
