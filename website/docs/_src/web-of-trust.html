@@ -41,10 +41,11 @@
         globe: you, your follows, and people enough of <em>your own</em> follows follow.</li>
     <li><strong>Your other accounts</strong> get their alerts, their account badge and their Vault lines judged
         by their own web too.</li>
-    <li><strong>The vault's inbox</strong> still uses one list for the device, pooled from every account, so a
-        mention for any account can land. What you're shown from it is filtered by the open account's web.</li>
+    <li><strong>The vault's inbox</strong> lets someone in for an account only if they're in that account's own
+        web (since 3.3.0). Each account also has its own Follow Distance and Minimum Followers: see
+        <a class="inline" href="/docs/web-of-trust/follow-distance/">Follow Distance</a>.</li>
 </ul>
-<p>Until the open account's follow list has loaded, and for a new account with fewer follows than Minimum
+<p>Until the open account's web has been built, and for a new account with fewer follows than Minimum
     Followers, the app shows the shared web instead.</p>
 </section>
 
@@ -183,7 +184,8 @@
 <h2>Who Can Reach You</h2>
 <p>On iPhone and Android, open <span class="path">Settings &rarr; Your Vault &rarr; Who Can Reach You</span>.</p>
 <ul>
-    <li><strong>Follow Distance</strong> is how far out your web reaches. At 1 hop it's you and your follows,
+    <li><strong>Follow Distance</strong> is how far out your web reaches. At Only you it's just you and your
+        other accounts, at 1 hop it's you and your follows,
         at 2 hops (the default) it adds the people they follow, the same "2 hops" a trust card shows. It
         never goes further, so nobody three hops out is in your web.</li>
     <li><strong>Minimum Followers</strong> is how many of your follows must follow someone in that outer ring
@@ -191,7 +193,9 @@
         account's follows.</li>
     <li><strong>Refresh Trust List</strong> is how often the web is rebuilt.</li>
 </ul>
-<p>Details on <a class="inline" href="/docs/vault/who-can-reach-you/">Who Can Reach You</a>.</p>
+<p>Details on <a class="inline" href="/docs/vault/who-can-reach-you/">Who Can Reach You</a>. Each step in plain
+    words, and the <strong>Discovery Reach</strong> slider in <span class="path">Settings &rarr; Feed</span>:
+    <a class="inline" href="/docs/web-of-trust/follow-distance/">Follow Distance</a>.</p>
 </section>
 
 <section id="platforms">
