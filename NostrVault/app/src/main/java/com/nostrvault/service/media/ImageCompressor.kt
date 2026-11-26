@@ -116,7 +116,8 @@ object ImageCompressor {
      * deletes both files when done ([Output.file] may be [source]).
      */
     fun compress(source: File, mimeType: String, quality: Quality, workDir: File): Output {
-        if (quality == Quality.ORIGINAL) return Output(source, mimeType)
+        // A video or other file isn't opened at all.
+        if (quality == Quality.ORIGINAL || !ImageHeaders.bareType(mimeType).startsWith("image/")) return Output(source, mimeType)
         return try {
             run(source, mimeType, describe(source, mimeType), workDir)
         } catch (e: Throwable) {
@@ -124,6 +125,10 @@ object ImageCompressor {
             Output(source, mimeType)
         }
     }
+
+    /** [compress], deleting [source] when a new file takes its place. */
+    fun replacing(source: File, mimeType: String, quality: Quality, workDir: File): Output =
+        compress(source, mimeType, quality, workDir).also { if (it.file != source) source.delete() }
 
     private fun run(source: File, mimeType: String, info: Source, workDir: File): Output {
         return when (val plan = plan(info, Quality.STANDARD)) {
