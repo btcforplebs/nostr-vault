@@ -71,7 +71,7 @@ class MeshCopyStarter internal constructor(
         reach: dagger.Lazy<com.nostrvault.service.DiscoveryReachStore>,
         mesh: dagger.Lazy<FipsMeshManager>,
     ) : this(
-        link = { npub -> otherVaultLink.open(npub, keep = false)?.takeIf(::answers) },
+        link = { npub -> openChecked(npub) { otherVaultLink.open(npub, keep = false) } },
         sign = { tags -> MeshKeySigner.authorization(MeshKeyAuth.START_KIND, "", tags) },
         engine = BridgeEngine,
         records = PrefsRecordStore(context),
@@ -93,7 +93,7 @@ class MeshCopyStarter internal constructor(
         },
         rankArrived = { reach.get().refresh() },
         connected = { mesh.get().status.value.peers },
-        seedLink = { npub -> otherVaultLink.open(npub, keep = true)?.takeIf(::answers) },
+        seedLink = { npub -> openChecked(npub) { otherVaultLink.open(npub, keep = true) } },
     )
 
     /** The libhaven copy calls (a fake in the tests). Codes: [MeshCopyV2.RUN_STARTED] and the rest. */
@@ -545,11 +545,35 @@ class MeshCopyStarter internal constructor(
                 .build()
         }
 
-        private fun answers(wsUrl: String): Boolean = runCatching {
+        /** [npub]'s link address once its probe answers, with the step that failed logged otherwise. */
+        private fun openChecked(npub: String, open: () -> String?): String? {
+            val url = open() ?: return null.also { Log.w(TAG, "link ${short(npub)}: no local port") }
+            val failed = probeFailure(url) ?: return url
+            Log.w(TAG, "link ${short(npub)}: $failed")
+            return null
+        }
+
+        /**
+         * One NIP-11 GET through [wsUrl]: null when it answers 2xx, else which step failed and what came back (the
+         * status and the head of the body), so a `link null` says why (Tod, nv-android ff220e33). Never the address:
+         * its path is the link's secret, so anything token-like is taken out.
+         */
+        internal fun probeFailure(wsUrl: String, client: okhttp3.OkHttpClient = probe): String? = try {
             val request = okhttp3.Request.Builder().url(wsUrl.replaceFirst("ws://", "http://"))
                 .header("Accept", "application/nostr+json").header("Connection", "close").build()
-            probe.newCall(request).execute().use { it.isSuccessful }
-        }.getOrDefault(false)
+            client.newCall(request).execute().use { r ->
+                if (r.isSuccessful) null
+                else "probe answered ${r.code}, body \"${scrub(r.peekBody(BODY_HEAD.toLong()).string())}\""
+            }
+        } catch (e: Exception) {
+            "probe got no answer (${e.javaClass.simpleName}: ${scrub(e.message.orEmpty())})"
+        }
+
+        private const val BODY_HEAD = 120
+
+        /** One line, short, with no hex run long enough to be a token. */
+        private fun scrub(s: String): String =
+            s.replace(Regex("[0-9a-fA-F]{16,}"), "<hex>").replace(Regex("\\s+"), " ").trim().take(BODY_HEAD)
 
         internal fun ownerOnly(f: File) {
             f.setReadable(false, false); f.setReadable(true, true)
