@@ -124,7 +124,7 @@ extension FeedService {
         // A key setup made here has no list anywhere yet. Read now, cleared
         // only once a list is signed: clearing it before a publish that then
         // failed made every retry wait on every relay (Android FeedServiceFollow).
-        let fresh = FreshAccountKeys.isFresh(owner)
+        let fresh = FreshAccountKeys.isFresh(owner, kind: 3)
         // One at a time, so a second tap builds on the first one's list.
         let previousPublish = Self.contactListPublishTail
         let publish = Task { @MainActor [weak self] in
@@ -171,8 +171,9 @@ extension FeedService {
                 return
             }
             Self.lastSignedContactList[owner] = event
-            // The key has a list now; from here on its load must find it.
-            FreshAccountKeys.clear(owner)
+            // The key has a follow list now; from here on its load must find it. Its
+            // other lists keep their own pass (FreshAccountKeys).
+            FreshAccountKeys.clear(owner, kind: 3)
             // What went out is now the list, unless another tap is already on screen.
             if self.contactListPTags == attempted {
                 let parsed = ContactManager.parseContactList(pTags: tags.filter { $0.count >= 2 && $0[0] == "p" })
@@ -234,7 +235,7 @@ extension FeedService {
     /// follow is queued) and the Fill your feed guide never starts.
     func markFreshAccount(_ hex: String) {
         guard !hex.isEmpty else { return }
-        FreshAccountKeys.mark(hex)
+        FreshAccountKeys.mark(hex, kinds: FreshAccountKeys.newAccountKinds)
         // The first load may already have finished without a list.
         if hex == ConfigService.shared.activeAccountHexPubkey,
            hasAttemptedContactLoad, !isLoadingContacts, followedPubkeys.isEmpty {

@@ -50,6 +50,21 @@ enum ReferralSuggestions {
     /// An event read to count interactions: its author, kind and tags.
     typealias Activity = (author: String, kind: Int, tags: [[String]])
 
+    /// Follows a join needs before the # step: the referrer and 4 of their
+    /// people, so the guide's web of trust (5) is built at setup (Logen
+    /// 2026-11-26 70edd8f4). Android: ReferralSuggestions.followGoal.
+    static let followGoal = 5
+
+    /// How many more of the offered people must be ticked before Follow
+    /// works: 0 once the referrer plus `picked` reach `followGoal`. With
+    /// fewer than that offered, any number goes (the guide then browses
+    /// Discover with the meter, FillYourFeedGuide.afterIntro).
+    static func picksStillNeeded(picked: Int, offered: Int) -> Int {
+        let needed = followGoal - 1
+        guard offered >= needed else { return 0 }
+        return max(0, needed - picked)
+    }
+
     /// What one interaction is worth, by kind: a zap, a reply or mention, a
     /// repost, a reaction. Each event counts once per person it tags.
     static func weight(kind: Int) -> Int {

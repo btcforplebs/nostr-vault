@@ -132,4 +132,20 @@ final class ReferralSuggestionsTests: XCTestCase {
         XCTAssertEqual(stash.takeFollows(), [])
         XCTAssertNil(stash.pendingReferrer)
     }
+
+    /// A join through someone's people needs the referrer and 4 of them.
+    func testFollowNeedsFourPicksWhenFourAreOffered() {
+        XCTAssertEqual(ReferralSuggestions.followGoal, 5)
+        XCTAssertEqual(ReferralSuggestions.picksStillNeeded(picked: 0, offered: 20), 4)
+        XCTAssertEqual(ReferralSuggestions.picksStillNeeded(picked: 3, offered: 20), 1)
+        XCTAssertEqual(ReferralSuggestions.picksStillNeeded(picked: 4, offered: 20), 0)
+        XCTAssertEqual(ReferralSuggestions.picksStillNeeded(picked: 9, offered: 20), 0)
+        XCTAssertEqual(ReferralSuggestions.picksStillNeeded(picked: 0, offered: 4), 4)
+    }
+
+    func testFewerThanFourOfferedDoesNotLockFollow() {
+        for offered in 0...3 {
+            XCTAssertEqual(ReferralSuggestions.picksStillNeeded(picked: 0, offered: offered), 0, "\(offered)")
+        }
+    }
 }

@@ -440,9 +440,15 @@ private struct TopicsCard: View {
             }
             .frame(maxHeight: 300)
             .fixedSize(horizontal: false, vertical: true)
-            PrimaryButton(title: FillYourFeedGuide.showPostsTitle(selected: selected.count), wide: true,
-                          disabled: selected.isEmpty) {
+            PrimaryButton(title: showPostsTitle, wide: true,
+                          disabled: selected.isEmpty || guide.savingTopics) {
                 guide.showPosts(topics: selected)
+            }
+            if let error = guide.topicSaveError {
+                Text(error)
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .onAppear {
@@ -451,11 +457,24 @@ private struct TopicsCard: View {
             // Topics this account already follows start picked.
             selected = interests.hashtags
         }
+        .onChange(of: guide.topicSaveError) { _, error in
+            #if os(iOS)
+            if let error { UIAccessibility.post(notification: .announcement, argument: error) }
+            #endif
+        }
         .sheet(isPresented: $showingMore) {
             MoreTopicsSheet(selected: $selected)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+    }
+}
+
+private extension TopicsCard {
+    var showPostsTitle: String {
+        if guide.savingTopics { return FillYourFeedGuide.savingTopicsTitle }
+        if guide.topicSaveError != nil, !selected.isEmpty { return FillYourFeedGuide.retryTopicsTitle }
+        return FillYourFeedGuide.showPostsTitle(selected: selected.count)
     }
 }
 

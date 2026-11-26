@@ -65,4 +65,17 @@ final class FillYourFeedGuideTests: XCTestCase {
         XCTAssertTrue(TutorialID.fillYourVault.isAvailable)
         XCTAssertEqual(TutorialID.fillYourVault.title, "Fill Your Feed")
     }
+
+    /// Logen 2026-11-26 70edd8f4: nobody with a follow list under 5 lands on #.
+    func testLetsFillItOpensTopicsOnlyForAKeyThatFollowsNobody() {
+        XCTAssertEqual(FillYourFeedGuide.afterIntro(follows: 0), .topics)
+        for count in 1...4 { XCTAssertEqual(FillYourFeedGuide.afterIntro(follows: count), .browsing, "\(count)") }
+        XCTAssertEqual(FillYourFeedGuide.afterIntro(follows: 5), .browsing)
+    }
+
+    func testAFailedTopicSaveSaysWhy() {
+        XCTAssertTrue(FillYourFeedGuide.topicSaveFailedText(noRelayList: true).contains("relay list"))
+        XCTAssertTrue(FillYourFeedGuide.topicSaveFailedText(noRelayList: false).contains("relays answered"))
+        XCTAssertNotEqual(FillYourFeedGuide.retryTopicsTitle, FillYourFeedGuide.showPostsTitle(selected: 1))
+    }
 }

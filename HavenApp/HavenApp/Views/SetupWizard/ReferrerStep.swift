@@ -116,7 +116,11 @@ struct ReferrerStep: View {
 
     private var subtitle: String {
         switch phase {
-        case .suggest(let pubkey): return "The people \(name(pubkey)) talks with most come first. Tap someone to see them and follow."
+        case .suggest(let pubkey):
+            let first = "The people \(name(pubkey)) talks with most come first."
+            return suggestions.count >= ReferralSuggestions.followGoal - 1
+                ? first + " Follow 4 of them: five people builds your web of trust."
+                : first + " Tap someone to see them and follow."
         default:
             #if os(iOS)
             return "Scan their profile code, or paste their link or npub, and follow them. People they follow are a good start."
@@ -257,8 +261,10 @@ struct ReferrerStep: View {
 
             VStack(spacing: 12) {
                 WizardPrimaryButton(title: followTitle, action: { finish([pubkey] + pickedKeys) },
-                                    disabled: loadingSuggestions)
-                if !suggestions.isEmpty && !loadingSuggestions {
+                                    disabled: loadingSuggestions || stillNeeded > 0)
+                // Fewer than 4 offered: the 5 can't be reached here.
+                if !suggestions.isEmpty && !loadingSuggestions
+                    && suggestions.count < ReferralSuggestions.followGoal - 1 {
                     WizardSkipLink(title: "Only follow \(name(pubkey))") { finish([pubkey]) }
                 }
             }
@@ -354,7 +360,13 @@ struct ReferrerStep: View {
         .accessibilityHidden(true)
     }
 
+    /// People still to tick before Follow works (ReferralSuggestions.picksStillNeeded).
+    private var stillNeeded: Int {
+        loadingSuggestions ? 0 : ReferralSuggestions.picksStillNeeded(picked: pickedKeys.count, offered: suggestions.count)
+    }
+
     private var followTitle: String {
+        if stillNeeded > 0 { return "Pick \(stillNeeded) more" }
         let count = 1 + pickedKeys.count
         return count == 1 ? "Follow 1 person" : "Follow \(count) people"
     }

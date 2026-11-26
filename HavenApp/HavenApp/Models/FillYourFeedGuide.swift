@@ -28,6 +28,16 @@ enum FillYourFeedGuide {
         meterOn ? .browsing : .intro
     }
 
+    /// Where "Let's fill it" goes. The topic (#) feed is only for a key that
+    /// follows nobody yet: it is the one place such a key finds people. With
+    /// 1 to 4 follows (joined by scan, or picked fewer people than offered)
+    /// it skips # and browses Discover with the meter until 5, so nobody
+    /// with a follow list lands on # before 5 (Logen 2026-11-26 70edd8f4).
+    /// Android: FillYourFeedGuide.afterIntro.
+    static func afterIntro(follows: Int) -> FillYourFeedPhase {
+        follows == 0 ? .topics : .browsing
+    }
+
     /// Whether the meter is drawn. It belongs to the guide's people: it is
     /// on from "Let's fill it" until they hide it, so an account the guide
     /// finished quietly (it already followed 5) never sees one.
@@ -46,6 +56,18 @@ enum FillYourFeedGuide {
     /// The topic step's button.
     static func showPostsTitle(selected: Int) -> String {
         selected == 0 ? "Pick at least one" : "Show posts (\(selected))"
+    }
+
+    /// The topic step's button while its save runs, and after one failed.
+    static let savingTopicsTitle = "Saving…"
+    static let retryTopicsTitle = "Try again"
+
+    /// Under the topic step's button when the interest list (10015) save
+    /// failed. Nothing was saved, so the topics stay picked for a retry.
+    static func topicSaveFailedText(noRelayList: Bool) -> String {
+        noRelayList
+            ? "Your topics weren't saved: your relay list isn't out yet. Try again in a moment."
+            : "Your topics weren't saved: not enough relays answered. Check your connection and try again."
     }
 
     /// The meter's two lines.

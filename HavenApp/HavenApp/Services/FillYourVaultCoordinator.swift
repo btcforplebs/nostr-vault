@@ -29,6 +29,10 @@ final class FillYourVaultCoordinator: ObservableObject {
     /// The open meter's measured height. Post rises by it and the feed
     /// scrolls clear of it (Tory: Post keeps priority).
     @Published var meterHeight: CGFloat = 0
+    /// The topic step's save is running.
+    @Published private(set) var savingTopics = false
+    /// Why the topic step's save failed; nil when it didn't.
+    @Published private(set) var topicSaveError: String?
     /// The person whose small profile card is open.
     @Published var profileCardPubkey: String?
 
@@ -90,17 +94,49 @@ final class FillYourVaultCoordinator: ObservableObject {
         meterStore.set(true, account: account)
         meterOn = true
         meterCollapsed = false
-        phase = .topics
+        let next = FillYourFeedGuide.afterIntro(follows: followsSoFar)
+        if next == .browsing { FeedService.shared.switchMode(.discovery) }
+        phase = next
+    }
+
+    /// Followed, plus follows still waiting for the list to load (setup's
+    /// referrer picks queue until then), so a scan-join with 1 to 4 picks
+    /// doesn't read as 0 and land on #.
+    private var followsSoFar: Int {
+        let feed = FeedService.shared
+        let followed = Set(feed.followedPubkeys)
+        let waiting = Set(feed.pendingFollowActions.filter { $0.follow && $0.account == feed.currentSnapshotKey() }.map(\.pubkey))
+        return followed.union(waiting).subtracting([account]).count
     }
 
     /// Topics: "Show posts". Follows the picked hashtags (one published
-    /// list) and opens the topic feed behind the hint.
+    /// list), then opens the topic feed behind the hint. A save that fails
+    /// keeps the topic card up with the reason and a retry, instead of the
+    /// chips quietly flipping back over an empty feed.
     func showPosts(topics: [String]) {
         let interests = InterestListService.shared
         let new = topics.filter { !interests.isFollowing($0) }
-        if !new.isEmpty {
-            Task { await interests.setFollowing(new, true) }
+        guard !new.isEmpty else { openTopicFeed(); return }
+        guard !savingTopics else { return }
+        savingTopics = true
+        topicSaveError = nil
+        let account = self.account
+        Task { @MainActor [weak self] in
+            let saved = await interests.setFollowing(new, true)
+            guard let self else { return }
+            self.savingTopics = false
+            guard self.phase == .topics, self.account == account else { return }
+            if saved {
+                self.openTopicFeed()
+            } else {
+                self.topicSaveError = FillYourFeedGuide.topicSaveFailedText(
+                    noRelayList: FeedService.activeAccountHasNoRelayList)
+            }
         }
+    }
+
+    private func openTopicFeed() {
+        topicSaveError = nil
         FeedService.shared.switchMode(.hashtags)
         phase = .hint
     }
@@ -138,6 +174,7 @@ final class FillYourVaultCoordinator: ObservableObject {
         meterStore.set(false, account: account)
         meterOn = false
         profileCardPubkey = nil
+        topicSaveError = nil
         phase = .off
     }
 
