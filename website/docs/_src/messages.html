@@ -54,7 +54,9 @@
 <p>In a conversation, tap the photo button (<strong>Attach photo or video</strong>; web: Photo), paste a photo with
     <strong>Paste Photo</strong>, or drag it in on a Mac or iPad. On iPhone, iPad, Mac and Android the same button
     sends videos too, and so does the web app. Photos other than GIFs are re-saved, which removes their location, and
-    a GIF's hidden extras (comments and other metadata) are stripped.</p>
+    a GIF's hidden extras (comments and other metadata) are stripped. With
+    <a class="inline" href="/docs/media/#upload-quality">Upload Quality</a> set to Original, a photo goes at full size
+    instead, with only its location removed.</p>
 <p>Since 3.2.3 a photo or video in a NIP-17 message is <strong>locked</strong>: the app encrypts it on your device
     before it uploads, so the media server only ever holds scrambled bytes, and the key travels inside the sealed
     message. It goes to your own media servers, or to nostr.download if they refuse it. Videos are capped at 100 MB

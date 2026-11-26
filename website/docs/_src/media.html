@@ -7,13 +7,13 @@
   "eyebrow": "Media and sharing",
   "h1": "Where your <span>photos</span> go.",
   "lede": "A note on Nostr is text. The photos in it live on media servers, and the note links to them. This page explains which servers Nostr Vault uses, how to change them, and how to keep your own copies.",
-  "description": "Media servers (Blossom) in Nostr Vault: where photos go when you post, adding and removing servers, Auto-Mirror and Import media, the live Media tab across your devices, cache settings, and uploading from the share sheet.",
-  "checked": "Nostr Vault 3.2.2",
+  "description": "Media servers (Blossom) in Nostr Vault: where photos go when you post, Upload Quality (Standard or Original), adding and removing servers, Auto-Mirror and Import media, the live Media tab across your devices, cache settings, and uploading from the share sheet.",
+  "checked": "Nostr Vault 3.3.0",
   "labels": {
-    "ios": ["Import media", "Import", "Keep it full", "Picture or video post", "Keep a private copy", "Follow, mute or add to a list", "Save for later", "Pay or zap", "Send privately", "Add to the upload queue", "Picture in Picture", "Media Servers", "Add to my media servers", "Save", "Waiting to send", "Try sending now", "Auto-Mirror Media", "Offline Copies", "Autoplay Videos", "Feed", "Back up media", "Clear cache", "Added for You", "Your Vaults on the Mesh", "Magic Paste", "Files", "Pick from your media", "Add to the upload queue", "Suggested", "Delete from media servers", "Delete everywhere", "Copy", "Share"],
-    "mac": ["Media Servers", "Waiting to send", "Try sending now", "Auto-Mirror Media", "Autoplay Videos", "Import media", "Back up media", "Clear cache"],
-    "android": ["Import media", "Import", "Keep it full", "Picture or video post", "Keep a private copy", "Open profile", "Save for later", "Pay", "Send privately", "Picture in picture", "Media Servers", "Media & Cache", "Try sending now", "Auto-Mirror Media", "Your Media", "Test", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache", "Use Local Blossom Cache", "YOUR VAULTS", "Pick from your media", "Delete from media servers", "Delete everywhere"],
-    "web": ["Media Servers", "Add", "Remove", "Save and publish", "Discard changes", "Test", "Load photos over the mesh", "Delete from media servers"]
+    "ios": ["Import media", "Import", "Keep it full", "Picture or video post", "Keep a private copy", "Follow, mute or add to a list", "Save for later", "Pay or zap", "Send privately", "Add to the upload queue", "Picture in Picture", "Media Servers", "Add to my media servers", "Save", "Waiting to send", "Try sending now", "Auto-Mirror Media", "Offline Copies", "Autoplay Videos", "Feed", "Back up media", "Clear cache", "Added for You", "Your Vaults on the Mesh", "Magic Paste", "Files", "Pick from your media", "Add to the upload queue", "Suggested", "Delete from media servers", "Delete everywhere", "Copy", "Share", "Upload Quality", "Standard", "Original"],
+    "mac": ["Media Servers", "Upload Quality", "Standard", "Original", "Waiting to send", "Try sending now", "Auto-Mirror Media", "Autoplay Videos", "Import media", "Back up media", "Clear cache"],
+    "android": ["Import media", "Import", "Keep it full", "Picture or video post", "Keep a private copy", "Open profile", "Save for later", "Pay", "Send privately", "Picture in picture", "Media Servers", "Media & Cache", "Try sending now", "Auto-Mirror Media", "Your Media", "Test", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache", "Use Local Blossom Cache", "YOUR VAULTS", "Pick from your media", "Delete from media servers", "Delete everywhere", "Upload Quality", "Standard", "Original"],
+    "web": ["Media Servers", "Add", "Remove", "Save and publish", "Discard changes", "Test", "Load photos over the mesh", "Delete from media servers", "Media & Cache", "Upload Quality", "Standard", "Original"]
   }
 }
 -->
@@ -45,6 +45,41 @@
     <p><strong>Posting a photo still needs a public media server.</strong> A photo that is only on your phone
         can't be seen by anyone else, so the app won't post it without an outside server.</p>
 </div>
+</section>
+
+<section id="upload-quality">
+<p class="eyebrow">Smaller uploads</p>
+<h2>Upload Quality</h2>
+<p>Since 3.3.0 the app shrinks photos and videos before it uploads them, so posts go up faster, load faster for
+    everyone, and fit on more media servers. One setting decides it: <span class="ui">Upload Quality</span>, with two
+    choices.</p>
+<ul>
+    <li><strong>Standard</strong> (the default): a photo's long edge is brought down to at most 2048 pixels and it is
+        saved as a JPEG, which also drops everything the camera wrote into it (model, serial number, date, location).
+        On iPhone, iPad, Mac and Android a video is made 720p (1280&times;720, or 720&times;1280 upright) at up to
+        5 Mbps. Files that are already small go up as they are, a screenshot or other PNG stays a PNG, and GIFs and
+        other moving pictures are never changed.</li>
+    <li><strong>Original</strong>: photos and videos go up as they are. The files are bigger, and some media servers
+        refuse large ones.</li>
+</ul>
+<p>The location is removed either way. Original is never a way to post where a photo was taken.</p>
+<p>It covers the photos and videos you post in a note, share to Nostr Vault from another app, send in live chat or
+    send in a message. There is no switch on each photo: change the setting before you post. Profile pictures,
+    banners, article covers and listing photos keep their own sizes whatever you pick.</p>
+<div class="note">
+    <p><strong>The Media tab always keeps the original.</strong> Files you add on the Media tab (Vault &rarr; Media on
+        the web) are your own copies, so they are never shrunk.</p>
+</div>
+<p>Where to find it:</p>
+<ul>
+    <li><strong>iPhone, iPad and Mac:</strong> <span class="path">Settings &rarr; Media Servers</span>, in the
+        Upload Quality section.</li>
+    <li><strong>Android:</strong> <span class="path">Settings &rarr; Media &amp; Cache &rarr; Upload Quality</span>.</li>
+    <li><strong>The web app</strong> and <strong>Nostr Vault for Linux</strong> (whose window is the web app):
+        <span class="path">Settings &rarr; Media &amp; Cache</span>, under Uploads. The web app shrinks photos only:
+        videos go up as they are, because a browser can't re-encode them. A HEIC photo that the browser can't open
+        (Chrome and Firefox) also goes up as it is. The choice is kept in this browser.</li>
+</ul>
 </section>
 
 <section id="manage">
@@ -136,7 +171,9 @@
     <span class="path">Settings &rarr; Feed</span>, and <span class="ui">Clear cache</span> is on the Vault dashboard.
     There is no Media &amp; Cache page.</p>
 <p><strong>Android</strong> has the page: <span class="path">Settings &rarr; Media &amp; Cache</span>, in the Feed
-    &amp; Display group. The web app has neither.</p>
+    &amp; Display group. The web app has a Media &amp; Cache page too, with Autoplay Videos and
+    <a class="inline" href="#upload-quality">Upload Quality</a>; it keeps no copies of its own (your browser caches
+    them).</p>
 <ul>
     <li><strong>Autoplay Videos</strong> plays videos as you scroll.</li>
     <li><strong>Prefetch Profile Pictures</strong> loads profile pictures ahead of time for smoother
