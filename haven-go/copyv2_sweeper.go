@@ -38,3 +38,16 @@ func startCopySweeper(ctx context.Context) {
 		}
 	})
 }
+
+// copyIDName: a copy's folder name, 32 lower-case hex characters.
+func copyIDName(name string) bool {
+	if len(name) != 32 {
+		return false
+	}
+	for _, c := range name {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}

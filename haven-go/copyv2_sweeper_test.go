@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,14 +28,21 @@ func TestCopySweepKeepsLiveCopiesAndDropsOldOnes(t *testing.T) {
 		}
 		return dir
 	}
-	fresh := mk("fresh", "ready", now.Add(-time.Hour))
-	old := mk("old", "ready", now.Add(-48*time.Hour))
-	building := mk("building", "building", now.Add(-48*time.Hour))
-	orphan := mk("orphan", "", time.Time{})
+	id := func(c string) string { return strings.Repeat(c, 32) }
+	fresh := mk(id("a"), "ready", now.Add(-time.Hour))
+	old := mk(id("b"), "ready", now.Add(-48*time.Hour))
+	building := mk(id("c"), "building", now.Add(-48*time.Hour))
+	orphan := mk(id("d"), "", time.Time{})
+	// Not a copy id: someone else's folder or file in a "copy" dir we don't own.
+	foreign := mk("photos", "", time.Time{})
+	foreignFile := filepath.Join(root, "notes.txt")
+	if err := os.WriteFile(foreignFile, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	s.sweepNow()
 
-	for _, keep := range []string{fresh, building} {
+	for _, keep := range []string{fresh, building, foreign, foreignFile} {
 		if _, err := os.Stat(keep); err != nil {
 			t.Errorf("%s removed: %v", filepath.Base(keep), err)
 		}
@@ -44,10 +52,10 @@ func TestCopySweepKeepsLiveCopiesAndDropsOldOnes(t *testing.T) {
 			t.Errorf("%s kept", filepath.Base(gone))
 		}
 	}
-	if _, ok := s.jobs["old"]; ok {
+	if _, ok := s.jobs[id("b")]; ok {
 		t.Error("old job still listed")
 	}
-	if _, ok := s.jobs["fresh"]; !ok {
+	if _, ok := s.jobs[id("a")]; !ok {
 		t.Error("fresh job dropped")
 	}
 }
@@ -57,7 +65,7 @@ func TestCopySweepKeepsLiveCopiesAndDropsOldOnes(t *testing.T) {
 func TestCopySweeperClearsEarlierRunAtStart(t *testing.T) {
 	root := t.TempDir()
 	cache := filepath.Join(root, copyCacheDir)
-	left := filepath.Join(cache, "abc")
+	left := filepath.Join(cache, strings.Repeat("e", 32))
 	if err := os.MkdirAll(left, 0o700); err != nil {
 		t.Fatal(err)
 	}

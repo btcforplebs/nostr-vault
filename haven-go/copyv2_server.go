@@ -301,6 +301,12 @@ func (s *copyServer) sweep() {
 	// read it any more, so it only holds disk.
 	entries, _ := os.ReadDir(s.cache())
 	for _, e := range entries {
+		// Only folders named like a copy id (copyRandomHex(16)): the folder
+		// is relative to the working directory, so a "copy" folder that is
+		// not ours (havend started elsewhere) loses nothing else.
+		if !e.IsDir() || !copyIDName(e.Name()) {
+			continue
+		}
 		if _, live := s.jobs[e.Name()]; !live {
 			_ = os.RemoveAll(filepath.Join(s.cache(), e.Name()))
 		}
