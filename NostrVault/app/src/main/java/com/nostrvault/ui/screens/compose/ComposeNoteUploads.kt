@@ -69,12 +69,19 @@ internal class ComposeNoteUploads(
             set(attachment.id, ComposeNoteUpload.Sending(0f))
             // Signed by the account active when it starts, unless Post names one.
             send(attachment, skipOutside, signAs ?: activeAccount()) { progress ->
-                if (_states.value[attachment.id] is ComposeNoteUpload.Sending) set(attachment.id, ComposeNoteUpload.Sending(progress))
+                val now = _states.value[attachment.id]
+                if (now is ComposeNoteUpload.Sending || now is ComposeNoteUpload.Compressing) set(attachment.id, ComposeNoteUpload.Sending(progress))
             }
         }
         if (attachment.id !in _states.value) return // removed meanwhile
         set(attachment.id, result)
         if (result is ComposeNoteUpload.Done) onDone?.invoke(attachment, result)
+    }
+
+    /** [id]'s video is being compressed, [progress] 0..1; the upload's own progress takes over after. */
+    fun compressing(id: String, progress: Float) {
+        val now = _states.value[id]
+        if (now is ComposeNoteUpload.Sending || now is ComposeNoteUpload.Compressing) set(id, ComposeNoteUpload.Compressing(progress))
     }
 
     /** The photo was removed: stop its upload and forget it. */

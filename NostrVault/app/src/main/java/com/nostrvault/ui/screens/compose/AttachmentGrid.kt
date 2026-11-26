@@ -33,8 +33,9 @@ internal fun AttachmentGrid(
     onEditAlt: (Attachment) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    Column(modifier = modifier) {
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -121,7 +122,24 @@ internal fun AttachmentGrid(
             }
         }
     }
+    CompressingLine(uploads)
+    }
 }
+
+/** "Compressing video… 40%" under the thumbnails while a picked video is made smaller. */
+@Composable
+private fun CompressingLine(uploads: Map<String, ComposeNoteUpload>) {
+    val p = uploads.values.filterIsInstance<ComposeNoteUpload.Compressing>().firstOrNull() ?: return
+    Text(
+        text = compressingText(p.progress),
+        color = SecondaryText,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(top = 6.dp),
+    )
+}
+
+internal fun compressingText(progress: Float) = "Compressing video… ${(progress.coerceIn(0f, 1f) * 100).toInt()}%"
 
 /** The upload's progress over the thumbnail; a phone once it is saved here only, a warning if it failed. */
 @Composable
@@ -130,6 +148,7 @@ private fun BoxScope.UploadRing(upload: ComposeNoteUpload?, alreadyHosted: Boole
     if (alreadyHosted || (upload is ComposeNoteUpload.Done && upload.media.url != null)) return
     val label = when (upload) {
         null, ComposeNoteUpload.Waiting -> "Waiting to upload"
+        is ComposeNoteUpload.Compressing -> compressingText(upload.progress)
         is ComposeNoteUpload.Sending -> "Uploading, ${(upload.progress * 100).toInt()} percent"
         is ComposeNoteUpload.Done -> "Saved on this device, posts when a server answers"
         is ComposeNoteUpload.Failed -> "Upload failed, Post tries again"
@@ -146,6 +165,13 @@ private fun BoxScope.UploadRing(upload: ComposeNoteUpload?, alreadyHosted: Boole
                 progress = { upload.progress.coerceIn(0.02f, 1f) },
                 color = Color.White,
                 trackColor = Color.White.copy(alpha = 0.3f),
+                strokeWidth = 3.dp,
+                modifier = Modifier.size(30.dp),
+            )
+            is ComposeNoteUpload.Compressing -> CircularProgressIndicator(
+                progress = { upload.progress.coerceIn(0.02f, 1f) },
+                color = Color.White.copy(alpha = 0.7f),
+                trackColor = Color.White.copy(alpha = 0.2f),
                 strokeWidth = 3.dp,
                 modifier = Modifier.size(30.dp),
             )
