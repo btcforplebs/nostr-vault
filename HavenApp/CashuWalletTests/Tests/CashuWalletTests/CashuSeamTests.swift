@@ -31,10 +31,10 @@ final class CashuSeamTests: XCTestCase {
     }
 
     func testOnlyPreSpendRefusalsTryAnotherMint() {
-        for code in ["not_enough", "busy", "no_change", "unknown_mint"] {
+        for code in ["not_enough", "no_change", "unknown_mint"] {
             XCTAssertTrue(CashuWalletService.triesNextMint(code), code)
         }
-        for code in ["pending", "error", "already_spent", "not_paid"] {
+        for code in ["pending", "busy", "error", "already_spent", "not_paid"] {
             XCTAssertFalse(CashuWalletService.triesNextMint(code), code)
         }
     }

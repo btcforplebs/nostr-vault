@@ -95,6 +95,22 @@ final class CashuWalletServiceTests: XCTestCase {
         XCTAssertLessThan(after.total, 100)
         let open = try await w.pendingCount()
         XCTAssertEqual(open, 1)
+        // A retry of the same invoice, or any other, waits for that one to settle.
+        do {
+            _ = try await w.payInvoice(bolt11: invoice)
+            XCTFail("paid again while the first melt was pending")
+        } catch let e as CashuError {
+            XCTAssertEqual(e.code, "busy")
+        }
+        let second = try await control("/invoice?amount=5")
+        do {
+            _ = try await w.payInvoice(bolt11: second)
+            XCTFail("a new payment went out while a melt was pending")
+        } catch let e as CashuError {
+            XCTAssertEqual(e.code, "busy")
+        }
+        let still = try await w.pendingCount()
+        XCTAssertEqual(still, 1)
         _ = try await control("/melt-pending?on=0")
     }
 

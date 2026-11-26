@@ -121,7 +121,13 @@ final class CashuWalletService: @unchecked Sendable {
     /// before any money moved. `pending` (the mint may still pay) stops
     /// at once: paying the same invoice from a second mint could pay twice.
     func payInvoice(bolt11: String) async throws -> CashuMeltResult {
-        if try await pendingCount() > 0 { try? await recover() }
+        // An earlier payment the mint hasn't settled may be this same invoice
+        // (a retry after "may still pay"). Starting another one, at any mint,
+        // could pay it twice, so nothing new goes out until recover clears it.
+        if try await pendingCount() > 0 {
+            try? await recover()
+            if try await pendingCount() > 0 { throw CashuError(code: "busy", message: "an earlier payment is still unsettled") }
+        }
         let balance = try await balance()
         let order = Self.payOrder(balance)
         guard !order.isEmpty else { throw CashuError.notEnough }
@@ -155,10 +161,10 @@ final class CashuWalletService: @unchecked Sendable {
     }
 
     /// Refusals that happen before the engine journals the spend, so no
-    /// money moved. Anything else (pending, or an error after the mint call)
-    /// stops the payment.
+    /// money moved. Anything else stops the payment: pending, an error after
+    /// the mint call, and busy (that mint's unfinished op may be this invoice).
     static func triesNextMint(_ code: String) -> Bool {
-        ["not_enough", "busy", "no_change", "unknown_mint"].contains(code)
+        ["not_enough", "no_change", "unknown_mint"].contains(code)
     }
 }
 
