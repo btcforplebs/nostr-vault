@@ -41,8 +41,17 @@ struct MediaMosaicColumns<Cell: View>: View {
     /// local scan read from the file, then the note's imeta `dim`, then any
     /// hint a feed note left for this address. Nil draws a square.
     static func aspect(of item: MediaItem) -> Double? {
-        let sizes = MediaMosaicSizes.shared
         let address = item.url.absoluteString
+        // A tile keeps the shape it was first drawn with until the tab is left:
+        // a shape learned later would change a passed section's height.
+        if let shown = MediaMosaicShown.shared.aspect(for: address) { return shown }
+        let found = lookUp(item, address: address)
+        MediaMosaicShown.shared.keep(found, for: address)
+        return found
+    }
+
+    private static func lookUp(_ item: MediaItem, address: String) -> Double? {
+        let sizes = MediaMosaicSizes.shared
         if let known = sizes.aspect(for: address) { return known }
         let hash = MediaCacheService.blossomHash(in: item.url)
         let found = hash.flatMap(sizes.aspect(for:))
@@ -67,5 +76,28 @@ extension MediaMosaicColumns: Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.items == rhs.items && lhs.columns == rhs.columns && lhs.columnWidth == rhs.columnWidth
             && lhs.spacing == rhs.spacing && lhs.rowSpacing == rhs.rowSpacing
+    }
+}
+
+/// The shapes this visit to the Media tab has drawn, nil (a square) included.
+/// Cleared when the tab appears, so the next visit picks up learned shapes.
+final class MediaMosaicShown: @unchecked Sendable {
+    static let shared = MediaMosaicShown()
+    private let lock = NSLock()
+    private var shapes: [String: Double?] = [:]
+
+    func aspect(for address: String) -> Double?? {
+        lock.lock(); defer { lock.unlock() }
+        return shapes[address]
+    }
+
+    func keep(_ aspect: Double?, for address: String) {
+        lock.lock(); defer { lock.unlock() }
+        if shapes[address] == nil { shapes[address] = .some(aspect) }
+    }
+
+    func forget() {
+        lock.lock(); defer { lock.unlock() }
+        shapes.removeAll()
     }
 }
