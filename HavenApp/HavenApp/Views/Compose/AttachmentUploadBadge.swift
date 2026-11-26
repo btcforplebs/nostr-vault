@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// What an attachment's upload is doing, drawn over its thumbnail: a
-/// progress ring while it goes up, a clock while it is saved on this device
+/// progress ring while a video compresses and while it goes up, a clock while it is saved on this device
 /// only, and Retry when it did not upload. Nothing once it is hosted.
 struct AttachmentUploadBadge: View {
     let state: ComposerUploadState
@@ -12,6 +12,10 @@ struct AttachmentUploadBadge: View {
         case .waiting:
             ring(progress: 0)
                 .accessibilityLabel("Waiting to upload")
+        case .compressing(let progress):
+            ring(progress: progress)
+                .accessibilityLabel("Compressing video")
+                .accessibilityValue("\(Int(progress * 100)) percent")
         case .uploading(let progress):
             ring(progress: progress)
                 .accessibilityLabel("Uploading")

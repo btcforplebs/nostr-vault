@@ -9,7 +9,8 @@ import UIKit
 /// order picked, while the author keeps writing. Each goes to this device's
 /// relay first and then to the outside Blossom servers in the preferred
 /// order (`BlossomService.uploadForPost`), with location data stripped
-/// first (`MediaPrivacy`). Post waits only for the ones still going.
+/// first (`MediaPrivacy`). Videos are compressed to 720p first
+/// (`VideoCompressor`). Post waits only for the ones still going.
 extension ComposeView {
     /// Queues the attachment's upload behind any already running.
     func startUpload(for id: UUID) {
@@ -39,7 +40,7 @@ extension ComposeView {
         let backgroundTime = BackgroundUploadTime(name: "ComposeUpload")
         defer { backgroundTime.end() }
         #endif
-        let mimeType = attachment.type.preferredMIMEType ?? "application/octet-stream"
+        var mimeType = attachment.type.preferredMIMEType ?? "application/octet-stream"
 
         // Picked from the relay: already hosted, nothing to upload.
         if attachment.data == nil, attachment.fileURL == nil, let hostedURL = attachment.url {
@@ -81,7 +82,29 @@ extension ComposeView {
         // Asked before the upload: was this blob new to every server a delete
         // would reach? Only then may removing it delete it (UploadDeleteRule).
         var freshServers: [String]?
-        if let originalURL = attachment.fileURL {
+        if let pickedURL = attachment.fileURL {
+            // A video goes up at 720p (VideoCompressor); one already small,
+            // or one that can't be re-encoded, goes up as it is.
+            var originalURL = pickedURL
+            if attachment.isVideo {
+                note.update(id) { $0.upload = .compressing(progress: 0) }
+                let compressed = await VideoCompressor.compressed(fileAt: pickedURL, quality: .standard) { fraction in
+                    Task { @MainActor in
+                        note.update(id) { if case .compressing = $0.upload { $0.upload = .compressing(progress: fraction) } }
+                    }
+                }
+                // Taken out while it compressed: nothing to upload.
+                guard !Task.isCancelled, note.attachments.contains(where: { $0.id == id }) else {
+                    if let compressed { try? FileManager.default.removeItem(at: compressed) }
+                    return
+                }
+                note.update(id) { $0.upload = .uploading(progress: 0) }
+                if let compressed {
+                    originalURL = compressed
+                    mimeType = "video/mp4"
+                }
+            }
+            defer { if originalURL != pickedURL { try? FileManager.default.removeItem(at: originalURL) } }
             // Never upload where it was taken (MediaPrivacy).
             guard let fileURL = await MediaPrivacy.removingLocation(fromFileAt: originalURL) else {
                 return fail(id, MediaPrivacy.failureMessage)

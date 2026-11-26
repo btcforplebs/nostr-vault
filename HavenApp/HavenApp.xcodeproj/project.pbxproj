@@ -1048,8 +1048,10 @@
 		69F558CD9D801A6F41CD6405 /* RepostedNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6BE0E091BAC1028A89B70F5 /* RepostedNoteView.swift */; };
 		6A008FF842ADC0B20E36128C /* NVSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A385719722D447ECB47AA2D8 /* NVSharedStore.swift */; };
 		6A039C2F09BEDBDF1155FB52 /* VaultSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E82F3342C8C1BDDEF52BF87 /* VaultSearch.swift */; };
+		6A909CEF2E565F2D01CBF1AE /* VideoCompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4923B705BC207579814003D7 /* VideoCompressor.swift */; };
 		6AABB9CFDD45978934C1FD14 /* ProfileWriteBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C511A09C35088E157D6599AB /* ProfileWriteBatch.swift */; };
 		6AD4F0CC7C12D694B9EEBB13 /* TrustScopeLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 143FB30420F6140DFC7F2A4E /* TrustScopeLock.swift */; };
+		6AD9964D7E4C81969165D8DD /* VideoCompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4923B705BC207579814003D7 /* VideoCompressor.swift */; };
 		6AF55016A3D77FF28054B932 /* TrustMapOuter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B29FD18A15F10C69D2526A16 /* TrustMapOuter.swift */; };
 		6B1C126C919BE5871E5977CD /* MediaPrivacy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C4C43890E8EB9A15FFAD39A /* MediaPrivacy.swift */; };
 		6B39C0CBF5DB41DFD9682525 /* ScopedImportFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A2175A5F0DB416041B4A00A /* ScopedImportFile.swift */; };
@@ -2933,6 +2935,7 @@
 		481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeFeedService.swift; sourceTree = "<group>"; };
 		48CA2811713E8B33E246FC55 /* LocalNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNotificationService.swift; sourceTree = "<group>"; };
 		48F5705A371573904C7229D4 /* VaultNetworking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultNetworking.swift; sourceTree = "<group>"; };
+		4923B705BC207579814003D7 /* VideoCompressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoCompressor.swift; sourceTree = "<group>"; };
 		494A41895F3CDFE3B0B8080B /* ProfileSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSupport.swift; sourceTree = "<group>"; };
 		49A6C4FCCA4B883C7014E92F /* ProfileShareLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileShareLink.swift; sourceTree = "<group>"; };
 		49B848AAC08254AED757D954 /* UnlikePill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlikePill.swift; sourceTree = "<group>"; };
@@ -4067,6 +4070,7 @@
 			isa = PBXGroup;
 			children = (
 				564F6B3D9C170FB23F0FF777 /* ImageCompressor.swift */,
+				4923B705BC207579814003D7 /* VideoCompressor.swift */,
 			);
 			path = MediaCompression;
 			sourceTree = "<group>";
@@ -7288,6 +7292,7 @@
 				19B615A624A3B6CCAF026B82 /* VertexReputation.swift in Sources */,
 				CA9A607D1C0188AD1A70C70D /* VideoAirPlayButton.swift in Sources */,
 				1FE0654764DAAEE07D000D86 /* VideoCaptionsMenu.swift in Sources */,
+				6A909CEF2E565F2D01CBF1AE /* VideoCompressor.swift in Sources */,
 				FD5E837F1BF269C6A816BB02 /* VideoControlBar.swift in Sources */,
 				6677A0CA3B6FE480608509F5 /* VideoExtraControls.swift in Sources */,
 				0393B144026DC90F9C995935 /* VideoNowPlaying.swift in Sources */,
@@ -8541,6 +8546,7 @@
 				3E53AB37D8C661294466026D /* VertexReputation.swift in Sources */,
 				9B6948E6D9FEA4B14F009535 /* VideoAirPlayButton.swift in Sources */,
 				53C50B31CC64B7088D4C6A9B /* VideoCaptionsMenu.swift in Sources */,
+				6AD9964D7E4C81969165D8DD /* VideoCompressor.swift in Sources */,
 				91DBE00339807A295DA8D4E9 /* VideoControlBar.swift in Sources */,
 				F57451D6FC8228DC86E0320C /* VideoExtraControls.swift in Sources */,
 				E568AD48D06E488A006FDAC0 /* VideoNowPlaying.swift in Sources */,

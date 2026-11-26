@@ -54,6 +54,9 @@ struct MediaPostReviewView: View {
                     HStack {
                         Spacer()
                         switch step {
+                        case .compressing(let progress):
+                            ProgressView()
+                            Text("Compressing video… \(Int(progress * 100))%").monospacedDigit().padding(.leading, 6)
                         case .uploading(let done, let of):
                             ProgressView()
                             Text(of > 1 ? "Uploading \(done + 1) of \(of)…" : "Uploading…").padding(.leading, 6)

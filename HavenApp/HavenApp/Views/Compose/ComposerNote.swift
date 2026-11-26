@@ -6,6 +6,9 @@ import UniformTypeIdentifiers
 enum ComposerUploadState: Equatable {
     /// Picked; waiting behind the uploads ahead of it (they run one at a time).
     case waiting
+    /// A video being shrunk before it goes up (VideoCompressor). `progress`
+    /// runs from 0 to 1.
+    case compressing(progress: Double)
     /// Going up. `progress` runs from 0 to 1.
     case uploading(progress: Double)
     /// On an outside server (or picked from the relay): `url` is set.
@@ -19,7 +22,7 @@ enum ComposerUploadState: Equatable {
     var isFinished: Bool {
         switch self {
         case .hosted, .savedOnDevice, .failed: return true
-        case .waiting, .uploading: return false
+        case .waiting, .compressing, .uploading: return false
         }
     }
 }
@@ -136,5 +139,12 @@ final class ComposerNote: ObservableObject {
             return total
         }
         return sum / Double(open.count)
+    }
+
+    /// How far the first video being compressed has got, 0 to 1; nil when
+    /// none is.
+    var compressingProgress: Double? {
+        for a in attachments { if case .compressing(let p) = a.upload { return p } }
+        return nil
     }
 }

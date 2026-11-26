@@ -175,7 +175,10 @@ extension MediaGalleryView {
         }
     }
 
-    func handleUploadFileURLs(_ urls: [URL]) {
+    /// `quality` is Original for the Media tab's own picks (full size, your
+    /// backup); videos shared into the Vault from another app pass Standard
+    /// and go up at 720p (VideoCompressor), as on Android.
+    func handleUploadFileURLs(_ urls: [URL], quality: ImageCompressor.Quality = .original) {
         guard !urls.isEmpty else { return }
 
         let blossom = blossomService
@@ -214,15 +217,32 @@ extension MediaGalleryView {
                         return
                     }
 
+                    var sourceURL = tempDest
+                    var uploadMime = mimeType
+                    if quality == .standard, derivedType.conforms(to: .movie) || derivedType.conforms(to: .video) {
+                        await MainActor.run { MediaUploadNotificationManager.shared.markCompressing(id: notificationId) }
+                        let compressed = await VideoCompressor.compressed(fileAt: tempDest, quality: quality) { fraction in
+                            Task { @MainActor in
+                                MediaUploadNotificationManager.shared.updateCompressing(id: notificationId, progress: fraction)
+                            }
+                        }
+                        await MainActor.run { MediaUploadNotificationManager.shared.markUploading(id: notificationId) }
+                        if let compressed {
+                            sourceURL = compressed
+                            uploadMime = "video/mp4"
+                        }
+                    }
+                    defer { if sourceURL != tempDest { try? FileManager.default.removeItem(at: sourceURL) } }
+
                     // Never upload where it was taken (MediaPrivacy).
-                    guard let uploadURL = await MediaPrivacy.removingLocation(fromFileAt: tempDest) else {
+                    guard let uploadURL = await MediaPrivacy.removingLocation(fromFileAt: sourceURL) else {
                         try? FileManager.default.removeItem(at: tempDest)
                         await MainActor.run {
                             MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: MediaPrivacy.failureMessage)
                         }
                         return
                     }
-                    defer { if uploadURL != tempDest { try? FileManager.default.removeItem(at: uploadURL) } }
+                    defer { if uploadURL != sourceURL { try? FileManager.default.removeItem(at: uploadURL) } }
 
                     guard let sha256 = ComposeView.streamingSHA256(of: uploadURL) else {
                         try? FileManager.default.removeItem(at: tempDest)
@@ -235,7 +255,7 @@ extension MediaGalleryView {
                     let localSuccess = await blossom.saveFromMediaTab(
                         fileURL: uploadURL,
                         sha256: sha256,
-                        contentType: mimeType
+                        contentType: uploadMime
                     ) { progress in
                         Task { @MainActor in
                             MediaUploadNotificationManager.shared.updateProgress(id: notificationId, progress: progress)
