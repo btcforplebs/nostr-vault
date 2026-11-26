@@ -8,6 +8,7 @@ import { SETTINGS_DTAG } from "./first-party.js"
 import { settingsAnswer, settingsHandlers, SETTINGS_TOPIC } from "./settings-answer.js"
 import { sendDelaySeconds, setSendDelaySeconds } from "../net/send-delay.js"
 import { autoplayOn, setAutoplay } from "../net/media-prefs.js"
+import { setUploadQuality, uploadQuality } from "../net/upload-quality.js"
 import { notifyOn, onNotifyPref, permission, setNotifyOn, turnOn } from "../net/notify-watch.js"
 import { readTypes, setType, onTypes } from "../net/notify-prefs.js"
 import { APP_VERSION, APP_COMMIT, commitUrl, SUPPORT_NPUB, PRIVACY_URL } from "../net/settings.js"
@@ -40,7 +41,7 @@ export function SettingsPane({ ctx, page = "" }) {
     ctx.vault.outbox.count({ authors: [ctx.session.pubkey] }).then(setEvents).catch(() => {})
   }, [ctx.session.pubkey])
   useEffect(() => { const a = onNotifyPref(bump), b = onTypes(bump); return () => { a(); b() } }, [])
-  const read = () => ({ keyPage: hasKeyPage(ctx), box: !!BOX, events, kept, sendDelay: sendDelaySeconds(), autoplay: autoplayOn(),
+  const read = () => ({ keyPage: hasKeyPage(ctx), box: !!BOX, events, kept, sendDelay: sendDelaySeconds(), autoplay: autoplayOn(), uploadQuality: uploadQuality(),
     notify: { on: notifyOn() && permission() === "granted", why }, types: readTypes(), copied })
   const latest = useRef(read)
   latest.current = read
@@ -55,6 +56,7 @@ export function SettingsPane({ ctx, page = "" }) {
     set: async (key, value) => {
       if (key === "sendDelay") setSendDelaySeconds(value)
       else if (key === "autoplay") setAutoplay(value)
+      else if (key === "uploadQuality") setUploadQuality(value)
       else if (key === "alert") setType(value.id, value.on)
       else if (key === "notify") {
         setWhy("")

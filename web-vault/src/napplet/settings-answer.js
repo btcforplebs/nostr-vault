@@ -7,7 +7,7 @@
 //                                            of PAGES_HERE
 //   napplet:settings/go { to }            -> a row id, "key" (only with a key in this browser), "box" (box mode), "list", "close",
 //                                            "learn", "docs", "privacy-policy" or "commit"
-//   napplet:settings/set { key, value }   -> sendDelay (a choice), autoplay (true/false), notify (true/false),
+//   napplet:settings/set { key, value }   -> sendDelay (a choice), uploadQuality ("standard"/"original"), autoplay (true/false), notify (true/false),
 //                                            alert { id, on } (an alert type)
 //   napplet:settings/copy { what: "support" } -> the support npub to the clipboard (the shell's)
 // A change comes as inc nv.settings.changed.
@@ -15,6 +15,7 @@ import { SETTINGS_GROUPS, SETTINGS_ICONS, PAGES, SUPPORT_NPUB } from "../net/set
 import { SEND_DELAY_CHOICES, sendDelayNote } from "../net/send-delay.js"
 import { TYPES } from "../net/notify-prefs.js"
 import { helpTopic } from "../net/settings-help.js"
+import { UPLOAD_QUALITY_CHOICES, UPLOAD_QUALITY_FOOTER, uploadQualityNote } from "../net/upload-quality.js"
 
 export const SETTINGS_TOPIC = "nv.settings.changed"
 /** The pages the napplet draws; "" is the list. */
@@ -53,7 +54,8 @@ export function settingsAnswer(page, x, w) {
     return { page: p, title, relaysNote: w.feedRelaysNote, relaysInfo: info("feed.relays"), note: w.feedNote,
       sendDelay: { seconds: x.sendDelay, choices: SEND_DELAY_CHOICES.map(s => ({ value: s, label: choiceLabel(s) })), note: sendDelayNote(x.sendDelay), info: info("post.sendDelay") } }
   }
-  if (p === "media") return { page: p, title, autoplay: { on: !!x.autoplay, note: w.autoplayNote(!!x.autoplay), info: info("media.autoplay") }, cacheNote: w.cacheNote }
+  if (p === "media") return { page: p, title, autoplay: { on: !!x.autoplay, note: w.autoplayNote(!!x.autoplay), info: info("media.autoplay") },
+    uploadQuality: { value: x.uploadQuality, choices: UPLOAD_QUALITY_CHOICES, note: `${uploadQualityNote(x.uploadQuality)} ${UPLOAD_QUALITY_FOOTER}` }, cacheNote: w.cacheNote }
   if (p === "privacy") return { page: p, title, sections: w.privacy.sections.map(s => ({ label: s.label, note: s.note, title: s.title, info: info(s.info) })), note: w.privacy.note }
   return { page: p, title, on: !!x.notify.on, info: info("notify.enable"), alertsInfo: info("notify.perAccount"),
     types: x.notify.on ? TYPES.map(t => ({ id: t.id, title: t.title, on: !!x.types[t.id] })) : [], note: x.notify.why || w.notifyNote }
@@ -88,6 +90,7 @@ export function settingsHandlers(pipe) {
     }),
     h("set", p => {
       if (p.key === "sendDelay" && SEND_DELAY_CHOICES.includes(p.value)) { pipe.ctl.set("sendDelay", p.value); return ok }
+      if (p.key === "uploadQuality" && UPLOAD_QUALITY_CHOICES.some(c => c.value === p.value)) { pipe.ctl.set("uploadQuality", p.value); return ok }
       if ((p.key === "autoplay" || p.key === "notify") && typeof p.value === "boolean") { pipe.ctl.set(p.key, p.value); return ok }
       if (p.key === "alert" && TYPES.some(t => t.id === p.value?.id) && typeof p.value?.on === "boolean") { pipe.ctl.set("alert", { id: p.value.id, on: p.value.on }); return ok }
       return { ok: false, error: "not a setting this page changes" }
