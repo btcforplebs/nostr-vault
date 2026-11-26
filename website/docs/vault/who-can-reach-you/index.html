@@ -80,6 +80,7 @@
                     <li><a href="/docs/messages/">Messages</a></li>
                     <li><a href="/docs/notifications/">How notifications arrive</a></li>
                     <li><a href="/docs/web-of-trust/">Web of trust</a></li>
+                    <li><a href="/docs/web-of-trust/follow-distance/">Follow Distance</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -177,19 +178,18 @@
                     meaning your follows and their follows. A trust card calls that same friend of a friend "2 hops".</p>
 
                 <h3>Minimum Followers</h3>
-                <p>At distance 3, how many of the people you follow must also follow someone before they can reach you.
+                <p>At 2 hops, how many of the people you follow must also follow someone before they can reach you.
                     The default is 3: a friend of a friend gets in once 3 of your follows follow them. Raise it to keep out more
                     strangers, lower it to let more friends of friends in. 0 and 1 both mean one follow is enough. It has no
-                    effect at distance 1 or 2, and your own follows always count, whatever it's set to.</p>
+                    effect at Only you or 1 hop, and your own follows always count, whatever it's set to.</p>
                 <p>A new account that follows fewer people than Minimum Followers would let almost nobody in, so the vault
                     widens it to its follows' follows until the account follows more.</p>
 
                 <h3>With more than one account</h3>
-                <p>The vault's inbox has one trust list for the whole device: it pools the follows of every account on it,
-                    and counts Minimum Followers across them all. What you see is stricter. Since 3.2.2, feeds, the Vault
-                    list, notifications and the WoT globe judge each account by its own follows only. Someone who got in
-                    through another account's follows doesn't show up for this one. See
-                    <a class="inline" href="/docs/web-of-trust/#per-account">Your web of trust</a>.</p>
+                <p>Since 3.3.0 each account has its own Follow Distance and Minimum Followers, and its inbox only lets in
+                    people from that account's own follows. Switch account to see or change its values. Your own accounts on
+                    the device can always reach each other. Refresh Trust List is one setting for the whole device. See
+                    <a class="inline" href="/docs/web-of-trust/follow-distance/#per-account">Follow Distance</a>.</p>
 
                 <h3>Refresh Trust List</h3>
                 <p>How often the vault rebuilds the list from your follows: <strong>Every hour</strong>,
@@ -222,18 +222,20 @@
                 <ul>
                     <li><strong>iPhone and Mac</strong> have the same screen. On the Mac it's in the Settings sidebar.</li>
                     <li><strong>Android</strong> has the same settings, and restarts the vault for you when you change one.</li>
-                    <li><strong>The web</strong> has no trust settings. Its trust list is fixed: everyone your follows follow,
-                        shown as 2 hops on its Vault Dashboard. Its Who Can Reach You settings row opens the browser vault's
+                    <li><strong>The web</strong> has no Follow Distance. Its trust list is always 2 hops, as its Vault Dashboard
+                        says. <span class="path">Settings &rarr; Who Can Reach You</span> has Minimum Followers and Refresh Trust
+                        List, kept in that browser. Its Who Can Reach You settings row opens the browser vault's
                         mesh panel, where <strong>Who can reach this vault</strong> is a list of your own vaults' mesh
                         addresses.</li>
                 </ul>
                 <div class="note">
                     <p><strong>Not getting a mention you expected?</strong> The sender may be too far from you. Follow them, or
-                        raise Follow Distance, then wait for the next trust list refresh.</p>
+                        raise Follow Distance, then wait for the next trust list refresh. What each step means, and the Discovery
+                        Reach slider: <a class="inline" href="/docs/web-of-trust/follow-distance/">Follow Distance</a>.</p>
                 </div>
                 </section>
             </article>
-            <p class="docs-checked">Checked against Nostr Vault 3.2.2 and the web app.</p>
+            <p class="docs-checked">Checked against Nostr Vault 3.3.0 and the web app.</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/vault/"><span>Previous</span>Your vault</a>
                 <a class="next" href="/docs/backup/"><span>Next</span>Backup and restore</a>
