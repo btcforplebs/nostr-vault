@@ -102,7 +102,11 @@ extension FeedService {
     /// connections are left untouched. Absorbs the old `addLocalRelayIfReady`.
     private func ensureRelaySetConnected() {
         if isGlobalLikeMode {
-            loadWotPubkeys()
+            // Off the main thread, and only when the file changed: this runs
+            // about every 5-10 s while Global scrolls (new authors bring new
+            // relay lists), and the synchronous read + re-filter froze a
+            // coasting scroll for 60-97 ms each time (Tom, coast hitch 11-26 #3).
+            Task { [weak self] in await self?.loadWotPubkeysInBackgroundIfChanged() }
         }
 
         refreshOutboxPlan()
