@@ -15,6 +15,8 @@ import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.data.model.QueuedMediaPost
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaPrivacy
+import com.nostrvault.service.media.ImageCompressor
+import com.nostrvault.service.media.ImageHeaders
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -72,15 +74,13 @@ import java.io.File
             // HEIC becomes JPEG (the re-encode also drops its location);
             // anything else keeps its bytes.
             var mimeType = attachment.mimeType
-            if (isHeic(mimeType)) {
-                val jpeg = File.createTempFile("upload_", ".jpg", context.cacheDir)
-                if (convertHeicToJpeg(file, jpeg)) {
+            if (ImageHeaders.isHeic(mimeType)) {
+                val out = ImageCompressor.compress(file, mimeType, ImageCompressor.Quality.STANDARD, context.cacheDir)
+                if (out.file != file) {
                     file.delete()
-                    file = jpeg
-                    tempFile = jpeg
-                    mimeType = JPEG_MIME
-                } else {
-                    jpeg.delete()
+                    file = out.file
+                    tempFile = out.file
+                    mimeType = out.mimeType
                 }
             }
 
