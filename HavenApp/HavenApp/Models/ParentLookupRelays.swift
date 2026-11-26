@@ -12,17 +12,60 @@ enum ParentLookupRelays {
     static let outboxPerAuthor = 3
     static let maxExtra = 8
 
-    /// Ancestor `e` tags (mentions skipped), as the note view fetches them.
+    /// Ancestor `e` tags plus NIP-22 `E` root tags (mentions skipped), as
+    /// the note view fetches them. A comment's root is named only by `E`, and
+    /// often its only usable relay hint sits there (2026-11-26: a Mostr
+    /// thread whose `e` hint was the poster's own 127.0.0.1 relay).
     static func ancestorTags(_ tags: [[String]]) -> [[String]] {
-        tags.filter { $0.count >= 2 && $0[0] == "e" && !($0.count >= 4 && $0[3] == "mention") }
+        tags.filter { $0.count >= 2 && ($0[0] == "e" || $0[0] == "E") && !($0.count >= 4 && $0[3] == "mention") }
+    }
+
+    /// One ancestor pointer read from a tag: its id, a relay hint others
+    /// can reach (nil for none, loopback or LAN), and its author.
+    struct Hint: Equatable {
+        let id: String
+        let relay: String?
+        let author: String?
+    }
+
+    /// Every ancestor's hint, in tag order.
+    static func hints(_ tags: [[String]]) -> [Hint] {
+        ancestorTags(tags).map { tag in
+            Hint(id: tag[1], relay: tag.count >= 3 ? reachableHint(tag[2]) : nil, author: author(in: tag))
+        }
+    }
+
+    /// The tag's author: NIP-10 puts it in the fifth slot, NIP-22 (`e` and
+    /// `E` of a kind 1111) in the fourth, where NIP-10 has its marker. A
+    /// marker is never 64 hex characters, so no kind is needed to tell them.
+    static func author(in tag: [String]) -> String? {
+        if tag.count >= 5, isHexKey(tag[4]) { return tag[4] }
+        if tag.count >= 4, isHexKey(tag[3]) { return tag[3] }
+        return nil
+    }
+
+    /// `raw` when it is a websocket address outsiders can reach. A poster
+    /// running only their phone's own relay writes `ws://127.0.0.1:3355`
+    /// as the hint; asking it reaches our own phone, never theirs.
+    static func reachableHint(_ raw: String) -> String? {
+        let url = raw.trimmingCharacters(in: .whitespaces)
+        let lower = url.lowercased()
+        let rest: Substring
+        if lower.hasPrefix("wss://") { rest = url.dropFirst(6) } else if lower.hasPrefix("ws://") { rest = url.dropFirst(5) } else { return nil }
+        guard !rest.isEmpty, URL(string: url) != nil,
+              !HavenConfig.isPrivateNetworkHost(String(rest)) else { return nil }
+        return url
+    }
+
+    private static func isHexKey(_ s: String) -> Bool {
+        s.utf8.count == 64 && s.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) || (65...70).contains($0) }
     }
 
     /// Authors of the ancestors, from the tags.
     static func authors(tags: [[String]], replyToPubkey: String?) -> [String] {
         var out: [String] = []
-        let ancestors = ancestorTags(tags)
-        for tag in ancestors where tag.count >= 5 && tag[4].count == 64 && !out.contains(tag[4]) {
-            out.append(tag[4])
+        for hint in hints(tags) {
+            if let a = hint.author, !out.contains(a) { out.append(a) }
         }
         if out.isEmpty, let p = replyToPubkey, p.count == 64 { out.append(p) }
         return out
@@ -47,7 +90,7 @@ enum ParentLookupRelays {
                   seen.insert(key(url)).inserted else { return }
             out.append(url)
         }
-        for tag in ancestorTags(tags) where tag.count >= 3 { add(tag[2]) }
+        for hint in hints(tags) { if let relay = hint.relay { add(relay) } }
         for author in authors(tags: tags, replyToPubkey: replyToPubkey) {
             for url in (outbox(author) ?? []).prefix(outboxPerAuthor) { add(url) }
         }

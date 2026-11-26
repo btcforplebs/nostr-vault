@@ -8,14 +8,11 @@ extension NoteDetailView {
         // NIP-10: A reply note includes e-tags for all thread ancestors.
         // Extract ALL ancestor IDs and fetch them in a single batch request
         // instead of chasing parents one-by-one with sequential round-trips.
-        let ancestorIds = note.tags
-            .filter { $0.count >= 2 && $0[0] == "e" }
-            .filter { tag in
-                // Skip explicitly-marked mentions (not thread ancestors)
-                if tag.count >= 4 && tag[3] == "mention" { return false }
-                return true
-            }
-            .map { $0[1] }
+        // Mentions are skipped; a NIP-22 comment's `E` root is included.
+        var ancestorIds: [String] = []
+        for tag in ParentLookupRelays.ancestorTags(note.tags) where !ancestorIds.contains(tag[1]) {
+            ancestorIds.append(tag[1])
+        }
 
         guard !ancestorIds.isEmpty, !isLoadingParents else { return }
         isLoadingParents = true

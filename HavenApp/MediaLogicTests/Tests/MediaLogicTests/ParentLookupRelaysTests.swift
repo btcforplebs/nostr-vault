@@ -36,4 +36,35 @@ final class ParentLookupRelaysTests: XCTestCase {
         XCTAssertEqual(extra.count, ParentLookupRelays.maxExtra)
         XCTAssertFalse(extra.contains("https://not-a-relay"))
     }
+
+    /// 2026-11-26: a Nostr Vault iOS kind 1111 reply in a Mostr thread. Its
+    /// parent `e` hint was the poster's own phone relay; only the `E` root
+    /// named relay.ditto.pub, and the authors sit in the fourth slot.
+    func testCommentRootHintLoopbackSkippedAndSlotFourAuthors() {
+        let root = String(repeating: "e", count: 64), rootAuthor = String(repeating: "a", count: 64)
+        let tags = [
+            ["E", root, "wss://relay.ditto.pub/", rootAuthor], ["K", "1"], ["P", rootAuthor],
+            ["e", parent, "wss://127.0.0.1:3355", author], ["k", "1111"], ["p", author],
+        ]
+        XCTAssertEqual(ParentLookupRelays.hints(tags), [
+            .init(id: root, relay: "wss://relay.ditto.pub/", author: rootAuthor),
+            .init(id: parent, relay: nil, author: author),
+        ])
+        XCTAssertEqual(ParentLookupRelays.authors(tags: tags, replyToPubkey: nil), [rootAuthor, author])
+        XCTAssertEqual(ParentLookupRelays.extraRelays(tags: tags, replyToPubkey: nil, known: []) { _ in nil },
+                       ["wss://relay.ditto.pub/"])
+    }
+
+    func testLANAndLoopbackHintsAreNotReachable() {
+        for raw in ["ws://127.0.0.1:3355", "wss://localhost:4869", "ws://192.168.1.20:3355", "wss://box.local", "ws://[::1]:3355", "wss://10.0.0.4"] {
+            XCTAssertNil(ParentLookupRelays.reachableHint(raw), raw)
+        }
+        XCTAssertEqual(ParentLookupRelays.reachableHint("wss://relay.mostr.pub"), "wss://relay.mostr.pub")
+        XCTAssertNil(ParentLookupRelays.reachableHint("https://relay.mostr.pub"))
+    }
+
+    func testNIP10MarkerIsNotReadAsAuthor() {
+        XCTAssertNil(ParentLookupRelays.author(in: ["e", parent, "wss://a.example", "reply"]))
+        XCTAssertEqual(ParentLookupRelays.author(in: ["e", parent, "wss://a.example", "reply", author]), author)
+    }
 }
