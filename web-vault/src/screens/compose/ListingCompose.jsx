@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "preact/hooks"
 import { publishKind } from "../../net/sync.js"
 import { mediaServers, uploadPhoto } from "../../net/upload.js"
+import { COVER, jpegOrAsIs } from "../../net/image-compress.js"
 import { uniq } from "../../net/pool.js"
 import { Dialog } from "../../components/Moderation.jsx"
 import { canGoBack } from "../../components/nav-depth.js"
@@ -57,7 +58,7 @@ export function ListingCompose({ ctx }) {
     queue.current = queue.current.then(async () => {
       try {
         servers.current ??= await mediaServers(ctx)
-        const up = await uploadPhoto(file, { ctx, servers: servers.current })
+        const up = await uploadPhoto(await jpegOrAsIs(file, COVER), { ctx, servers: servers.current })
         patchPhoto(id, { ...up, status: "done", file: null })
       } catch (e) { patchPhoto(id, { status: "failed", error: String(e?.message ?? e) }) }
     })

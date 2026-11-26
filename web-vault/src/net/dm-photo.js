@@ -4,6 +4,7 @@
 // JPEG at most 2400 px on the long edge (LongFormComposeView.coverJPEG), which leaves its EXIF, location included,
 // behind: the photo is going to one person, not the camera's record of where it was taken.
 import { stripGif } from "./gif-strip.js"
+import { decodeImage, drawImage, fitSize as fit } from "./image-compress.js"
 
 export const MAX_EDGE = 2400
 /** A picked photo before it's cleaned, as the Messages napplet's limit (dm-dispatch.js MAX_PHOTO). */
@@ -18,12 +19,7 @@ export async function isGif(file) {
 }
 
 /** The drawn size: the long edge brought down to `max`, never up. */
-export function fitSize(width, height, max = MAX_EDGE) {
-  const long = Math.max(width, height)
-  if (!(long > max)) return { width, height }
-  const s = max / long
-  return { width: Math.max(1, Math.round(width * s)), height: Math.max(1, Math.round(height * s)) }
-}
+export const fitSize = (width, height, max = MAX_EDGE) => fit(width, height, max)
 
 /**
  * The file to upload for a picked, pasted or dropped photo: a GIF with its metadata blocks stripped, anything else redrawn as a JPEG with no
@@ -44,15 +40,8 @@ export async function preparePhoto(file, { draw = drawJpeg } = {}) {
   return new File([blob], (file.name || "photo").replace(/\.[^.]*$/, "") + ".jpg", { type: "image/jpeg" })
 }
 
+// Drawn by image-compress.js, which every other photo upload uses too.
 async function drawJpeg(file) {
-  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" })
-  const { width, height } = fitSize(bmp.width, bmp.height)
-  const canvas = typeof OffscreenCanvas === "function" ? new OffscreenCanvas(width, height) : Object.assign(document.createElement("canvas"), { width, height })
-  const g = canvas.getContext("2d")
-  g.fillStyle = "#fff" // a transparent PNG becomes white, not black, as a JPEG
-  g.fillRect(0, 0, width, height)
-  g.drawImage(bmp, 0, 0, width, height)
-  bmp.close?.()
-  if (canvas.convertToBlob) return canvas.convertToBlob({ type: "image/jpeg", quality: JPEG_QUALITY })
-  return new Promise(res => canvas.toBlob(res, "image/jpeg", JPEG_QUALITY))
+  const bmp = await decodeImage(file)
+  try { return await drawImage(bmp, { type: "image/jpeg", maxEdge: MAX_EDGE, quality: JPEG_QUALITY }) } finally { bmp.close?.() }
 }

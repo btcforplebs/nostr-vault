@@ -2,6 +2,7 @@
 // as it's picked. A newer pick wins over one still uploading.
 import { useRef } from "preact/hooks"
 import { mediaServers, uploadPhoto } from "../../net/upload.js"
+import { COVER, jpegOrAsIs } from "../../net/image-compress.js"
 
 /** cover: { preview, status: "uploading" | "done" | "failed", url?, error?, file? } or null; `setCover` sets it. */
 export function useCover(ctx, setCover, onPick = () => {}) {
@@ -12,7 +13,7 @@ export function useCover(ctx, setCover, onPick = () => {}) {
     const preview = URL.createObjectURL(file)
     setCover({ preview, status: "uploading", file }); onPick()
     try {
-      const up = await uploadPhoto(file, { ctx, servers: await mediaServers(ctx) })
+      const up = await uploadPhoto(await jpegOrAsIs(file, COVER), { ctx, servers: await mediaServers(ctx) })
       if (no === pickNo.current) setCover({ ...up, preview, status: "done" })
     } catch (e) {
       if (no === pickNo.current) setCover({ preview, status: "failed", file, error: String(e?.message ?? e) })
