@@ -1,46 +1,111 @@
-# Nostr Vault
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/readme/icon-dark.png">
+    <img src=".github/readme/icon-light.png" width="128" height="128" alt="Nostr Vault app icon">
+  </picture>
+</p>
+
+<h1 align="center">Nostr Vault</h1>
+
+<p align="center">
+  Your own Nostr relay, on your own devices.<br>
+  <a href="https://nostrvault.app">nostrvault.app</a> · <a href="https://nostrvault.app/docs/">User guide</a> · <a href="https://nostrvault.app/docs/whats-new/">What's new in 3.3.0</a>
+</p>
 
 Nostr Vault is a Nostr app that runs your own relay on your own device. Your notes, follows, messages and media are
 kept on your phone or computer first, then sent to the relays and media servers you choose. The people you follow
 decide who shows up in your feeds, and you decide what reaches each relay.
 
-Website and user guide: [nostrvault.app](https://nostrvault.app) and [nostrvault.app/docs](https://nostrvault.app/docs/)
+<p align="center">
+  <img src=".github/readme/iphone-my-web.webp" width="270" alt="My Web on iPhone: everyone in your web, with the Hop 2 to Hop 5 rings">
+  &nbsp;
+  <img src=".github/readme/iphone-vault.webp" width="270" alt="The Vault tab on iPhone: replies, reactions and zaps kept on your device">
+</p>
 
 ## Get it
+
+The current release is **3.3.0**.
 
 | Platform | Where | Needs |
 |---|---|---|
 | iPhone and iPad | [App Store](https://apps.apple.com/us/app/nostr-vault/id6759681282) | iOS / iPadOS 17 or later |
-| Mac | [Mac App Store](https://apps.apple.com/us/app/nostr-vault/id6759681282) | macOS 14 or later |
-| Android | [Zapstore](https://zapstore.dev/apps/com.nostrvault.app), or the APK on [GitHub releases](https://github.com/btcforplebs/nostr-vault/releases/latest) | Android 8 or later |
-| Web | [nostrvault.app/vault](https://nostrvault.app/vault/) | A modern browser, nothing to install |
-| Linux box | [linux/README.md](linux/README.md) (one Docker container) | Raspberry Pi 4/5, mini PC or home server |
+| Mac | [Mac App Store](https://apps.apple.com/us/app/nostr-vault/id6759681282) | macOS 14 (Sonoma) or later |
+| Android | [Zapstore](https://zapstore.dev/apps/com.nostrvault.app), or the APK on [GitHub releases](https://github.com/btcforplebs/nostr-vault/releases/latest) | Android 8 or later. Take the APK without `32bit` in its name; if Android says the app isn't compatible (some older budget phones), take the `-32bit.apk` |
+| Web | [nostrvault.app/vault](https://nostrvault.app/vault/) | Chrome, Edge, Firefox or Safari 16.4+, nothing to install |
+| Linux | [Packages on the v3.3.0 release](https://github.com/btcforplebs/nostr-vault/releases/tag/v3.3.0), steps in [Get started on Linux](https://nostrvault.app/docs/start/linux/) | A 64-bit machine (arm64 or amd64): a Raspberry Pi 4/5, mini PC, home server or desktop |
+
+Nostr Vault for Linux comes as:
+
+- **.deb** for Debian 12+, Ubuntu 22.04+ and Raspberry Pi OS 12 (64-bit)
+- **.rpm** for Fedora
+- **Arch** package (`.pkg.tar.zst`), for Arch Linux and Arch Linux ARM
+- **Alpine** apk for Alpine 3.22+ (OpenRC, no window)
+- **Flatpak** for any desktop, such as a Steam Deck (no mesh for now)
+- **Nix** flake with a NixOS module: `github:btcforplebs/nostr-vault/v3.3.0`
+- **Docker**: the box image `ghcr.io/btcforplebs/nostr-vault-linux`, which the **Umbrel** and **Start9** packages
+  run ([linux/README.md](linux/README.md))
+
+On a desktop it has a window and a tray icon. On a box with no screen, you open it from your phone or browser.
 
 ## What it does
 
 - **Your own relay.** Every app carries a full Nostr relay (the Go relay from [Haven](https://github.com/bitvora/haven),
   built into the app as a library). Everything you post, receive and save is stored there first. On the web the
   same relay runs in the page as WebAssembly, so your notes stay in your browser, not on a server.
-- **A pocket relay or a home relay.** On a phone the relay is a private backup and a megaphone: it keeps a complete
-  copy and pushes your posts out, and nothing on the network can reach in. On a Mac that stays on, with a domain
-  such as `relay.yourdomain.com`, it is a full public relay that your phone, your friends and other relays can read.
+- **Desktop Vaults.** Keep as many Macs and Linux boxes as you like as always-on vaults, each reached over the mesh,
+  by web address, or both. Settings › Desktop Vaults shows each one's status and lets you add, move or delete them.
+  Your phone stays light, and your full history lives at home.
+  ([Desktop Vaults](https://nostrvault.app/docs/mesh/desktop-vaults/))
 - **A private mesh between your devices.** Show a code on one device and scan it with the other, and they are linked
   over [FIPS](https://github.com/jmcorgan/fips), an encrypted peer-to-peer mesh. No public IP, port forwarding,
   domain or VPN needed. Your devices sync over it, a new phone can copy your whole vault across, and media can be
-  read straight from your own devices. The protocol is written up in [docs/NIP-F1.md](docs/NIP-F1.md).
+  read straight from your own devices. Your devices sign with their own mesh keys, never your account key. The
+  protocol is written up in [docs/NIP-F1.md](docs/NIP-F1.md).
 - **Web of trust, on by default.** Global feeds, search and notifications are filtered by the follow graph of the
-  people you follow, so you see accounts your graph can vouch for instead of the raw firehose. You can see who
-  vouches for anyone, drawn as a globe. Mute lists sync, and Report and Block are on every post.
-- **Your media, kept by you.** Photos and videos are kept in your own media library and copied to the
+  people you follow, so you see accounts your graph can vouch for instead of the raw firehose. Your web is drawn as
+  a globe you can explore, Mute lists sync, and Report and Block are on every post.
+- **A trust rank and Hop rings.** Your always-on Desktop Vault reads the follow lists around you in the background and
+  ranks everyone up to six hops out from 0 to 100, then hands the result to your phones so they never do the heavy
+  work. My Web has rings for Hop 2 through Hop 5: pick one and the globe zooms out to it, and a far hop becomes its
+  own spinning sphere. A profile shows how many hops away someone is, and **Why?** shows who links you.
+  ([The far rings](https://nostrvault.app/docs/web-of-trust/#far-rings))
+- **Your media, kept by you.** Photos and videos go into your own media library and are copied to the
   [Blossom](https://github.com/hzrd149/blossom) media servers you pick. The app runs its own Blossom server too.
+  Uploads are smaller by default: photos are brought down to 2048 pixels as JPEG with the camera details and location
+  removed, and on iPhone, iPad, Mac and Android videos go up at 720p. Pick **Original** under Upload Quality to send
+  files as they are; your Media tab always keeps the originals.
+  ([Upload Quality](https://nostrvault.app/docs/media/#upload-quality))
+- **htree photos.** Photos with an `htree://` (Iris hashtree) address show and save, up to 2 MiB, in every app.
+  ([htree photos](https://nostrvault.app/docs/media/#htree-photos))
 - **Keys that never sit in plain text.** Your key is encrypted with NIP-49 and its password kept in the system
-  keychain, or kept out of the app entirely with a NIP-46 remote signer (bunker). On the web, sign in with a
-  NIP-07 extension or a bunker.
+  keychain, or kept out of the app entirely with a NIP-46 remote signer (bunker). Sign in by scanning a Nostr
+  Connect code with Amber or another signer. Every app refuses to publish a note that contains an nsec.
 - **Everything else you expect.** Private messages (NIP-17, with NIP-04 for older apps), zaps through Nostr Wallet
   Connect, threads, articles, live streams, polls, marketplace listings, music and short videos. Notifications are
-  made on the device from your own relay, with no push server.
+  made on the device from your own relay, with no push server. Light and dark mode, with an accent colour that the
+  app icon follows on iPhone, iPad and Mac.
 - **Backups you hold.** Export your notes as JSONL and your media as files, and import them on another device.
   Every version of your follow list, mute list and bookmarks is kept, so a list another app wiped can come back.
+
+<p align="center">
+  <img src=".github/readme/accent-orange.png" width="48" alt="Orange">
+  <img src=".github/readme/accent-gold.png" width="48" alt="Gold">
+  <img src=".github/readme/accent-green.png" width="48" alt="Green">
+  <img src=".github/readme/accent-teal.png" width="48" alt="Teal">
+  <img src=".github/readme/accent-blue.png" width="48" alt="Blue">
+  <img src=".github/readme/accent-purple.png" width="48" alt="Purple">
+  <img src=".github/readme/accent-pink.png" width="48" alt="Pink">
+  <img src=".github/readme/accent-red.png" width="48" alt="Red">
+</p>
+
+### On a Mac and on a Linux box
+
+<p align="center">
+  <img src=".github/readme/mac-media.webp" width="820" alt="Nostr Vault on the Mac: the Media page inside Vault, with Photo, Video, GIF and Audio filters">
+</p>
+<p align="center">
+  <img src=".github/readme/linux-box.webp" width="820" alt="A Linux box's vault in the browser, with the live vault list beside it">
+</p>
 
 ## Repository layout
 
@@ -101,6 +166,9 @@ Without a release keystore the APK is unsigned. To sign it, put `KEYSTORE_PATH`,
 and `KEY_PASSWORD` in `NostrVault/local.properties`. Debug and release builds share an app id but not a signing key,
 so installing one over the other erases the keys stored on the phone. Use the same kind each time.
 
+The published APKs, 64-bit and 32-bit, are built with
+`./scripts/release_all.sh --skip-ios --skip-macos --skip-publish`, which builds everything the release carries.
+
 ### Web app
 
 ```sh
@@ -112,7 +180,8 @@ npm test
 
 ### Linux box
 
-See [linux/README.md](linux/README.md) to install it or build the Docker image.
+See [linux/README.md](linux/README.md) for the services, the packages (`packaging/`) and the Docker image.
+On Nix: `nix build github:btcforplebs/nostr-vault/v3.3.0`, or the NixOS module in `flake.nix` (`nix/`).
 
 ## Documentation
 
