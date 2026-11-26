@@ -158,7 +158,7 @@ extension FeedService {
         defer { applyPendingFollowActions() }
         // Every load ends here (answered or timed out). A key setup just
         // made has no list anywhere, so "none found" is known for it.
-        if followedPubkeys.isEmpty, FreshAccountKeys.isFresh(ConfigService.shared.activeAccountHexPubkey) {
+        if followedPubkeys.isEmpty, FreshAccountKeys.isFresh(ConfigService.shared.activeAccountHexPubkey, kind: 3) {
             contactListConfirmed = true
         }
         if followedPubkeys.isEmpty {

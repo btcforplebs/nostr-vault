@@ -85,6 +85,8 @@ final class InterestListService: ObservableObject {
         var published = next
         published.createdAt = max(event.created_at, list.createdAt + 1)
         accept(published)
+        // It has an interest list now: the next save must find it.
+        FreshAccountKeys.clear(hex, kind: 10015)
         NostrService.shared.postEvent(event)
         return true
     }
@@ -113,7 +115,7 @@ final class InterestListService: ObservableObject {
                 asked: lookup.asked, answered: lookup.answered, answeredBy: lookup.answeredBy,
                 from: lookup.from, ahead: lookup.ahead)
             switch InterestList.saveBase(found, held: self.list, own: NostrService.ownListRelays(for: hex),
-                                         fresh: FreshAccountKeys.isFresh(hex)) {
+                                         fresh: FreshAccountKeys.isFresh(hex, kind: 10015)) {
             case .list(let newest):
                 if newest.createdAt >= self.list.createdAt { self.accept(newest) }
             case .none:

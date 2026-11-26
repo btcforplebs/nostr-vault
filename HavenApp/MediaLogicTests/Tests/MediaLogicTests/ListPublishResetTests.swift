@@ -17,7 +17,7 @@ final class ListPublishResetTests: XCTestCase {
 
         defaults.set(["https://blossom.example"], forKey: "serverListManaged.abc")
         defaults.set(Data("{}".utf8), forKey: "interestList.abc")
-        FreshAccountKeys.mark("abc", defaults: defaults)
+        FreshAccountKeys.mark("abc", kinds: FreshAccountKeys.newAccountKinds, defaults: defaults)
         defaults.set("kept", forKey: "serverListStamps.v2")
         defaults.set("kept", forKey: "somethingElse")
 
@@ -27,7 +27,7 @@ final class ListPublishResetTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
         XCTAssertNil(defaults.object(forKey: "serverListManaged.abc"), "the next 10063 edit must not drop servers as removed here")
         XCTAssertNil(defaults.object(forKey: "interestList.abc"))
-        XCTAssertFalse(FreshAccountKeys.isFresh("abc", defaults: defaults), "a restored key is asked about on the network")
+        XCTAssertFalse(FreshAccountKeys.isFresh("abc", kind: 3, defaults: defaults), "a restored key is asked about on the network")
         XCTAssertEqual(defaults.string(forKey: "serverListStamps.v2"), "kept")
         XCTAssertEqual(defaults.string(forKey: "somethingElse"), "kept")
     }
