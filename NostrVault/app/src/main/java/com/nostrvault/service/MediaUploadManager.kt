@@ -3,6 +3,7 @@ package com.nostrvault.service
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import com.nostrvault.service.media.ImageCompressor
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.ui.notification.NotificationManager
@@ -107,7 +108,12 @@ class MediaUploadManager @Inject constructor(
                 return
             }
 
-            val contentType = contentResolver.getType(uri) ?: "application/octet-stream"
+            // A shared photo is shrunk before it goes up (2048 px JPEG, no metadata).
+            val compressed = ImageCompressor.replacing(tempFile,
+                contentResolver.getType(uri) ?: "application/octet-stream",
+                ImageCompressor.Quality.STANDARD, mediaCacheService.cacheDirectory)
+            tempFile = compressed.file
+            val contentType = compressed.mimeType
             if (!MediaPrivacy.removeLocation(tempFile, contentType)) {
                 notificationManager.markUploadFailed(uploadId, MediaPrivacy.FAILURE_MESSAGE)
                 return

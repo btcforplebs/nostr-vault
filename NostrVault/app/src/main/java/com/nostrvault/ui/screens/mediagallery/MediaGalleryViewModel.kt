@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.service.media.ImageCompressor
 import com.nostrvault.service.readsForeignUri
 import android.net.Uri
 import android.util.Log
@@ -474,7 +475,11 @@ class MediaGalleryViewModel @Inject constructor(
                 return false
             }
 
-            val contentType = contentResolver.getType(uri) ?: "application/octet-stream"
+            // Your Vault keeps full quality (Logen 2026-11-26): Original keeps
+            // every byte; only the location comes out, below.
+            val kept = ImageCompressor.compress(tempFile!!, contentResolver.getType(uri) ?: "application/octet-stream",
+                ImageCompressor.Quality.ORIGINAL, mediaCacheService.cacheDirectory)
+            val contentType = kept.mimeType
             if (!withContext(Dispatchers.IO) { MediaPrivacy.removeLocation(tempFile!!, contentType) }) {
                 notificationManager.markUploadFailed(uploadId, MediaPrivacy.FAILURE_MESSAGE)
                 return false

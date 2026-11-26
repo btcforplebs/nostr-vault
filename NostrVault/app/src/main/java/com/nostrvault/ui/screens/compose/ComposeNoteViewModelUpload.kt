@@ -16,7 +16,6 @@ import com.nostrvault.data.model.QueuedMediaPost
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.service.media.ImageCompressor
-import com.nostrvault.service.media.ImageHeaders
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -71,17 +70,14 @@ import java.io.File
                 }
             }
 
-            // HEIC becomes JPEG (the re-encode also drops its location);
-            // anything else keeps its bytes.
+            // A photo is shrunk to 2048 px JPEG with no metadata (HEIC
+            // included); a video keeps its bytes.
             var mimeType = attachment.mimeType
-            if (ImageHeaders.isHeic(mimeType)) {
-                val out = ImageCompressor.compress(file, mimeType, ImageCompressor.Quality.STANDARD, context.cacheDir)
-                if (out.file != file) {
-                    file.delete()
-                    file = out.file
-                    tempFile = out.file
-                    mimeType = out.mimeType
-                }
+            if (!attachment.isVideo) {
+                val out = ImageCompressor.replacing(file, mimeType, ImageCompressor.Quality.STANDARD, context.cacheDir)
+                file = out.file
+                tempFile = out.file
+                mimeType = out.mimeType
             }
 
             // The location comes out before the hash: the blob is public

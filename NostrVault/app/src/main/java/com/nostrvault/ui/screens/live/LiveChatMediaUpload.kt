@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaPrivacy
+import com.nostrvault.service.media.ImageCompressor
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -36,12 +37,14 @@ class LiveChatMediaUpload @Inject constructor(
      * `file://` URI has no type the content resolver can tell.
      */
     suspend fun upload(uri: Uri, mimeType: String? = null): Outcome = withContext(Dispatchers.IO) {
-        val mime = mimeType ?: context.contentResolver.getType(uri) ?: "application/octet-stream"
-        val temp = File.createTempFile("livechat_", ".tmp", context.cacheDir)
+        var mime = mimeType ?: context.contentResolver.getType(uri) ?: "application/octet-stream"
+        var temp = File.createTempFile("livechat_", ".tmp", context.cacheDir)
         try {
             val input = context.contentResolver.openInputStream(uri)
                 ?: return@withContext Outcome.Failed("Couldn't read that file.")
             input.use { i -> temp.outputStream().use { i.copyTo(it) } }
+            // A photo is shrunk (2048 px JPEG, no metadata); GIFs and videos keep their bytes.
+            ImageCompressor.replacing(temp, mime, ImageCompressor.Quality.STANDARD, context.cacheDir).let { temp = it.file; mime = it.mimeType }
             if (!MediaPrivacy.removeLocation(temp, mime)) return@withContext Outcome.Failed(MediaPrivacy.FAILURE_MESSAGE)
             val sha256 = blossomService.computeSHA256(temp)
             // Signed by the account the chat message goes out as, not the owner (Logen 2026-11-01).

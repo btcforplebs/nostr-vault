@@ -178,4 +178,28 @@ class ImageCompressorTest {
         assertNull(ImageHeaders.jpegWithoutMetadata(soi + byteArrayOf(0xFF.toByte(), 0xE1.toByte(), 0x7F, 0x00)))
         assertNull(ImageHeaders.jpegWithoutMetadata(soi + app0 + sos)) // no end marker
     }
+
+    // Callers
+
+    @Test fun aVideoOrOtherFileIsNeverOpenedAndNeverDeleted() {
+        val video = java.io.File.createTempFile("clip", ".mp4").apply { writeBytes(ByteArray(16)) }
+        try {
+            val out = ImageCompressor.replacing(video, "video/mp4", Quality.STANDARD, video.parentFile!!)
+            assertEquals(ImageCompressor.Output(video, "video/mp4"), out)
+            assertTrue(video.exists())
+        } finally {
+            video.delete()
+        }
+    }
+
+    @Test fun originalHandsBackTheSameFile() {
+        val photo = java.io.File.createTempFile("photo", ".jpg").apply { writeBytes(ByteArray(16)) }
+        try {
+            assertEquals(ImageCompressor.Output(photo, "image/heic"),
+                ImageCompressor.replacing(photo, "image/heic", Quality.ORIGINAL, photo.parentFile!!))
+            assertTrue(photo.exists())
+        } finally {
+            photo.delete()
+        }
+    }
 }
