@@ -14,3 +14,6 @@ func noteCopyDeleteAuth(context.Context, *nostr.Event, string, string) (bool, st
 }
 
 func keepOwnCopyDelete(string) {}
+
+// The browser vault builds no copies, so there is nothing to sweep (copyv2_sweeper.go).
+func startCopySweeper(context.Context) {}
