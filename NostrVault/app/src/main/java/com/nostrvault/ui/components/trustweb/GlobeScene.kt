@@ -78,6 +78,8 @@ internal class GlobeScene(
         private set
     /** Bumped every tick and every load, so drawing and placement re-run. */
     private val frameCount = mutableLongStateOf(0L)
+    /** This frame's number, read as Compose state so a reader redraws each frame. */
+    internal val frame: Long get() = frameCount.longValue
     private val version = mutableIntStateOf(0)
 
     val camera = GlobeCamera()
@@ -328,9 +330,13 @@ internal class GlobeScene(
         wake()
     }
 
-    /** Turn toward someone tapped, before their globe has loaded. */
-    fun turn(key: String) {
-        camera.fly(GlobeCamera.facing(TrustMap.direction(key)), nowSeconds())
+    /**
+     * Turn toward someone tapped, before their globe has loaded. [on] is where
+     * they sit when that is not their spot on this globe (a picked hop's
+     * sphere, [GlobeHopSphere.direction]).
+     */
+    fun turn(key: String, on: Vec3? = null) {
+        camera.fly(GlobeCamera.facing(on ?: TrustMap.direction(key)), nowSeconds())
         wake()
     }
 
@@ -380,7 +386,11 @@ internal class GlobeScene(
     fun focus(layer: TrustMap.Layer, zoomsToRings: Boolean = false) {
         weightTarget = TrustMap.layerWeights(layer)
         if (Motion.isReduced) weights = weightTarget
-        ringZoomTarget = if (zoomsToRings) GlobeRingZoom.level(layer.hop) else 0.0
+        val target = if (zoomsToRings) GlobeRingZoom.level(layer.hop) else 0.0
+        // A hop's sphere puts its best people on the side that faces you at
+        // rest ([GlobeSphereField.pole]): turn back to rest as it zooms out.
+        if (target > 0 && target != ringZoomTarget && hasLoaded) reset()
+        ringZoomTarget = target
         if (Motion.isReduced) ringZoom = ringZoomTarget
         wake()
     }
@@ -529,9 +539,9 @@ internal class GlobeScene(
 
     /** Closest front-facing face to a tap, within reach of a fingertip. Zoomed in, plain stars can be tapped too. */
     fun hit(tap: Offset, w: Float, h: Float, density: Float): String? {
-        // Zoomed out to a ring, the globe is drawn shrunk and sunk ([GlobeRingZoom.unsink]).
-        val shrink = GlobeRingZoom.innerDrawScale(ringZoom, w.toDouble(), h.toDouble()).toFloat()
-        val at = GlobeRingZoom.unsink(tap.x, tap.y, w, h, ringZoom).let { Offset(it.first, it.second) }
+        // Zoomed out to a ring, the globe is drawn shrunk in place ([GlobeRingZoom.unnest]).
+        val shrink = GlobeRingZoom.innerDrawScale(ringZoom).toFloat()
+        val at = GlobeRingZoom.unnest(tap.x, tap.y, w, h, ringZoom).let { Offset(it.first, it.second) }
         val project = Projector(camera, w, h, phone)
         var best: String? = null
         var bestDistance = Double.MAX_VALUE
@@ -643,8 +653,8 @@ internal class GlobeScene(
         originY = origin.y
         coreR = 22 * k * core.scale * min(zoom, 1.8) * density
         ready = true
-        // Shrunk and sunk to an outer ring, more of the globe fits: keep what now lands on screen.
-        val grow = GlobeRingZoom.cullGrow(ringZoom, w.toDouble(), h.toDouble())
+        // Shrunk to an outer ring, more of the globe fits: keep what now lands on screen.
+        val grow = GlobeRingZoom.cullGrow(ringZoom)
         val padX = 8 * density + w * grow
         val padY = 8 * density + h * grow
 

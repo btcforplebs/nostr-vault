@@ -22,18 +22,18 @@ class GlobeRingZoomTest {
     @Test fun `level zero is the globe as it was`() {
         assertEquals(1.0, GlobeRingZoom.innerScale(0.0), 0.0)
         assertEquals(1.0, GlobeRingZoom.innerAlpha(0.0), 0.0)
-        assertEquals(outline * 1.72, GlobeRingZoom.radius(3, 0.0, outline, half), 1e-9)
-        assertEquals(outline * (1.72 + 2 * 0.26), GlobeRingZoom.radius(5, 0.0, outline, half), 1e-9)
+        assertEquals(outline * 1.72, GlobeRingZoom.radius(3, 0.0, outline), 1e-9)
+        assertEquals(outline * (1.72 + 2 * 0.26), GlobeRingZoom.radius(5, 0.0, outline), 1e-9)
         for (hop in 3..5) {
             assertEquals(1.0, GlobeRingZoom.visibility(hop, 0.0), 0.0)
             assertEquals(0.0, GlobeRingZoom.emphasis(hop, 0.0), 0.0)
         }
     }
 
-    @Test fun `the picked ring fills the frame and the globe shrinks and fades`() {
+    @Test fun `the picked sphere is the Hop 2 globe's size and the globe shrinks and fades`() {
         for (hop in 3..5) {
             val level = GlobeRingZoom.level(hop)
-            assertEquals(GlobeRingZoom.FIT * half, GlobeRingZoom.radius(hop, level, outline, half), 1e-9)
+            assertEquals("the picked sphere is the Hop 2 globe's size", outline, GlobeRingZoom.radius(hop, level, outline), 1e-9)
             assertEquals(1.0, GlobeRingZoom.emphasis(hop, level), 0.0)
             assertEquals(1.0, GlobeRingZoom.visibility(hop, level), 0.0)
             assertTrue(GlobeRingZoom.innerScale(level) < 0.5)
@@ -42,22 +42,30 @@ class GlobeRingZoomTest {
         assertTrue(GlobeRingZoom.innerScale(1.0) > GlobeRingZoom.innerScale(3.0))
     }
 
-    @Test fun `rings inside the picked one close in and ones past it go`() {
-        fun r(hop: Int) = GlobeRingZoom.radius(hop, 3.0, outline, half)
+    @Test fun `rings inside the picked one close in`() {
+        fun r(hop: Int) = GlobeRingZoom.radius(hop, 3.0, outline)
         assertTrue(GlobeRingZoom.innerOutline(3.0, outline) < r(3))
         assertTrue(r(3) < r(4) && r(4) < r(5))
         assertEquals("evenly spaced", r(4) - r(3), r(5) - r(4), 1e-9)
         assertEquals(GlobeRingZoom.INSIDE_ALPHA, GlobeRingZoom.visibility(3, 3.0), 0.0)
-        assertEquals(0.0, GlobeRingZoom.visibility(5, 1.0), 0.0)
         assertEquals(0.0, GlobeRingZoom.emphasis(3, 3.0), 0.0)
+    }
+
+    @Test fun `rings past the picked one stay round its sphere`() {
+        fun r(hop: Int) = GlobeRingZoom.radius(hop, 1.0, outline)
+        assertEquals("Hop 4 round Hop 3", GlobeRingZoom.PAST_ALPHA, GlobeRingZoom.visibility(4, 1.0), 0.0)
+        assertEquals("Hop 5 round Hop 4", GlobeRingZoom.PAST_ALPHA, GlobeRingZoom.visibility(5, 2.0), 0.0)
+        assertTrue(r(3) < r(4) && r(4) < r(5))
+        assertTrue("on screen round the sphere", r(4) < half)
+        assertEquals("drawn as a flat ring", 0.0, GlobeRingZoom.sphere(4, 1.0), 0.0)
     }
 
     @Test fun `it eases smoothly between levels`() {
         for (hop in 3..5) {
-            var last = GlobeRingZoom.radius(hop, 0.0, outline, half)
+            var last = GlobeRingZoom.radius(hop, 0.0, outline)
             for (step in 1..300) {
                 val level = step / 100.0
-                val now = GlobeRingZoom.radius(hop, level, outline, half)
+                val now = GlobeRingZoom.radius(hop, level, outline)
                 assertTrue("hop $hop jumped at $level", abs(now - last) < 6)
                 last = now
             }

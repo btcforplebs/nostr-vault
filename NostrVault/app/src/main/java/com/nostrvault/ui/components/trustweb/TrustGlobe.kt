@@ -202,7 +202,8 @@ internal fun TrustGlobe(
 
     LaunchedEffect(filterLit) { scene.filter(filterLit) }
 
-    LaunchedEffect(focus) { focus?.let { scene.turn(it) } }
+    // Someone on a picked hop's sphere: turn to their spot there, not on the inner globe.
+    LaunchedEffect(focus) { focus?.let { scene.turn(it, if (showsOuterRings) GlobeHopSphere.direction(it) else null) } }
 
     LaunchedEffect(focus, focusBridges) { scene.trace(focus, focusBridges) }
 
@@ -237,7 +238,15 @@ internal fun TrustGlobe(
                 detectTapGestures(
                     onDoubleTap = { scene.reset() },
                     onTap = { at ->
-                        val key = scene.hit(at, size.width.toFloat(), size.height.toFloat(), density)
+                        val w = size.width.toFloat()
+                        val h = size.height.toFloat()
+                        // A hop's sphere is in front, except over the inner globe
+                        // nested in its middle: there the globe's own faces come first.
+                        val key = when {
+                            !showsOuterRings -> scene.hit(at, w, h, density)
+                            GlobeHopSphere.inHole(at.x, at.y) -> scene.hit(at, w, h, density) ?: GlobeHopSphere.hit(at.x, at.y)
+                            else -> GlobeHopSphere.hit(at.x, at.y) ?: scene.hit(at, w, h, density)
+                        }
                         if (key == null) {
                             currentOnEmptyTap()
                         } else {
@@ -311,21 +320,18 @@ internal fun TrustGlobe(
         val outer = if (showsOuterRings) rememberTrustMapOuter() else null
         outer?.let {
             Canvas(Modifier.fillMaxSize()) {
-                GlobeOuterRings.draw(this, it, scene.camera.zoom, phone, textMeasurer, scene.ringZoom, lite)
+                GlobeOuterRings.draw(this, it, scene.camera.zoom, phone, textMeasurer, scene.ringZoom)
             }
         }
         // Zoomed out to an outer ring (a Hop layer), the whole inner globe,
-        // faces too, shrinks round the middle, sinks down and fades ([GlobeRingZoom.sink]).
+        // faces too, shrinks in place round the middle and fades ([GlobeRingZoom.nest]).
         Box(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    val w = size.width.toDouble()
-                    val h = size.height.toDouble()
-                    val shrink = GlobeRingZoom.innerDrawScale(scene.ringZoom, w, h).toFloat()
+                    val shrink = GlobeRingZoom.innerDrawScale(scene.ringZoom).toFloat()
                     scaleX = shrink
                     scaleY = shrink
-                    translationY = GlobeRingZoom.innerSink(scene.ringZoom, w, h).drop.toFloat()
                     alpha = GlobeRingZoom.innerAlpha(scene.ringZoom).toFloat()
                 },
         ) {
@@ -392,5 +398,7 @@ internal fun TrustGlobe(
 
         Canvas(Modifier.fillMaxSize()) { scene.drawLabels(this, textMeasurer, currentName) }
         }
+        // A picked hop's sphere over the nested globe, turned by the same camera.
+        outer?.let { GlobeHopSphereLayer(scene, it, layer, phone, lite, profiles, focus, onNeedProfiles) }
     }
 }
