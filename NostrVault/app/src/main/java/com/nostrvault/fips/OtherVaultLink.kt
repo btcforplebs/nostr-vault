@@ -55,8 +55,8 @@ class OtherVaultLink internal constructor(
      * acefaeee). [store] keeps the newest one, the one an engine or app restart brings back.
      */
     private class Link(val server: ServerSocket, val token: String, @Volatile var until: Long) {
-        /** The current ingress for the npub (`host:port`), cached so a dial per connection doesn't open a port each. */
-        @Volatile var target: InetSocketAddress? = null
+        /** The current ingress for the npub, cached so a dial per connection doesn't open a port each. */
+        @Volatile var target: Ingress? = null
         val open: Boolean get() = !server.isClosed
     }
 
@@ -183,28 +183,36 @@ class OtherVaultLink internal constructor(
         }.getOrNull()
         // Past its day the address forwards nothing, even before the next open or restart lets it go (Tron, #2550).
         val rewritten = line?.takeIf { OtherVaultCopy.open(l.until, clock()) }?.let { withoutToken(it, token) }
-        val upstream = rewritten?.let { connect(l, npub) }
-        if (rewritten == null || upstream == null) {
+        val (upstream, ingress) = rewritten?.let { connect(l, npub) } ?: (null to null)
+        if (rewritten == null || upstream == null || ingress == null) {
             runCatching { client.close() }
             return
         }
+        // The engine's own per-port token goes back on the path, or it refuses the request (Tao, nv-android c1389f08).
+        val forwarded = withIngressPath(rewritten, ingress.path) ?: run {
+            runCatching { client.close() }
+            runCatching { upstream.close() }
+            return
+        }
         try {
-            upstream.getOutputStream().write(rewritten.toByteArray(Charsets.ISO_8859_1))
+            upstream.getOutputStream().write(forwarded.toByteArray(Charsets.ISO_8859_1))
         } catch (e: Exception) {
             runCatching { client.close() }
             runCatching { upstream.close() }
             return
         }
         thread(name = "other-vault-link-up", isDaemon = true) { pipe(client.getInputStream(), upstream.getOutputStream(), upstream, client) }
-        pipe(upstream.getInputStream(), client.getOutputStream(), client, upstream)
+        val answered = pipe(upstream.getInputStream(), client.getOutputStream(), client, upstream)
+        // The engine logs its refusal to stderr only, which logcat never shows: a close with no answer is one.
+        if (answered == 0L) Log.w(TAG, "other vault refused the request: closed with no answer")
     }
 
     /** The cached ingress, else a fresh dial; once more on a refused connect (the engine restarted). */
-    private fun connect(l: Link, npub: String): Socket? {
+    private fun connect(l: Link, npub: String): Pair<Socket, Ingress>? {
         repeat(2) {
             val t = l.target ?: resolve(npub)?.also { l.target = it } ?: return null
             try {
-                return Socket().apply { connect(t, CONNECT_TIMEOUT_MS) }
+                return Socket().apply { connect(t.address, CONNECT_TIMEOUT_MS) } to t
             } catch (e: Exception) {
                 l.target = null
             }
@@ -213,19 +221,31 @@ class OtherVaultLink internal constructor(
         return null
     }
 
-    private fun resolve(npub: String): InetSocketAddress? {
+    /** The ingress's loopback port and its token path (`/<token>`): the engine refuses a request without it. */
+    private class Ingress(val address: InetSocketAddress, val path: String)
+
+    private fun resolve(npub: String): Ingress? {
         val uri = dial(npub)?.let { runCatching { URI(it) }.getOrNull() } ?: return null
         if (uri.port <= 0) return null
-        return InetSocketAddress(InetAddress.getLoopbackAddress(), uri.port)
+        return Ingress(InetSocketAddress(InetAddress.getLoopbackAddress(), uri.port), uri.rawPath.orEmpty().trimEnd('/'))
     }
 
-    private fun pipe(from: InputStream, to: OutputStream, vararg closing: Socket) {
+    /** Bytes copied from [from] to [to]. */
+    private fun pipe(from: InputStream, to: OutputStream, vararg closing: Socket): Long {
+        var n = 0L
         try {
-            from.copyTo(to, BUFFER)
+            val buf = ByteArray(BUFFER)
+            while (true) {
+                val r = from.read(buf)
+                if (r < 0) break
+                to.write(buf, 0, r)
+                n += r
+            }
         } catch (_: Exception) {
         } finally {
             closing.forEach { runCatching { it.close() } }
         }
+        return n
     }
 
     private fun address(port: Int, token: String): String = "ws://127.0.0.1:$port/$token"
@@ -293,4 +313,21 @@ internal fun withoutToken(line: String, token: String): String? {
         else -> return null  // /<token>more is another path
     }
     return "${parts[0]} $stripped ${parts[2]}"
+}
+
+/**
+ * [line] (a request line [withoutToken] gave) with the ingress's token path [base] (`/<token>`, or empty) put back in
+ * front of its path: `GET / HTTP/1.1` is `GET /<token> HTTP/1.1`, `/x?y` is `/<token>/x?y`. Null for a bad line.
+ */
+internal fun withIngressPath(line: String, base: String): String? {
+    val parts = line.split(' ')
+    if (parts.size != 3) return null
+    val path = parts[1]
+    if (!path.startsWith("/")) return null
+    val joined = when {
+        base.isEmpty() -> path
+        path == "/" -> base
+        else -> base + path
+    }
+    return "${parts[0]} $joined ${parts[2]}"
 }

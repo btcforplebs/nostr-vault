@@ -244,6 +244,46 @@ class OtherVaultLinkTest {
         assertNotEquals(first, store.token)
     }
 
+    /** A stand-in for the engine's ingress: like the engine, it closes with no answer when the path lacks its token. */
+    private fun tokenIngress(reply: String, token: String): ServerSocket {
+        val s = ServerSocket(0, 50, InetAddress.getLoopbackAddress()).also { servers += it }
+        thread(isDaemon = true) {
+            while (!s.isClosed) {
+                val c = runCatching { s.accept() }.getOrNull() ?: break
+                val line = runCatching { c.getInputStream().bufferedReader().readLine() }.getOrNull()
+                line?.let { received += it }
+                val path = line?.split(' ')?.getOrNull(1).orEmpty()
+                val after = path.removePrefix("/$token")
+                val ok = path.startsWith("/$token") && (after.isEmpty() || after[0] == '/' || after[0] == '?')
+                if (ok) runCatching { c.getOutputStream().write("$reply\n".toByteArray()) }
+                c.close()
+            }
+        }
+        ingress = "http://127.0.0.1:${s.localPort}/$token"
+        return s
+    }
+
+    @Test fun `the engine's own token goes through the doorway, so the engine answers`() {
+        val engineToken = "e".repeat(64)
+        tokenIngress("vault A", engineToken)
+        val url = link.open("npub1a", now = 0)!!
+        val token = store.token!!
+        assertEquals("vault A", read(url))
+        assertEquals("vault A", read(url, "/$token/list/ab?x=1"))
+        assertEquals(
+            listOf("GET /$engineToken HTTP/1.1", "GET /$engineToken/list/ab?x=1 HTTP/1.1"),
+            received.toList(),
+        )
+    }
+
+    @Test fun `the ingress path goes back in front`() {
+        assertEquals("GET /t HTTP/1.1\r\n", withIngressPath("GET / HTTP/1.1\r\n", "/t"))
+        assertEquals("GET /t/x?y HTTP/1.1\r\n", withIngressPath("GET /x?y HTTP/1.1\r\n", "/t"))
+        assertEquals("GET /t/?y HTTP/1.1\r\n", withIngressPath("GET /?y HTTP/1.1\r\n", "/t"))
+        assertEquals("GET /x HTTP/1.1\r\n", withIngressPath("GET /x HTTP/1.1\r\n", ""))
+        assertNull(withIngressPath("garbage", "/t"))
+    }
+
     @Test fun `the path check`() {
         val t = "ab12"
         assertEquals("GET / HTTP/1.1\r\n", withoutToken("GET /ab12 HTTP/1.1\r\n", t))
