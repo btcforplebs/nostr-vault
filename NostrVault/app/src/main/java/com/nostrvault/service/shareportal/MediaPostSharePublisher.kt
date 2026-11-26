@@ -10,6 +10,7 @@ import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.data.model.MediaUploadOutcomeMessage
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.media.ImageCompressor
+import com.nostrvault.service.media.VideoCompressor
 import com.nostrvault.service.shareportal.handlers.MediaPostShareTags
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -49,8 +50,9 @@ class MediaPostSharePublisher @Inject constructor(
         shape.problem?.let { throw PublishException(it.message) }
         val media = mutableListOf<MediaPostShareTags.Media>()
         for ((i, f) in files.withIndex()) {
-            onStatus(if (files.size == 1) "Uploading…" else "Uploading ${i + 1} of ${files.size}…")
-            media += withContext(Dispatchers.IO) { upload(f, lock) }
+            val uploading = if (files.size == 1) "Uploading…" else "Uploading ${i + 1} of ${files.size}…"
+            onStatus(uploading)
+            media += withContext(Dispatchers.IO) { upload(f, lock, onStatus, uploading) }
         }
         onStatus("Publishing…")
         val kind = MediaPostShareTags.kind(shape.shape!!, media)
@@ -73,7 +75,12 @@ class MediaPostSharePublisher @Inject constructor(
         nostrService.postEvent(event)
     }
 
-    private suspend fun upload(shared: Shared, lock: PostingAccount.Lock): MediaPostShareTags.Media {
+    private suspend fun upload(
+        shared: Shared,
+        lock: PostingAccount.Lock,
+        onStatus: (String) -> Unit,
+        uploading: String,
+    ): MediaPostShareTags.Media {
         val dir = File(context.cacheDir, "share-media").apply { mkdirs() }
         val ext = shared.file.extension.ifEmpty { "bin" }
         var mime = shared.mime.lowercase()
@@ -83,6 +90,13 @@ class MediaPostSharePublisher @Inject constructor(
             // A photo is shrunk (2048 px JPEG, no metadata); a type the shrink
             // leaves alone but NIP-68 doesn't list (TIFF…) still becomes a JPEG below.
             ImageCompressor.replacing(temp, mime, ImageCompressor.Quality.STANDARD, dir).let { temp = it.file; mime = it.mimeType }
+            // A video is shrunk to 720p H.264 at 5 Mbps (VideoCompressor), with its progress on the card.
+            if (MediaPostShareTags.isVideo(mime)) {
+                VideoCompressor.replacing(context, temp, mime, ImageCompressor.Quality.STANDARD, dir) {
+                    onStatus("Compressing video… ${(it * 100).toInt()}%")
+                }.let { temp = it.file; mime = it.mimeType }
+                onStatus(uploading)
+            }
             if (MediaPostShareTags.needsJpeg(mime)) {
                 val jpeg = File(dir, "${System.nanoTime()}.jpg")
                 if (!toJpeg(temp, jpeg)) {

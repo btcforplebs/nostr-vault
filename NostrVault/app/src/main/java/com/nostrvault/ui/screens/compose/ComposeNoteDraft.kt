@@ -10,6 +10,9 @@ sealed interface ComposeNoteUpload {
     /** Picked, waiting its turn (uploads go one at a time, in picked order). */
     data object Waiting : ComposeNoteUpload
 
+    /** A video being made smaller before it goes up; [progress] is 0..1. */
+    data class Compressing(val progress: Float) : ComposeNoteUpload
+
     /** Sending; [progress] is 0..1. */
     data class Sending(val progress: Float) : ComposeNoteUpload
 

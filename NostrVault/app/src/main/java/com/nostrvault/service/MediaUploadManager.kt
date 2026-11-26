@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import com.nostrvault.service.media.ImageCompressor
+import com.nostrvault.service.media.VideoCompressor
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.ui.notification.NotificationManager
@@ -108,12 +109,19 @@ class MediaUploadManager @Inject constructor(
                 return
             }
 
-            // A shared photo is shrunk before it goes up (2048 px JPEG, no metadata).
-            val compressed = ImageCompressor.replacing(tempFile,
-                contentResolver.getType(uri) ?: "application/octet-stream",
-                ImageCompressor.Quality.STANDARD, mediaCacheService.cacheDirectory)
-            tempFile = compressed.file
-            val contentType = compressed.mimeType
+            // A shared photo is shrunk before it goes up (2048 px JPEG, no metadata);
+            // a video to 720p H.264 at 5 Mbps, its compressing shown as the first 30%.
+            val sourceType = contentResolver.getType(uri) ?: "application/octet-stream"
+            val compressed = if (sourceType.lowercase().startsWith("video/")) {
+                VideoCompressor.replacing(context, tempFile, sourceType, ImageCompressor.Quality.STANDARD,
+                    mediaCacheService.cacheDirectory) { notificationManager.updateUploadProgress(uploadId, it * 0.3f) }
+                    .let { it.file to it.mimeType }
+            } else {
+                ImageCompressor.replacing(tempFile, sourceType, ImageCompressor.Quality.STANDARD,
+                    mediaCacheService.cacheDirectory).let { it.file to it.mimeType }
+            }
+            tempFile = compressed.first
+            val contentType = compressed.second
             if (!MediaPrivacy.removeLocation(tempFile, contentType)) {
                 notificationManager.markUploadFailed(uploadId, MediaPrivacy.FAILURE_MESSAGE)
                 return

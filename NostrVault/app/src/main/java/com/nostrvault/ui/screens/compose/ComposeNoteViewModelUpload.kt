@@ -16,6 +16,7 @@ import com.nostrvault.data.model.QueuedMediaPost
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.service.media.ImageCompressor
+import com.nostrvault.service.media.VideoCompressor
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -71,14 +72,20 @@ import java.io.File
             }
 
             // A photo is shrunk to 2048 px JPEG with no metadata (HEIC
-            // included); a video keeps its bytes.
+            // included); a video to 720p H.264 at 5 Mbps (VideoCompressor).
             var mimeType = attachment.mimeType
-            if (!attachment.isVideo) {
-                val out = ImageCompressor.replacing(file, mimeType, ImageCompressor.Quality.STANDARD, context.cacheDir)
-                file = out.file
-                tempFile = out.file
-                mimeType = out.mimeType
+            val (outFile, outMime) = if (attachment.isVideo) {
+                uploads.compressing(attachment.id, 0f)
+                VideoCompressor.replacing(context, file, mimeType, ImageCompressor.Quality.STANDARD, context.cacheDir) {
+                    uploads.compressing(attachment.id, it)
+                }.let { it.file to it.mimeType }
+            } else {
+                ImageCompressor.replacing(file, mimeType, ImageCompressor.Quality.STANDARD, context.cacheDir)
+                    .let { it.file to it.mimeType }
             }
+            file = outFile
+            tempFile = outFile
+            mimeType = outMime
 
             // The location comes out before the hash: the blob is public
             // once uploaded (iOS #335).
