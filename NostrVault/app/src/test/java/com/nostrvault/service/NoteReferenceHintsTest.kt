@@ -63,4 +63,29 @@ class NoteReferenceHintsTest {
         assertNull(all[missing])
         assertEquals(emptyMap<String, Pair<String?, String?>>(), NoteReferenceHints.findEach(emptySet(), notes.asSequence()))
     }
+
+    /** 2026-11-26: an iOS kind 1111 reply in a Mostr thread; only the `E` root had a reachable hint. */
+    @Test
+    fun commentRootHintIsReadAndLoopbackHintDropped() {
+        val root = "e".repeat(64)
+        val rootAuthor = "c".repeat(64)
+        val reply = FeedNote.fromEvent(
+            id = "r", pubkey = "b".repeat(64), content = "reply", createdAt = 1_700_000_000L, kind = 1111,
+            tags = listOf(
+                listOf("E", root, "wss://relay.ditto.pub/", rootAuthor), listOf("K", "1"), listOf("P", rootAuthor),
+                listOf("e", parent, "wss://127.0.0.1:3355", author), listOf("k", "1111"), listOf("p", author),
+            ),
+        )
+        val found = NoteReferenceHints.findEach(setOf(root, parent), sequenceOf(reply))
+        assertEquals("wss://relay.ditto.pub/" to rootAuthor, found[root])
+        assertEquals(null to author, found[parent])
+    }
+
+    @Test
+    fun lanHintsAreNotReachable() {
+        for (raw in listOf("ws://127.0.0.1:3355", "wss://localhost", "ws://192.168.1.20:3355", "wss://box.local", "ws://[::1]:3355")) {
+            assertNull(raw, NoteReferenceHints.reachableHint(raw))
+        }
+        assertEquals("wss://relay.mostr.pub", NoteReferenceHints.reachableHint("wss://relay.mostr.pub"))
+    }
 }
