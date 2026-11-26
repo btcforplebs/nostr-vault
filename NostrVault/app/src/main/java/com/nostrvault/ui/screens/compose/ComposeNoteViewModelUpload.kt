@@ -16,6 +16,7 @@ import com.nostrvault.data.model.QueuedMediaPost
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.service.media.ImageCompressor
+import com.nostrvault.service.media.UploadQuality
 import com.nostrvault.service.media.VideoCompressor
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -76,11 +77,11 @@ import java.io.File
             var mimeType = attachment.mimeType
             val (outFile, outMime) = if (attachment.isVideo) {
                 uploads.compressing(attachment.id, 0f)
-                VideoCompressor.replacing(context, file, mimeType, ImageCompressor.Quality.STANDARD, context.cacheDir) {
+                VideoCompressor.replacing(context, file, mimeType, UploadQuality.current, context.cacheDir) {
                     uploads.compressing(attachment.id, it)
                 }.let { it.file to it.mimeType }
             } else {
-                ImageCompressor.replacing(file, mimeType, ImageCompressor.Quality.STANDARD, context.cacheDir)
+                ImageCompressor.replacing(file, mimeType, UploadQuality.current, context.cacheDir)
                     .let { it.file to it.mimeType }
             }
             file = outFile

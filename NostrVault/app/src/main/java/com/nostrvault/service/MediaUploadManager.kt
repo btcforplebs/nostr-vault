@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import com.nostrvault.service.media.ImageCompressor
+import com.nostrvault.service.media.UploadQuality
 import com.nostrvault.service.media.VideoCompressor
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
@@ -113,11 +114,11 @@ class MediaUploadManager @Inject constructor(
             // a video to 720p H.264 at 5 Mbps, its compressing shown as the first 30%.
             val sourceType = contentResolver.getType(uri) ?: "application/octet-stream"
             val compressed = if (sourceType.lowercase().startsWith("video/")) {
-                VideoCompressor.replacing(context, tempFile, sourceType, ImageCompressor.Quality.STANDARD,
+                VideoCompressor.replacing(context, tempFile, sourceType, UploadQuality.current,
                     mediaCacheService.cacheDirectory) { notificationManager.updateUploadProgress(uploadId, it * 0.3f) }
                     .let { it.file to it.mimeType }
             } else {
-                ImageCompressor.replacing(tempFile, sourceType, ImageCompressor.Quality.STANDARD,
+                ImageCompressor.replacing(tempFile, sourceType, UploadQuality.current,
                     mediaCacheService.cacheDirectory).let { it.file to it.mimeType }
             }
             tempFile = compressed.first

@@ -48,6 +48,7 @@ internal val CACHE_TTL_OPTIONS = listOf(
 @Composable
 fun MediaSettingsScreen(
     onBack: () -> Unit,
+    onUploadQuality: () -> Unit,
     viewModel: AdvancedSettingsViewModel = hiltViewModel(),
 ) {
     val config by viewModel.config.collectAsState()
@@ -83,6 +84,11 @@ fun MediaSettingsScreen(
             SectionLabel("Playback")
             ToggleRow("Autoplay Videos", config.autoplayVideos, viewModel::setAutoplay, SettingsHelp.MEDIA_AUTOPLAY)
             ToggleRow("Prefetch Profile Pictures", config.prefetchAvatars, viewModel::setPrefetch, SettingsHelp.MEDIA_PREFETCH_AVATARS)
+
+            Spacer(Modifier.height(20.dp))
+
+            SectionLabel("Uploads")
+            UploadQualityRow(config.uploadQuality, onUploadQuality)
 
             Spacer(Modifier.height(20.dp))
 

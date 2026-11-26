@@ -10,6 +10,7 @@ import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.data.model.MediaUploadOutcomeMessage
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.media.ImageCompressor
+import com.nostrvault.service.media.UploadQuality
 import com.nostrvault.service.media.VideoCompressor
 import com.nostrvault.service.shareportal.handlers.MediaPostShareTags
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -89,10 +90,10 @@ class MediaPostSharePublisher @Inject constructor(
             shared.file.copyTo(temp, overwrite = true)
             // A photo is shrunk (2048 px JPEG, no metadata); a type the shrink
             // leaves alone but NIP-68 doesn't list (TIFF…) still becomes a JPEG below.
-            ImageCompressor.replacing(temp, mime, ImageCompressor.Quality.STANDARD, dir).let { temp = it.file; mime = it.mimeType }
+            ImageCompressor.replacing(temp, mime, UploadQuality.current, dir).let { temp = it.file; mime = it.mimeType }
             // A video is shrunk to 720p H.264 at 5 Mbps (VideoCompressor), with its progress on the card.
             if (MediaPostShareTags.isVideo(mime)) {
-                VideoCompressor.replacing(context, temp, mime, ImageCompressor.Quality.STANDARD, dir) {
+                VideoCompressor.replacing(context, temp, mime, UploadQuality.current, dir) {
                     onStatus("Compressing video… ${(it * 100).toInt()}%")
                 }.let { temp = it.file; mime = it.mimeType }
                 onStatus(uploading)

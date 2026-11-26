@@ -115,7 +115,7 @@ object VideoCompressor {
         onProgress: (Float) -> Unit = {},
     ): Output {
         val asIs = Output(source, mimeType)
-        if (!mimeType.lowercase().startsWith("video/")) return asIs
+        untouched(source, mimeType, quality)?.let { return it }
         val info = withContext(Dispatchers.IO) { describe(source) } ?: return asIs
         val plan = plan(info, quality) as? Plan.Encode ?: return asIs
         val out = withContext(Dispatchers.IO) { File.createTempFile("video_", ".mp4", workDir) }
@@ -135,6 +135,13 @@ object VideoCompressor {
         Log.i(TAG, "compressed ${source.length()} -> ${out.length()} bytes (${info.width}x${info.height}, ${info.bitrate} bps)")
         return Output(out, MP4)
     }
+
+    /**
+     * [source] as it is, without opening it, when there is nothing to do: Original quality
+     * (Settings > Media & Cache > Upload Quality, or the Media tab), or not a video. Null otherwise.
+     */
+    fun untouched(source: File, mimeType: String, quality: ImageCompressor.Quality): Output? =
+        if (quality == ImageCompressor.Quality.ORIGINAL || !mimeType.lowercase().startsWith("video/")) Output(source, mimeType) else null
 
     /** [compress], deleting [source] when a new file replaced it. */
     suspend fun replacing(

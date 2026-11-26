@@ -312,6 +312,12 @@ data class HavenConfig(
     // Advanced / media (client-side; not sent to the Go relay)
     val disableMediaCache: Boolean = false,
     val cacheTTLDays: Int = 3, // 0 = never evict
+    /**
+     * Settings > Media & Cache > Upload Quality (Logen 2026-11-26): "standard" shrinks photos and
+     * videos for notes, share, live chat and DMs; "original" sends them as they are. Location is
+     * removed either way. The Media tab always sends originals. See UploadQuality.
+     */
+    val uploadQuality: String = "standard",
     val autoStartRelay: Boolean = true,
 
     // External relay (Android only). Some users keep the client and their
