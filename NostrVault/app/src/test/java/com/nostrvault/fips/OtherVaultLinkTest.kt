@@ -44,7 +44,7 @@ class OtherVaultLinkTest {
 
     /** A stand-in ingress: reads the request line, answers one line per connection. */
     private fun fakeIngress(reply: String): ServerSocket {
-        val s = ServerSocket(0, 50, InetAddress.getLoopbackAddress()).also { servers += it }
+        val s = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1")).also { servers += it }
         thread(isDaemon = true) {
             while (!s.isClosed) {
                 val c = runCatching { s.accept() }.getOrNull() ?: break
@@ -246,7 +246,7 @@ class OtherVaultLinkTest {
 
     /** A stand-in for the engine's ingress: like the engine, it closes with no answer when the path lacks its token. */
     private fun tokenIngress(reply: String, token: String): ServerSocket {
-        val s = ServerSocket(0, 50, InetAddress.getLoopbackAddress()).also { servers += it }
+        val s = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1")).also { servers += it }
         thread(isDaemon = true) {
             while (!s.isClosed) {
                 val c = runCatching { s.accept() }.getOrNull() ?: break
@@ -294,5 +294,20 @@ class OtherVaultLinkTest {
         assertNull(withoutToken("GET / HTTP/1.1\r\n", t))
         assertNull(withoutToken("garbage", t))
         assertNull(withoutToken("GET /ab12 HTTP/1.1\r\n", ""))
+    }
+
+    /**
+     * The address names 127.0.0.1, so the port must listen there. Android's `InetAddress.getLoopbackAddress()` is
+     * ::1, and a link bound to it refused every connection to its own address: every catch-up and rank pull ended
+     * `link null` (Moto vc120 2026-11-26: `Failed to connect to /127.0.0.1:39825`, `ss` showed `[::1]:39825`). The
+     * JVM's loopback is 127.0.0.1 unless java.net.preferIPv6Addresses is set; with it set, this suite failed 11 of
+     * 21 before the fix, so the bind host is pinned here too.
+     */
+    @Test fun listensOnTheHostItsAddressNames() {
+        assertTrue(LOOPBACK is java.net.Inet4Address)
+        assertEquals("127.0.0.1", LOOPBACK.hostAddress)
+        val uri = URI(link.open("npub1" + "c".repeat(58), now = 0)!!)
+        assertEquals("127.0.0.1", uri.host)
+        Socket().use { it.connect(java.net.InetSocketAddress(uri.host, uri.port), 2_000) }
     }
 }

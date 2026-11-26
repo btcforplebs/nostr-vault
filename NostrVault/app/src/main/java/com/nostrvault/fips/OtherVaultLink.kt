@@ -161,7 +161,7 @@ class OtherVaultLink internal constructor(
     private fun bind(port: Int): ServerSocket? = try {
         ServerSocket().apply {
             reuseAddress = true
-            bind(InetSocketAddress(InetAddress.getLoopbackAddress(), port))
+            bind(InetSocketAddress(LOOPBACK, port))
         }
     } catch (e: Exception) {
         null
@@ -227,7 +227,7 @@ class OtherVaultLink internal constructor(
     private fun resolve(npub: String): Ingress? {
         val uri = dial(npub)?.let { runCatching { URI(it) }.getOrNull() } ?: return null
         if (uri.port <= 0) return null
-        return Ingress(InetSocketAddress(InetAddress.getLoopbackAddress(), uri.port), uri.rawPath.orEmpty().trimEnd('/'))
+        return Ingress(InetSocketAddress(LOOPBACK, uri.port), uri.rawPath.orEmpty().trimEnd('/'))
     }
 
     /** Bytes copied from [from] to [to]. */
@@ -248,7 +248,7 @@ class OtherVaultLink internal constructor(
         return n
     }
 
-    private fun address(port: Int, token: String): String = "ws://127.0.0.1:$port/$token"
+    private fun address(port: Int, token: String): String = "ws://${LOOPBACK.hostAddress}:$port/$token"
 
     private class PrefsStore(context: Context) : Store {
         private val prefs = context.getSharedPreferences("other_vault_link", Context.MODE_PRIVATE)
@@ -272,6 +272,7 @@ class OtherVaultLink internal constructor(
         const val BUFFER = 16 * 1024
         const val REQUEST_LINE_TIMEOUT_MS = 10_000
         const val MAX_REQUEST_LINE = 8 * 1024
+
 
         /** 32 random bytes, hex: the per-link secret in the address. */
         fun newToken(): String {
@@ -297,6 +298,13 @@ class OtherVaultLink internal constructor(
  * [line] (an HTTP request line, with its line end) with the leading `/<token>` taken out of the path, or null when
  * the path doesn't start with it: `GET /<token> HTTP/1.1` is `GET / HTTP/1.1`, `/<token>/x?y` is `/x?y`.
  */
+/**
+ * 127.0.0.1, the host every address here names and the ingress listens on. Never `InetAddress.getLoopbackAddress()`:
+ * on Android that is ::1, so a link's port refused every connection to its own address and each catch-up and rank
+ * pull ended `link null` (Moto vc120 2026-11-26: `Failed to connect to /127.0.0.1:39825`, `ss` showed `[::1]:39825`).
+ */
+internal val LOOPBACK: InetAddress = InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))
+
 internal fun withoutToken(line: String, token: String): String? {
     val parts = line.split(' ')
     if (parts.size != 3 || token.isEmpty()) return null
