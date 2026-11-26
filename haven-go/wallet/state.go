@@ -21,6 +21,28 @@ type State struct {
 	Ops        []Op                  `json:"ops,omitempty"`
 	MintQuotes []MintQuote           `json:"mint_quotes,omitempty"`
 	Reserved   []Reserved            `json:"reserved,omitempty"`
+
+	// NIP-60 event layer (E2). WalletKey is the 17375 wallet key (hex): NOT
+	// the account key; it only unlocks nutzaps locked to us. WalletDigest is
+	// what the last published 17375 held. Tokens indexes the 7375 events we
+	// know are live; QuoteEvents maps a mint quote id to its 7374 event.
+	WalletKey    string            `json:"wallet_key,omitempty"`
+	WalletDigest string            `json:"wallet_digest,omitempty"`
+	Tokens       []PublishedToken  `json:"tokens,omitempty"`
+	QuoteEvents  map[string]string `json:"quote_events,omitempty"`
+	// PendingDeletes are 7375 ids already replaced by a published 7375 (and
+	// named in its del), still owed a kind-5. A kind-5 is only ever sent for
+	// an id whose replacement is committed, so a failed publish never leaves
+	// the Vault without the proofs.
+	PendingDeletes []string `json:"pending_deletes,omitempty"`
+}
+
+// PublishedToken is one live 7375 we know of.
+type PublishedToken struct {
+	EventID string `json:"event_id"`
+	Mint    string `json:"mint"`
+	Group   string `json:"group"`
+	Digest  string `json:"digest"`
 }
 
 // MintState is one mint and the proofs we hold there.

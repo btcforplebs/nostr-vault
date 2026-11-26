@@ -210,7 +210,7 @@ func (m *testMint) mintQuoteState(w http.ResponseWriter, r *http.Request) {
 		refuse(w, cashu.QuoteNotExistErr)
 		return
 	}
-	reply(w, &nut04.PostMintQuoteBolt11Response{Quote: r.PathValue("id"), Request: "x", State: q.state})
+	reply(w, &quoteStatus{Quote: r.PathValue("id"), Request: "x", State: q.state.String(), Amount: q.amount})
 }
 
 func (m *testMint) mint(w http.ResponseWriter, r *http.Request) {
