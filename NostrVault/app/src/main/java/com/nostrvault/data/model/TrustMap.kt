@@ -376,7 +376,7 @@ object TrustMap {
      * "Further out" is gone). iOS `TrustMap.Layer`.
      */
     enum class Layer(val title: String, val hop: Int? = null) {
-        EVERYONE("Everyone"), FOLLOWING("Following"), CLOSE("Vouched"),
+        EVERYONE("Everyone"), FOLLOWING("Following"), CLOSE("Hop 2"),
         HOP3("Hop 3", 3), HOP4("Hop 4", 4), HOP5("Hop 5", 5),
         ;
 
