@@ -339,14 +339,7 @@ struct LongFormComposeView: View {
     /// Decodes any image format, applies its orientation, caps it at a
     /// cover-sized 2400 px and encodes JPEG (which also drops location data).
     static func coverJPEG(from data: Data) -> Data? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: 2400
-        ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return PreparedClip.jpegData(image)
+        ImageCompressor.jpeg(from: data, maxPixels: 2400, quality: 0.8)
     }
 
     private static func image(from data: Data) -> Image? {
