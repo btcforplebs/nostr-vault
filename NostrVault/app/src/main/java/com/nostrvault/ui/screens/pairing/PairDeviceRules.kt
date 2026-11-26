@@ -19,6 +19,15 @@ internal object PairDeviceRules {
         data object JoinAgain : AfterScan
     }
 
+    /**
+     * B: the four check words shown under this phone's code, the same ones A shows on its "They match. Accept"
+     * screen (iOS `sayHello`). Empty when they can't be worked out: the code then shows alone.
+     */
+    fun joinWords(a: MeshPairing.Payload, ownHex: String): List<String> {
+        val secret = (a.code as? MeshPairing.Code.Secret)?.value ?: return emptyList()
+        return MeshPairing.checkWords(a.meshHex, ownHex, secret).orEmpty()
+    }
+
     /** B, after reading A's code and passing the owner check. */
     fun afterScanFirst(role: MeshPairing.RoleCheck): AfterScan = when (role) {
         is MeshPairing.RoleCheck.RefuseOtherRole -> AfterScan.Refuse(MeshPairing.otherRoleText(role.role))

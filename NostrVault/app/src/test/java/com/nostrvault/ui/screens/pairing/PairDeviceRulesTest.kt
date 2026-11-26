@@ -2,7 +2,10 @@ package com.nostrvault.ui.screens.pairing
 
 import com.nostrvault.fips.DeviceRole
 import com.nostrvault.fips.MeshPairing
+import com.nostrvault.fips.MeshPairingJoiner
+import com.nostrvault.fips.MeshPairingSession
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PairDeviceRulesTest {
@@ -50,5 +53,34 @@ class PairDeviceRulesTest {
         assertEquals(PairDeviceRules.Paste.Refuse(PairDeviceRules.NOT_A_CODE_TEXT), PairDeviceRules.paste(typo, own))
         assertEquals(PairDeviceRules.Paste.Refuse(PairDeviceRules.NOT_A_CODE_TEXT), PairDeviceRules.paste("hello", own))
         assertEquals(PairDeviceRules.Paste.Refuse(PairDeviceRules.OWN_ADDRESS_TEXT), PairDeviceRules.paste(own, own))
+    }
+
+    /**
+     * Logen 2026-11-26 ("fix the they match issues"): when this phone scans the Mac and the Mac taps "They match.
+     * Accept", the words must already be under the phone's code, and an early "They match" tap here links on A's
+     * words ack with no second screen.
+     */
+    @Test
+    fun `the words under this phone's code match the Mac's and an early tap links`() {
+        val aHex = MeshPairing.npubHex(box)!!
+        val bHex = MeshPairing.npubHex(own)!!
+        val now = 1_800_000_000L
+        val aSecret = MeshPairing.newSecret()
+        val qrA = MeshPairing.build(box, "Mac", DeviceRole.MAC, own, MeshPairing.Code.Secret(aSecret), listOf(own))
+        val a = (MeshPairing.parse(qrA, own) as MeshPairing.Parsed.Ok).payload
+
+        // B (this phone) shows its code with the words; A (the Mac) gets the hello and accepts with the words.
+        val words = PairDeviceRules.joinWords(a, bHex)
+        assertEquals(4, words.size)
+        val session = MeshPairingSession(aSecret, now, aHex, own, listOf(own), matchAnyAccount = true)
+        val hello = MeshPairing.helloJson(aSecret, "Moto", DeviceRole.PHONE, own, now, listOf(own))
+        assertTrue(session.receiveHello(bHex, hello, now) is MeshPairingSession.Outcome.Camera)
+        assertTrue(session.acceptWithoutScan(now + 5) is MeshPairingSession.Outcome.Confirm)
+        assertEquals(MeshPairing.checkWords(aHex, bHex, aSecret), words)
+
+        // The early tap waits for the ack, then the words ack links at once.
+        val joiner = MeshPairingJoiner.start(a, bHex, MeshPairing.newSecret(), now)!!
+        assertEquals(MeshPairingJoiner.Outcome.WaitAck, joiner.confirmWords(now + 3))
+        assertEquals(MeshPairingJoiner.Outcome.Linked, joiner.receiveAck(aHex, session.ack!!, now + 6))
     }
 }
