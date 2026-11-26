@@ -126,6 +126,13 @@ final class VaultExporter: ObservableObject {
         #endif
     }
 
+    /// The share sheet closed (shared or not): the zip in tmp/ is no longer
+    /// needed, and a media backup is as big as the vault.
+    func shareClosed() {
+        if let url = shareURL { try? FileManager.default.removeItem(at: url) }
+        shareURL = nil
+    }
+
     private func setStatus(_ message: String, isError: Bool = false) {
         withAnimation(Motion.fade) {
             statusMessage = message
