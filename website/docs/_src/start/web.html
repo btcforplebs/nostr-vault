@@ -4,17 +4,17 @@
   "nav": "Web browser",
   "section": "start",
   "order": 4,
-  "description": "Open the Nostr Vault web app at nostrvault.app/vault/, create an account or sign in with a browser extension, a bunker link or read-only, and know what the web app keeps in your browser.",
+  "description": "Open the Nostr Vault web app at nostrvault.app/vault/, create an account or sign in with a browser extension, a signer app code, a bunker link or read-only, and know what the web app keeps in your browser.",
   "checked": "the web app on nostrvault.app, October 2026",
   "labels": {
-    "web": ["Sign in with extension", "Bunker link (NIP-46)", "Connect bunker", "Your name, npub1… or you@example.com", "Find me",
-            "Create an account", "I already use Nostr", "I saved my secret key", "Start Exploring", "Your Secret Key",
+    "web": ["Sign in with extension", "Sign in with Amber or a signer app", "Open in signer app", "Copy link", "Or paste a bunker link", "Connect bunker", "More ways to sign in", "Just look around", "Your name, npub1… or you@example.com", "Find me",
+            "Create an account", "Bring an account", "I saved my secret key", "Start Exploring", "Your Secret Key",
             "Viewing as a guest", "Sign in", "Feed", "Search", "Profile", "WoT", "Vault", "Settings", "Backup & Restore",
             "Export notes", "Save backup file", "Import notes", "Kept on this browser", "This browser may clear it", "This browser's copy",
             "Sign out and delete this browser's copy", "Reset Everything", "Database & Reset", "In your vault", "Who Can Reach You",
             "Create My Account", "Skip for Now", "Your posts will be shared through these servers", "Continue", "Change",
             "Sign in read-only", "Getting your vault ready", "Open now, finish in the background", "Import Notes",
-            "Import from my relays", "Relays", "Yes, create an account", "No, I already use Nostr", "Who showed you this app?", "Fill Your Feed", "Not now", "Turn on",
+            "Import from my relays", "Relays", "Who showed you this app?", "Fill Your Feed", "Not now", "Turn on",
             "I have a password-locked key (ncryptsec)", "New to Nostr Vault?", "Yes, bring my notes from relays", "No, copy from my other vault", "Scan your other device", "They match",
             "Getting your vault ready", "Open now, finish in the background", "Save and publish", "Accounts & Keys", "Add Account", "Just look around"]
   }
@@ -26,7 +26,9 @@
     storage.</p>
 
 <h2 id="create">New to Nostr</h2>
-<p>The first screen asks <strong>New to Nostr?</strong> Click <span class="ui">Yes, create an account</span>, then
+<p>The first screen has two choices, <span class="ui">Create an account</span> and
+    <span class="ui">Bring an account</span>, and <span class="ui">Just look around</span> to find anyone by name or
+    npub without signing in. New to Nostr? Click <span class="ui">Create an account</span>, then
     <span class="ui">Create My Account</span>. The web app makes
     your keys in this browser and shows both. Save the secret key somewhere safe, tick
     <span class="ui">I saved my secret key</span>, and choose a password of at least 8 characters, typed twice. Add a
@@ -45,19 +47,25 @@
     it in the Nostr Vault app.</p>
 
 <h2>Sign in</h2>
-<p>Already use Nostr? Click <span class="ui">No, I already use Nostr</span>. The web app never asks for your plain
+<p>Already use Nostr? Click <span class="ui">Bring an account</span>. The web app never asks for your plain
     secret key. Sign in with something that holds the key for you, or with a key locked with a password:</p>
 <ul>
+    <li><strong>A signer app on your phone.</strong> Click <span class="ui">Sign in with Amber or a signer app</span>
+        and scan the code with Amber, nsec.app or another Nostr Connect signer, then approve. On the phone itself,
+        <span class="ui">Open in signer app</span> opens it directly, and <span class="ui">Copy link</span> copies the
+        code as a link. This is the way in on a computer with no Nostr extension.</li>
     <li><strong>A browser extension.</strong> Click <span class="ui">Sign in with extension</span> and approve in the
         extension. If this browser has no Nostr extension, the button shows which one to install instead: Sidecar for
         Chrome, Brave, Edge and Firefox; Nostash on a Mac; and on iPhone and iPad, Safari with
         <a href="https://apps.apple.com/us/app/nostr-build-shack/id6752591477">Nostr Build Shack</a>
         or <a href="https://apps.apple.com/us/app/nostash/id6744309333">Nostash</a>. Android browsers can't add one
-        yet, so use a bunker link from Amber.</li>
-    <li><strong>A remote signer.</strong> Paste a bunker:// link (or your name@domain) from your signer app into
-        <span class="ui">Bunker link (NIP-46)</span>, click <span class="ui">Connect bunker</span>, and approve the
+        yet, so use Amber's code or bunker link. With no extension, the button sits under
+        <span class="ui">More ways to sign in</span>.</li>
+    <li><strong>A bunker link.</strong> Paste a bunker:// link (or your name@domain) from your signer app into
+        <span class="ui">Or paste a bunker link</span>, click <span class="ui">Connect bunker</span>, and approve the
         connection in your signer. See <a href="/docs/keys/signers/">Signers</a>.</li>
-    <li><strong>A password-locked key.</strong> Click <span class="ui">I have a password-locked key (ncryptsec)</span>,
+    <li><strong>A password-locked key.</strong> Under <span class="ui">More ways to sign in</span>, click
+        <span class="ui">I have a password-locked key (ncryptsec)</span>,
         paste your ncryptsec and type its password. The Nostr Vault apps can copy your key this way.</li>
     <li><strong>Read-only.</strong> Type your npub or name@domain and click
         <span class="ui">Sign in read-only</span>, or type a plain name and click <span class="ui">Find me</span> to pick
