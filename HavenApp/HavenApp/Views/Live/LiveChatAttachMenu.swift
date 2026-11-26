@@ -121,9 +121,12 @@ struct LiveChatAttachMenu: View {
                         throw ModePostPublisher.PublishError.upload("Couldn't read that photo.")
                     }
                     let picked = item.supportedContentTypes.first { $0.conforms(to: .image) } ?? .jpeg
-                    let (photo, type) = Self.jpegIfHEIC(data, type: picked)
+                    let photo = await Task.detached(priority: .userInitiated) {
+                        ImageCompressor.prepare(data, type: picked, quality: .standard)
+                    }.value
+                    let type = photo.type
                     blob = try await ModePostPublisher.upload(
-                        data: photo, mimeType: type.preferredMIMEType ?? "image/jpeg",
+                        data: photo.data, mimeType: photo.mimeType,
                         configService: configService, nostrService: nostrService)
                     ext = type.preferredFilenameExtension ?? "jpg"
                 }
@@ -139,21 +142,6 @@ struct LiveChatAttachMenu: View {
     /// extension, so a bare hash would show as a plain link.
     static func link(_ url: URL, extension ext: String) -> URL {
         url.pathExtension.isEmpty ? url.appendingPathExtension(ext) : url
-    }
-
-    /// HEIC as JPEG, as the note composer sends it: most other apps cannot
-    /// draw a HEIC.
-    static func jpegIfHEIC(_ data: Data, type: UTType) -> (Data, UTType) {
-        guard type.conforms(to: .heic) || type.conforms(to: .heif) else { return (data, type) }
-        #if os(iOS)
-        if let jpeg = UIImage(data: data)?.jpegData(compressionQuality: 0.8) { return (jpeg, .jpeg) }
-        #elseif os(macOS)
-        if let tiff = NSImage(data: data)?.tiffRepresentation,
-           let jpeg = NSBitmapImageRep(data: tiff)?.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
-            return (jpeg, .jpeg)
-        }
-        #endif
-        return (data, type)
     }
 
     // MARK: - GIF

@@ -57,8 +57,9 @@ extension MediaPostShareHandler {
                                             tags: tags, nostrService: NostrService.shared, lockedTo: lock)
     }
 
-    /// One file up, described for its `imeta`. Pictures NIP-68 doesn't list
-    /// (HEIC from the camera) go up as JPEG; the location comes out in
+    /// One file up, described for its `imeta`. Pictures are shrunk by
+    /// `ImageCompressor`; ones NIP-68 doesn't list (HEIC from the camera)
+    /// that it leaves alone still go up as JPEG; the location comes out in
     /// ModePostPublisher.upload either way.
     @MainActor
     private static func upload(_ url: URL, mime: String) async throws -> MediaPostShareTags.Media {
@@ -66,7 +67,20 @@ extension MediaPostShareHandler {
         var type = mime.lowercased()
         var converted: URL?
         defer { if let converted { try? FileManager.default.removeItem(at: converted) } }
-        if MediaPostShareTags.needsJPEG(type) {
+        if MediaPostShareTags.isPicture(type),
+           let photo = await Task.detached(priority: .userInitiated, operation: {
+               ImageCompressor.compressed(fileAt: url, type: UTType(mimeType: type) ?? .image, quality: .standard)
+           }).value {
+            // Standard: 2048 px JPEG with no metadata (PNG stays PNG).
+            let out = FileManager.default.temporaryDirectory
+                .appendingPathComponent("share-\(UUID().uuidString).\(photo.type.preferredFilenameExtension ?? "jpg")")
+            do { try photo.data.write(to: out) } catch {
+                throw ModePostPublisher.PublishError.upload("Couldn't read the file to upload.")
+            }
+            converted = out
+            fileURL = out
+            type = photo.mimeType
+        } else if MediaPostShareTags.needsJPEG(type) {
             guard let jpeg = jpegCopy(of: url) else {
                 throw ModePostPublisher.PublishError.upload("Couldn't turn a picture into a JPEG to post it.")
             }
