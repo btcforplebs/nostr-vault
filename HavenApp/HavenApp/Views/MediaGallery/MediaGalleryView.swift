@@ -225,6 +225,7 @@ struct MediaGalleryView: View {
         .filterNoteHost(filterNote)
         #endif
         .onAppear {
+            MediaMosaicShown.shared.forget()
             if relayManager.isRunning && !relayManager.isBooting {
                 let recentlyReconnected: Bool
                 if let lastReconnect = nostrService.lastForegroundReconnectTime {
@@ -359,6 +360,7 @@ struct MediaGalleryView: View {
     var viewContent: some View {
         viewContentPlatform
         .onAppear {
+            MediaMosaicShown.shared.forget()
             if relayManager.isRunning && !relayManager.isBooting {
                 let recentlyReconnected: Bool
                 if let lastReconnect = nostrService.lastForegroundReconnectTime {

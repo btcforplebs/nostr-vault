@@ -80,22 +80,30 @@ enum MediaSortOption: String, CaseIterable, Identifiable {
     func sorted(_ items: [MediaItem], isOnRelay: (MediaItem) -> Bool) -> [MediaItem] {
         switch self {
         case .newestFirst:
-            return items.sorted { $0.dateAdded > $1.dateAdded }
+            return items.sorted(by: Self.newer)
         case .oldestFirst:
-            return items.sorted { $0.dateAdded < $1.dateAdded }
+            return items.sorted { Self.newer($1, $0) }
         case .mediaType:
             return items.sorted {
                 let a = MediaGalleryView.typeRank(for: $0), b = MediaGalleryView.typeRank(for: $1)
                 if a != b { return a < b }
-                return $0.dateAdded > $1.dateAdded
+                return Self.newer($0, $1)
             }
         case .onRelayFirst:
             return items.sorted {
                 let a = isOnRelay($0), b = isOnRelay($1)
                 if a != b { return a }
-                return $0.dateAdded > $1.dateAdded
+                return Self.newer($0, $1)
             }
         }
+    }
+
+    /// Newer first; photos from one note share a date, so the address breaks
+    /// the tie. Without it they come back in a new order every page and the
+    /// mosaic re-deals sections already scrolled past.
+    static func newer(_ a: MediaItem, _ b: MediaItem) -> Bool {
+        if a.dateAdded != b.dateAdded { return a.dateAdded > b.dateAdded }
+        return a.url.absoluteString < b.url.absoluteString
     }
 }
 
