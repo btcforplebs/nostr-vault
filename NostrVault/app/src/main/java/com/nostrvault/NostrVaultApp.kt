@@ -105,6 +105,10 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
             com.nostrvault.data.gif.GifCache.sweep(cacheDir)
             // Picked backup zips a kill left mid-restore (audit #17).
             com.nostrvault.service.PickedZip.sweep(cacheDir)
+            // Upload copies and shared backup zips older than a day that no job holds.
+            com.nostrvault.service.CacheSweep.sweep(cacheDir).let { r ->
+                if (r.removed > 0) android.util.Log.i("CacheSweep", "removed ${r.removed} leftover cache files (${r.removedBytes} bytes), kept ${r.kept}")
+            }
             // Decrypted private copies a crash or a kill left behind.
             com.nostrvault.service.shareportal.PrivateCopyService.clearOpened(this@NostrVaultApp)
         }

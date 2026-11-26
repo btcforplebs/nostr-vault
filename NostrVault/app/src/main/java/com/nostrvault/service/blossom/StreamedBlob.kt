@@ -101,6 +101,9 @@ internal object BlobStream {
         live.remove(file.absolutePath)
     }
 
+    /** Whether a download still running writes [file] (CacheSweep keeps it). */
+    fun isLive(file: File): Boolean = file.absolutePath in live
+
     /** Where downloads land: the app's private cache. */
     fun tempDir(): File = File(System.getProperty("java.io.tmpdir") ?: ".")
 
