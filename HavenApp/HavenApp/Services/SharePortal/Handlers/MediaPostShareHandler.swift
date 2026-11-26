@@ -74,10 +74,11 @@ extension MediaPostShareHandler {
         var type = mime.lowercased()
         var converted: URL?
         defer { if let converted { try? FileManager.default.removeItem(at: converted) } }
+        let quality = UploadQuality.current
         if MediaPostShareTags.isVideo(type) {
             let live = CompressingFlag()
             compressing(0)
-            let compressed = await VideoCompressor.compressed(fileAt: url, quality: .standard) { fraction in
+            let compressed = await VideoCompressor.compressed(fileAt: url, quality: quality) { fraction in
                 Task { @MainActor in if live.isOn { compressing(fraction) } }
             }
             live.isOn = false
@@ -93,7 +94,7 @@ extension MediaPostShareHandler {
             // Compressed: an .mp4 named by its type already.
         } else if MediaPostShareTags.isPicture(type),
            let photo = await Task.detached(priority: .userInitiated, operation: {
-               ImageCompressor.compressed(fileAt: url, type: UTType(mimeType: type) ?? .image, quality: .standard)
+               ImageCompressor.compressed(fileAt: url, type: UTType(mimeType: type) ?? .image, quality: quality)
            }).value {
             // Standard: 2048 px JPEG with no metadata (PNG stays PNG).
             let out = FileManager.default.temporaryDirectory

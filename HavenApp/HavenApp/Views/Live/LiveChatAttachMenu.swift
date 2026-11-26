@@ -101,6 +101,7 @@ struct LiveChatAttachMenu: View {
     private func upload(_ item: PhotosPickerItem) {
         let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) || $0.conforms(to: .video) }
         isUploading = true
+        let quality = UploadQuality.current
         Task {
             defer { isUploading = false }
             do {
@@ -122,7 +123,7 @@ struct LiveChatAttachMenu: View {
                     }
                     let picked = item.supportedContentTypes.first { $0.conforms(to: .image) } ?? .jpeg
                     let photo = await Task.detached(priority: .userInitiated) {
-                        ImageCompressor.prepare(data, type: picked, quality: .standard)
+                        ImageCompressor.prepare(data, type: picked, quality: quality)
                     }.value
                     let type = photo.type
                     blob = try await ModePostPublisher.upload(

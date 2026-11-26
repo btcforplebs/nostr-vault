@@ -528,8 +528,8 @@ struct DMThreadView: View {
         let prepared: PickedAttachment?
         if GIFStrip.isGIF(data) {
             prepared = (try? GIFStrip.strip(data)).map { PickedAttachment(data: $0, mimeType: "image/gif", preview: Self.image(from: $0)) }
-        } else if let jpeg = LongFormComposeView.coverJPEG(from: data) {
-            prepared = PickedAttachment(data: jpeg, mimeType: "image/jpeg", preview: Self.image(from: jpeg))
+        } else if let photo = DMPhotoQuality.prepared(data, quality: UploadQuality.current) {
+            prepared = PickedAttachment(data: photo.data, mimeType: photo.mimeType, preview: Self.image(from: photo.data))
         } else {
             prepared = nil
         }

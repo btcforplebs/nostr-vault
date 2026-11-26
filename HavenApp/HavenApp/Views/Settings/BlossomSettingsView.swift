@@ -203,6 +203,8 @@ struct BlossomSettingsView: View {
                 Text("Your Media")
             }
 
+            MediaUploadQualitySettingsView()
+
             // Auto-Mirror stays for now (2026-11-12). Its by-hand twin is
             // Import media on the dashboard, the one place that runs it.
             Section {
