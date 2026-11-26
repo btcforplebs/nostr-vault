@@ -467,7 +467,7 @@ class TrustMapTest {
 
     @Test
     fun vouchedHasItsOwnShellBetweenFollowsAndTheRest() {
-        assertEquals("Vouched", TrustMap.Layer.CLOSE.title)
+        assertEquals("Hop 2", TrustMap.Layer.CLOSE.title)
         assertTrue(TrustMap.RING_RADIUS < TrustMap.CLOSE_RADIUS && TrustMap.CLOSE_RADIUS < TrustMap.OUTER_RADIUS)
         // The author sits inside the Vouched shell, so their face never lands among its stars.
         assertTrue(TrustMap.RING_RADIUS < TrustMap.AUTHOR_RADIUS && TrustMap.AUTHOR_RADIUS < TrustMap.CLOSE_RADIUS)
@@ -491,7 +491,7 @@ class TrustMapTest {
             TrustMap.layers(false),
         )
         // "Further out" is gone: the picker ends Hop 3, Hop 4, Hop 5 (Logen 2026-11-24).
-        assertEquals(listOf("Everyone", "Following", "Vouched", "Hop 3", "Hop 4", "Hop 5"), TrustMap.Layer.entries.map { it.title })
+        assertEquals(listOf("Everyone", "Following", "Hop 2", "Hop 3", "Hop 4", "Hop 5"), TrustMap.Layer.entries.map { it.title })
         assertEquals(listOf(3, 4, 5), TrustMap.Layer.entries.mapNotNull { it.hop })
         assertEquals(TrustMap.Layer.EVERYONE, TrustMap.Layer.HOP5.globeLayer)
         assertEquals(TrustMap.Layer.CLOSE, TrustMap.Layer.CLOSE.globeLayer)
