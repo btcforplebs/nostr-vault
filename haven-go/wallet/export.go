@@ -54,20 +54,46 @@ func (w *Wallet) ExportToken(mint string) (ExportedToken, error) {
 	}
 	id := w.newID()
 	now := w.now().Unix()
+	var out ExportedToken
 	err := w.commit(func(s *State) error {
 		ms := s.Mints[mint]
-		if ms == nil || len(ms.Proofs) == 0 {
+		if ms == nil {
 			return ErrNothingToExport
 		}
-		proofs := stripWitness(ms.Proofs)
-		s.takeProofs(mint, ms.Proofs)
+		// Only unlocked proofs go: a token can't carry a P2PK proof (even
+		// one locked to us), and TakeBack/TokenFor refuse a set holding one.
+		proofs := unlockedProofs(stripWitness(ms.Proofs))
+		if len(proofs) == 0 {
+			return ErrNothingToExport
+		}
+		// Build the token before anything moves, so an encode error leaves
+		// the state as it was.
+		tok, err := encodeToken(mint, proofs)
+		if err != nil {
+			return err
+		}
+		s.takeProofs(mint, proofs)
 		s.Reserved = append(s.Reserved, Reserved{ID: id, Mint: mint, Proofs: proofs, Memo: "export", Created: now})
+		out = ExportedToken{Reserved: id, Mint: mint, Amount: proofs.Amount(),
+			Fee: inputFee(proofs, ms.Keysets), Token: tok, ExportedAt: max(now, 1)}
 		return nil
 	})
 	if err != nil {
 		return ExportedToken{}, err
 	}
-	return w.TokenFor(id)
+	return out, nil
+}
+
+// unlockedProofs drops every NUT-10 P2PK proof.
+func unlockedProofs(ps cashu.Proofs) cashu.Proofs {
+	var out cashu.Proofs
+	for _, p := range ps {
+		if sec, err := nut10.DeserializeSecret(p.Secret); err == nil && sec.Kind == nut10.P2PK {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // TokenFor rebuilds the cashuB token for a waiting set (the card reopened,
@@ -130,18 +156,28 @@ func (w *Wallet) TakeBack(ctx context.Context, reservedID string) (TakeBackResul
 	if err != nil {
 		return res, err
 	}
+	mint := w.reservedMint(reservedID, "")
+	// The mint refuses the whole swap when some inputs are spent, and
+	// Reclaim drops those. Swap the unspent rest; the other wallet may claim
+	// more meanwhile, so keep going (a few times) until a swap goes through
+	// or nothing is left. last is the set's amount going into the last try.
+	last := before
 	got, err := w.reclaimLocked(ctx, reservedID)
-	if errors.Is(err, ErrAlreadySpent) {
-		// The mint refused the whole swap because some inputs are spent;
-		// Reclaim dropped those. Swap the unspent rest, if any.
-		left := w.reservedAmount(reservedID)
-		if claimed := before - left; claimed > 0 {
-			res.Claim = newClaim(reservedID, w.reservedMint(reservedID, ""), claimed, left == 0, groupIDs)
-		}
-		if left == 0 {
-			return res, err
+	for try := 0; errors.Is(err, ErrAlreadySpent) && try < 4; try++ {
+		if last = w.reservedAmount(reservedID); last == 0 {
+			break
 		}
 		got, err = w.reclaimLocked(ctx, reservedID)
+	}
+	// Claimed: what the other wallet took. A swap that went through took
+	// back all of last, so nothing waits; otherwise what's left still does.
+	claimed, done := before-last, true
+	if err != nil {
+		left := w.reservedAmount(reservedID)
+		claimed, done = before-left, left == 0
+	}
+	if claimed > 0 {
+		res.Claim = newClaim(reservedID, mint, claimed, done, groupIDs)
 	}
 	if err != nil {
 		return res, err

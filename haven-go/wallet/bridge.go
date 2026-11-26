@@ -35,6 +35,11 @@ type cashuWallets struct {
 	next     int
 	byHandle map[int]*cashuOpenWallet
 	byPath   map[string]int
+	// engines keeps the one Wallet per state file for the life of the
+	// process. A close can come while a call that already got the engine is
+	// still running; a reopen then must get that same engine, never a second
+	// one that would save over the first one's writes.
+	engines map[string]*Wallet
 }
 
 type cashuOpenWallet struct {
@@ -43,7 +48,7 @@ type cashuOpenWallet struct {
 	refs int
 }
 
-var cashuBridge = &cashuWallets{byHandle: map[int]*cashuOpenWallet{}, byPath: map[string]int{}}
+var cashuBridge = &cashuWallets{byHandle: map[int]*cashuOpenWallet{}, byPath: map[string]int{}, engines: map[string]*Wallet{}}
 
 type cashuReply struct {
 	OK     bool   `json:"ok"`
@@ -58,6 +63,7 @@ var cashuErrCodes = []struct {
 }{
 	{ErrPending, "pending"},
 	{ErrBusy, "busy"},
+	{ErrOwnProofs, "own_proofs"},
 	{ErrAlreadySpent, "already_spent"},
 	{ErrNotEnough, "not_enough"},
 	{ErrUnknownMint, "unknown_mint"},
@@ -118,9 +124,13 @@ func BridgeOpen(path string) []byte {
 		b.byHandle[h].refs++
 		return cashuJSON(map[string]int{"handle": h}, nil)
 	}
-	w, err := Open(FileStore{Path: path})
-	if err != nil {
-		return cashuJSON(nil, err)
+	w := b.engines[path]
+	if w == nil {
+		var err error
+		if w, err = Open(FileStore{Path: path}); err != nil {
+			return cashuJSON(nil, err)
+		}
+		b.engines[path] = w
 	}
 	b.next++
 	h := b.next
@@ -129,7 +139,8 @@ func BridgeOpen(path string) []byte {
 	return cashuJSON(map[string]int{"handle": h}, nil)
 }
 
-// BridgeClose drops one open of handle; the wallet is let go at the last.
+// BridgeClose drops one open of handle; the handle goes at the last. The
+// engine stays (see engines), so a reopen gets the same one.
 func BridgeClose(handle int) {
 	b := cashuBridge
 	b.mu.Lock()

@@ -202,9 +202,9 @@ func TestTakeBackAfterPartialClaimNoCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The mint refuses the whole swap (one input spent); TakeBack records
-	// the claimed 32 and swaps back the other 68.
+	// the claimed 32 and swaps back the other 68; nothing is left waiting.
 	res, err := alice.TakeBack(ctx, exp.Reserved)
-	if err != nil || res.Returned != 68 || res.Claim == nil || res.Claim.Amount != 32 || res.Claim.Done {
+	if err != nil || res.Returned != 68 || res.Claim == nil || res.Claim.Amount != 32 || !res.Claim.Done {
 		t.Fatalf("take back %+v %v", res, err)
 	}
 	wantBalance(t, alice, 68)
