@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import com.nostrvault.data.model.NIP10Thread
+import com.nostrvault.relay.ReplyRelayHint
 import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.flow.map
@@ -39,7 +40,7 @@ import kotlinx.coroutines.flow.map
                 parentKind = effectiveParentKind,
                 parentPubkey = parentNote.pubkey,
                 parentTags = parentNote.tags,
-                relayHint = configStore.config.value.nostrURL ?: "",
+                relayHint = ReplyRelayHint.pick(configStore.config.value),
             ))
             // NIP-10 still holds for notification fan-out: carry the parent's
             // p tags (thread participants), deduplicated.
