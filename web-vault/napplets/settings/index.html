@@ -222,7 +222,13 @@
     const a = d.autoplay
     const rows = [toggle("Autoplay Videos", a.info, "media.autoplay", a.on, on => ask("set", { key: "autoplay", value: on })), el("p", "settings-note muted small", a.note)]
     const cache = el("section", "settings-group"), cr = el("div", "settings-rows"); cr.append(el("p", "settings-note muted small", d.cacheNote)); cache.append(el("div", "section-label", "Cache"), cr)
-    return [group("Playback", rows), cache]
+    const q = d.uploadQuality, qrow = el("div", "settings-row static send-delay"), qt = el("span", "settings-title"), ql = el("span", "", "Upload Quality"); ql.id = "upload-quality-label"; qt.append(ql)
+    const qseg = el("div", "seg-pill"); qseg.setAttribute("role", "radiogroup"); qseg.setAttribute("aria-labelledby", "upload-quality-label")
+    for (const c of q.choices) { const b = el("button", q.value === c.value ? "on" : "", c.label); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", String(q.value === c.value)); b.onclick = () => ask("set", { key: "uploadQuality", value: c.value }); qseg.append(b) }
+    qrow.append(qt, qseg)
+    const qnote = el("p", "settings-note muted small", q.note); qnote.setAttribute("aria-live", "polite")
+    const uploads = el("section", "settings-group"), ur = el("div", "settings-rows"); ur.append(qrow, qnote); uploads.append(el("div", "section-label", "Uploads"), ur)
+    return [group("Playback", rows), uploads, cache]
   }
   function privacy(d) {
     const out = d.sections.map((s, i) => group(s.label, [toggle(s.title, s.info, `privacy.${i}`, false, null, true)], s.note))

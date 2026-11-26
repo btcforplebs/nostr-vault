@@ -19,6 +19,7 @@ import { receiptTrust, zap, zapPublisherOf, PRESET_SATS } from "../net/zaps.js"
 import { setBlock } from "../net/blocks.js"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
 import { compressImage } from "../net/image-compress.js"
+import { uploadQuality } from "../net/upload-quality.js"
 import { appendClientTag } from "../net/client-tag.js"
 import { checkSigned } from "../net/sync.js"
 import { mediaType } from "../net/media.js"
@@ -188,7 +189,7 @@ function Composer({ ctx, stream: s, onSent }) {
     if (!f) return
     run("upload", async () => {
       if (!/^(image|video)\//.test(f.type)) throw new Error("Pick a photo, GIF or video.")
-      const { url } = await uploadPhoto(await compressImage(f), { ctx, servers: await mediaServers(ctx) })
+      const { url } = await uploadPhoto(await compressImage(f, { quality: uploadQuality() }), { ctx, servers: await mediaServers(ctx) })
       setDraft(d => (d.trim() ? `${d.trim()} ${url}` : url))
     })()
   }

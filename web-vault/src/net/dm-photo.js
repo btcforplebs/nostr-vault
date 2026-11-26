@@ -2,9 +2,12 @@
 // servers before the message goes out as a kind 15 file message (dm-file.js; a link no server holds would reach them
 // dead). A GIF keeps its frames with every metadata block stripped (gif-strip.js); anything else is redrawn as a
 // JPEG at most 2400 px on the long edge (LongFormComposeView.coverJPEG), which leaves its EXIF, location included,
-// behind: the photo is going to one person, not the camera's record of where it was taken.
+// behind: the photo is going to one person, not the camera's record of where it was taken. With Settings › Upload Quality on
+// Original (upload-quality.js) the photo goes at full size instead, with only its location taken out.
 import { stripGif } from "./gif-strip.js"
-import { decodeImage, drawImage, fitSize as fit } from "./image-compress.js"
+import { decodeImage, drawImage, fitSize as fit, sniff } from "./image-compress.js"
+import { withoutLocation } from "./media-privacy.js"
+import { ORIGINAL, uploadQuality } from "./upload-quality.js"
 
 export const MAX_EDGE = 2400
 /** A picked photo before it's cleaned, as the Messages napplet's limit (dm-dispatch.js MAX_PHOTO). */
@@ -26,7 +29,7 @@ export const fitSize = (width, height, max = MAX_EDGE) => fit(width, height, max
  * metadata (the browser turns it the right way up from its EXIF first). Throws "Couldn't read that photo." for a file
  * that isn't an image the browser can draw. `draw` is for tests.
  */
-export async function preparePhoto(file, { draw = drawJpeg } = {}) {
+export async function preparePhoto(file, { draw = drawJpeg, quality = uploadQuality() } = {}) {
   if (!file || !(/^image\//.test(file.type) || !file.type)) throw new Error("Couldn't read that photo.")
   if (file.size > MAX_PHOTO) throw new Error("That photo is too big to send (at most 50 MB).")
   if (await isGif(file)) {
@@ -34,10 +37,23 @@ export async function preparePhoto(file, { draw = drawJpeg } = {}) {
     try { clean = stripGif(new Uint8Array(await file.arrayBuffer())) } catch { throw new Error("Couldn't read that photo.") }
     return new File([clean], file.name || "photo.gif", { type: "image/gif" })
   }
+  if (quality === ORIGINAL) return originalPhoto(file)
   let blob
   try { blob = await draw(file) } catch { blob = null }
   if (!blob) throw new Error("Couldn't read that photo.")
   return new File([blob], (file.name || "photo").replace(/\.[^.]*$/, "") + ".jpg", { type: "image/jpeg" })
+}
+
+const TYPES = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp", heic: "image/heic" }
+
+/** Settings › Upload Quality › Original (DMPhotoQuality on the iPhone): the photo at full size, as it is, with only its
+ *  location taken out here (the encrypted upload sends its bytes raw, so upload.js can't). Throws media-privacy's
+ *  LOCATION_FAILURE rather than send one it can't clean, and "Couldn't read that photo." for what isn't one. */
+async function originalPhoto(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  const type = TYPES[sniff(bytes).format]
+  if (!type) throw new Error("Couldn't read that photo.")
+  return new File([withoutLocation(bytes)], file.name || "photo", { type })
 }
 
 // Drawn by image-compress.js, which every other photo upload uses too.
