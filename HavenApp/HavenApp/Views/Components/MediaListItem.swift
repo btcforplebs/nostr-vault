@@ -85,6 +85,7 @@ struct MediaListItem: View {
                             .foregroundColor(.blue)
                         }
                     }
+                    MediaRowDetailLine(item: item)
                 }
 
                 Spacer()

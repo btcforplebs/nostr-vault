@@ -36,6 +36,8 @@ extension MediaGalleryView {
         let currentLocationFilter = mediaLocationFilter
         let currentTypeFilter = mediaTypeFilter
         let currentSort = sortOption
+        // Sizes learned from servers (Z1), so the size sorts place them too.
+        let learnedSizes = MediaSizeLookup.shared.snapshot()
         let currentMirrorHosts: Set<String> = Set(
             configService.config.activeBlossomMirrors.compactMap {
                 URL(string: $0)?.host?.lowercased()
@@ -117,7 +119,8 @@ extension MediaGalleryView {
                             dateAdded: eventDate,
                             pubkey: item.pubkey,
                             tags: item.tags,
-                            mimeType: item.mimeType
+                            mimeType: item.mimeType,
+                            size: item.size
                         )
                     } else {
                         latestItems[key] = item
@@ -139,7 +142,9 @@ extension MediaGalleryView {
                         dateAdded: eventTimestamps[key] ?? item.dateAdded,
                         pubkey: item.pubkey ?? existing.pubkey,
                         tags: item.tags ?? existing.tags,
-                        mimeType: existing.mimeType ?? item.mimeType
+                        mimeType: existing.mimeType ?? item.mimeType,
+                        // This device's file first, then the note's.
+                        size: MediaItemSize.first(existing.size, item.size)
                     )
                 } else {
                     latestItems[key] = item
@@ -153,6 +158,8 @@ extension MediaGalleryView {
                     for link in tile.urls { if let url = URL(string: link) { recordURL(tile.sha256, url) } }
                     if latestItems[tile.sha256] == nil, let item = tile.mediaItem(owner: owner) {
                         latestItems[tile.sha256] = item
+                    } else if let have = latestItems[tile.sha256], have.size == nil, tile.size > 0 {
+                        latestItems[tile.sha256]?.size = tile.size
                     }
                 }
             }
@@ -180,7 +187,8 @@ extension MediaGalleryView {
                         dateAdded: item.dateAdded,
                         pubkey: item.pubkey,
                         tags: item.tags,
-                        mimeType: item.mimeType
+                        mimeType: item.mimeType,
+                        size: item.size
                     )
                 }
             }
@@ -235,7 +243,9 @@ extension MediaGalleryView {
             filtered = filtered.filter(isOwnersMedia)
             let totalCount = allItems.lazy.filter(isOwnersMedia).count
 
-            filtered = currentSort.sorted(filtered) {
+            filtered = currentSort.sorted(filtered, sizeOf: {
+                $0.knownSize ?? MediaCacheService.blossomHash(in: $0.url).flatMap { learnedSizes[$0] }
+            }) {
                 inBlossomLookup[self.normalizedKeyStatic(for: $0.url)] ?? false
             }
             var result = filtered
@@ -275,7 +285,7 @@ extension MediaGalleryView {
                     }
 
                     if sniffedType != .unknown {
-                        result[i] = MediaItem(id: item.id, url: item.url, type: sniffedType, dateAdded: item.dateAdded, pubkey: item.pubkey, tags: item.tags, mimeType: sniffedMime)
+                        result[i] = MediaItem(id: item.id, url: item.url, type: sniffedType, dateAdded: item.dateAdded, pubkey: item.pubkey, tags: item.tags, mimeType: sniffedMime, size: item.size)
                     }
                 }
             }
@@ -406,7 +416,9 @@ extension MediaGalleryView {
                                 fileURL, key: MediaCacheService.blossomHash(in: serveURL) ?? serveURL.absoluteString)
                         }
 
-                        return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: ownerHex, tags: nil, mimeType: mimeType)
+                        // The file's own size, from the same attributes read (A1).
+                        let bytes = (attributes?[.size] as? NSNumber)?.int64Value
+                        return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: ownerHex, tags: nil, mimeType: mimeType, size: bytes)
                     }
                 }.value
 
