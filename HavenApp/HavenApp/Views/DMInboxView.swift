@@ -488,13 +488,13 @@ struct ConversationRow: View {
     }
 
     private var counterpartyName: String {
-        counterpartyProfile?.bestName ?? String(conversation.id.prefix(8)) + "…"
+        counterpartyProfile?.shownName ?? String(conversation.id.prefix(8)) + "…"
     }
 
     private var lastMessagePreview: String {
-        if let preview { return preview }
+        if let preview { return CleanMode.shown(preview) }
         // A locked photo reads "Photo", never its link and key (DMFile).
-        let message = DMFile.displayText(conversation.lastMessage?.content ?? "")
+        let message = CleanMode.shown(DMFile.displayText(conversation.lastMessage?.content ?? ""))
         if message.isEmpty {
             return String(localized: "dm.inbox.noContent")
         }

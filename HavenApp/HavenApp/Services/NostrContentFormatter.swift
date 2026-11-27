@@ -32,11 +32,13 @@ public struct NostrContentFormatter {
     /// word beside — or instead of — the card.
     @MainActor
     static func format(_ content: String, mediaURLs: [URL] = [], invoices: [NoteInvoices.Match] = []) -> AttributedString {
-        let key = "\(content.hashValue)_\(mediaURLs.count)_\(invoices.count)" as NSString
+        let clean = CleanMode.isOn
+        let key = "\(content.hashValue)_\(mediaURLs.count)_\(invoices.count)_\(clean ? 1 : 0)" as NSString
         if let cached = cache.object(forKey: key) {
             return cached.value
         }
-        let result = formatUncached(content, mediaURLs: mediaURLs, invoices: invoices)
+        let formatted = formatUncached(content, mediaURLs: mediaURLs, invoices: invoices)
+        let result = clean ? CleanMode.shown(formatted) : formatted
         cache.setObject(Box(result), forKey: key)
         return result
     }

@@ -76,6 +76,8 @@ struct BlockedSettingsView: View {
             } footer: {
                 Text("Only you can see these. They are encrypted in your block list.")
             }
+
+            CleanModeSettingsView()
         }
         .warmFormBackground()
         .groupedFormStyleCompat()

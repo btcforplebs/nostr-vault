@@ -62,7 +62,7 @@ extension FeedNoteRow {
 
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
-                                Text(rowData.parentProfile?.bestName ?? shortKey(parent.pubkey))
+                                Text(rowData.parentProfile?.shownName ?? shortKey(parent.pubkey))
                                     .font(.appSystem(size: 14, weight: .semibold, design: .default))
                                     .foregroundColor(Color.ink.opacity(0.85))
                                     .lineLimit(1)
@@ -206,7 +206,7 @@ extension FeedNoteRow {
 
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            Text(rowData.displayProfile?.bestName ?? shortKey(displayPubkey))
+                            Text(rowData.displayProfile?.shownName ?? shortKey(displayPubkey))
                                 .font(.appSystem(size: 14, weight: .semibold, design: .default))
                                 .foregroundColor(Color.ink)
                                 .lineLimit(1)
@@ -284,7 +284,7 @@ extension FeedNoteRow {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(rowData.displayProfile?.bestName ?? shortKey(displayPubkey))
+                        Text(rowData.displayProfile?.shownName ?? shortKey(displayPubkey))
                             .font(.appSystem(size: 14, weight: .semibold, design: .default))
                             .foregroundColor(Color.ink)
                             .lineLimit(1)

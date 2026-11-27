@@ -46,7 +46,7 @@ struct OuterRingSheet: View {
     private func row(_ key: String) -> some View {
         HStack(spacing: 12) {
             AvatarView(url: nostrService.profiles[key]?.pictureURL, pubkey: key, size: 36)
-            Text(nostrService.profiles[key]?.bestName ?? "npub…" + String(key.suffix(6)))
+            Text(nostrService.profiles[key]?.shownName ?? "npub…" + String(key.suffix(6)))
                 .lineLimit(1)
             Spacer()
             if let score = reach.copy?.globePerson(key)?.score {

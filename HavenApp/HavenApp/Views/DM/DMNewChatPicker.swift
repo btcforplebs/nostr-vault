@@ -77,7 +77,7 @@ struct DMNewChatPicker: View {
         return Button { onPick(hex) } label: {
             HStack(spacing: 10) {
                 AvatarView(url: profile?.pictureURL, pubkey: hex, size: 32)
-                Text(profile?.bestName ?? String(hex.prefix(8)) + "…")
+                Text(profile?.shownName ?? String(hex.prefix(8)) + "…")
                     .font(.appSystem(size: 14, weight: .medium))
                     .foregroundColor(.primary)
                     .lineLimit(1)

@@ -63,7 +63,7 @@ struct QuotedNoteView: View {
                 let profile = nostrService.profiles[note.pubkey]
                 AvatarView(url: profile?.pictureURL, pubkey: note.pubkey, size: 18)
                 
-                Text(profile?.bestName ?? "Someone")
+                Text(profile?.shownName ?? "Someone")
                     .font(.appSystem(size: 12, weight: .semibold))
                     .foregroundColor(.primary.opacity(0.9))
 

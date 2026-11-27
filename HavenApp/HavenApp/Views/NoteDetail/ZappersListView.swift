@@ -23,7 +23,7 @@ struct ZappersListView: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text(profile?.bestName ?? "npub…" + String(zap.zapperPubkey.suffix(6)))
+                                Text(profile?.shownName ?? "npub…" + String(zap.zapperPubkey.suffix(6)))
                                     .font(.appSystem(size: 15, weight: .semibold))
                                     .foregroundColor(.primary)
                                 Spacer()

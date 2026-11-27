@@ -433,7 +433,7 @@ struct FollowListRow: View {
         } else {
             // Plain text: links in a bio are not tappable here, so the whole
             // row stays one tap target.
-            Text(verbatim: FollowListLogic.bioLine(profile?.about) ?? " ")
+            Text(verbatim: CleanMode.shown(FollowListLogic.bioLine(profile?.about) ?? " "))
                 .font(.appSystem(size: 13))
                 .foregroundColor(.secondary)
                 .lineLimit(2, reservesSpace: true)

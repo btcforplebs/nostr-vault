@@ -111,7 +111,7 @@ struct NuclearUnfollowListView: View {
                     .font(.appSystem(size: 20))
                     .foregroundColor(on ? .red : .secondary)
                 AvatarView(url: profile?.pictureURL, pubkey: hex, size: 30)
-                Text(profile?.bestName ?? String(hex.prefix(8)) + "…")
+                Text(profile?.shownName ?? String(hex.prefix(8)) + "…")
                     .foregroundColor(.primary)
                     .lineLimit(1)
                 Spacer(minLength: 0)

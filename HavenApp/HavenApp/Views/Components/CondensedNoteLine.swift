@@ -142,7 +142,7 @@ struct CondensedNoteLine: View, Equatable {
     /// lines go too, for the same reason.
     private var bodyPlainText: String {
         let text = NostrContentFormatter.stripURLs(mediaURLs + linkURLs, from: displayContent)
-        return CondensedText.squeezeBlankLines(NostrContentFormatter.resolveMentionsPlainText(text))
+        return CleanMode.shown(CondensedText.squeezeBlankLines(NostrContentFormatter.resolveMentionsPlainText(text)))
     }
 
     var body: some View {
@@ -449,7 +449,7 @@ struct CondensedNoteLine: View, Equatable {
     private var shownDate: Date { postedAt ?? note.originalCreatedAt ?? note.createdAt }
 
     private var displayName: String {
-        profile?.bestName ?? CondensedNoteLine.shortKey(authorPubkey)
+        profile?.shownName ?? CondensedNoteLine.shortKey(authorPubkey)
     }
 
     private var accessibilityLabel: String {
@@ -461,7 +461,7 @@ struct CondensedNoteLine: View, Equatable {
         }
         for quote in quotes {
             if case .loaded(let quoted) = quote {
-                parts.append("quoting " + NostrContentFormatter.resolveMentionsPlainText(quoted.content))
+                parts.append("quoting " + CleanMode.shown(NostrContentFormatter.resolveMentionsPlainText(quoted.content)))
             }
         }
         if replyCount > 0 {

@@ -103,7 +103,7 @@ struct DMReviewView: View {
         return HStack(spacing: 10) {
             AvatarView(url: profile?.pictureURL, pubkey: hex, size: 28)
             VStack(alignment: .leading, spacing: 2) {
-                Text(profile?.bestName ?? String(hex.prefix(8)))
+                Text(profile?.shownName ?? String(hex.prefix(8)))
                 Text(Data(hexString: hex).flatMap { Bech32.encode(hrp: "npub", data: $0) }.map { String($0.prefix(20)) + "…" } ?? "")
                     .font(.caption2).foregroundStyle(.secondary)
             }

@@ -67,7 +67,7 @@ extension MenuBarView {
                                     )
 
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(nostrService.profiles[activeHex]?.bestName ?? (isOwner ? "Owner" : "User"))
+                                        Text(nostrService.profiles[activeHex]?.shownName ?? (isOwner ? "Owner" : "User"))
                                             .font(.appSystem(size: 13, weight: .semibold))
                                             .foregroundColor(.ink)
                                             .lineLimit(1)

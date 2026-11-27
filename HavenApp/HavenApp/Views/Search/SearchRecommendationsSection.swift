@@ -71,7 +71,7 @@ struct SearchRecommendationsSection: View {
         Button(action: { onProfile(person.pubkey) }) {
             VStack(spacing: 6) {
                 AvatarView(url: profile.pictureURL, pubkey: person.pubkey, size: 48)
-                Text(profile.bestName)
+                Text(profile.shownName)
                     .font(.appSystem(size: 12, weight: .semibold))
                     .foregroundColor(.primary)
                     .lineLimit(1)
