@@ -41,8 +41,9 @@ import com.nostrvault.service.NostrService.Companion.TRIM_CACHED_PROFILES
             // avatar for PROFILE_RETRY_TTL_MS after every cold start.
             _profiles.update { live -> trimProfiles(mergeDiskProfiles(loaded, live)) }
             withContext(Dispatchers.Main.immediate) {
-                _relayLists.value = relays + _relayLists.value
-                _outboxRelays.value = outbox + _outboxRelays.value
+                // update, not assign: batched relay lists publish from Default.
+                _relayLists.update { relays + it }
+                _outboxRelays.update { outbox + it }
                 _dmRelayLists.value = dmRelays + _dmRelayLists.value
                 _serverLists.value = servers + _serverLists.value
             }

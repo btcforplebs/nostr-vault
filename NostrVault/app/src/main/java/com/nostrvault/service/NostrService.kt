@@ -190,13 +190,18 @@ class NostrService @Inject constructor(
     val ownerHexPubkey: String
         get() {
             val npub = configStore.config.value.ownerNpub
-            return when {
+            ownerHexCache?.let { if (it.first == npub) return it.second }
+            val hex = when {
                 npub.isEmpty() -> ""
                 npub.startsWith("npub1") -> npubToHex(npub) ?: ""
                 npub.length == 64 && npub.all { it in '0'..'9' || it in 'a'..'f' } -> npub
                 else -> npubToHex(npub) ?: ""
             }
+            ownerHexCache = npub to hex
+            return hex
         }
+    /** Last npub → hex decode: each one is a JNI bech32 call, and hot paths read this per event. */
+    @Volatile private var ownerHexCache: Pair<String, String>? = null
     /**
      * The one active-account value, kept by [ConfigStore]. Empty when the
      * active account can't be decoded, so nothing signs as someone else; the
@@ -326,7 +331,7 @@ class NostrService @Inject constructor(
     // _outboxRelays, per pubkey — guards against a late-arriving stale relay list
     // (from a lagging relay) clobbering a fresher one, same failure mode as the
     // kind-3 follow-list clobber bug.
-    internal val relayListCreatedAt = mutableMapOf<String, Long>()
+    internal val relayListCreatedAt = RelayListBatch()
 
     // Newest 10063 wins: a kiosk vault republishes without its mesh entry
     // when it leaves the mesh, and an older copy must not bring it back.
