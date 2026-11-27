@@ -144,15 +144,6 @@ class FeedService: ObservableObject {
     /// Per-note engagement counts (replies, reactions, reposts) from relay data.
     @Published var noteStats: [String: NoteStats] = [:]
 
-    // MARK: - Search
-    @Published var isSearchActive: Bool = false
-    @Published var searchQuery: String = ""
-    @Published var searchResults: [FeedNote] = []
-    @Published var isSearching: Bool = false
-    var searchClient: WebSocketClient?
-    var searchCancellable: AnyCancellable?
-    var searchDebounceWork: DispatchWorkItem?
-
     // MARK: - Cached Filtered Notes (avoids O(n) filter on every SwiftUI render)
     @Published var filteredNotes: [FeedNote] = []
     @Published var filteredMediaNotes: [FeedNote] = []
