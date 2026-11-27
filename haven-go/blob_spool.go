@@ -103,5 +103,5 @@ func wireBlobReceive(bs *blossom.BlossomServer) {
 		}
 		return nil
 	})
-	bs.RejectBlob = append(bs.RejectBlob, blobCovered)
+	bs.RejectBlob = append(bs.RejectBlob, blobCovered, blobRemovedHere)
 }
