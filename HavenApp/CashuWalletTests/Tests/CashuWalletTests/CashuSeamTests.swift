@@ -57,3 +57,67 @@ final class CashuSeamTests: XCTestCase {
         XCTAssertEqual(PayZapsWith.choice(accountHex: "", defaults: d), .nwc)
     }
 }
+
+/// Where the wallet is kept (A2, design §4 risk 4): one place warns.
+final class CashuVaultCopiesTests: XCTestCase {
+    func testOnePlaceWarnsTwoDoNot() {
+        let one = CashuVaultCopies(thisVault: true, desktopVaults: 0)
+        XCTAssertTrue(one.warnOneCopy)
+        XCTAssertEqual(one.places, 1)
+        XCTAssertTrue(one.line.contains("only on this device"))
+        let two = CashuVaultCopies(thisVault: true, desktopVaults: 1)
+        XCTAssertFalse(two.warnOneCopy)
+        XCTAssertEqual(two.places, 2)
+        XCTAssertTrue(two.line.contains("1 desktop Vault"))
+    }
+
+    func testUnconfirmedCountsNothing() {
+        for unsure in [CashuVaultCopies(thisVault: nil, desktopVaults: 2), CashuVaultCopies(thisVault: false, desktopVaults: 2)] {
+            XCTAssertEqual(unsure.places, 0)
+            XCTAssertFalse(unsure.warnOneCopy)
+            XCTAssertFalse(unsure.line.contains("kept on"))
+        }
+    }
+}
+
+/// A new wallet only after every place the wallet could be has answered
+/// (Tron #2667 must-fix): this Vault read empty, and every paired desktop
+/// Vault had copied into it before that read.
+final class CashuNewWalletGateTests: XCTestCase {
+    func testNoDesktopEmptyReadAllows() {
+        XCTAssertTrue(CashuNewWalletGate.allows(.noWallet, readAt: 100, desktops: [], copiedAt: [:]))
+    }
+
+    func testDesktopNeverCopiedFromBlocks() {
+        XCTAssertFalse(CashuNewWalletGate.allows(.noWallet, readAt: 100, desktops: ["a"], copiedAt: [:]))
+        XCTAssertEqual(CashuNewWalletGate.waitingFor(readAt: 100, desktops: ["a"], copiedAt: [:]), ["a"])
+    }
+
+    func testCopyAfterTheReadBlocksUntilReadAgain() {
+        XCTAssertFalse(CashuNewWalletGate.allows(.noWallet, readAt: 100, desktops: ["a"], copiedAt: ["a": 101]))
+        XCTAssertTrue(CashuNewWalletGate.allows(.noWallet, readAt: 102, desktops: ["a"], copiedAt: ["a": 101]))
+    }
+
+    func testEveryDesktopMustHaveCopied() {
+        let copied = ["a": 50]
+        XCTAssertFalse(CashuNewWalletGate.allows(.noWallet, readAt: 100, desktops: ["a", "b"], copiedAt: copied))
+        XCTAssertEqual(CashuNewWalletGate.waitingFor(readAt: 100, desktops: ["a", "b"], copiedAt: copied), ["b"])
+        XCTAssertTrue(CashuNewWalletGate.allows(.noWallet, readAt: 100, desktops: ["a", "b"], copiedAt: ["a": 50, "b": 60]))
+    }
+
+    func testOnlyAnEmptyReadAllows() {
+        for outcome: CashuRestoreOutcome? in [nil, .cantReachVault, .cantOpen("x"), .keyConflict, .failed("x"),
+                                              .restored(CashuRestoreReport(walletFound: true, added: 1, deleted: 0, quotes: 0))] {
+            XCTAssertFalse(CashuNewWalletGate.allows(outcome, readAt: 100, desktops: [], copiedAt: [:]), "\(String(describing: outcome))")
+        }
+        XCTAssertFalse(CashuNewWalletGate.allows(.noWallet, readAt: nil, desktops: [], copiedAt: [:]))
+    }
+
+    func testReadAgainUnlessFullyRestored() {
+        XCTAssertTrue(CashuRestoreOutcome.noWallet.readAgain)
+        XCTAssertFalse(CashuRestoreOutcome.restored(CashuRestoreReport(walletFound: true, added: 1, deleted: 0, quotes: 0)).readAgain)
+        var part = CashuRestoreReport(walletFound: true, added: 1, deleted: 0, quotes: 0)
+        part.unopened = 2
+        XCTAssertTrue(CashuRestoreOutcome.restored(part).readAgain)
+    }
+}
