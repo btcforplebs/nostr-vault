@@ -18,21 +18,22 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
 /** How long a lookup waits after its socket drops, for an EOSE still on its way to the collector. */
 internal const val GONE_DRAIN_MS = 250L
 
+/** How long relay lists gather before one publish to the lookup maps. */
+internal const val RELAY_LIST_BATCH_MS = 50L
+
     internal fun NostrService.parseRelayListEvent(pubkey: String, tags: List<List<String>>, createdAt: Long) {
         val (readRelays, writeRelays) = profileRepository.parseRelayListTags(tags)
-        scope.launch(Dispatchers.Main.immediate) {
-            val known = relayListCreatedAt[pubkey]
-            if (known != null && createdAt < known) return@launch
-            relayListCreatedAt[pubkey] = createdAt
-            if (readRelays.isNotEmpty()) {
-                _relayLists.value = _relayLists.value + (pubkey to readRelays)
-            }
-            if (writeRelays.isNotEmpty()) {
-                _outboxRelays.value = _outboxRelays.value + (pubkey to writeRelays)
-            }
-            if (pubkey.isNotBlank() && pubkey.equals(ownerHexPubkey, ignoreCase = true)) {
-                adoptOwnerRelayList(readRelays, writeRelays, createdAt)
-            }
+        val offer = relayListCreatedAt.offer(pubkey, readRelays, writeRelays, createdAt)
+        if (!offer.accepted) return
+        // One map copy per batch, off Main: a cold start brings a list per follow.
+        if (offer.schedule) scope.launch(Dispatchers.Default) {
+            delay(RELAY_LIST_BATCH_MS)
+            val (read, write) = relayListCreatedAt.drain()
+            if (read.isNotEmpty()) _relayLists.update { it + read }
+            if (write.isNotEmpty()) _outboxRelays.update { it + write }
+        }
+        if (pubkey.isNotBlank() && pubkey.equals(ownerHexPubkey, ignoreCase = true)) {
+            scope.launch(Dispatchers.Main.immediate) { adoptOwnerRelayList(readRelays, writeRelays, createdAt) }
         }
     }
 
