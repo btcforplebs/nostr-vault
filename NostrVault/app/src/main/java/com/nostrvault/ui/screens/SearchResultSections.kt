@@ -2,6 +2,7 @@ package com.nostrvault.ui.screens
 
 import com.nostrvault.util.findAllOnce
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.HashtagSearchRank
 
 /** A link found in a note that matched the search. */
 data class SearchLink(
@@ -22,20 +23,17 @@ object SearchResultSections {
 
     /**
      * Hashtags written in [notes] whose text contains [query] (lowercased,
-     * de-duplicated, sorted). A leading '#' on the query is ignored, so
-     * "#bit" finds #bitcoin too.
+     * de-duplicated), in [HashtagSearchRank] order: the tag typed, then the
+     * most used, then A-Z. A leading '#' on the query is ignored, so "#bit"
+     * finds #bitcoin too.
      */
     fun hashtags(notes: List<FeedNote>, query: String): List<String> {
         val needle = query.trim().lowercase().removePrefix("#")
         if (needle.isEmpty()) return emptyList()
-        val found = HashSet<String>()
-        for (note in notes) {
-            for (match in hashtagRegex.findAllOnce(note.content)) {
-                val tag = match.groupValues[1].lowercase()
-                if (tag.contains(needle)) found.add(tag)
-            }
+        val counts = HashtagSearchRank.counts(notes) { note ->
+            hashtagRegex.findAllOnce(note.content).map { it.groupValues[1].lowercase() }.filter { it.contains(needle) }.toList()
         }
-        return found.sorted()
+        return HashtagSearchRank.order(counts, query)
     }
 
     /**
