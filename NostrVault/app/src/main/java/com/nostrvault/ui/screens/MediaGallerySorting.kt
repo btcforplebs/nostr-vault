@@ -16,6 +16,8 @@ enum class MediaSortOption(val key: String, val label: String) {
     OLDEST_FIRST("oldestFirst", "Oldest first"),
     MEDIA_TYPE("mediaType", "Media type"),
     ON_RELAY_FIRST("onRelayFirst", "On relay first"),
+    LARGEST_FIRST("largestFirst", "Largest first"),
+    SMALLEST_FIRST("smallestFirst", "Smallest first"),
     ;
 
     /**
@@ -35,12 +37,27 @@ enum class MediaSortOption(val key: String, val label: String) {
         ON_RELAY_FIRST -> items.sortedWith(
             compareBy<BlossomMediaItem> { if (it.isLocal) 0 else 1 }.thenByDescending { it.sortTime },
         )
+        // A file with no known size goes last under both size sorts, not
+        // first under Smallest: "nothing known" is not "tiny".
+        LARGEST_FIRST -> items.sortedWith(
+            compareBy<BlossomMediaItem> { knownSize(it) == null }
+                .thenByDescending { knownSize(it) ?: 0L }
+                .thenByDescending { it.sortTime },
+        )
+        SMALLEST_FIRST -> items.sortedWith(
+            compareBy<BlossomMediaItem> { knownSize(it) == null }
+                .thenBy { knownSize(it) ?: 0L }
+                .thenByDescending { it.sortTime },
+        )
     }
 
     companion object {
         const val STORAGE_KEY = "mediaGallery.sortOption"
 
         fun fromKey(key: String?): MediaSortOption = entries.firstOrNull { it.key == key } ?: NEWEST_FIRST
+
+        /** The byte size, or null when no source gave one (servers that omit it report 0). */
+        internal fun knownSize(item: BlossomMediaItem): Long? = item.size?.takeIf { it > 0 }
 
         /** Photos, then GIFs, videos, audio, anything else (iOS `typeRank`). */
         internal fun typeRank(item: BlossomMediaItem): Int = when {
