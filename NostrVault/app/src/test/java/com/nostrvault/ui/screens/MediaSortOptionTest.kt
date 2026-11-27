@@ -7,9 +7,9 @@ import org.junit.Test
 
 /** Media tab sort orders, ported from iOS MediaSortOption. */
 class MediaSortOptionTest {
-    private fun item(id: Char, mime: String?, time: Long, local: Boolean = false) = BlossomMediaItem(
+    private fun item(id: Char, mime: String?, time: Long, local: Boolean = false, size: Long? = null) = BlossomMediaItem(
         sha256 = id.toString().repeat(64), displayUrl = "https://m.example/$id", localFile = null,
-        mimeType = mime, size = null, uploaded = time, lastModified = null, isLocal = local,
+        mimeType = mime, size = size, uploaded = time, lastModified = null, isLocal = local,
     )
 
     private val photoOld = item('a', "image/png", 100)
@@ -34,12 +34,27 @@ class MediaSortOptionTest {
         assertEquals("bdca", ids(MediaSortOption.ON_RELAY_FIRST.sorted(all)))
     }
 
+    @Test fun bySizeUnknownLastTiesNewest() {
+        val big = item('a', "video/mp4", 100, size = 5_000_000)
+        val small = item('b', "image/png", 200, size = 1_000)
+        val sameSmallNewer = item('c', "image/png", 300, size = 1_000)
+        val unknown = item('d', "image/png", 400, size = null)
+        val zero = item('e', "image/png", 500, size = 0)
+        val mixed = listOf(unknown, small, zero, big, sameSmallNewer)
+        assertEquals("acbed", ids(MediaSortOption.LARGEST_FIRST.sorted(mixed)))
+        assertEquals("cbaed", ids(MediaSortOption.SMALLEST_FIRST.sorted(mixed)))
+        assertFalse(MediaSortOption.LARGEST_FIRST.groupsByDate)
+        assertFalse(MediaSortOption.SMALLEST_FIRST.groupsByDate)
+    }
+
     @Test fun storedKeyRoundTripsAndDefaults() {
         for (option in MediaSortOption.entries) assertEquals(option, MediaSortOption.fromKey(option.key))
         assertEquals(MediaSortOption.NEWEST_FIRST, MediaSortOption.fromKey(null))
         assertEquals(MediaSortOption.NEWEST_FIRST, MediaSortOption.fromKey("bogus"))
         // Same raw values iOS stores.
         assertEquals("onRelayFirst", MediaSortOption.ON_RELAY_FIRST.key)
+        assertEquals("largestFirst", MediaSortOption.LARGEST_FIRST.key)
+        assertEquals("smallestFirst", MediaSortOption.SMALLEST_FIRST.key)
     }
 
     @Test fun onlyDateSortsGroupByDate() {

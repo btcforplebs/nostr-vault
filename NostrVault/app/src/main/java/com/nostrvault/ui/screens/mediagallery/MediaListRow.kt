@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nostrvault.service.*
+import com.nostrvault.ui.screens.dashboard.formatSize
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -121,7 +122,7 @@ internal fun MediaListRow(
                 )
                 if (item.size != null && item.size > 0) {
                     Text(
-                        text = " \u00B7 ${formatFileSize(item.size)}",
+                        text = " \u00B7 ${formatSize(item.size)}",
                         color = TertiaryText,
                         fontSize = 12.sp,
                     )
@@ -184,13 +185,5 @@ internal fun MediaListRow(
             onReport = onReport,
             onBlock = onBlock,
         )
-    }
-}
-
-private fun formatFileSize(bytes: Long): String {
-    return when {
-        bytes < 1024 -> "$bytes B"
-        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-        else -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
     }
 }
