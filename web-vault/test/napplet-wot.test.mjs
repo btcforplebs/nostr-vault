@@ -12,7 +12,7 @@ import { buildWeb, filterWeb, shownByKey, trustPathText, EXTENDED_CAP, FURTHER_C
 import { layout, layerFaceCandidates, pictured, LAYER_FACES, RING_FACES } from "../src/net/wot-globe.js"
 
 const read = p => fs.readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
-const html = injectWot(read("napplets/wot/index.html"), [read("src/net/wot-pure.js"), read("src/net/wot-globe.js")])
+const html = injectWot(read("napplets/wot/index.html"), [read("src/net/wot-pure.js"), read("src/net/wot-globe.js"), read("src/net/people-rank.js")])
 const script = html.slice(html.indexOf("<script>") + 8, html.indexOf("// ---- end pure ----"))
 const box = {}
 vm.runInNewContext(`${script}\n;Object.assign(box, { webOf, litOf, nodesOf, findPeople, trustPathText, layout })`, { box, TextEncoder, Map, Set })
@@ -78,6 +78,17 @@ test("find: by name word or key start, follows first", () => {
   assert.deepEqual(plain(box.findPeople(web, names, O[3].slice(0, 10))), [O[3]])
   assert.deepEqual(plain(box.findPeople(web, names, "  ")), [])
   assert.deepEqual(plain(box.findPeople(web, names, "Lee An")), [O[1]]) // a whole name with its space
+})
+
+test("find: the shell's shared ranker (search plan W3): follows first, exact name over prefix, same order as the app", async () => {
+  const { rankPeople } = await import("../src/net/people-rank.js")
+  const web = box.webOf({ me: ME, follows: F, extended: [], further: O, linkers: {}, followsMe: [] })
+  const names = { [F[4]]: ["Robertson"], [O[2]]: ["Jarob"], [O[6]]: ["Mr Rob"], [O[9]]: ["Robby"], [O[11]]: ["rob"] }
+  const got = plain(box.findPeople(web, names, "Rob"))
+  assert.deepEqual(got, [F[4], O[11], O[9], O[6], O[2]], "follow, then exact, starts with, a word starts with, contains")
+  const app = rankPeople([...F, ...O], "rob", { me: ME, follows: new Set(F), web: new Set(O), profileOf: pk => (names[pk] ? { name: names[pk][0] } : null) })
+  assert.deepEqual(got, app, "the napplet and the app give the same people in the same order")
+  assert.match(script, /function rankPeople\(pubkeys, query/, "the ranker is injected, not copied")
 })
 
 test("the WoT tab is the WoT napplet on the desktop (plan step 11), See their web included; the phone keeps its screen; no network domain", () => {

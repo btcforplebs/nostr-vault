@@ -1,4 +1,5 @@
-// The WoT napplet carries the app's own globe maths (plan P6): net/wot-pure.js and net/wot-globe.js, put into its
+// The WoT napplet carries the app's own globe maths (plan P6): net/wot-pure.js and net/wot-globe.js (and the shared
+// people ranker, net/people-rank.js, for Find), put into its
 // index.html where it says /*@wot-maths*/, with their import lines and `export` words taken out. One copy of the maths,
 // so the napplet places and draws people exactly as the app does. Pure: first-party.js passes the files' text (vite
 // ?raw), node tests read them from disk.
