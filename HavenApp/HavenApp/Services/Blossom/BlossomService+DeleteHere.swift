@@ -48,19 +48,21 @@ extension BlossomService {
         // On the list first, so a run starting now skips it; then out of the
         // vault folder, so no address of this device can answer the check
         // with its own copy (Tron, PR 2652 M1).
+        // Every name it is served by goes aside, and the list goes back to how
+        // it was if the check refuses (Tron, #2654 lows 2 and 3).
+        let wasListed = store.list(relayDataDir: relayDataDir).contains(hash)
         guard store.add(hash, owner: owner, relayDataDir: relayDataDir) else {
             return .failed("Couldn't save the list of files removed here, so nothing was deleted.")
         }
-        guard let aside = store.setAside(file, sha256: hash, relayDataDir: relayDataDir) else {
-            store.remove(hash, relayDataDir: relayDataDir)
+        guard store.setAside(DeviceRemovedStore.vaultFiles(of: hash, in: vault), sha256: hash,
+                             wasListed: wasListed, relayDataDir: relayDataDir) else {
+            if !wasListed { store.remove(hash, relayDataDir: relayDataDir) }
             return .failed("Couldn't remove the file from this device.")
         }
         defer { store.finished(hash) }
         func putBack() {
-            if (try? FileManager.default.moveItem(at: aside, to: file)) != nil {
-                store.remove(hash, relayDataDir: relayDataDir)
-            } else {
-                // Left aside and listed: the next delete-here run puts it back.
+            if !store.putBack(hash, relayDataDir: relayDataDir, vault: vault) {
+                // Left aside and listed: the next pass puts it back.
                 logger.error("deleteHere: \(hash.prefix(8)) not put back; recovered on the next run")
             }
         }
@@ -79,7 +81,7 @@ extension BlossomService {
             return .refused("Not deleted.")
         }
         do {
-            try FileManager.default.removeItem(at: aside)
+            try store.discardSetAside(hash, relayDataDir: relayDataDir)
         } catch {
             putBack()
             logger.error("deleteHere: \(hash.prefix(8)) not removed: \(error.localizedDescription)")
