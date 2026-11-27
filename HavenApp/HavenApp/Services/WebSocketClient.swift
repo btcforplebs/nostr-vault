@@ -122,6 +122,8 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
     private var webSocketTask: URLSessionWebSocketTask?
     @Published var connectionState: ConnectionState = .disconnected
     private var lastError: String?
+    /// The last `.error` was the connect timing out (LookupSocketPool). Main queue.
+    private(set) var lastFailureTimedOut = false
     private var isClosing = false
     var isTemporary = false
     let messageSubject = PassthroughSubject<String, Never>()
@@ -185,6 +187,7 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
             if RelayBlocklist.isBlocked(url.absoluteString) {
                 self.refusedByBlocklist = true
                 DispatchQueue.main.async { [weak self] in
+                    self?.lastFailureTimedOut = false // refused by the blocklist
                     self?.connectionState = .error
                 }
                 return
@@ -197,6 +200,7 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
             }
 
             DispatchQueue.main.async { [weak self] in
+                self?.lastFailureTimedOut = false
                 self?.connectionState = .connecting
             }
 
@@ -233,6 +237,7 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
                 self.disconnectLocked()
                 self.refusedByBlocklist = true
                 DispatchQueue.main.async { [weak self] in
+                    self?.lastFailureTimedOut = false // refused by the blocklist
                     self?.connectionState = .error
                 }
             } else if !blocked, self.refusedByBlocklist {
@@ -413,6 +418,7 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
                     }
                     #endif
                     DispatchQueue.main.async { [weak self] in
+                        self?.lastFailureTimedOut = (error as NSError).code == NSURLErrorTimedOut
                         self?.connectionState = .error
                         self?.lastError = error.localizedDescription
                     }
@@ -506,6 +512,7 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
             }
             #endif
             DispatchQueue.main.async { [weak self] in
+                self?.lastFailureTimedOut = (error as NSError).code == NSURLErrorTimedOut
                 self?.connectionState = .error
                 self?.lastError = error.localizedDescription
             }

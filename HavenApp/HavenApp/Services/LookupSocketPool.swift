@@ -19,6 +19,9 @@ protocol LookupConnection: AnyObject {
     func open(_ url: URL)
     func send(_ text: String)
     func close()
+    /// Whether the socket's last `.failed` was its dial timing out (a slow
+    /// relay, maybe healthy) rather than a refusal or a socket error.
+    var lastFailureTimedOut: Bool { get }
 }
 
 /// One socket per relay for the app's small one-shot lookups (profiles,
@@ -183,10 +186,25 @@ final class LookupSocketPool {
 
     /// Whether the last socket dialled to `url` failed before its handshake
     /// finished: the relay was dialled and could not be reached. A relay not
-    /// dialled (cooling down, pool full), still connecting, or one that
-    /// connected and then dropped is not this (ListMerge.followMajority).
+    /// dialled (cooling down, pool full), still connecting, one whose dial
+    /// timed out, or one that connected and then dropped is not this
+    /// (ListMerge.followMajority).
     func failedToConnect(_ url: URL) -> Bool {
         handshakeFailed.contains(Self.relayKey(url))
+    }
+
+    /// Whether a lookup to `url` that ended with `outcome` leaves the relay
+    /// out of the follow count (`ReplaceableLookup.unreachable`).
+    /// A dial that failed to connect, or a skip for the cool-down that such a
+    /// dial started: a second follow inside the cool-down counts the relay the
+    /// same as the first (rd's dead relays, web b5cb8f8f5). A timed-out dial,
+    /// a connected socket that dropped, a full pool or a busy id still count.
+    func unreachable(_ url: URL, after outcome: Outcome) -> Bool {
+        switch outcome {
+        case .failed: return failedToConnect(url)
+        case .skipped: return failedToConnect(url) && isCoolingDown(url)
+        default: return false
+        }
     }
 
     /// Closes every pooled socket (background, account switch). Lookups still
@@ -229,7 +247,7 @@ final class LookupSocketPool {
                     for item in queued { entry.connection.send(item.frame) }
                     if entry.lookups.isEmpty { self.scheduleIdleClose(entry) }
                 case .failed:
-                    if !entry.connected { self.handshakeFailed.insert(entry.key) }
+                    if !entry.connected && !entry.connection.lastFailureTimedOut { self.handshakeFailed.insert(entry.key) }
                     self.cooldownUntil[entry.key] = self.now().addingTimeInterval(self.cooldown)
                     self.shut(entry)
                 }
