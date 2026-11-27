@@ -70,12 +70,20 @@ object ZapConfirm {
 class PendingZaps(private val now: () -> Long = { System.currentTimeMillis() }) {
     private val pending = ConcurrentHashMap<String, Long>()
     private val asked = ConcurrentHashMap<String, Long>()
+    /**
+     * Zaps whose wallet hasn't answered yet. They stay pending however long
+     * that takes: a Cashu pay (recover, a quote per mint, melt) can outlast
+     * [PENDING_MS], and a second tap then must still be asked first.
+     */
+    private val paying = ConcurrentHashMap<String, Int>()
+
+    private fun live(key: String, t: Long): Boolean =
+        (paying[key] ?: 0) > 0 || pending[key]?.let { t - it <= PENDING_MS } == true
 
     /** True when the zap should go ahead; false means "ask first" (the caller says so and stops). */
     fun mayZap(key: String): Boolean {
         val t = now()
-        val since = pending[key]
-        if (since == null || t - since > PENDING_MS) {
+        if (!live(key, t)) {
             pending.remove(key)
             return true
         }
@@ -90,14 +98,25 @@ class PendingZaps(private val now: () -> Long = { System.currentTimeMillis() }) 
 
     fun begin(key: String) {
         pending[key] = now()
+        paying.merge(key, 1, Int::plus)
         asked.remove(key)
     }
 
+    /** The wallet answered (or gave up): the pending window runs from now. */
+    fun answered(key: String) {
+        // Counted per zap: a second confirmed tap on the same note stays
+        // pending when the first one's wallet answers.
+        if (paying[key] == null) return
+        paying.computeIfPresent(key) { _, n -> (n - 1).takeIf { it > 0 } }
+        pending[key] = now()
+    }
+
+    /** The zap is settled. Call after [answered]; another zap still paying on the key stays pending. */
     fun end(key: String) {
         pending.remove(key)
     }
 
-    fun isPending(key: String): Boolean = pending[key]?.let { now() - it <= PENDING_MS } == true
+    fun isPending(key: String): Boolean = live(key, now())
 
     companion object {
         /** A zap counts as pending for the wallet wait plus the receipt watch. */

@@ -58,6 +58,10 @@ extern void StopRelayC(void);
 extern void RequestRelaySyncC(void);
 extern void SetMeshServingC(int on);
 extern void RequestMacSyncCheckC(void);
+// The built-in Cashu wallet (haven-go/cashu_wallet_cshared.go). Each returns JSON the caller frees.
+extern char* CashuWalletOpenC(char* path);
+extern char* CashuWalletCallC(int handle, char* method, char* args);
+extern void CashuWalletCloseC(int handle);
 extern void SetAppForegroundC(int on);
 extern void TrimMemoryC(void);
 extern void UpdateBlacklistC(const char* npubsJSON);
@@ -778,4 +782,59 @@ Java_com_nostrvault_relay_VaultStatusBridge_statusFrom(JNIEnv *env, jobject thiz
     REL_CSTR(env, base, cBase);
     REL_CSTR(env, peer, cPeer);
     return goStringToJstring(env, answer);
+}
+
+// ---- Built-in Cashu wallet (service/cashu/CashuNative.kt) ----
+// Bytes in and out: the JSON is plain UTF-8, which NewStringUTF and
+// GetStringUTFChars (modified UTF-8) would mangle for emoji in a memo.
+
+// A NUL-terminated copy of a byte[], or NULL. The caller frees it.
+static char *cashuBytes(JNIEnv *env, jbyteArray in) {
+    if (in == NULL) return NULL;
+    jsize n = (*env)->GetArrayLength(env, in);
+    char *out = malloc((size_t)n + 1);
+    if (out == NULL) return NULL;
+    (*env)->GetByteArrayRegion(env, in, 0, n, (jbyte*)out);
+    out[n] = '\0';
+    return out;
+}
+
+// The engine's answer as a byte[]; frees it.
+static jbyteArray cashuAnswer(JNIEnv *env, char *answer) {
+    if (answer == NULL) return NULL;
+    size_t len = strlen(answer);
+    jbyteArray out = (*env)->NewByteArray(env, (jsize)len);
+    if (out != NULL) (*env)->SetByteArrayRegion(env, out, 0, (jsize)len, (const jbyte*)answer);
+    free(answer);
+    return out;
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_nostrvault_service_cashu_CashuNative_openNative(JNIEnv *env, jclass clazz, jbyteArray path) {
+    char *cPath = cashuBytes(env, path);
+    if (cPath == NULL) return NULL;
+    char *answer = CashuWalletOpenC(cPath);
+    free(cPath);
+    return cashuAnswer(env, answer);
+}
+
+// Blocks up to 2 minutes when it reaches a mint: Kotlin calls it on Dispatchers.IO.
+JNIEXPORT jbyteArray JNICALL
+Java_com_nostrvault_service_cashu_CashuNative_callNative(JNIEnv *env, jclass clazz, jint handle, jbyteArray method, jbyteArray args) {
+    char *cMethod = cashuBytes(env, method);
+    char *cArgs = cashuBytes(env, args);
+    if (cMethod == NULL || cArgs == NULL) {
+        free(cMethod);
+        free(cArgs);
+        return NULL;
+    }
+    char *answer = CashuWalletCallC((int)handle, cMethod, cArgs);
+    free(cMethod);
+    free(cArgs);
+    return cashuAnswer(env, answer);
+}
+
+JNIEXPORT void JNICALL
+Java_com_nostrvault_service_cashu_CashuNative_closeNative(JNIEnv *env, jclass clazz, jint handle) {
+    CashuWalletCloseC((int)handle);
 }

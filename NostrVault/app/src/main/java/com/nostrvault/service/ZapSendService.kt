@@ -2,6 +2,8 @@ package com.nostrvault.service
 
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.service.cashu.CashuException
+import com.nostrvault.service.cashu.ZapPayer
 import com.nostrvault.util.Bolt11
 import com.nostrvault.util.RelayGiven
 import com.nostrvault.ui.notification.NotificationManager
@@ -33,6 +35,8 @@ class ZapSendService @Inject constructor(
     private val configStore: ConfigStore,
     private val feedService: FeedService,
     private val notificationManager: NotificationManager,
+    /** The "Pay zaps with" seam (service/cashu). Null (tests) pays by NWC as before. */
+    private val zapPayer: ZapPayer? = null,
 ) {
     /** Zaps waiting on their wallet or receipt ([PendingZaps]). */
     internal val pendingZaps = PendingZaps()
@@ -92,6 +96,8 @@ class ZapSendService @Inject constructor(
         addressTag: String? = null,
         extraReceiptRelays: List<String> = emptyList(),
     ): Result<Unit> {
+        // The account that tapped Zap: its "Pay zaps with" wallet pays.
+        val payingAccount = if (zapPayer != null) nostrService.activeHexPubkey else ""
         if (amountSats <= 0) {
             return Result.failure(ZapError.PaymentFailed("Zap amount must be greater than 0", notPaid = true))
         }
@@ -195,13 +201,17 @@ class ZapSendService @Inject constructor(
             return Result.failure(ZapError.WrongInvoiceAmount())
         }
 
-        // 4. Pay via NWC, and watch for the zap's own receipt meanwhile: either
+        // 4. Pay (NWC or the built-in wallet, ZapPayer), and watch for the zap's own receipt meanwhile: either
         // one proves it went (ZapConfirm). Only a receipt-carrying zap can be
         // watched; a plain invoice has only the wallet's word.
         pendingZaps.begin(pendingKey)
         val receipt = receiptRelays.takeIf { zapRequestJson != null && it.isNotEmpty() }
             ?.let { relays -> ReceiptWatch(invoice, ZapConfirm.receiptFilter(notePubkey, noteId, requestedAt), relays) }
-        val payment = pay(invoice, receipt)
+        val payment = try {
+            pay(invoice, payingAccount, receipt)
+        } finally {
+            pendingZaps.answered(pendingKey)
+        }
         return when (payment) {
             Payment.Paid -> {
                 Log.i(TAG, "Zap paid ($amountSats sats)")
@@ -219,9 +229,11 @@ class ZapSendService @Inject constructor(
             is Payment.Failed -> {
                 pendingZaps.end(pendingKey)
                 val e = payment.error
-                Log.w(TAG, "NWC payment failed: ${e.message}")
-                val notPaid = e is NWCNotSentException || (e is NWCWalletException && e.refusedBeforePaying)
-                Result.failure(ZapError.PaymentFailed(e.message ?: "unknown error", notPaid))
+                Log.w(TAG, "Zap payment failed: ${e.message}")
+                val notPaid = e is NWCNotSentException || (e is NWCWalletException && e.refusedBeforePaying) ||
+                    (e is CashuException && e.refusedBeforePaying)
+                val shown = (e as? CashuException)?.userMessage ?: e.message ?: "unknown error"
+                Result.failure(ZapError.PaymentFailed(shown, notPaid))
             }
         }
     }
@@ -233,15 +245,18 @@ class ZapSendService @Inject constructor(
      * The wallet's answer, or the receipt if it comes first. No answer within
      * the wallet wait, or one without a preimage, is [Payment.Unconfirmed].
      */
-    private suspend fun pay(invoice: String, receipt: ReceiptWatch?): Payment = coroutineScope {
+    private suspend fun pay(invoice: String, account: String, receipt: ReceiptWatch?): Payment = coroutineScope {
         val wallet = async {
             try {
-                nwcService.payInvoice(invoice)
+                if (zapPayer != null) zapPayer.pay(invoice, account) else nwcService.payInvoice(invoice)
                 Payment.Paid
             } catch (e: NWCTimeoutException) {
                 Payment.Unconfirmed
             } catch (e: NWCNoPreimageException) {
                 Payment.Unconfirmed
+            } catch (e: CashuException) {
+                // "pending": the mint may still pay, so wait for the receipt.
+                if (e.mayStillSettle) Payment.Unconfirmed else Payment.Failed(e)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 Payment.Failed(e)
