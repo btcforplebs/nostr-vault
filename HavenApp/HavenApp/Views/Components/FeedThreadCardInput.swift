@@ -23,15 +23,18 @@ struct FeedThreadCardInput: Equatable {
     /// Row data the card asks for: the open note's, and each bare repost's
     /// (its original).
     let rowData: [FeedNoteRowData]
-    /// For each quoted id across the entries: 2 loaded, 1 unavailable, 0 loading.
-    let quoteStates: [UInt8]
+    /// For each quoted id across the entries (a bare repost's are its
+    /// original's, as the card draws): the loaded note's id, so a newer
+    /// replaceable version (a 30311 stream update) redraws; "!" unavailable;
+    /// "" loading.
+    let quoteStates: [String]
 
     @MainActor
     init(thread: FeedThread<FeedNote>, openNoteId: String?, isExpanded: Bool, rootUnavailable: Bool,
          profileFor: (String) -> FeedProfile?, rowDataFor: (FeedNote) -> FeedNoteRowData,
          find: (String) -> FeedNote?, unavailable: Set<String>, isOLED: Bool) {
         var entries: [FeedNote] = [], depths: [Int] = [], profiles: [FeedProfile?] = []
-        var rowData: [FeedNoteRowData] = [], quoteStates: [UInt8] = []
+        var rowData: [FeedNoteRowData] = [], quoteStates: [String] = []
         entries.reserveCapacity(thread.entries.count)
         for entry in thread.entries {
             let note = entry.note
@@ -39,21 +42,27 @@ struct FeedThreadCardInput: Equatable {
             depths.append(entry.depth)
             profiles.append(profileFor(note.pubkey))
             let isBareRepost = note.kind == 6 && note.content.isEmpty && note.repostedEventId != nil
+            var shown = note
             if isBareRepost || note.id == openNoteId {
                 let data = rowDataFor(note)
                 rowData.append(data)
-                if let original = data.resolvedOriginal { profiles.append(profileFor(original.pubkey)) }
+                if let original = data.resolvedOriginal {
+                    profiles.append(profileFor(original.pubkey))
+                    // The card resolves quotes and live cleanup on a bare
+                    // repost's original, not the empty repost.
+                    if isBareRepost { shown = original }
+                }
             }
-            for id in note.quotedEventIds {
+            for id in shown.quotedEventIds {
                 if let quoted = find(id) {
-                    quoteStates.append(2)
+                    quoteStates.append(quoted.id)
                     profiles.append(profileFor(quoted.pubkey))
                 } else {
-                    quoteStates.append(unavailable.contains(id) ? 1 : 0)
+                    quoteStates.append(unavailable.contains(id) ? "!" : "")
                 }
             }
             if let refId = note.repostedEventId, isBareRepost {
-                quoteStates.append(unavailable.contains(refId) ? 1 : 0)
+                quoteStates.append(unavailable.contains(refId) ? "!" : "")
             }
         }
         self.entries = entries
