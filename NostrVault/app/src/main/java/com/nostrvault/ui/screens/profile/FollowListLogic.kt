@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.profile
 
+import com.nostrvault.data.model.PeopleSearchRank
 import java.util.Locale
 
 /** The two lists a profile's Following / Followers counts open. */
@@ -82,8 +83,29 @@ object FollowListLogic {
         }
         return FollowListGroup.entries.mapNotNull { group ->
             val members = buckets[group]?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-            FollowListSection(group, ordered(members, sort, trustRank))
+            FollowListSection(group, queryMatchesFirst(ordered(members, sort, trustRank), query))
         }
+    }
+
+    /**
+     * While a query is typed, inside each group: names that are the query,
+     * then names that start with it, then the rest; the picked sort holds
+     * within each part (search plan §2.8). Same folding as [PeopleSearchRank],
+     * and a NIP-05's local part counts as a name. iOS twin: A6.
+     */
+    fun queryMatchesFirst(people: List<FollowListPerson>, query: String): List<FollowListPerson> {
+        val folded = PeopleSearchRank.fold(query)
+        if (folded.isEmpty()) return people
+        val parts = List(3) { ArrayList<FollowListPerson>() }
+        for (person in people) {
+            val match = PeopleSearchRank.match(folded, PeopleSearchRank.Person(person.pubkey, displayName = person.name, nip05 = person.nip05))
+            parts[when (match) {
+                PeopleSearchRank.Match.EXACT -> 0
+                PeopleSearchRank.Match.PREFIX -> 1
+                else -> 2
+            }] += person
+        }
+        return parts.flatten()
     }
 
     fun ordered(people: List<FollowListPerson>, sort: FollowListSort, trustRank: Map<String, Int>): List<FollowListPerson> =
