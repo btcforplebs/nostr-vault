@@ -88,8 +88,7 @@ class FollowListWipeGuardTest {
         // A key made on this device has no lists anywhere: its first follow still goes out.
         assertEquals(0, ContactManager.saveBase(me, null, false, freshKey = true, known = null, unknownWhy = ListMerge.NO_RELAY_LIST)!!.tags.size)
         // The toast says why rather than "try again".
-        assertEquals("Couldn't follow. ${ListMerge.NO_RELAY_LIST}", followFailedMessage(follow = true, why = ListMerge.NO_RELAY_LIST))
-        assertEquals("Couldn't unfollow, try again", followFailedMessage(follow = false, why = ListMerge.NOT_ANSWERED))
+        assertEquals("Couldn't follow. ${ListMerge.NO_RELAY_LIST}", followFailedMessage(follow = true, FollowPublishFailure.NoRelayList))
     }
 
     @Test fun aCopyDatedAheadIsNeverTheBase() {

@@ -57,6 +57,7 @@ class FreshKeyClearedOnAcceptTest {
         every { FreshAccountKeys.isFresh(any<Context>(), alice, any()) } returns true
         every { FreshAccountKeys.clear(any(), any(), any()) } returns Unit
         nostr = mockk(relaxed = true)
+        every { nostr.outboxRelays } returns MutableStateFlow(emptyMap())
         every { nostr.activeHexPubkey } returns alice
         every { nostr.lockPostingAccount() } returns lockA
         coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any(), any()) } answers {
@@ -79,7 +80,13 @@ class FreshKeyClearedOnAcceptTest {
 
     private fun feed() = FeedService(
         appContext = context,
-        configStore = mockk<ConfigStore>(relaxed = true) { every { config } returns MutableStateFlow(HavenConfig()) },
+        // Main is unconfined, so the observers FeedService starts run now: a relaxed mock's flow throws when collected,
+        // and the uncaught exception fails a later runTest test (ListMergeGapsTest).
+        configStore = mockk<ConfigStore>(relaxed = true) {
+            every { config } returns MutableStateFlow(HavenConfig())
+            every { activeAccountHexPubkey } returns MutableStateFlow(alice)
+            every { accountSwitches } returns kotlinx.coroutines.flow.emptyFlow()
+        },
         nostrService = nostr,
         feedFilterEngine = mockk(relaxed = true),
         engagementTracker = mockk(relaxed = true),
