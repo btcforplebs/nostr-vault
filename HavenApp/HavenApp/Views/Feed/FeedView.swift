@@ -3,10 +3,13 @@ import SwiftUI
 // MARK: - FeedView
 
 struct FeedView: View {
-    @StateObject var feedService = FeedService.shared
-    @EnvironmentObject var relayManager: RelayProcessManager
-    @EnvironmentObject var configService: ConfigService
-    @EnvironmentObject var nostrService: NostrService
+    /// Everything below is read, not observed: `screen` forwards their
+    /// changes only while the Feed is on screen (Feed perf review 11-27 #4).
+    @StateObject var screen = FeedScreenWatch()
+    var feedService: FeedService { .shared }
+    var relayManager: RelayProcessManager { .shared }
+    var configService: ConfigService { .shared }
+    var nostrService: NostrService { .shared }
     /// Not observed: the manager publishes every countdown tick (10 a
     /// second), and the whole feed would redraw for each. Only the pill
     /// watches it; the Mac's edit request comes in by `onReceive`.
@@ -27,11 +30,11 @@ struct FeedView: View {
     @Namespace var mediaZoom
     /// macOS presents the article reader as a sheet; iOS pushes it.
     @State var showingArticle: ArticleRoute?
-    @StateObject var recipeService = RecipeFeedService.shared
-    @StateObject var marketplaceService = MarketplaceFeedService.shared
+    var recipeService: RecipeFeedService { .shared }
+    var marketplaceService: MarketplaceFeedService { .shared }
     @State var selectedListing: MarketListing?
-    @StateObject var liveService = LiveFeedService.shared
-    @StateObject var reelsService = ReelsFeedService.shared
+    var liveService: LiveFeedService { .shared }
+    var reelsService: ReelsFeedService { .shared }
     @State var playingStream: LiveStream?
     @State var selectedGridMediaNoteId: String?
     /// The grid viewer's notes travel with the presentation: a separate
@@ -149,9 +152,13 @@ struct FeedView: View {
         #if os(iOS)
         feedStack
             .onAppear {
+                screen.isOnScreen = true
                 openNotificationNote()
                 FeedActions.refreshEmoji(nostrService: nostrService)
             }
+            // Behind another tab (the TabView keeps this view) or under a
+            // pushed page: stop redrawing for changes nobody sees.
+            .onDisappear { screen.isOnScreen = false }
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenNotificationNote)) { _ in
                 openNotificationNote()
             }
