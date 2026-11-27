@@ -145,6 +145,7 @@ class NostrService: ObservableObject {
         // Stored in configCancellable (not cancellables) so resetConnections() won't destroy it.
         configCancellable = ConfigService.shared.activeAccountSwitches
             .sink { [weak self] _ in
+                PeopleSearchRank.resetMemo()
                 self?.handleAccountSwitch()
             }
 
@@ -161,7 +162,16 @@ class NostrService: ObservableObject {
             .store(in: &cancellables)
     }
 
-    @Published var profiles: [String: FeedProfile] = [:]
+    @Published var profiles: [String: FeedProfile] = [:] {
+        didSet {
+            profilesVersion &+= 1
+            // Leave Nostr empties the cache; the folded names go with it.
+            if profiles.isEmpty { PeopleSearchRank.resetMemo() }
+        }
+    }
+    /// Bumped on every write to `profiles`, so a cached search answer can
+    /// tell a renamed profile from an unchanged one.
+    private(set) var profilesVersion = 0
     /// Kind-0 profiles waiting to be written to `profiles` in one go.
     var profileWrites = ProfileWriteBatch()
     var profileWriteFlushScheduled = false

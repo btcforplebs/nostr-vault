@@ -132,59 +132,109 @@ enum PeopleSearchRank {
     /// profile on each keystroke and while relay answers stream in, and
     /// `String.folding` is the slow part (Tron, #2681: 114-174 ms a pass on
     /// 20k profiles), so each raw name is folded once per run.
-    struct Folded {
-        /// UTF-8 of the folded, precomposed text: matching on bytes skips
-        /// the per-Character work of String's `hasPrefix`/`contains`.
-        let bytes: [UInt8]
-        let words: [[UInt8]]
-
-        init(_ raw: String) {
-            let text = PeopleSearchRank.fold(raw).precomposedStringWithCanonicalMapping
-            bytes = Array(text.utf8)
-            words = text.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map { Array($0.utf8) }
-        }
-    }
-
-    /// The query as `match` compares it.
+    /// The query as `match` compares it: folded UTF-8, precomposed.
     static func queryBytes(_ folded: String) -> [UInt8] {
         Array(folded.precomposedStringWithCanonicalMapping.utf8)
     }
 
-    /// One person's names and about, folded. Kept per pubkey and reused
-    /// while the raw text is the same (the same strings from the profile
-    /// cache compare by storage, so the check is cheap; hashing them is not).
+    /// One person's names and about, folded, packed into two arrays so the
+    /// memo stays small (Tron, #2697: an array per name and per word cost
+    /// ~1.6 KB a person). Matching runs on the bytes, which skips the
+    /// per-Character work of String's `hasPrefix`/`contains`.
+    struct Folded {
+        /// Every name's folded UTF-8, then the about's.
+        let bytes: [UInt8]
+        /// Per name: start, end, word count, then each word's start and end,
+        /// all byte offsets into `bytes`.
+        let spans: [Int32]
+        /// Where the about starts in `bytes`; -1 without one.
+        let aboutStart: Int32
+
+        init(names: [String], about: String?) {
+            var bytes: [UInt8] = [], spans: [Int32] = []
+            for raw in names {
+                let text = PeopleSearchRank.fold(raw).precomposedStringWithCanonicalMapping
+                let utf8 = text.utf8
+                let start = Int32(bytes.count)
+                bytes.append(contentsOf: utf8)
+                spans.append(start)
+                spans.append(Int32(bytes.count))
+                let words = text.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+                spans.append(Int32(words.count))
+                for word in words {
+                    let offset = start + Int32(utf8.distance(from: utf8.startIndex, to: word.utf8.startIndex))
+                    spans.append(offset)
+                    spans.append(offset + Int32(word.utf8.count))
+                }
+            }
+            if let about, !about.isEmpty {
+                aboutStart = Int32(bytes.count)
+                bytes.append(contentsOf: PeopleSearchRank.queryBytes(PeopleSearchRank.fold(about)))
+            } else {
+                aboutStart = -1
+            }
+            // Exact-size copies: the built arrays carry growth slack.
+            self.bytes = Self.exact(bytes)
+            self.spans = Self.exact(spans)
+        }
+
+        private static func exact<T>(_ array: [T]) -> [T] {
+            [T](unsafeUninitializedCapacity: array.count) { buffer, count in
+                _ = buffer.initialize(from: array)
+                count = array.count
+            }
+        }
+    }
+
+    /// A person's folded text and the raw fields it was folded from. Kept per
+    /// pubkey and reused while those are the same (the same strings from the
+    /// profile cache compare by storage, so the check is cheap; hashing them
+    /// is not).
     private struct Entry {
-        let names: [String]
+        let displayName: String?
+        let name: String?
+        let nip05: String?
         let about: String?
-        let folded: [Folded]
-        let foldedAbout: [UInt8]?
+        let folded: Folded
+
+        func holds(_ person: Person) -> Bool {
+            displayName == person.displayName && name == person.name
+                && nip05 == person.nip05 && about == person.about
+        }
     }
 
     private final class FoldMemo: @unchecked Sendable {
         private var people: [String: Entry] = [:]
         private let lock = NSLock()
         /// Past this many people the memo starts over, so it stays bounded.
-        private let cap = 100_000
+        private let cap = 25_000
 
-        func entry(_ person: Person) -> Entry {
-            let names = person.names
+        func reset() {
+            lock.lock(); defer { lock.unlock() }
+            people.removeAll()
+        }
+
+        func folded(_ person: Person) -> Folded {
             lock.lock()
-            if let hit = people[person.pubkey], hit.names == names, hit.about == person.about {
+            if let hit = people[person.pubkey], hit.holds(person) {
                 lock.unlock()
-                return hit
+                return hit.folded
             }
             lock.unlock()
-            let entry = Entry(names: names, about: person.about, folded: names.map(Folded.init),
-                              foldedAbout: person.about.map { PeopleSearchRank.queryBytes(PeopleSearchRank.fold($0)) })
+            let folded = Folded(names: person.names, about: person.about)
             lock.lock()
             if people.count >= cap { people.removeAll(keepingCapacity: true) }
-            people[person.pubkey] = entry
+            people[person.pubkey] = Entry(displayName: person.displayName, name: person.name,
+                                          nip05: person.nip05, about: person.about, folded: folded)
             lock.unlock()
-            return entry
+            return folded
         }
     }
 
     private static let memo = FoldMemo()
+
+    /// Forgets every folded name: Leave Nostr and an account switch call it.
+    static func resetMemo() { memo.reset() }
 
     /// How well `person` matches the folded query; nil for no match at all.
     static func match(_ folded: String, _ person: Person) -> Int? {
@@ -194,46 +244,57 @@ enum PeopleSearchRank {
     /// `match` with the query already in bytes, for loops over many people.
     static func match(bytes query: [UInt8], _ person: Person) -> Int? {
         guard !query.isEmpty else { return nil }
-        let entry = memo.entry(person)
-        var best: Int?
-        for name in entry.folded {
-            let m: Int?
-            if name.bytes == query {
-                m = Match.exact
-            } else if hasPrefix(name.bytes[...], query) {
-                m = Match.prefix
-            } else if name.words.contains(where: { hasPrefix($0[...], query) }) {
-                m = Match.wordPrefix
-            } else if contains(name.bytes, query) {
-                m = Match.contains
-            } else {
-                m = nil
-            }
-            if let m, m < (best ?? Int.max) { best = m }
-            if best == Match.exact { break }
-        }
-        if best == nil, let about = entry.foldedAbout, contains(about, query) { best = Match.aboutOnly }
-        return best
-    }
-
-    private static func hasPrefix(_ text: ArraySlice<UInt8>, _ prefix: [UInt8]) -> Bool {
-        text.count >= prefix.count && text.prefix(prefix.count).elementsEqual(prefix)
-    }
-
-    private static func contains(_ text: [UInt8], _ needle: [UInt8]) -> Bool {
-        let n = needle.count, end = text.count - n
-        guard n > 0, end >= 0 else { return n == 0 }
-        let first = needle[0]
-        return text.withUnsafeBufferPointer { t in
-            needle.withUnsafeBufferPointer { q in
-                var i = 0
-                while i <= end {
-                    if t[i] == first, memcmp(t.baseAddress! + i, q.baseAddress!, n) == 0 { return true }
-                    i += 1
+        let folded = memo.folded(person)
+        return folded.bytes.withUnsafeBufferPointer { text in
+            query.withUnsafeBufferPointer { q in
+                folded.spans.withUnsafeBufferPointer { spans in
+                    var best: Int?
+                    var i = 0
+                    while i < spans.count {
+                        let start = Int(spans[i]), end = Int(spans[i + 1]), words = Int(spans[i + 2])
+                        let wordsAt = i + 3
+                        i = wordsAt + 2 * words
+                        let m: Int?
+                        if end - start == q.count, hasPrefix(text, start, end, q) {
+                            m = Match.exact
+                        } else if hasPrefix(text, start, end, q) {
+                            m = Match.prefix
+                        } else if (0..<words).contains(where: {
+                            hasPrefix(text, Int(spans[wordsAt + 2 * $0]), Int(spans[wordsAt + 2 * $0 + 1]), q)
+                        }) {
+                            m = Match.wordPrefix
+                        } else if contains(text, start, end, q) {
+                            m = Match.contains
+                        } else {
+                            m = nil
+                        }
+                        if let m, m < (best ?? Int.max) { best = m }
+                        if best == Match.exact { break }
+                    }
+                    if best == nil, folded.aboutStart >= 0,
+                       contains(text, Int(folded.aboutStart), text.count, q) { best = Match.aboutOnly }
+                    return best
                 }
-                return false
             }
         }
+    }
+
+    private static func hasPrefix(_ text: UnsafeBufferPointer<UInt8>, _ start: Int, _ end: Int,
+                                  _ prefix: UnsafeBufferPointer<UInt8>) -> Bool {
+        end - start >= prefix.count && memcmp(text.baseAddress! + start, prefix.baseAddress!, prefix.count) == 0
+    }
+
+    private static func contains(_ text: UnsafeBufferPointer<UInt8>, _ start: Int, _ end: Int,
+                                 _ needle: UnsafeBufferPointer<UInt8>) -> Bool {
+        let n = needle.count, last = end - n
+        guard n > 0, last >= start else { return false }
+        let first = needle[0]
+        var i = start
+        while i <= last {
+            if text[i] == first, memcmp(text.baseAddress! + i, needle.baseAddress!, n) == 0 { return true }
+            i += 1
+        }
+        return false
     }
 
     /// The shortest name, for the tie-break; people with no name sort after.

@@ -40,7 +40,8 @@ extension TrustWebView {
     /// Who the search finds: a pasted key, or names you've seen, in the
     /// shared people order (`PeopleSearchRank`, the Search tab's too).
     /// Blocked people are left out. Read on every body pass, so the answer
-    /// is kept until the query or what it ranks over changes.
+    /// is kept until the query or what it ranks over changes; any profile
+    /// write (a relay's newer name too) counts as a change.
     private var searchMatches: [String] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.count == 64, text.allSatisfy(\.isHexDigit) { return [text.lowercased()] }
@@ -49,7 +50,7 @@ extension TrustWebView {
         let profiles = nostrService.profiles
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
         let copy = DiscoveryReachStore.shared.copy
-        let key = TrustWebSearchMemo.Key(query: text, me: me, profiles: profiles.count, follows: myFollows.count,
+        let key = TrustWebSearchMemo.Key(query: text, me: me, profiles: nostrService.profilesVersion, follows: myFollows.count,
                                          web: web.count, blocked: blocked.count, copy: copy.map { Int($0.builtAt) &+ $0.people.count } ?? -1)
         if let hit = searchMemo.answer(for: key) { return hit }
         let answer = PeopleSearchRank.rank(Array(profiles.values), query: text, circle: searchCircle(copy: copy),

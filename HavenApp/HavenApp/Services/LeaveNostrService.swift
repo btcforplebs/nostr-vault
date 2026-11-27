@@ -107,6 +107,7 @@ enum LeaveNostrService {
     private static func forgetCachesInMemory() {
         let nostr = NostrService.shared
         nostr.profiles = [:]
+        PeopleSearchRank.resetMemo()
         nostr.relayLists = [:]
         nostr.outboxRelays = [:]
         nostr.dmRelayLists = [:]
