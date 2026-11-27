@@ -173,9 +173,32 @@ final class ProfileFeedLoader: ObservableObject {
     /// each); listing every saved version here too showed them twice.
     func rebucket() {
         let feed = feedService
-        buckets = ProfileBucketing.buckets(notes: profileNotes, tagged: taggedNotes, owner: pubkey,
-                                           gate: feed.feedGate, authorOf: { feed.findNote(id: $0)?.pubkey })
+        let next = ProfileBucketing.buckets(notes: profileNotes, tagged: taggedNotes, owner: pubkey,
+                                            gate: feed.feedGate, authorOf: { feed.findNote(id: $0)?.pubkey })
+        // Worked out here, once per change to the notes, not on every body
+        // pass of the list (Profile perf review 11-27 #5: O(n) per pass).
+        taggedOpen = next.taggedOutside.isEmpty ? next.tagged
+            : (next.tagged + next.taggedOutside).sorted(by: Self.newestFirst)
+        idsHashes = [.notes: Self.idsHash(next.top), .media: Self.idsHash(next.media),
+                     .replies: Self.idsHash(next.replies), .reposts: Self.idsHash(next.reposts),
+                     .tagged: Self.idsHash(next.tagged)]
+        buckets = next
     }
+
+    /// The Tagged tab with its outside fold open, in order.
+    private(set) var taggedOpen: [FeedNote] = []
+    /// A hash of each tab's note ids, for the list's engagement fetch key.
+    private(set) var idsHashes: [ProfileSection: Int] = [:]
+
+    private static func idsHash(_ notes: [FeedNote]) -> Int {
+        var hasher = Hasher()
+        for note in notes { hasher.combine(note.id) }
+        return hasher.finalize()
+    }
+
+    /// The Tagged tab fetches no numbers (other people's posts), so its
+    /// open fold needs no hash of its own.
+    func idsHash(for section: ProfileSection) -> Int { idsHashes[section] ?? 0 }
 
     func scheduleFlush() {
         guard !pending.scheduled else { return }
@@ -223,8 +246,7 @@ final class ProfileFeedLoader: ObservableObject {
         case .replies: return buckets.replies
         case .reposts: return buckets.reposts
         case .tagged:
-            return showsOutsideTagged && ConfigService.shared.config.showsOutsideUnderPosts
-                ? (buckets.tagged + buckets.taggedOutside).sorted(by: Self.newestFirst) : buckets.tagged
+            return showsOutsideTagged && ConfigService.shared.config.showsOutsideUnderPosts ? taggedOpen : buckets.tagged
         case .shop, .articles, .divines, .music: return []
         }
     }
