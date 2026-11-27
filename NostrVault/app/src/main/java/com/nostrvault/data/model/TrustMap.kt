@@ -228,49 +228,10 @@ object TrustMap {
     fun web(saved: Set<String>, follows: Set<String>): Set<String> =
         if (saved.isEmpty()) emptySet() else saved + follows
 
-    /** How close a search hit is to you: the tag on its row, and its rank. */
+    /** How close a Find someone hit is to you: the tag on its row ([com.nostrvault.ui.components.findSomeone]). */
     enum class Tier { FOLLOW, WEB, OTHER }
 
     data class PersonHit(val pubkey: String, val tier: Tier)
-
-    /**
-     * The WOT tab's search over profiles already cached: a case-insensitive
-     * "contains" on display name, name and NIP-05. People you follow come
-     * first, then your wider web, then everyone else; within that a name that
-     * starts with the query beats one that only contains it, then the shorter
-     * name wins, since it's the closer match. Instant, so it runs every keystroke.
-     */
-    fun searchPeople(
-        query: String,
-        people: Collection<FeedProfile>,
-        follows: Set<String>,
-        web: Set<String>,
-        limit: Int = 8,
-    ): List<PersonHit> {
-        val q = query.trim().lowercase()
-        if (q.isEmpty() || limit <= 0) return emptyList()
-        class Ranked(val hit: PersonHit, val prefix: Boolean, val length: Int)
-        val ranked = ArrayList<Ranked>()
-        for (person in people) {
-            val fields = listOfNotNull(person.displayName, person.name, person.nip05)
-                .map { it.trim().lowercase() }
-                .filter { it.isNotEmpty() }
-            if (fields.none { it.contains(q) }) continue
-            val tier = when (person.pubkey) {
-                in follows -> Tier.FOLLOW
-                in web -> Tier.WEB
-                else -> Tier.OTHER
-            }
-            val name = person.displayName?.trim()?.takeIf { it.isNotEmpty() }
-                ?: person.name?.trim()?.takeIf { it.isNotEmpty() }
-                ?: person.nip05.orEmpty()
-            ranked += Ranked(PersonHit(person.pubkey, tier), fields.any { it.startsWith(q) }, name.length)
-        }
-        return ranked
-            .sortedWith(compareBy({ it.hit.tier }, { !it.prefix }, { it.length }, { it.hit.pubkey }))
-            .take(limit)
-            .map { it.hit }
-    }
 
     /**
      * The key a pasted npub or 64-hex names, or null. [decodeNpub] is the app's

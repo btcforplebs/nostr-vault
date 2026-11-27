@@ -316,48 +316,6 @@ class TrustMapTest {
 
     // ── Search ───────────────────────────────────────────────────────
 
-    private fun person(key: String, display: String? = null, name: String? = null, nip05: String? = null) =
-        FeedProfile(pubkey = key, name = name, displayName = display, nip05 = nip05)
-
-    @Test fun `search matches display name, name and nip05 ignoring case`() {
-        val people = listOf(
-            person("1", display = "Alice Smith"),
-            person("2", name = "bob"),
-            person("3", nip05 = "carol@ALICE.com"),
-            person("4", display = "Dave"),
-        )
-        val hits = TrustMap.searchPeople("ALICE", people, emptySet(), emptySet()).map { it.pubkey }
-        assertEquals(setOf("1", "3"), hits.toSet())
-        assertEquals(listOf("2"), TrustMap.searchPeople("Bo", people, emptySet(), emptySet()).map { it.pubkey })
-        assertTrue(TrustMap.searchPeople("   ", people, emptySet(), emptySet()).isEmpty())
-        assertTrue(TrustMap.searchPeople("zed", people, emptySet(), emptySet()).isEmpty())
-    }
-
-    @Test fun `search ranks follows, then web, then prefix, then shorter name`() {
-        val people = listOf(
-            person("other", display = "Ann"),
-            person("web", display = "Ann Web"),
-            person("follow", display = "Joanne"),
-            person("followPrefixLong", display = "Annabelle"),
-            person("followPrefixShort", display = "Anna"),
-        )
-        val follows = setOf("follow", "followPrefixLong", "followPrefixShort")
-        val hits = TrustMap.searchPeople("ann", people, follows, setOf("web"))
-        assertEquals(listOf("followPrefixShort", "followPrefixLong", "follow", "web", "other"), hits.map { it.pubkey })
-        assertEquals(
-            listOf(TrustMap.Tier.FOLLOW, TrustMap.Tier.FOLLOW, TrustMap.Tier.FOLLOW, TrustMap.Tier.WEB, TrustMap.Tier.OTHER),
-            hits.map { it.tier },
-        )
-        // A follow is also in the web: it's still tagged as a follow.
-        assertEquals(TrustMap.Tier.FOLLOW, TrustMap.searchPeople("joanne", people, follows, follows).single().tier)
-    }
-
-    @Test fun `search stops at the limit`() {
-        val people = (0 until 20).map { person("k$it", display = "Sam $it") }
-        assertEquals(8, TrustMap.searchPeople("sam", people, emptySet(), emptySet()).size)
-        assertEquals(3, TrustMap.searchPeople("sam", people, emptySet(), emptySet(), limit = 3).size)
-    }
-
     @Test fun `a pasted hex key or npub names one person`() {
         val hex = "AB".repeat(32)
         assertEquals(hex.lowercase(), TrustMap.pastedKey("  $hex ") { null })

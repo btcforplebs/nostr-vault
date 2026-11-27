@@ -2,6 +2,7 @@ package com.nostrvault.ui.screens.vault
 
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.PeopleSearchRank
 import com.nostrvault.data.model.VaultSearchLogic
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -38,7 +39,11 @@ class VaultSearchModelTest {
         follows: Set<String> = emptySet(),
         authorOf: (String) -> String? = { null },
         authors: Set<String>? = null,
-    ) = VaultSearchModel.sectionsFor(query, profiles, found, cached, blocked, follows, decodeNpub, authorOf, authors)
+    ) = VaultSearchModel.sectionsFor(
+        query, profiles, found, cached, blocked,
+        PeopleSearchRank.Circle(own = emptySet(), follows = follows, web = emptySet()),
+        decodeNpub, authorOf, authors,
+    )
 
     @Test
     fun aProfileMatchedOnlyThroughItsHexIsDropped() {
@@ -96,7 +101,7 @@ class VaultSearchModelTest {
     }
 
     @Test
-    fun followsComeFirstThenByNameCaseInsensitive() {
+    fun followsComeFirstInTheSharedPeopleOrder() {
         val r = sections(
             "pal",
             profiles = listOf(
@@ -107,7 +112,8 @@ class VaultSearchModelTest {
             ),
             follows = setOf(alice, mallory),
         )
-        assertEquals(listOf("Yan pal", "zed pal", "amy pal", "Bea pal"), r.people.map { it.bestName })
+        // PeopleSearchRank: follows first; the same match and length, so by key.
+        assertEquals(listOf("zed pal", "Yan pal", "Bea pal", "amy pal"), r.people.map { it.bestName })
     }
 
     @Test
