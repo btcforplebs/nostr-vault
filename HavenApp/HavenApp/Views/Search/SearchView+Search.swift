@@ -239,13 +239,13 @@ extension SearchView {
         results.notes = Array(found.inside.prefix(100))
         results.outsideNotes = Array(found.outside.prefix(100))
 
-        var foundHashtags = Set<String>()
-        for note in found.inside {
-            for tag in extractHashtags(from: note.content) where tag.lowercased().contains(trimmedQuery) {
-                foundHashtags.insert(tag)
-            }
+        // The tag typed first, then the most used, then A-Z (HashtagSearchRank).
+        // A typed "#" is not part of the tag.
+        let tagQuery = trimmedQuery.replacingOccurrences(of: "#", with: "")
+        let tagCounts = HashtagSearchRank.counts(found.inside) { note in
+            extractHashtags(from: note.content).filter { !tagQuery.isEmpty && $0.contains(tagQuery) }
         }
-        results.hashtags = Array(foundHashtags).sorted()
+        results.hashtags = HashtagSearchRank.order(tagCounts, query: trimmedQuery)
 
         results.links = extractURLs(from: results.notes)
         return results

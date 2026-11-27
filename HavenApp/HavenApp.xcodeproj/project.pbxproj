@@ -334,6 +334,7 @@
 		205B7AE7E638FDB0FA24F3D5 /* FeedSpeedPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C54EC3846583043C553DC3 /* FeedSpeedPolicy.swift */; };
 		206173696EB1D685569C073F /* GlobeStormProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03DBB409E343A8D2FF2B53D1 /* GlobeStormProbe.swift */; };
 		2061C05EDB45E6A677C44828 /* NoteTranslation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDB08989DAA08A101C01CEC2 /* NoteTranslation.swift */; };
+		2067C4EE11F50AA6578DD3C9 /* HashtagSearchRank.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BEDA496F657AEDCB3D66EF4 /* HashtagSearchRank.swift */; };
 		20909F66629BEC603D2806A0 /* FloatingArrowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6F73BF6DECD70643354714 /* FloatingArrowController.swift */; };
 		20ACAB0CCDD35997C75B68B4 /* LiveFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C29A25C6DBE37CB0202A7F /* LiveFeedService.swift */; };
 		20B79D60254DD561EAD2AB53 /* DMService+SignerPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64BAF7CD86FC5EBA575A0824 /* DMService+SignerPolicy.swift */; };
@@ -1778,6 +1779,7 @@
 		AD093FA032369C6ECBD22018 /* IdentityInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54BCCF618B0F0045B3B8C3EB /* IdentityInput.swift */; };
 		AD09CAB3FDA4AF35E77DEE62 /* CondensedNoteLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 382B059DAE5A61E52A3387E7 /* CondensedNoteLine.swift */; };
 		AD0E49E31659A84461BDFAF5 /* GlobalFeedEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BE7C8BF88EE91C6E05CD3DF /* GlobalFeedEmptyState.swift */; };
+		AD32E7EBC8F24ADB5E7C09E0 /* HashtagSearchRank.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BEDA496F657AEDCB3D66EF4 /* HashtagSearchRank.swift */; };
 		AD71A7CC6D83F5135072186B /* FeedService+Background.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E2BDF8247BFB3BB8C959870 /* FeedService+Background.swift */; };
 		AD7EC9D5CEF6CFED0DB4DE37 /* SnoStageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F9D10555623C1343D324309 /* SnoStageView.swift */; };
 		ADAA735F232D5B43B1372F32 /* MacSpaceColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = B99CA3BD2660F781DAC6B5B3 /* MacSpaceColumn.swift */; };
@@ -2748,6 +2750,7 @@
 		0B9E478F433669EF4773A33E /* MeshCopyV2Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshCopyV2Service.swift; sourceTree = "<group>"; };
 		0BCCF93729CB6A3A2DD9C2B3 /* ArticleClipReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleClipReviewView.swift; sourceTree = "<group>"; };
 		0BCE06AC36BF540013C789B2 /* NIP46Error.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP46Error.swift; sourceTree = "<group>"; };
+		0BEDA496F657AEDCB3D66EF4 /* HashtagSearchRank.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashtagSearchRank.swift; sourceTree = "<group>"; };
 		0BF0AAC36338F0945CC5920C /* FeedView+MacHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedView+MacHeader.swift"; sourceTree = "<group>"; };
 		0C48773D215B6C7086533AEF /* FipsURL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FipsURL.swift; sourceTree = "<group>"; };
 		0C8199215F090F63778A8A09 /* UploadQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQuality.swift; sourceTree = "<group>"; };
@@ -5255,6 +5258,7 @@
 				E8900A988AADA79F41EC5BA9 /* GlobeZaps.swift */,
 				316C72DCEDB199C0029315D5 /* GreetingCounts.swift */,
 				4D8F8AD8BA77B58854E62A04 /* HashNamedFileCheck.swift */,
+				0BEDA496F657AEDCB3D66EF4 /* HashtagSearchRank.swift */,
 				B20041DCF1B7AF43B56CF7E9 /* HashtagSuggestions.swift */,
 				E3056CC16711F7E38B7FE86D /* HavenConfig.swift */,
 				A3ED66FFABA906619D374265 /* HomeVaultFileNoteLane.swift */,
@@ -6751,6 +6755,7 @@
 				3324BB9222C391CF8AE84F4D /* HashtagFeedModel.swift in Sources */,
 				C127A8564C70DC65F2FCFAB6 /* HashtagFeedView.swift in Sources */,
 				F9A2BAA37896BB9F71FD22F5 /* HashtagLink.swift in Sources */,
+				AD32E7EBC8F24ADB5E7C09E0 /* HashtagSearchRank.swift in Sources */,
 				99C0536807D7C2FB8F49D4F8 /* HashtagSuggestions.swift in Sources */,
 				3C87BD1637BAF76B322EA8AE /* HashtagsFeedViews.swift in Sources */,
 				317391DCBA9DF606C5BD6011 /* HavenApp_iOS.swift in Sources */,
@@ -8085,6 +8090,7 @@
 				8EF83AE93E1EC2D3D44EAC15 /* HashtagFeedModel.swift in Sources */,
 				5514476A15F2AEEE055AB6B4 /* HashtagFeedView.swift in Sources */,
 				92EAC0D39F5301AE83A1115A /* HashtagLink.swift in Sources */,
+				2067C4EE11F50AA6578DD3C9 /* HashtagSearchRank.swift in Sources */,
 				B7E31155A74F89CE22520C4F /* HashtagSuggestions.swift in Sources */,
 				783AA267F0219A0C6DC2A847 /* HashtagsFeedViews.swift in Sources */,
 				AF4BFB028BF32397C9E696EF /* HavenApp.swift in Sources */,
