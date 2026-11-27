@@ -73,6 +73,8 @@ internal fun FullScreenMediaPager(
     /** Each page's note: swipe up (or the grabber) opens it. Empty: up closes too. */
     noteIds: List<String?> = emptyList(),
     onOpenNote: ((String) -> Unit)? = null,
+    /** False keeps the clip out of the mini player (DMs). */
+    minimize: Boolean = true,
     viewModel: FeedMediaMirrorViewModel = hiltViewModel(),
 ) {
     val mirrorState by viewModel.state.collectAsState()
@@ -301,7 +303,12 @@ internal fun FullScreenMediaPager(
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             } else {
-                                VideoPlayer(uri = url, modifier = Modifier.fillMaxSize(), controls = videoControls.shown)
+                                VideoPlayer(
+                                    uri = url,
+                                    modifier = Modifier.fillMaxSize(),
+                                    controls = videoControls.shown,
+                                    minimize = if (minimize) remember(url) { VideoMinimize(authors.getOrNull(page), onMinimized = close) } else null,
+                                )
                             }
                         }
                     }

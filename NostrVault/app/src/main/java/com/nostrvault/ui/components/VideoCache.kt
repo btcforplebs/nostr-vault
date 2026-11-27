@@ -62,11 +62,20 @@ object VideoCache {
     /** Plays [uri] through the cache unless it is a live playlist or a local file. */
     fun ExoPlayer.Builder.cachedFor(context: Context, uri: String, mimeType: String? = null): ExoPlayer.Builder {
         if (skipsCache(uri, mimeType)) return this
+        return setMediaSourceFactory(cachedSourceFactory(context))
+    }
+
+    /**
+     * Sources that read through the cache, for a player that is not built
+     * here: the music service plays a minimized clip from the same copy the
+     * viewer filled, so the clip is not downloaded again (MusicMediaSources).
+     */
+    fun cachedSourceFactory(context: Context): DefaultMediaSourceFactory {
         val upstream = DefaultDataSource.Factory(context)
         val cached = CacheDataSource.Factory()
             .setCache(cache(context))
             .setUpstreamDataSourceFactory(upstream)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        return setMediaSourceFactory(DefaultMediaSourceFactory(cached))
+        return DefaultMediaSourceFactory(cached)
     }
 }

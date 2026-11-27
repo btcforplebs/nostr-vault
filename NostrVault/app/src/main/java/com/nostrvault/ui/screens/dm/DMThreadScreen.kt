@@ -625,11 +625,11 @@ private fun MessageBubble(
                             modifier = Modifier
                                 .size(photoSize)
                                 .mediaZoomSource(MediaSourceKey(zoomOrigin, index), crop = true)
-                                .clickable { FullScreenMediaRouter.open(media, index, zoomOrigin) },
+                                .clickable { FullScreenMediaRouter.open(media, index, zoomOrigin, minimize = false) },
                         )
                     }
                     parts.videos.forEachIndexed { index, url ->
-                        val open = { FullScreenMediaRouter.open(media, parts.images.size + index, zoomOrigin) }
+                        val open = { FullScreenMediaRouter.open(media, parts.images.size + index, zoomOrigin, minimize = false) }
                         // A locked video (kind 15) opens here, with its size and progress; a plain link plays in the viewer.
                         if (com.nostrvault.service.DMFile.isFileLink(url)) {
                             DMLockedVideoTile(link = url, size = photoSize, onOpen = open)

@@ -30,6 +30,7 @@ import com.nostrvault.ui.components.AudioPlayer
 import com.nostrvault.ui.components.VideoPiPBridge
 import com.nostrvault.ui.components.VideoControls
 import com.nostrvault.ui.components.VideoPlayer
+import com.nostrvault.ui.components.VideoMinimize
 import com.nostrvault.ui.components.ZoomableBox
 import com.nostrvault.ui.components.ZoomableImage
 import com.nostrvault.ui.theme.*
@@ -189,6 +190,7 @@ fun MediaViewerScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 autoplay = autoplayVideos,
                                 controls = videoControls.shown,
+                                minimize = remember(mediaUri) { VideoMinimize(authorPubkey = null, onMinimized = onBack) },
                             )
                         }
                     } else {
