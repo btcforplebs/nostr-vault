@@ -116,6 +116,7 @@ def choose():
     """Before WebKit loads: the mode this process draws in."""
     global mode, tried, why
     nv_heal.pending_reset()  # before WebKit loads: nothing has its cache open yet
+    nv_heal.pending_safe()  # (and nothing has its databases open)
     own = os.environ.get(OURS)
     if own in MODES or own == "user":
         mode, why = own, "carried over from before this process started over"
@@ -444,6 +445,8 @@ class Checker:
         self.log(f"the window draws (mode {mode})")
         if os.environ.pop(nv_heal.RESET, None) == "done":
             self.log("it draws with a fresh WebKit cache (the old one is kept in " + nv_heal.cache_dir() + ".bak-*)")
+        if os.environ.pop(nv_heal.SAFE, None) == "done":
+            self.log("it draws after a safe start (the saved data moved aside is kept in " + nv_heal.data_dir() + ".safe-*)")
         os.environ[TRIED] = ""
         tried = []
         if mode == "user":
@@ -464,6 +467,15 @@ class Checker:
             save_state(st)
             self.log(f"the window didn't draw in mode {mode} ({reason}): starting over with WebKit's cache moved "
                      "aside, in the same mode")
+            route = self.app.pending_route
+            self.restart(["--open", route] if route else [], failing=True)
+            return
+        if not self.js_ok and nv_heal.may_safe(st):
+            # The fresh cache didn't help: maybe the web app's saved data spins it. Once, a safe start (nv_heal.py).
+            nv_heal.ask_safe(st)
+            save_state(st)
+            self.log(f"the window didn't draw in mode {mode} ({reason}) after a fresh cache: starting over safe, with "
+                     "its saved data moved aside (sign-ins and keys stay), in the same mode")
             route = self.app.pending_route
             self.restart(["--open", route] if route else [], failing=True)
             return

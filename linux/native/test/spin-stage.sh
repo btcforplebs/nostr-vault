@@ -18,7 +18,15 @@ DATA=$HOME/.local/share/nostr-vault-desktop
 SERVER=${NV_WT_SPIN_SERVER:-$(dirname "$0")/spin-server.py}
 SHARE_DIR=${NV_DESKTOP_SHARE:-/usr/share/nostr-vault/desktop}
 SPID=""
-fresh() { rm -rf "$RJ" "$CACHE" "$CACHE".bak-* "$DATA"; }
+fresh() { rm -rf "$RJ" "$CACHE" "$CACHE".bak-* "$DATA" "$DATA".safe-*; }
+SAFE_SERVER=${SERVER%spin-server.py}safe-server.py
+# dbnames <dir>: the name of each IndexedDB database under dir, one a line (WebKit's IDBDatabaseInfo)
+dbnames() { python3 -I -c 'import os, sqlite3, sys
+for r, _d, f in os.walk(sys.argv[1]):
+    if "IndexedDB.sqlite3" in f:
+        c = sqlite3.connect("file:" + os.path.join(r, "IndexedDB.sqlite3") + "?mode=ro", uri=True)
+        v = c.execute("SELECT value FROM IDBDatabaseInfo WHERE key = ?", ("DatabaseName",)).fetchone()[0]
+        print(v.decode("utf-16-le") if isinstance(v, bytes) else v)' "$1" 2>/dev/null | sort; }
 serve() { : >"$OUT/$MODE-spin-$1-requests.log"; python3 -I "$SERVER" "$PORT" "$OUT/$MODE-spin-$1-requests.log" "$2" & SPID=$!; sleep 1; }
 unserve() { [ -n "$SPID" ] && kill "$SPID" 2>/dev/null; SPID=""; }
 fetches() { grep -c '^GET /app.js' "$1" 2>/dev/null; }
@@ -195,4 +203,31 @@ if [ "$MODE" = wayland ]; then
     stop; unserve
   fi
 fi
+# 4. The safe start: a page that spins because of its own saved data (a feed database it reads at start), never
+# cached, so the fresh cache can't help. After the fresh cache, once, the window moves the saved databases aside and
+# starts over: it draws, with every sign-in and key still there (localStorage nv-session and nv-accounts' ncryptsec,
+# the cookie, nv-keyring, the wallet, drafts and outbox, all read back by the page), and the feed kept in the .safe.
+fresh; : >"$OUT/$MODE-spin-safe-requests.log"
+python3 -I "$SAFE_SERVER" "$PORT" "$OUT/$MODE-spin-safe-requests.log" "$tok" & SPID=$!; sleep 1
+start safe env NV_PAINT_GIVE_UP_S=$G $CMD
+L="$OUT/$MODE-spin-safe.log"; R="$OUT/$MODE-spin-safe-requests.log"
+waitlog "$R" "^GET /seeded" 30 && ok "safe: the page saved a sign-in, its keys and a feed that spins it" \
+  || no "safe: the page never saved its data"
+if waitlog "$L" "safe start: moved" $((3 * G + 90)); then ok "safe: $(grep -o 'safe start: moved [^;]*' "$L" | head -1)"
+else no "safe: the window never started safe"; grep -E "didn't draw|cache|safe" "$L" | head; fi
+drawn "$OUT/$MODE-spin-4-safe.png" "$MODE: after the safe start the window draws"
+want="session=$tok&ncryptsec=ncryptsec1$tok&cookie=$tok&key=key-$tok&wallet=nwc-$tok&draft=draft-$tok&outbox=unsent-$tok&feed=empty"
+if waitlog "$R" "^GET /saw" 30 && grep -qF "GET /saw?$want" "$R"; then
+  ok "safe: the page finds every sign-in and key it saved (nv-session, the ncryptsec, the cookie, nv-keyring, wallet, drafts, outbox), and no feed"
+else no "safe: the page read back '$(grep '^GET /saw' "$R" | head -1)', want '/saw?$want'"; fi
+b=$(ls -d "$DATA".safe-* 2>/dev/null | head -1); moved=$(dbnames "$b" | tr '\n' ' ')
+[ "$moved" = "haven:$(printf 'ab%.0s' $(seq 32)):feed " ] && ok "safe: only the feed database was moved, and is kept ($(basename "$b"))" \
+  || no "safe: moved aside: '$moved' (want only the feed) in '$b'"
+left=$(dbnames "$DATA" | tr '\n' ' ')
+for d in nv-keyring wallet drafts outbox; do echo "$left" | grep -q "$d" || no "safe: $d isn't in its place any more ($left)"; done
+[ -n "$b" ] && [ -z "$(find "$b" -iname '*localstorage*' -o -name 'cookies.sqlite*' | head -1)" ] && [ -f "$DATA/cookies.sqlite" ] \
+  && ok "safe: localStorage and cookies.sqlite never moved" || no "safe: localStorage or cookies moved: $(find "$b" | head)"
+grep -q "trying the window again with mode" "$L" && no "safe: it went down the drawing ladder" || ok "safe: it stayed in its drawing mode"
+waitlog "$L" "it draws after a safe start" 20 && ok "safe: and says the safe start fixed it" || no "safe: it never passed its check after the safe start"
+stop; unserve
 fresh
