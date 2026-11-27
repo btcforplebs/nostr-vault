@@ -23,7 +23,7 @@ const files = [b("p1", "photo", day(1)), b("v2", "video", day(2)), b("g3", "gif"
 const ids = secs => secs.flatMap(s => s.blobs.map(x => x.sha256))
 
 test("the iPhone's sorts, without 'On relay first' (no relay-held media on the web); newest by default", () => {
-  assert.deepEqual(SORTS.map(s => s.label), ["Newest first", "Oldest first", "Media type"])
+  assert.deepEqual(SORTS.map(s => s.label), ["Newest first", "Oldest first", "Media type", "Largest first", "Smallest first"])
   const m = new Map(); const st = { getItem: k => m.get(k) ?? null }
   assert.equal(loadSort(st), "newest")
   m.set("nv-gallery-sort", "type"); assert.equal(loadSort(st), "type")

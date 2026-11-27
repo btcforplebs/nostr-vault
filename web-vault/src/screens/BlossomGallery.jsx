@@ -20,16 +20,27 @@ import { Avatar } from "../components/Avatar.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { ago } from "../components/time.js"
 import { vaultNotesUsing, notePreview } from "../net/media-notes.js"
+import { MediaListRows } from "./MediaListRows.jsx"
 import { clampAspect, columnsFor, deal, learnShape, shapeOf, shapesNow } from "../net/media-mosaic.js"
 if (import.meta.env) import("../styles/blossom.css")
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
 
-/** The iPhone's sorts, less "On relay first": the web has no relay-held media to put first. */
-export const SORTS = [{ id: "newest", label: "Newest first" }, { id: "oldest", label: "Oldest first" }, { id: "type", label: "Media type" }]
+/** The iPhone's sorts, less "On relay first": the web has no relay-held media to put first. Largest/Smallest are the
+ *  size sorts (W1): one undated run, files with no size last, ties newest first. */
+export const SORTS = [{ id: "newest", label: "Newest first" }, { id: "oldest", label: "Oldest first" }, { id: "type", label: "Media type" },
+  { id: "largest", label: "Largest first" }, { id: "smallest", label: "Smallest first" }]
 const SORT_KEY = "nv-gallery-sort"
 export const loadSort = (storage = globalThis.localStorage) => { const s = storage?.getItem(SORT_KEY); return SORTS.some(x => x.id === s) ? s : "newest" }
 const saveSort = (s, storage = globalThis.localStorage) => { try { storage?.setItem(SORT_KEY, s) } catch {} }
+
+/** Grid (the mosaic) or list (MediaListRows), kept in this browser; grid when unset or unknown. */
+export const LAYOUTS = ["grid", "list"]
+const LAYOUT_KEY = "nv-gallery-layout"
+export const loadLayout = (storage = globalThis.localStorage) => { const s = storage?.getItem(LAYOUT_KEY); return LAYOUTS.includes(s) ? s : "grid" }
+export const saveLayout = (l, storage = globalThis.localStorage) => { try { storage?.setItem(LAYOUT_KEY, l) } catch {} }
+
+const sized = b => Number.isFinite(b.size) && b.size > 0
 
 /** Photos, GIFs, videos, audio, then anything else (MediaGalleryView.typeRank). */
 export const isAudio = b => b.kind === "audio" || (b.kind === "other" && /^audio\//i.test(b.type ?? ""))
@@ -37,6 +48,11 @@ export const typeRank = b => ({ photo: 0, gif: 1, video: 2 })[b.kind] ?? (isAudi
 
 /** The files in `sort` order, as sections: dated runs for the date sorts, one untitled run otherwise. */
 export function sections(blobs, sort, locale, now) {
+  if (sort === "largest" || sort === "smallest") {
+    const dir = sort === "largest" ? -1 : 1
+    const by = (a, b) => (sized(b) - sized(a)) || (sized(a) && dir * (a.size - b.size)) || b.uploaded - a.uploaded
+    return blobs.length ? [{ day: "", blobs: [...blobs].sort(by) }] : []
+  }
   if (sort === "type") return blobs.length ? [{ day: "", blobs: [...blobs].sort((a, b) => typeRank(a) - typeRank(b) || b.uploaded - a.uploaded) }] : []
   return byDay([...blobs].sort((a, b) => (sort === "oldest" ? a.uploaded - b.uploaded : b.uploaded - a.uploaded)), locale, now)
 }
@@ -60,6 +76,7 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
   const [open, setOpen] = useState(null) // sha256
   const [note, setNote] = useState("")
   const [sort, setSort] = useState(loadSort)
+  const [layout, setLayout] = useState(loadLayout)
   const runs = useRef(0) // only the newest listing may draw
   const load = async () => {
     const run = ++runs.current
@@ -135,18 +152,24 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
       <BlossomUpload ctx={ctx} servers={servers} onAdded={added => setFound(x => ({ ...x, blobs: [...added, ...x.blobs.filter(b => !added.some(a => a.sha256 === b.sha256))] }))} />
       {note && <div class="status-line">{note}</div>}
       {listed.length > 1 && (
-        <label class="status-line blossom-sort">Sort by{" "}
-          <select value={sort} onChange={e => { setSort(e.currentTarget.value); saveSort(e.currentTarget.value) }}>
-            {SORTS.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
-          </select>
-        </label>
+        <div class="status-line" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <label class="blossom-sort">Sort by{" "}
+            <select value={sort} onChange={e => { setSort(e.currentTarget.value); saveSort(e.currentTarget.value) }}>
+              {SORTS.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+          </label>
+          <span class="blossom-layout" role="group" aria-label="Layout">
+            {LAYOUTS.map(l => <button key={l} type="button" class={`small${layout === l ? " on" : ""}`} aria-pressed={layout === l}
+              onClick={() => { setLayout(l); saveLayout(l) }}>{l === "grid" ? "Grid" : "List"}</button>)}
+          </span>
+        </div>
       )}
       {!blobs.length ? <div class="empty"><p><strong>No media found</strong></p>{listed.length > 0 ? <p class="muted small">Try changing your filter settings</p>
         : why && <p class="muted small">{why}</p>}</div>
         : groups.map(g => (
         <section key={g.day || "all"}>
           {g.day && <div class="section-label blossom-day">{g.day}</div>}
-          <Mosaic blobs={g.blobs} columns={columns} shapes={shapes} tile={(b, aspect) => (
+          {layout === "list" ? <MediaListRows blobs={g.blobs} servers={servers} thumb={b => <Thumb blob={b} />} onOpen={setOpen} /> : <Mosaic blobs={g.blobs} columns={columns} shapes={shapes} tile={(b, aspect) => (
             <button key={b.sha256} class="vault-thumb blossom-tile" style={{ aspectRatio: String(aspect) }} onClick={() => setOpen(b.sha256)} aria-label={`${isAudio(b) ? "audio" : b.kind}${g.day ? ` uploaded ${g.day}` : ""}`}
               onLoadCapture={e => learnShape(b.sha256, e.target.naturalWidth, e.target.naturalHeight)}
               onLoadedMetadataCapture={e => learnShape(b.sha256, e.target.videoWidth, e.target.videoHeight)}>
@@ -155,7 +178,7 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
               {b.fromNote ? <span class="blossom-badge" title="Just added from one of your devices">New</span>
                 : servers.length > 0 && <span class="blossom-badge" title={b.servers.length < servers.length ? "Not on every server" : "On every server"}>{b.servers.length}/{servers.length}</span>}
             </button>
-          )} />
+          )} />}
         </section>
       ))}
       {current && <Viewer ctx={ctx} blob={current} servers={servers} order={order} onStep={setOpen} onClose={() => setOpen(null)}
