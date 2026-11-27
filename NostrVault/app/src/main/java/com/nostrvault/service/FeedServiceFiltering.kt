@@ -16,8 +16,9 @@ import kotlinx.serialization.json.*
 
     internal fun FeedService.doRecomputeFilteredNotes() {
         val config = configStore.config.value
-        val blockedPubkeys = config.blockedForActiveAccount()
-            .mapNotNull { nostrService.npubToHex(it) }.toSet()
+        // Memoized per block list: decoding every blocked npub over JNI on
+        // each recompute was wasted work (Feed perf review #8).
+        val blockedPubkeys = blockedHexForActiveAccount()
 
         val all = filterForCurrentFeed(_notes.value, config, blockedPubkeys)
         // Underrated shows the first pages asked for (50 at a time); others whole.
