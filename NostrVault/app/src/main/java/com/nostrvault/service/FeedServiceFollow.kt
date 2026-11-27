@@ -73,7 +73,7 @@ import com.nostrvault.ui.notification.FollowKind
                     val own = if (freshKey) emptyList() else runCatching { nostrService.ownListRelays(owner) }
                         .onFailure { if (it is CancellationException) throw it }
                         .getOrDefault(emptyList())
-                    val lookup = runCatching { nostrService.lookupNewestReplaceable(3, owner, (own + alsoAsk).distinct()) }
+                    val lookup = runCatching { nostrService.lookupNewestReplaceable(3, owner, (FollowListKnown.askAlso(own) + alsoAsk).distinct()) }
                         .onFailure { if (it is CancellationException) throw it }
                         .getOrNull()
                     val fetched = lookup?.event?.let { ContactManager.ListCopy(owner, it.tags, it.content, it.createdAt) }

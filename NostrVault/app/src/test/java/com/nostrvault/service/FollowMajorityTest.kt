@@ -161,15 +161,55 @@ class FollowMajorityTest {
         )
     }
 
-    @Test fun `a relay list of one relay can never be checked and says so`() {
-        // Old rule: its one relay plus an indexer was enough.
+    private val oneRelay = "Couldn't follow: your relay list has only one relay, and your newest follow list needs two of " +
+        "your relays to answer before it can be checked. Nothing changed. Add a relay in Settings › Relays, then try again."
+
+    @Test fun `a relay list of one relay plus purplepag es answering publishes`() {
+        // Logen 2026-11-27 (b219c87b): with exactly one own write relay, the indexer is the second answer.
         own = listOf("wss://r1")
         onRelays = lookup(answered = own, reached = own, others = setOf("wss://purplepag.es"))
+        assertEquals(PUBLISHED, follow())
+    }
+
+    @Test fun `a relay list of one relay asks purplepag es`() {
+        own = listOf("wss://r1")
+        onRelays = lookup(answered = own, reached = own, others = setOf("wss://purplepag.es"))
+        follow()
+        io.mockk.coVerify { nostr.lookupNewestReplaceable(3, alice, match { "wss://purplepag.es" in it && "wss://r1" in it }, any(), any()) }
+    }
+
+    @Test fun `a relay list of one relay with purplepag es silent is refused`() {
+        own = listOf("wss://r1")
+        onRelays = lookup(answered = own, reached = own)
+        assertEquals(oneRelay, follow())
+    }
+
+    @Test fun `a relay list of one relay with purplepag es connected but silent is refused`() {
+        own = listOf("wss://r1")
+        onRelays = lookup(answered = own, reached = own).let { it.copy(reachedBy = it.reachedBy!! + "wss://purplepag.es") }
+        assertEquals(oneRelay, follow())
+    }
+
+    @Test fun `a relay list of one relay that is silent is refused even with purplepag es answering`() {
+        own = listOf("wss://r1")
+        onRelays = lookup(answered = emptyList(), reached = own, others = setOf("wss://purplepag.es"))
+        assertEquals(oneRelay, follow())
+    }
+
+    @Test fun `two own relays with one answering and purplepag es answering is still refused`() {
+        own = seven.take(2)
+        onRelays = lookup(answered = own.take(1), reached = own.take(1), others = setOf("wss://purplepag.es"))
         assertEquals(
-            "Couldn't follow: your relay list has only one relay, and your newest follow list needs two of your relays " +
-                "to answer before it can be checked. Nothing changed. Add a relay in Settings › Relays, then try again.",
+            "Couldn't follow: only 1 of your relays answered, and it takes 2 of them to check your newest follow list. " +
+                "Nothing changed. Try again in a moment.",
             follow(),
         )
+    }
+
+    @Test fun `a first list on a one-relay account needs purplepag es too`() {
+        own = listOf("wss://r1")
+        onRelays = lookup(answered = own, reached = own, found = false, others = setOf("wss://purplepag.es"))
+        assertEquals(PUBLISHED, follow(before = emptyList()))
     }
 
     @Test fun `no list yet with a dead relay left out publishes the first one`() {
