@@ -3,7 +3,8 @@ import XCTest
 
 /// The follow list's save rule (Logen 2026-11-27): own write relays that
 /// never connect drop out, at least two own relays must answer (indexers
-/// don't count), and more than half of the ones that connect must answer.
+/// don't count, except purplepag.es for a one-relay list), and more than
+/// half of the ones that connect must answer.
 /// Web (followListKnown) and Android (FollowListKnown, #2612) test the same cases.
 final class FollowMajorityTests: XCTestCase {
     private let own = (1...7).map { "wss://r\($0).example" }
@@ -51,13 +52,52 @@ final class FollowMajorityTests: XCTestCase {
         XCTAssertTrue(ListMerge.ownMajority(ownAnswered: 1, own: 1, answered: 2), "the old rule let one own relay and an indexer through")
     }
 
-    func testAOneRelayListIsRefusedWithItsOwnReason() {
+    func testAOneRelayListAndPurplepagesBothAnsweringIsOK() {
+        // Logen 2026-11-27 (b219c87b), Android #2616: a one-relay list counts
+        // purplepag.es as its second relay.
         let single = [own[0]]
-        let both = lookup(answering: single, indexer: true)
-        XCTAssertNil(base(both, own: single))
-        XCTAssertEqual(FollowPublishFailure.didNotAnswer(both, own: single), .oneRelayList)
+        XCTAssertEqual(base(lookup(answering: single, indexer: true), own: single), 100)
+        XCTAssertEqual(ListMerge.followCounted(own: single), [own[0], indexer])
+    }
+
+    func testAOneRelayListWithPurplepagesSilentIsRefusedWithItsOwnReason() {
+        let single = [own[0]]
+        let ownOnly = lookup(answering: single)
+        XCTAssertNil(base(ownOnly, own: single))
+        XCTAssertEqual(FollowPublishFailure.didNotAnswer(ownOnly, own: single), .oneRelayList)
         XCTAssertEqual(FollowPublishFailure.oneRelayList.message(follow: true),
                        "Couldn't follow: your relay list has only one relay, and your newest follow list needs two of your relays to answer before it can be checked. Nothing changed. Add a relay in Settings › Relays, then try again.")
+        // purplepag.es answers but the account's own relay doesn't: refused too.
+        let indexerOnly = ReplaceableLookup<Int64>(event: 100, asked: 2, answered: 1, answeredBy: [indexer], from: [indexer])
+        XCTAssertNil(base(indexerOnly, own: single))
+        XCTAssertEqual(FollowPublishFailure.didNotAnswer(indexerOnly, own: single), .oneRelayList)
+    }
+
+    func testTwoOwnRelaysNeverCountPurplepages() {
+        let two = Array(own.prefix(2))
+        let one = ReplaceableLookup<Int64>(event: 100, asked: 3, answered: 2, answeredBy: [two[0], indexer],
+                                           from: [two[0], indexer])
+        XCTAssertNil(base(one, own: two))
+        XCTAssertEqual(FollowPublishFailure.didNotAnswer(one, own: two), .tooFewAnswered(answered: 1))
+        XCTAssertEqual(ListMerge.followCounted(own: two), two)
+    }
+
+    func testAOneRelayListWithNoListFoundNeedsBothAndKeepsTheShownGuard() {
+        let single = [own[0]]
+        let both = ReplaceableLookup<Int64>(event: nil, asked: 2, answered: 2, answeredBy: [own[0], indexer])
+        let found = ListMerge.followEditBase(both, held: nil, own: single, createdAt: { $0 })
+        guard case .none = found else { return XCTFail("both answered with no list: none") }
+        let ownOnly = ReplaceableLookup<Int64>(event: nil, asked: 2, answered: 1, answeredBy: [own[0]])
+        guard case .unknown = ListMerge.followEditBase(ownOnly, held: nil, own: single, createdAt: { $0 }) else {
+            return XCTFail("purplepag.es silent: not none")
+        }
+        // 300 shown and none found: still refused, and not with the one-relay text (both answered).
+        let shown = (0..<300).map { ["p", String(format: "%064x", $0)] }
+        guard case .unknown = ListMerge.followBase(found, held: nil, before: shown,
+                                                    after: shown + [["p", String(repeating: "f", count: 64)]]) else {
+            return XCTFail("300 shown guard stays")
+        }
+        XCTAssertEqual(FollowPublishFailure.didNotAnswer(both, own: single), .relaysDidNotAnswer(ownAnswered: 2, own: 2))
     }
 
     func testZeroAnsweringIsRefused() {

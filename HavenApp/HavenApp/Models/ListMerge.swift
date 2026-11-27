@@ -228,14 +228,29 @@ enum ListMerge {
     /// count (`followMajority`). One not dialled or that timed out still
     /// counts. Every other list keeps `ownMajority`. "None" (a first follow
     /// with no list found) still needs every own relay answering, dead ones
-    /// included (Tron, web #2611).
+    /// included (Tron, web #2611). A relay list of exactly one relay counts
+    /// purplepag.es as its second (`followCounted`), so both must answer.
     static func followEditBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String],
                                       now: Int64 = Int64(Date().timeIntervalSince1970),
                                       createdAt: (Event) -> Int64) -> EditBase<Event> {
         let unreachable = Set(lookup.unreachable.subtracting(lookup.answeredBy).map(relayKey))
-        return editBase(lookup, held: held, own: own, now: now, createdAt: createdAt) { mine, ownAnswered in
+        return editBase(lookup, held: held, own: followCounted(own: own), now: now, createdAt: createdAt) { mine, ownAnswered in
             followMajority(ownAnswered: ownAnswered, ownReached: mine.subtracting(unreachable).count)
         }
+    }
+
+    /// purplepag.es: the second answer a one-relay list needs (`followCounted`).
+    /// `editLookupAsk` already asks it (RelayDraft.indexers).
+    static let followIndexer = "wss://purplepag.es"
+
+    /// The relays that count for the follow list: `own`, plus `followIndexer`
+    /// when `own` names exactly one relay, so that relay and purplepag.es must
+    /// both answer (Logen 2026-11-27, b219c87b; Android #2616, web the same).
+    /// Two or more own relays: own only, and no indexer ever counts.
+    static func followCounted(own: [String]) -> [String] {
+        var seen = Set<String>()
+        let mine = own.filter { seen.insert(relayKey($0)).inserted }
+        return mine.count == 1 && !seen.contains(relayKey(followIndexer)) ? mine + [followIndexer] : mine
     }
 
     /// `base` for a follow or unfollow made on `before` (the list on screen)
@@ -306,13 +321,14 @@ enum ListMerge {
     /// own relays answered (an indexer such as purplepag.es doesn't count),
     /// and more than half of the other `ownReached` ones answered (a relay
     /// that was slow, timed out connecting, or was not dialled at all counts
-    /// as not answering). A
-    /// relay list of one relay never passes. Same rule as web
+    /// as not answering). A relay list of one relay counts purplepag.es as
+    /// its second own relay (`followCounted`). Same rule as web
     /// followListKnown and Android FollowListKnown:
     /// - 7 own, 3 never connect, 4 answer: yes.
     /// - 7 own, 4 never connect, 3 answer: yes (was no under ownMajority).
     /// - 3 connect, 2 answer, 1 slow: yes. 5 connect, 2 answer, 3 slow: no.
-    /// - 1 own relay answered (with or without an indexer), or none: no.
+    /// - 1 of 2+ own relays answered (with or without an indexer), or none: no.
+    /// - A one-relay list: yes once it and purplepag.es both answered.
     static func followMajority(ownAnswered: Int, ownReached: Int) -> Bool {
         ownAnswered >= 2 && ownAnswered * 2 > ownReached
     }
