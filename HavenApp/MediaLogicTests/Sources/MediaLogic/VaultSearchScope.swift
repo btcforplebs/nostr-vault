@@ -1,0 +1,1 @@
+../../../HavenApp/Models/VaultSearchScope.swift

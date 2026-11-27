@@ -44,6 +44,8 @@ final class LocalRelaySearchSession {
     /// milliseconds against an on-box relay.
     private let kindOrder: [Int]
     private let timeout: TimeInterval
+    /// Only these authors' events, or everyone when nil.
+    private let authors: [String]?
     private let onFinish: (GlobalSearchResults) -> Void
 
     /// Called on the session's queue with the matches so far after every page,
@@ -72,12 +74,14 @@ final class LocalRelaySearchSession {
     init(matcher: LocalSearchMatcher,
          routes: [URL],
          noteKinds: [Int] = [1],
+         authors: [String]? = nil,
          timeout: TimeInterval? = nil,
          onFinish: @escaping (GlobalSearchResults) -> Void) {
         self.collector = LocalRelaySearchCollector(matcher: matcher)
         self.routes = routes
         self.kindOrder = LocalRelaySearchPlan.kindOrder(noteKinds: noteKinds)
         self.timeout = timeout ?? LocalRelaySearchPlan.timeout(kindCount: kindOrder.count)
+        self.authors = authors
         self.onFinish = onFinish
     }
 
@@ -172,11 +176,7 @@ final class LocalRelaySearchSession {
         stream.until = until
         streams[subId] = stream
 
-        var filter: [String: Any] = [
-            "kinds": [stream.kind],
-            "limit": LocalRelaySearchPlan.pageLimit
-        ]
-        if let until = until { filter["until"] = until }
+        let filter = LocalRelaySearchPlan.pageFilter(kind: stream.kind, until: until, authors: authors)
 
         let req = ["REQ", subId, filter] as [Any]
         if let data = try? JSONSerialization.data(withJSONObject: req),

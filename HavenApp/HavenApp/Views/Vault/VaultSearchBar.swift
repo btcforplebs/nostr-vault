@@ -146,6 +146,8 @@ final class VaultSearchModel: ObservableObject {
 
     @Published private(set) var results = Results()
     @Published private(set) var state = VaultSearchLogic.QueryState()
+    /// Notes or My notes, kept across launches.
+    @Published private(set) var scope = VaultSearchScope.saved(UserDefaults.standard.string(forKey: VaultSearchScope.defaultsKey))
 
     var status: Status { state.status }
     /// The query the results are for.
@@ -155,8 +157,19 @@ final class VaultSearchModel: ObservableObject {
 
     /// Searches `query` after a short pause, so typing does not start a walk
     /// of the whole store per keystroke. `now` skips the pause (Return).
+    /// Flips Notes / My notes. The results on screen are for the other
+    /// scope, so they go, and the next `search` runs again.
+    func setScope(_ new: VaultSearchScope) {
+        guard new != scope else { return }
+        scope = new
+        UserDefaults.standard.set(new.rawValue, forKey: VaultSearchScope.defaultsKey)
+        results = Results()
+        state.forgetResults()
+    }
+
+    /// `me`: the account in use, whose notes My notes keeps.
     func search(_ query: String, now: Bool = false,
-                nostrService: NostrService, feedService: FeedService, blocked: Set<String>) {
+                nostrService: NostrService, feedService: FeedService, blocked: Set<String>, me: String) {
         pending?.cancel()
         pending = nil
         switch state.typed(query) {
@@ -170,7 +183,8 @@ final class VaultSearchModel: ObservableObject {
             pending = Task { [weak self] in
                 if !now { try? await Task.sleep(for: .milliseconds(300)) }
                 guard !Task.isCancelled, let self else { return }
-                self.run(trimmed, nostrService: nostrService, feedService: feedService, blocked: blocked)
+                self.run(trimmed, scope: self.scope, me: me,
+                         nostrService: nostrService, feedService: feedService, blocked: blocked)
             }
         }
     }
@@ -183,18 +197,29 @@ final class VaultSearchModel: ObservableObject {
         state.reset()
     }
 
-    private func run(_ query: String, nostrService: NostrService, feedService: FeedService, blocked: Set<String>) {
+    private func run(_ query: String, scope: VaultSearchScope, me: String,
+                     nostrService: NostrService, feedService: FeedService, blocked: Set<String>) {
         guard state.started(query) else { return }
+        let authors = scope.authors(me: me)
+        if authors?.isEmpty == true {
+            // My notes with no account: nothing is yours. An empty `authors`
+            // must not reach the relay, where it may read as no filter.
+            nostrService.cancelLocalRelaySearch()
+            land(query, scope: scope, me: me, profiles: [], notes: [], as: .done,
+                 nostrService: nostrService, feedService: feedService, blocked: blocked)
+            return
+        }
         guard let relayURL = feedService.localRelayURL else {
             // The relay is still starting: search what the app has loaded
             // rather than show nothing.
-            runInMemory(query, nostrService: nostrService, feedService: feedService, blocked: blocked)
+            runInMemory(query, scope: scope, me: me, nostrService: nostrService, feedService: feedService, blocked: blocked)
             return
         }
         nostrService.localRelaySearch(query: query, relayURL: relayURL,
-                                      noteKinds: Self.noteKinds, allTerms: true) { [weak self] found in
+                                      noteKinds: Self.noteKinds, allTerms: true,
+                                      authors: authors) { [weak self] found in
             guard let self else { return }
-            self.land(query, profiles: found.profiles, notes: found.notes,
+            self.land(query, scope: scope, me: me, profiles: found.profiles, notes: found.notes,
                       as: found.isCutShort ? .cutShort : .done,
                       nostrService: nostrService, feedService: feedService, blocked: blocked)
         }
@@ -202,7 +227,8 @@ final class VaultSearchModel: ObservableObject {
 
     /// The relay-down fallback: the same matching over the profiles, Vault
     /// events and feed notes already in memory.
-    private func runInMemory(_ query: String, nostrService: NostrService, feedService: FeedService, blocked: Set<String>) {
+    private func runInMemory(_ query: String, scope: VaultSearchScope, me: String,
+                             nostrService: NostrService, feedService: FeedService, blocked: Set<String>) {
         guard let matcher = LocalSearchMatcher(allTermsOf: query) else { return }
         let kinds = Set(Self.noteKinds)
         let profiles = Array(nostrService.profiles.values)
@@ -216,25 +242,29 @@ final class VaultSearchModel: ObservableObject {
             var seen = Set<String>()
             var notes: [FeedNote] = []
             for event in events where kinds.contains(event.kind)
+                && scope.keepsNote(pubkey: event.pubkey, me: me)
                 && matcher.matchesNote(content: event.content, tags: event.tags)
                 && seen.insert(event.id).inserted {
                 notes.append(FeedNote(id: event.id, pubkey: event.pubkey, content: event.content,
                                       createdAt: event.createdAtDate, tags: event.tags, kind: event.kind))
             }
             for note in feedNotes where kinds.contains(note.kind)
+                && scope.keepsNote(pubkey: note.pubkey, me: me)
                 && matcher.matchesNote(content: note.content, tags: note.tags)
                 && seen.insert(note.id).inserted {
                 notes.append(note)
             }
             notes.sort { $0.createdAt > $1.createdAt }
-            await self?.land(query, profiles: people, notes: notes, as: .inMemory,
+            await self?.land(query, scope: scope, me: me, profiles: people, notes: notes, as: .inMemory,
                              nostrService: nostrService, feedService: feedService, blocked: blocked)
         }
     }
 
-    private func land(_ query: String, profiles: [FeedProfile], notes found: [FeedNote], as result: Status,
+    private func land(_ query: String, scope: VaultSearchScope, me: String,
+                      profiles: [FeedProfile], notes found: [FeedNote], as result: Status,
                       nostrService: NostrService, feedService: FeedService, blocked: Set<String>) {
-        guard state.landed(query, as: result) else { return }
+        // A walk for the other scope that was still running is not this answer.
+        guard scope == self.scope, state.landed(query, as: result) else { return }
         var matched = profiles.filter {
             VaultSearchLogic.keepsPerson(pubkey: $0.pubkey,
                                          fields: [$0.displayName, $0.name, $0.about, $0.nip05],
@@ -249,14 +279,14 @@ final class VaultSearchModel: ObservableObject {
         }
         let filter = SearchBlockFilter(blocked: blocked)
         let people = filter.profiles(matched, pubkey: \.pubkey)
-        let notes = filter.notes(found) { note, blocked in
+        let notes = filter.notes(found.filter { scope.keepsNote(pubkey: $0.pubkey, me: me) }) { note, blocked in
             FeedFilterEngine.involvesBlocked(note, blocked: blocked,
                                              authorOf: { feedService.findNote(id: $0)?.pubkey })
         }
         let follows = Set(feedService.followedPubkeys)
         var results = Results()
         // People you follow first, then by name.
-        results.people = people.sorted {
+        results.people = !scope.showsPeople ? [] : people.sorted {
             let a = follows.contains($0.pubkey), b = follows.contains($1.pubkey)
             if a != b { return a }
             return $0.bestName.localizedCaseInsensitiveCompare($1.bestName) == .orderedAscending

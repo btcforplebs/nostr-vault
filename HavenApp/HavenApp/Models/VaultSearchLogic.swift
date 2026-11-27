@@ -237,6 +237,14 @@ enum VaultSearchLogic {
             return true
         }
 
+        /// The results on screen no longer answer the field (the scope
+        /// changed): the same query runs again instead of being kept.
+        mutating func forgetResults() {
+            resultsQuery = ""
+            resultsStatus = .idle
+            if status != .idle { status = .searching }
+        }
+
         mutating func reset() {
             self = QueryState()
         }
