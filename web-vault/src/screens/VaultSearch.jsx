@@ -10,7 +10,7 @@ import { useBlocks } from "../components/useBlocks.js"
 import { useProfile } from "../components/useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
-import { SECTIONS, searchVault, terms } from "../net/vault-search.js"
+import { SECTIONS, searchVault, searchesMine, setSearchesMine, terms } from "../net/vault-search.js"
 import { Spinner } from "../components/Loading.jsx"
 
 /** Rows per section under "All", and rows in one section: the relay walk keeps every match, and the cap keeps a
@@ -21,31 +21,35 @@ export const SECTION_CAP = 200
 /** The Vault search's data (shared with the Reader, reader-vault.js): what is typed, what was found, busy. Typing waits
  *  300 ms; `now` (Return) searches at once, and the pause after it doesn't walk the stores a second time. */
 export function useVaultSearch(ctx) {
-  const { vault, account } = ctx
+  const { vault, account, session } = ctx
   const [text, setText] = useState("")
+  const [mine, setMineState] = useState(searchesMine) // "My notes": only what the account in use wrote
   const [found, setFound] = useState(null) // { query, ...results }
   const [busy, setBusy] = useState(false)
   const { blocked } = useBlocks(ctx)
   const live = useRef("")
+  const mineRef = useRef(mine)
 
-  const run = async q => {
+  const run = async (q, onlyMine = mineRef.current) => {
     live.current = q
     if (!terms(q)) { setFound(null); setBusy(false); return }
     setBusy(true)
-    const r = await searchVault([vault.outbox, vault.inbox, vault.feed], q, { follows: account.follows, blocked, decode }).catch(() => null)
-    if (live.current !== q) return // the field has moved on
+    const r = await searchVault([vault.outbox, vault.inbox, vault.feed], q, { follows: account.follows, blocked, decode, mine: onlyMine ? session.pubkey : null }).catch(() => null)
+    if (live.current !== q || mineRef.current !== onlyMine) return // the field or the switch has moved on
     setFound(r && { query: q, ...r }); setBusy(false)
     if (r?.people.length) fetchProfiles(vault, r.people.slice(0, 40), uniq([...account.relays.read, ...DEFAULT_RELAYS])).catch(() => {})
   }
   // A short pause, so typing doesn't walk the stores per key; Return searches at once.
   useEffect(() => { const q = text.trim(); if (q === live.current) return; const t = setTimeout(() => run(q), 300); return () => clearTimeout(t) }, [text])
   const now = q => { setText(q); run(q.trim()) }
-  return { text, setText, now, found, busy }
+  /** Flip Notes / My notes: kept for next time, and what is typed is searched again at once. */
+  const setMine = on => { setSearchesMine(on); setMineState(on); mineRef.current = on; if (live.current) run(live.current, on) }
+  return { text, setText, now, found, busy, mine, setMine }
 }
 
 export function VaultSearch({ ctx, onClose }) {
   const { session, account } = ctx
-  const { text, setText, now, found, busy } = useVaultSearch(ctx)
+  const { text, setText, now, found, busy, mine, setMine } = useVaultSearch(ctx)
   const [section, setSection] = useState("all")
   useEffect(() => setSection("all"), [found])
   const input = useRef()
@@ -63,6 +67,10 @@ export function VaultSearch({ ctx, onClose }) {
           placeholder="Search your Vault" aria-label="Search your Vault" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck={false} />
         <button type="button" class="small" onClick={onClose}>Done</button>
       </form>
+      <div class="vault-search-chips" role="radiogroup" aria-label="Whose notes">
+        <Chip role="radio" on={!mine} onClick={() => setMine(false)}>Notes</Chip>
+        <Chip role="radio" on={mine} onClick={() => setMine(true)}>My notes</Chip>
+      </div>
       {found && total > 0 && (
         <div class="vault-search-chips" role="tablist" aria-label="Results">
           <Chip on={section === "all"} onClick={() => setSection("all")}>All {total}</Chip>
@@ -73,7 +81,7 @@ export function VaultSearch({ ctx, onClose }) {
       {!busy && found?.cut && <div class="status-line">Your Vault has more matches than shown, so older items may be missing. Add a word to narrow it.</div>}
       {!found ? (text.trim().length === 1 ? <p class="empty">Type at least two letters.</p>
           : <Message title="Search your Vault" detail="Notes, people, hashtags, links, articles and media stored in this browser's relay." />)
-        : total === 0 ? <Message title="Nothing in your Vault matches" detail={`“${found.query}”`} />
+        : total === 0 ? <Message title={mine ? "None of your notes match" : "Nothing in your Vault matches"} detail={`“${found.query}”`} />
         : shown.map(s => {
           const all = found[s.id]
           const list = section === "all" ? all.slice(0, PREVIEW) : all.slice(0, SECTION_CAP)
@@ -91,7 +99,7 @@ export function VaultSearch({ ctx, onClose }) {
 
 const Message = ({ title, detail }) => <div class="empty"><p><strong>{title}</strong></p><p class="muted small">{detail}</p></div>
 
-const Chip = ({ on, onClick, children }) => <button role="tab" aria-selected={on} class={`chip ${on ? "on" : ""}`} onClick={onClick}>{children}</button>
+const Chip = ({ on, onClick, children, role = "tab" }) => <button role={role} aria-selected={role === "tab" ? on : undefined} aria-checked={role === "radio" ? on : undefined} class={`chip ${on ? "on" : ""}`} onClick={onClick}>{children}</button>
 
 /** A hashtag opens that tag's feed, as a #tag in a note does (NoteText). */
 export const hashtagHref = tag => `#/feed?tag=${encodeURIComponent(String(tag).toLowerCase())}`

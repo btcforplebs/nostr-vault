@@ -39,3 +39,11 @@ test("the iPhone's words: Search your Vault, Searching your Vault…, Nothing in
   for (const s of ["Search your Vault", "Searching your Vault…", "Nothing in your Vault matches", "Notes, people, hashtags, links, articles and media"]) assert.ok(src.includes(s), s)
   assert.equal(/your vault/.test(src.replace(/\/\/.*$/gm, "")), false, "lower-case vault left in the copy")
 })
+
+test("Notes / My notes: two choices over the results, My notes passes only the account in use, and a flip searches again", () => {
+  assert.match(src, />Notes<\/Chip>/)
+  assert.match(src, />My notes<\/Chip>/)
+  assert.match(src, /mine: onlyMine \? session\.pubkey : null/)
+  assert.match(src, /setSearchesMine\(on\)/)
+  assert.match(src, /if \(live\.current\) run\(live\.current, on\)/)
+})

@@ -77,3 +77,35 @@ test("searchVault: an npub finds its person, even with no profile here; a full p
   assert.equal((await searchVault([many], "bread", { decode, limit: 5 })).cut, true)
   assert.equal((await searchVault([many], "b", { decode })).notes.length, 0)
 })
+
+test("searchVault mine (My notes): only the account in use's notes, asked by author; no People; nothing for a pasted npub", async () => {
+  const outbox = store([ev(A, 1, "my bread loaf"), ev(A, 30023, "x", [["title", "Bread guide"]])])
+  const inbox = store([ev(B, 1, "your bread? https://bake.example/b"), ev(C, 20, "bread picture")])
+  const feed = store([profile(B, { name: "Bread Ben" }), profile(A, { name: "bread me" })])
+  const all = await searchVault([outbox, inbox, feed], "bread", { decode })
+  assert.equal(all.notes.length, 2, "Notes: everything in the Vault")
+  assert.equal(all.people.length, 2)
+  for (const s of [outbox, inbox, feed]) s.asked.length = 0
+  const r = await searchVault([outbox, inbox, feed], "bread", { decode, mine: A.pk })
+  assert.deepEqual(r.notes.map(n => n.content), ["my bread loaf"])
+  assert.equal(r.articles.length, 1)
+  assert.equal(r.media.length, 0, "someone else's picture isn't yours")
+  assert.deepEqual(r.people, [], "My notes has no People")
+  assert.deepEqual(r.links, [], "links only from your own notes")
+  for (const s of [outbox, inbox, feed]) {
+    assert.ok(s.asked.length && s.asked.every(f => f.kinds.includes(1) && f.authors?.length === 1 && f.authors[0] === A.pk), "the store is asked by author, never kind 0")
+  }
+  // A store that ignores authors too: the re-check still keeps only yours.
+  const loose = { async query() { return [ev(B, 1, "bread from B"), ev(A, 1, "bread from A")] } }
+  assert.deepEqual((await searchVault([loose], "bread", { decode, mine: A.pk })).notes.map(n => n.pubkey), [A.pk])
+  assert.deepEqual((await searchVault([store([])], npubEncode(B.pk), { decode, mine: A.pk })).people, [])
+})
+
+test("the Notes / My notes switch remembers its last setting; default Notes", async () => {
+  const { searchesMine, setSearchesMine } = await import("../src/net/vault-search.js")
+  const m = new Map(), storage = { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) }
+  assert.equal(searchesMine(storage), false)
+  setSearchesMine(true, storage); assert.equal(searchesMine(storage), true)
+  setSearchesMine(false, storage); assert.equal(searchesMine(storage), false)
+  assert.equal(searchesMine({ getItem() { throw new Error("blocked") } }), false)
+})
