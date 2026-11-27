@@ -205,7 +205,7 @@ import java.net.URL
                         val blossomDir = File(File(appContext.filesDir, "relay_data"), "blossom")
                         blossomDir.mkdirs()
                         // Reads iOS and Android media backups alike.
-                        BlossomArchive.import(zip, blossomDir)
+                        BlossomArchive.import(zip, blossomDir, onImported = blossomService.removedHere::allow)
                     }
                 }
                 if (result.imported > 0 || result.skipped == 0) {

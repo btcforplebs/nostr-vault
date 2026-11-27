@@ -72,11 +72,16 @@ internal fun BlossomService.vaultFile(hash: String): File? {
 
 /** One server's answer for "Delete from this device": a 1-byte GET, its headers only. */
 internal fun BlossomService.askServerHolds(server: String, hash: String, length: Long): Boolean = try {
-    val request = Request.Builder().url("${server.trimEnd('/')}/$hash").get().header("Range", "bytes=0-0").build()
+    // A fresh query and no-cache: a CDN edge (Cloudflare keeps blobs 7 days) must not answer
+    // for a blob the server already dropped (Tron, #2649).
+    val bust = java.util.UUID.randomUUID().toString().take(12)
+    val request = Request.Builder().url("${server.trimEnd('/')}/$hash?nvcheck=$bust").get()
+        .header("Range", "bytes=0-0").header("Cache-Control", "no-cache").header("Pragma", "no-cache").build()
     presenceClient.newCall(request).execute().use { r ->
         deleteHereHolds(
             blobPresence(r.code, r.header("Content-Type"), r.header("Content-Length"), sha256 = hash, finalUrl = r.request.url.toString()),
             r.code, r.header("Content-Range"), r.header("Content-Length"), length,
+            cacheStatus = r.header("cf-cache-status"), age = r.header("Age"),
         )
     }
 } catch (e: Exception) {
@@ -87,7 +92,7 @@ internal fun BlossomService.askServerHolds(server: String, hash: String, length:
 /**
  * Whether one answer proves the server holds this file: present, and the size
  * it gives is [localLength] (`Content-Range: bytes 0-0/N` on 206, the length
- * of a whole-file 200). No size given is not proof.
+ * of a whole-file 200), from the server itself, not a cache. No size given is not proof.
  */
 internal fun deleteHereHolds(
     presence: BlobPresence,
@@ -95,8 +100,14 @@ internal fun deleteHereHolds(
     contentRange: String?,
     contentLength: String?,
     localLength: Long,
+    /** `cf-cache-status`: HIT, STALE or UPDATING came from the edge, not the server. */
+    cacheStatus: String? = null,
+    /** `Age` over 0: a cache answered. */
+    age: String? = null,
 ): Boolean {
     if (presence != BlobPresence.PRESENT) return false
+    if (cacheStatus?.trim()?.uppercase() in setOf("HIT", "STALE", "UPDATING")) return false
+    if ((age?.trim()?.toLongOrNull() ?: 0L) > 0L) return false
     val total = when (code) {
         206 -> contentRange?.substringAfterLast('/', "")?.trim()?.toLongOrNull()
         200 -> contentLength?.trim()?.toLongOrNull()

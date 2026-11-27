@@ -352,6 +352,12 @@ class BlossomService @Inject constructor(
         ownVault: OwnVaultAuth? = null,
         /** Told why a file was not stored (no room, bad hash, cut short), for the import log. */
         onSkip: ((String) -> Unit)? = null,
+        /**
+         * Asked with the bytes' hash once they are here, before they go in the vault:
+         * true drops them and returns null (taken off this device). Nothing already in
+         * the vault is touched.
+         */
+        keepOut: ((String) -> Boolean)? = null,
     ): String? = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(url).get().build()
@@ -381,6 +387,10 @@ class BlossomService @Inject constructor(
                 }
             }
             val sha256 = blob.sha256
+            if (keepOut?.invoke(sha256) == true) {
+                blob.delete()
+                return@withContext null
+            }
             if (storeStreamed(blob, contentType, ownVault, authHeader)) sha256 else null
         } catch (e: Exception) {
             Log.w(TAG, "Mirror $url to local failed: ${e.message}")
@@ -654,6 +664,11 @@ class BlossomService @Inject constructor(
         val names: Map<String, String> = emptyMap(),
         /** Left alone by Delete from mirrors: the owner runs them (NIP-11 pubkey), so their copy stays. */
         val skipped: List<String> = emptyList(),
+        /**
+         * Delete from mirrors refused: this device took its copy off with "Delete from
+         * this device", so the servers may hold the last copies (Tron, #2649).
+         */
+        val refusedLastCopy: Boolean = false,
     ) {
         val allDeleted: Boolean get() = failed.isEmpty() && deleted.isNotEmpty()
 
@@ -689,6 +704,14 @@ class BlossomService @Inject constructor(
         val mirrors = config.blossomDeleteTargets(published, photoUrl, includeHomeVault)
         val mesh = com.nostrvault.fips.MeshDeleteTargets.of(config, includeHomeVault)
         if (mirrors.isEmpty() && mesh.isEmpty()) return@withContext MirrorDeleteResult()
+
+        // Delete from mirrors keeps the file only because this device has it. After "Delete from
+        // this device" it does not, and the servers asked here are the ones that proved they held
+        // it, so this delete could take the last copies: refuse, every caller (Tron, #2649).
+        if (!includeHomeVault && removedHere.isRemovedAnyAccount(sha256) && vaultFile(sha256.lowercase()) == null) {
+            Log.i(TAG, "Delete from mirrors ${sha256.take(8)}: refused, removed from this device")
+            return@withContext MirrorDeleteResult(refusedLastCopy = true)
+        }
 
         val owner = nostrService.ownerHexPubkey
         val outcomes = mirrors.map { mirror ->

@@ -48,6 +48,12 @@ class DeviceRemovedHashes(private val folderOf: () -> File?) {
         loaded()[accountHex.lowercase()]?.contains(sha256.lowercase()) == true
     }
 
+    /** Whether [sha256] was removed here under any account (the vault folder is shared). */
+    fun isRemovedAnyAccount(sha256: String): Boolean = synchronized(lock) {
+        val hash = sha256.lowercase()
+        loaded().values.any { hash in it }
+    }
+
     /** Every hash removed here under [accountHex]. */
     fun removed(accountHex: String): Set<String> = synchronized(lock) {
         loaded()[accountHex.lowercase()]?.toSet().orEmpty()

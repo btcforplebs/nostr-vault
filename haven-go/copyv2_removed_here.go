@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 )
 
 // copyRemovedHereFile: the files the owner took off this device with "Delete
@@ -17,30 +16,23 @@ const copyRemovedHereFile = "removed_here.json"
 
 var copyRemovedHere = struct {
 	sync.Mutex
-	mod  time.Time
-	size int64
-	set  map[string]bool // lower-case sha
+	set map[string]bool // lower-case sha
 }{}
 
 // copyIsRemovedHere: whether the owner removed sha from this device, under
 // any account: the vault folder holds one file per hash whoever's record
 // listed it, so a copy for another account would put the same file back.
-// The file is read again only when it changed. An unreadable file keeps the last
-// list read, so a half-written file cannot let everything back in.
+// The file is read on every call: it is tiny, and a change inside one coarse
+// mtime tick that keeps its size (an allow plus a remove) must not be missed
+// (Tron, #2649). An unreadable file keeps the last list read, so a
+// half-written file cannot let everything back in.
 func copyIsRemovedHere(sha string) bool {
 	copyRemovedHere.Lock()
 	defer copyRemovedHere.Unlock()
-	st, err := os.Stat(copyRemovedHereFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			copyRemovedHere.set, copyRemovedHere.mod, copyRemovedHere.size = nil, time.Time{}, 0
-		}
-		return copyRemovedHere.set[strings.ToLower(sha)]
-	}
-	if copyRemovedHere.set == nil || !st.ModTime().Equal(copyRemovedHere.mod) || st.Size() != copyRemovedHere.size {
-		if set, ok := readCopyRemovedHere(); ok {
-			copyRemovedHere.set, copyRemovedHere.mod, copyRemovedHere.size = set, st.ModTime(), st.Size()
-		}
+	if _, err := os.Stat(copyRemovedHereFile); os.IsNotExist(err) {
+		copyRemovedHere.set = nil
+	} else if set, ok := readCopyRemovedHere(); ok {
+		copyRemovedHere.set = set
 	}
 	return copyRemovedHere.set[strings.ToLower(sha)]
 }

@@ -127,6 +127,36 @@ class BlossomDeleteHereTest {
         assertEquals(DeleteHereResult.NotHere, svc.deleteFromThisDevice("not-a-hash"))
     }
 
+    // ── Delete from mirrors after Delete from this device (Tron, #2649) ──
+
+    @Test
+    fun `delete from mirrors is refused once this device's copy is gone`() = runTest {
+        val (dir, blob) = vault()
+        val removed = DeviceRemovedHashes(dir = null)
+        val svc = service(dir, listOf("https://cdn.example.com"), removed)
+        svc.heldCopyProbe = { _, _, _ -> true }
+        assertTrue(svc.deleteFromThisDevice(sha) is DeleteHereResult.Removed)
+        assertFalse(blob.exists())
+        // The servers that proved they hold it are the ones this delete would reach: not asked at all.
+        svc.serverOwner = { _, _ -> error("mirror delete reached a server") }
+        val report = svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
+        assertTrue(report.refusedLastCopy)
+        assertTrue(report.deleted.isEmpty() && report.failed.isEmpty())
+        assertEquals(DELETE_MIRRORS_LAST_COPY to false, mirrorsDeleteMessage(report))
+    }
+
+    @Test
+    fun `a mark with the file back here does not refuse delete from mirrors`() = runTest {
+        val (dir, _) = vault()
+        val removed = DeviceRemovedHashes(dir = null).apply { assertTrue(markRemoved("d".repeat(64), sha)) }
+        val svc = service(dir, listOf("https://cdn.example.com"), removed)
+        var asked = 0
+        svc.serverOwner = { _, _ -> asked++; BlossomService.ServerOwner.OWNER }
+        val report = svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
+        assertFalse(report.refusedLastCopy)
+        assertEquals(1, asked)
+    }
+
     // ── One answer as proof ─────────────────────────────────────
 
     @Test
@@ -145,6 +175,16 @@ class BlossomDeleteHereTest {
         assertFalse(deleteHereHolds(p, 206, null, "5", 5))
         assertFalse(deleteHereHolds(BlobPresence.ABSENT, 206, "bytes 0-0/5", "1", 5))
         assertFalse(deleteHereHolds(BlobPresence.UNREACHABLE, 206, "bytes 0-0/5", "1", 5))
+    }
+
+    @Test
+    fun `a cached answer is not proof`() {
+        val p = BlobPresence.PRESENT
+        assertTrue(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, cacheStatus = "MISS", age = "0"))
+        assertTrue(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, cacheStatus = "DYNAMIC"))
+        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, cacheStatus = "HIT"))
+        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, cacheStatus = "stale"))
+        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, age = "120"))
     }
 
     // ── The removed-here list ───────────────────────────────────

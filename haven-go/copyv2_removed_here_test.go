@@ -68,6 +68,26 @@ func TestCopySyncFileSkipsRemovedHere(t *testing.T) {
 		t.Fatal("an unreadable list let a removed file back in")
 	}
 
+	// An allow plus a remove in one mtime tick keeps the size: still seen.
+	first := `{"byAccount":{"` + owner + `":["` + removed + `"]}}`
+	if err := os.WriteFile(copyRemovedHereFile, []byte(first), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := os.Stat(copyRemovedHereFile)
+	if !copyIsRemovedHere(removed) {
+		t.Fatal("listed file not seen")
+	}
+	swapped := `{"byAccount":{"` + owner + `":["` + kept + `"]}}`
+	if err := os.WriteFile(copyRemovedHereFile, []byte(swapped), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(copyRemovedHereFile, st.ModTime(), st.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if copyIsRemovedHere(removed) || !copyIsRemovedHere(kept) {
+		t.Fatal("a same-size, same-mtime change was missed")
+	}
+
 	// Save to Vault took it off: the catch-up may bring it again.
 	if err := os.WriteFile(copyRemovedHereFile, []byte(`{"byAccount":{}}`), 0o600); err != nil {
 		t.Fatal(err)

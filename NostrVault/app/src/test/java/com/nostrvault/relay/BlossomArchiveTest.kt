@@ -70,6 +70,14 @@ class BlossomArchiveTest {
     }
 
     @Test
+    fun `each restored hash is reported, so it comes off the removed-here list`() {
+        val archive = zip(mapOf("${sha(jpeg)}.jpeg" to jpeg, "${"0".repeat(64)}.jpeg" to jpeg))
+        val restored = mutableListOf<String>()
+        BlossomArchive.import(archive, tmp.newFolder("restore"), onImported = { restored += it })
+        assertEquals(listOf(sha(jpeg)), restored)
+    }
+
+    @Test
     fun `round trip through export and import keeps every blob`() {
         val src = tmp.newFolder("src")
         File(src, sha(jpeg)).writeBytes(jpeg)

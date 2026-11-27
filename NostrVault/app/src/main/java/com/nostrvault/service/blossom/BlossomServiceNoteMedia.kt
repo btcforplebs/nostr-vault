@@ -80,13 +80,19 @@ internal suspend fun BlossomService.copyNoteMediaIn(
             launch {
                 try {
                     val startedAt = System.currentTimeMillis()
-                    val sha = mirrorUrlToLocal(url, ownVault = auth) { onLogMessage?.invoke("Skipped $url: $it") }
-                    // A link whose hash only showed once it came: the owner took it off this
-                    // device (and a server had it then), so it goes again; the link is remembered
-                    // so later runs skip it before downloading.
-                    if (sha != null && removedHere.isRemoved(owner, sha)) {
-                        autoMirrorState.remember(url, sha)
-                        deleteFromLocal(sha)
+                    // A link whose hash only shows once it came: the owner took it off this
+                    // device (and a server had it then), so the bytes never go in the vault and
+                    // the link is remembered so later runs skip it before downloading. A copy
+                    // already in the vault (brought back on purpose) is left alone (Tron, #2649).
+                    var keptOut: String? = null
+                    val sha = mirrorUrlToLocal(
+                        url,
+                        ownVault = auth,
+                        onSkip = { onLogMessage?.invoke("Skipped $url: $it") },
+                        keepOut = { hash -> removedHere.isRemoved(owner, hash).also { if (it) keptOut = hash } },
+                    )
+                    if (keptOut != null) {
+                        autoMirrorState.remember(url, keptOut!!)
                     } else if (sha != null) {
                         stampCopiedIn(sha, noteDates[url], startedAt)
                         autoMirrorState.remember(url, sha)
