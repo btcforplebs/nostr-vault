@@ -30,6 +30,8 @@ object FullScreenMediaRouter {
         /** Each photo's note, by index: swipe up opens it (Logen 11-04). Empty: up closes, as down does. */
         val noteIds: List<String?> = emptyList(),
         val onOpenNote: ((String) -> Unit)? = null,
+        /** False for DMs: a minimized clip shows its sender on the lock screen and goes out through the exported music service. */
+        val minimize: Boolean = true,
     )
 
     private val _request = MutableStateFlow<Request?>(null)
@@ -51,9 +53,10 @@ object FullScreenMediaRouter {
         authors: List<String?> = emptyList(),
         noteIds: List<String?> = emptyList(),
         onOpenNote: ((String) -> Unit)? = null,
+        minimize: Boolean = true,
     ) {
         if (urls.isEmpty()) return
-        _request.value = Request(urls, initialIndex, origin, copyLink, authors, noteIds, onOpenNote)
+        _request.value = Request(urls, initialIndex, origin, copyLink, authors, noteIds, onOpenNote, minimize)
         _position.value = origin?.let { MediaSourceKey(it, initialIndex) }
     }
 
@@ -90,6 +93,7 @@ fun FullScreenMediaHost() {
                 authors = it.authors,
                 noteIds = it.noteIds,
                 onOpenNote = it.onOpenNote,
+                minimize = it.minimize,
                 onDismiss = FullScreenMediaRouter::dismiss,
             )
         }

@@ -87,7 +87,11 @@ object SharedVideoRouter {
  * say), not the note's link. The viewer releases its player as it closes.
  */
 internal fun minimizeToBar(context: Context, player: Player, uri: String, minimize: VideoMinimize) {
+    // The viewer loops, so it is often just short of the end: start over
+    // rather than play a moment and drop off the bar.
+    val durationMs = player.duration
     val positionMs = player.currentPosition.coerceAtLeast(0)
+        .let { if (durationMs > 0 && it >= durationMs - 1_000) 0L else it }
     player.pause()
     val profile = minimize.authorPubkey?.let { pk ->
         runCatching {
@@ -181,6 +185,9 @@ private fun SharedVideoPlayer(player: Player, onMinimize: () -> Unit) {
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             player.removeListener(listener)
+            // The long-lived controller would otherwise keep this screen's
+            // TextureView (and the Activity) after the viewer closes.
+            player.clearVideoSurface()
             player.setSoundOnly(true)
         }
     }

@@ -327,7 +327,8 @@ private fun UrlVideoPlayer(
                         )
                     }
 
-                    if (minimize != null && bytes == null) {
+                    // Hidden while muted: the bar would play the clip out loud.
+                    if (minimize != null && bytes == null && !isMuted) {
                         MinimizeVideoButton { minimizeToBar(context, exoPlayer, uri, minimize) }
                     }
 
