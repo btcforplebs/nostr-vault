@@ -38,6 +38,9 @@ import java.net.URL
                         // that key: never an account someone pasted in.
                         if (_setupPath.value == SetupPath.NEW_TO_NOSTR && hex == generatedPkHex) {
                             com.nostrvault.service.FreshAccountKeys.mark(appContext, hex)
+                            // No finishing Fill your feed before 5 follows,
+                            // on any path (Logen 2026-11-27).
+                            com.nostrvault.vaultguide.FillYourVaultCoordinator.requireFiveFollows(hex)
                             // Straight into Fill your feed: this key follows
                             // nobody yet, so there is nothing to wait for.
                             com.nostrvault.tutorials.TutorialCenter.startIfEligible(

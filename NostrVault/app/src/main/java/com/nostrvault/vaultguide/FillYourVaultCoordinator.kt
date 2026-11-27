@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 object FillYourVaultCoordinator {
     private var masterStore: VaultMasterStore? = null
     private var meterStore: FeedMeterStore? = null
+    private var gateStore: FillYourFeedGateStore? = null
     private var started = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     /** Count the last time the rule ran, per account; null before the list is known. */
@@ -58,6 +59,13 @@ object FillYourVaultCoordinator {
     private val _meterOn = MutableStateFlow(false)
     /** Whether the meter is on for this account (see [FeedMeterStore]). */
     val meterOn: StateFlow<Boolean> = _meterOn.asStateFlow()
+
+    private val _locked = MutableStateFlow(false)
+    /**
+     * A new account short of 5 follows ([FillYourFeedGate]): no Skip, "Not
+     * now" or "Hide the meter", and [closeGuide] does nothing.
+     */
+    val locked: StateFlow<Boolean> = _locked.asStateFlow()
 
     /** The meter folded down to its pill. */
     val meterCollapsed = MutableStateFlow(false)
@@ -85,6 +93,20 @@ object FillYourVaultCoordinator {
         }
         masterStore = VaultMasterStore(store)
         meterStore = FeedMeterStore(store)
+        gateStore = FillYourFeedGateStore(store)
+    }
+
+    /**
+     * Setup made [account]'s key on this device: it can't finish the guide
+     * before 5 follows. Never for an account someone signed in with.
+     */
+    fun requireFiveFollows(account: String) {
+        gateStore?.require(account)
+        if (account == this.account) refreshLock()
+    }
+
+    private fun refreshLock() {
+        _locked.value = FillYourFeedGate.isLocked(gateStore?.isRequired(account) == true, _meter.value)
     }
 
     /** [activeAccount] is the same flow the tutorial cards and Feeds start key on. */
@@ -197,6 +219,8 @@ object FillYourVaultCoordinator {
 
     /** Skip, "Not now" or "Hide the meter": the guide closes and the meter goes away. */
     fun closeGuide() {
+        // A new account under 5 has no way out (Logen 2026-11-27).
+        if (_locked.value) return
         if (TutorialCenter.isActive(TutorialID.FILL_YOUR_VAULT)) close(account)
         meterStore?.set(false, account)
         _meterOn.value = false
@@ -221,10 +245,12 @@ object FillYourVaultCoordinator {
     // ── State ─────────────────────────────────────────────────────
 
     private fun loadMeterState(account: String) {
+        this.account = account
         _meterOn.value = meterStore?.isOn(account) == true
         meterCollapsed.value = _meter.value.count >= VaultMeter.GOAL
         profileCardPubkey.value = null
         if (!TutorialCenter.isActive(TutorialID.FILL_YOUR_VAULT)) setPhase(FillYourFeedPhase.OFF)
+        refreshLock()
     }
 
     private fun setPhase(phase: FillYourFeedPhase) {
@@ -257,6 +283,7 @@ object FillYourVaultCoordinator {
             if (_meterOn.value) setCelebrate(true)
         }
         _meter.value = meter
+        refreshLock()
 
         val id = TutorialID.FILL_YOUR_VAULT
         when (FillYourVaultRule.onFollowsChanged(

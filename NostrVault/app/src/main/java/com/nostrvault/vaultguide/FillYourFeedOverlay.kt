@@ -146,6 +146,7 @@ fun FillYourFeedOverlay(
         val meter by guide.meter.collectAsState()
         val celebrate by guide.celebrateVaultMaster.collectAsState()
         val cardPubkey by guide.profileCardPubkey.collectAsState()
+        val locked by guide.locked.collectAsState()
         val reduceMotion = rememberReduceMotion()
         var showingPicks by remember { mutableStateOf(false) }
         val bolt = remember { Animatable(-0.2f) }
@@ -231,7 +232,7 @@ fun FillYourFeedOverlay(
                 PicksSheet(meter, profiles, onUnfollow, onDone = { showingPicks = false }, onHide = {
                     showingPicks = false
                     guide.closeGuide()
-                })
+                }.takeUnless { locked })
             }
         }
 
@@ -348,13 +349,16 @@ private fun PrimaryButton(
 @Composable
 private fun IntroCard() {
     val guide = FillYourVaultCoordinator
-    GuideCard(step = 1, onSkip = guide::closeGuide) {
+    val locked by guide.locked.collectAsState()
+    GuideCard(step = 1, onSkip = guide::closeGuide.takeUnless { locked }) {
         CardTitle("Fill your feed")
         WebOfTrustDiagram(Modifier.fillMaxWidth().height(132.dp))
         CardBody("Nostr starts empty. No algorithm picks for you. Follow a few people, and the people they follow become your web of trust. It fills your feed and filters out spam.")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = guide::closeGuide, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text("Not now", color = SecondaryText, fontSize = 16.sp)
+            if (!locked) {
+                TextButton(onClick = guide::closeGuide, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("Not now", color = SecondaryText, fontSize = 16.sp)
+                }
             }
             PrimaryButton("Let's fill it", onClick = guide::beginFilling)
         }
@@ -407,7 +411,8 @@ private fun TopicsCard() {
     val guide = FillYourVaultCoordinator
     val selected = remember { mutableStateListOf<String>().apply { addAll(guide.followedTopics()) } }
     var showingMore by remember { mutableStateOf(false) }
-    GuideCard(step = 2, onSkip = guide::closeGuide) {
+    val locked by guide.locked.collectAsState()
+    GuideCard(step = 2, onSkip = guide::closeGuide.takeUnless { locked }) {
         CardTitle("What are you into?")
         CardBody("Pick a few topics. You'll see posts about them from everyone, so you can find people to follow.")
         Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
@@ -508,7 +513,8 @@ private fun MoreTopicsSheet(selected: MutableList<String>, onDone: () -> Unit) {
 @Composable
 private fun HintCard() {
     val guide = FillYourVaultCoordinator
-    GuideCard(step = 3, onSkip = guide::closeGuide) {
+    val locked by guide.locked.collectAsState()
+    GuideCard(step = 3, onSkip = guide::closeGuide.takeUnless { locked }) {
         CardTitle("Find people you like")
         CardBody("Tap anyone to see their profile and posts first. When you like what you see, follow them. Each follow fills a spot down by the tabs. Five builds your web of trust.")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -600,7 +606,8 @@ private fun MeterBar(
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 if (!compact) {
-                    Text(FillYourFeedGuide.meterSubtitle(meter), color = SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val locked by FillYourVaultCoordinator.locked.collectAsState()
+                    Text(FillYourFeedGuide.meterSubtitle(meter, locked), color = SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             IconButton(onClick = onCollapse, modifier = Modifier.size(48.dp)) {
@@ -696,7 +703,8 @@ private fun PicksSheet(
     profiles: Map<String, FeedProfile>,
     onUnfollow: (String) -> Unit,
     onDone: () -> Unit,
-    onHide: () -> Unit,
+    /** Null while a new account is short of 5: no way to hide the meter. */
+    onHide: (() -> Unit)?,
 ) {
     val primary = LocalNostrVaultColors.current.primary
     Column(
@@ -722,8 +730,10 @@ private fun PicksSheet(
             HorizontalDivider(color = Ink.copy(alpha = 0.1f))
         }
         PrimaryButton("Done", modifier = Modifier.fillMaxWidth(), onClick = onDone)
-        TextButton(onClick = onHide, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text("Hide the meter", color = SecondaryText, fontSize = 16.sp)
+        if (onHide != null) {
+            TextButton(onClick = onHide, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("Hide the meter", color = SecondaryText, fontSize = 16.sp)
+            }
         }
     }
 }
