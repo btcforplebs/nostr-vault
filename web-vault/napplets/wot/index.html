@@ -95,13 +95,15 @@ function cardLine(web, pk, nameOf, whose) {
   const l = web.layerOf(pk)
   return l === "follow" ? `${whose} follows them` : l === "extended" ? `Vouched for in ${whose}'s web` : l === "further" ? `Further out in ${whose}'s web` : `Not in ${whose}'s web`
 }
-/** Find: people whose name (or a word of it, or a phrase in it) or key starts with what was typed, follows first. */
+/** Find: the shell's shared people ranker (net/people-rank.js, injected with the maths): middle person, follows, then
+ *  the rest of the web; exact name > starts with > a word starts with > contains, shorter names first. A key's start
+ *  finds that person too, after the names. */
 function findPeople(web, names, q, max = 30) {
   const s = String(q ?? "").trim().toLowerCase()
   if (!s) return []
   const all = [...web.follows, ...web.extended, ...web.further]
-  const hit = name => { const t = name.toLowerCase(); return t.startsWith(s) || t.split(/\s+/).some(w => w.startsWith(s)) || (s.includes(" ") && t.includes(s)) }
-  return all.filter(pk => pk.startsWith(s) || hit(names[pk]?.[0] ?? "")).slice(0, max)
+  const c = { me: web.me, follows: new Set(web.follows), web: new Set([...web.extended, ...web.further]), profileOf: pk => (names[pk]?.[0] ? { name: names[pk][0] } : null) }
+  return [...new Set([...rankPeople(all, s, c), ...all.filter(pk => pk.startsWith(s))])].slice(0, max)
 }
 // ---- end pure ----
 

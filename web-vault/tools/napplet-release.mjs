@@ -21,7 +21,7 @@ const read = p => fs.readFileSync(path.join(root, p), "utf8")
 /** One napplet's artifact bytes, as the app builds them (first-party.js). */
 export function artifactOf(n, readFile = read) {
   const html = readFile(`napplets/${n.file}/index.html`)
-  const withMaths = n.maths ? injectWot(html, [readFile("src/net/wot-pure.js"), readFile("src/net/wot-globe.js")]) : html
+  const withMaths = n.maths ? injectWot(html, [readFile("src/net/wot-pure.js"), readFile("src/net/wot-globe.js"), readFile("src/net/people-rank.js")]) : html
   return injectTheme(withMaths, readFile("src/napplet/theme-client.js"))
 }
 
