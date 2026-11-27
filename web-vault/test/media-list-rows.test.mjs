@@ -18,7 +18,7 @@ registerHooks({
   },
 })
 const { sections, loadLayout, saveLayout, SORTS, loadSort } = await import("../src/screens/BlossomGallery.jsx")
-const { MediaListRows, sizeLabel, typeLabel, dateLabel, serversLabel, detailLine } = await import("../src/screens/MediaListRows.jsx")
+const { MediaListRows, RowView, sizeLabel, typeLabel, dateLabel, serversLabel, detailLine } = await import("../src/screens/MediaListRows.jsx")
 
 const S = ["https://a.example", "https://b.example", "https://c.example"]
 const b = (id, kind, size, uploaded = 1000, extra = {}) => ({ sha256: id, kind, size, uploaded, type: "", servers: S.slice(0, 2), ...extra })
@@ -61,7 +61,8 @@ test("MediaListRows draws one row per file with the grid's thumbnail, and a tap 
   const opened = []
   const files = [b("one", "photo", 2048), b("two", "video", 4096)]
   const tree = MediaListRows({ blobs: files, servers: S, thumb: x => `thumb:${x.sha256}`, onOpen: id => opened.push(id), locale: "en-GB" })
-  const rows = tree.props.children
+  // Each row settles its size (Z1) and draws as RowView.
+  const rows = tree.props.children.map(r => RowView(r.props))
   assert.equal(rows.length, 2)
   const text = JSON.stringify(rows[0])
   assert.match(text, /thumb:one/); assert.match(text, /Photo · 2 KB/); assert.match(text, /2\/3 servers/)
@@ -73,4 +74,10 @@ test("the gallery offers the Grid/List toggle and draws MediaListRows in list la
   const src = readFileSync(new URL("../src/screens/BlossomGallery.jsx", import.meta.url), "utf8")
   assert.match(src, /layout === "list" \? <MediaListRows blobs=\{g\.blobs\} servers=\{servers\} thumb=\{b => <Thumb blob=\{b\} \/>\} onOpen=\{setOpen\} \/> : <Mosaic/)
   assert.match(src, /onClick=\{\(\) => \{ setLayout\(l\); saveLayout\(l\) \}\}/)
+})
+
+test("Z1: a row shows a size learned from its server where the list gave none", () => {
+  const row = RowView({ blob: b("n", "photo", undefined), servers: S, thumb: () => "", onOpen() {}, locale: "en-GB", size: 3_200_000 })
+  assert.match(JSON.stringify(row), /Photo · 3\.1 MB/)
+  assert.doesNotMatch(JSON.stringify(RowView({ blob: b("n", "photo", undefined), servers: S, thumb: () => "", onOpen() {}, locale: "en-GB" })), /MB|KB|· 0/)
 })
