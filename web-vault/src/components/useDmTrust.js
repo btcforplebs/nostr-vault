@@ -2,6 +2,7 @@ import { useEffect, useState } from "preact/hooks"
 import { followLists } from "../net/wot.js"
 import { trustedWeb } from "../net/notifications.js"
 import { requestPeers } from "../net/dm-trust.js"
+import { dmHiddenPeers } from "../net/dm-muted.js"
 
 // The trust set Messages splits on (net/dm-trust.js): Notifications' (trustedWeb over the follows' contact lists,
 // wot.js followLists, whose cache the Web of Trust tab, Popular and Notifications share, so no list is fetched twice).
@@ -33,5 +34,6 @@ export function useDmTrust(ctx) {
   return waiting.trusted
 }
 
-/** Who to leave out of unread counts: blocked people and Requests (a request never raises a badge). */
-export const hiddenFromUnread = (messages, me, blocked, trusted) => new Set([...blocked, ...requestPeers(messages, me, trusted)])
+/** Who to leave out of unread counts: blocked people, people who wrote a muted word (dm-muted.js) and Requests (a
+ *  request never raises a badge). */
+export const hiddenFromUnread = (messages, me, blocked, trusted) => new Set([...dmHiddenPeers(messages, blocked), ...requestPeers(messages, me, trusted)])

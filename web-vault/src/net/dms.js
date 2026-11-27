@@ -21,6 +21,7 @@ import { chunkBytesFor, dmCache } from "./dm-cache.js"
 import { settleWatch } from "./settle-early.js"
 import { fileContentOf, isFileLink, isVideoLink } from "./dm-file.js"
 import { assertNoSecretKey, containsSecretKey, secretKeyError } from "./secret-key-leak.js"
+import { dmHiddenPeers } from "./dm-muted.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -426,11 +427,13 @@ export function watchMessages({ vault, session, signer }, relays, { crypto, chat
  *  as the screen says; bug hunt 2026-11-05 #4). */
 export const threadShown = (messages, peer, { blocked = new Set(), me } = {}) => thread(messages, peer).filter(m => !blocked.has(peer) || m.from === me)
 
-/** Conversations, newest first, blocked people left out. -> [{ peer, last, count }] */
+/** Conversations, newest first, blocked people and those who wrote a muted word (dm-muted.js) left out.
+ *  -> [{ peer, last, count }] */
 export function conversations(messages, blocked = new Set()) {
+  const hidden = dmHiddenPeers(messages, blocked)
   const byPeer = new Map()
   for (const m of messages.values()) {
-    if (blocked.has(m.peer)) continue
+    if (hidden.has(m.peer)) continue
     const c = byPeer.get(m.peer)
     if (!c) byPeer.set(m.peer, { peer: m.peer, last: m, count: 1 })
     else { c.count++; if (m.at > c.last.at) c.last = m }
