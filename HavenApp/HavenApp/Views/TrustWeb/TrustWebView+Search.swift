@@ -37,18 +37,24 @@ extension TrustWebView {
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
     }
 
-    /// Who the search finds: a pasted key, or names you've seen, people you
-    /// follow first.
+    /// Who the search finds: a pasted key, or names you've seen, in the
+    /// shared people order (`PeopleSearchRank`, the Search tab's too).
+    /// Blocked people are left out.
     private var searchMatches: [String] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.count == 64, text.allSatisfy(\.isHexDigit) { return [text.lowercased()] }
         let bare = text.hasPrefix("nostr:") ? String(text.dropFirst(6)) : text
         if bare.lowercased().hasPrefix("npub1"), let hex = NpubValidation.hexPubkey(fromNpub: bare) { return [hex] }
-        let people = nostrService.profiles.values.map {
-            TrustMap.Person(pubkey: $0.pubkey, names: [$0.displayName, $0.name, $0.nip05].compactMap { $0 })
-        }
-        return TrustMap.searchPeople(text, in: people, follows: myFollows, web: web)
+        let circle = PeopleSearchRank.Circle(own: [me], follows: myFollows, web: web,
+                                             copy: DiscoveryReachStore.shared.copy)
+        return PeopleSearchRank.rank(Array(nostrService.profiles.values), query: text, circle: circle,
+                                     blocked: ConfigService.shared.activeAccountBlockedHexPubkeys,
+                                     limit: Self.searchLimit, person: PeopleSearchRank.person)
+            .map(\.pubkey)
     }
+
+    /// Rows Find someone shows.
+    static var searchLimit: Int { 8 }
 
     func searchResults(maxHeight: CGFloat) -> some View {
         let matches = searchMatches

@@ -111,13 +111,20 @@ struct SearchTermMatcher: Equatable {
 
 enum GlobalSearchRanking {
     /// Lower sorts first: the user's own posts, then people they follow, then
-    /// the rest of their Web of Trust, then everyone.
-    static func tier(pubkey: String, own: Set<String>, follows: Set<String>, wot: Set<String> = []) -> Int {
+    /// the rest of their Web of Trust, then people further out (3+ steps, in
+    /// the Haven's rank copy), then everyone. The same tiers as
+    /// `PeopleSearchRank` (search plan §1b).
+    static func tier(pubkey: String, own: Set<String>, follows: Set<String>, wot: Set<String> = [],
+                     distant: (String) -> Bool = { _ in false }) -> Int {
         if own.contains(pubkey) { return 0 }
         if follows.contains(pubkey) { return 1 }
         if wot.contains(pubkey) { return 2 }
-        return 3
+        if distant(pubkey) { return 3 }
+        return outsideTier
     }
+
+    /// Everyone past your web. 3+ steps away counts as inside (Logen 5d1ce4cb #6).
+    static let outsideTier = 4
 
     /// Own, then follows, then Web of Trust, then everyone; newest first within a tier. Ties on
     /// time break on id so the order is stable while results stream in.
@@ -125,11 +132,12 @@ enum GlobalSearchRanking {
                              own: Set<String>,
                              follows: Set<String>,
                              wot: Set<String> = [],
+                             distant: (String) -> Bool = { _ in false },
                              pubkey: (T) -> String,
                              createdAt: (T) -> Date,
                              id: (T) -> String) -> [T] {
         items
-            .map { (item: $0, tier: tier(pubkey: pubkey($0), own: own, follows: follows, wot: wot)) }
+            .map { (item: $0, tier: tier(pubkey: pubkey($0), own: own, follows: follows, wot: wot, distant: distant)) }
             .sorted { a, b in
                 if a.tier != b.tier { return a.tier < b.tier }
                 let ta = createdAt(a.item), tb = createdAt(b.item)
@@ -140,7 +148,7 @@ enum GlobalSearchRanking {
     }
 
     /// Results split by your web (Logen 2026-11-13 "go all", option B): you,
-    /// your follows and `wot` stay; everyone else (tier 3) goes to `outside`,
+    /// your follows, `wot` and `distant` stay; everyone else goes to `outside`,
     /// folded under "N from outside your web". Order is kept on both sides.
     /// Fails closed: with no web yet only you and your follows are inside.
     /// Web twin: web-vault/src/net/search.js shapeResults `fold`.
@@ -148,10 +156,11 @@ enum GlobalSearchRanking {
                                 own: Set<String>,
                                 follows: Set<String>,
                                 wot: Set<String>,
+                                distant: (String) -> Bool = { _ in false },
                                 pubkey: (T) -> String) -> (inside: [T], outside: [T]) {
         var inside: [T] = [], outside: [T] = []
         for item in items {
-            if tier(pubkey: pubkey(item), own: own, follows: follows, wot: wot) < 3 {
+            if tier(pubkey: pubkey(item), own: own, follows: follows, wot: wot, distant: distant) < outsideTier {
                 inside.append(item)
             } else {
                 outside.append(item)

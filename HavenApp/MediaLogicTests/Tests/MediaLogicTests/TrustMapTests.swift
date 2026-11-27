@@ -322,20 +322,6 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(scores, [alice: 4, bob: 1, carol: 3])
     }
 
-    func testSearchPeopleRanksFollowsThenWebThenPrefix() {
-        let people = [
-            TrustMap.Person(pubkey: key(1), names: ["Alice Stranger"]),
-            TrustMap.Person(pubkey: key(2), names: ["Mal Alice"]),
-            TrustMap.Person(pubkey: key(3), names: ["alice", "alice@example.com"]),
-            TrustMap.Person(pubkey: key(4), names: ["Alicewebber"]),
-            TrustMap.Person(pubkey: key(5), names: ["Bob"]),
-        ]
-        let found = TrustMap.searchPeople(" ALI ", in: people, follows: [key(2), key(3)], web: [key(4)])
-        XCTAssertEqual(found, [key(3), key(2), key(4), key(1)])
-        XCTAssertTrue(TrustMap.searchPeople("  ", in: people, follows: [], web: []).isEmpty)
-        XCTAssertEqual(TrustMap.searchPeople("a", in: people, follows: [], web: [], limit: 2).count, 2)
-    }
-
     func testSeatFacesNeverLetsOneFaceCoverAnother() {
         let spot = { (k: String, x: Double) in TrustMap.FaceSpot(key: k, x: x, y: 0, r: 10) }
         // Front-most first: b sits on a, c is clear, d sits on the core.

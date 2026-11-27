@@ -279,35 +279,6 @@ enum TrustMap {
         return scores
     }
 
-    // MARK: Finding someone
-
-    /// Someone the WOT tab's search can find: their key and every name they go by.
-    struct Person {
-        let pubkey: String
-        let names: [String]
-    }
-
-    /// The WOT tab's search: people you follow first, then your web, then
-    /// everyone else; a name that starts with the query before one that only
-    /// contains it; shorter names first.
-    static func searchPeople(_ query: String, in people: [Person], follows: Set<String>,
-                             web: Set<String>, limit: Int = 8) -> [String] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return [] }
-        var ranked: [(tier: Int, prefix: Int, length: Int, key: String)] = []
-        for person in people {
-            let names = person.names.map { $0.lowercased() }.filter { $0.contains(q) }
-            guard !names.isEmpty else { continue }
-            let tier = follows.contains(person.pubkey) ? 0 : web.contains(person.pubkey) ? 1 : 2
-            let prefix = names.contains { $0.hasPrefix(q) } ? 0 : 1
-            ranked.append((tier, prefix, names.map(\.count).min() ?? 0, person.pubkey))
-        }
-        return ranked
-            .sorted { ($0.tier, $0.prefix, $0.length, $0.key) < ($1.tier, $1.prefix, $1.length, $1.key) }
-            .prefix(limit)
-            .map(\.key)
-    }
-
     /// The WOT tab's layer picker. Picking one shows only that part of your
     /// web, with its faces; switching never reloads the web.
     /// Hop 3, 4 and 5 are the outer rings (`TrustMapOuter`): picking one

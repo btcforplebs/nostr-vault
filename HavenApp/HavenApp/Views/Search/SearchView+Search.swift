@@ -172,6 +172,7 @@ extension SearchView {
             guard self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == requestedQuery else { return }
             self.globalSnapshot = snapshot
             self.searchResults = self.filteredResults(from: snapshot, query: trimmedQuery)
+            self.openOutsideForTheOnlyExactMatch(query: requestedQuery)
             self.globalSources = snapshot.sources
             self.globalFinished = snapshot.isFinished
             self.isSearching = false
@@ -184,6 +185,25 @@ extension SearchView {
         guard let snapshot = globalSnapshot else { return }
         let trimmedQuery = searchQuery.lowercased().trimmingCharacters(in: .whitespaces)
         searchResults = filteredResults(from: snapshot, query: trimmedQuery)
+    }
+
+    /// Who is how close, for ranking people: follows, your web and the
+    /// Haven's rank copy (hops 3+ and trust scores).
+    func peopleSearchCircle(own: String, follows: Set<String>) -> PeopleSearchRank.Circle {
+        PeopleSearchRank.Circle(own: [own], follows: follows, web: feedService.webOfTrustForRanking,
+                                copy: DiscoveryReachStore.shared.copy)
+    }
+
+    /// The fold opens by itself, once per query, when the only exact name
+    /// match is outside your web (Logen 5d1ce4cb #1): they stay in the fold,
+    /// but it is who you typed.
+    func openOutsideForTheOnlyExactMatch(query: String) {
+        guard !showsOutside, outsideAutoOpenedFor != query,
+              PeopleSearchRank.outsideHoldsTheOnlyExactMatch(
+                inside: searchResults.orderedUsers.map(\.value), outside: searchResults.outsideUsers,
+                query: query, person: PeopleSearchRank.person) else { return }
+        outsideAutoOpenedFor = query
+        showsOutside = true
     }
 
     /// Blocks, then the who/when scope, then the per-type lists. Hashtags and
@@ -201,9 +221,13 @@ extension SearchView {
 
         // People and notes from outside your web fold under one line; their
         // hashtags and links stay out with them (Logen 2026-11-13, option B).
-        let wot = feedService.webOfTrustForRanking
-        let people = GlobalSearchRanking.splitOutside(profiles, own: [own], follows: follows, wot: wot, pubkey: \.pubkey)
-        let found = GlobalSearchRanking.splitOutside(notes, own: [own], follows: follows, wot: wot, pubkey: \.pubkey)
+        // People 3+ steps away (the Haven's rank copy) count as inside.
+        let circle = peopleSearchCircle(own: own, follows: follows)
+        let people = PeopleSearchRank.split(profiles, query: trimmedQuery, circle: circle,
+                                            keepUnmatched: true, person: PeopleSearchRank.person)
+        let found = GlobalSearchRanking.splitOutside(notes, own: [own], follows: follows, wot: circle.web,
+                                                     distant: { circle.copy?[$0] != nil },
+                                                     pubkey: \.pubkey)
 
         var results = SearchResults()
         for profile in people.inside {
