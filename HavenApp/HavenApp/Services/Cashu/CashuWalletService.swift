@@ -15,6 +15,7 @@ final class CashuWalletService: @unchecked Sendable {
         self.fileURL = fileURL
         try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true,
                                                 attributes: Self.folderAttributes)
+        Self.excludeFromBackup(fileURL.deletingLastPathComponent())
         handle = try CashuBridge.open(path: fileURL.path)
     }
 
@@ -35,6 +36,20 @@ final class CashuWalletService: @unchecked Sendable {
     /// True once this account has a wallet on this device. Never creates one.
     static func exists(accountHex: String, base: URL = defaultBase) -> Bool {
         isAccountHex(accountHex) && FileManager.default.fileExists(atPath: fileURL(accountHex: accountHex, base: base).path)
+    }
+
+    /// wallet.json stays out of iCloud, Finder and Time Machine backups
+    /// (Logen's pick, 2026-11-27): an old copy brought back would count
+    /// proofs spent since. The Vault copy brings the wallet back instead
+    /// (`CashuVaultSync.restore`). The flag is on the folders, not the file:
+    /// the engine replaces wallet.json by renaming a temp file into place,
+    /// which would drop a flag set on the file itself.
+    static func excludeFromBackup(_ folder: URL) {
+        for var url in [folder, folder.deletingLastPathComponent()] {
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? url.setResourceValues(values)
+        }
     }
 
     private static let lock = NSLock()
@@ -67,7 +82,7 @@ final class CashuWalletService: @unchecked Sendable {
 
     // MARK: Engine calls
 
-    private struct NoArgs: Encodable {}
+    struct NoArgs: Encodable {}
 
     /// One engine call, off the main thread (mint calls block up to 2 min).
     func call<Result: Decodable>(_ method: String, _ args: some Encodable = NoArgs(), as type: Result.Type) async throws -> Result {
@@ -77,6 +92,15 @@ final class CashuWalletService: @unchecked Sendable {
             try CashuBridge.call(handle, method, args: body)
         }.value
         return try JSONDecoder().decode(Result.self, from: data)
+    }
+
+    /// A call with JSON in and out as they are (rollover templates must go
+    /// back to commit_published unchanged, meta included).
+    func callRaw(_ method: String, args: Data? = nil) async throws -> Data {
+        let handle = handle
+        return try await Task.detached(priority: .userInitiated) {
+            try CashuBridge.call(handle, method, args: args)
+        }.value
     }
 
     /// A call whose result we don't read.

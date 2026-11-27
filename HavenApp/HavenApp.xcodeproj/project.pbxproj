@@ -281,6 +281,7 @@
 		1CB925192845B8F8219CD4B4 /* MediaPostShareTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB41FAD5B11E1C7F4245F7E1 /* MediaPostShareTags.swift */; };
 		1CC5A64F92A00678610A9D4C /* EmojiPaletteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B589B40DCA89EA8C175FEF32 /* EmojiPaletteStore.swift */; };
 		1CD9EA6DE7FC6EEA28DFAE37 /* StartupMarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8035EC9D9270146F2FA33BC /* StartupMarks.swift */; };
+		1CECA9F728C379ABA2544E78 /* CashuVaultSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9A8AC9D6DA3266DE096BB88 /* CashuVaultSync.swift */; };
 		1CF6609A6E8D7B55E7EAC0AA /* MacVaultImportProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D499A8692D54F384FADA473 /* MacVaultImportProgress.swift */; };
 		1CFC00E39549C03B9D03810D /* ListHistoryScanStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BD3061693CB7921DAB3A13 /* ListHistoryScanStatus.swift */; };
 		1D030CED5BF6DF39EED7648D /* ParentLookupRelays.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CBFBDBD520513562F5E4354 /* ParentLookupRelays.swift */; };
@@ -841,6 +842,7 @@
 		52C693587EAAB2B0A4A10B48 /* ListPublishReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01EE381BC579E96331A3449 /* ListPublishReset.swift */; };
 		52CAC9B45B184FBECD565101 /* BlossomUploadReply.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7C42A113F1DF2AA4AE3B00 /* BlossomUploadReply.swift */; };
 		5305BD300986F6C61A663EC1 /* DMSendFailedAway.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DE9D372B8B8E0E8D53391F9 /* DMSendFailedAway.swift */; };
+		5325213BD68A38F779EA2EB8 /* CashuVaultCopies.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E7E230F923C4981CAAE94A /* CashuVaultCopies.swift */; };
 		5335596D525595585FFBE345 /* NoteDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB96BA330E32C7807A2F867 /* NoteDetailView.swift */; };
 		5349C039224164C14CDDEE1C /* AppDataWipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2FF162CEBBC03954CBBB65 /* AppDataWipe.swift */; };
 		5379A69EEDE74CC763325DDF /* VaultDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78F0E3CDA2C677BE9603C497 /* VaultDashboardView.swift */; };
@@ -1121,6 +1123,7 @@
 		6F6502FABCA2A499BBF8B3E3 /* ArticleCommentRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5322197B2E2B16920BA467E1 /* ArticleCommentRow.swift */; };
 		6F73B4E01831A601E8BA5865 /* AccountWeb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 737C297DFD1BEAF9966EB868 /* AccountWeb.swift */; };
 		6F923A9D7824CDB7C70FB597 /* DeletedPostsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E680C50EB51C30D009823043 /* DeletedPostsStore.swift */; };
+		6FA16EA80D3A9D41D75655ED /* CashuVaultLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2965FCB50A7CED40E704D4A2 /* CashuVaultLink.swift */; };
 		6FADE7F1EE93ECA61C279770 /* QuickBarRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207340FB8D3B36C2D991C22A /* QuickBarRow.swift */; };
 		6FE1EBFEB320EFC5CEFBC7CD /* DesktopVaultEntryRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 643843738CB04BE19E899920 /* DesktopVaultEntryRows.swift */; };
 		7003613F2ACF40FAC274A6D1 /* NostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65D86DC20FC17947852F5719 /* NostrService.swift */; };
@@ -1204,6 +1207,7 @@
 		77B0B3690B14A5102B5A66CA /* LocalTLSPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40FE00243820A6D15633BB8 /* LocalTLSPolicy.swift */; };
 		77EF823FB3FAEC4AF1A29BA7 /* MeshCopyV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41CF6E91B459C440D659F195 /* MeshCopyV2.swift */; };
 		78055CE117852546CF7DB136 /* HighlightRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DEF13C08E09135E0133D49F /* HighlightRow.swift */; };
+		780D6133D5DA75D78DCEEB51 /* CashuVaultSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9A8AC9D6DA3266DE096BB88 /* CashuVaultSync.swift */; };
 		7812BDC72704D04F78C592E1 /* BlossomUploadReply.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7C42A113F1DF2AA4AE3B00 /* BlossomUploadReply.swift */; };
 		782CC7A2BAE030E7CB91B783 /* ImportStartGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80856F4033F4F17241F65C4D /* ImportStartGate.swift */; };
 		783AA267F0219A0C6DC2A847 /* HashtagsFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FB986CD40CF9532CA6B250 /* HashtagsFeedViews.swift */; };
@@ -1452,6 +1456,7 @@
 		8FFD0E5954ACDA85402BB3DA /* HighlightReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E29E19875274ECE1D3381131 /* HighlightReviewView.swift */; };
 		8FFFD04B6E709008AB747119 /* ComposerContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF788B89ACD8B1FE30E03676 /* ComposerContext.swift */; };
 		90268759C73B9E3010CD6AEA /* OpensMessagesMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 436B49412CA8DD29DA49C857 /* OpensMessagesMode.swift */; };
+		902A2E4D2CA65B46CDBE0768 /* CashuVaultLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2965FCB50A7CED40E704D4A2 /* CashuVaultLink.swift */; };
 		9049ACC91219AD4538241AF7 /* BookmarkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEFACBF119702896AC43B502 /* BookmarkService.swift */; };
 		904B4EBE02E9E9B8049AB9F5 /* LabelShareTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CD0DC0A87BE4877A35C6657 /* LabelShareTags.swift */; };
 		905F81924C957FBBF21131E2 /* NVShareClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2273735721EB06B1A2815C4E /* NVShareClassifier.swift */; };
@@ -1782,6 +1787,7 @@
 		B06A0F4E145FA1BC93E21D35 /* CopyAccountsSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A4CAA77B6208DA3C7EB9678 /* CopyAccountsSync.swift */; };
 		B06FA2DF88BCBEA7BBFE23A5 /* PullDownToCloseRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = E02263EA7B83AAC9AB47B12A /* PullDownToCloseRule.swift */; };
 		B078D58DB3B737198B72E836 /* GlobeStormProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03DBB409E343A8D2FF2B53D1 /* GlobeStormProbe.swift */; };
+		B07B456153BD542B73625270 /* CashuVaultSyncer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62427065E5F9214491C58E82 /* CashuVaultSyncer.swift */; };
 		B0CCD220B12D223F5CC9860F /* InterestList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 381DC5D952C2744229EB2046 /* InterestList.swift */; };
 		B0EE7DC4594BAA8CB1C4ACEF /* VaultTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4006EAE38E09D8D31A4D607 /* VaultTabView.swift */; };
 		B1045E187A25184061DCEE73 /* ConfigService+BlockPrivately.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3BBF0CF8E7C195923C027D7 /* ConfigService+BlockPrivately.swift */; };
@@ -1908,6 +1914,7 @@
 		BC149F5EF1080D3A330334B6 /* Bolt11.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC971B12438093F727E8967F /* Bolt11.swift */; };
 		BC1B7C2C39879963AC6F307C /* VaultView+ListSwap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A39C0F9DA5BB3A65DCD8BBF /* VaultView+ListSwap.swift */; };
 		BC26384F1250C09A13F97C75 /* TabTripleTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46DF595ABC36AEC53A781D80 /* TabTripleTap.swift */; };
+		BC8BBE6EBAA4FF04EAB265FF /* CashuVaultCopies.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E7E230F923C4981CAAE94A /* CashuVaultCopies.swift */; };
 		BC9069B485D3CCF79BDD4AC7 /* HighlightPageLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E432CD99DC05DA1799FCF /* HighlightPageLink.swift */; };
 		BD5A27165C17582AFFB599EF /* AvatarThumbnail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0802E590CDCCA7978BB8D2C6 /* AvatarThumbnail.swift */; };
 		BD5BFB3341B91B7CD9B412CE /* VaultSeedRelays.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCCEF6A04471A1EE6CC26A7 /* VaultSeedRelays.swift */; };
@@ -1947,6 +1954,7 @@
 		C15BC1150640134489643E12 /* MacVaultGlance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D28727304060A6A7B4CBB6E /* MacVaultGlance.swift */; };
 		C168BACEB5175CBF47A849A7 /* TutorialCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F8CCE0B894EB86F20D564F3 /* TutorialCenter.swift */; };
 		C195349D3F422A72587B7B54 /* FeedView+TrustScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09269B6CDEA04F6D772F6BC /* FeedView+TrustScope.swift */; };
+		C1D670312D8EF80E73F9B79D /* CashuVaultSyncer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62427065E5F9214491C58E82 /* CashuVaultSyncer.swift */; };
 		C20F11831AE268F08F8E13BE /* MarketplaceFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D53D58F77A62E4B853B420 /* MarketplaceFeedViews.swift */; };
 		C222AC05629E7654D7822D08 /* SharePortalPosting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 976E0C4659DE7076CD1FD9C6 /* SharePortalPosting.swift */; };
 		C22D800D759177B755F71440 /* NVShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200B7EA08917B874F06B2AF /* NVShareInbox.swift */; };
@@ -2851,6 +2859,7 @@
 		2801D4ACC69F3FF4C1D2C620 /* StillToBringInSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StillToBringInSection.swift; sourceTree = "<group>"; };
 		288BA92372A8506F03AF9217 /* DMService+ExternalFetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+ExternalFetch.swift"; sourceTree = "<group>"; };
 		28E8ADDC3D1ACC497D08EF92 /* PlatformClipboard+Secret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlatformClipboard+Secret.swift"; sourceTree = "<group>"; };
+		2965FCB50A7CED40E704D4A2 /* CashuVaultLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuVaultLink.swift; sourceTree = "<group>"; };
 		2967E3C73285483C276E373D /* MeshDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshDiagnostics.swift; sourceTree = "<group>"; };
 		29767A3AEABFBE965362EE96 /* ShareActionList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareActionList.swift; sourceTree = "<group>"; };
 		299FAAEDC2A8F8F9CEBC02E1 /* AppTypeScale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTypeScale.swift; sourceTree = "<group>"; };
@@ -3143,6 +3152,7 @@
 		614245993910AB626DBE345C /* RelayProcessManager+Backup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RelayProcessManager+Backup.swift"; sourceTree = "<group>"; };
 		618885CB514523D351B723B4 /* MosaicWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MosaicWidget.swift; sourceTree = "<group>"; };
 		621A96E074FD92012D0EEB20 /* MacFipsMeshSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFipsMeshSettingsView.swift; sourceTree = "<group>"; };
+		62427065E5F9214491C58E82 /* CashuVaultSyncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuVaultSyncer.swift; sourceTree = "<group>"; };
 		627B6A3D0FCAFC4B49356337 /* HavenInviteCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenInviteCard.swift; sourceTree = "<group>"; };
 		62A3D186CE8979899BC73398 /* WotNewcomersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WotNewcomersView.swift; sourceTree = "<group>"; };
 		62B1CCA082F36A09EF426579 /* MarketScopeGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketScopeGate.swift; sourceTree = "<group>"; };
@@ -3618,6 +3628,7 @@
 		B589B40DCA89EA8C175FEF32 /* EmojiPaletteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPaletteStore.swift; sourceTree = "<group>"; };
 		B5A945B5727F35AAE72E9985 /* TrustWebSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustWebSheet.swift; sourceTree = "<group>"; };
 		B5AF9325362206BD88D81991 /* DMService+Reconnect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+Reconnect.swift"; sourceTree = "<group>"; };
+		B5E7E230F923C4981CAAE94A /* CashuVaultCopies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuVaultCopies.swift; sourceTree = "<group>"; };
 		B5F560D2926BAD9DC92F86DE /* TrustedWebMemo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustedWebMemo.swift; sourceTree = "<group>"; };
 		B629C6222E327F0A0F66AB74 /* NostrConnectQR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrConnectQR.swift; sourceTree = "<group>"; };
 		B66050958913C4DFE7CAABBA /* SignerWaitGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignerWaitGate.swift; sourceTree = "<group>"; };
@@ -3875,6 +3886,7 @@
 		E8DDCBDBDC878D99921558E0 /* MediaGalleryLiveNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryLiveNotes.swift; sourceTree = "<group>"; };
 		E8F22A484AF66D3490824187 /* ProfileShareTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileShareTarget.swift; sourceTree = "<group>"; };
 		E905DA3B12A262533B3AB511 /* DMPhotoQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMPhotoQuality.swift; sourceTree = "<group>"; };
+		E9A8AC9D6DA3266DE096BB88 /* CashuVaultSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuVaultSync.swift; sourceTree = "<group>"; };
 		EA0A686E5FF7B46AC8AB9776 /* BlossomURI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomURI.swift; sourceTree = "<group>"; };
 		EA838F6714983E9410C458B7 /* EmojiSetBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiSetBrowser.swift; sourceTree = "<group>"; };
 		EABB53459772E6F0C0ACEACE /* NIP88Poll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP88Poll.swift; sourceTree = "<group>"; };
@@ -4881,6 +4893,10 @@
 			isa = PBXGroup;
 			children = (
 				679FF90AC2B0436A06171CCB /* CashuBridge.swift */,
+				B5E7E230F923C4981CAAE94A /* CashuVaultCopies.swift */,
+				2965FCB50A7CED40E704D4A2 /* CashuVaultLink.swift */,
+				E9A8AC9D6DA3266DE096BB88 /* CashuVaultSync.swift */,
+				62427065E5F9214491C58E82 /* CashuVaultSyncer.swift */,
 				D5460B7C49B26B953617B6D0 /* CashuWalletService.swift */,
 				406D57425C2501A29C3FC062 /* PayZapsWith.swift */,
 				D4214412C9047EAF88745D3C /* ZapPayer.swift */,
@@ -6325,6 +6341,10 @@
 				00D377663348974FE1760D48 /* CalendarShareParser.swift in Sources */,
 				0EC410FD4C4FE34861C8312F /* CaretFollower.swift in Sources */,
 				1559FCAE50E10A21E7F71AA8 /* CashuBridge.swift in Sources */,
+				5325213BD68A38F779EA2EB8 /* CashuVaultCopies.swift in Sources */,
+				6FA16EA80D3A9D41D75655ED /* CashuVaultLink.swift in Sources */,
+				780D6133D5DA75D78DCEEB51 /* CashuVaultSync.swift in Sources */,
+				B07B456153BD542B73625270 /* CashuVaultSyncer.swift in Sources */,
 				43069CE3EF2D8D49854D3E64 /* CashuWalletService.swift in Sources */,
 				BFCA56ED27015092B5E32FAA /* ChromeCollapse.swift in Sources */,
 				569CA523726603213D68EE68 /* ChromeFold.swift in Sources */,
@@ -7643,6 +7663,10 @@
 				6D8A30D88570209DB5A4F373 /* CalendarShareParser.swift in Sources */,
 				79426B290B20945CBB68F3DF /* CaretFollower.swift in Sources */,
 				D91E9E9D532B4F4ABD011F91 /* CashuBridge.swift in Sources */,
+				BC8BBE6EBAA4FF04EAB265FF /* CashuVaultCopies.swift in Sources */,
+				902A2E4D2CA65B46CDBE0768 /* CashuVaultLink.swift in Sources */,
+				1CECA9F728C379ABA2544E78 /* CashuVaultSync.swift in Sources */,
+				C1D670312D8EF80E73F9B79D /* CashuVaultSyncer.swift in Sources */,
 				1808B96A9CA2EFAE97F139B3 /* CashuWalletService.swift in Sources */,
 				22A5F696CCD4E98BD5F5BE24 /* ChromeCollapse.swift in Sources */,
 				55BA886A3A57C86E1AC0DDD7 /* ChromeFold.swift in Sources */,

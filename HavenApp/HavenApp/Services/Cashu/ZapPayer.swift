@@ -19,6 +19,9 @@ enum ZapPayer {
             // A chosen built-in wallet that isn't on this device fails closed:
             // never fall back to NWC and pay from a wallet the user didn't pick.
             let wallet = try CashuWalletService.wallet(accountHex: account)
+            // Paid, refused after the mint call or still pending: the proofs
+            // may have changed, so the Vault copy is brought up to date (A2).
+            defer { Task { @MainActor in CashuVaultSyncer.shared.walletChanged(accountHex: account) } }
             let result = try await wallet.payInvoice(bolt11: bolt11)
             return result.preimage ?? ""
         }

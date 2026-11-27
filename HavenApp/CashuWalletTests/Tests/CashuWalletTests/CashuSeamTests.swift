@@ -57,3 +57,25 @@ final class CashuSeamTests: XCTestCase {
         XCTAssertEqual(PayZapsWith.choice(accountHex: "", defaults: d), .nwc)
     }
 }
+
+/// Where the wallet is kept (A2, design §4 risk 4): one place warns.
+final class CashuVaultCopiesTests: XCTestCase {
+    func testOnePlaceWarnsTwoDoNot() {
+        let one = CashuVaultCopies(thisVault: true, desktopVaults: 0)
+        XCTAssertTrue(one.warnOneCopy)
+        XCTAssertEqual(one.places, 1)
+        XCTAssertTrue(one.line.contains("only on this device"))
+        let two = CashuVaultCopies(thisVault: true, desktopVaults: 1)
+        XCTAssertFalse(two.warnOneCopy)
+        XCTAssertEqual(two.places, 2)
+        XCTAssertTrue(two.line.contains("1 desktop Vault"))
+    }
+
+    func testUnconfirmedCountsNothing() {
+        for unsure in [CashuVaultCopies(thisVault: nil, desktopVaults: 2), CashuVaultCopies(thisVault: false, desktopVaults: 2)] {
+            XCTAssertEqual(unsure.places, 0)
+            XCTAssertFalse(unsure.warnOneCopy)
+            XCTAssertFalse(unsure.line.contains("kept on"))
+        }
+    }
+}

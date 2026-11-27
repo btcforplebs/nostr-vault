@@ -15,6 +15,8 @@ struct HavenApp: App {
     @StateObject private var nostrService = NostrService.shared
     @StateObject private var statsService = StatsService.shared
     @StateObject private var draftService = DraftService.shared
+    /// The built-in wallet's Vault copy: restore on login, publish after changes.
+    @StateObject private var cashuVaultSyncer = CashuVaultSyncer.shared
 
     var body: some Scene {
         #if os(macOS)
