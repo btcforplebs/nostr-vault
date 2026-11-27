@@ -3,7 +3,9 @@ package com.nostrvault.service
 /**
  * When the follow list (kind 3) is known well enough to edit (Logen 2026-11-27, b6e725ef). Same rule as web
  * follows.js followListKnown and iOS (Tory, nv-apple):
- *  - only the account's own relays (its kind 10002) count, never the app's defaults or an indexer;
+ *  - only the account's own relays (its kind 10002) count, never the app's defaults or an indexer. One exception: a
+ *    relay list that names exactly one relay counts purplepag.es ([INDEXER]) as a second own relay, so that relay and
+ *    the indexer must both answer (Logen 2026-11-27, b219c87b; web the same). Two or more own relays: own only;
  *  - an own relay that never connected drops out of the count. One that connected but sent no EOSE in time still
  *    counts against: it may hold a newer copy;
  *  - at least 2 own relays must answer, always;
@@ -23,7 +25,7 @@ internal object FollowListKnown {
      * Otherwise what to tell the person, as [ListMerge.unknownWhy].
      */
     fun unknownWhy(own: Collection<String>, lookup: NostrService.ReplaceableLookup, found: Boolean): String? {
-        val mine = own.map(ListMerge::key).toSet()
+        val mine = counted(own)
         if (mine.isEmpty()) return ListMerge.NO_RELAY_LIST
         val answeredBy = lookup.answeredBy.map(ListMerge::key).toSet()
         val reachedBy = lookup.reachedBy?.map(ListMerge::key)?.toSet()?.plus(answeredBy)
@@ -33,6 +35,19 @@ internal object FollowListKnown {
         if (!found && !noneKnown(lookup, answeredBy, reachedBy)) return ListMerge.NOT_ANSWERED
         return null
     }
+
+    /** purplepag.es: the second answer for a one-relay list ([counted]). */
+    const val INDEXER = "wss://purplepag.es"
+
+    /** The relays that count: [own], plus [INDEXER] when [own] names exactly one relay. */
+    fun counted(own: Collection<String>): Set<String> {
+        val mine = own.map(ListMerge::key).toSet()
+        return if (mine.size == 1) mine + ListMerge.key(INDEXER) else mine
+    }
+
+    /** Where the follow lookup asks besides [alsoAsk]: [own], and [INDEXER] when it counts ([counted]). */
+    fun askAlso(own: List<String>): List<String> =
+        if (own.map(ListMerge::key).toSet().size == 1) own + INDEXER else own
 
     /**
      * Whether the relays confirm there is no list ([ContactManager.saveBase]'s confirmedNone): no list found by the
