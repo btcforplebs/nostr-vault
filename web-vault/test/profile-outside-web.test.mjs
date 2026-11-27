@@ -83,3 +83,11 @@ test("a repost, quote, reply-to and mention of someone outside your web: a short
   assert.match(text, /if \(outside\?\.\(pubkey\)\) return <a class="mention mention-outside"/, "fix 6 (and every @name on the page)")
   assert.equal(OUTSIDE_TEXT.reply, "someone outside your web")
 })
+
+test("the desktop napplet's own-profile card counts Following and Followers inside your web too", () => {
+  const pane = read("napplet/ReaderPane.jsx")
+  assert.match(pane, /fetchFollowersInWeb\(me, keys, mineChanged\)/)
+  assert.match(pane, /const follows = liveCtx\.account\.follows\.filter\(pk => w\.inside\(pk\)\)\.length/)
+  assert.match(pane, /useEffect\(\(\) => \{ live\.current\?\.mineChanged\?\.\(\) \}, \[web\.gate\]\)/, "asks again as the web grows")
+  assert.doesNotMatch(pane, /fetchFollowers\(me/, "no raw count of every kind 3")
+})

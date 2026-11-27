@@ -51,7 +51,8 @@ import { loadBookmarks, onBookmarks, entries as bookmarkEntries } from "../net/b
 import { fetchEntries } from "../net/bookmark-notes.js"
 import { npubEncode } from "nostr-tools/nip19"
 import { getProfile, fetchProfiles } from "../net/profiles.js"
-import { fetchFollowers, keptFollowers } from "../net/followers.js"
+import { fetchFollowersInWeb, keptFollowers, webKey, webKeysOf } from "../net/followers.js"
+import { useWebTrust } from "../components/useWebTrust.js"
 import { fetchShop } from "../net/profile-tabs.js"
 import { priceLabel } from "../readers/market.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
@@ -85,6 +86,13 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
   const vaultPipe = useMemo(() => ({ last: null, ctl: null, tell: () => {}, put(v) { this.last = v; this.tell() } }), [])
   const notifPipe = useMemo(() => ({ list: null, tell: () => {}, put(l) { this.list = l; this.tell() } }), [])
   const live = useRef(null) // { bus, me, reader }
+  // Your web, for your own profile card's Following and Followers: only people inside it count, as on the profile
+  // page (#2701, Logen 2026-11-27). Read through a ref by the card's intent handler, set up once below.
+  const web = useWebTrust(ctx)
+  const webRef = useRef(web)
+  webRef.current = web
+  // The web grew (or a block changed it): the card asks again, so its counts follow (mineChanged, set up below).
+  useEffect(() => { live.current?.mineChanged?.() }, [web.gate])
   const openRef = useRef(open)
   openRef.current = open
   const besideRef = useRef(beside)
@@ -156,7 +164,8 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
     // Your own profile in the Reader (plan step 5, reader-mine.js): what only the shell holds, and its own screens.
     const mineChanged = () => bus.emit(wire.me, MINE_TOPIC, {})
     live.current.mineChanged = mineChanged
-    let askedFollowers = false
+    let askedFollowers = "" // the web (webKey) the in-web Followers count was last asked for
+    let lastFollowers = null // the last in-web count, shown while a wider web is being counted
     // Your bookmarks in the Reader (plan step 6a, reader-bookmarks.js): the list opened here, signed notes handed over.
     const offBookmarks = bookmarkIntents({
       bus, me: wire.me, verify: verifyEvent, onChange: onBookmarks,
@@ -194,8 +203,13 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
       profile: async () => {
         const me = liveCtx.session.pubkey
         if (!getProfile(me)) await fetchProfiles(liveCtx.vault, [me], uniq([...liveCtx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {})
-        if (!askedFollowers && keptFollowers(me) == null) { askedFollowers = true; fetchFollowers(me, mineChanged).catch(() => {}) }
-        return { me, npub: npubEncode(me), profile: getProfile(me), follows: liveCtx.account.follows.length, followers: keptFollowers(me) ?? null, readOnly: !!liveCtx.signer?.readOnly }
+        // Asked again once the web grows (the follows' lists coming in): the card keeps the last number meanwhile.
+        const w = webRef.current, keys = webKeysOf(w.gate), wk = webKey(keys)
+        if (askedFollowers !== wk && keptFollowers(me, Date.now(), wk) == null) { askedFollowers = wk; fetchFollowersInWeb(me, keys, mineChanged).catch(() => {}) }
+        const followers = keptFollowers(me, Date.now(), wk) ?? lastFollowers
+        if (followers != null) lastFollowers = followers
+        const follows = liveCtx.account.follows.filter(pk => w.inside(pk)).length
+        return { me, npub: npubEncode(me), profile: getProfile(me), follows, followers: followers ?? null, readOnly: !!liveCtx.signer?.readOnly }
       },
       shop: () => fetchShop(liveCtx.session.pubkey, uniq([...liveCtx.account.relays.write, ...DEFAULT_RELAYS])),
       priceOf: priceLabel,
