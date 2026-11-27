@@ -34,7 +34,7 @@ export function useVaultSearch(ctx) {
     live.current = q
     if (!terms(q)) { setFound(null); setBusy(false); return }
     setBusy(true)
-    const r = await searchVault([vault.outbox, vault.inbox, vault.feed], q, { follows: account.follows, blocked, decode, mine: onlyMine ? session.pubkey : null }).catch(() => null)
+    const r = await searchVault([vault.outbox, vault.inbox, vault.feed], q, { follows: account.follows, blocked, decode, mine: onlyMine ? session.pubkey : null, me: session.pubkey }).catch(() => null)
     if (live.current !== q || mineRef.current !== onlyMine) return // the field or the switch has moved on
     setFound(r && { query: q, ...r }); setBusy(false)
     if (r?.people.length) fetchProfiles(vault, r.people.slice(0, 40), uniq([...account.relays.read, ...DEFAULT_RELAYS])).catch(() => {})

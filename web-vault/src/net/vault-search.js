@@ -2,6 +2,8 @@
 // or NIP-05, or in a note's text or its title/summary/subject tags. It reads only this browser's relay (Haven's
 // NIP-50 search, haven-go/search.go) and re-checks each hit here, as the phone does with its own stores.
 
+import { rankPeople } from "./people-rank.js"
+
 export const ARTICLE_KIND = 30023
 /** NIP-68 pictures, NIP-71 videos (normal and short), the older addressable video kinds (VaultSearchLogic.mediaKinds). */
 export const MEDIA_KINDS = [20, 21, 22, 34235, 34236]
@@ -99,11 +101,12 @@ export function links(notes) {
 /**
  * Search this browser's relay. `stores`: Haven clients ({ query }) to read: the user's own notes, what others sent
  * them, the feed cache (where profiles are kept too). -> { people, notes, articles, media, hashtags, links, cut }
- * People you follow come first, then by name; notes newest first. Blocked authors are left out.
+ * People by the shared ranker (you, follows, then the rest; best name match first); notes newest first. Blocked
+ * authors are left out.
  * `mine`: the pubkey of the account in use, for "My notes": only notes it wrote (asked with `authors`, which Haven's
  * search applies before the words, haven-go/search.go) and no People section. Other added accounts don't count.
  */
-export async function searchVault(stores, query, { follows = [], blocked = new Set(), decode, limit = 500, mine = null } = {}) {
+export async function searchVault(stores, query, { follows = [], blocked = new Set(), decode, limit = 500, mine = null, me = null } = {}) {
   const words = terms(query)
   const empty = { people: [], notes: [], articles: [], media: [], hashtags: [], links: [], cut: false }
   if (!words) return empty
@@ -121,9 +124,9 @@ export async function searchVault(stores, query, { follows = [], blocked = new S
   ])
   const newest = new Map()
   for (const ev of profiles) if (ev?.kind === 0 && !blocked.has(ev.pubkey) && keepsPerson(ev, words, key) && !(newest.get(ev.pubkey)?.created_at >= ev.created_at)) newest.set(ev.pubkey, ev)
-  const name = ev => { const p = profileOf(ev); return String(p.display_name || p.displayName || p.name || ev.pubkey).toLowerCase() }
-  const fset = new Set(follows)
-  const people = [...newest.values()].sort((a, b) => (fset.has(b.pubkey) - fset.has(a.pubkey)) || name(a).localeCompare(name(b))).map(ev => ev.pubkey)
+  // The shared people ranker (people-rank.js): you, follows, then everyone here; exact name > starts with > a word
+  // starts with > contains > about only; shorter names first. Every one of them already matched, so none is dropped.
+  const people = rankPeople([...newest.keys()], words.join(" "), { me, follows: new Set(follows), profileOf: pk => profileOf(newest.get(pk)), match: "any" })
   // A pasted npub finds its person even with no profile here yet.
   if (!mine && !people.length && key && String(query).trim().toLowerCase().replace(/^nostr:/, "").startsWith("npub1") && !blocked.has(key)) people.push(key)
   const byId = new Map()

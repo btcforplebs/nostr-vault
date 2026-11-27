@@ -13,9 +13,9 @@ import { useProfile } from "../components/useProfile.js"
 import { SearchStart } from "./SearchStart.jsx"
 import { OutsideFold } from "../components/OutsideFold.jsx"
 import { parseQuery, hashtagOf, startSearch, shapeResults, filterCaption, loadRecent, saveRecent, clearRecent, MIN_QUERY, NO_FILTER, WHO, WHEN } from "../net/search.js"
-import { fetchProfiles, putProfile } from "../net/profiles.js"
-import { followLists } from "../net/wot.js"
-import { vouchesSoon } from "../net/for-you.js"
+import { fetchProfiles, getProfile, putProfile } from "../net/profiles.js"
+import { rankCopyFor } from "../net/rank-copy-store.js"
+import { useWot } from "../components/useWot.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { visibleNotes, visiblePeople } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
@@ -108,7 +108,7 @@ export function useSearch(ctx) {
   const shown = found && shapeResults({
     people: found.direct ? found.people : visiblePeople(found.people, blocked),
     notes: visibleNotes(found.notes, blocked),
-  }, text, { me: ctx.session.pubkey, follows: ctx.account.follows, wot, filter: found.direct ? NO_FILTER : filter, fold: !found.direct })
+  }, text, { me: ctx.session.pubkey, follows: ctx.account.follows, wot, filter: found.direct ? NO_FILTER : filter, fold: !found.direct, profileOf: getProfile, rankCopy: rankCopyFor(ctx.session.pubkey) })
   return { text, setText, found, sources, finished, filter, setFilter, recent, setRecent, submit, clear, shown, blocked }
 }
 
@@ -179,19 +179,6 @@ export function SearchScreen({ ctx, onProfile }) {
       </>}
     </main>
   )
-}
-
-/** Your web of trust past your follows: the people they follow (wot.js followLists, shared with For you and the Web
- *  tab, so it is asked once a session). Ranks those results after your follows and before everyone else. */
-function useWot(ctx) {
-  const [wot, setWot] = useState(() => new Set())
-  const follows = ctx.account.follows
-  useEffect(() => {
-    let live = true
-    followLists(ctx.session.pubkey, follows).then(l => vouchesSoon(follows, l)).then(v => live && setWot(new Set(v.keys()))).catch(() => {}) // off the tap, shared with For you (for-you.js)
-    return () => { live = false }
-  }, [ctx.session.pubkey, follows.length])
-  return wot
 }
 
 /** One chip per source, as the iPhone's globalSourceStrip: searching / N so far / N found / no answer: why. */

@@ -109,3 +109,10 @@ test("the Notes / My notes switch remembers its last setting; default Notes", as
   setSearchesMine(false, storage); assert.equal(searchesMine(storage), false)
   assert.equal(searchesMine({ getItem() { throw new Error("blocked") } }), false)
 })
+
+test("searchVault people: the shared ranker, so an exact name beats one that only contains it, follows still first", async () => {
+  const D = key(), E = key()
+  const feed = store([profile(D, { name: "Marybeth" }), profile(E, { name: "Mary" }), profile(A, { name: "old mary" })])
+  const r = await searchVault([feed], "mary", { follows: [A.pk], decode })
+  assert.deepEqual(r.people, [A.pk, E.pk, D.pk])
+})

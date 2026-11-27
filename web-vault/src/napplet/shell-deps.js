@@ -20,7 +20,7 @@ import { preparePhoto } from "../net/dm-photo.js"
 import { prepareVideo, isVideoFile } from "../net/dm-video.js"
 import { encryptedPhoto, openFileLink, parseFileLink } from "../net/dm-file.js"
 import { getProfile, putProfile } from "../net/profiles.js"
-import { searchNostr } from "../net/search.js"
+import { searchPeople } from "../net/search.js"
 import { rankPeople } from "../components/MentionPicker.jsx"
 import { findPeople } from "./dm-people.js"
 import { findMine, newestMine } from "./shell-deps-find.js"
@@ -197,7 +197,7 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
       blocked: dm.blocked, trusted: dm.trusted, unread: dm.unread,
       searchName: dm.searchName ?? (() => ""), follows: dm.follows ?? (() => false), lookup: dm.lookup ?? (() => {}),
       profile: pk => getProfile(pk),
-      findPeople: q => findPeople(q, { follows: ctx.account.follows, blocked: dm.blocked(), rank: rankPeople, search: async t => (await searchNostr(t, { limit: 10 })).people, put: putProfile }),
+      findPeople: q => findPeople(q, { follows: ctx.account.follows, blocked: dm.blocked(), rank: rankPeople, search: t => searchPeople(t, { limit: 10 }), put: putProfile }),
       onChange: cb => onMessages(cb),
       // A photo takes the classic thread's own path (ConversationScreen.jsx): redrawn or stripped of its metadata
       // (preparePhoto), encrypted and uploaded to your media servers, sent as a kind 15 after the text (dm-file.js);

@@ -7,8 +7,9 @@ import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
 import { FEED_ICON } from "../components/FeedPickerMenu.jsx"
 import { getProfile, putProfile } from "../net/profiles.js"
-import { pool } from "../net/pool.js"
-import { parseQuery, SEARCH_RELAYS } from "../net/search.js"
+import { parseQuery, searchPeople } from "../net/search.js"
+import { fromRankCopy, nameMatch, rankPeople } from "../net/people-rank.js"
+import { rankCopyFor } from "../net/rank-copy-store.js"
 import { LAYERS } from "../net/wot.js"
 import { HOP_LAYERS } from "../net/wot-hop-layers.js"
 
@@ -127,7 +128,7 @@ const nameOf = pk => getProfile(pk)?.name || npubEncode(pk).slice(0, 12) + "…"
 
 /** Find someone (TrustWebView+Search): your web's names first, then relays' after a pause; a key or npub goes straight
  *  to that person. Picking one opens their card. */
-export function WotSearch({ web, me, onPick, onClose }) {
+export function WotSearch({ web, me, onPick, onClose, blocked = new Set() }) {
   const [q, setQ] = useState("")
   const [found, setFound] = useState([]) // pubkeys relays sent for this text
   const [searching, setSearching] = useState(false)
@@ -141,19 +142,18 @@ export function WotSearch({ web, me, onPick, onClose }) {
     setSearching(true)
     // After 350 ms of no typing; relays get 6 s (searchRelays in +Search).
     const t = setTimeout(() => {
-      pool.querySync(SEARCH_RELAYS, { kinds: [0], search: text, limit: 20 }, { maxWait: 6000 })
+      searchPeople(text, { limit: 20 }) // the same people-only lookup the pickers use
         .then(evs => { if (!live) return; for (const ev of evs) putProfile(ev); setFound(evs.map(ev => ev.pubkey)) })
         .catch(() => {})
         .finally(() => { if (live) setSearching(false) })
     }, 350)
     return () => { live = false; clearTimeout(t) }
   }, [text])
-  const needle = text.toLowerCase()
-  const local = !needle || parsed.type !== "search" ? [] : [me, ...(web?.follows ?? []), ...(web?.extended ?? []), ...(web?.further ?? [])].filter(pk => {
-    const p = getProfile(pk)
-    return (p?.name ?? "").toLowerCase().includes(needle) || (p?.nip05 ?? "").toLowerCase().includes(needle)
-  })
-  const results = parsed.type === "profile" ? [parsed.pubkey] : [...new Set([...local, ...found])].slice(0, RESULTS)
+  // Your web's names, then what the relays sent, in one order: the shared people ranker (net/people-rank.js), the
+  // same one the Search tab uses. Blocked people are never offered, from either source.
+  const c = { me, follows: new Set(web?.follows ?? []), web: new Set([...(web?.extended ?? []), ...(web?.further ?? [])]), blocked, profileOf: getProfile, ...fromRankCopy(rankCopyFor(me)) }
+  const local = !text || parsed.type !== "search" ? [] : [me, ...(web?.follows ?? []), ...(web?.extended ?? []), ...(web?.further ?? [])].filter(pk => nameMatch(text, getProfile(pk)) <= 3)
+  const results = parsed.type === "profile" ? [parsed.pubkey] : rankPeople([...local, ...found], text, { ...c, match: "any" }).slice(0, RESULTS)
   return (
     <div class="wot-search">
       <label class="wot-search-field">

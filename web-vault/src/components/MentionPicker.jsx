@@ -5,7 +5,10 @@ import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "./Avatar.jsx"
 import { fetchProfiles, getProfile, onProfiles, putProfile } from "../net/profiles.js"
-import { searchNostr } from "../net/search.js"
+import { searchPeople } from "../net/search.js"
+import { fromRankCopy, rankPeople as rankWith } from "../net/people-rank.js"
+import { useWot } from "./useWot.js"
+import { rankCopyFor } from "../net/rank-copy-store.js"
 import { useBlocks } from "./useBlocks.js"
 
 const MAX = 8
@@ -56,21 +59,23 @@ export const toNostr = (text, map) => resolveMentions(text, map).content
 /** The people whose token resolveMentions replaced: they get p tags, so the tags always match the npubs. */
 export const mentionedPubkeys = (text, map) => resolveMentions(text, map).pubkeys
 
-/** People matching `query`, follows first, then names that start with it, then shorter names (iPhone's ranking).
- *  Blocked people are never offered: you can't message them, and a mention would tag them (B3). */
-export function rankPeople(query, pubkeys, follows, blocked = new Set()) {
-  const q = query.toLowerCase(), followed = new Set(follows)
-  const hits = [...new Set(pubkeys)].filter(pk => !blocked.has(pk)).map(pk => ({ pk, name: nameOf(pk) })).filter(({ pk, name }) =>
-    name ? name.toLowerCase().includes(q) || getProfile(pk)?.nip05?.toLowerCase().includes(q) : !q)
-  const rank = h => [followed.has(h.pk) ? 0 : 1, h.name.toLowerCase().startsWith(q) ? 0 : 1, h.name.length]
-  return hits.sort((a, b) => { const ra = rank(a), rb = rank(b); return ra[0] - rb[0] || ra[1] - rb[1] || ra[2] - rb[2] }).slice(0, MAX).map(h => h.pk)
+/** People matching `query` by the shared ranker (net/people-rank.js): thread people, you, follows, your web, then the
+ *  rest; inside each, exact name > starts with > a word starts with > contains, then trust score and shorter names.
+ *  Only names and NIP-05 count, as before. Blocked people are never offered: you can't message them, and a mention
+ *  would tag them (B3). `more`: { me, wot: Set, thread: Set, rankCopy }. -> up to MAX pubkeys */
+export function rankPeople(query, pubkeys, follows, blocked = new Set(), more = {}) {
+  const ranked = rankWith(pubkeys, query, { me: more.me, follows: new Set(follows), web: more.wot, thread: more.thread, blocked,
+    profileOf: getProfile, ...fromRankCopy(more.rankCopy) })
+  return ranked.slice(0, MAX)
 }
 
 /** The suggestion strip under the box. Follows' names come from Haven (then their relays); for 2+ characters, a
- *  NIP-50 search adds people who aren't followed. From the box: ↑/↓ move, Enter or Tab picks, Escape closes. */
-export function MentionPicker({ ctx, query, onPick, onClose, input }) {
+ *  NIP-50 people search adds people who aren't followed. `thread`: [pk] of the note being replied to (its author and
+ *  the people it tags), offered first. From the box: ↑/↓ move, Enter or Tab picks, Escape closes. */
+export function MentionPicker({ ctx, query, onPick, onClose, input, thread = [] }) {
   const follows = ctx.account.follows
   const { blocked } = useBlocks(ctx)
+  const wot = useWot(ctx)
   const [found, setFound] = useState([]) // pubkeys from search
   const [active, setActive] = useState(0)
   const [, bump] = useState(0)
@@ -80,7 +85,7 @@ export function MentionPicker({ ctx, query, onPick, onClose, input }) {
     setFound([])
     if (query.length < 2 || globalThis.navigator?.onLine === false) return
     let live = true
-    const t = setTimeout(() => searchNostr(query, { limit: 10 }).then(({ people }) => {
+    const t = setTimeout(() => searchPeople(query, { limit: 10 }).then(people => {
       if (!live) return
       people.forEach(putProfile)
       setFound(people.map(e => e.pubkey))
@@ -88,7 +93,8 @@ export function MentionPicker({ ctx, query, onPick, onClose, input }) {
     return () => { live = false; clearTimeout(t) }
   }, [query])
 
-  const people = rankPeople(query, [...follows, ...found], follows, blocked)
+  const me = ctx.session?.pubkey
+  const people = rankPeople(query, [...thread, ...follows, ...found], follows, blocked, { me, wot, thread: new Set(thread), rankCopy: rankCopyFor(me) })
   const at = Math.min(active, Math.max(0, people.length - 1))
   useEffect(() => setActive(0), [query])
   useEffect(() => {
