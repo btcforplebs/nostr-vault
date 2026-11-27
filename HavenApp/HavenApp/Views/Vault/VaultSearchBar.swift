@@ -283,14 +283,15 @@ final class VaultSearchModel: ObservableObject {
             FeedFilterEngine.involvesBlocked(note, blocked: blocked,
                                              authorOf: { feedService.findNote(id: $0)?.pubkey })
         }
-        let follows = Set(feedService.followedPubkeys)
         var results = Results()
-        // People you follow first, then by name.
-        results.people = !scope.showsPeople ? [] : people.sorted {
-            let a = follows.contains($0.pubkey), b = follows.contains($1.pubkey)
-            if a != b { return a }
-            return $0.bestName.localizedCaseInsensitiveCompare($1.bestName) == .orderedAscending
-        }
+        // The shared people order (PeopleSearchRank): you, follows, your web,
+        // then the rest; the best name match first in each.
+        let circle = PeopleSearchRank.Circle(own: [me], follows: Set(feedService.followedPubkeys),
+                                             web: feedService.webOfTrustForRanking,
+                                             copy: DiscoveryReachStore.shared.copy)
+        results.people = !scope.showsPeople ? [] : PeopleSearchRank.rank(people, query: query, circle: circle,
+                                                                         keepUnmatched: true,
+                                                                         person: PeopleSearchRank.person)
         results.notes = notes
         results.hashtags = VaultSearchLogic.hashtags(contents: notes.map { ($0.content, $0.tags) }, query: query)
         results.links = VaultSearchLogic.links(notes: notes.map { ($0.id, $0.content) })

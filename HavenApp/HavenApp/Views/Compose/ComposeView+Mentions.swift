@@ -151,6 +151,7 @@ extension ComposeView {
         }
         let threadSet = Set(threadPubkeys)
 
+        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
         if query.isEmpty {
             // Just typed @: thread participants first, then followed.
             let threadProfiles = threadPubkeys.compactMap { nostrService.profiles[$0] }
@@ -159,33 +160,18 @@ extension ComposeView {
             for p in followedProfiles where !combined.contains(where: { $0.pubkey == p.pubkey }) {
                 combined.append(p)
             }
-            mentionResults = Array(combined.prefix(8))
+            mentionResults = Array(combined.filter { !BlockedPeople.isBlocked($0.pubkey, in: blocked) }.prefix(8))
             return
         }
 
         // Search the entire profile cache (feed authors, search results, etc.),
-        // not just follows, ranking thread participants, follows, then the rest
-        // of the Web of Trust first.
-        let lower = query.lowercased()
-        let matches = nostrService.profiles.values.filter { profile in
-            profile.pubkey != selfPubkey && (
-                profile.bestName.lowercased().contains(lower) ||
-                (profile.name?.lowercased().contains(lower) ?? false) ||
-                (profile.nip05?.lowercased().contains(lower) ?? false)
-            )
-        }
-        let ranked = matches.sorted { a, b in
-            func rank(_ p: FeedProfile) -> (Int, Int, Int, Int) {
-                (threadSet.contains(p.pubkey) ? 0 : 1,
-                 followedSet.contains(p.pubkey) ? 0 : 1,
-                 wotSet.contains(p.pubkey) ? 0 : 1,
-                 p.bestName.lowercased().hasPrefix(lower) ? 0 : 1)
-            }
-            let ra = rank(a), rb = rank(b)
-            if ra != rb { return ra < rb }
-            return a.bestName.count < b.bestName.count
-        }
-        mentionResults = Array(ranked.prefix(8))
+        // not just follows, in the shared people order with the thread first
+        // (PeopleSearchRank). Blocked people and yourself never come up.
+        let circle = PeopleSearchRank.Circle(own: [], follows: followedSet, web: wotSet,
+                                             copy: DiscoveryReachStore.shared.copy, thread: threadSet)
+        let candidates = nostrService.profiles.values.filter { $0.pubkey != selfPubkey }
+        mentionResults = PeopleSearchRank.rank(Array(candidates), query: query, circle: circle,
+                                               blocked: blocked, limit: 8, person: PeopleSearchRank.person)
     }
 
     /// Debounced NIP-50 relay search so you can @-mention people who aren't followed

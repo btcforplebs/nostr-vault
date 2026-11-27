@@ -3,7 +3,7 @@ import Foundation
 /// What the new-chat box makes of what you typed (B2, 2026-11-19): the same
 /// on iPhone, iPad and Mac. A key (npub, nprofile or 64-char hex, with or
 /// without `nostr:`) names one person, loaded or not; anything else searches
-/// the names of profiles already loaded. Blocked people and your own account
+/// the names of profiles already loaded, in the shared people order. Blocked people and your own account
 /// never come up (B3).
 enum DMRecipientQuery {
     enum Outcome: Equatable {
@@ -25,8 +25,12 @@ enum DMRecipientQuery {
 
     static let minimumSearch = 2
 
-    static func resolve(_ typed: String, names: [String: String], blocked: Set<String>,
-                        own: String, limit: Int = 10) -> Outcome {
+    /// - people: the profiles already loaded.
+    /// - circle: who is how close, for the shared order (`PeopleSearchRank`):
+    ///   follows first, then your web, then the rest.
+    static func resolve(_ typed: String, people: [PeopleSearchRank.Person],
+                        circle: PeopleSearchRank.Circle = .init(own: [], follows: [], web: []),
+                        blocked: Set<String>, own: String, limit: Int = 10) -> Outcome {
         var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.lowercased().hasPrefix("nostr:") { text = String(text.dropFirst(6)) }
         let lower = text.lowercased()
@@ -39,16 +43,10 @@ enum DMRecipientQuery {
         }
         guard text.count >= minimumSearch else { return .idle }
         let skip = Set(blocked.map { $0.lowercased() }).union([own.lowercased()])
-        let hits = names
-            .filter { !skip.contains($0.key.lowercased()) && $0.value.lowercased().contains(lower) }
-            .sorted { a, b in
-                let pa = a.value.lowercased().hasPrefix(lower), pb = b.value.lowercased().hasPrefix(lower)
-                if pa != pb { return pa }
-                return a.value.localizedCaseInsensitiveCompare(b.value) == .orderedAscending
-            }
-            .prefix(limit)
-            .map(\.key)
-        return hits.isEmpty ? .noMatch : .matches(Array(hits))
+        let hits = PeopleSearchRank.rank(people, query: text, circle: circle, blocked: skip,
+                                         limit: limit, person: { $0 })
+            .map(\.pubkey)
+        return hits.isEmpty ? .noMatch : .matches(hits)
     }
 
     private static func person(_ hex: String, blocked: Set<String>, own: String) -> Outcome {
