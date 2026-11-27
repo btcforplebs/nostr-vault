@@ -777,8 +777,8 @@ class LocalNotificationService @Inject constructor(
             inInbox = dms.isInboxConversation(counterparty),
             onScreen = appInForeground && dms.visibleConversation == counterparty,
         )
-        if (!alerts) {
-            if (BuildConfig.DEBUG) Log.i(TAG, "skip: DM ${id.take(8)} is yours, blocked, a Request or on screen")
+        if (!alerts || configStore.config.value.muteRulesFor(npub).hidesText(message.content)) {
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: DM ${id.take(8)} is yours, blocked, muted, a Request or on screen")
             return
         }
         scope.launch {

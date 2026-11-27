@@ -64,6 +64,10 @@ class DMInboxViewModel @Inject constructor(
     val conversations: StateFlow<List<DMConversation>> = dmService.inboxConversations
     /** Everyone else, behind the Requests row. */
     val requests: StateFlow<List<DMConversation>> = dmService.requestConversations
+    /** Hidden by a muted word (DMMutes), and whether "N hidden" was tapped to show them. */
+    val muted: StateFlow<List<DMConversation>> = dmService.mutedConversations
+    val showingMuted: StateFlow<Boolean> = dmService.showMutedConversations
+    fun toggleMuted() { dmService.showMutedConversations.value = !dmService.showMutedConversations.value }
 
     private val _showingRequests = MutableStateFlow(false)
     val showingRequests: StateFlow<Boolean> = _showingRequests.asStateFlow()
@@ -197,6 +201,8 @@ private fun DMInboxList(
 ) {
     val inbox by viewModel.conversations.collectAsState()
     val requests by viewModel.requests.collectAsState()
+    val muted by viewModel.muted.collectAsState()
+    val showingMuted by viewModel.showingMuted.collectAsState()
     val showingRequests by viewModel.showingRequests.collectAsState()
     // Back out of Requests once the last one has been answered or blocked.
     val inRequests = showingRequests && requests.isNotEmpty()
@@ -272,7 +278,7 @@ private fun DMInboxList(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth().padding(24.dp),
                     )
-                } else if (conversations.isEmpty() && requests.isEmpty()) {
+                } else if (conversations.isEmpty() && requests.isEmpty() && muted.isEmpty()) {
                     DMInboxEmptyState()
                 } else if (dmInboxOnlyRequests(conversations.isEmpty(), requests.size, inRequests, searchingNow)) {
                     DMRequestsOnlyNotice(requests.size) { viewModel.showRequests(true) }
@@ -296,6 +302,9 @@ private fun DMInboxList(
                                 showChevron = showChevrons,
                                 onClick = { onConversationClick(conversation.id) },
                             )
+                        }
+                        if (muted.isNotEmpty() && !inRequests && !searchingNow) {
+                            item(key = "muted-row") { DMMutedRow(muted.size, showingMuted, viewModel::toggleMuted) }
                         }
                     }
                 }

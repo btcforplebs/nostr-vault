@@ -3,6 +3,7 @@ package com.nostrvault.service
 import android.util.Log
 import com.nostrvault.BuildConfig
 import com.nostrvault.data.model.BlockedPeople
+import com.nostrvault.data.model.muteRulesForActiveAccount
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
@@ -20,7 +21,9 @@ import com.nostrvault.service.DMService.Companion.TAG
 
     internal fun DMService.addMessageToConversation(counterparty: String, message: DMMessage) {
         // Kept even from a blocked sender (hidden, not lost), but never unread.
-        val alerts = BlockedPeople.mayAlert(message.senderPubkey, message.isFromMe, blockedHex())
+        // A muted word: kept, never unread (DMMutes).
+        val alerts = BlockedPeople.mayAlert(message.senderPubkey, message.isFromMe, blockedHex()) &&
+            (message.isFromMe || !configStore.config.value.muteRulesForActiveAccount().hidesText(message.content))
         val current = _conversations.value.toMutableList()
         val existingIndex = current.indexOfFirst { it.id == counterparty }
 
