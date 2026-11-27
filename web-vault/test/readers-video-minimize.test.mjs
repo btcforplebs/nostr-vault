@@ -140,3 +140,36 @@ test("every surface has the text Minimize, and the bar and Now Playing have Back
   assert.match(src("readers/NowPlaying.jsx"), /backToVideo\(s\) \}\}>Back to the video<\/button>/)
   assert.match(src("readers/FloatingPlayer.jsx"), /<ReopenedVideo \/>/)
 })
+
+test("Back to the video over an open viewer lets the old viewer's blob go (Tron #2710 point 2)", () => {
+  resetPlayer(); element(fakeAudio)
+  const a = "blob:https://x/a", b = "blob:https://x/b"
+  holdBlob(a); playVideo(a, 1); releaseBlob(a, () => {})
+  assert.equal(backToVideo(), true)
+  holdBlob(b); playVideo(b, 2); releaseBlob(b, () => {})
+  assert.equal(backToVideo(), true)
+  assert.equal(blobHolds(a), 0, "the replaced viewer's hold is released")
+  assert.equal(blobHolds(b), 1)
+  closeReopened()
+  assert.equal(blobHolds(b), 0)
+})
+
+test("Minimize is drawn only while a player bar is mounted: a guest page has none (Tron #2710 point 1)", async () => {
+  const { barMounted, mountBar, onBarMounted } = await import("../src/readers/bar-mounted.js")
+  assert.equal(barMounted(), false)
+  const seen = []
+  const off = onBarMounted(m => seen.push(m))
+  const unmount = mountBar()
+  assert.equal(barMounted(), true)
+  unmount()
+  assert.equal(barMounted(), false)
+  off()
+  assert.deepEqual(seen, [true, false])
+  assert.match(src("readers/FloatingPlayer.jsx"), /useEffect\(mountBar, \[\]\)/)
+  assert.match(src("components/MinimizeVideo.jsx"), /if \(!bar\) return null/)
+  assert.doesNotMatch(src("guest/GuestApp.jsx"), /FloatingPlayer/, "if a guest page gets the bar, Minimize comes back there by itself")
+})
+
+test("a minimized feed video scrolled back on screen doesn't start a second copy (Tron #2710 point 3)", () => {
+  assert.match(src("components/MediaParts.jsx"), /if \(e\.isIntersecting\) \{ if \(current\(\)\?\.mediaUrl !== src\) v\.play\(\)/)
+})
