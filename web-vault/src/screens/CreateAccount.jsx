@@ -195,9 +195,21 @@ export async function profileJPEG(file, maxPixel = 512) {
   return blob
 }
 
+/** Follows a new account needs before it's ready: 5, the iPhone and Android rule (Logen 2026-11-26 fc2719f6, #2601/#2602).
+ *  Five people is what builds a web of trust, so there is no way past this step with fewer. */
+export const FOLLOWS_NEEDED = 5
+/** How many more people to pick before Continue turns on (0 once there are enough). */
+export const followsStillNeeded = count => Math.max(0, FOLLOWS_NEEDED - count)
+/** The follows step's button: "Pick N more" until 5, then "Continue with N people". */
+export function followsButtonLabel(count) {
+  const left = followsStillNeeded(count)
+  return left ? `Pick ${left} more` : `Continue with ${count} people`
+}
+
 /** People to follow, from the iPhone's starter packs, so the first feed has posts. Each pack picks or drops all of
- *  its people; each person can be dropped on their own. */
-function Follows({ packs, picked, setPicked, onContinue }) {
+ *  its people; each person can be dropped on their own. Continue stays off until FOLLOWS_NEEDED are picked. */
+export function Follows({ packs, picked, setPicked, onContinue }) {
+  const left = followsStillNeeded(picked.size)
   const toggle = pks => setPicked(old => {
     const s = new Set(old)
     const all = pks.every(pk => s.has(pk))
@@ -207,7 +219,7 @@ function Follows({ packs, picked, setPicked, onContinue }) {
   return (
     <>
       <h1 class="onboard-title">Fill Your Feed</h1>
-      <p class="onboard-sub">Pick a few people to start with. Your web of trust grows from the people you follow, so your feeds show who they vouch for.</p>
+      <p class="onboard-sub">Pick at least {FOLLOWS_NEEDED} people to start with. Your web of trust grows from the people you follow, so your feeds show who they vouch for.</p>
       {packs.map(p => {
         const pks = p.accounts.map(a => a.pubkey)
         const all = pks.every(pk => picked.has(pk))
@@ -232,8 +244,11 @@ function Follows({ packs, picked, setPicked, onContinue }) {
           </section>
         )
       })}
-      <button type="button" class="primary onboard-main sticky" onClick={onContinue}>
-        {picked.size ? `Continue with ${picked.size} ${picked.size === 1 ? "person" : "people"}` : "Continue without follows"}
+      <p class="muted small onboard-follow-count" aria-live="polite">
+        {left ? `${picked.size} of ${FOLLOWS_NEEDED} picked: ${left} more to go.` : `${picked.size} picked. You're ready.`}
+      </p>
+      <button type="button" class="primary onboard-main sticky" disabled={left > 0} onClick={() => { if (!followsStillNeeded(picked.size)) onContinue() }}>
+        {followsButtonLabel(picked.size)}
       </button>
     </>
   )
