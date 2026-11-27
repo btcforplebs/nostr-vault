@@ -217,11 +217,14 @@ internal fun deleteHereHolds(
     cacheStatus: String? = null,
     /** `Age` over 0: a cache answered. */
     age: String? = null,
-    /** Where redirects ended: an http hop could be answered by anyone on that network (Tron, #2658). */
-    finalUrl: String? = null,
+    /**
+     * Where redirects ended: an http hop could be answered by anyone on that
+     * network (Tron, #2658). Required, so no caller can skip it (Apple fails closed on nil too).
+     */
+    finalUrl: String,
 ): Boolean {
     if (presence != BlobPresence.PRESENT) return false
-    if (finalUrl != null && !finalUrl.startsWith("https://", ignoreCase = true)) return false
+    if (!finalUrl.startsWith("https://", ignoreCase = true)) return false
     if (cacheStatus?.trim()?.uppercase() in setOf("HIT", "STALE", "UPDATING")) return false
     if ((age?.trim()?.toLongOrNull() ?: 0L) > 0L) return false
     val total = when (code) {
