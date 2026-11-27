@@ -238,6 +238,22 @@ enum ListMerge {
         }
     }
 
+    /// `base` for a follow or unfollow made on `before` (the list on screen)
+    /// that gives `after`. "No list anywhere" is not believed while the
+    /// screen still shows people this tap doesn't touch and no signed copy
+    /// is held here: a restored snapshot, or a list kept only on relays
+    /// dropped from the 10002. Building on `[]` then would sign a 1-person
+    /// list over 300 (Tron on #2613; web guardRefusal appCount > 0, Android
+    /// noneUnproven). Unfollowing the last person, or a first follow on an
+    /// empty screen, still builds on none.
+    static func followBase<Event>(_ base: EditBase<Event>, held: Event?, before: [[String]], after: [[String]]) -> EditBase<Event> {
+        guard case .none = base, held == nil else { return base }
+        func people(_ tags: [[String]]) -> Set<String> {
+            Set(tags.compactMap { $0.count >= 2 && $0[0] == "p" ? $0[1].lowercased() : nil })
+        }
+        return people(before).isDisjoint(with: people(after)) ? base : .unknown
+    }
+
     private static func editBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String], now: Int64,
                                         createdAt: (Event) -> Int64,
                                         enough: (_ mine: Set<String>, _ ownAnswered: Int) -> Bool) -> EditBase<Event> {

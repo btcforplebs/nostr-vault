@@ -140,7 +140,8 @@ extension FeedService {
             let base: (tags: [[String]], content: String, createdAt: Int64)
             let held = Self.lastSignedContactList[owner]
             let found = ListMerge.followEditBase(lookup, held: held, own: NostrService.ownListRelays(for: owner), createdAt: { $0.created_at })
-            switch ListMerge.freshKeyBase(found, fresh: fresh, lookup: lookup, held: held, createdAt: { $0.created_at }) {
+            let known = ListMerge.freshKeyBase(found, fresh: fresh, lookup: lookup, held: held, createdAt: { $0.created_at })
+            switch ListMerge.followBase(known, held: held, before: before, after: attempted) {
             case .noRelayList:
                 fail(.noRelayList, nil)
                 return

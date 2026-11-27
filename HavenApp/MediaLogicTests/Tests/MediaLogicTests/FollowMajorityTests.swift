@@ -108,6 +108,43 @@ final class FollowMajorityTests: XCTestCase {
         }
     }
 
+    func testNoListAnywhereIsNotBelievedWhileTheScreenShowsPeople() {
+        // Tron on #2613: 300 follows on screen (a restored snapshot), both own
+        // relays answer with no list, nothing held. Building on none would
+        // sign a 1-person list.
+        let two = Array(own.prefix(2))
+        let empty = ReplaceableLookup<Int64>(event: nil, asked: 2, answered: 2, answeredBy: Set(two))
+        let found = ListMerge.followEditBase(empty, held: nil, own: two, createdAt: { $0 })
+        guard case .none = found else { return XCTFail("the lookup itself says none") }
+        let shown = (0..<300).map { ["p", String(format: "%064x", $0)] }
+        let newPerson = ["p", String(repeating: "f", count: 64)]
+        guard case .unknown = ListMerge.followBase(found, held: nil, before: shown, after: shown + [newPerson]) else {
+            return XCTFail("300 shown and none found: refused, not a 1-person list")
+        }
+        XCTAssertEqual(FollowPublishFailure.didNotAnswer(empty, own: two), .relaysDidNotAnswer(ownAnswered: 2, own: 2))
+        // An unfollow of 1 of the 300 too.
+        guard case .unknown = ListMerge.followBase(found, held: nil, before: shown, after: Array(shown.dropFirst())) else {
+            return XCTFail("unfollow on 300 shown and none found: refused")
+        }
+        // A first follow on an empty screen, or unfollowing the only person, still builds on none.
+        guard case .none = ListMerge.followBase(found, held: nil, before: [], after: [newPerson]),
+              case .none = ListMerge.followBase(found, held: nil, before: [newPerson], after: []) else {
+            return XCTFail("nothing else on screen: none stands")
+        }
+        // A held signed copy wins over none anyway; followBase leaves .list alone.
+        guard case .list(7) = ListMerge.followBase(EditBase<Int64>.list(7), held: nil, before: shown, after: shown + [newPerson]) else {
+            return XCTFail(".list passes through")
+        }
+    }
+
+    func testTheFollowTapGoesThroughFollowBase() throws {
+        let file = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("HavenApp/Services/Feed/FeedService+Follow.swift")
+        let src = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(src.contains("switch ListMerge.followBase(known, held: held, before: before, after: attempted)"))
+    }
+
     func testOtherListsKeepTheOldRule() {
         let three = lookup(answering: Array(own.prefix(3)))
         guard case .unknown = ListMerge.editBase(three, held: nil, own: own, createdAt: { $0 }) else {
@@ -115,6 +152,8 @@ final class FollowMajorityTests: XCTestCase {
         }
     }
 }
+
+private typealias EditBase = ListMerge.EditBase
 
 private extension ListMerge.EditBase where Event == Int64 {
     var listValue: Int64? {
