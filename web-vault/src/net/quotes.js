@@ -4,7 +4,9 @@
 // the network: nothing here signs. The screens never see the vault here:
 // main.jsx registers it once with setQuoteSource(), and the cards read it through quoteSource().
 import { decode } from "nostr-tools/nip19"
-import { pool, uniq } from "./pool.js"
+import { isDead, pool, uniq } from "./pool.js"
+import { reachableHint } from "./parent-hints.js"
+import { followOutboxes, relayKey } from "./relay-suggestions.js"
 import { repostedNote, verifiedCopy } from "./thread.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
@@ -27,7 +29,7 @@ export function parseRef(ref) {
     case "npub": return { type: "profile", pubkey: d.data, relays }
     case "nprofile": return { type: "profile", pubkey: d.data.pubkey, relays }
     case "note": return { type: "note", id: d.data, relays }
-    case "nevent": return { type: "note", id: d.data.id, relays }
+    case "nevent": return { type: "note", id: d.data.id, relays, ...(HEX64.test(d.data.author ?? "") ? { author: d.data.author } : {}) }
     case "naddr": return { type: "addr", kind: d.data.kind, pubkey: d.data.pubkey, d: d.data.identifier, relays }
     default: return null
   }
@@ -54,12 +56,12 @@ function changed() { for (const cb of listeners) cb() }
  * plus the reference's own hints. Resolves to the event, or null when nowhere has it. One fetch per key at a time.
  * `save: false` doesn't write what the relays return into /feed. `query` is for tests.
  */
-export function fetchQuote(q, { vault, relays = [], save = true, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+export function fetchQuote(q, { vault, relays = [], save = true, query = (r, f, o) => pool.querySync(r, f, o), outboxes = followOutboxes } = {}) {
   const key = quoteKey(q)
   if (cache.has(key)) return Promise.resolve(cache.get(key))
   if (inflight.has(key)) return inflight.get(key)
   const run = (async () => {
-    const ev = await lookup(q, { vault, relays, save, query })
+    const ev = await lookup(q, { vault, relays, save, query, outboxes })
     cache.set(key, ev)
     changed()
     return ev
@@ -68,7 +70,7 @@ export function fetchQuote(q, { vault, relays = [], save = true, query = (r, f, 
   return run
 }
 
-async function lookup(q, { vault, relays, save, query }) {
+async function lookup(q, { vault, relays, save, query, outboxes }) {
   const filter = q.type === "note" ? { ids: [q.id] } : { kinds: [q.kind], authors: [q.pubkey], "#d": [q.d] }
   if (vault) {
     const local = newest(await vault.feed.query(filter))
@@ -86,10 +88,23 @@ async function lookup(q, { vault, relays, save, query }) {
   // A note id names one event, so the read ends at the first verified copy instead of waiting for the slowest relay
   // (LivePool.querySync `first`). An naddr may come back in several versions and the newest wins, so that read waits.
   const first = q.type === "note" ? ev => matches(q, ev) && !!verifiedCopy(ev) : undefined
-  const found = newest((await query(urls, filter, { maxWait: 6000, first })).map(verifiedCopy).filter(ev => ev && matches(q, ev)))
+  const read = async at => !at.length ? null : newest((await query(at, filter, { maxWait: 6000, first }).catch(() => [])).map(verifiedCopy).filter(ev => ev && matches(q, ev)))
+  const found = (await read(urls)) ?? (await read(await authorRelays(q, { vault, relays, query, outboxes }, urls)))
   if (!found) return null
   if (vault && save) await vault.feed.event(found).catch(() => {})
   return found
+}
+
+/** When the read relays and hints miss (the hint is down, the note sits on one of the author's own relays: Tidy,
+ *  2026-11-27), up to MAX_OUTBOX of the author's kind 10002 write relays not asked yet, loopback/LAN and dead hosts
+ *  skipped. The author comes from the nevent, or the naddr's key. -> [url] (empty: nothing more to ask) */
+export const MAX_OUTBOX = 8
+async function authorRelays(q, { vault, relays, query, outboxes }, asked) {
+  const author = q.type === "addr" ? q.pubkey : q.author
+  if (!author) return []
+  const outbox = await outboxes({ vault, follows: [author], relays, query }).catch(() => new Map())
+  const skip = new Set(asked.map(relayKey))
+  return uniq((outbox.get(author) ?? []).filter(u => reachableHint(u) && !isDead(u) && !skip.has(relayKey(u)))).slice(0, MAX_OUTBOX)
 }
 
 /** True when ev is the event q points at: the note with that id, or that author's event of that kind and d tag. */
