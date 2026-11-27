@@ -137,7 +137,8 @@ struct FeedActions {
         }
         feedService.saveInteractionState()
 
-        let relayHint = ConfigService.shared.config.nostrURL
+        // Never this phone's own 127.0.0.1: no other client could find the note.
+        let relayHint = ConfigService.shared.config.replyRelayHint
         Task {
             let powSnap = PowPreferences.snapshot()
             let powDiff = powSnap.reactionEnabled ? powSnap.reactionDifficulty : 0
