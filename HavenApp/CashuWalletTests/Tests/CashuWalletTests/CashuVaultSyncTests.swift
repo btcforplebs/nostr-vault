@@ -200,8 +200,74 @@ final class CashuVaultSyncTests: XCTestCase {
         let base = newDevice()
         let outcome = await CashuVaultSync.restore(accountHex: account.pk, base: base, io: io(account, FakeVault()))
         XCTAssertEqual(outcome, .noWallet)
-        XCTAssertTrue(outcome.allowsNewWallet)
+        XCTAssertTrue(outcome.readAgain, "an empty Vault may still get the copy: read again")
+        XCTAssertTrue(CashuNewWalletGate.allows(outcome, readAt: 100, desktops: [], copiedAt: [:]))
         XCTAssertFalse(CashuWalletService.exists(accountHex: account.pk, base: base))
+    }
+
+    /// Tron #2667: a new phone's own Vault answers empty before the desktop's
+    /// copy lands. That read settles nothing; once the copy is in, reading
+    /// again brings the same wallet back, and no second wallet key is made.
+    func testEmptyLocalVaultBeforeTheCopyLandsIsReadAgain() async throws {
+        let account = try await newAccount()
+        let desktopVault = FakeVault()
+        let w = try await funded(account, 50, base: newDevice())
+        let pub = await CashuVaultSync.publish(w, io: io(account, desktopVault))
+        XCTAssertTrue(pub.ok, "\(pub)")
+        let key = try await walletKey(w)
+
+        let phoneVault = FakeVault()
+        let phone = newDevice()
+        let early = await CashuVaultSync.restore(accountHex: account.pk, base: phone, io: io(account, phoneVault))
+        XCTAssertEqual(early, .noWallet)
+        XCTAssertTrue(early.readAgain, "not kept for the launch")
+        // A desktop is paired and hasn't copied in before the read: no new wallet.
+        XCTAssertFalse(CashuNewWalletGate.allows(early, readAt: 100, desktops: ["npub1desk"], copiedAt: [:]))
+        XCTAssertFalse(CashuWalletService.exists(accountHex: account.pk, base: phone))
+
+        // The mesh copy lands: the desktop's /private events reach the phone's Vault.
+        for event in await desktopVault.all() { _ = await phoneVault.publish(event) }
+        let later = await CashuVaultSync.restore(accountHex: account.pk, base: phone, io: io(account, phoneVault))
+        guard case .restored(let report) = later else { return XCTFail("\(later)") }
+        XCTAssertTrue(report.walletFound)
+        XCTAssertFalse(later.readAgain)
+        XCTAssertFalse(CashuNewWalletGate.allows(later, readAt: 200, desktops: ["npub1desk"], copiedAt: ["npub1desk": 150]))
+        let back = try CashuWalletService.wallet(accountHex: account.pk, base: phone)
+        let backKey = try await walletKey(back)
+        XCTAssertEqual(backKey, key, "the same wallet key, not a second one")
+        let balance = try await back.balance()
+        XCTAssertEqual(balance.total, 50)
+    }
+
+    /// Tron #2667 low: a restore the signer could only partly open (a bunker
+    /// timeout on some 7375s) is read again, not marked done for the launch.
+    func testPartlyOpenedRestoreIsReadAgain() async throws {
+        let account = try await newAccount()
+        let vault = FakeVault()
+        let w = try await funded(account, 40, base: newDevice())
+        let pub = await CashuVaultSync.publish(w, io: io(account, vault))
+        XCTAssertTrue(pub.ok, "\(pub)")
+        let tokenContents = Set(await vault.all().filter { $0.kind == CashuVaultSync.tokenKind }.map(\.content))
+        XCTAssertFalse(tokenContents.isEmpty)
+
+        var flaky = io(account, vault)
+        let real = flaky.decryptFromSelf
+        flaky.decryptFromSelf = { content in
+            if tokenContents.contains(content) { throw CashuError(code: "timeout", message: "bunker timed out") }
+            return try await real(content)
+        }
+        let base = newDevice()
+        let outcome = await CashuVaultSync.restore(accountHex: account.pk, base: base, io: flaky)
+        guard case .restored(let report) = outcome else { return XCTFail("\(outcome)") }
+        XCTAssertEqual(report.unopened, tokenContents.count)
+        XCTAssertTrue(outcome.readAgain)
+
+        let again = await CashuVaultSync.restore(accountHex: account.pk, base: base, io: io(account, vault))
+        guard case .restored(let full) = again else { return XCTFail("\(again)") }
+        XCTAssertEqual(full.unopened, 0)
+        XCTAssertFalse(again.readAgain)
+        let balance = try await CashuWalletService.wallet(accountHex: account.pk, base: base).balance()
+        XCTAssertEqual(balance.total, 40, "the second read brings the rest")
     }
 
     func testUnreachableVaultIsNotNoWallet() async throws {
@@ -211,7 +277,8 @@ final class CashuVaultSyncTests: XCTestCase {
         await vault.setReachable(false)
         let outcome = await CashuVaultSync.restore(accountHex: account.pk, base: base, io: io(account, vault))
         XCTAssertEqual(outcome, .cantReachVault)
-        XCTAssertFalse(outcome.allowsNewWallet)
+        XCTAssertTrue(outcome.readAgain)
+        XCTAssertFalse(CashuNewWalletGate.allows(outcome, readAt: 100, desktops: [], copiedAt: [:]))
         XCTAssertFalse(CashuWalletService.exists(accountHex: account.pk, base: base))
     }
 
@@ -227,7 +294,7 @@ final class CashuVaultSyncTests: XCTestCase {
         let base = newDevice()
         let outcome = await CashuVaultSync.restore(accountHex: account.pk, base: base, io: broken)
         guard case .cantOpen = outcome else { return XCTFail("\(outcome)") }
-        XCTAssertFalse(outcome.allowsNewWallet)
+        XCTAssertFalse(CashuNewWalletGate.allows(outcome, readAt: 100, desktops: [], copiedAt: [:]))
         XCTAssertFalse(CashuWalletService.exists(accountHex: account.pk, base: base), "nothing written")
     }
 

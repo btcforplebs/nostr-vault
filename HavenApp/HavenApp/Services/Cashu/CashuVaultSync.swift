@@ -7,7 +7,10 @@ import Foundation
 /// The local state file (`wallet.json`) is left out of iCloud and Time Machine
 /// backups (Logen's pick, 2026-11-27): an old copy brought back from a backup
 /// would hold proofs that were spent since, and the Vault is the truth anyway.
-/// A new or restored device gets the wallet back from here instead.
+/// A new or restored device gets the wallet back from here instead. The Vault
+/// database itself is still in backups, so a restored backup can bring old
+/// 7375s back; that is safe because restore plus checkstate drops the spent
+/// proofs, not because backups never hold them.
 ///
 /// Pure over `CashuVaultIO`, so CashuWalletTests runs it against the real
 /// engine and test mint with a stand-in Vault; `CashuVaultLink` is the app's IO.
@@ -30,7 +33,10 @@ enum CashuVaultSync {
     /// Fail-closed (§2 "never create a second 17375"): no wallet file is made
     /// unless the Vault answered and holds wallet events; a Vault that didn't
     /// answer is `cantReachVault`, never `noWallet`; a 17375 the signer can't
-    /// open is `cantOpen`, and nothing is written.
+    /// open is `cantOpen`, and nothing is written. `noWallet` only says this
+    /// Vault was empty when read: a new phone's own Vault is empty until the
+    /// mesh copy from a desktop lands, so it is never the last word on its own
+    /// (`CashuNewWalletGate`).
     static func restore(accountHex: String, base: URL = CashuWalletService.defaultBase,
                         io: CashuVaultIO) async -> CashuRestoreOutcome {
         let me = accountHex.lowercased()
@@ -213,7 +219,8 @@ struct CashuVaultIO: Sendable {
 enum CashuRestoreOutcome: Equatable {
     /// The Vault copy was merged in (the wallet is on this device now).
     case restored(CashuRestoreReport)
-    /// The Vault answered and holds no wallet; nothing was created.
+    /// The Vault answered and holds no wallet (yet); nothing was created.
+    /// Read again later: a mesh copy may still bring it.
     case noWallet
     /// Not "no wallet": try again once the Vault answers.
     case cantReachVault
@@ -223,8 +230,14 @@ enum CashuRestoreOutcome: Equatable {
     case keyConflict
     case failed(String)
 
-    /// Only a finished read that found nothing lets a new wallet be made (A3).
-    var allowsNewWallet: Bool { self == .noWallet }
+    /// A read that settles nothing for this launch: read the Vault again on
+    /// the next relay start, account switch or finished mesh copy.
+    var readAgain: Bool {
+        switch self {
+        case .restored(let report): return report.unopened > 0
+        case .noWallet, .cantReachVault, .cantOpen, .keyConflict, .failed: return true
+        }
+    }
 }
 
 /// The engine's RestoreReport (haven-go/wallet/nip60_restore.go), plus the

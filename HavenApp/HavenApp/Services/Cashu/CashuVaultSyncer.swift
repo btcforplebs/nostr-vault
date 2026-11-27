@@ -10,14 +10,18 @@ import Combine
 ///
 /// One sync at a time per account. An account without a key or signer here,
 /// or one the Vault doesn't take private posts from, is left alone. The
-/// outcome per account is kept for the wallet screens (A3): only `noWallet`
-/// lets them make a new wallet. Android twin: `service/cashu/CashuVaultSyncer.kt` (D2).
+/// outcome per account is kept for the wallet screens (A3); they may make a
+/// new wallet only when `mayCreateWallet` says so (`CashuNewWalletGate`). A
+/// read that found nothing, or couldn't open every event, is read again when
+/// a mesh copy finishes or the relay starts, never kept for the launch. Android twin: `service/cashu/CashuVaultSyncer.kt` (D2).
 @MainActor
 final class CashuVaultSyncer: ObservableObject {
     static let shared = CashuVaultSyncer()
 
     /// The last restore per account (hex).
     @Published private(set) var outcomes: [String: CashuRestoreOutcome] = [:]
+    /// When each account's last restore read the Vault (Unix s).
+    private(set) var readAt: [String: Int] = [:]
     /// Where each account's wallet is kept, after the last read-back.
     @Published private(set) var copies: [String: CashuVaultCopies] = [:]
     /// The last publish per account that didn't finish (nil once one does).
@@ -37,6 +41,15 @@ final class CashuVaultSyncer: ObservableObject {
             .store(in: &subs)
         ConfigService.shared.$config
             .map(\.activeAccountNpub)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.syncActive() }
+            .store(in: &subs)
+        // A finished mesh copy may have just brought the wallet into this
+        // device's Vault: read again if the last read settled nothing.
+        MeshCopyV2Service.shared.$syncState
+            .map(\.lastAt)
             .removeDuplicates()
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -78,14 +91,14 @@ final class CashuVaultSyncer: ObservableObject {
     private func pass(_ me: String) async {
         let io = CashuVaultLink.io(accountHex: me)
         if !restored.contains(me) {
+            let started = Int(Date().timeIntervalSince1970)
             let outcome = await CashuVaultSync.restore(accountHex: me, io: io)
             outcomes[me] = outcome
-            switch outcome {
-            case .restored, .noWallet:
-                restored.insert(me)
-            case .cantReachVault, .cantOpen, .keyConflict, .failed:
-                return // tried again on the next relay start or account switch
-            }
+            readAt[me] = started
+            if !outcome.readAgain { restored.insert(me) }
+            // Nothing settled yet: read again on the next relay start, account
+            // switch or finished copy. A part-opened restore still publishes.
+            guard case .restored = outcome else { return }
         }
         guard CashuWalletService.exists(accountHex: me),
               let wallet = try? CashuWalletService.wallet(accountHex: me) else { return }
@@ -94,6 +107,29 @@ final class CashuVaultSyncer: ObservableObject {
         let holds = await CashuVaultSync.vaultHoldsWallet(accountHex: me, io: io)
         let desktops = ConfigService.shared.config.meshDevices.filter { $0.role == .mac }.count
         copies[me] = CashuVaultCopies(thisVault: holds, desktopVaults: desktops)
+    }
+
+    /// Whether the wallet screens may make a new wallet for `accountHex`: the
+    /// last read found nothing and every paired desktop Vault had copied into
+    /// this one before it (or none is paired).
+    func mayCreateWallet(accountHex: String) -> Bool {
+        let me = accountHex.lowercased()
+        return CashuNewWalletGate.allows(outcomes[me], readAt: readAt[me],
+                                         desktops: Self.copyInDesktops(),
+                                         copiedAt: MeshCopyV2Service.shared.syncState.lastAt)
+    }
+
+    /// The desktop Vaults (Macs, home Vaults) this device copies `/private`
+    /// in from. Only the iPhone/iPad copies in (MeshCopyV2Service); a Mac's
+    /// own Vault is read directly.
+    static func copyInDesktops() -> [String] {
+        #if os(iOS)
+        return FipsMeshDevices.current(ConfigService.shared.config)
+            .filter { $0.role == .mac || $0.role == .homeVault }
+            .map(\.npub)
+        #else
+        return []
+        #endif
     }
 
     /// The account has a key or signer here and may post to `/private`.

@@ -757,6 +757,7 @@
 		4B5D58DCD57393A28797C9F4 /* NostrVaultShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C8D23388CEDEB6EF30250B5F /* NostrVaultShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4B8B584EB02021A488F995CF /* libhaven_ios.a in Frameworks */ = {isa = PBXBuildFile; fileRef = DA8EC80FB31CC3B6EB777D12 /* libhaven_ios.a */; };
 		4BA17748CFD085060F935090 /* MediaSizeLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D43B30E99CE52D22E5880DE /* MediaSizeLookup.swift */; };
+		4BAE253A72A17C30DC066012 /* CashuNewWalletGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71A37FE29FA71D617F9F66F /* CashuNewWalletGate.swift */; };
 		4BE74F42C56394DDD4DC8B80 /* NpubValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 131AAC224239A2C64C2579FC /* NpubValidation.swift */; };
 		4C000491129B78530A08D23C /* KeptCountSockets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84FB263473431623112FF0F /* KeptCountSockets.swift */; };
 		4C01A0C02F7DB9B62F71CDBD /* ZappersListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDB3FEB452DBB79FE900D89B /* ZappersListView.swift */; };
@@ -1222,6 +1223,7 @@
 		791A8D3230F45096B00B7D51 /* MediaViewerPhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41589AE9C7065360D4094FD1 /* MediaViewerPhoto.swift */; };
 		79308A8A03547273EB5444DE /* OrderedMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB431D810E209891157D10ED /* OrderedMerge.swift */; };
 		79379A78AE60A6E8FE515E16 /* RelayMatrix.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E9E5172FB10D6FD12D46EBA /* RelayMatrix.swift */; };
+		793F50A08C0881B8A24A143B /* CashuNewWalletGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71A37FE29FA71D617F9F66F /* CashuNewWalletGate.swift */; };
 		79426B290B20945CBB68F3DF /* CaretFollower.swift in Sources */ = {isa = PBXBuildFile; fileRef = D39BB3DA1D948E689E12C3E3 /* CaretFollower.swift */; };
 		794D7EB6FCF9281E42ED80B0 /* FeedReach.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8010BF050F675A5BC1CEBAEE /* FeedReach.swift */; };
 		796734361AD97AEAEAD4960B /* ArticleBookmarkButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BD00B4534F4F61CF08B3641 /* ArticleBookmarkButton.swift */; };
@@ -3634,6 +3636,7 @@
 		B66050958913C4DFE7CAABBA /* SignerWaitGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignerWaitGate.swift; sourceTree = "<group>"; };
 		B69E44634D34050365EEF1A8 /* FeedMediaViewer+Actions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedMediaViewer+Actions.swift"; sourceTree = "<group>"; };
 		B6EEA633D3639AB7EE2C3BFC /* InlinePlayerLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlinePlayerLayer.swift; sourceTree = "<group>"; };
+		B71A37FE29FA71D617F9F66F /* CashuNewWalletGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuNewWalletGate.swift; sourceTree = "<group>"; };
 		B72DFD54673471C63A265F7C /* ImportCouldNotStartButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportCouldNotStartButton.swift; sourceTree = "<group>"; };
 		B7AE5C3CB89D22373BCC0664 /* libnvfips.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libnvfips.a; path = build/ios/libnvfips.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7E0BC988FC3F464AE8DAD87 /* FollowListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowListView.swift; sourceTree = "<group>"; };
@@ -4893,6 +4896,7 @@
 			isa = PBXGroup;
 			children = (
 				679FF90AC2B0436A06171CCB /* CashuBridge.swift */,
+				B71A37FE29FA71D617F9F66F /* CashuNewWalletGate.swift */,
 				B5E7E230F923C4981CAAE94A /* CashuVaultCopies.swift */,
 				2965FCB50A7CED40E704D4A2 /* CashuVaultLink.swift */,
 				E9A8AC9D6DA3266DE096BB88 /* CashuVaultSync.swift */,
@@ -6341,6 +6345,7 @@
 				00D377663348974FE1760D48 /* CalendarShareParser.swift in Sources */,
 				0EC410FD4C4FE34861C8312F /* CaretFollower.swift in Sources */,
 				1559FCAE50E10A21E7F71AA8 /* CashuBridge.swift in Sources */,
+				793F50A08C0881B8A24A143B /* CashuNewWalletGate.swift in Sources */,
 				5325213BD68A38F779EA2EB8 /* CashuVaultCopies.swift in Sources */,
 				6FA16EA80D3A9D41D75655ED /* CashuVaultLink.swift in Sources */,
 				780D6133D5DA75D78DCEEB51 /* CashuVaultSync.swift in Sources */,
@@ -7663,6 +7668,7 @@
 				6D8A30D88570209DB5A4F373 /* CalendarShareParser.swift in Sources */,
 				79426B290B20945CBB68F3DF /* CaretFollower.swift in Sources */,
 				D91E9E9D532B4F4ABD011F91 /* CashuBridge.swift in Sources */,
+				4BAE253A72A17C30DC066012 /* CashuNewWalletGate.swift in Sources */,
 				BC8BBE6EBAA4FF04EAB265FF /* CashuVaultCopies.swift in Sources */,
 				902A2E4D2CA65B46CDBE0768 /* CashuVaultLink.swift in Sources */,
 				1CECA9F728C379ABA2544E78 /* CashuVaultSync.swift in Sources */,
