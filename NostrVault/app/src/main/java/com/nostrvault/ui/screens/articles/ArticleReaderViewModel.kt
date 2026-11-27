@@ -126,7 +126,8 @@ class ArticleReaderViewModel @Inject constructor(
     /** Wallet settings' default zap, in sats: where the zap sheet starts. */
     val defaultZapSats: Int get() = configStore.config.value.defaultZapAmount
 
-    private val relayHint: String get() = configStore.config.value.nostrURL ?: ""
+    // Never the phone's own ws://127.0.0.1: other clients would ask themselves (ReplyRelayHint).
+    private val relayHint: String get() = com.nostrvault.relay.ReplyRelayHint.pick(configStore.config.value)
 
     /** Same optimistic like as the feed, tagged with the article's `a` coordinate. */
     fun like(note: FeedNote) {

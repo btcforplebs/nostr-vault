@@ -44,7 +44,7 @@ class NIP10ThreadTest {
 
     /** An Amethyst-style comment answering another comment under a kind 1 note. */
     private val nestedComment: List<List<String>> = listOf(
-        listOf("E", "root", "wss://r", "rootauthor"), listOf("K", "1"), listOf("P", "rootauthor"),
+        listOf("E", "root", "wss://r.example", "rootauthor"), listOf("K", "1"), listOf("P", "rootauthor"),
         listOf("e", "parentcomment", "wss://r", "parentauthor"), listOf("k", "1111"), listOf("p", "parentauthor"),
     )
 
@@ -81,7 +81,7 @@ class NIP10ThreadTest {
     @Test fun commentReplyTagsKeepRootAndNameTheParent() {
         val tags = NIP10Thread.commentReplyTags("c2", "author2", nestedComment, "wss://me")
         assertEquals(listOf(
-            listOf("E", "root", "wss://r", "rootauthor"), listOf("K", "1"), listOf("P", "rootauthor"),
+            listOf("E", "root", "wss://r.example", "rootauthor"), listOf("K", "1"), listOf("P", "rootauthor"),
             listOf("e", "c2", "wss://me", "author2"), listOf("k", "1111"), listOf("p", "author2"),
         ), tags)
         assertEquals("c2", NIP10Thread.parentEventId(1111, tags))
@@ -136,5 +136,20 @@ class NIP10ThreadTest {
     @Test fun commentWithoutPubkeySlotTakesTheFirstP() {
         val tags = listOf(listOf("E", "root"), listOf("e", "parent"), listOf("p", parentAuthor), listOf("p", rootAuthor))
         assertEquals(parentAuthor, NIP10Thread.parentAuthor(NIP10Thread.COMMENT_KIND, tags))
+    }
+
+    @Test fun commentReplyBlanksALoopbackHintCopiedFromTheParent() {
+        val parentTags = listOf(
+            listOf("E", "root", "ws://127.0.0.1:3355", "b"),
+            listOf("A", "30023:b:x", "ws://192.168.4.20:3355"),
+            listOf("K", "1"),
+            listOf("P", "b"),
+        )
+        val tags = NIP10Thread.commentReplyTags("parent", "d", parentTags, "wss://nos.lol")
+        assertEquals(listOf("E", "root", "", "b"), tags.first { it[0] == "E" })
+        assertEquals(listOf("A", "30023:b:x", ""), tags.first { it[0] == "A" })
+        assertEquals(listOf("e", "parent", "wss://nos.lol", "d"), tags.first { it[0] == "e" })
+        val kept = NIP10Thread.commentReplyTags("p", "d", listOf(listOf("E", "root", "wss://relay.ditto.pub", "b")), "")
+        assertEquals("wss://relay.ditto.pub", kept.first { it[0] == "E" }[2])
     }
 }

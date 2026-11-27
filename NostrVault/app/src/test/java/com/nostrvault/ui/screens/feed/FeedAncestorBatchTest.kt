@@ -49,4 +49,20 @@ class FeedAncestorBatchTest {
         assertEquals(listOf(1, 4), got)
         job.cancel()
     }
+
+    @Test
+    fun `a NIP-22 comment fetches its E root with its parent`() {
+        val comment = FeedNote(
+            id = "c", pubkey = "a", content = "", createdAt = Date(0),
+            tags = listOf(
+                listOf("E", "root", "wss://relay.ditto.pub", "b"), listOf("K", "1"),
+                listOf("e", "parent", "wss://127.0.0.1:3355", "d"), listOf("k", "1111"),
+            ),
+            kind = 1111, repostedBy = null, isReply = true, replyToPubkey = null, parentEventId = "parent",
+            mediaURLs = emptyList(), linkURLs = emptyList(), quotedEventIds = emptyList(), repostedEventId = null,
+        )
+        assertEquals(listOf("parent", "root"), FeedAncestorBatch.rowFetchIds(comment))
+        // A kind 1 reply still asks for its parent only, as before.
+        assertEquals(listOf("p1"), FeedAncestorBatch.rowFetchIds(note("b", parent = "p1", root = "r1")))
+    }
 }

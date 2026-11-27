@@ -144,7 +144,7 @@ class PollModel internal constructor(
         // Only the poll's public relays: the author wrote these, and a LAN or
         // onion one is neither dialled nor handed on as a hint.
         val pollRelays = poll.relays.map { it.trim() }.filter(NIP88Poll::isPublicRelay).distinct()
-        val relayHint = pollRelays.firstOrNull() ?: configStore.config.value.nostrURL.orEmpty()
+        val relayHint = pollRelays.firstOrNull() ?: com.nostrvault.relay.ReplyRelayHint.pick(configStore.config.value)
         val tags = NIP88Poll.responseTags(poll, optionIds, relayHint)
         scope.launch {
             try {
