@@ -28,6 +28,18 @@
   align-items: center; justify-content: center; gap: 4px; color: var(--text-2); }
 .profile-tabs button.on { color: var(--accent-text); }
 .profile-tabs .tab-count { font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-2); }
+/* More (screens/ProfileTabRow.jsx): the fourth tab, and the list of the other kinds it opens under the row. */
+.profile-tabs { position: relative; }
+.profile-tabs .tab-more-wrap { flex: 1 1 0; min-width: 0; display: flex; }
+.profile-tabs .tab-more-wrap > .tab-more { flex: 1 1 0; }
+.profile-tabs .tab-chevron { opacity: .7; }
+.profile-tabs .tab-more-menu { position: absolute; z-index: 8; top: calc(100% + 4px); right: 16px; min-width: 200px; padding: 6px;
+  display: grid; gap: 2px; border-radius: 14px; background: var(--s1); border: 1px solid var(--strong); box-shadow: 0 8px 24px rgb(0 0 0 / .6); }
+.profile-tabs .tab-more-menu button { flex: none; justify-content: flex-start; gap: 10px; min-height: 44px; padding: 0 12px; border: 0;
+  border-radius: 10px; background: none; box-shadow: none; color: var(--text); font: var(--t-sub); text-align: left; }
+.profile-tabs .tab-more-menu button:hover, .profile-tabs .tab-more-menu button:focus-visible { background: var(--s2); }
+.profile-tabs .tab-more-menu button.on { color: var(--accent-text); }
+.profile-tabs .tab-more-menu .tab-more-name { flex: 1; }
 /* Too narrow for the counts: icons alone (the iPhone's ViewThatFits). */
 @container (max-width: 320px) { .profile-tabs .tab-count { display: none; } }
 /* Following and Followers on one line, 18 apart as on the iPhone (followCountsRow). */

@@ -60,14 +60,44 @@ function Profile({ open, older, tagged = { open: async () => [], older: async ()
   return h(ProfileTabs, { notes, tagged: tags, articles, pubkey: "b".repeat(64), blocked: new Set() })
 }
 
-test("the tab bar is the iPhone's order, Articles only when there are some", async () => {
+test("the tab bar: three icon tabs, then More with the other kinds in the iPhone's order, Articles only when there are some", async () => {
   const el = document.createElement("div"), out = {}
   render(h(Profile, { open: async () => [], older: async () => [], out }), el)
   // Icon tabs: the name is the title (the iPhone's accessibility label).
-  assert.deepEqual(buttons(el).map(b => b.attributes.title || b.textContent), ["Notes", "Media", "Replies", "Reposts", "Tagged"])
+  const row = () => buttons(el).filter(b => b.attributes.role === "tab").map(b => b.attributes.title)
+  const menu = () => buttons(el).filter(b => b.attributes.role === "menuitemradio").map(b => b.textContent)
+  assert.deepEqual(row(), ["Notes", "Media", "Replies", "More"])
+  assert.deepEqual(menu(), [], "the list waits for a tap on More")
+  const more = () => buttons(el).find(b => b.attributes.class?.startsWith("tab-more"))
+  click(more())
+  await tick(10)
+  assert.deepEqual(menu(), ["Reposts", "Tagged"])
   const art = finalizeEvent({ kind: 30023, created_at: 1, tags: [["d", "x"], ["title", "T"]], content: "" }, sk)
   render(h(Profile, { open: async () => [], older: async () => [], articles: [art], out }), el)
-  assert.deepEqual(buttons(el).map(b => b.attributes.title || b.textContent).slice(0, 6), ["Notes", "Media", "Replies", "Reposts", "Tagged", "Articles"])
+  await tick(10)
+  assert.deepEqual(row(), ["Notes", "Media", "Replies", "More"])
+  assert.deepEqual(menu(), ["Reposts", "Tagged", "Articles1"], "Articles with its count")
+  render(null, el)
+})
+
+test("a kind picked from More opens, More wears its name and is the selected tab, and the list closes", async () => {
+  const el = document.createElement("div"), out = {}
+  render(h(Profile, { open: async () => [], older: async () => [], out }), el)
+  const more = () => buttons(el).find(b => b.attributes.class?.startsWith("tab-more"))
+  assert.equal(more().attributes["aria-selected"], "false")
+  click(more())
+  await tick(10)
+  click(buttons(el).find(b => b.attributes.role === "menuitemradio" && b.textContent === "Tagged"))
+  await tick(10)
+  assert.equal(more().attributes.title, "More: Tagged")
+  assert.equal(more().attributes["aria-selected"], "true")
+  assert.equal(buttons(el).find(b => b.attributes.title === "Notes").attributes["aria-selected"], "false")
+  assert.ok(!buttons(el).some(b => b.attributes.role === "menuitemradio"), "the list closed")
+  await until(() => /No tagged yet/.test(el.textContent), "the Tagged tab's empty text")
+  // Back to a row tab: More is plain again.
+  click(buttons(el).find(b => b.attributes.title === "Media"))
+  await tick(10)
+  assert.equal(more().attributes.title, "More")
   render(null, el)
 })
 
