@@ -58,3 +58,26 @@ test("keeps the newest `max` hashes", async () => {
   assert.equal(s.cached(h(1)), null)
   assert.equal(s.cached(h(3)), 7)
 })
+
+test("the list sorts a learned size like a listed one, and a row shows it", async () => {
+  const { registerHooks } = await import("node:module")
+  const { readFileSync } = await import("node:fs")
+  const { fileURLToPath } = await import("node:url")
+  const { transformSync } = await import("rolldown/utils")
+  registerHooks({
+    load(u, context, next) {
+      if (u.endsWith(".css")) return { format: "module", source: "", shortCircuit: true }
+      if (!u.endsWith(".jsx")) return next(u, context)
+      const path = fileURLToPath(u)
+      return { format: "module", source: transformSync(path, readFileSync(path, "utf8"), { jsx: { runtime: "automatic", importSource: "preact" } }).code, shortCircuit: true }
+    },
+  })
+  const { withLearnedSizes, sections } = await import("../src/screens/BlossomGallery.jsx")
+  const store = blobSizes({ storage: memory(), fetch: async () => reply(200, "5000") })
+  await store.size(sha, url)
+  const files = [{ sha256: sha, url, kind: "photo", size: 0, uploaded: 1, servers: [] }, { sha256: "cd".repeat(32), url, kind: "photo", size: 100, uploaded: 2, servers: [] }]
+  const learned = withLearnedSizes(files, store)
+  assert.equal(learned[0].size, 5000)
+  assert.equal(files[0].size, 0, "the listed file is not changed")
+  assert.deepEqual(sections(learned, "largest", "en-US")[0].blobs.map(b => b.size), [5000, 100])
+})

@@ -11,6 +11,7 @@ import { mediaServers } from "../net/upload.js"
 import { BlossomStats } from "./BlossomStats.jsx"
 import { BlossomUpload } from "./BlossomUpload.jsx"
 import { withBox, copyToServers } from "../box/box-media.js"
+import { blobSizeStore } from "../net/blob-size.js"
 import { listBlobs, deleteBlob, deleteTargets, outcome, byDay, TYPE_FILTERS, mergeNoteTiles, withoutEmoji } from "../net/blossom-gallery.js"
 import { watchFileNotes } from "../net/file-notes-live.js"
 import { sealMeshAuth } from "../net/pair-hello.js"
@@ -47,6 +48,9 @@ export const isAudio = b => b.kind === "audio" || (b.kind === "other" && /^audio
 export const typeRank = b => ({ photo: 0, gif: 1, video: 2 })[b.kind] ?? (isAudio(b) ? 3 : 4)
 
 /** The files in `sort` order, as sections: dated runs for the date sorts, one untitled run otherwise. */
+/** Files with no listed size take the one this browser learned by asking (net/blob-size.js), if any. */
+export const withLearnedSizes = (blobs, store = blobSizeStore()) => blobs.map(b => (b.size > 0 ? b : (n => (n ? { ...b, size: n } : b))(store.cached(b.sha256))))
+
 export function sections(blobs, sort, locale, now) {
   if (sort === "largest" || sort === "smallest") {
     const dir = sort === "largest" ? -1 : 1
@@ -137,7 +141,8 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
   if (!found || (!found.done && !listed.length)) return <><Waiting>Loading media…</Waiting><SkeletonGrid count={12} gridClass="vault-grid" tileClass="vault-thumb blossom-tile" label="Asking your media servers" /></>
   const blobs = listed.filter(TYPE_FILTERS[filter] ?? TYPE_FILTERS.all)
   const why = found.done && !listed.length ? emptyMediaReason({ servers, status: found.status, readOnly: !!ctx.signer?.readOnly }) : ""
-  const groups = sections(blobs, sort)
+  // A size this browser learned from a server (net/blob-size.js, Z1) sorts like a listed one.
+  const groups = sections(sort === "largest" || sort === "smallest" ? withLearnedSizes(blobs) : blobs, sort)
   const order = groups.flatMap(g => g.blobs) // the viewer steps through the grid's order
   const current = listed.find(b => b.sha256 === open)
   // A note-only tile the viewer copies or deletes becomes a listed file (or none), so its servers show.

@@ -1,6 +1,8 @@
 // Vault › Media as a list (the iPhone's MediaListItem, RESEARCH/NV_MEDIA_LIST_SIZE_2026_11_26.md W1): one row per file
 // with its thumbnail, type, size, upload date and how many of your servers hold it ("2/3 servers"). The grid's tile
 // opens the same viewer; `thumb(blob)` is the grid's own thumbnail, so a row loads its picture the same lazy way.
+import { useEffect, useRef, useState } from "preact/hooks"
+import { blobSizeStore } from "../net/blob-size.js"
 
 /** "2.4 MB", "830 KB", "512 B"; "" when the server gave no size. */
 export function sizeLabel(bytes) {
@@ -43,19 +45,46 @@ const thumbBox = { flex: "0 0 56px", width: 56, height: 56, borderRadius: 8, ove
 export function MediaListRows({ blobs, servers, thumb, onOpen, locale }) {
   return (
     <div class="blossom-list" role="list">
-      {blobs.map(b => {
-        const where = serversLabel(b, servers)
-        return (
-          <button key={b.sha256} type="button" role="listitem" class="blossom-row" style={row} onClick={() => onOpen(b.sha256)}
-            aria-label={`${typeLabel(b)}${b.size ? `, ${sizeLabel(b.size)}` : ""}`}>
-            <span class="blossom-row-thumb" style={thumbBox}>{thumb(b)}</span>
-            <span style={{ flex: "1 1 auto", minWidth: 0 }}>
-              <span class="small" style={{ display: "block" }}>{detailLine(b, locale)}</span>
-              {where && <span class="muted small" style={{ display: "block" }} title={b.fromNote ? "Just added from one of your devices" : b.servers.length < servers.length ? "Not on every server" : "On every server"}>{where}</span>}
-            </span>
-          </button>
-        )
-      })}
+      {blobs.map(b => <Row key={b.sha256} blob={b} servers={servers} thumb={thumb} onOpen={onOpen} locale={locale} />)}
     </div>
+  )
+}
+
+/** The size to show: the list's or note's, else one this browser learned (net/blob-size.js), else asked of the
+ *  file's server once the row comes on screen (Z1). Unknown stays blank, never "0". */
+export function useRowSize(blob, ref, store = blobSizeStore()) {
+  const [size, setSize] = useState(() => blob.size || store.cached(blob.sha256) || 0)
+  useEffect(() => {
+    if (size > 0) return
+    let alive = true
+    const ask = () => store.size(blob.sha256, blob.url).then(n => { if (alive && n) setSize(n) })
+    let seen = null
+    if (typeof IntersectionObserver === "function" && ref.current) {
+      seen = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { seen.disconnect(); ask() } })
+      seen.observe(ref.current)
+    } else ask()
+    return () => { alive = false; seen?.disconnect() }
+  }, [blob.sha256, blob.url])
+  return size
+}
+
+function Row(props) {
+  const ref = useRef(null)
+  return <RowView {...props} size={useRowSize(props.blob, ref)} rowRef={ref} />
+}
+
+/** One row as drawn, with `size` already settled. */
+export function RowView({ blob: b, servers, thumb, onOpen, locale, size = b.size, rowRef }) {
+  const where = serversLabel(b, servers)
+  const shown = size === b.size ? b : { ...b, size }
+  return (
+    <button ref={rowRef} type="button" role="listitem" class="blossom-row" style={row} onClick={() => onOpen(b.sha256)}
+      aria-label={`${typeLabel(b)}${size ? `, ${sizeLabel(size)}` : ""}`}>
+      <span class="blossom-row-thumb" style={thumbBox}>{thumb(b)}</span>
+      <span style={{ flex: "1 1 auto", minWidth: 0 }}>
+        <span class="small" style={{ display: "block" }}>{detailLine(shown, locale)}</span>
+        {where && <span class="muted small" style={{ display: "block" }} title={b.fromNote ? "Just added from one of your devices" : b.servers.length < servers.length ? "Not on every server" : "On every server"}>{where}</span>}
+      </span>
+    </button>
   )
 }
