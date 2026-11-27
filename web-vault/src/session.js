@@ -54,6 +54,9 @@ export function loadAccounts(storage = localStorage) {
   return list
 }
 
+/** The pubkeys of every account this browser remembers: "You" in every people box (search spec 1a, Logen 11-22). */
+export const ownPubkeys = (storage = localStorage) => new Set(loadAccounts(storage).map(a => a.pubkey))
+
 /** Adds an account, or replaces the saved one with the same pubkey (a bunker connected again). Doesn't switch to it. */
 export function rememberAccount(s, storage = localStorage) {
   if (!valid(s)) throw new Error("not an account")

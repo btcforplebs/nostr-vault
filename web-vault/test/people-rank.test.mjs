@@ -75,7 +75,8 @@ test("every people box calls the shared ranker; Find someone drops blocked relay
   const { readFileSync } = await import("node:fs")
   const src = p => readFileSync(new URL(`../src/${p}`, import.meta.url), "utf8")
   const wot = src("screens/WotTopBar.jsx")
-  assert.match(wot, /rankPeople\(\[\.\.\.local, \.\.\.found\], text, \{ \.\.\.c, match: "any" \}\)/)
+  assert.match(wot, /rankPeople\(\[\.\.\.local, \.\.\.found\], text, c\)/)
+  assert.match(wot, /const c = \{ \.\.\.base, blocked, profileOf: getProfile, \.\.\.fromRankCopy\(copy\), match: "any" \}/)
   assert.match(wot, /blocked, profileOf: getProfile/)
   assert.match(src("screens/WotScreen.jsx"), /<WotSearch web=\{web\} me=\{me\} blocked=\{blocked\}/)
   assert.match(src("net/vault-search.js"), /rankPeople\(\[\.\.\.newest\.keys\(\)\]/)
@@ -83,4 +84,26 @@ test("every people box calls the shared ranker; Find someone drops blocked relay
   assert.match(src("components/MentionPicker.jsx"), /searchPeople\(query, \{ limit: 10 \}\)/)
   assert.match(src("napplet/shell-deps.js"), /search: t => searchPeople\(t, \{ limit: 10 \}\)/)
   for (const f of ["components/MentionPicker.jsx", "napplet/shell-deps.js", "net/search.js"]) assert.doesNotMatch(src(f), /searchNostr/, f)
+})
+
+test("folded names are kept per profile object; a newer profile object is folded again (Tron #2689 read)", () => {
+  const p = { name: "Zoë Ann" }
+  assert.deepEqual(nameMatch("zoe", p), 1)
+  assert.equal(nameMatch("ann", p), 2, "the cached words still find a word start")
+  const q = { name: "Bob" } // profiles.js replaces the object on a newer kind 0
+  assert.equal(nameMatch("zoe", q), 4)
+  assert.equal(nameMatch("", p), 4)
+})
+
+test("your other accounts are You, and the Search tab keeps them inside your web (spec 1a)", () => {
+  profiles.set(ALT, { name: "alt" }); profiles.set(X, { name: "alt" })
+  assert.equal(tierOf(ALT, { me: ME, own: new Set([ME, ALT]) }), TIER.you)
+  const r = shapeResults({ people: [X, ALT], notes: [] }, "alt", { me: ME, own: new Set([ME, ALT]), follows: [], wot: new Set(), profileOf })
+  assert.deepEqual(r.people, [ALT]); assert.deepEqual(r.outsidePeople, [X])
+})
+
+test("every people box passes all your accounts as You", async () => {
+  const { readFileSync } = await import("node:fs")
+  const src = p => readFileSync(new URL(`../src/${p}`, import.meta.url), "utf8")
+  for (const f of ["screens/WotTopBar.jsx", "screens/SearchScreen.jsx", "components/MentionPicker.jsx", "screens/VaultSearch.jsx"]) assert.match(src(f), /ownPubkeys\(\)/, f)
 })

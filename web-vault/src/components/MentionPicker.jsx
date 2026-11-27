@@ -1,7 +1,7 @@
 // @mentions in Compose, as the iPhone composer does them (ComposeView+Mentions): typing "@" suggests people, follows
 // first; picking one puts a readable "@Name" token in the box and remembers whose it is. At posting, each token still in
 // the text becomes nostr:npub… and that person gets a p tag.
-import { useEffect, useState } from "preact/hooks"
+import { useEffect, useMemo, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "./Avatar.jsx"
 import { fetchProfiles, getProfile, onProfiles, putProfile } from "../net/profiles.js"
@@ -10,6 +10,7 @@ import { fromRankCopy, rankPeople as rankWith } from "../net/people-rank.js"
 import { useWot } from "./useWot.js"
 import { rankCopyFor } from "../net/rank-copy-store.js"
 import { useBlocks } from "./useBlocks.js"
+import { ownPubkeys } from "../session.js"
 
 const MAX = 8
 
@@ -62,9 +63,9 @@ export const mentionedPubkeys = (text, map) => resolveMentions(text, map).pubkey
 /** People matching `query` by the shared ranker (net/people-rank.js): thread people, you, follows, your web, then the
  *  rest; inside each, exact name > starts with > a word starts with > contains, then trust score and shorter names.
  *  Only names and NIP-05 count, as before. Blocked people are never offered: you can't message them, and a mention
- *  would tag them (B3). `more`: { me, wot: Set, thread: Set, rankCopy }. -> up to MAX pubkeys */
+ *  would tag them (B3). `more`: { me, own: Set (your other accounts), wot: Set, thread: Set, rankCopy }. -> up to MAX pubkeys */
 export function rankPeople(query, pubkeys, follows, blocked = new Set(), more = {}) {
-  const ranked = rankWith(pubkeys, query, { me: more.me, follows: new Set(follows), web: more.wot, thread: more.thread, blocked,
+  const ranked = rankWith(pubkeys, query, { me: more.me, own: more.own, follows: new Set(follows), web: more.wot, thread: more.thread, blocked,
     profileOf: getProfile, ...fromRankCopy(more.rankCopy) })
   return ranked.slice(0, MAX)
 }
@@ -94,7 +95,8 @@ export function MentionPicker({ ctx, query, onPick, onClose, input, thread = [] 
   }, [query])
 
   const me = ctx.session?.pubkey
-  const people = rankPeople(query, [...thread, ...follows, ...found], follows, blocked, { me, wot, thread: new Set(thread), rankCopy: rankCopyFor(me) })
+  const own = useMemo(() => ownPubkeys(), [me]) // "You" is every account added here (spec 1a)
+  const people = rankPeople(query, [...thread, ...follows, ...found], follows, blocked, { me, own, wot, thread: new Set(thread), rankCopy: rankCopyFor(me) })
   const at = Math.min(active, Math.max(0, people.length - 1))
   useEffect(() => setActive(0), [query])
   useEffect(() => {

@@ -101,9 +101,28 @@ function cardLine(web, pk, nameOf, whose) {
 function findPeople(web, names, q, max = 30) {
   const s = String(q ?? "").trim().toLowerCase()
   if (!s) return []
-  const all = [...web.follows, ...web.extended, ...web.further]
-  const c = { me: web.me, follows: new Set(web.follows), web: new Set([...web.extended, ...web.further]), profileOf: pk => (names[pk]?.[0] ? { name: names[pk][0] } : null) }
+  const { all, c } = findContext(web, names)
   return [...new Set([...rankPeople(all, s, c), ...all.filter(pk => pk.startsWith(s))])].slice(0, max)
+}
+// Find's people and closeness, built once per scene (not per keystroke: two 150k Sets each time was 4-5x the old Find,
+// Tron #2689 read). One profile object per pubkey and name, so the ranker's fold cache (people-rank.js) keeps them.
+const findContexts = new WeakMap()
+function findContext(web, names) {
+  let byNames = findContexts.get(web)
+  if (!byNames) findContexts.set(web, (byNames = new WeakMap()))
+  let ctx = byNames.get(names)
+  if (ctx) return ctx
+  const profiles = new Map()
+  const profileOf = pk => {
+    const name = names[pk]?.[0]
+    if (!name) return null
+    let p = profiles.get(pk)
+    if (p?.name !== name) profiles.set(pk, (p = { name }))
+    return p
+  }
+  ctx = { all: [...web.follows, ...web.extended, ...web.further], c: { me: web.me, follows: new Set(web.follows), web: new Set([...web.extended, ...web.further]), profileOf } }
+  byNames.set(names, ctx)
+  return ctx
 }
 // ---- end pure ----
 

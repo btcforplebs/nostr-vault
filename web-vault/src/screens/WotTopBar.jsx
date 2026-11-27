@@ -2,13 +2,14 @@
 // layer's icon + name + chevron, that opens the layers with their counts and Rebuild your web; on the right one glass
 // capsule with Find someone and the Follow you back filter. Talk with you and Live arrivals are left out: the browser
 // keeps no history of who you talk with, and has no relay of its own streaming new notes to fly.
-import { useEffect, useRef, useState } from "preact/hooks"
+import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
 import { FEED_ICON } from "../components/FeedPickerMenu.jsx"
 import { getProfile, putProfile } from "../net/profiles.js"
 import { parseQuery, searchPeople } from "../net/search.js"
-import { fromRankCopy, nameMatch, rankPeople } from "../net/people-rank.js"
+import { fromRankCopy, nameMatcher, rankPeople } from "../net/people-rank.js"
+import { ownPubkeys } from "../session.js"
 import { rankCopyFor } from "../net/rank-copy-store.js"
 import { LAYERS } from "../net/wot.js"
 import { HOP_LAYERS } from "../net/wot-hop-layers.js"
@@ -128,7 +129,7 @@ const nameOf = pk => getProfile(pk)?.name || npubEncode(pk).slice(0, 12) + "…"
 
 /** Find someone (TrustWebView+Search): your web's names first, then relays' after a pause; a key or npub goes straight
  *  to that person. Picking one opens their card. */
-export function WotSearch({ web, me, onPick, onClose, blocked = new Set() }) {
+export function WotSearch({ web, me, onPick, onClose, blocked = new Set(), profilesIn = 0 }) {
   const [q, setQ] = useState("")
   const [found, setFound] = useState([]) // pubkeys relays sent for this text
   const [searching, setSearching] = useState(false)
@@ -151,9 +152,21 @@ export function WotSearch({ web, me, onPick, onClose, blocked = new Set() }) {
   }, [text])
   // Your web's names, then what the relays sent, in one order: the shared people ranker (net/people-rank.js), the
   // same one the Search tab uses. Blocked people are never offered, from either source.
-  const c = { me, follows: new Set(web?.follows ?? []), web: new Set([...(web?.extended ?? []), ...(web?.further ?? [])]), blocked, profileOf: getProfile, ...fromRankCopy(rankCopyFor(me)) }
-  const local = !text || parsed.type !== "search" ? [] : [me, ...(web?.follows ?? []), ...(web?.extended ?? []), ...(web?.further ?? [])].filter(pk => nameMatch(text, getProfile(pk)) <= 3)
-  const results = parsed.type === "profile" ? [parsed.pubkey] : rankPeople([...local, ...found], text, { ...c, match: "any" }).slice(0, RESULTS)
+  // Built once per web, not per render: the parent redraws on every profile batch, and two 150k Sets plus a fold of
+  // every name each time was ~10x the old filter (Tron, #2689 read). "You" is every account added here (spec 1a).
+  const base = useMemo(() => {
+    const own = ownPubkeys()
+    return { me, own, follows: new Set(web?.follows ?? []), web: new Set([...(web?.extended ?? []), ...(web?.further ?? [])]),
+      everyone: [me, ...own, ...(web?.follows ?? []), ...(web?.extended ?? []), ...(web?.further ?? [])] }
+  }, [web, me])
+  const copy = rankCopyFor(me)
+  const results = useMemo(() => {
+    if (parsed.type === "profile") return [parsed.pubkey]
+    const c = { ...base, blocked, profileOf: getProfile, ...fromRankCopy(copy), match: "any" }
+    const match = nameMatcher(text)
+    const local = !text || parsed.type !== "search" ? [] : base.everyone.filter(pk => match(getProfile(pk)) <= 3)
+    return rankPeople([...local, ...found], text, c).slice(0, RESULTS)
+  }, [text, found, base, blocked, copy, profilesIn])
   return (
     <div class="wot-search">
       <label class="wot-search-field">
