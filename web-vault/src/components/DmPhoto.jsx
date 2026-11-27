@@ -3,6 +3,8 @@
 // (TapImage); a video also waits when it is big, showing its size, then how much has arrived.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { AUTO_SHOW_MAX, MAX_FILE, openFileLink, parseFileLink } from "../net/dm-file.js"
+import { holdBlob, releaseBlob } from "../readers/blob-hold.js"
+import { MinimizeButton } from "./MinimizeVideo.jsx"
 
 /** The biggest video a thread opens by itself (the phones' DMFileLoader.AUTO_SHOW_MAX); a bigger one waits for a tap.
  *  The size tag only decides whether to try: the read itself is held to it (openFileLink max). */
@@ -45,7 +47,8 @@ function DmImage({ link, load }) {
   return src ? <img class="note-media" src={src} alt="Photo" /> : <span class="dm-photo-loading">Photo…</span>
 }
 
-/** A locked video: plays silently in the bubble once opened; a tap opens it full screen with sound and controls. */
+/** A locked video: plays silently in the bubble once opened; a tap opens it full screen with sound and controls, and
+ *  Minimize gives its sound to the player bar, which keeps the decrypted copy alive after the chat closes. */
 function DmVideo({ link, load, size }) {
   const [on, setOn] = useState(load)
   const [src, setSrc] = useState("")
@@ -66,9 +69,10 @@ function DmVideo({ link, load, size }) {
     openFileLink(link, { max: tapped ? MAX_FILE : AUTO_SHOW_MAX, signal: stop.signal, onProgress: (n, all) => { if (gone) return; setGot(n); if (all > 0) setTotal(all) } }).then(blob => {
       if (gone) return
       if (!/^video\//.test(blob.type)) { setFailed(true); return }
-      url = URL.createObjectURL(blob); setSrc(url)
+      // Held, not owned: once minimized the player holds it too, and the last to let go revokes it (blob-hold.js).
+      url = URL.createObjectURL(blob); holdBlob(url); setSrc(url)
     }, e => { if (!gone) { if (e?.tooBig) { setBigger(true); setOn(false) } else setFailed(true) } })
-    return () => { gone = true; stop.abort(); if (url) URL.revokeObjectURL(url) }
+    return () => { gone = true; stop.abort(); if (url) releaseBlob(url) }
   }, [on, link, tries, tapped])
   if (!on || failed) {
     return <button type="button" class="small tap-image" onClick={e => { e.stopPropagation(); setTapped(true); setOn(true); if (failed) setTries(n => n + 1) }}>
@@ -90,6 +94,11 @@ function DmVideo({ link, load, size }) {
     else v.webkitEnterFullscreen?.() // iPhone Safari: only a video element goes full screen
     v.play?.().catch(() => {})
   }
-  return <video ref={video} class="note-media dm-video" src={src} muted autoplay loop playsinline aria-label="Video" onClick={full}
-    onFullscreenChange={() => { const v = video.current; if (v && !document.fullscreenElement) { v.controls = false; v.muted = true } }} />
+  return (
+    <span class="video-min-box text">
+      <video ref={video} class="note-media dm-video" src={src} muted autoplay loop playsinline aria-label="Video" onClick={full}
+        onFullscreenChange={() => { const v = video.current; if (v && !document.fullscreenElement) { v.controls = false; v.muted = true } }} />
+      <MinimizeButton video={() => video.current} url={src} meta={{ title: "Video in a message" }} overlay />
+    </span>
+  )
 }

@@ -59,8 +59,8 @@ test("empty Up Next says so, or that the queue starts over under repeat all; Shu
   resetPlayer()
 })
 
-test("Now Playing has an Up Next button that shows the queue (not for a live stream)", () => {
+test("Now Playing has an Up Next button that shows the queue (not for a live stream or a video)", () => {
   const src = readFileSync(new URL("../src/readers/NowPlaying.jsx", import.meta.url), "utf8")
   assert.match(src, /Up Next<\/button>/)
-  assert.match(src, /\{queue && !t\.live && <UpNext state=\{s\} \/>\}/)
+  assert.match(src, /const song = !t\.live && !t\.video[\s\S]*\{queue && song && <UpNext state=\{s\} \/>\}/)
 })

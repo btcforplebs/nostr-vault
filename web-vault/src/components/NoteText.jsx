@@ -17,6 +17,7 @@ import { inlineMarks } from "../net/inline-md.js"
 import { LinkCard } from "./LinkCard.jsx"
 import { BlossomMedia } from "./BlossomMedia.jsx"
 import { DmPhoto } from "./DmPhoto.jsx"
+import { TextVideo } from "./MinimizeVideo.jsx"
 import { isFileLink } from "../net/dm-file.js"
 import { parseBlossomUri } from "../net/blossom-uri.js"
 import { HtreeMedia } from "./HtreeMedia.jsx"
@@ -85,7 +86,7 @@ export function NoteText(props) {
         if (dm && isFileLink(s)) return <DmPhoto key={i} link={s} load={images} />
         const type = mediaType(s)
         if (type === "image") return images ? <img key={i} class="note-media" src={s} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <TapImage key={i} src={s} />
-        if (type === "video" && !dm && images) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline referrerpolicy="no-referrer" />
+        if (type === "video" && !dm && images) return <TextVideo key={i} src={s} author={author} referrerpolicy="no-referrer" />
         const label = s.replace(/^https?:\/\//, "")
         return <a key={i} href={s} target="_blank" rel="noopener noreferrer">{label.slice(0, 48)}{label.length > 48 ? "…" : ""}</a>
       })}

@@ -43,7 +43,7 @@ export function MediaLightbox({ items, author, start = 0, onClose }) {
       <div class="lightbox-track" ref={track} onScroll={() => setAt(pageOf(track.current))}>
         {items.map((it, i) => (
           <div key={it.url} class="lightbox-page" aria-label={`${i + 1} of ${n}`}>
-            {it.type === "video" ? <InlineVideo src={it.url} />
+            {it.type === "video" ? <InlineVideo src={it.url} sound={!!it.sound} at={it.at ?? 0} minimize={{ meta: { author, ...it.meta }, onDone: onClose }} />
               : <MediaImage item={it} author={author} decoding="async" loading={Math.abs(i - start) > 1 ? "lazy" : undefined} />}
           </div>
         ))}

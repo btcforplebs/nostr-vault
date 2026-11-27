@@ -2,9 +2,11 @@
 // and next, and on to the next song when one ends. It lives outside the Music screen, so switching feeds keeps the
 // song playing. Wavlake's mediaUrl is a plain MP3. Every song that starts puts its artist in Your artists. Shuffle,
 // repeat (off / all / one) and stop work as the iPhone's toggleShuffle, cycleRepeat and stop. A live stream can be
-// minimized into it too (the iPhone's playLive): its sound plays here, through hls.js where the browser needs it.
+// minimized into it too (the iPhone's playLive): its sound plays here, through hls.js where the browser needs it. So
+// can a note's, Vault or DM video (playVideo): its sound carries on from where it was, once, with seeking.
 import { rememberRecent, trackArtist } from "./wavlake.js"
 import { attachHls, playMode } from "./hls.js"
+import { holdBlob, releaseBlob } from "./blob-hold.js"
 const listeners = new Set()
 let audio = null
 let stopHls = null // the hls.js feeding a minimized stream, when the browser can't play HLS itself
@@ -27,7 +29,7 @@ export function element(make = () => new Audio()) {
   audio.addEventListener("timeupdate", () => set({ time: audio.currentTime || 0 }))
   audio.addEventListener("durationchange", () => set({ duration: Number.isFinite(audio.duration) ? audio.duration : 0 }))
   audio.addEventListener("ended", ended)
-  audio.addEventListener("error", () => { if (!current()?.live || !stopHls) set({ playing: false, error: current()?.live ? "The stream didn't load." : "This song didn't load." }) })
+  audio.addEventListener("error", () => { if (!current()?.live || !stopHls) set({ playing: false, error: current()?.live ? "The stream didn't load." : current()?.video ? "The video didn't load." : "This song didn't load." }) })
   return audio
 }
 
@@ -35,10 +37,14 @@ function load(index) {
   const t = state.queue[index]
   if (!t) return
   const a = element()
-  set({ index, time: 0, duration: t.duration ?? 0, error: "" })
+  set({ index, time: t.at ?? 0, duration: t.duration ?? 0, error: "" })
   stopHls?.(); stopHls = null
   nowPlaying(t)
-  if (!t.live) rememberRecent(trackArtist(t))
+  if (!t.live && !t.video) rememberRecent(trackArtist(t))
+  if (t.video && t.at > 0) {
+    // A position before the file's length is known is lost: seek once there is one.
+    a.addEventListener?.("loadedmetadata", () => { if (current() === t) a.currentTime = t.at }, { once: true })
+  }
   if (t.live && playMode(a) === "hlsjs") {
     // hls.js loads itself and the stream first: playing before that plays nothing, so play once there is something.
     a.removeAttribute?.("src")
@@ -66,7 +72,9 @@ export function playList(tracks, at = 0) {
   const t = tracks[at]
   if (!t) return
   if (current()?.id === t.id) return toggle()
+  const gone = state.queue
   state = { ...state, queue: tracks.slice(), shuffled: false, unshuffled: [] }
+  release(gone)
   load(at)
 }
 
@@ -79,7 +87,28 @@ export const liveItem = (stream, hostName = "") => ({
 /** Minimize: the stream's sound carries on in the player while you browse (the iPhone's playLive). */
 export function playLive(stream, hostName) {
   if (!stream?.streaming) return
+  const gone = state.queue
   state = { ...state, queue: [liveItem(stream, hostName)], shuffled: false, unshuffled: [] }
+  release(gone)
+  load(0)
+}
+
+/** A note's or file's video as a player item: its sound plays once (no loop), from `at`, and seeks like a song.
+ *  `meta`: { title?, author? (pubkey), art? }. */
+export const videoItem = (url, at = 0, meta = {}) => ({
+  id: `video:${url}`, video: true, title: meta.title || "Video", artist: meta.artist || "", author: meta.author ?? null, art: meta.art ?? null,
+  mediaUrl: url, duration: null, at: Math.max(0, Number(at) || 0),
+})
+
+/** Minimize a video (live's Minimize for a clip): its sound carries on in the player from `at` seconds. A blob: URL
+ *  (a DM video, decrypted in the page) is held while the player has it, so closing the chat doesn't end it. */
+export function playVideo(url, at = 0, meta = {}) {
+  if (!url) return
+  const t = videoItem(url, at, meta)
+  holdBlob(url)
+  const gone = state.queue
+  state = { ...state, queue: [t], shuffled: false, unshuffled: [] }
+  release(gone)
   load(0)
 }
 
@@ -96,7 +125,9 @@ export function shuffled(list, random = Math.random) {
 /** Plays `tracks` in a random order with shuffle on, so turning it off goes back to the list's own order. */
 export function playShuffled(tracks, random) {
   if (!tracks.length) return
+  const gone = state.queue
   state = { ...state, queue: shuffled(tracks, random), shuffled: true, unshuffled: tracks.slice() }
+  release(gone)
   load(0)
 }
 
@@ -104,7 +135,7 @@ export function playShuffled(tracks, random) {
  *  with the current song in its place. */
 export function toggleShuffle(random) {
   const t = current()
-  if (!t || t.live) return
+  if (!t || t.live || t.video) return
   if (state.shuffled) {
     const back = state.unshuffled.length ? state.unshuffled : state.queue
     set({ queue: back, index: Math.max(0, back.findIndex(x => x.id === t.id)), shuffled: false, unshuffled: [] })
@@ -127,7 +158,7 @@ export function jump(position) {
 export const cycleRepeat = () => set({ repeat: REPEATS[(REPEATS.indexOf(state.repeat) + 1) % REPEATS.length] })
 
 /** Is there a song after this one: later in the queue, or round again under repeat all. */
-export const hasNext = (s = state) => !current(s)?.live && (s.index + 1 < s.queue.length || (s.repeat === "all" && s.queue.length > 0))
+export const hasNext = (s = state) => !current(s)?.live && !current(s)?.video && (s.index + 1 < s.queue.length || (s.repeat === "all" && s.queue.length > 0))
 
 /** Stops and clears the queue; the player bar goes away. Repeat stays as chosen, as on the iPhone. */
 export function stop() {
@@ -135,11 +166,16 @@ export function stop() {
   a.pause()
   stopHls?.(); stopHls = null
   a.removeAttribute?.("src")
+  const gone = state.queue
   set({ ...EMPTY, repeat: state.repeat })
+  release(gone)
 }
 
+/** Lets go of the blob: URLs a queue held (playVideo), once it is no longer the player's. */
+function release(queue) { for (const t of queue) if (t.video && !state.queue.includes(t)) releaseBlob(t.mediaUrl) }
+
 function ended() {
-  if (current()?.live) return stop() // the stream ended
+  if (current()?.live || current()?.video) return stop() // the stream ended; a video plays once
   const a = element()
   if (state.repeat === "one") { a.currentTime = 0; const p = a.play(); if (p?.catch) p.catch(() => {}); return }
   next()
@@ -153,7 +189,7 @@ export function toggle() {
 
 /** Next song; under repeat all the end of the queue goes round to the first, otherwise it stops there. */
 export function next() {
-  if (current()?.live) return
+  if (current()?.live || current()?.video) return
   if (state.index + 1 < state.queue.length) load(state.index + 1)
   else if (hasNext()) load(0)
   else { const a = element(); a.pause(); a.currentTime = 0; set({ playing: false }) }
@@ -170,4 +206,4 @@ export function previous() {
 export function seek(seconds) { const a = element(); if (current() && !current().live) a.currentTime = Math.max(0, seconds) }
 
 /** For tests: forget the element and the queue. */
-export function resetPlayer() { stopHls?.(); stopHls = null; audio = null; state = { ...EMPTY }; for (const f of listeners) f(state) }
+export function resetPlayer() { stopHls?.(); stopHls = null; audio = null; const gone = state.queue; state = { ...EMPTY }; release(gone); for (const f of listeners) f(state) }

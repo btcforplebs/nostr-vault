@@ -32,7 +32,7 @@ const MAX_H = 400
 const slot = el => ({ w: el?.parentElement?.clientWidth || el?.clientWidth || 0, h: MAX_H })
 
 function MediaItem({ item, author, onOpen, fit = "contain" }) {
-  if (item.type === "video") return <InlineVideo src={item.url} />
+  if (item.type === "video") return <InlineVideo src={item.url} minimize={{ meta: { author } }} />
   return <MediaPicture item={item} author={author} onOpen={onOpen} fit={fit} />
 }
 
