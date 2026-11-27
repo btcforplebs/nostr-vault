@@ -85,26 +85,16 @@ class BlossomDeleteHereTest {
     }
 
     @Test
-    fun `the owner's own Mac or box never counts, under any name`() = runTest {
+    fun `the owner's own Mac or box counts as a safe copy, this device's loopback never`() = runTest {
         val (dir, blob) = vault()
-        // A LAN box and a .local Mac are never asked; a public name the owner runs is asked who runs it.
-        val svc = service(dir, listOf("https://192.168.4.99:3355", "https://studio.local"), published = listOf("https://logen.example.com"))
+        // Logen 2026-11-27: a LAN box or a .local Mac the owner runs holds a real second copy.
+        val svc = service(dir, listOf("https://192.168.4.99:3355", "https://studio.local", "http://127.0.0.1:3355"))
         val probed = mutableListOf<String>()
-        svc.serverOwner = { server, _ -> probed += server; BlossomService.ServerOwner.OWNER }
-        svc.heldCopyProbe = { _, _, _ -> true }
-        assertEquals(DeleteHereResult.Kept(DELETE_HERE_NO_COPY), svc.deleteFromThisDevice(sha))
-        assertEquals(listOf("https://logen.example.com"), probed)
-        assertTrue(blob.exists())
-    }
-
-    @Test
-    fun `a server that cannot say who runs it does not count`() = runTest {
-        val (dir, blob) = vault()
-        val svc = service(dir, listOf("https://tunnel.example.com"))
-        svc.serverOwner = { _, _ -> BlossomService.ServerOwner.UNKNOWN }
-        svc.heldCopyProbe = { _, _, _ -> true }
-        assertEquals(DeleteHereResult.Kept(DELETE_HERE_NO_COPY), svc.deleteFromThisDevice(sha))
-        assertTrue(blob.exists())
+        svc.heldCopyProbe = { server, _, _ -> probed += server; server.contains("192.168.4.99") }
+        assertEquals(DeleteHereResult.Removed(freedBytes = 5, heldBy = 1), svc.deleteFromThisDevice(sha))
+        assertFalse(probed.any { it.contains("127.0.0.1") })
+        assertTrue(probed.any { it.contains("studio.local") })
+        assertFalse(blob.exists())
     }
 
     @Test
@@ -146,23 +136,82 @@ class BlossomDeleteHereTest {
         assertTrue(blob.exists())
         assertEquals(5L, blob.length())
         assertFalse(removed.isRemoved(owner, sha))
-        assertTrue(File(dir, "removed_here_aside").listFiles().orEmpty().isEmpty())
+        assertTrue(File(dir, "removed_here_aside").listFiles { f -> f.isFile }.orEmpty().isEmpty())
+        assertTrue(File(dir, "removed_here_aside/unlist").listFiles().orEmpty().isEmpty())
     }
 
     @Test
-    fun `a file left aside by a check that never finished goes back and comes off the list`() {
-        val dir = tempDir()
+    fun `a quit mid-check puts the file back and the list as it was`() = runTest {
+        val (dir, blob) = vault()
         val removed = DeviceRemovedHashes(dir = null)
-        assertTrue(removed.markRemoved(owner, sha))
-        val left = File(File(dir, "removed_here_aside").apply { mkdirs() }, sha).apply { writeBytes(ByteArray(5) { 7 }) }
         val svc = service(dir, listOf("https://cdn.example.com"), removed)
+        // The app "quits" during the probe: copy what is aside now, as a later start would find it.
+        val snapshot = tempDir()
+        svc.heldCopyProbe = { _, _, _ -> File(dir, "removed_here_aside").copyRecursively(snapshot, overwrite = true); false }
+        svc.deleteFromThisDevice(sha)
+        File(dir, "removed_here_aside").deleteRecursively()
+        snapshot.copyRecursively(File(dir, "removed_here_aside"))
+        blob.delete()
+        assertTrue(removed.markRemoved(owner, sha)) // as listed at the moment of the quit
         svc.restoreDeleteHereAside()
-        assertFalse(left.exists())
-        assertEquals(5L, File(File(dir, "blossom"), sha).length())
+        assertEquals(5L, blob.length())
         assertFalse(removed.isRemoved(owner, sha))
     }
 
-    // ── Delete from mirrors after Delete from this device (Tron, #2649) ──
+    @Test
+    fun `a file listed before the check stays listed after a quit mid-check`() = runTest {
+        val (dir, blob) = vault()
+        val removed = DeviceRemovedHashes(dir = null)
+        assertTrue(removed.markRemoved(owner, sha)) // e.g. back from a zip restore, still listed
+        val svc = service(dir, listOf("https://cdn.example.com"), removed)
+        val snapshot = tempDir()
+        svc.heldCopyProbe = { _, _, _ -> File(dir, "removed_here_aside").copyRecursively(snapshot, overwrite = true); false }
+        svc.deleteFromThisDevice(sha)
+        File(dir, "removed_here_aside").deleteRecursively()
+        snapshot.copyRecursively(File(dir, "removed_here_aside"))
+        blob.delete()
+        svc.restoreDeleteHereAside()
+        assertEquals(5L, blob.length())
+        assertTrue(removed.isRemoved(owner, sha))
+    }
+
+    @Test
+    fun `a plain-http LAN server is asked over https only`() = runTest {
+        val (dir, blob) = vault()
+        val svc = service(dir, listOf("http://192.168.4.20:3355"))
+        val probed = mutableListOf<String>()
+        svc.heldCopyProbe = { server, _, _ -> probed += server; server.startsWith("http://") }
+        assertEquals(DeleteHereResult.Kept(DELETE_HERE_NO_COPY), svc.deleteFromThisDevice(sha))
+        assertEquals(listOf("https://192.168.4.20:3355"), probed)
+        assertTrue(blob.exists())
+    }
+
+    @Test
+    fun `a stale unlist mark is cleared when the hash was listed already`() = runTest {
+        val (dir, _) = vault()
+        val removed = DeviceRemovedHashes(dir = null)
+        assertTrue(removed.markRemoved(owner, sha))
+        File(File(dir, "removed_here_aside/unlist").apply { mkdirs() }, sha).writeText(owner) // left by a quit
+        val svc = service(dir, listOf("https://cdn.example.com"), removed)
+        var markDuringProbe: Boolean? = null
+        svc.heldCopyProbe = { _, _, _ -> markDuringProbe = File(dir, "removed_here_aside/unlist/$sha").exists(); false }
+        svc.deleteFromThisDevice(sha)
+        assertEquals(false, markDuringProbe)
+        assertTrue(removed.isRemoved(owner, sha))
+    }
+
+    @Test
+    fun `every vault copy of the hash is out of the folder during the probe`() = runTest {
+        val (dir, blob) = vault()
+        val withExt = File(blob.parentFile, "$sha.jpg").apply { writeBytes(ByteArray(5) { 7 }) }
+        val svc = service(dir, listOf("https://cdn.example.com"))
+        var seen: Boolean? = null
+        svc.heldCopyProbe = { _, _, _ -> seen = blob.exists() || withExt.exists(); true }
+        assertEquals(DeleteHereResult.Removed(freedBytes = 5, heldBy = 1), svc.deleteFromThisDevice(sha))
+        assertEquals(false, seen)
+        assertFalse(blob.exists() || withExt.exists())
+        assertTrue(File(dir, "removed_here_aside").listFiles { f -> f.isFile }.orEmpty().isEmpty())
+    }
 
     @Test
     fun `delete from mirrors is refused once this device's copy is gone`() = runTest {
@@ -253,6 +302,17 @@ class BlossomDeleteHereTest {
         assertEquals(1, aside.size)
         assertTrue(aside.single().readText().contains(sha))
         assertEquals(setOf(other), DeviceRemovedHashes(dir).removed(owner))
+    }
+
+    @Test
+    fun `a list that can't be read right now is kept, not set aside`() {
+        val dir = tempDir()
+        // A read error (here: a folder where the file should be), not a bad list.
+        val file = File(dir, "removed_here.json").apply { mkdirs() }
+        val removed = DeviceRemovedHashes(dir)
+        assertFalse(removed.markRemoved(owner, "b".repeat(64)))
+        assertTrue(file.isDirectory)
+        assertTrue(dir.listFiles()!!.none { it.name.startsWith("removed_here.json.corrupt-") })
     }
 
     @Test

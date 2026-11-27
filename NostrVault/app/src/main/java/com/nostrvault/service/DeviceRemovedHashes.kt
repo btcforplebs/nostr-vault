@@ -112,11 +112,12 @@ class DeviceRemovedHashes(private val folderOf: () -> File?) {
         }.getOrElse { error ->
             Log.w(TAG, "Unreadable $FILE_NAME: ${error.message}")
             // Saving over it would undo every earlier removal and Auto-Mirror
-            // would pull them all back: set it aside first (as iOS
-            // HomeVaultSender.loadQueue does). If that fails too, keep it and
-            // refuse to write ([blocked]), so nothing is deleted on top of it.
+            // would pull them all back. A read error may pass: keep the file,
+            // refuse writes ([blocked]) and read again next time. Only a list
+            // that won't decode is set aside (as iOS HomeVaultSender.loadQueue
+            // does), and if that fails too, writes refuse (Tron low 1, #2654).
             val aside = File(folder, "$FILE_NAME.corrupt-${System.currentTimeMillis()}")
-            if (file == null || !file.renameTo(aside)) {
+            if (error !is kotlinx.serialization.SerializationException || file == null || !file.renameTo(aside)) {
                 blocked = true
                 return mutableMapOf()
             }
