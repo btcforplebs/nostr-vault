@@ -113,6 +113,11 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
             com.nostrvault.service.shareportal.PrivateCopyService.clearOpened(this@NostrVaultApp)
         }
         profilePicturePrefetcher.start(applicationScope)
+        // Clean mode: the word list off the main thread, the switch kept current.
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.nostrvault.util.CleanMode.load(this@NostrVaultApp) }
+            configStore.config.collect { com.nostrvault.util.CleanMode.enabled = it.cleanMode }
+        }
         // One Import media when the first Moving in finishes.
         mediaImportAfterMovingIn.start()
         autoMirrorOnOpen.start()

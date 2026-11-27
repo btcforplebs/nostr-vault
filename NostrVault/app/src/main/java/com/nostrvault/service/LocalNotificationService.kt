@@ -827,8 +827,8 @@ class LocalNotificationService @Inject constructor(
         true
     }
 
-    private fun buildContent(type: String, name: String?, preview: String): Pair<String, String> {
-        val who = name ?: "Someone"
+    private fun buildContent(type: String, name: String?, shownPreview: String): Pair<String, String> {
+        val (who, preview) = (name ?: "Someone") to com.nostrvault.util.CleanMode.shown(shownPreview)
         return when (type) {
             "mention" -> "$who mentioned you" to preview.ifBlank { "You were mentioned in a note" }
             "reply" -> "$who replied to your note" to preview.ifBlank { "Tap to view the reply" }

@@ -312,7 +312,7 @@ class ComposeNoteViewModel @Inject constructor(
      * The token is converted back to `nostr:npub…` at publish/draft-save time.
      */
     fun insertMention(profile: FeedProfile): Pair<String, Int>? {
-        val token = mentionToken(profile.bestName, profile.pubkey)
+        val token = mentionToken(profile.rawBestName, profile.pubkey)
         val replacement = "$token "
         val text = _content.value
         val start = mentionStartOffset

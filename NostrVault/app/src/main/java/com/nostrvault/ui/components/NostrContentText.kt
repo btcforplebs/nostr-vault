@@ -77,12 +77,14 @@ fun NostrContentText(
     // Resolve mention display-names + build the styled string. This is cheap
     // (map lookups + string appends, no regex), so it can re-run when profiles
     // or theme change without hurting scroll.
-    val annotated = remember(segments, profiles, colors.primaryText, emojis) {
+    // Clean mode masks the words as shown (CleanMode); read here so a switch redraws.
+    val clean = com.nostrvault.util.CleanMode.enabled
+    val annotated = remember(segments, profiles, colors.primaryText, emojis, clean) {
         buildAnnotatedString {
             for (segment in segments) {
                 when (segment) {
                     // Inline markdown, as the iPhone renders it.
-                    is ContentSegment.PlainText -> appendTextWithEmoji(segment.text, emojis)
+                    is ContentSegment.PlainText -> appendTextWithEmoji(com.nostrvault.util.CleanMode.shown(segment.text), emojis)
 
                     is ContentSegment.Mention -> {
                         val displayName = profiles[segment.pubkey]?.bestName
@@ -105,7 +107,7 @@ fun NostrContentText(
                     is ContentSegment.Hashtag -> {
                         pushStringAnnotation("hashtag", segment.tag)
                         withStyle(SpanStyle(color = colors.primaryText)) {
-                            append(segment.text)
+                            append(com.nostrvault.util.CleanMode.shown(segment.text))
                         }
                         pop()
                     }
