@@ -289,7 +289,7 @@ enum ListMerge {
         return out
     }
 
-    private static func relayKey(_ url: String) -> String {
+    static func relayKey(_ url: String) -> String {
         var key = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         while key.hasSuffix("/") { key.removeLast() }
         return key

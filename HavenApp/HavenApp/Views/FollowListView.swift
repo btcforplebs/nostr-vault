@@ -538,10 +538,9 @@ final class FollowListFollowWatch: ObservableObject {
         guard followed.contains(pubkey) != follow else { return }
         // The list changes now; if the new list cannot be published the feed
         // puts it back and the button follows.
-        let failed: () -> Void = {
+        let failed: (FollowPublishFailure) -> Void = { reason in
             banner.add(recipientName: name, kind: .failed(
-                ContactManager.publishFailedMessage(follow: follow, readOnly: FeedService.activeAccountIsReadOnly,
-                                                   noRelayList: FeedService.activeAccountHasNoRelayList)))
+                reason.message(follow: follow)))
         }
         let result = follow
             ? feed.followUser(pubkey, onPublishFailed: failed)

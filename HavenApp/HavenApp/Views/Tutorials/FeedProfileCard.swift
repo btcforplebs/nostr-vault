@@ -29,13 +29,12 @@ enum FollowActions {
         }
     }
 
-    /// The relays refused the new list (or it couldn't be signed) and the
-    /// change was put back: say so, or the button just snaps back.
-    static func publishFailed(_ name: String, follow: Bool) -> () -> Void {
-        {
+    /// The new list couldn't be published and the change was put back: say
+    /// why, or the button just snaps back.
+    static func publishFailed(_ name: String, follow: Bool) -> (FollowPublishFailure) -> Void {
+        { reason in
             FollowNotificationManager.shared.add(recipientName: name, kind: .failed(
-                ContactManager.publishFailedMessage(follow: follow, readOnly: FeedService.activeAccountIsReadOnly,
-                                                   noRelayList: FeedService.activeAccountHasNoRelayList)))
+                reason.message(follow: follow)))
         }
     }
 

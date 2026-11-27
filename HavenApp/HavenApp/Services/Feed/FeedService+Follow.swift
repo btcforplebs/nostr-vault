@@ -9,9 +9,9 @@ extension FeedService {
     typealias FollowActionError = ContactManager.FollowActionError
 
     @discardableResult
-    /// `onPublishFailed` runs on the main actor if the new list could not be
-    /// signed or every relay refused it; the follow has been rolled back by then.
-    func followUser(_ pubkey: String, onPublishFailed: (() -> Void)? = nil) -> Result<Void, FollowActionError> {
+    /// `onPublishFailed` runs on the main actor with the reason if the new
+    /// list could not be published; the follow has been rolled back by then.
+    func followUser(_ pubkey: String, onPublishFailed: ((FollowPublishFailure) -> Void)? = nil) -> Result<Void, FollowActionError> {
         switch ContactManager.prepareFollow(
             pubkey: pubkey,
             currentPTags: contactListPTags,
@@ -37,7 +37,7 @@ extension FeedService {
 
     @discardableResult
     /// `onPublishFailed`: as for `followUser`.
-    func unfollowUser(_ pubkey: String, onPublishFailed: (() -> Void)? = nil) -> Result<Void, FollowActionError> {
+    func unfollowUser(_ pubkey: String, onPublishFailed: ((FollowPublishFailure) -> Void)? = nil) -> Result<Void, FollowActionError> {
         switch ContactManager.prepareUnfollow(
             pubkey: pubkey,
             activeAccountHex: ConfigService.shared.activeAccountHexPubkey,
@@ -80,10 +80,10 @@ extension FeedService {
     func publishContactList(
         rollback: (pTags: [[String]], pubkeys: [String])? = nil,
         unfollowFrom: Int? = nil,
-        onFailure: (() -> Void)? = nil
+        onFailure: ((FollowPublishFailure) -> Void)? = nil
     ) {
         let attempted = contactListPTags
-        let fail: @MainActor (_ refusedAt: Int64?) -> Void = { [weak self] refusedAt in
+        let fail: @MainActor (_ reason: FollowPublishFailure, _ refusedAt: Int64?) -> Void = { [weak self] reason, refusedAt in
             guard let self else { return }
             if let rollback, self.contactListPTags == attempted {
                 if let refusedAt { self.refusedContactListCreatedAt = refusedAt }
@@ -92,7 +92,7 @@ extension FeedService {
                 self.recomputeFilteredNotes()
                 self.resubscribePrimaryIfNeeded()
             }
-            onFailure?()
+            onFailure?(reason)
         }
         guard ContactManager.mayPublish(tagCount: contactListPTags.count, lastFetchedCount: lastFetchedContactCount,
                                         unfollowFrom: unfollowFrom) else {
@@ -100,14 +100,14 @@ extension FeedService {
             print("FeedService: BLOCKED contact list publish — \(contactListPTags.count) tags vs \(lastFetchedContactCount) fetched. Possible data loss.")
             #endif
             // After the caller's re-filter, so the rollback lands last.
-            DispatchQueue.main.async { fail(nil) }
+            DispatchQueue.main.async { fail(.wouldShrink, nil) }
             return
         }
         // No key to sign with: don't try. Follow/unfollow already refuse
         // with `.readOnly` before the list changes; this covers any other
-        // publish. `onFailure` reads the same check to say "read-only".
+        // publish.
         guard !Self.activeAccountIsReadOnly else {
-            DispatchQueue.main.async { fail(nil) }
+            DispatchQueue.main.async { fail(.readOnly, nil) }
             return
         }
         // Bump the local-edit guard synchronously to "now" so an immediate contact
@@ -117,7 +117,7 @@ extension FeedService {
         ownContactListCreatedAt = max(ownContactListCreatedAt, Int64(Date().timeIntervalSince1970))
         // Every caller is a tap that carries the list it was made on.
         guard let before = rollback?.pTags else {
-            DispatchQueue.main.async { fail(nil) }
+            DispatchQueue.main.async { fail(.noBefore, nil) }
             return
         }
         let owner = ConfigService.shared.activeAccountHexPubkey
@@ -136,20 +136,19 @@ extension FeedService {
             let config = ConfigService.shared.config
             let lookup = await NostrService.shared.lookupNewestReplaceable(
                 kind: 3, for: owner, alsoAsk: ListMerge.editLookupAsk(readRelays: config.readRelays), skipAhead: true)
-            guard owner == ConfigService.shared.activeAccountHexPubkey else { fail(nil); return }
+            guard owner == ConfigService.shared.activeAccountHexPubkey else { fail(.accountSwitched, nil); return }
             let base: (tags: [[String]], content: String, createdAt: Int64)
             let held = Self.lastSignedContactList[owner]
             let found = ListMerge.editBase(lookup, held: held, own: NostrService.ownListRelays(for: owner), createdAt: { $0.created_at })
             switch ListMerge.freshKeyBase(found, fresh: fresh, lookup: lookup, held: held, createdAt: { $0.created_at }) {
             case .noRelayList:
-                // onFailure's message says why (ContactManager.publishFailedMessage).
-                fail(nil)
+                fail(.noRelayList, nil)
                 return
             case .unknown:
                 #if DEBUG
                 print("FeedService: follow list not published — relays didn't answer (\(lookup.answered)/\(lookup.asked))")
                 #endif
-                fail(nil)
+                fail(.relaysDidNotAnswer(answeredBy: lookup.answeredBy, own: NostrService.ownListRelays(for: owner)), nil)
                 return
             case .none: base = ([], "", 0)
             case .list(let newest): base = (newest.tags, newest.content, newest.created_at)
@@ -159,18 +158,18 @@ extension FeedService {
             let people = tags.filter { $0.count >= 2 && $0[0] == "p" }.count
             guard ContactManager.mayPublish(tagCount: people, lastFetchedCount: basePeople,
                                             unfollowFrom: unfollowFrom == nil ? nil : basePeople) else {
-                fail(nil)
+                fail(.wouldShrink, nil)
                 return
             }
             // A later second than the list it replaces, or relays may keep that
             // one. editBase never picks a base dated ListMerge.maxSkew or more ahead.
             let signedAt = ListMerge.signedAt(now: Int64(Date().timeIntervalSince1970), base: base.createdAt)
-            guard let event = await NostrService.shared.signEventAsync(kind: 3, content: base.content, tags: tags, notBefore: signedAt),
-                  event.pubkey.lowercased() == owner.lowercased(),
-                  owner == ConfigService.shared.activeAccountHexPubkey else {
-                fail(nil)
+            guard let event = await NostrService.shared.signEventAsync(kind: 3, content: base.content, tags: tags, notBefore: signedAt) else {
+                fail(.notSigned, nil)
                 return
             }
+            guard event.pubkey.lowercased() == owner.lowercased() else { fail(.wrongSigner, nil); return }
+            guard owner == ConfigService.shared.activeAccountHexPubkey else { fail(.accountSwitched, nil); return }
             Self.lastSignedContactList[owner] = event
             // What went out is now the list, unless another tap is already on screen.
             if self.contactListPTags == attempted {
@@ -188,7 +187,7 @@ extension FeedService {
                 // stays (FreshAccountKeys.settle). Other kinds keep their own.
                 FreshAccountKeys.settle(owner, kind: 3, accepted: outcome == .accepted)
                 guard outcome == .refused else { return }
-                Task { @MainActor in fail(event.created_at) }
+                Task { @MainActor in fail(.refused, event.created_at) }
             })
         }
         Self.contactListPublishTail = publish
