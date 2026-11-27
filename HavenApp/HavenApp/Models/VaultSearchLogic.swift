@@ -46,27 +46,22 @@ enum VaultSearchLogic {
     }
 
     /// Hashtags on the matched notes that contain any word of the query,
-    /// from the text (`#word`) and from `t` tags, lowercased, deduplicated
-    /// and sorted. `#` in the query is ignored, so "#bitcoin" and "bitcoin"
-    /// find the same tags.
+    /// from the text (`#word`) and from `t` tags, lowercased and deduplicated,
+    /// in `HashtagSearchRank` order: the tag typed, then the most used, then
+    /// A-Z. `#` in the query is ignored, so "#bitcoin" and "bitcoin" find
+    /// the same tags.
     static func hashtags(contents: [(content: String, tags: [[String]])], query: String) -> [String] {
-        let words = query.lowercased()
-            .replacingOccurrences(of: "#", with: " ")
-            .split(whereSeparator: { $0.isWhitespace })
-            .map(String.init)
+        let words = HashtagSearchRank.words(query)
         guard !words.isEmpty else { return [] }
 
-        var found = Set<String>()
-        for item in contents {
+        let counts = HashtagSearchRank.counts(contents) { item in
             var tags = hashtagsInText(item.content)
             for tag in item.tags where tag.count >= 2 && tag[0] == "t" && !tag[1].isEmpty {
                 tags.append(tag[1].lowercased())
             }
-            for tag in tags where words.contains(where: { tag.contains($0) }) {
-                found.insert(tag)
-            }
+            return tags.filter { tag in words.contains(where: { tag.contains($0) }) }
         }
-        return found.sorted()
+        return HashtagSearchRank.order(counts, query: query)
     }
 
     /// `#word` hashtags in a note's text, lowercased, without the `#`.

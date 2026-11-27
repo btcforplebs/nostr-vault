@@ -1,0 +1,1 @@
+../../../HavenApp/Models/HashtagSearchRank.swift
