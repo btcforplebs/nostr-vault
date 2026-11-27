@@ -368,21 +368,38 @@ class GlobalSearchAccumulator {
 
 /**
  * Own posts first, then follows, then the rest of the Web of Trust, then
- * everyone; newest first within a tier. iOS: GlobalSearchRanking.
- * Profiles carry no timestamp worth sorting on, so within a tier they keep
- * arrival order (the sort is stable).
+ * people further out (3+ steps, in the Haven's rank copy), then everyone;
+ * newest first within a tier. The same tiers as [PeopleSearchRank] (search
+ * plan §1b). iOS: GlobalSearchRanking. Profiles here keep arrival order inside
+ * a tier; the screens rank people with [PeopleSearchRank].
  */
 object SearchRanking {
-    fun tier(pubkey: String, own: Set<String>, follows: Set<String>, wot: Set<String> = emptySet()): Int = when (pubkey) {
-        in own -> 0
-        in follows -> 1
-        in wot -> 2
-        else -> 3
+    /** Everyone past your web. 3+ steps away counts as inside (Logen 5d1ce4cb #6). */
+    const val OUTSIDE_TIER = PeopleSearchRank.Tier.OUTSIDE
+
+    fun tier(
+        pubkey: String,
+        own: Set<String>,
+        follows: Set<String>,
+        wot: Set<String> = emptySet(),
+        distant: (String) -> Boolean = { false },
+    ): Int = when {
+        pubkey in own -> 0
+        pubkey in follows -> 1
+        pubkey in wot -> 2
+        distant(pubkey) -> 3
+        else -> OUTSIDE_TIER
     }
 
-    fun rankNotes(notes: List<FeedNote>, own: Set<String>, follows: Set<String>, wot: Set<String> = emptySet()): List<FeedNote> =
+    fun rankNotes(
+        notes: List<FeedNote>,
+        own: Set<String>,
+        follows: Set<String>,
+        wot: Set<String> = emptySet(),
+        distant: (String) -> Boolean = { false },
+    ): List<FeedNote> =
         notes.sortedWith(
-            compareBy<FeedNote> { tier(it.pubkey, own, follows, wot) }
+            compareBy<FeedNote> { tier(it.pubkey, own, follows, wot, distant) }
                 .thenByDescending { it.createdAt.time },
         )
 

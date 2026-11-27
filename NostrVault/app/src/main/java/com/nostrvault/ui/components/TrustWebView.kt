@@ -386,15 +386,13 @@ internal fun TrustWebContent(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val pasted = remember(query) { TrustMap.pastedKey(query, HavenBridge::decodeNpub) }
-    val hits = remember(query, pasted, profiles, myFollows, web) {
+    val rankCopy = rememberRankCopy()
+    val hits = remember(query, pasted, profiles, myFollows, web, rankCopy) {
         if (pasted != null) {
-            listOf(TrustMap.PersonHit(pasted, when (pasted) {
-                in myFollows -> TrustMap.Tier.FOLLOW
-                in web -> TrustMap.Tier.WEB
-                else -> TrustMap.Tier.OTHER
-            }))
+            val circle = com.nostrvault.data.model.PeopleSearchRank.Circle(setOf(me), myFollows, web, rankCopy)
+            listOf(TrustMap.PersonHit(pasted, rowTier(pasted, circle)))
         } else {
-            TrustMap.searchPeople(query, profiles.values, myFollows, web)
+            findSomeone(query, profiles.values, me, myFollows, web, rankCopy, feedService.blockedHexForActiveAccount())
         }
     }
 

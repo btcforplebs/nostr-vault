@@ -11,7 +11,9 @@ import com.nostrvault.data.model.BareNostrRefs
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.GlobalSearchResults
+import com.nostrvault.data.model.PeopleSearchRank
 import com.nostrvault.data.model.QuoteRef
+import com.nostrvault.data.model.SearchResultsOrder
 import com.nostrvault.data.model.SearchFilter
 import com.nostrvault.data.model.SearchSourceState
 import com.nostrvault.service.GlobalSearchSession
@@ -20,6 +22,7 @@ import com.nostrvault.service.FeedService
 import com.nostrvault.service.InterestListService
 import com.nostrvault.service.SearchRecommendations
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.ownSearchPubkeys
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.data.model.NoteStats
 import com.nostrvault.ui.theme.*
@@ -111,6 +114,10 @@ class SearchViewModel @Inject constructor(
     /** What the running search returned before blocks were applied. */
     private var rawResults = GlobalSearchResults()
     private var sessionJob: Job? = null
+    /** Who is how close, for ranking this search's people and notes; set when it starts. */
+    private var circle: PeopleSearchRank.Circle? = null
+    /** The query the running session is for. */
+    private var sessionQuery = ""
     /** Authors whose profile has already been requested for this search. */
     private val requestedAuthors = HashSet<String>()
 
@@ -358,6 +365,13 @@ class SearchViewModel @Inject constructor(
             return
         }
         session = started
+        sessionQuery = query.trim()
+        circle = PeopleSearchRank.Circle(
+            own = nostrService.ownSearchPubkeys(),
+            follows = feedService.followedPubkeys.value.toSet(),
+            web = feedService.webOfTrustForRanking(),
+            copy = feedService.discoveryReach.copy.value,
+        )
         requestedAuthors.clear()
         _results.value = GlobalSearchResults()
         _isSearching.value = true
@@ -377,7 +391,8 @@ class SearchViewModel @Inject constructor(
         val unblocked = SearchBlockFilter.apply(results, feedService.blockedHexForActiveAccount()) {
             feedService.findNote(it)?.pubkey
         }
-        return _filter.value.apply(unblocked, nostrService.activeHexPubkey, feedService.followedPubkeys.value.toSet())
+        val shown = _filter.value.apply(unblocked, nostrService.activeHexPubkey, feedService.followedPubkeys.value.toSet())
+        return circle?.let { SearchResultsOrder.apply(shown, sessionQuery, it) } ?: shown
     }
 
     /** Note authors from outside the follow graph have no cached profile yet. */

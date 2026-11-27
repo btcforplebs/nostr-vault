@@ -2,6 +2,7 @@ package com.nostrvault.ui.screens.vault
 
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.PeopleSearchRank
 import com.nostrvault.data.model.SearchTermMatcher
 import com.nostrvault.data.model.VaultSearchLogic
 import com.nostrvault.data.model.VaultSearchLogic.Status
@@ -202,9 +203,14 @@ internal class VaultSearchModel(
     private suspend fun land(query: String, profiles: List<FeedProfile>, found: List<FeedNote>, result: Status, authors: Set<String>?) {
         val cached = nostrService.profiles.value
         val blocked = feedService.blockedHexForActiveAccount()
-        val follows = feedService.followedPubkeys.value.toHashSet()
+        val circle = PeopleSearchRank.Circle(
+            own = nostrService.ownSearchPubkeys(),
+            follows = feedService.followedPubkeys.value.toHashSet(),
+            web = feedService.webOfTrustForRanking(),
+            copy = feedService.discoveryReach.copy.value,
+        )
         val sections = withContext(Dispatchers.Default) {
-            sectionsFor(query, profiles, found, cached, blocked, follows,
+            sectionsFor(query, profiles, found, cached, blocked, circle,
                 decodeNpub = nostrService::npubToHex, authorOf = { feedService.findNote(it)?.pubkey }, authors = authors)
         }
         if (result == Status.SEARCHING) {
@@ -234,7 +240,8 @@ internal class VaultSearchModel(
         /**
          * The sections for [query]: the people the query is about (a pasted npub
          * finds its person even with no profile stored), blocked people and their
-         * notes taken out, people you follow first, notes newest first, and the
+         * notes taken out, people in the shared order ([PeopleSearchRank]: you,
+         * follows, your web, then name match), notes newest first, and the
          * hashtags and links those notes carry. [authors] set (My notes): no
          * People, and only notes those keys wrote.
          */
@@ -244,7 +251,7 @@ internal class VaultSearchModel(
             found: List<FeedNote>,
             cached: Map<String, FeedProfile>,
             blocked: Set<String>,
-            follows: Set<String>,
+            circle: PeopleSearchRank.Circle,
             decodeNpub: (String) -> String?,
             authorOf: (String) -> String? = { null },
             authors: Set<String>? = null,
@@ -257,8 +264,8 @@ internal class VaultSearchModel(
                     people = listOf(cached[key] ?: FeedProfile(pubkey = key))
                 }
             }
-            people = people.filter { it.pubkey !in blocked }
-                .sortedWith(compareBy<FeedProfile> { it.pubkey !in follows }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.bestName })
+            // Already matched above (a pasted key's row matches no name): keep them all, ranked.
+            people = PeopleSearchRank.rank(people, query, circle, blocked, keepUnmatched = true, person = PeopleSearchRank::person)
             val kinds = VaultSearchLogic.NOTE_KINDS.toHashSet()
             val notes = found
                 .filter { it.kind in kinds && (authors == null || it.pubkey in authors) && !FeedFilterEngine.involvesBlocked(it, blocked, authorOf) }
