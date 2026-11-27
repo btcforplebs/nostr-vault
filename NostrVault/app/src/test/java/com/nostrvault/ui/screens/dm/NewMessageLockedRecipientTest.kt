@@ -31,6 +31,7 @@ class NewMessageLockedRecipientTest {
         dmService = mockk(relaxed = true),
         nostrService = mockk(relaxed = true) { every { profiles } returns MutableStateFlow(emptyMap()) },
         blossomService = mockk(relaxed = true),
+        feedService = mockk(relaxed = true),
     )
 
     @Test fun `opened from a profile the recipient is locked and stays`() {

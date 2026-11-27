@@ -70,6 +70,7 @@ class NewMessageViewModel @Inject constructor(
     private val dmService: DMService,
     private val nostrService: NostrService,
     private val blossomService: BlossomService,
+    private val feedService: com.nostrvault.service.FeedService,
 ) : ViewModel() {
 
     /** Optional pre-locked recipient (e.g. opened from a profile). null = free picker. */
@@ -100,10 +101,20 @@ class NewMessageViewModel @Inject constructor(
     val sendError: StateFlow<String?> = _sendError.asStateFlow()
     fun clearSendError() { _sendError.value = null }
 
+    /** Who is how close, for ranking the "To:" names; read once, the picker is short-lived. */
+    private val recipientCircle by lazy {
+        com.nostrvault.data.model.PeopleSearchRank.Circle(
+            own = setOf(nostrService.activeHexPubkey),
+            follows = feedService.followedPubkeys.value.toHashSet(),
+            web = feedService.webOfTrustForRanking(),
+            copy = feedService.discoveryReach.copy.value,
+        )
+    }
+
     /** Search results: an npub, nprofile or hex key (one hit), or a name search; never someone blocked (DMRecipientInput). */
     val searchResults: StateFlow<List<String>> =
         combine(_searchText, nostrService.profiles) { query, profs ->
-            DMRecipientInput.results(query, profs, dmService.blockedPubkeys())
+            DMRecipientInput.results(query, profs, dmService.blockedPubkeys(), recipientCircle)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Why this account can't send DMs (watch-only), or null when it can (B12). */

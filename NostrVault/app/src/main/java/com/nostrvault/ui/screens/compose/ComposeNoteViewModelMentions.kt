@@ -6,12 +6,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.PeopleSearchRank
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+/** Rows the @ picker offers. */
+private const val MENTION_LIMIT = 8
 
     /**
      * Finds the @query at the caret and populates [mentionResults]. Scans backwards
@@ -63,38 +67,30 @@ import kotlinx.coroutines.launch
         }
         threadPubkeys.remove(self)
 
+        val blocked = feedService.blockedHexForActiveAccount()
         val results: List<FeedProfile> = if (query.isEmpty()) {
             // Just typed `@`: thread participants first, then followed.
-            val threadProfiles = threadPubkeys.mapNotNull { profilesMap[it] }
+            val threadProfiles = threadPubkeys.filter { it !in blocked }.mapNotNull { profilesMap[it] }
             val followedProfiles = followed.asSequence()
-                .filter { it != self }
+                .filter { it != self && it !in blocked }
                 .mapNotNull { profilesMap[it] }
                 .filter { p -> threadProfiles.none { it.pubkey == p.pubkey } }
-            (threadProfiles + followedProfiles).take(8)
+            (threadProfiles + followedProfiles).take(MENTION_LIMIT)
         } else {
             // Search the entire profile cache (feed authors, search results, etc.),
-            // not just follows, ranking thread participants, follows, then the
-            // rest of the Web of Trust first.
-            val lower = query.lowercase()
-            val followedSet = followed.toHashSet()
-            val wotSet = feedService.webOfTrustForRanking()
-            profilesMap.values.asSequence()
-                .filter { it.pubkey != self }
-                .filter { p ->
-                    p.rawBestName.lowercase().contains(lower) ||
-                        (p.name?.lowercase()?.contains(lower) == true) ||
-                        (p.displayName?.lowercase()?.contains(lower) == true) ||
-                        (p.nip05?.lowercase()?.contains(lower) == true)
-                }
-                .sortedWith(
-                    compareByDescending<FeedProfile> { threadPubkeys.contains(it.pubkey) }
-                        .thenByDescending { followedSet.contains(it.pubkey) }
-                        .thenByDescending { wotSet.contains(it.pubkey) }
-                        .thenByDescending { it.rawBestName.lowercase().startsWith(lower) }
-                        .thenBy { it.rawBestName.length }
-                )
-                .take(8)
-                .toList()
+            // not just follows, in the shared people order (PeopleSearchRank):
+            // thread participants, follows, your web, then the best name match.
+            val circle = PeopleSearchRank.Circle(
+                own = setOf(self),
+                follows = followed.toHashSet(),
+                web = feedService.webOfTrustForRanking(),
+                copy = feedService.discoveryReach.copy.value,
+                thread = threadPubkeys,
+            )
+            PeopleSearchRank.rank(
+                profilesMap.values.filter { it.pubkey != self }, query, circle,
+                blocked = blocked, limit = MENTION_LIMIT, person = PeopleSearchRank::person,
+            )
         }
 
         _mentionResults.value = results

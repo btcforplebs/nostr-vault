@@ -1,6 +1,7 @@
 package com.nostrvault.ui.screens.dm
 
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.PeopleSearchRank
 import com.nostrvault.relay.HavenBridge
 
 /**
@@ -28,20 +29,24 @@ internal object DMRecipientInput {
         }
     }
 
-    /** The people to offer for [query], blocked people left out. */
-    fun results(query: String, profiles: Map<String, FeedProfile>, blocked: Set<String>): List<String> {
+    /**
+     * The people to offer for [query], blocked people left out, in the shared
+     * people order ([PeopleSearchRank]: follows, your web, then the best name
+     * match). [circle] null ranks by name match alone.
+     */
+    fun results(
+        query: String,
+        profiles: Map<String, FeedProfile>,
+        blocked: Set<String>,
+        circle: PeopleSearchRank.Circle? = null,
+    ): List<String> {
         val q = query.trim()
         if (q.length < 2) return emptyList()
         key(q)?.let { return if (it in blocked) emptyList() else listOf(it) }
-        val lower = q.lowercase()
-        return profiles.keys.asSequence()
-            .filter { it !in blocked }
-            .filter { pubkey ->
-                val name = profiles[pubkey]?.bestName.orEmpty()
-                name.lowercase().contains(lower) || pubkey.lowercase().contains(lower)
-            }
-            .take(MAX_RESULTS)
-            .toList()
+        return PeopleSearchRank.rank(
+            profiles.values, q, circle ?: PeopleSearchRank.Circle(emptySet(), emptySet(), emptySet()),
+            blocked = blocked, limit = MAX_RESULTS, person = PeopleSearchRank::person,
+        ).map { it.pubkey }
     }
 
     /** True when the field should say [NO_MATCH]. */

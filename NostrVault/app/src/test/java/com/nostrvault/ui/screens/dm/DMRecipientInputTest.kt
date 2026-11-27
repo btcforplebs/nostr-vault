@@ -46,4 +46,19 @@ class DMRecipientInputTest {
         assertFalse(DMRecipientInput.showsNoMatch("z", emptyList()))
         assertFalse(DMRecipientInput.showsNoMatch("ali", listOf(alice)))
     }
+
+    /** D5: the shared people order, follows first, then the best name match, capped at MAX_RESULTS. */
+    @Test fun `names are ranked follows first, then exact before contains`() {
+        val ann = "1".repeat(64); val joanne = "2".repeat(64); val annie = "3".repeat(64)
+        val people = mapOf(
+            ann to FeedProfile(pubkey = ann, name = "ann"),
+            joanne to FeedProfile(pubkey = joanne, name = "Joanne"),
+            annie to FeedProfile(pubkey = annie, name = "Annie"),
+        )
+        assertEquals(listOf(ann, annie, joanne), DMRecipientInput.results("ann", people, emptySet()))
+        val circle = com.nostrvault.data.model.PeopleSearchRank.Circle(emptySet(), setOf(joanne), emptySet())
+        assertEquals(listOf(joanne, ann, annie), DMRecipientInput.results("ann", people, emptySet(), circle))
+        val many = (10..30).associate { n -> "%064d".format(n) to FeedProfile(pubkey = "%064d".format(n), name = "sam $n") }
+        assertEquals(DMRecipientInput.MAX_RESULTS, DMRecipientInput.results("sam", many, emptySet()).size)
+    }
 }
