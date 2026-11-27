@@ -4,7 +4,9 @@
 
 Nothing is ever cached (no-store), so a fresh WebKit cache can't help. /app.js, on a page with nothing saved, saves a
 sign-in and a key the way the web vault does (localStorage nv-session, nv-accounts with an ncryptsec, a cookie, the
-nv-keyring database, an account's wallet, drafts and outbox), plus a feed database ("haven:<pk>:feed") holding a
+nv-keyring database, an account's wallet, drafts and outbox, and the stores that may be the only copy: deleted,
+followbackup, nv-napplets, blobs, listsimport and one a later version might add), the refillable inbox and
+nv-napplet-apps, plus a feed database ("haven:<pk>:feed") holding a
 record that makes it spin; it reports /seeded and then loops forever. Any later load that finds that feed record
 spins at once. One that finds no feed record but the keyring key draws a page (many colours) and reports to /saw
 everything it found, so the test sees the sign-in and every key survived the safe start.
@@ -21,6 +23,9 @@ INDEX = b"""<!doctype html><html><head><meta charset="utf-8"><title>safe test</t
 
 APP = ("""const T = "%s", PK = "%s", DBS = ["nv-keyring", "haven:" + PK + ":wallet", "haven:" + PK + ":drafts",
   "haven:" + PK + ":outbox", "haven:" + PK + ":feed"]
+// More of the web vault's own stores, filled once: the only copies (kept in place) and refillable caches (moved)
+const ONLY = ["haven:" + PK + ":deleted", "haven:" + PK + ":followbackup", "nv-napplets:" + PK, "haven:" + PK + ":blobs",
+  "haven:" + PK + ":listsimport", "haven:" + PK + ":somethingnew"], REFILL = ["haven:" + PK + ":inbox", "nv-napplet-apps:" + PK]
 const open = n => new Promise((ok, no) => { const r = indexedDB.open(n, 1)
   r.onupgradeneeded = () => r.result.createObjectStore("s"); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error) })
 const get = (db, k) => new Promise(ok => { const r = db.transaction("s").objectStore("s").get(k)
@@ -39,6 +44,7 @@ const spin = () => { for (;;) {} }
     await put(key, "sealing", "key-" + T); await put(wallet, "nwc", "nwc-" + T)
     await put(drafts, "d1", "draft-" + T); await put(outbox, "e1", "unsent-" + T)
     await put(feed, "poison", "spin")
+    for (const n of [...ONLY, ...REFILL]) { const d = await open(n); await put(d, "x", n + "-" + T); d.close() }
     for (const db of dbs) db.close()
     await fetch("/seeded")
     setTimeout(spin, 300)
