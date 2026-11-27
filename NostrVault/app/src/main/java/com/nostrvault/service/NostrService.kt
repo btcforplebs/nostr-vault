@@ -477,21 +477,21 @@ class NostrService @Inject constructor(
 
     /**
      * Who a callback search belongs to; each gets its own slot. WOT is the
-     * WOT tab's "Find someone", so typing there never cancels a feed search.
+     * WOT tab's "Find someone", so typing there never cancels a mention lookup.
      */
-    enum class SearchCaller { FEED, MENTION, WOT }
+    enum class SearchCaller { MENTION, WOT }
 
     /**
-     * One in-flight callback search per caller. Feed search and @-mention
-     * lookup used to share one slot, so a mention lookup cancelled the feed's
-     * search, whose callback then never fired and left its spinner on.
+     * One in-flight callback search per caller. Two callers used to share one
+     * slot, so one caller's lookup cancelled the other's search, whose callback
+     * then never fired and left its spinner on.
      */
     internal val callbackSearches = java.util.concurrent.ConcurrentHashMap<SearchCaller, GlobalSearchSession>()
 
     /**
      * One-shot NIP-50 search over the configured search relays, delivered once
-     * every relay has answered (or the per-relay cap passed). Used by the feed's
-     * search and @-mention lookup; the Search screen streams via [startSearch].
+     * every relay has answered (or the per-relay cap passed). Used by @-mention
+     * lookup and the WOT tab's "Find someone"; the Search screen streams via [startSearch].
      *
      * A search replaced by a newer one from the same [caller], or cancelled via
      * [cancelGlobalSearch], never calls [onResult]: delivery is checked on the
@@ -500,11 +500,11 @@ class NostrService @Inject constructor(
      */
     fun globalSearch(
         query: String,
-        caller: SearchCaller = SearchCaller.FEED,
+        caller: SearchCaller,
         onResult: (GlobalSearchResults) -> Unit,
     ) { globalSearchImpl(query, caller, onResult) }
 
-    fun cancelGlobalSearch(caller: SearchCaller = SearchCaller.FEED) {
+    fun cancelGlobalSearch(caller: SearchCaller) {
         callbackSearches.remove(caller)?.cancel()
     }
 
