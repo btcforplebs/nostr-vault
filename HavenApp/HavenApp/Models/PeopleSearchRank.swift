@@ -128,20 +128,83 @@ enum PeopleSearchRank {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// A name folded once, with its words. Boxes re-rank every cached
+    /// profile on each keystroke and while relay answers stream in, and
+    /// `String.folding` is the slow part (Tron, #2681: 114-174 ms a pass on
+    /// 20k profiles), so each raw name is folded once per run.
+    struct Folded {
+        /// UTF-8 of the folded, precomposed text: matching on bytes skips
+        /// the per-Character work of String's `hasPrefix`/`contains`.
+        let bytes: [UInt8]
+        let words: [[UInt8]]
+
+        init(_ raw: String) {
+            let text = PeopleSearchRank.fold(raw).precomposedStringWithCanonicalMapping
+            bytes = Array(text.utf8)
+            words = text.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map { Array($0.utf8) }
+        }
+    }
+
+    /// The query as `match` compares it.
+    static func queryBytes(_ folded: String) -> [UInt8] {
+        Array(folded.precomposedStringWithCanonicalMapping.utf8)
+    }
+
+    /// One person's names and about, folded. Kept per pubkey and reused
+    /// while the raw text is the same (the same strings from the profile
+    /// cache compare by storage, so the check is cheap; hashing them is not).
+    private struct Entry {
+        let names: [String]
+        let about: String?
+        let folded: [Folded]
+        let foldedAbout: [UInt8]?
+    }
+
+    private final class FoldMemo: @unchecked Sendable {
+        private var people: [String: Entry] = [:]
+        private let lock = NSLock()
+        /// Past this many people the memo starts over, so it stays bounded.
+        private let cap = 100_000
+
+        func entry(_ person: Person) -> Entry {
+            let names = person.names
+            lock.lock()
+            if let hit = people[person.pubkey], hit.names == names, hit.about == person.about {
+                lock.unlock()
+                return hit
+            }
+            lock.unlock()
+            let entry = Entry(names: names, about: person.about, folded: names.map(Folded.init),
+                              foldedAbout: person.about.map { PeopleSearchRank.queryBytes(PeopleSearchRank.fold($0)) })
+            lock.lock()
+            if people.count >= cap { people.removeAll(keepingCapacity: true) }
+            people[person.pubkey] = entry
+            lock.unlock()
+            return entry
+        }
+    }
+
+    private static let memo = FoldMemo()
+
     /// How well `person` matches the folded query; nil for no match at all.
     static func match(_ folded: String, _ person: Person) -> Int? {
-        guard !folded.isEmpty else { return nil }
+        match(bytes: queryBytes(folded), person)
+    }
+
+    /// `match` with the query already in bytes, for loops over many people.
+    static func match(bytes query: [UInt8], _ person: Person) -> Int? {
+        guard !query.isEmpty else { return nil }
+        let entry = memo.entry(person)
         var best: Int?
-        for raw in person.names {
-            let name = fold(raw)
+        for name in entry.folded {
             let m: Int?
-            if name == folded {
+            if name.bytes == query {
                 m = Match.exact
-            } else if name.hasPrefix(folded) {
+            } else if hasPrefix(name.bytes[...], query) {
                 m = Match.prefix
-            } else if words(of: name).contains(where: { $0.hasPrefix(folded) }) {
+            } else if name.words.contains(where: { hasPrefix($0[...], query) }) {
                 m = Match.wordPrefix
-            } else if name.contains(folded) {
+            } else if contains(name.bytes, query) {
                 m = Match.contains
             } else {
                 m = nil
@@ -149,12 +212,28 @@ enum PeopleSearchRank {
             if let m, m < (best ?? Int.max) { best = m }
             if best == Match.exact { break }
         }
-        if best == nil, let about = person.about, fold(about).contains(folded) { best = Match.aboutOnly }
+        if best == nil, let about = entry.foldedAbout, contains(about, query) { best = Match.aboutOnly }
         return best
     }
 
-    private static func words(of name: String) -> [Substring] {
-        name.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+    private static func hasPrefix(_ text: ArraySlice<UInt8>, _ prefix: [UInt8]) -> Bool {
+        text.count >= prefix.count && text.prefix(prefix.count).elementsEqual(prefix)
+    }
+
+    private static func contains(_ text: [UInt8], _ needle: [UInt8]) -> Bool {
+        let n = needle.count, end = text.count - n
+        guard n > 0, end >= 0 else { return n == 0 }
+        let first = needle[0]
+        return text.withUnsafeBufferPointer { t in
+            needle.withUnsafeBufferPointer { q in
+                var i = 0
+                while i <= end {
+                    if t[i] == first, memcmp(t.baseAddress! + i, q.baseAddress!, n) == 0 { return true }
+                    i += 1
+                }
+                return false
+            }
+        }
     }
 
     /// The shortest name, for the tie-break; people with no name sort after.
@@ -171,14 +250,14 @@ enum PeopleSearchRank {
     static func rank<T>(_ items: [T], query: String, circle: Circle,
                         blocked: Set<String> = [], keepUnmatched: Bool = false,
                         limit: Int? = nil, person: (T) -> Person) -> [T] {
-        let folded = fold(query)
+        let folded = queryBytes(fold(query))
         var seen = Set<String>()
         var keyed: [(item: T, tier: Int, match: Int, score: Double, length: Int, key: String)] = []
         for item in items {
             let p = person(item)
             let key = p.pubkey.lowercased()
             guard !blocked.contains(p.pubkey), !blocked.contains(key), seen.insert(key).inserted else { continue }
-            let found = match(folded, p)
+            let found = match(bytes: folded, p)
             guard found != nil || keepUnmatched else { continue }
             keyed.append((item, tier(p.pubkey, in: circle), found ?? Match.unseen,
                           circle.score(key), length(p), key))
