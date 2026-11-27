@@ -384,17 +384,35 @@ extension FeedView {
                 dropInPendingNotes()
                 return
             }
-            // Below the top, the post being read stays put while the new
-            // ones go in above it (the layout switch's anchor, FeedView+Layout).
-            let reading = FeedStayPut.keepsReading(isAtTop: isAtTop) ? topVisibleNoteId() : nil
-            feedService.applyPendingNotes()
-            if let reading, let row = rowId(showing: reading) {
-                pendingLayoutAnimation = nil
-                pendingLayoutAnchor = row
-            }
+            applyPendingKeepingPlace()
         }
         autoLoadWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// Below the top, the post being read stays put while the new ones go in
+    /// above it (the layout switch's anchor, FeedView+Layout).
+    func applyPendingKeepingPlace() {
+        let reading = FeedStayPut.keepsReading(isAtTop: isAtTop) ? topVisibleNoteId() : nil
+        feedService.applyPendingNotes()
+        if let reading, let row = rowId(showing: reading) {
+            pendingLayoutAnimation = nil
+            pendingLayoutAnchor = row
+        }
+    }
+
+    /// Back on the Feed after changes came in while it was hidden. The
+    /// hidden Feed used to apply waiting posts as they came; now they are
+    /// applied here, before the first frame, with no drop-in: nobody saw
+    /// them arrive, and doing it 1.5 s later would move the feed just as
+    /// you start reading (Tron, #2704 review).
+    func autoLoadOnReturn() {
+        guard FeedStayPut.autoLoads(enabled: configService.config.autoLoadNewPosts,
+                                    waiting: feedService.pendingNotes.count,
+                                    isLoading: feedService.isLoadingFeed,
+                                    postOpen: expandedNoteId != nil) else { return }
+        autoLoadWork?.cancel()
+        applyPendingKeepingPlace()
     }
 
     /// At the top: the waiting posts drop in from behind the top bar and push

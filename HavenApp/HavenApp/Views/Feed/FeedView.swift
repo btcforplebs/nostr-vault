@@ -14,7 +14,7 @@ struct FeedView: View {
     /// second), and the whole feed would redraw for each. Only the pill
     /// watches it; the Mac's edit request comes in by `onReceive`.
     var pendingManager: PendingPostManager { .shared }
-    @ObservedObject var tutorialCenter = TutorialCenter.shared
+    var tutorialCenter: TutorialCenter { .shared }
     @State var composeContext: ComposeContext?
     /// The diVine, article or recipe composer, when the post button opens one.
     @State var modeComposer: ModeComposer?
@@ -25,7 +25,7 @@ struct FeedView: View {
     var menuModes: [FeedMode] { FeedMode.menuModes(order: feedMenuOrder, hidden: feedMenuHidden) }
     @State var showingNoteId: String?
     @State var showingProfileKey: IdentifiableString?
-    @ObservedObject var fillGuide = FillYourVaultCoordinator.shared
+    var fillGuide: FillYourVaultCoordinator { .shared }
     @State var showingMediaUrl: IdentifiableURL?
     @Namespace var mediaZoom
     /// macOS presents the article reader as a sheet; iOS pushes it.
@@ -83,7 +83,8 @@ struct FeedView: View {
     @State var cacheRebuildWork: DispatchWorkItem?
     /// Row data and thread grouping (`rowDataCache`, `feedThreads`), held by
     /// reference so view copies don't each keep their own; see FeedRowStore.
-    @StateObject var rowStore = FeedRowStore()
+    /// Observed through `screen`, so hidden row writes don't redraw.
+    var rowStore: FeedRowStore { screen.rowStore }
 
     /// The note open in place in a thread card (nil = none).
     @State var expandedNoteId: String? = nil
@@ -100,7 +101,11 @@ struct FeedView: View {
     /// A gap-fill regroup is already queued; see regroupIfGapFilled.
     @State var gapRegroupScheduled = false
     /// Popular rank per note id, rebuilt once per `filteredNotes` change.
-    @State var popularRanks: [String: Int] = [:]
+    /// In the row store, so a rebuild while hidden doesn't redraw.
+    var popularRanks: [String: Int] {
+        get { rowStore.popularRanks }
+        nonmutating set { rowStore.popularRanks = newValue }
+    }
     /// The rows' actions, built once (`feedActionsValue`). Its closures only
     /// reach the shared services.
     @State var feedActions = FeedActions.make(feedService: .shared, nostrService: .shared)
@@ -152,13 +157,16 @@ struct FeedView: View {
         #if os(iOS)
         feedStack
             .onAppear {
-                screen.isOnScreen = true
+                // Posts that came in while hidden go in now, not 1.5 s
+                // into reading (scheduleAutoLoad).
+                if screen.show() { autoLoadOnReturn() }
                 openNotificationNote()
                 FeedActions.refreshEmoji(nostrService: nostrService)
             }
-            // Behind another tab (the TabView keeps this view) or under a
-            // pushed page: stop redrawing for changes nobody sees.
-            .onDisappear { screen.isOnScreen = false }
+            // Behind another tab (the TabView keeps this view), or on the
+            // iPad under a page pushed in the Feed's own stack: stop
+            // redrawing for changes nobody sees.
+            .onDisappear { screen.hide() }
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenNotificationNote)) { _ in
                 openNotificationNote()
             }

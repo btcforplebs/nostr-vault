@@ -12,6 +12,8 @@ import SwiftUI
 final class FeedRowStore: ObservableObject {
     @Published var rows: [String: FeedNoteRowData] = [:]
     @Published var threads: [FeedThread<FeedNote>] = []
+    /// Popular rank per note id; see `updatePopularRanks`.
+    @Published var popularRanks: [String: Int] = [:]
     /// Bumped by every thread rebuild, so an off-main grouping that a newer
     /// rebuild overtook is dropped rather than applied.
     var threadGeneration = 0

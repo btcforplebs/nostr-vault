@@ -12,22 +12,25 @@ import Combine
 /// the Feed draws once with everything that arrived. The row cache and the
 /// thread grouping keep themselves current while hidden
 /// (RowDataCacheObservers), and `onReceive` subscriptions still run.
+///
+/// The Feed's own row store lives here too, so the row writes those
+/// observers make while hidden (likes, zaps, stats, profiles) don't run
+/// FeedView.body either.
 @MainActor
 final class FeedScreenWatch: ObservableObject {
+    /// Row data, thread grouping and Popular ranks; see FeedRowStore.
+    let rowStore = FeedRowStore()
     private var cancellables = Set<AnyCancellable>()
     private var missedChange = false
 
-    /// False behind another tab or under a pushed page.
-    var isOnScreen = true {
-        didSet {
-            guard isOnScreen != oldValue, isOnScreen, missedChange else { return }
-            missedChange = false
-            objectWillChange.send()
-        }
-    }
+    /// False while the Feed is hidden: behind another tab, or on the iPad,
+    /// under a page pushed in its own stack. On iPhone a pushed thread
+    /// covers the whole stack, which stays on screen.
+    private(set) var isOnScreen = true
 
     init() {
         let sources: [ObservableObjectPublisher] = [
+            rowStore.objectWillChange,
             FeedService.shared.objectWillChange,
             NostrService.shared.objectWillChange,
             ConfigService.shared.objectWillChange,
@@ -36,6 +39,8 @@ final class FeedScreenWatch: ObservableObject {
             MarketplaceFeedService.shared.objectWillChange,
             LiveFeedService.shared.objectWillChange,
             ReelsFeedService.shared.objectWillChange,
+            TutorialCenter.shared.objectWillChange,
+            FillYourVaultCoordinator.shared.objectWillChange,
         ]
         // Forwarded at once, not throttled: while on screen the Feed redraws
         // exactly as it did when it observed these itself.
@@ -49,6 +54,20 @@ final class FeedScreenWatch: ObservableObject {
             }.store(in: &cancellables)
         }
     }
+
+    /// The Feed is on screen again. True when something changed while it
+    /// was hidden; that change is sent now.
+    @discardableResult
+    func show() -> Bool {
+        guard !isOnScreen else { return false }
+        isOnScreen = true
+        guard missedChange else { return false }
+        missedChange = false
+        objectWillChange.send()
+        return true
+    }
+
+    func hide() { isOnScreen = false }
 
     private func changed() {
         if isOnScreen { objectWillChange.send() } else { missedChange = true }
