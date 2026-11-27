@@ -51,9 +51,10 @@ import com.nostrvault.data.model.SearchTermMatcher
      * [GlobalSearchSession.state] and cancels the session when the query
      * changes. Returns null for a query too short to search.
      *
-     * Relay scope ([includeGlobal] false) walks the phone's embedded relay only.
-     * Global adds the Mac relay (if configured) and the configured NIP-50
-     * search relays, all at once.
+     * The Search tab always passes [includeGlobal] true: the phone's embedded
+     * relay, the Mac relay (if configured) and the configured NIP-50 search
+     * relays, all at once. False walks the phone's relay only; the Vault search
+     * builds its own phone-only session instead of calling this.
      */
     internal fun NostrService.startSearchImpl(query: String, includeGlobal: Boolean, follows: Set<String>, wot: Set<String> = emptySet()): GlobalSearchSession? {
         val matcher = SearchTermMatcher.create(query) ?: return null
@@ -79,7 +80,7 @@ import com.nostrvault.data.model.SearchTermMatcher
 
     internal fun NostrService.globalSearchImpl(
         query: String,
-        caller: SearchCaller = SearchCaller.FEED,
+        caller: SearchCaller,
         onResult: (GlobalSearchResults) -> Unit,
     ) {
         cancelGlobalSearch(caller)

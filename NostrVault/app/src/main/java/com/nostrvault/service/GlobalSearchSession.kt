@@ -55,7 +55,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * One search across every source at once: the phone's embedded relay, the Mac
  * relay (if configured) and the NIP-50 search relays. Each source runs on its
  * own sockets, results stream into [state] as they land (deduplicated by event
- * id / pubkey, ranked own → follows → everyone, newest first), and every source
+ * id / pubkey, ranked own → follows → your web → everyone, newest first), and every source
  * ends on its own EOSE / CLOSED / error, with a hard cap of [SOURCE_TIMEOUT_MS].
  *
  * A session is single-use: [start] once, [cancel] when the query changes.

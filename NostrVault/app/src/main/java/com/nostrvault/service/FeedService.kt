@@ -410,18 +410,6 @@ class FeedService @Inject constructor(
     internal val _noteStats = MutableStateFlow<Map<String, NoteStats>>(emptyMap())
     val noteStats: StateFlow<Map<String, NoteStats>> = _noteStats.asStateFlow()
 
-    internal val _isSearchActive = MutableStateFlow(false)
-    val isSearchActive: StateFlow<Boolean> = _isSearchActive.asStateFlow()
-
-    internal val _searchQuery = MutableStateFlow("")
-    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
-
-    internal val _searchResults = MutableStateFlow<List<FeedNote>>(emptyList())
-    val searchResults: StateFlow<List<FeedNote>> = _searchResults.asStateFlow()
-
-    internal val _isSearching = MutableStateFlow(false)
-    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
-
     // Saved in the config so they survive a restart, as on iOS. Read from the
     // config, not copied: the config loads from disk after this is built.
     val showReposts: StateFlow<Boolean> = configStore.config.map { it.showReposts }
