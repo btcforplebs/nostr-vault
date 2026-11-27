@@ -116,106 +116,10 @@ extension ComposeView {
             }
 
             // 2. Build Event
-            var tags: [[String]] = []
-            var eventKind = 1
             let relayHint = ConfigService.shared.config.replyRelayHint
-
-            if let parent = effectiveReplyTo {
-                // NIP-10 tags — for reposts (kind 6), reply to the original note, not the repost
-                let effectiveParentId: String
-                let effectiveParentPubkey: String
-                let effectiveParentTags: [[String]]
-                let effectiveParentKind: Int
-
-                if parent.kind == 6, let originalId = parent.repostedEventId {
-                    effectiveParentId = originalId
-                    if let original = FeedService.shared.notes.first(where: { $0.id == originalId }) {
-                        effectiveParentPubkey = original.pubkey
-                        effectiveParentTags = original.tags
-                        effectiveParentKind = original.kind
-                    } else {
-                        effectiveParentPubkey = parent.pubkey
-                        effectiveParentTags = parent.tags
-                        effectiveParentKind = 1
-                    }
-                } else {
-                    effectiveParentId = parent.id
-                    effectiveParentPubkey = parent.pubkey
-                    effectiveParentTags = parent.tags
-                    effectiveParentKind = parent.kind
-                }
-
-                // NIP-10: Determine the thread root from the parent's e-tags
-                let parentETags = effectiveParentTags.filter { $0.count >= 2 && $0[0] == "e" }
-                let parentNonMentionETags = parentETags.filter { tag in
-                    guard tag.count >= 4 else { return true }
-                    return tag[3] != "mention"
-                }
-
-                let parentNonMentionATags = effectiveParentTags.filter { tag in
-                    guard tag.count >= 2 && tag[0] == "a" else { return false }
-                    guard tag.count >= 4 else { return true }
-                    return tag[3] != "mention"
-                }
-
-                // Automatic (Logen, 2026-10-03): a note gets a kind 1 reply,
-                // anything else a NIP-22 comment. No switch to explain.
-                eventKind = NIP10Thread.replyKind(parentKind: effectiveParentKind)
-                if eventKind == NIP10Thread.commentKind {
-                    // NIP-22: on a comment, copy its root and point at it; on
-                    // anything else the parent is the root (E, or A alone for
-                    // addressables and replaceables).
-                    tags.append(contentsOf: NIP10Thread.commentTags(
-                        parentId: effectiveParentId, parentKind: effectiveParentKind,
-                        parentPubkey: effectiveParentPubkey, parentTags: effectiveParentTags,
-                        relayHint: relayHint
-                    ))
-                } else if parentNonMentionETags.isEmpty {
-                    // Parent IS the root note — single e-tag with "root" marker.
-                    // NIP-10: the optional 5th element is the event author's pubkey,
-                    // used by the outbox model to know whose relays to fetch it from.
-                    tags.append(["e", effectiveParentId, relayHint, "root", effectiveParentPubkey])
-                } else {
-                    // Parent is itself a reply — find the thread root
-                    let threadRootId: String
-                    let threadRootPubkey: String?
-                    if let rootTag = parentNonMentionETags.first(where: { $0.count >= 4 && $0[3] == "root" }) {
-                        // Preferred: explicit "root" marker in parent's tags
-                        threadRootId = rootTag[1]
-                        threadRootPubkey = rootTag.count >= 5 ? rootTag[4] : nil
-                    } else {
-                        // Deprecated positional: first e-tag is the root
-                        threadRootId = parentNonMentionETags[0][1]
-                        threadRootPubkey = parentNonMentionETags[0].count >= 5 ? parentNonMentionETags[0][4] : nil
-                    }
-                    if let pk = threadRootPubkey {
-                        tags.append(["e", threadRootId, relayHint, "root", pk])
-                    } else {
-                        tags.append(["e", threadRootId, relayHint, "root"])
-                    }
-                    tags.append(["e", effectiveParentId, relayHint, "reply", effectiveParentPubkey])
-
-                    // A legacy thread under an addressable root carries its
-                    // coordinate forward. a/A tags have no marker field.
-                    if let rootATag = parentNonMentionATags.first(where: { $0.count >= 4 && $0[3] == "root" }) ?? parentNonMentionATags.first {
-                        tags.append(["a", rootATag[1], relayHint])
-                    }
-                }
-
-                // Always tag the parent author (commentReplyTags already did)
-                if eventKind != NIP10Thread.commentKind {
-                    tags.append(["p", effectiveParentPubkey])
-                }
-
-                // NIP-10: Accumulate p-tags from parent (thread participants), deduplicated
-                var seenPubkeys = Set<String>([effectiveParentPubkey])
-                for tag in effectiveParentTags where tag.count >= 2 && tag[0] == "p" {
-                    let pk = tag[1]
-                    if seenPubkeys.insert(pk).inserted {
-                        tags.append(["p", pk])
-                    }
-                }
-            }
+            let reply = replyTagsAndKind(relayHint: relayHint)
+            var tags = reply.tags
+            let eventKind = reply.kind
 
             // @mention p-tags
             for mentionedPubkey in taggedPubkeys {

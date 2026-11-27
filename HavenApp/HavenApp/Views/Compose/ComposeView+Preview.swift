@@ -26,7 +26,13 @@ extension ComposeView {
     /// The note as the feed would draw it now. nil while there is nothing to show.
     func makePreviewNote() -> FeedNote? {
         var text = publishedText()
-        var tags: [[String]] = taggedPubkeys.map { ["p", $0] }
+        // A reply previews as one: the same reply tags and kind Post signs, so
+        // the row shows "reply to Name", the reply edge and the parent above.
+        let reply = replyTagsAndKind(relayHint: ConfigService.shared.config.replyRelayHint)
+        var tags = reply.tags
+        for pubkey in taggedPubkeys where !tags.contains(where: { $0.count > 1 && $0[0] == "p" && $0[1] == pubkey }) {
+            tags.append(["p", pubkey])
+        }
         if let quoted = effectiveQuoteTo {
             text += "\nnostr:\(quoted.nevent)"
             tags.append(["q", quoted.id, configService.config.publicRelayHint, quoted.pubkey])
@@ -51,7 +57,7 @@ extension ComposeView {
             content: text,
             createdAt: Date(),
             tags: tags,
-            kind: 1
+            kind: reply.kind
         )
     }
 
