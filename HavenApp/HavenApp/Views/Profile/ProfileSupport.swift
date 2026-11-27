@@ -366,15 +366,6 @@ final class PendingProfileNotes {
     var scheduled = false
 }
 
-/// The profile's notes split by tab.
-struct ProfileNoteBuckets {
-    var top: [FeedNote] = []
-    var media: [FeedNote] = []
-    var replies: [FeedNote] = []
-    var reposts: [FeedNote] = []
-    var tagged: [FeedNote] = []
-}
-
 /// Full screen on iPhone and iPad, a sized sheet on the Mac.
 struct FollowListHost<Page: View>: ViewModifier {
     @Binding var item: FollowListTab?
