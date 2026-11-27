@@ -127,6 +127,7 @@ enum PostEngagementQuery {
                 let parent = NIP10Thread.parentEventId(kind: kind, tags: tags)
                 if replyKinds.contains(kind), let parent, targets.contains(parent) {
                     out[parent, default: EngagementLedger()].replies.insert(EngagementLedger.key(id))
+                    out[parent, default: EngagementLedger()].noteResponder(id: id, author: pubkey)
                 }
                 // A quote names the post in a `q` tag (NIP-18) or, from older
                 // clients, an `e` tag marked "mention". One note can quote
@@ -138,6 +139,7 @@ enum PostEngagementQuery {
                 }).intersection(targets).subtracting([parent].compactMap { $0 })
                 for target in quoted {
                     out[target, default: EngagementLedger()].quotes = (out[target]?.quotes ?? []).union([EngagementLedger.key(id)])
+                    out[target, default: EngagementLedger()].noteResponder(id: id, author: pubkey)
                 }
 
             default:
@@ -176,6 +178,10 @@ struct EngagementLedger: Codable, Equatable {
     var quotes: Set<String>? = []
     /// Zap receipt key → sats.
     var zaps: [String: Int] = [:]
+    /// Reply or quote key → its author's key, so the counts can leave out
+    /// people outside your web. Optional like `quotes`: a ledger saved
+    /// before authors were kept reads nil and is fetched in full once more.
+    var responders: [String: String]? = [:]
     /// When relays were last asked about this post. nil until then.
     var checkedAt: Date?
     /// Counted from relays only (anyone else's post): a lower bound.
@@ -188,6 +194,24 @@ struct EngagementLedger: Codable, Equatable {
                        quotes: quotes?.count ?? 0, zapSats: zaps.values.reduce(0, +), isLowerBound: isLowerBound)
     }
 
+    mutating func noteResponder(id: String, author: String) {
+        var known = responders ?? [:]
+        known[Self.key(id)] = Self.key(author)
+        responders = known
+    }
+
+    /// The counts from people `isInside` lets in (it is given 16-character
+    /// keys, `key(_:)`). A reply or quote whose author was never recorded is
+    /// left out: fail closed, as the gate does. Zap sats stay whole; a zap
+    /// from outside your web keeps its amount (`WebGate.zapShow`).
+    func engagement(isInside: (String) -> Bool) -> PostEngagement {
+        let authors = responders ?? [:]
+        let byInside = { (event: String) in authors[event].map(isInside) ?? false }
+        return PostEngagement(likes: likers.filter(isInside).count, reposts: reposters.filter(isInside).count,
+                              replies: replies.filter(byInside).count, quotes: (quotes ?? []).filter(byInside).count,
+                              zapSats: zaps.values.reduce(0, +), isLowerBound: isLowerBound)
+    }
+
     /// Adds what `other` saw. Sets union, so an event seen before adds nothing.
     mutating func absorb(_ other: EngagementLedger) {
         likers.formUnion(other.likers)
@@ -195,5 +219,8 @@ struct EngagementLedger: Codable, Equatable {
         replies.formUnion(other.replies)
         quotes = (quotes ?? []).union(other.quotes ?? [])
         zaps.merge(other.zaps) { old, _ in old }
+        if let theirs = other.responders {
+            responders = (responders ?? [:]).merging(theirs) { old, _ in old }
+        }
     }
 }

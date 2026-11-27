@@ -26,8 +26,10 @@ final class ProfileEngagementStore: ObservableObject {
     /// Ledgers kept on disk, most recently checked first.
     private let maxLedgers = 3_000
 
-    func engagement(for id: String) -> PostEngagement? {
-        guard let e = ledgers[id]?.engagement, !e.isEmpty else { return nil }
+    /// The counts from people inside your web only (Logen 11-27): what a
+    /// profile row shows. `isInside` is `GateInsideKeys.predicate(for:)`.
+    func engagement(for id: String, isInside: (String) -> Bool) -> PostEngagement? {
+        guard let e = ledgers[id]?.engagement(isInside: isInside), !e.isEmpty else { return nil }
         return e
     }
 
@@ -49,9 +51,12 @@ final class ProfileEngagementStore: ObservableObject {
         // was sent to you; anything else may be missing likes on other relays.
         let lowerBound = !relays.contains { $0.absoluteString.hasSuffix("/inbox") }
 
-        // A ledger saved before quotes were counted (quotes nil) is asked
-        // about in full once; the ledger drops everything it already holds.
-        let isKnown = { (id: String) in self.ledgers[id]?.checkedAt != nil && self.ledgers[id]?.quotes != nil }
+        // A ledger saved before quotes were counted (quotes nil), or before
+        // reply and quote authors were kept (responders nil), is asked about
+        // in full once; the ledger drops everything it already holds.
+        let isKnown = { (id: String) in
+            self.ledgers[id]?.checkedAt != nil && self.ledgers[id]?.quotes != nil && self.ledgers[id]?.responders != nil
+        }
         let fresh = due.filter { !isKnown($0) }
         let known = due.filter(isKnown)
         var filters = PostEngagementQuery.filters(for: fresh)

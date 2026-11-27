@@ -17,9 +17,6 @@ struct FollowListView: View {
     let followersHaveMore: Bool
     /// Finished follower pages, so the loader can ask again after an empty one.
     var followerPagesDone = 0
-    /// The profile's follower count as its page shows it, which can be ahead
-    /// of the list while pages load.
-    var followersTotal: Int? = nil
     /// True when `followers` is the subject's own complete ledger, so every
     /// row follows the viewer and the "follows you" tag would say nothing.
     let isViewersOwnFollowers: Bool
@@ -49,7 +46,6 @@ struct FollowListView: View {
         followers: [String: Int64],
         followersHaveMore: Bool,
         followerPagesDone: Int = 0,
-        followersTotal: Int? = nil,
         isViewersOwnFollowers: Bool,
         followsViewer: Set<String>,
         hidden: Set<String>,
@@ -61,7 +57,6 @@ struct FollowListView: View {
         self.followers = followers
         self.followersHaveMore = followersHaveMore
         self.followerPagesDone = followerPagesDone
-        self.followersTotal = followersTotal
         self.isViewersOwnFollowers = isViewersOwnFollowers
         self.followsViewer = followsViewer
         self.hidden = hidden
@@ -111,6 +106,8 @@ struct FollowListView: View {
         .overlay(alignment: .top) { PillLaneStack() }
         #endif
         .onAppear(perform: loadTrust)
+        // Follower pages add people the group has not judged yet.
+        .onChange(of: followers.count) { _, _ in loadTrust() }
     }
 
     // MARK: - List
@@ -214,17 +211,18 @@ struct FollowListView: View {
         FollowListLogic.shownCount(following, dropped: dropped)
     }
 
+    /// Followers inside your web, as the profile counts them: people you
+    /// follow and the Web of Trust group, never the outside group.
     private var followersShown: Int {
-        FollowListLogic.shownCount(Array(followers.keys), dropped: dropped)
+        let followed = Set(follows.followed)
+        return FollowListLogic.shownCount(
+            followers.keys.filter { followed.contains($0) || webOfTrust.contains($0) }, dropped: dropped)
     }
 
-    /// Matches the count on the profile: the full total when relays gave one,
-    /// otherwise what is loaded, with + while more can load.
+    /// Matches the count on the profile: what is loaded, with + while more
+    /// can load.
     private var followersLabel: String {
-        if let followersTotal, followersTotal > followersShown {
-            return FollowListLogic.countText(followersTotal, more: false)
-        }
-        return FollowListLogic.countText(followersShown, more: followersHaveMore)
+        FollowListLogic.countText(followersShown, more: followersHaveMore)
     }
 
     private var sortMenu: some View {
@@ -315,7 +313,11 @@ struct FollowListView: View {
     private func loadTrust() {
         let feed = FeedService.shared
         // The relay's graph loads lazily; this reads it if nothing has yet.
-        webOfTrust = feed.relayTabTrustedPubkeys().union(feed.extendedNetworkPubkeys)
+        _ = feed.relayTabTrustedPubkeys()
+        // The "Web of Trust" group is who the one gate lets in, nobody wider
+        // (Logen 11-27). The extended network only orders the rows.
+        let gate = feed.feedGate
+        webOfTrust = Set((following + Array(followers.keys)).filter { WebGate.isInside($0, in: gate) })
         var rank: [String: Int] = [:]
         for (index, key) in feed.extendedNetworkPubkeys.enumerated() where rank[key] == nil {
             rank[key] = index

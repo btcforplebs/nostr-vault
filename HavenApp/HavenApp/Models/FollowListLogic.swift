@@ -66,10 +66,11 @@ enum FollowListLogic {
     /// Splits `people` into the three groups and orders each.
     ///
     /// - follows: who the viewer follows.
-    /// - webOfTrust: the viewer's trust graph (the same set Global feed and
-    ///   search ranking use). Follows win over it.
+    /// - webOfTrust: who the viewer's one gate lets in (`WebGate`). Follows
+    ///   win over it. Nobody else is in the group, however ranked.
     /// - trustRank: position in the extended network, ranked by how many of
-    ///   the viewer's follows follow them; lower is more trusted.
+    ///   the viewer's follows follow them; lower is more trusted. It only
+    ///   orders the rows.
     /// - hidden: spam, dropped from every group.
     /// Empty groups are left out.
     static func sections(
@@ -88,7 +89,7 @@ enum FollowListLogic {
             let group: FollowListGroup
             if follows.contains(person.pubkey) {
                 group = .follows
-            } else if webOfTrust.contains(person.pubkey) || trustRank[person.pubkey] != nil {
+            } else if webOfTrust.contains(person.pubkey) {
                 group = .webOfTrust
             } else {
                 group = .outside

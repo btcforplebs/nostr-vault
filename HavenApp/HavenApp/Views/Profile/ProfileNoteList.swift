@@ -32,6 +32,8 @@ struct ProfileNoteList<Footer: View>: View {
     var body: some View {
         let _ = profilesSeen
         let firstID = notes.first?.id
+        // Counts under each post are from people inside your web only.
+        let isInside = GateInsideKeys.shared.predicate(for: feedService.feedGate)
         LazyVStack(spacing: 0) {
             ForEach(notes) { note in
                 if note.id != firstID {
@@ -40,7 +42,7 @@ struct ProfileNoteList<Footer: View>: View {
                         .frame(height: 0.5)
                         .padding(.leading, 16)
                 }
-                row(note)
+                row(note, isInside: isInside)
                     .contentShape(Rectangle())
                     .onTapGesture { onOpen(note) }
             }
@@ -82,7 +84,7 @@ struct ProfileNoteList<Footer: View>: View {
         return people
     }
 
-    private func row(_ note: FeedNote) -> some View {
+    private func row(_ note: FeedNote, isInside: (String) -> Bool) -> some View {
         FeedNoteRow(
             note: note,
             profile: section == .tagged ? nostrService.profiles[note.pubkey] : profile,
@@ -90,7 +92,7 @@ struct ProfileNoteList<Footer: View>: View {
                 for: note,
                 feedService: feedService,
                 nostrService: nostrService
-            ).with(engagement: engagementStore.engagement(for: feedService.originalNote(for: note).id)),
+            ).with(engagement: engagementStore.engagement(for: feedService.originalNote(for: note).id, isInside: isInside)),
             onReply: { onReply(note) },
             onQuote: { onQuote(note) },
             onProfile: onProfile,

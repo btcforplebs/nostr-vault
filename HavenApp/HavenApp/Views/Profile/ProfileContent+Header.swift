@@ -186,7 +186,7 @@ extension ProfileContent {
                 followCount(loader.followingCountShown.map(ProfileFormat.shortInt) ?? "—", label: "Following")
             }
             Button { openFollowList(.followers) } label: {
-                followCount(loader.displayedFollowersCount.map(ProfileFormat.shortInt) ?? "—", label: "Followers")
+                followCount(loader.followersShownText, label: "Followers")
             }
             Spacer(minLength: 0)
         }
@@ -235,7 +235,7 @@ extension ProfileContent {
         let ownLedger = loader.usesOwnLedger ? ledger : nil
         let followers: [String: Int64] = ownLedger.map { snap in
             Dictionary(snap.current.map { ($0.pubkey, $0.existing ? $0.listAt : $0.followedAt) }, uniquingKeysWith: max)
-        } ?? loader.followerSeenAt
+        } ?? loader.followerSeenAt.merging(loader.followsWhoFollow.map { ($0, 0) }) { seen, _ in seen }
         let haveMore = ownLedger == nil && !loader.followersExhausted
             && (loader.displayedFollowersCount ?? 0) > followers.count
         return FollowListView(
@@ -246,7 +246,6 @@ extension ProfileContent {
             followers: followers,
             followersHaveMore: haveMore,
             followerPagesDone: loader.followerPagesDone,
-            followersTotal: ownLedger == nil ? loader.displayedFollowersCount : nil,
             isViewersOwnFollowers: ownLedger != nil,
             followsViewer: viewerFollowers,
             hidden: spam,
