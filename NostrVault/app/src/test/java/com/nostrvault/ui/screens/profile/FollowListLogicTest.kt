@@ -133,4 +133,25 @@ class FollowListLogicTest {
         val hex = "abcd1234" + "0".repeat(52) + "wxyz"
         assertEquals("abcd1234…wxyz", FollowListLogic.shortPubkey(hex))
     }
+
+    /** Search plan D7 (iOS A6): exact, then prefix, matches first in each group; the picked sort holds within each part; groups stay. */
+    @Test
+    fun queryMatchesFirstWithinEachGroup() {
+        val people = listOf(p("a", "Big Dan", 9), p("b", "Daniel", 5), p("c", "dan", 1), p("d", "Danny", 8), p("e", "Jordan", 7, nip05 = "dan@x.com"))
+        val sections = FollowListLogic.sections(
+            people, follows = setOf("a", "b", "c"), webOfTrust = emptySet(), trustRank = emptyMap(), sort = FollowListSort.RECENT, query = "Dan",
+        )
+        assertEquals(listOf(FollowListGroup.FOLLOWS, FollowListGroup.OUTSIDE), sections.map { it.group })
+        // Follows: "dan" exact; "Daniel" prefix; "Big Dan" only a word.
+        assertEquals(listOf("c", "b", "a"), sections[0].people.map { it.pubkey })
+        // Outside: Jordan's NIP-05 local part is exactly "dan"; Danny a prefix.
+        assertEquals(listOf("e", "d"), sections[1].people.map { it.pubkey })
+    }
+
+    @Test
+    fun noQueryKeepsThePickedSort() {
+        val people = listOf(p("a", "Dan", 1), p("b", "Daniel", 5))
+        assertEquals(listOf("a", "b"), FollowListLogic.queryMatchesFirst(people, " ").map { it.pubkey })
+        assertEquals(listOf("b", "a"), FollowListLogic.queryMatchesFirst(people, "dani").map { it.pubkey })
+    }
 }
