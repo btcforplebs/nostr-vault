@@ -205,4 +205,32 @@ class BlossomDeleteHereTest {
         assertFalse(reread.isRemoved(owner, sha))
         assertFalse(DeviceRemovedHashes(dir).isRemoved(owner, sha))
     }
+
+    @Test
+    fun `an unreadable list is set aside, not saved over`() {
+        val dir = tempDir()
+        val file = File(dir, "removed_here.json")
+        file.writeText("{\"byAccount\":{\"$owner\":[\"$sha\"") // cut short
+        val other = "b".repeat(64)
+        val removed = DeviceRemovedHashes(dir)
+        assertTrue(removed.markRemoved(owner, other))
+        val aside = dir.listFiles()!!.filter { it.name.startsWith("removed_here.json.corrupt-") }
+        assertEquals(1, aside.size)
+        assertTrue(aside.single().readText().contains(sha))
+        assertEquals(setOf(other), DeviceRemovedHashes(dir).removed(owner))
+    }
+
+    @Test
+    fun `an unreadable list that can't be set aside refuses new removals`() {
+        val dir = tempDir()
+        val file = File(dir, "removed_here.json")
+        file.writeText("not json")
+        dir.setWritable(false)
+        try {
+            assertFalse(DeviceRemovedHashes(dir).markRemoved(owner, "b".repeat(64)))
+            assertEquals("not json", file.readText())
+        } finally {
+            dir.setWritable(true)
+        }
+    }
 }

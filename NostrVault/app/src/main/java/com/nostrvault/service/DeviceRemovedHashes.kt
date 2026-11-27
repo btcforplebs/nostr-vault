@@ -42,6 +42,8 @@ class DeviceRemovedHashes(private val folderOf: () -> File?) {
     private val lock = Any()
     private var byAccount: MutableMap<String, LinkedHashSet<String>>? = null
     private var loadedFrom: File? = null
+    /** An unreadable list that couldn't be set aside: writes refuse until it reads. */
+    private var blocked = false
 
     /** Whether [sha256] was removed here under [accountHex]. */
     fun isRemoved(accountHex: String, sha256: String): Boolean = synchronized(lock) {
@@ -93,14 +95,29 @@ class DeviceRemovedHashes(private val folderOf: () -> File?) {
     private fun loaded(): MutableMap<String, LinkedHashSet<String>> {
         val folder = folderOf()
         byAccount?.takeIf { folder == loadedFrom }?.let { return it }
-        loadedFrom = folder
+        val file = folder?.let { File(it, FILE_NAME) }
         val disk = runCatching {
-            folder?.let { File(it, FILE_NAME) }?.takeIf { it.exists() }?.readText()?.let { json.decodeFromString<Disk>(it) }
-        }.onFailure { Log.w(TAG, "Unreadable $FILE_NAME: ${it.message}") }.getOrNull() ?: Disk()
+            file?.takeIf { it.exists() }?.readText()?.let { json.decodeFromString<Disk>(it) }
+        }.getOrElse { error ->
+            Log.w(TAG, "Unreadable $FILE_NAME: ${error.message}")
+            // Saving over it would undo every earlier removal and Auto-Mirror
+            // would pull them all back: set it aside first (as iOS
+            // HomeVaultSender.loadQueue does). If that fails too, keep it and
+            // refuse to write ([blocked]), so nothing is deleted on top of it.
+            val aside = File(folder, "$FILE_NAME.corrupt-${System.currentTimeMillis()}")
+            if (file == null || !file.renameTo(aside)) {
+                blocked = true
+                return mutableMapOf()
+            }
+            null
+        } ?: Disk()
+        blocked = false
+        loadedFrom = folder
         return disk.byAccount.mapValuesTo(mutableMapOf()) { LinkedHashSet(it.value) }.also { byAccount = it }
     }
 
     private fun save(map: Map<String, Set<String>>): Boolean {
+        if (blocked) return false
         val d = folderOf() ?: return true
         return runCatching {
             d.mkdirs()
