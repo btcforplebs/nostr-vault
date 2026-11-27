@@ -6,120 +6,101 @@
   "order": 3.5,
   "eyebrow": "Using the app",
   "h1": "How far your <span>web of trust</span> reaches",
-  "lede": "Two settings decide how far out Nostr Vault trusts people: Follow Distance, for who can reach you, and the Discovery Reach slider, for who the discovery feeds show you.",
-  "description": "Nostr Vault's web of trust settings in plain words: Follow Distance (Only you, 1 hop, 2 hops) and Minimum Followers for each account, why fewer hops means less spam, Hop 3, Hop 4 and Hop 5 on the WoT globe, and the Discovery Reach score slider fed by a desktop Vault's trust rank.",
+  "lede": "Why Nostr Vault only lets in people your friends follow, and how to choose how far out that trust goes.",
+  "description": "Why Nostr needs a web of trust: anyone can make thousands of new keys and flood your mentions, DMs and feeds. Nostr Vault lets in only people your friends follow. Follow Distance (Only you, 1 hop, 2 hops) sets how far out that trust goes, Minimum Followers guards the second ring, each account has its own, and a desktop Vault can rank people further out for Discovery Reach.",
   "checked": "Nostr Vault 3.3.0 and the web app",
   "labels": {
-    "ios": ["Who Can Reach You", "Web of Trust", "Follow Distance", "Only you", "1 hop", "Minimum Followers", "Refresh Trust List", "These two settings are for the account you are on. Each of your accounts has its own.", "Discovery Reach", "Score", "and up", "in your circle and", "distant connections", "Scores come from Nostr Vault on your desktop", "Pair a desktop Vault to see distant connections", "Show the invite on the globe", "Hop 3", "Found by your desktop Vault", "Needs a desktop Vault", "Reach", "Your web"],
-    "android": ["Who Can Reach You", "Web of Trust", "Follow Distance", "Only you", "1 hop", "Minimum Followers", "Refresh Trust List", "These two settings are for the account you are on. Each of your accounts has its own.", "Changes restart the relay automatically.", "Discovery Reach", "Score", "and up", "in your circle and", "distant connections", "Scores come from Nostr Vault on your desktop", "Show the invite on the globe", "Hop 3", "Found by your desktop Vault"],
+    "ios": ["Who Can Reach You", "Follow Distance", "Only you", "1 hop", "Minimum Followers", "Discovery Reach", "Underrated", "Discover"],
+    "android": ["Who Can Reach You", "Follow Distance", "Only you", "1 hop", "Minimum Followers", "Discovery Reach"],
     "mac": ["Who Can Reach You", "Follow Distance", "Discovery Reach"],
-    "web": ["Who Can Reach You", "Minimum Followers", "Refresh Trust List", "People within"]
+    "web": ["Who Can Reach You", "Minimum Followers"]
   }
 }
 -->
 
-<section id="names">
-<p class="eyebrow">What the app calls it</p>
-<h2>Where to find it</h2>
-<div class="docs-table-wrap">
-<table>
-    <tr><th>Setting</th><th>Where</th><th>What you pick</th></tr>
-    <tr><td><strong>Follow Distance</strong></td>
-        <td><span class="path">Settings &rarr; Your Vault &rarr; Who Can Reach You</span>, under
-            <strong>Web of Trust</strong>. iPhone, iPad, Mac and Android.</td>
-        <td><strong>Only you</strong>, <strong>1 hop</strong> or <strong>2 hops</strong> (the default)</td></tr>
-    <tr><td><strong>Minimum Followers</strong></td><td>The same screen, just below.</td><td>0 to 100, default 3</td></tr>
-    <tr><td><strong>Discovery Reach</strong> (the slider)</td>
-        <td><span class="path">Settings &rarr; Feed &rarr; Discovery Reach</span>. iPhone, iPad, Mac and
-            Android, once a desktop Vault has sent its scores.</td>
-        <td><strong>Score</strong>, "N and up", from 0 to 100</td></tr>
-</table>
-</div>
-<p>The Vault Dashboard shows your Follow Distance too: its <strong>Who Can Reach You</strong> row reads, for
-    example, "2 hops", and its line says "People within 2 hops of you. Everyone else is kept out."</p>
+<section id="problem">
+<p class="eyebrow">The problem</p>
+<h2>Anyone can be anyone on Nostr</h2>
+<p>Nostr is open. Nobody signs you up, so nobody can stop anyone else from signing up either. A new account is
+    just a new key, and a script can make a thousand of them in a minute. Every one of those keys can mention you,
+    send you a message and turn up in your feeds. Left alone, that is how an open network fills up with spam.</p>
+<p>What a spammer can't make is friends. Your friends won't follow a key that appeared a minute ago. So Nostr
+    Vault lets in the people your friends actually follow and keeps everyone else out. That circle of trust is
+    your web of trust, and you decide how far out it reaches.</p>
 </section>
 
-<section id="follow-distance">
-<p class="eyebrow">Who can reach you</p>
-<h2>Follow Distance</h2>
-<p>A hop is one follow away from you. Your follows are 1 hop out. The people they follow are 2 hops out.</p>
-<div class="docs-table-wrap">
-<table>
-    <tr><th>Follow Distance</th><th>Who can reach your inbox and messages</th></tr>
-    <tr><td>Only you</td><td>Only you and your other accounts on this device. Everyone else is kept out.</td></tr>
-    <tr><td>1 hop</td><td>Also the people you follow.</td></tr>
-    <tr><td>2 hops (default)</td><td>Also the people your follows follow, once at least
-        <strong>Minimum Followers</strong> of your follows (3 by default) follow them.</td></tr>
-</table>
-</div>
-<p>Anyone can still reply to or quote your own posts, at every setting. Your own posting is never affected.</p>
-<p>The same web decides your feeds, notifications and the WoT globe, so a lower Follow Distance also means
-    fewer strangers there. See <a class="inline" href="/docs/web-of-trust/#reach">What your web decides</a>.</p>
+<section id="hops">
+<p class="eyebrow">How it works</p>
+<h2>Rings of follows, counted in hops</h2>
+<p>Picture yourself in the middle. The people you follow are the first ring around you, 1 hop out. The people
+    they follow are the second ring, 2 hops out. Each ring is far bigger than the one inside it: you might follow
+    200 people, and between them they might follow 50,000.</p>
+
+<figure class="rings" style="margin: 26px auto 28px; max-width: 520px;">
+<svg viewBox="0 0 520 400" role="img" aria-labelledby="rings-title rings-desc" style="width: 100%; height: auto; display: block;">
+    <title id="rings-title">Your web of trust as rings</title>
+    <desc id="rings-desc">You are in the middle. The people you follow are 1 hop out. The people they follow are 2 hops out. Everyone further out, including brand new keys, is kept out of your inbox.</desc>
+    <circle cx="200" cy="200" r="185" style="fill: none; stroke: var(--text-secondary); stroke-width: 1.5; stroke-dasharray: 5 6; opacity: 0.6;"/>
+    <circle cx="200" cy="200" r="135" style="fill: rgba(255, 140, 0, 0.08); stroke: var(--accent); stroke-width: 1.5; opacity: 0.9;"/>
+    <circle cx="200" cy="200" r="82" style="fill: rgba(255, 140, 0, 0.16); stroke: var(--accent); stroke-width: 2;"/>
+    <circle cx="200" cy="200" r="32" style="fill: var(--accent);"/>
+    <text x="200" y="206" text-anchor="middle" style="fill: #000; font: 700 16px system-ui, sans-serif;">You</text>
+    <text x="200" y="150" text-anchor="middle" style="fill: var(--text-primary); font: 600 14px system-ui, sans-serif;">1 hop</text>
+    <text x="200" y="98" text-anchor="middle" style="fill: var(--text-primary); font: 600 14px system-ui, sans-serif;">2 hops</text>
+    <text x="200" y="44" text-anchor="middle" style="fill: var(--text-secondary); font: 600 13px system-ui, sans-serif;">3 hops and further</text>
+    <g style="fill: var(--text-secondary); opacity: 0.8;">
+        <circle cx="430" cy="70" r="5"/><circle cx="455" cy="98" r="5"/><circle cx="418" cy="120" r="5"/>
+        <circle cx="470" cy="140" r="5"/><circle cx="440" cy="160" r="5"/><circle cx="488" cy="110" r="5"/>
+    </g>
+    <line x1="406" y1="140" x2="392" y2="152" style="stroke: #ef4444; stroke-width: 3; stroke-linecap: round;"/>
+    <line x1="392" y1="140" x2="406" y2="152" style="stroke: #ef4444; stroke-width: 3; stroke-linecap: round;"/>
+    <text x="452" y="196" text-anchor="middle" style="fill: var(--text-secondary); font: 13px system-ui, sans-serif;">New keys</text>
+    <text x="452" y="214" text-anchor="middle" style="fill: var(--text-secondary); font: 13px system-ui, sans-serif;">nobody follows</text>
+    <text x="452" y="232" text-anchor="middle" style="fill: #ef4444; font: 600 13px system-ui, sans-serif;">kept out</text>
+</svg>
+<figcaption style="margin-top: 8px; color: var(--text-secondary); font-size: 0.85rem; text-align: center;">Spam keys sit outside every ring, because nobody you know follows them.</figcaption>
+</figure>
+
+<p>The setting that draws the line is called Follow Distance. You'll find it in Settings, under Who Can Reach You,
+    on iPhone, iPad, Mac and Android. It decides who can reach your inbox and messages, and the same rings shape
+    your feeds, notifications and the WoT globe.</p>
 </section>
 
-<section id="spam">
-<p class="eyebrow">Why it works</p>
-<h2>Fewer hops, less spam</h2>
-<p>Spam comes from new keys that nobody follows. A spammer can make a thousand of them in a minute, but they
-    can't make your friends follow them. So the closer to you the line is, the fewer of those keys can get in.</p>
-<ul>
-    <li>Each hop out adds many more people. You might follow 200 people, and they might follow 50,000 between
-        them.</li>
-    <li><strong>Minimum Followers</strong> guards the 2-hop ring: one careless follow by one friend isn't enough.
-        Raise it to keep out more, lower it to let more friends of friends in.</li>
-    <li>Follow Distance stops at 2 hops. Nobody 3 or more hops out reaches your inbox, unless they reply to you.</li>
-</ul>
-<p>Not getting a mention you expected? The sender is probably too far out. Follow them, or lower Minimum
-    Followers, and wait for the next rebuild.</p>
+<section id="steps">
+<p class="eyebrow">Choosing your distance</p>
+<h2>What each step gives you, and what it costs</h2>
+<p><strong>Only you</strong> is the quietest. Nobody but you and your own accounts on the device can reach your
+    inbox. You'll never see spam there, but you also won't hear from friends, even the ones you follow.</p>
+<p><strong>1 hop</strong> lets in the people you follow. Your inbox is everyone you chose and nobody you didn't.
+    The cost is that a friend of a friend, someone you've never followed, can't get a message to you.</p>
+<p><strong>2 hops</strong> is where the app starts. It adds the people your follows follow, which is how most
+    new people find you. To stop one careless follow from letting a stranger in, someone in that outer ring also
+    needs a few of your follows behind them: 3 by default. That number is the Minimum Followers setting, just
+    below Follow Distance. Raise it and fewer friends of friends get in; lower it and more do.</p>
+<p>Two things stay the same at every step. Anyone can still reply to or quote your own posts, and your own
+    posting is never limited. If a mention you expected never arrives, the sender is probably outside your rings:
+    follow them, or lower Minimum Followers, and they'll be let in when your web next rebuilds.</p>
 </section>
 
 <section id="per-account">
 <p class="eyebrow">More than one account</p>
-<h2>Each account has its own</h2>
-<p>Follow Distance and Minimum Followers belong to the account you're on. Switch account and the screen shows
-    that account's values; changing them changes that account only. With more than one account, the screen
-    says: "These two settings are for the account you are on. Each of your accounts has its own."</p>
-<ul>
-    <li>Each account's web is built from its own follows only. Another account's follows don't let anyone in.</li>
-    <li>Your own accounts on the device can always reach each other, at every setting.</li>
-    <li><strong>Refresh Trust List</strong> (how often the web is rebuilt) is one setting for the whole device.</li>
-    <li>A change restarts your vault, and the new web is ready after it rebuilds. Until then the app uses the
-        last one it built.</li>
-</ul>
+<h2>Each account draws its own rings</h2>
+<p>Every account on the device has its own Follow Distance and Minimum Followers, and its rings are built from its
+    own follows only. Changing the setting changes the account you're on, and the new rings are ready once the
+    vault has rebuilt them. Your own accounts can always reach each other.</p>
 </section>
 
 <section id="far-rings">
 <p class="eyebrow">Past 2 hops</p>
-<h2>Hop 3, Hop 4, Hop 5 and the trust rank</h2>
-<p>Your phone can't rank the hundreds of thousands of people further out. A
-    <a class="inline" href="/docs/mesh/desktop-vaults/">desktop Vault</a> (Nostr Vault on a Mac, or a Linux box)
-    can. It gives people up to 6 hops out a score from 0 to 100, based on who in your web follows them, and sends
-    the scores to your phone over the mesh. A Mac does this for itself.</p>
-<ul>
-    <li><strong>On the WoT globe</strong>, <strong>Hop 3</strong>, <strong>Hop 4</strong> and <strong>Hop 5</strong>
-        in the layer menu show each far hop's best-ranked people, labelled <strong>Found by your desktop
-        Vault</strong>. Without the scores they're greyed: <strong>Needs a desktop Vault</strong>. This is for
-        looking around only: it lets nobody into your inbox. More in
-        <a class="inline" href="/docs/web-of-trust/#far-rings">The far rings</a>.</li>
-    <li><strong>The Discovery Reach slider</strong> picks the lowest score you'll see. People your desktop Vault
-        ranked at that score or higher also show in <strong>Underrated</strong> and <strong>Discover</strong>, even
-        when they're past your web. Lower lets more in. Under the slider the app counts them, for example
-        "1,204 people in your circle and 87 distant connections": your circle is 1 and 2 hops out, distant
-        connections are 3 and more.</li>
-    <li>Notifications, replies, your inbox and every other feed stay with your web, wherever the slider is.</li>
-    <li>With no scores yet, Discovery Reach says "Scores come from Nostr Vault on your desktop." and, with no
-        desktop paired, "Pair a desktop Vault to see distant connections". If you put the globe's invite away,
-        <strong>Show the invite on the globe</strong> here brings it back.</li>
-</ul>
-<p>Each feed also has its own <strong>Reach</strong> in <span class="path">Settings &rarr; Feed</span>:
-    <strong>Your web</strong>, or your web plus a few people one hop out. See
-    <a class="inline" href="/docs/feeds/#reach">Feeds</a>.</p>
-</section>
-
-<section id="web">
-<p class="eyebrow">In a browser</p>
-<h2>The web app</h2>
-<p>The web app has no Follow Distance or Discovery Reach yet. Its web is always 2 hops: the Vault Dashboard says
-    "People within 2 hops of you." <span class="path">Settings &rarr; Who Can Reach You</span> has
-    <strong>Minimum Followers</strong> and <strong>Refresh Trust List</strong>, kept in that browser.</p>
+<h2>A desktop Vault can see further</h2>
+<p>Your inbox stops at 2 hops, but there's a world of good people beyond it. A phone can't sort through the
+    hundreds of thousands out there; a <a class="inline" href="/docs/mesh/desktop-vaults/">desktop Vault</a> on a
+    Mac or Linux box can. It gives people up to 6 hops out a score based on who in your web follows them, and
+    sends the scores to your phone over the mesh.</p>
+<p>Those scores feed the Discovery Reach slider in Settings &rarr; Feed. The best-scored far-off people then show up
+    in Underrated and Discover, and as Hop 3, Hop 4 and Hop 5 on the WoT globe. It's for finding people only:
+    nobody far out reaches your inbox this way. More in <a class="inline" href="/docs/web-of-trust/#far-rings">The
+    far rings</a>.</p>
+<p>The web app doesn't have Follow Distance yet. It always uses 2 hops, with its own Minimum Followers in that
+    browser.</p>
 </section>
