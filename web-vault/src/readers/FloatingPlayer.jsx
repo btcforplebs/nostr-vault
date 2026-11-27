@@ -4,9 +4,12 @@
 // A minimized video's "Back to the video" works from any bar: its viewer is drawn here (VideoReopen.jsx).
 import { PlayerBar } from "./PlayerBar.jsx"
 import { ReopenedVideo } from "./VideoReopen.jsx"
+import { useEffect } from "preact/hooks"
+import { mountBar } from "./bar-mounted.js"
 
 if (import.meta.env) import("./readers.css")
 
 export function FloatingPlayer() {
+  useEffect(mountBar, [])
   return <><PlayerBar floating /><ReopenedVideo /></>
 }

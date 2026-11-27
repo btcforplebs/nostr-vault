@@ -26,6 +26,7 @@ export function backToVideo(s = playerState()) {
   if (s === playerState() && element().currentTime > 0) v.at = element().currentTime
   holdBlob(v.url) // before stop() lets the player's hold go
   stop()
+  if (open) releaseBlob(open.url) // one viewer at a time: the one it replaces lets its hold go
   open = v; changed()
   return true
 }
