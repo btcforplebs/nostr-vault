@@ -16,6 +16,27 @@ vault (reset_cache):
 The move happens in the new process, before WebKit loads (pending_reset, from nv_paint.choose()): nothing of this
 process has the cache open then. A WebKit process left from before the exec that still writes, writes into the .bak.
 
+A page that still never answers after the fresh cache (the safe start, pending_safe): the web app's saved data may
+be what spins it (a feed store it reads at start). Once (a day, and a chain), the window starts over with the web app's
+refillable IndexedDB caches moved aside, and nothing else:
+  - When: only after a fresh cache, and only where a GPU or sandbox hang is ruled out (it gives the same "never
+    answered" signal, and the drawing ladder is for that): this drawing mode drew before (renderer.json's works), or
+    every drawing mode failed too (nv_paint.Checker.failed). Tron, PR 2653 review. And only when there is something
+    to move (movable): a hung web process with no saved caches (the blank stage, the setup page) goes straight on.
+  - Moved: only the databases MOVE_DBS names, the caches the vault and the relays fill again: haven:<pk>:feed,
+    inbox, private, chat, lists, blossom and wotlists, and nv-napplet-apps:<pk> (installed apps' pages, by hash:
+    fetched again only while the app's server is up; until then, the copy in the .safe folder is the one there is).
+    Each database's folder as it is, into <data>.safe-<time> under the same path, which is kept. Nothing is deleted
+    or written over: a fresh folder, os.rename (one file system).
+  - Kept in place, everything else: localStorage (nv-session, nv-accounts, a key's ncryptsec, the device key, paired
+    vaults), cookies.sqlite, nv-keyring (the key that seals the ncryptsec, signer/keyring.js), and every database
+    that may be the only copy: each account's wallet (an NWC secret), drafts (unsent), deleted (Un-delete copies:
+    the kind 5 is out), followbackup (the undo of an unfollow), outbox, blobs and listsimport, nv-napplets:<pk>
+    (napplet storage), /relay/'s haven:relay:..., a store added later, and a database whose name can't be read.
+    A list of what may move, not of what stays: a new store is kept until someone adds it here.
+  - Before WebKit loads (pending_safe, from nv_paint.choose()), as the cache move. A database that can't be moved
+    stays where it is and the rest still move; the log names each one moved, and each one that couldn't be.
+
 Stray WebKit processes (reap_strays): a web process that outlived its window (two sandboxed ones, 3 days old, at
 99.9% CPU on Guy's machine, under a bwrap whose window was long gone) holds CPU and memory forever. Every start of the
 window ends each one that is ours and that no running window owns, with its whole process tree:
@@ -35,7 +56,9 @@ SIGTERM, then SIGKILL after STRAY_TERM_S. (A web process of this process's own W
 hadn't finished its handshake made WebKit abort the window, see nv_paint.reap_leftovers. Strays have no window.)
 """
 import os
+import re
 import shutil
+import sqlite3
 import signal
 import time
 
@@ -48,9 +71,14 @@ SANDBOX = ("bwrap", "xdg-dbus-proxy")
 MARK = b"NV_DESKTOP_RENDERER="
 # The window's own variables, never handed to what it starts: the marker, the start-over chain's, and the drawing
 # mode's (WebKit's, set by nv_paint.set_mode; another app's WebKit must draw its own way).
-OWN_VARS = ("NV_DESKTOP_RENDERER", "NV_DESKTOP_TRIED", RESET,
+OWN_VARS = ("NV_DESKTOP_RENDERER", "NV_DESKTOP_TRIED", RESET, "NV_DESKTOP_SAFE_START",
             "WEBKIT_DISABLE_DMABUF_RENDERER", "WEBKIT_DISABLE_COMPOSITING_MODE")
 PROGRAM = "nostr-vault-desktop"
+SAFE = "NV_DESKTOP_SAFE_START"  # "pending": move the saved data aside before WebKit loads; "done": this chain did
+IDB_FILE = "IndexedDB.sqlite3"  # one per database, in its own folder (with its -wal, -shm and blob files)
+# The only databases a safe start moves: caches the vault, the relays or an app's server fill again. Everything else
+# stays (see the top of this file).
+MOVE_DBS = re.compile(r"haven:[0-9a-f]{64}:(feed|inbox|private|chat|lists|blossom|wotlists)|nv-napplet-apps:[0-9a-f]{64}")
 KEEP_BAKS = 3  # reset_cache keeps the newest this many old caches (at most one a day), and deletes the rest
 
 note = ""  # what pending_reset did, for the log (it runs before the log is set up)
@@ -130,6 +158,96 @@ def prune_baks():
         return
     for n in baks[:-KEEP_BAKS]:
         shutil.rmtree(os.path.join(parent, n), ignore_errors=True)
+
+
+# ---- a page that never answers even then: a safe start, its saved data moved aside
+
+def may_safe(state):
+    """The page never answered after a fresh cache (this chain's, or one within a day): may it start safe now?"""
+    if os.environ.get(SAFE) or (os.environ.get(RESET) != "done" and may_reset(state)):
+        return False
+    last = state.get("safe_start")
+    if isinstance(last, (int, float)) and 0 <= time.time() - last < RESET_EVERY_S:
+        return False
+    return movable()  # nothing to move aside: starting over would only cost the ladder time
+
+
+def _dbs():
+    """Each IndexedDB database under the data folder: (its folder, its name or None)."""
+    for root, dirs, files in os.walk(data_dir()):
+        if IDB_FILE in files:
+            dirs[:] = []  # a database's own folder: nothing below it is another database
+            yield root, db_name(os.path.join(root, IDB_FILE))
+
+
+def movable():
+    """Is there a database a safe start would move (MOVE_DBS)? Read-only, as safe_start reads the names."""
+    return any(name is not None and MOVE_DBS.fullmatch(name) for _root, name in _dbs())
+
+
+def ask_safe(state):
+    os.environ[SAFE] = "pending"
+    state["safe_start"] = int(time.time())
+
+
+def pending_safe():
+    """In nv_paint.choose(), before WebKit loads: do the move a failed check asked for (ask_safe)."""
+    global note
+    if os.environ.get(SAFE) != "pending":
+        return
+    os.environ[SAFE] = "done"
+    try:
+        bak, moved, kept, failed = safe_start()
+    except OSError as e:  # its folder couldn't be listed: nothing moved
+        note = "couldn't move the saved data aside: " + repr(e)
+        return
+    note = ((f"safe start: moved {len(moved)} saved database(s) aside to {bak}: {', '.join(moved)}" if moved
+             else "safe start: no saved database to move aside")
+            + (f"; couldn't move (left in place): {'; '.join(failed)}" if failed else "")
+            + f"; kept in place: localStorage, cookies and {', '.join(kept) or 'no other database'}")
+
+
+def db_name(path):
+    """The name a page gave the IndexedDB database in path (WebKit's IDBDatabaseInfo), or None if it can't be read."""
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=1)
+        try:
+            row = con.execute("SELECT value FROM IDBDatabaseInfo WHERE key = 'DatabaseName'").fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+    v = row[0] if row else None
+    if isinstance(v, bytes):  # WebKit keeps it as UTF-16 (little-endian), a blob
+        try:
+            v = v.decode("utf-16-le")
+        except UnicodeDecodeError:
+            return None
+    return v if isinstance(v, str) else None
+
+
+def safe_start():
+    """Moves every IndexedDB database MOVE_DBS names into <data>.safe-<time> -> (that folder, moved, kept, failed:
+    "<name> (<error>)" for each one that couldn't be moved, left in place)."""
+    src = data_dir()
+    bak, n = src + ".safe-" + time.strftime("%Y%m%d-%H%M%S"), 1
+    while os.path.exists(bak):
+        n += 1
+        bak = src + ".safe-" + time.strftime("%Y%m%d-%H%M%S") + f"-{n}"
+    moved, kept, failed = [], [], []
+    for root, name in list(_dbs()):  # the whole list first: nothing is walked after it moved
+        if name is None or not MOVE_DBS.fullmatch(name):
+            kept.append(name or os.path.relpath(root, src) + " (unread)")
+            continue
+        to = os.path.join(bak, os.path.relpath(root, src))
+        try:
+            os.makedirs(os.path.dirname(to), exist_ok=True)
+            os.rename(root, to)  # bak is new, so this never writes over anything; same parent: one file system
+        except OSError as e:
+            failed.append(f"{name} ({e})")
+            continue
+        moved.append(name)
+    return bak, sorted(moved), sorted(kept), failed
 
 
 # ---- what the window starts: without its own variables

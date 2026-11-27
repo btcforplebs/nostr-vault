@@ -116,6 +116,7 @@ def choose():
     """Before WebKit loads: the mode this process draws in."""
     global mode, tried, why
     nv_heal.pending_reset()  # before WebKit loads: nothing has its cache open yet
+    nv_heal.pending_safe()  # (and nothing has its databases open)
     own = os.environ.get(OURS)
     if own in MODES or own == "user":
         mode, why = own, "carried over from before this process started over"
@@ -444,11 +445,25 @@ class Checker:
         self.log(f"the window draws (mode {mode})")
         if os.environ.pop(nv_heal.RESET, None) == "done":
             self.log("it draws with a fresh WebKit cache (the old one is kept in " + nv_heal.cache_dir() + ".bak-*)")
+        safe_last = False
+        if os.environ.pop(nv_heal.SAFE, None) == "done":
+            self.log("it draws after a safe start (the saved data moved aside is kept in " + nv_heal.data_dir() + ".safe-*)")
+            safe_last = bool(tried)  # it started safe at the end of the ladder: the saved data, not the mode, was it
         os.environ[TRIED] = ""
         tried = []
         if mode == "user":
             return
         st = load_state()
+        if safe_last:
+            # Don't keep a lower rung (compositing off, the slow way) for good: the next start begins at the top of
+            # the ladder again (Tron, PR 2653 review).
+            if "works" in st or "failed" in st:
+                st.pop("works", None)
+                st.pop("failed", None)
+                save_state(st)
+            self.log(f"not remembering drawing mode {mode}: it drew once the saved data was moved aside, so the next "
+                     "start tries the first mode again")
+            return
         if st.get("works") != mode or "failed" in st:
             st.pop("failed", None)
             st["works"] = mode
@@ -467,12 +482,25 @@ class Checker:
             route = self.app.pending_route
             self.restart(["--open", route] if route else [], failing=True)
             return
+        done = tried + [mode]
+        nxt = None if mode == "user" else next((m for m in ladder() if m not in done), None)
+        drew = st.get("works") == mode
+        if not self.js_ok and (drew or nxt is None) and nv_heal.may_safe(st):
+            # The fresh cache didn't help: maybe the web app's saved data spins it. Once, a safe start (nv_heal.py).
+            # Not while another drawing mode is still untried, unless this one drew before: a web process hung by the
+            # GPU or the sandbox never answers either, and the ladder below is for that (Tron, PR 2653 review).
+            nv_heal.ask_safe(st)
+            save_state(st)
+            self.log(f"the window didn't draw in mode {mode} ({reason}) after a fresh cache, "
+                     + ("in a mode that drew before" if drew else "and no other drawing mode drew")
+                     + ": starting over safe, with only its refillable caches moved aside, in the same mode")
+            route = self.app.pending_route
+            self.restart(["--open", route] if route else [], failing=True)
+            return
         if mode == "user":
             self.log(f"the window didn't draw ({reason}); WebKit's drawing was set by hand, so it stays as set")
             self.show_browser_page(False)
             return
-        done = tried + [mode]
-        nxt = next((m for m in ladder() if m not in done), None)
         if nxt is None:
             self.log(f"the window didn't draw ({reason}) in any drawing mode ({', '.join(done)}): showing the "
                      "browser page")

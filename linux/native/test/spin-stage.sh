@@ -18,7 +18,15 @@ DATA=$HOME/.local/share/nostr-vault-desktop
 SERVER=${NV_WT_SPIN_SERVER:-$(dirname "$0")/spin-server.py}
 SHARE_DIR=${NV_DESKTOP_SHARE:-/usr/share/nostr-vault/desktop}
 SPID=""
-fresh() { rm -rf "$RJ" "$CACHE" "$CACHE".bak-* "$DATA"; }
+fresh() { rm -rf "$RJ" "$CACHE" "$CACHE".bak-* "$DATA" "$DATA".safe-*; }
+SAFE_SERVER=${SERVER%spin-server.py}safe-server.py
+# dbnames <dir>: the name of each IndexedDB database under dir, one a line (WebKit's IDBDatabaseInfo)
+dbnames() { python3 -I -c 'import os, sqlite3, sys
+for r, _d, f in os.walk(sys.argv[1]):
+    if "IndexedDB.sqlite3" in f:
+        c = sqlite3.connect("file:" + os.path.join(r, "IndexedDB.sqlite3") + "?mode=ro", uri=True)
+        v = c.execute("SELECT value FROM IDBDatabaseInfo WHERE key = ?", ("DatabaseName",)).fetchone()[0]
+        print(v.decode("utf-16-le") if isinstance(v, bytes) else v)' "$1" 2>/dev/null | sort; }
 serve() { : >"$OUT/$MODE-spin-$1-requests.log"; python3 -I "$SERVER" "$PORT" "$OUT/$MODE-spin-$1-requests.log" "$2" & SPID=$!; sleep 1; }
 unserve() { [ -n "$SPID" ] && kill "$SPID" 2>/dev/null; SPID=""; }
 fetches() { grep -c '^GET /app.js' "$1" 2>/dev/null; }
@@ -195,4 +203,63 @@ if [ "$MODE" = wayland ]; then
     stop; unserve
   fi
 fi
+# 4. The safe start: a page that spins because of its own saved data (a feed database it reads at start), never
+# cached, so the fresh cache can't help. After the fresh cache, once, the window moves only the refillable caches
+# aside and starts over: it draws, with every sign-in and key still there (localStorage nv-session and nv-accounts'
+# ncryptsec, the cookie, nv-keyring, the wallet, drafts and outbox, all read back by the page), every store that may
+# be the only copy still in place (deleted, followbackup, nv-napplets, blobs, listsimport, and a name it has never
+# heard of), and only the feed, inbox and nv-napplet-apps kept in the .safe.
+#   a. renderer.json says this drawing mode drew before: the safe start comes right after the fresh cache, in the same
+#      mode, without the ladder.
+#   b. Nothing drew before (a first start, or a GPU hang looks the same): the drawing ladder runs first, and only when
+#      every mode has failed, the safe start (Tron, PR 2653 review: a hung GPU must not move saved data).
+PKX=$(printf 'ab%.0s' $(seq 32))
+safe_run() { # <name> <seed: 1 = this mode drew before>
+  fresh
+  if [ "$2" = 1 ]; then
+    first=$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import nv_paint; print(nv_paint.ladder()[0])' "$SHARE_DIR")
+    mkdir -p "$(dirname "$RJ")" && printf '{"works": "%s"}' "$first" >"$RJ"
+  fi
+  : >"$OUT/$MODE-spin-$1-requests.log"
+  python3 -I "$SAFE_SERVER" "$PORT" "$OUT/$MODE-spin-$1-requests.log" "$tok" & SPID=$!; sleep 1
+  start "$1" env NV_PAINT_GIVE_UP_S=$G $CMD
+  L="$OUT/$MODE-spin-$1.log"; R="$OUT/$MODE-spin-$1-requests.log"
+  waitlog "$R" "^GET /seeded" 30 && ok "$1: the page saved a sign-in, its keys, its other stores and a feed that spins it" \
+    || no "$1: the page never saved its data"
+  if waitlog "$L" "safe start: moved" $((6 * G + 120)); then ok "$1: $(grep -o 'safe start: moved [^;]*' "$L" | head -1)"
+  else no "$1: the window never started safe"; grep -E "didn't draw|cache|safe" "$L" | head; fi
+  drawn "$OUT/$MODE-spin-4-$1.png" "$MODE: after the safe start the window draws ($1)"
+  want="session=$tok&ncryptsec=ncryptsec1$tok&cookie=$tok&key=key-$tok&wallet=nwc-$tok&draft=draft-$tok&outbox=unsent-$tok&feed=empty"
+  if waitlog "$R" "^GET /saw" 30 && grep -qF "GET /saw?$want" "$R"; then
+    ok "$1: the page finds every sign-in and key it saved (nv-session, the ncryptsec, the cookie, nv-keyring, wallet, drafts, outbox), and no feed"
+  else no "$1: the page read back '$(grep '^GET /saw' "$R" | head -1)', want '/saw?$want'"; fi
+  b=$(ls -d "$DATA".safe-* 2>/dev/null | head -1); moved=$(dbnames "$b" | tr '\n' ' ')
+  [ "$moved" = "haven:$PKX:feed haven:$PKX:inbox nv-napplet-apps:$PKX " ] \
+    && ok "$1: only the refillable caches were moved (feed, inbox, nv-napplet-apps), and are kept ($(basename "$b"))" \
+    || no "$1: moved aside: '$moved' (want only feed, inbox, nv-napplet-apps) in '$b'"
+  left=" $(dbnames "$DATA" | tr '\n' ' ')"
+  miss=""; for d in nv-keyring haven:$PKX:wallet haven:$PKX:drafts haven:$PKX:outbox haven:$PKX:deleted haven:$PKX:followbackup \
+    nv-napplets:$PKX haven:$PKX:blobs haven:$PKX:listsimport haven:$PKX:somethingnew; do
+    case "$left" in *" $d "*) ;; *) miss="$miss $d" ;; esac; done
+  [ -z "$miss" ] && ok "$1: every store that may be the only copy stayed in place (keyring, wallet, drafts, outbox, deleted, followbackup, nv-napplets, blobs, listsimport, an unknown one)" \
+    || no "$1: not in their place any more:$miss (left: $left)"
+  [ -n "$b" ] && [ -z "$(find "$b" -iname '*localstorage*' -o -name 'cookies.sqlite*' | head -1)" ] && [ -f "$DATA/cookies.sqlite" ] \
+    && ok "$1: localStorage and cookies.sqlite never moved" || no "$1: localStorage or cookies moved: $(find "$b" | head)"
+  lad=$(grep -n "trying the window again with mode" "$L" | tail -1 | cut -d: -f1); sf=$(grep -n "starting over safe" "$L" | head -1 | cut -d: -f1)
+  if [ "$2" = 1 ]; then
+    [ -z "$lad" ] && grep -q "in a mode that drew before" "$L" && ok "$1: it started safe in the mode that drew before, without the drawing ladder" \
+      || no "$1: it went down the drawing ladder, or didn't say the mode drew before: $(grep -E 'trying the window again|starting over safe' "$L" | head -3)"
+  else
+    [ -n "$lad" ] && [ -n "$sf" ] && [ "$lad" -lt "$sf" ] && grep -q "no other drawing mode drew" "$L" \
+      && ok "$1: with no mode that drew before, every drawing mode was tried first ($(grep -c 'trying the window again with mode' "$L") of them), then the safe start" \
+      || no "$1: the safe start came before the drawing ladder ran out (ladder line $lad, safe line $sf)"
+    waitlog "$L" "not remembering drawing mode" 20 && [ -z "$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1])).get("works", ""))' "$RJ" 2>/dev/null)" ] \
+      && ok "$1: the last rung isn't remembered, so the next start tries the first mode again" \
+      || no "$1: after a safe start at the end of the ladder, renderer.json remembers: $(cat "$RJ" 2>/dev/null)"
+  fi
+  waitlog "$L" "it draws after a safe start" 20 && ok "$1: and says the safe start fixed it" || no "$1: it never passed its check after the safe start"
+  stop; unserve
+}
+safe_run safe 1
+safe_run safe-first 0
 fresh

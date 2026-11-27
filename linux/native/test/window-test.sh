@@ -51,6 +51,7 @@ if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
   cp "$(dirname "$0")/blank-stage.sh" /tmp/blank-stage.sh && chmod 644 /tmp/blank-stage.sh
   cp "$(dirname "$0")/spin-stage.sh" /tmp/spin-stage.sh && chmod 644 /tmp/spin-stage.sh
   cp "$(dirname "$0")/spin-server.py" /tmp/nvwt-spin-server.py && chmod 644 /tmp/nvwt-spin-server.py
+  cp "$(dirname "$0")/safe-server.py" /tmp/nvwt-safe-server.py && chmod 644 /tmp/nvwt-safe-server.py
   if [ "$STAGE" = spin ]; then
     # spin-stage.sh's stand-in vault: vault.env names an owner and its port, put back as it was after (before setup).
     E=/etc/nostr-vault/vault.env; [ -e "$E" ] && cp -p "$E" /tmp/nvwt-vault.env.orig
