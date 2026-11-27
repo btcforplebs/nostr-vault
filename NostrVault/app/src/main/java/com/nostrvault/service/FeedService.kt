@@ -223,6 +223,16 @@ class FeedService @Inject constructor(
             com.nostrvault.util.PublicKeyRegistry.keys,
         ) { _, _, _, _ -> globalTrustSet() }.distinctUntilChanged()
 
+    /**
+     * [relayTabTrustedPubkeys] as a flow: the account's web whatever the
+     * Global shield says, for surfaces that are always web-only (a
+     * profile's Tagged tab and follower count). Empty until the web loads.
+     */
+    val webTrustSet: Flow<Set<String>>
+        get() = combine(_wotPubkeys, _followedPubkeys, com.nostrvault.util.PublicKeyRegistry.keys) { _, _, _ ->
+            relayTabTrustedPubkeys()
+        }.distinctUntilChanged()
+
     internal val _notes = MutableStateFlow<List<FeedNote>>(emptyList())
     val notes: StateFlow<List<FeedNote>> = _notes.asStateFlow()
 

@@ -33,7 +33,8 @@ internal fun ProfileFollowCounts(
         FollowCount(following?.let(ProfileCountText::short) ?: "—", "Following") {
             onOpenFollowList(FollowListTab.FOLLOWING)
         }
-        // Your own comes from the relay's follower ledger, so it is exact.
+        // Only followers inside your web (ProfileWebFollowers): your own from
+        // the relay's follower ledger, someone else's from what your web shows.
         FollowCount(followers?.let(ProfileCountText::short) ?: "—", "Followers") {
             onOpenFollowList(FollowListTab.FOLLOWERS)
         }
