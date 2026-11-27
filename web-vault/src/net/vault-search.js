@@ -2,7 +2,7 @@
 // or NIP-05, or in a note's text or its title/summary/subject tags. It reads only this browser's relay (Haven's
 // NIP-50 search, haven-go/search.go) and re-checks each hit here, as the phone does with its own stores.
 
-import { rankPeople } from "./people-rank.js"
+import { rankPeople, rankTags } from "./people-rank.js"
 
 export const ARTICLE_KIND = 30023
 /** NIP-68 pictures, NIP-71 videos (normal and short), the older addressable video kinds (VaultSearchLogic.mediaKinds). */
@@ -62,16 +62,18 @@ export const sectionOf = kind => kind === ARTICLE_KIND ? "articles" : MEDIA_KIND
 /** `#word` hashtags in text, lowercased. */
 export const hashtagsInText = text => [...String(text ?? "").matchAll(/#([\p{L}\p{N}_]+)/gu)].map(m => m[1].toLowerCase())
 
-/** Hashtags on the matched notes that contain a word of the query (# ignored), from text and t tags, sorted. */
+/** Hashtags on the matched notes that contain a word of the query (# ignored), from text and t tags: a tag that is
+ *  exactly a word of the query first, then the one most notes carry, then A-Z (people-rank.js rankTags). */
 export function hashtags(notes, query) {
   const words = String(query ?? "").toLowerCase().replace(/#/g, " ").split(/\s+/).filter(Boolean)
   if (!words.length) return []
-  const found = new Set()
+  const counts = new Map()
   for (const n of notes) {
-    const tags = [...hashtagsInText(n.content), ...(n.tags ?? []).filter(t => t[0] === "t" && t[1]).map(t => t[1].toLowerCase())]
-    for (const t of tags) if (words.some(w => t.includes(w))) found.add(t)
+    const tags = new Set([...hashtagsInText(n.content), ...(n.tags ?? []).filter(t => t[0] === "t" && t[1]).map(t => t[1].toLowerCase())])
+    for (const t of tags) if (words.some(w => t.includes(w))) counts.set(t, (counts.get(t) ?? 0) + 1)
   }
-  return [...found].sort()
+  const exact = new Set(words)
+  return rankTags(counts, "").sort((a, b) => exact.has(b) - exact.has(a)) // stable: count, then A-Z, inside each
 }
 
 /** Sentence punctuation after a URL isn't part of it; a ) or ] is only when the URL has more closers than openers. */

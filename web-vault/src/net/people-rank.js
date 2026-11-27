@@ -89,3 +89,18 @@ export function fromRankCopy(copy) {
   const row = pk => copy.people?.get(pk) ?? copy.globe?.get(pk) ?? null
   return { hopOf: pk => row(pk)?.hop ?? null, scoreOf: pk => row(pk)?.score ?? null }
 }
+
+/** Kind 0 events from a relay search, by how well `query` names them (exact > starts with > a word starts with >
+ *  contains > about only), relay order kept inside each: the Welcome, referrer and read-only sign-in boxes, which
+ *  have no web of trust yet (plan 2.9). */
+export function byNameMatch(events, query) {
+  const profile = ev => { try { const p = JSON.parse(ev?.content ?? ""); return p && typeof p === "object" ? p : null } catch { return null } }
+  return events.map((ev, i) => [ev, nameMatch(query, profile(ev)), i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(([ev]) => ev)
+}
+
+/** Hashtags in results (plan 1c): the tag that is exactly the query first, then the one the most results carry,
+ *  then A-Z. `counts`: Map(tag -> results carrying it). */
+export function rankTags(counts, query) {
+  const q = foldText(query).replace(/^#/, "")
+  return [...counts.keys()].sort((a, b) => ((foldText(b) === q) - (foldText(a) === q)) || counts.get(b) - counts.get(a) || (a < b ? -1 : a > b ? 1 : 0))
+}
