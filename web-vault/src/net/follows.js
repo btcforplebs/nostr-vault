@@ -7,6 +7,7 @@ import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, PROFILE_RELAYS, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
 import { firstTaken } from "./actions.js"
+import { followError } from "./follow-failure.js"
 
 const HEX = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -135,27 +136,31 @@ export function editedTags(base, target, follow) {
  *    The size rule can't catch that case (the base and the app's count are the same copy), and an old copy would drop
  *    every follow since and bring back anyone unfollowed on another client.
  */
-export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, answered = 0, heard = answered, netFound = false, ahead = false, at = now() }) {
-  if (!asked) return NO_OWN_RELAYS
+export const wipeGuard = o => guardRefusal(o)?.text ?? ""
+
+/** wipeGuard's refusal with its kind: -> { code, text } (codes as follow-failure.js), or null when the edit may go out. */
+export function guardRefusal({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, answered = 0, heard = answered, netFound = false, ahead = false, at = now() }) {
+  const no = (code, text) => ({ code, text })
+  if (!asked) return no("noOwnRelays", NO_OWN_RELAYS)
   if (!editKnown({ asked, answered, heard, found: !!base })) {
-    if (!answered) return "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable."
-    if (base && answered * 2 > asked) return "Only one relay answered, so your newest follow list isn't known (another may hold a newer copy) and nothing was changed. Try again shortly."
-    if (base) return `Only ${answered} of your ${asked} relays answered, so your newest follow list isn't known (one that didn't may hold a newer copy) and nothing was changed. Try again when more of them are reachable.`
-    return `${answered} of your ${asked} relays answered and none had a follow list. Your first one needs every relay to answer, so nothing was changed. Try again shortly.`
+    if (!answered) return no("relays", "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable.")
+    if (base && answered * 2 > asked) return no("relays", "Only one relay answered, so your newest follow list isn't known (another may hold a newer copy) and nothing was changed. Try again shortly.")
+    if (base) return no("relays", `Only ${answered} of your ${asked} relays answered, so your newest follow list isn't known (one that didn't may hold a newer copy) and nothing was changed. Try again when more of them are reachable.`)
+    return no("relays", `${answered} of your ${asked} relays answered and none had a follow list. Your first one needs every relay to answer, so nothing was changed. Try again shortly.`)
   }
   if (!base && (!follow || appCount > 0 || ahead))
-    return "Your follow list wasn't found on your relays, so nothing was changed. Try again when they answer."
+    return no("notFound", "Your follow list wasn't found on your relays, so nothing was changed. Try again when they answer.")
   if (base && !netFound && base.created_at < at - MAX_LOCAL_AGE) {
     const day = new Date(base.created_at * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
-    return `Your relays no longer have your follow list and this browser's copy is from ${day}, so nothing was changed. Open the app on your phone, or try again when your relays are reachable.`
+    return no("staleLocal", `Your relays no longer have your follow list and this browser's copy is from ${day}, so nothing was changed. Open the app on your phone, or try again when your relays are reachable.`)
   }
   const before = followsOf(base), after = new Set(followsOf({ tags }))
   const single = !follow && before.includes(target) && after.size === before.length - 1
-  if (!after.size && !single) return "This would publish an empty follow list, so it wasn't published."
+  if (!after.size && !single) return no("empty", "This would publish an empty follow list, so it wasn't published.")
   const most = Math.max(appCount, ...seen.map(ev => followsOf(ev).length))
   if (most > 10 && after.size < most / 2)
-    return `Your newest follow list has ${before.length} follows but you had ${most}. Publishing it would drop most of them, so nothing was changed.`
-  return ""
+    return no("shrink", `Your newest follow list has ${before.length} follows but you had ${most}. Publishing it would drop most of them, so nothing was changed.`)
+  return null
 }
 
 /**
@@ -170,12 +175,16 @@ export async function setFollow({ vault, signer, pubkey, target, follow, readRel
   if (target === pubkey) throw new Error("You can't follow or unfollow yourself.")
   const { base, seen, asked, answered, heard, netFound, ahead } = await findLatestList({ vault, pubkey, relays: ownRelays, known, ask })
   const tags = editedTags(base, target, follow)
-  const refused = wipeGuard({ base, tags, target, follow, seen, appCount, asked, answered, heard, netFound, ahead })
-  if (refused) throw new Error(refused)
+  const refused = guardRefusal({ base, tags, target, follow, seen, appCount, asked, answered, heard, netFound, ahead })
+  // The tap's banner gives the reason in the apps' wording (follow-failure.js); exits with no shared text keep the
+  // guard's own sentence.
+  if (refused) throw followError(refused.code, { follow, answered, asked, detail: refused.text })
   // Newer than the base, so no relay keeps the old list over this one on a same-second tie. findLatestList only
   // picks a base dated before now + MAX_SKEW, so this is never later than that.
   const template = { kind: 3, created_at: Math.max(now(), (base?.created_at ?? 0) + 1), tags, content: base?.content ?? "" }
-  const { event, taken, settled } = await publishFollowList({ vault, signer, pubkey, template, writeRelays, publish })
+  const { event, taken, settled } = await publishFollowList({ vault, signer, pubkey, template, writeRelays, publish }).catch(e => {
+    throw followError(e?.code ?? "other", { follow, detail: e?.code === "vault" ? e.reason : String(e?.message ?? e) })
+  })
   // Following Backup keeps the old list and the new one (loaded late: that module imports this one).
   import("./follow-backup.js").then(b => b.keepFollowChange(pubkey, base, event)).catch(() => {})
   return { event, follows: followsOf(event), taken, settled }
@@ -186,7 +195,12 @@ export async function setFollow({ vault, signer, pubkey, target, follow, readRel
  * signed, no network relay took it, or Haven refused it. -> { event, taken: the first network relay's URL, settled }
  */
 export async function publishFollowList({ vault, signer, pubkey, template, writeRelays, publish = (urls, ev) => pool.publish(urls, ev) }) {
-  const event = checkSigned(await signer.signEvent(template), template, pubkey)
+  const tagged = (e, code) => Object.assign(e instanceof Error ? e : new Error(String(e)), { code })
+  let signed
+  try { signed = await signer.signEvent(template) } catch (e) { throw tagged(e, "signer") }
+  if (!signed) throw tagged(new Error("Your signer didn't sign it."), "signer")
+  let event
+  try { event = checkSigned(signed, template, pubkey) } catch (e) { throw tagged(e, signed.pubkey !== pubkey ? "signerKey" : "signerChanged") }
   // Network first: the vault keeps it (and the app shows it) only once a relay took it, so a follow that went
   // nowhere is never shown as done (iOS rolls those back).
   const { network, local: own } = publishRelays(writeRelays)
@@ -196,9 +210,9 @@ export async function publishFollowList({ vault, signer, pubkey, template, write
   const sends = publish(urls, event)
   const settled = Promise.allSettled(sends).then(results => results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason), local: i >= network.length })))
   const first = await firstTaken(sends.slice(0, network.length))
-  if (first < 0) throw new Error(`No relay took it (0 of ${network.length}), so nothing changed. Try again.`)
+  if (first < 0) throw tagged(new Error(`No relay took it (0 of ${network.length}), so nothing changed. Try again.`), "refused")
   const stored = await vault.outbox.event(event)
-  if (!stored.ok && !/^duplicate:/.test(stored.message)) throw new Error(`Sent, but your vault refused the follow list: ${stored.message}`)
+  if (!stored.ok && !/^duplicate:/.test(stored.message)) throw Object.assign(tagged(new Error(`Sent, but your vault refused the follow list: ${stored.message}`), "vault"), { reason: stored.message })
   return { event, taken: urls[first], settled }
 }
 
