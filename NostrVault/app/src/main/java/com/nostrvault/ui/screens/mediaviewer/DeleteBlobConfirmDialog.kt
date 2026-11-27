@@ -51,8 +51,9 @@ internal fun DeleteLeftoverBanner(message: String, onDismiss: () -> Unit, modifi
 internal fun deleteBlobConfirmBody(scope: DeleteScope): String = when (scope) {
     DeleteScope.MIRRORS -> "Removes this file from all your media servers. Your vault keeps its copy."
     DeleteScope.EVERYWHERE -> "Permanently removes this file from your vault and all your media servers. This cannot be undone."
-    DeleteScope.THIS_DEVICE -> "Removes this device's copy. Your media servers keep theirs, and Save to Vault brings it back. " +
-        "If none of them has it right now, the file stays here."
+    DeleteScope.THIS_DEVICE -> "Removes this device's copy. The copy stays on an outside media server that confirms " +
+        "right now that it has this file, and Save to Vault brings it back. Your Mac or box doesn't count. " +
+        "If no outside server confirms it, the file stays here."
 }
 
 /**

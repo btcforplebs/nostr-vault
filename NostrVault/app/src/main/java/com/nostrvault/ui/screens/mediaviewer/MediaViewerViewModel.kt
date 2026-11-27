@@ -285,7 +285,8 @@ class MediaViewerViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = blossomService.deleteFromThisDevice(item.sha256)) {
                 is com.nostrvault.service.DeleteHereResult.Removed ->
-                    notificationManager.showToast("Deleted from this device. Freed ${com.nostrvault.ui.screens.dashboard.formatSize(result.freedBytes)}.")
+                    notificationManager.showToast("Deleted from this device. Freed ${com.nostrvault.ui.screens.dashboard.formatSize(result.freedBytes)}; " +
+                        "still on ${result.heldBy} outside server${if (result.heldBy == 1) "" else "s"} that confirmed it.")
                 com.nostrvault.service.DeleteHereResult.NotHere -> notificationManager.showToast("Not on this device")
                 is com.nostrvault.service.DeleteHereResult.Kept -> notificationManager.showError(result.reason)
             }
