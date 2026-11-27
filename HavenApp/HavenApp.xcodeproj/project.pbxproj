@@ -2087,6 +2087,7 @@
 		CE9BE3737EA6F24E11508EFD /* ShareInboxTrigger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64608CF1EFDCD7211E9AAE04 /* ShareInboxTrigger.swift */; };
 		CEA5CEC8E86A649DE1F6DF56 /* NoteRowParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = A240B593DE2CCCBE5AA33789 /* NoteRowParse.swift */; };
 		CEBA8A8FAE1C365867C7E9E3 /* VaultDashboardDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = D67ADBC1563448EB3D0AE077 /* VaultDashboardDetails.swift */; };
+		CEC1B3DB71C2E64EC8EB04F8 /* NostrService+MuteListBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F617BC64FBCA7FB4C742FB0 /* NostrService+MuteListBase.swift */; };
 		CEF852B80B0C6831D4FEDD9A /* BackupRestoreCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FD42DE3F81B42839907CD4 /* BackupRestoreCode.swift */; };
 		CF11F2A3B34BC8D6843AE229 /* QuoteReferenceIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */; };
 		CF4C777AEA457AF1976BAA9D /* WotRebuildWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DF3E7F03589E36F93A1077E /* WotRebuildWatch.swift */; };
@@ -2629,6 +2630,7 @@
 		FF144327512A26B3E2A09868 /* PayZapsWith.swift in Sources */ = {isa = PBXBuildFile; fileRef = 406D57425C2501A29C3FC062 /* PayZapsWith.swift */; };
 		FF3796326AA660DE673215DB /* LogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F43AE6D03159B7716D9F71 /* LogStore.swift */; };
 		FF4441376B46784E5BF598AD /* PopularRankControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FD61246C5617D0FAF9A4D5F /* PopularRankControls.swift */; };
+		FF7F90BB54495DA31D579349 /* NostrService+MuteListBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F617BC64FBCA7FB4C742FB0 /* NostrService+MuteListBase.swift */; };
 		FFAF10F2042C64AE6A598D79 /* ZapComment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76AE561EEB95A58E4DD97077 /* ZapComment.swift */; };
 		FFB6AB9DB03EF093C9585F42 /* KeyStepsStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92EACD2F9FE85BFD35893DFB /* KeyStepsStrip.swift */; };
 		FFEA19EB5659CCFDB4E69ED7 /* SuggestedMediaServersSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0040BB6771C3E16494146D8E /* SuggestedMediaServersSection.swift */; };
@@ -3502,6 +3504,7 @@
 		9DBB580AAD32E5EC2FDF1161 /* BlossomService+AutoMirrorSave.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+AutoMirrorSave.swift"; sourceTree = "<group>"; };
 		9E77ED4BBAC80594F90F2E40 /* ProfileMetadataMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMetadataMerge.swift; sourceTree = "<group>"; };
 		9ECCB260673A3292601A6F39 /* TrustWebView+Breadcrumbs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrustWebView+Breadcrumbs.swift"; sourceTree = "<group>"; };
+		9F617BC64FBCA7FB4C742FB0 /* NostrService+MuteListBase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+MuteListBase.swift"; sourceTree = "<group>"; };
 		9F848F73043279F564248F74 /* YourDevicesThisPhoneSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YourDevicesThisPhoneSection.swift; sourceTree = "<group>"; };
 		9F9D10555623C1343D324309 /* SnoStageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnoStageView.swift; sourceTree = "<group>"; };
 		9FA16722B2CD63AE6DC314B4 /* MeshIdentityReset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshIdentityReset.swift; sourceTree = "<group>"; };
@@ -4315,6 +4318,7 @@
 				EE000450336CCC4829F6DEE1 /* NostrService+MessageProcessing.swift */,
 				E30504C7086C0BB20CEE367D /* NostrService+Moderation.swift */,
 				23082A59191D1E9993BAE72B /* NostrService+MuteList.swift */,
+				9F617BC64FBCA7FB4C742FB0 /* NostrService+MuteListBase.swift */,
 				E4E3B844DF3DFEDC00802292 /* NostrService+ProfileRefresh.swift */,
 				9AD2777B6DB059131373523E /* NostrService+Profiles.swift */,
 				3418518C726F177780E29385 /* NostrService+RelayListSave.swift */,
@@ -7062,6 +7066,7 @@
 				A59BFB091451B1925F912A7D /* NostrService+MessageProcessing.swift in Sources */,
 				554FAF301A8500989E23A5ED /* NostrService+Moderation.swift in Sources */,
 				80279D6A57EA7D21982B4AA0 /* NostrService+MuteList.swift in Sources */,
+				CEC1B3DB71C2E64EC8EB04F8 /* NostrService+MuteListBase.swift in Sources */,
 				5893CC6FC11E90B44611FC3D /* NostrService+ProfileRefresh.swift in Sources */,
 				9E595137C38D1492B73EA14C /* NostrService+Profiles.swift in Sources */,
 				964EAD12BD955EDC75736090 /* NostrService+RelayListSave.swift in Sources */,
@@ -8363,6 +8368,7 @@
 				E9E1B0EF2629614F4D3F33F8 /* NostrService+MessageProcessing.swift in Sources */,
 				76A58FDBA899BE4A39FCCE30 /* NostrService+Moderation.swift in Sources */,
 				43A187E1D7C8CD0195296947 /* NostrService+MuteList.swift in Sources */,
+				FF7F90BB54495DA31D579349 /* NostrService+MuteListBase.swift in Sources */,
 				67E3CA1E6BDC6999B066B77C /* NostrService+ProfileRefresh.swift in Sources */,
 				FA707DCC1E83124978483119 /* NostrService+Profiles.swift in Sources */,
 				309B32F737870929628309E8 /* NostrService+RelayListSave.swift in Sources */,
