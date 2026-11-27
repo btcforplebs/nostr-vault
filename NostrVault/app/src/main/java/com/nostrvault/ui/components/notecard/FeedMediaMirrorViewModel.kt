@@ -1,5 +1,6 @@
 package com.nostrvault.ui.components
 
+import com.nostrvault.service.deleteFromThisDevice
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -219,6 +220,16 @@ class FeedMediaMirrorViewModel @Inject constructor(
                         val leftover = deleteEverywhereLeftover(localDeleted = localOk, mirrors = report)
                         onMessage(leftover ?: "Deleted everywhere", ok = leftover == null)
                         if (leftover == null) onAllGone()
+                    }
+                    // Not offered in the feed; the same guard if it ever is.
+                    DeleteScope.THIS_DEVICE -> {
+                        val result = blossomService.deleteFromThisDevice(sha)
+                        refreshCloudBadges(sha)
+                        when (result) {
+                            is com.nostrvault.service.DeleteHereResult.Removed -> onMessage("Deleted from this device", ok = true)
+                            com.nostrvault.service.DeleteHereResult.NotHere -> onMessage("Not on this device", ok = true)
+                            is com.nostrvault.service.DeleteHereResult.Kept -> onMessage(result.reason, ok = false)
+                        }
                     }
                 }
                 if (openUrl == url) onOpen(url)

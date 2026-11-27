@@ -57,8 +57,15 @@ object BlossomArchive {
      * same hash. Entries whose name (minus extension) isn't a lowercase sha256,
      * or whose bytes don't hash to it, are skipped, so nothing in the archive
      * can write outside the folder or serve wrong bytes under a hash.
+     * [onImported] gets each restored hash (callers clear it from
+     * DeviceRemovedHashes, so note media doesn't treat it as removed).
      */
-    fun import(zipFile: File, blossomDir: File): ImportResult {
+    fun import(
+        zipFile: File,
+        blossomDir: File,
+        /** Each hash restored: a restore is the owner wanting it here, so it comes off "removed here". */
+        onImported: (String) -> Unit = {},
+    ): ImportResult {
         blossomDir.mkdirs()
         var imported = 0
         var skipped = 0
@@ -96,6 +103,7 @@ object BlossomArchive {
                             StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE,
                         )
                         imported++
+                        onImported(sha)
                     } else {
                         skipped++
                     }

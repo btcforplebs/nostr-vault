@@ -747,13 +747,15 @@ func (c *copyClient) syncFiles(ctx context.Context, since int64) (int, bool, err
 	}
 }
 
-// syncFile fetches one own file A listed, unless it is here already. False
+// syncFile fetches one own file A listed, unless it is here already, was
+// deleted, or the owner removed it from this device (copyIsRemovedHere). False
 // when A answers 404 (not its own file, or gone) or the bytes don't match
 // the hash: retrying would bring the same, so it does not hold the round
 // back. Any other answer (a 5xx, a busy A) is an error, so the round stays
 // unrecorded and the file stays in the window (Tron #1864).
 func (c *copyClient) syncFile(ctx context.Context, f copyFile, deleted map[string]int64) (bool, error) {
-	if !isBlobHash(f.SHA256) || copyBlobFile(f.SHA256) != "" || copyIsDeleted(deleted, f.SHA256, f.Pubkey, f.CreatedAt) {
+	if !isBlobHash(f.SHA256) || copyBlobFile(f.SHA256) != "" || copyIsDeleted(deleted, f.SHA256, f.Pubkey, f.CreatedAt) ||
+		copyIsRemovedHere(f.SHA256) {
 		return false, nil
 	}
 	resp, err := c.do(ctx, http.MethodGet, "/copy/v2/sync/file/"+f.SHA256, nil, nil)

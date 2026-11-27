@@ -51,6 +51,8 @@ internal fun DeleteLeftoverBanner(message: String, onDismiss: () -> Unit, modifi
 internal fun deleteBlobConfirmBody(scope: DeleteScope): String = when (scope) {
     DeleteScope.MIRRORS -> "Removes this file from all your media servers. Your vault keeps its copy."
     DeleteScope.EVERYWHERE -> "Permanently removes this file from your vault and all your media servers. This cannot be undone."
+    DeleteScope.THIS_DEVICE -> "Removes this device's copy. Your media servers keep theirs, and Save to Vault brings it back. " +
+        "If none of them has it right now, the file stays here."
 }
 
 /**
@@ -80,6 +82,11 @@ internal fun DeleteBlobConfirmDialog(
             title = "Delete everywhere?"
             body = deleteBlobConfirmBody(scope)
             confirmLabel = "Delete everywhere"
+        }
+        DeleteScope.THIS_DEVICE -> {
+            title = "Delete from this device?"
+            body = deleteBlobConfirmBody(scope)
+            confirmLabel = "Delete from this device"
         }
     }
     val offerPosts = scope == DeleteScope.EVERYWHERE && postCount > 0 && onConfirmWithPosts != null

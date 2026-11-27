@@ -35,7 +35,7 @@ internal suspend fun BlossomService.copyNoteMediaIn(
         onLogMessage?.invoke("This run's downloads are used up; note media comes next run")
         return@withContext 0
     }
-    val picker = NoteMediaScan.Picker { mediaCacheService.isInLocalBlossom(it) }
+    val picker = NoteMediaScan.Picker { mediaCacheService.isInLocalBlossom(it) || removedHere.isRemoved(owner, it) }
     val noteDates = LinkedHashMap<String, Long>() // url to copy -> its newest note's created_at
     var linkCount = 0
     val noteCount = NoteMediaScan.forEachPage(owner, { filter ->
@@ -80,8 +80,20 @@ internal suspend fun BlossomService.copyNoteMediaIn(
             launch {
                 try {
                     val startedAt = System.currentTimeMillis()
-                    val sha = mirrorUrlToLocal(url, ownVault = auth) { onLogMessage?.invoke("Skipped $url: $it") }
-                    if (sha != null) {
+                    // A link whose hash only shows once it came: the owner took it off this
+                    // device (and a server had it then), so the bytes never go in the vault and
+                    // the link is remembered so later runs skip it before downloading. A copy
+                    // already in the vault (brought back on purpose) is left alone (Tron, #2649).
+                    var keptOut: String? = null
+                    val sha = mirrorUrlToLocal(
+                        url,
+                        ownVault = auth,
+                        onSkip = { onLogMessage?.invoke("Skipped $url: $it") },
+                        keepOut = { hash -> removedHere.isRemoved(owner, hash).also { if (it) keptOut = hash } },
+                    )
+                    if (keptOut != null) {
+                        autoMirrorState.remember(url, keptOut!!)
+                    } else if (sha != null) {
                         stampCopiedIn(sha, noteDates[url], startedAt)
                         autoMirrorState.remember(url, sha)
                         saved.incrementAndGet()

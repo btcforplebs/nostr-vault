@@ -50,10 +50,14 @@ fun deleteEverywhereLeftover(localDeleted: Boolean, mirrors: BlossomService.Mirr
  * skipped one never reads as plain "Deleted from mirrors". Same words as iOS
  * `MediaDeleteWording.mirrorsReport` and the web vault's `skippedLine` (blossom-gallery.js).
  */
+internal const val DELETE_MIRRORS_LAST_COPY =
+    "Kept on your media servers: this device no longer has a copy. Save to Vault first, or use Delete everywhere."
+
 fun mirrorsDeleteMessage(report: BlossomService.MirrorDeleteResult): Pair<String, Boolean> {
     val skipped = skippedLine(report.skippedHosts)
     fun withSkipped(text: String) = if (skipped.isEmpty()) text else "$text. $skipped"
     return when {
+        report.refusedLastCopy -> DELETE_MIRRORS_LAST_COPY to false
         report.failed.isNotEmpty() -> withSkipped(deleteEverywhereLeftover(localDeleted = true, mirrors = report)!!) to false
         report.deleted.isNotEmpty() -> withSkipped("Deleted from mirrors") to true
         else -> withSkipped(DELETE_NO_MIRRORS_MESSAGE) to false

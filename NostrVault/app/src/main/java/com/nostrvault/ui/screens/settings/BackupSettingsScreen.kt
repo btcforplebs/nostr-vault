@@ -38,6 +38,8 @@ class BackupSettingsViewModel @Inject constructor(
     private val relayImportService: RelayImportService,
     /** Exports here count as the Vault Dashboard's backups too (iOS VaultHistory). */
     private val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
+    /** A restored file is wanted here again: it comes off "Delete from this device"'s list. */
+    private val removedHere: com.nostrvault.service.DeviceRemovedHashes,
 ) : ViewModel() {
     private val _busy = MutableStateFlow(false)
     val busy = _busy.asStateFlow()
@@ -78,7 +80,7 @@ class BackupSettingsViewModel @Inject constructor(
     }
 
     fun importMedia(src: Uri) = run("Restoring media…", "Media restored", src = src) { tmp ->
-        val result = BlossomArchive.import(tmp, File(blossomDir))
+        val result = BlossomArchive.import(tmp, File(blossomDir), onImported = removedHere::allow)
         result.failure()?.let { error(it) }
         0
     }

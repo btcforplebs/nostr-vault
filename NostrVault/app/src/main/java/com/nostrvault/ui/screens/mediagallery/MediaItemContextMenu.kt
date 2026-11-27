@@ -123,6 +123,19 @@ internal fun MediaItemContextMenu(
                 onDelete(DeleteScope.EVERYWHERE)
             },
         )
+        // Only a file this device holds; the servers keep theirs (D3).
+        if (item.isLocal) {
+            DropdownMenuItem(
+                text = { Text("Delete from this device", color = ErrorRed) },
+                leadingIcon = {
+                    Icon(NostrVaultIcons.Delete, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+                },
+                onClick = {
+                    onDismiss()
+                    onDelete(DeleteScope.THIS_DEVICE)
+                },
+            )
+        }
         HorizontalDivider()
         DropdownMenuItem(
             text = { Text(if (is404) "Remove from 404" else "Mark as 404") },
