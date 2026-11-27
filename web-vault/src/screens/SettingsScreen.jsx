@@ -30,6 +30,7 @@ import { FeedSettingsPage } from "./settings/FeedSettingsPage.jsx"
 import { NotificationsPage } from "./settings/NotificationsPage.jsx"
 import { RelayAccessPage } from "./settings/RelayAccessPage.jsx"
 import { BlockSomeone } from "./settings/BlockSomeone.jsx"
+import { MutedWordsPage } from "./settings/MutedWordsPage.jsx"
 import { blockedSections } from "./settings/block-someone.js"
 import {
   SETTINGS_GROUPS, SETTINGS_ICONS, PAGES, isPage, APP_VERSION, APP_COMMIT, commitUrl, SUPPORT_NPUB, PRIVACY_URL,
@@ -159,6 +160,7 @@ function Page({ ctx, page }) {
     <main class="screen settings">
       <header class="screen-head"><a class="button small" href="#/settings">‹ Settings</a><h2>{title}</h2><span style="width: 92px" /></header>
       {page === "blocked" && <><BlockSomeone ctx={ctx} /><Blocked ctx={ctx} /></>}
+      {page === "muted-words" && <MutedWordsPage ctx={ctx} />}
       {page === "feed" && <FeedSettingsPage />}
       {page === "appearance" && <AppearancePage />}
       {page === "media" && <MediaCachePage />}

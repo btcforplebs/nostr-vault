@@ -109,7 +109,7 @@ export async function refreshBlockList(vault, pubkey, relays, { query = (r, f, o
 }
 
 // What the screens read. One list per signed-in account; a new account starts empty.
-const empty = pubkey => ({ pubkey, blocked: muteSet(), publicBlocked: new Set(), privateBlocked: new Set(), privateNote: "", eventId: null, publicEntries: 0 })
+const empty = pubkey => ({ pubkey, blocked: muteSet(), publicBlocked: new Set(), privateBlocked: new Set(), publicWords: [], privateWords: [], privateNote: "", eventId: null, publicEntries: 0 })
 let state = empty(null)
 let loading = null
 let asked = new Set() // relays already asked for this account's list
@@ -127,7 +127,7 @@ async function apply(pubkey, ev, opener) {
   if (state.eventId && ev.id !== state.eventId && ev.created_at < (state.created_at ?? 0)) return // never go back to an older list
   const priv = await privateBlocks(ev, opener)
   if (state.pubkey !== pubkey) return // signed out or switched while decrypting
-  state = { pubkey, blocked: muteSet([...pTags(ev.tags), ...priv.pubkeys], [...(ev.tags ?? []), ...priv.tags]), publicBlocked: new Set(pTags(ev.tags)), privateBlocked: new Set(priv.pubkeys), privateNote: priv.note, eventId: ev.id, created_at: ev.created_at, publicEntries: entryCount(ev.tags) }
+  state = { pubkey, blocked: muteSet([...pTags(ev.tags), ...priv.pubkeys], [...(ev.tags ?? []), ...priv.tags]), publicBlocked: new Set(pTags(ev.tags)), privateBlocked: new Set(priv.pubkeys), publicWords: muteEntries(ev.tags).words, privateWords: muteEntries(priv.tags).words, privateNote: priv.note, eventId: ev.id, created_at: ev.created_at, publicEntries: entryCount(ev.tags) }
   for (const cb of listeners) cb()
 }
 
@@ -320,53 +320,69 @@ async function openPrivate(ev, crypto, me) {
   } catch (e) { return { reason: `the private part of your block list couldn't be opened (${e?.message ?? e})` } }
 }
 
-const withoutP = (tags, target) => tags.filter(t => !(Array.isArray(t) && t[0] === "p" && String(t[1] ?? "").toLowerCase() === target))
-
 /**
- * The new list's tags and content for blocking (`block`) or unblocking `target`. Every other entry, public or
- * private (words, hashtags, threads, other people), is kept as it was. A public block goes in the tags, which every
- * app reads, the iPhone included; a private one goes in the content, NIP-44 encrypted to the user. Unblocking takes
- * the person out of both. When the private part can't be opened, a public change keeps it as it is, and a change
- * that needs it refuses (throws): a private block, or unblocking someone who isn't in the public part.
- * `crypto` is the signer's (signer.crypto). -> { tags, content }
+ * The new list's tags and content after adding (`add`) or taking out one entry: a person (`name` "p") or a muted
+ * word ("word"). `same(value)` says which tags are that entry (a person's key or a word in any case). Every other
+ * entry, public or private (words, hashtags, threads, other people), is kept as it was. A public entry goes in the
+ * tags, which every app reads, the iPhone included; a private one goes in the content, NIP-44 encrypted to the user.
+ * Taking it out takes it out of both. When the private part can't be opened, a public change keeps it as it is, and a
+ * change that needs it refuses (throws `${refuse}: <reason>.`): a private add, or taking out one that isn't in the
+ * public part. `crypto` is the signer's (signer.crypto). -> { tags, content }
  */
-export async function editedBlockList(base, { target, block, isPrivate = false, crypto, me }) {
-  const inPublic = (base?.tags ?? []).some(t => Array.isArray(t) && t[0] === "p" && String(t[1] ?? "").toLowerCase() === target)
-  const tags = withoutP(base?.tags ?? [], target)
+export async function editedEntry(base, { name, value, same, add, isPrivate = false, crypto, me, refuse }) {
+  const is = t => Array.isArray(t) && t[0] === name && same(String(t[1] ?? ""))
+  const inPublic = (base?.tags ?? []).some(is)
+  const tags = (base?.tags ?? []).filter(t => !is(t))
   let content = base?.content ?? ""
   const priv = await openPrivate(base, crypto, me)
-  const inPrivate = !priv.reason && priv.tags.some(t => Array.isArray(t) && t[0] === "p" && String(t[1] ?? "").toLowerCase() === target)
-  // Not public and the private part won't open: they can only be on the private part, and republishing it as it is
-  // would leave them blocked while saying they aren't.
-  if (!block && !inPublic && priv.reason) throw new Error(`Couldn't unblock: ${priv.reason}.`)
-  if (block && isPrivate) {
-    if (priv.reason) throw new Error(`Couldn't block privately: ${priv.reason}.`)
-    content = await crypto.encrypt(me, JSON.stringify([...withoutP(priv.tags, target), ["p", target]]))
+  const inPrivate = !priv.reason && priv.tags.some(is)
+  // Not public and the private part won't open: it can only be in the private part, and republishing that as it is
+  // would leave it in force while saying it isn't.
+  if (!add && !inPublic && priv.reason) throw new Error(`${refuse.remove}: ${priv.reason}.`)
+  if (add && isPrivate) {
+    if (priv.reason) throw new Error(`${refuse.addPrivate}: ${priv.reason}.`)
+    content = await crypto.encrypt(me, JSON.stringify([...priv.tags.filter(t => !is(t)), [name, value]]))
   } else if (inPrivate) {
-    // Blocked publicly now, or unblocked: either way they come out of the private part.
-    content = await crypto.encrypt(me, JSON.stringify(withoutP(priv.tags, target)))
+    // Public now, or taken out: either way it comes out of the private part.
+    content = await crypto.encrypt(me, JSON.stringify(priv.tags.filter(t => !is(t))))
   }
-  if (block && !isPrivate) tags.push(["p", target])
+  if (add && !isPrivate) tags.push([name, value])
   return { tags, content }
 }
+
+/** editedEntry for a person: blocking (`block`) or unblocking `target`, a hex key. -> { tags, content } */
+export const editedBlockList = (base, { target, block, isPrivate = false, crypto, me }) =>
+  editedEntry(base, { name: "p", value: target, same: v => v.toLowerCase() === target, add: block, isPrivate, crypto, me,
+    refuse: { addPrivate: "Couldn't block privately", remove: "Couldn't unblock" } })
 
 /**
  * Block or unblock `target`: find the newest list, edit it, guard it, sign it, send it to the write relays, keep it in
  * Haven's outbox, and show it at once. Throws (and publishes nothing) when the guard refuses or nothing took it.
  * ctx: { vault, signer, session, account }. `ask` and `publish` are for tests. -> { event, relays }
  */
-export async function setBlock(ctx, target, { block = true, isPrivate = false, ask, publish = (urls, ev) => pool.publish(urls, ev) } = {}) {
+export async function setBlock(ctx, target, { block = true, isPrivate = false, ask, publish } = {}) {
   const me = ctx.session.pubkey
   target = String(target ?? "").toLowerCase()
   if (!HEX64.test(target)) throw new Error("That isn't a profile that can be blocked.")
   if (target === me) throw new Error("You can't block yourself.")
+  return publishMuteList(ctx, base => editedBlockList(base, { target, block, isPrivate, crypto: ctx.signer.crypto, me }), { ask, publish })
+}
+
+/**
+ * Publish a new kind 10000 that `edit(base)` (-> { tags, content }) builds on the newest list: find it, guard it, edit
+ * it, sign it, send it to the write relays, keep it in Haven's outbox, and show it at once. Throws (and publishes
+ * nothing) when the guard or the edit refuses, or no relay took it. Blocking (setBlock) and muted words
+ * (muted-words.js) both go through here. `ask` and `publish` are for tests. -> { event, relays }
+ */
+export async function publishMuteList(ctx, edit, { ask, publish = (urls, ev) => pool.publish(urls, ev) } = {}) {
+  const me = ctx.session.pubkey
   const { read = [], write = [] } = ctx.account.relays
   const found = await findLatestBlockList({ vault: ctx.vault, pubkey: me, relays: uniq([...read, ...write]), ask })
   // Public entries only: the private part's count can't be checked against a base whose private part may not open.
   const known = state.pubkey === me ? state.publicEntries : 0
   const refused = blockGuard({ ...found, known })
   if (refused) throw new Error(refused)
-  const { tags, content } = await editedBlockList(found.base, { target, block, isPrivate, crypto: ctx.signer.crypto, me })
+  const { tags, content } = await edit(found.base)
   const template = { kind: 10000, created_at: Math.max(now(), (found.base?.created_at ?? 0) + 1), tags, content }
   const event = checkSigned(await ctx.signer.signEvent(template), template, me)
   const { network, local } = publishRelays(write)

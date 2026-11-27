@@ -39,7 +39,7 @@ test("groups are the phone's, each row with a page or a screen to go to; every s
   assert.equal(rows.find(r => r.id === "relay-access").href, "#/settings/relay-access") // its own page, not the Mesh panel
   assert.equal(rows.find(r => r.id === "wallet").href, "#/wallet")
   for (const r of rows) assert.match(r.href, /^#\/[a-z-]+(\/[a-z-]+)?$/)
-  assert.deepEqual(Object.keys(PAGES).sort(), ["appearance", "backup", "blocked", "database", "feed", "following-backup", "import", "logs", "media", "media-servers", "notifications", "privacy", "recently-deleted", "recover-list", "relay-access", "relays"])
+  assert.deepEqual(Object.keys(PAGES).sort(), ["appearance", "backup", "blocked", "database", "feed", "following-backup", "import", "logs", "media", "media-servers", "muted-words", "notifications", "privacy", "recently-deleted", "recover-list", "relay-access", "relays"])
   assert.ok(isPage("backup") && !isPage("accounts") && !isPage("") && !isPage(undefined) && !isPage("constructor"))
   assert.match(APP_VERSION, /^\d+\.\d+\.\d+/)
   assert.match(SUPPORT_NPUB, /^npub1/)

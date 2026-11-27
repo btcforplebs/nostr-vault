@@ -281,3 +281,8 @@ button.reload-feed { width: 100%; border: 0; background: none; text-align: left;
 button.reload-feed:active { transform: none; }
 /* Settings › Who Can Reach You › Refresh Trust List and Appearance › Translate To: a picker at the row's end. */
 .settings-select { margin-left: auto; max-width: 55%; }
+/* Settings › Muted Words (screens/settings/MutedWordsPage.jsx). */
+.muted-words { list-style: none; margin: 0 var(--gutter); padding: 0; }
+.muted-word-row { display: flex; align-items: center; gap: 10px; min-height: 44px; border-bottom: 1px solid var(--hair); }
+.muted-word-row:last-child { border-bottom: 0; }
+.muted-word { flex: 1; min-width: 0; overflow-wrap: anywhere; font: var(--t-body); color: var(--text); }

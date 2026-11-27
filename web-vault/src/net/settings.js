@@ -27,6 +27,8 @@ export const SETTINGS_ICONS = {
   // A key on its own (key.fill), not Accounts & Keys' person with a key.
   secretKey: "M10.5 13.5L20 4M17 7l3 3M15 9l2 2M11 16a4 4 0 1 1-8 0 4 4 0 0 1 8 0z",
   key: "M15 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM3 21a8 8 0 0 1 11-7.4M16 14l4 4-2 2-1-1-1 1-1-1 1-1-1-1 1-1",
+  // A speech bubble with a line through it: words that are hidden.
+  mutedWords: "M4 5h16v11H9l-5 4zM3 3l18 18",
   block: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.6 5.6l12.8 12.8",
   relays: "M5 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM19 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM12 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6.5 6.5L17.5 6.5M6 7l5 10M18 7l-5 10",
   server: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01",
@@ -54,6 +56,7 @@ export const SETTINGS_GROUPS = [
   { title: "Account", rows: [
     { id: "accounts", title: "Accounts & Keys", icon: "key", color: "#0a84ff", href: "#/accounts" },
     { id: "blocked", title: "Blocked", icon: "block", color: "#ff453a", href: "#/settings/blocked" },
+    { id: "muted-words", title: "Muted Words", icon: "mutedWords", color: "#ff9f0a", href: "#/settings/muted-words" },
     { id: "recently-deleted", title: "Recently Deleted", icon: "trash", color: "#8e8e93", href: "#/settings/recently-deleted" },
     { id: "following-backup", title: "Following Backup", icon: "people", color: "#40c8e0", href: "#/settings/following-backup" },
     { id: "recover-list", title: "Recover a List", icon: "restore", color: "#64d2ff", href: "#/settings/recover-list" },
