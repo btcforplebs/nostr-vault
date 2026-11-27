@@ -40,4 +40,23 @@ class VaultActivityNewsTest {
         )
         assertEquals(listOf(VaultMode.LIKES), VaultActivityNews.visited(VaultMode.LIKES))
     }
+
+    private fun reply(from: String, at: Long) =
+        VaultActivity.Event("r$from$at", from, 1, at, "Free SOL inside!", listOf(listOf("e", "x", "", "reply"), listOf("p", me)))
+
+    @Test
+    fun `a spam reply from outside your web lights nothing, as the list hides it`() {
+        val outside = setOf(them)
+        val hides: (String) -> Boolean = { it in outside }
+        assertFalse(VaultActivityNews.hasNews(listOf(reply(them, 200)), VaultMode.NOTES, me, emptySet(), 100, hides))
+        assertFalse(VaultActivityNews.hasNews(listOf(like(them, 200)), VaultMode.LIKES, me, emptySet(), 100, hides))
+        val friend = "d".repeat(64)
+        assertTrue(VaultActivityNews.hasNews(listOf(reply(friend, 200)), VaultMode.NOTES, me, emptySet(), 100, hides))
+    }
+
+    @Test
+    fun `a zap still lights, whoever signed the receipt`() {
+        val zap = VaultActivity.Event("z", them, 9735, 200, "", listOf(listOf("p", me)))
+        assertTrue(VaultActivityNews.hasNews(listOf(zap), VaultMode.ZAPS, me, emptySet(), 100) { true })
+    }
 }
