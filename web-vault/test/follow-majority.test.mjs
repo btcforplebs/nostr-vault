@@ -4,7 +4,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
-import { setFollow, followsOf, followListKnown, socketFailed } from "../src/net/follows.js"
+import { setFollow, followsOf, followListKnown, socketFailed, INDEX_RELAY } from "../src/net/follows.js"
 
 const me = generateSecretKey(), mePk = getPublicKey(me)
 const pk = () => getPublicKey(generateSecretKey())
@@ -115,4 +115,42 @@ test("real pool: a cool-down that wasn't a socket failure (a timeout) still coun
   for (const k of [url, key]) pool.coolDowns.set(k, { n: 1, socket: true, until: Date.now() + 60000 })
   assert.deepEqual(await askRelay(url, { kinds: [3] }, 1500), { events: [], answered: false, connected: false })
   for (const k of [url, key]) pool.coolDowns.delete(k)
+})
+
+// One own write relay (Logen 2026-11-27, b219c87b): purplepag.es may be the second answer; every other account stays
+// own-only, and no other index relay ever counts.
+const oneRun = ({ own, index = [], ownRelays = [seven[0]] }) => setFollow({ vault: fakeVault([base]), signer: { signEvent: async t => finalizeEvent(t, me) },
+  pubkey: mePk, target: pk(), follow: true, readRelays: [], writeRelays: ownRelays, ownRelays,
+  ask: async url => (ownRelays.includes(url) ? own(url) : index.includes(url))
+    ? { events: [base], answered: true, connected: true } : { events: [], answered: false, connected: true },
+  publish: urls => urls.map(() => Promise.resolve("")) })
+
+test("one own relay: it answering plus purplepag.es answering is enough", async () => {
+  const r = await oneRun({ own: () => true, index: [INDEX_RELAY] })
+  assert.equal(followsOf(r.event).length, 3)
+})
+
+test("one own relay: it answering with purplepag.es silent is refused, and the other index relay doesn't count", async () => {
+  await assert.rejects(oneRun({ own: () => true }), { code: "oneAnswer" })
+  await assert.rejects(oneRun({ own: () => true, index: ["wss://index.hzrd149.com"] }), { code: "oneAnswer" })
+})
+
+test("one own relay: purplepag.es alone answering is refused (the own relay must answer)", async () => {
+  await assert.rejects(oneRun({ own: () => false, index: [INDEX_RELAY] }), { code: "noAnswer" })
+})
+
+test("2+ own relays: purplepag.es answering still doesn't count", async () => {
+  // 2 own relays, 1 answering + purplepag.es: refused.
+  await assert.rejects(oneRun({ ownRelays: seven.slice(0, 2), own: url => url === seven[0], index: [INDEX_RELAY] }), { code: "oneAnswer" })
+  // 7 own relays, 1 answering + both index relays: refused.
+  await assert.rejects(oneRun({ ownRelays: seven, own: url => url === seven[0], index: [INDEX_RELAY, "wss://index.hzrd149.com"] }), { code: "oneAnswer" })
+})
+
+test("followListKnown: purplepag.es counts only for one own relay", () => {
+  assert.equal(followListKnown({ asked: 1, reached: 1, answered: 1, found: true, indexAnswered: true }), true)
+  assert.equal(followListKnown({ asked: 1, reached: 1, answered: 1, found: false, indexAnswered: true }), true)
+  assert.equal(followListKnown({ asked: 1, reached: 1, answered: 1, found: true }), false)
+  assert.equal(followListKnown({ asked: 1, reached: 1, answered: 0, found: true, indexAnswered: true }), false)
+  assert.equal(followListKnown({ asked: 2, reached: 1, answered: 1, found: true, indexAnswered: true }), false)
+  assert.equal(followListKnown({ asked: 7, reached: 1, answered: 1, found: true, indexAnswered: true }), false)
 })

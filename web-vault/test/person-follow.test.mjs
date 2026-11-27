@@ -167,8 +167,14 @@ test("guard: most of your relays answering is enough for a found list, never one
   assert.equal(guard(3, 4), "")
   assert.match(guard(2, 4, 5), /Only 2 of your 4/, "half is not more than half")
   assert.match(guard(1, 2, 3), /Only one relay answered/)
-  assert.match(guard(1, 1), /only one relay, .*Add a relay/, "a one-relay list can never make 2: its own reason (Tao #2612)")
-  assert.match(guard(1, 1, 2), /only one relay, .*Add a relay/, "its one relay and an indexer: the indexer doesn't count (Logen 11-27)")
+  // One own relay (Logen 2026-11-27, b219c87b): purplepag.es may be the second answer; neither answering -> add a relay.
+  const one = (answered, indexAnswered) => wipeGuard({ base, tags, target: t, follow: true, seen: [base], answered, asked: 1, indexAnswered })
+  assert.equal(one(1, true), "", "its one relay and purplepag.es")
+  assert.match(one(1, false), /Only one relay answered/, "its one relay, purplepag.es silent")
+  assert.match(guard(1, 1, 2), /Only one relay answered/, "another index relay answering (heard) never counts")
+  assert.match(one(0, false), /only one relay, .*Add a relay/, "neither answered: its own reason (Tao #2612)")
+  assert.match(wipeGuard({ base, tags, target: t, follow: true, seen: [base], answered: 1, asked: 2, indexAnswered: true }), /Only one relay answered/,
+    "2 own relays: purplepag.es never counts")
   // No list found: every own relay.
   const first = (answered, asked) => wipeGuard({ base: undefined, tags: [["p", t]], target: t, follow: true, answered, asked })
   assert.equal(first(3, 3), "")
