@@ -32,12 +32,14 @@ class FollowListLogicTest {
     }
 
     @Test
-    fun rankedExtendedNetworkCountsAsTrustEvenOutsideTheGraph() {
+    fun rankedExtendedNetworkOutsideTheWebStaysOutside() {
+        // Logen 2026-11-27: the web group is your web only; a friend of a
+        // friend's rank orders people but doesn't make them trusted.
         val sections = FollowListLogic.sections(
             people = listOf(p("x", "Xena")),
             follows = emptySet(), webOfTrust = emptySet(), trustRank = mapOf("x" to 3), sort = FollowListSort.TRUSTED,
         )
-        assertEquals(FollowListGroup.WEB_OF_TRUST, sections.first().group)
+        assertEquals(FollowListGroup.OUTSIDE, sections.first().group)
     }
 
     @Test

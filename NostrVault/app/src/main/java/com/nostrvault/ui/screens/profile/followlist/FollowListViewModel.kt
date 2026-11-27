@@ -272,7 +272,9 @@ class FollowListViewModel @Inject constructor(
     private fun loadTrust() {
         // The relay's graph loads lazily; this reads it if nothing has yet.
         val extended = feedService.extendedNetworkPubkeys.value
-        _webOfTrust.value = feedService.relayTabTrustedPubkeys() + extended
+        // The group is your web only: the extended network (friends of
+        // friends) only orders the rest by rank.
+        _webOfTrust.value = feedService.relayTabTrustedPubkeys()
         val rank = HashMap<String, Int>()
         extended.forEachIndexed { index, key -> rank.putIfAbsent(key, index) }
         _trustRank.value = rank

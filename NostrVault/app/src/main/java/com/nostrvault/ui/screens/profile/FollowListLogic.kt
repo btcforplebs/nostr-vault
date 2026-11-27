@@ -55,7 +55,8 @@ object FollowListLogic {
      * - webOfTrust: the viewer's trust graph (the same set Global feed and
      *   search ranking use). Follows win over it.
      * - trustRank: position in the extended network, ranked by how many of
-     *   the viewer's follows follow them; lower is more trusted.
+     *   the viewer's follows follow them; lower is more trusted. It orders
+     *   people, it never puts them in the web group (Logen 2026-11-27).
      * - hidden: spam, dropped from every group.
      *
      * Empty groups are left out.
@@ -76,7 +77,7 @@ object FollowListLogic {
             if (!seen.add(person.pubkey)) continue
             val group = when {
                 person.pubkey in follows -> FollowListGroup.FOLLOWS
-                person.pubkey in webOfTrust || trustRank.containsKey(person.pubkey) -> FollowListGroup.WEB_OF_TRUST
+                person.pubkey in webOfTrust -> FollowListGroup.WEB_OF_TRUST
                 else -> FollowListGroup.OUTSIDE
             }
             buckets.getOrPut(group) { mutableListOf() }.add(person)

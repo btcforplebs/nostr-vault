@@ -9,7 +9,6 @@ import com.nostrvault.service.blockPrivately
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.NoteStats
-import com.nostrvault.data.model.TrustGate
 import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
@@ -122,7 +121,6 @@ class ProfileViewModel @Inject constructor(
     companion object {
         /** Posts arriving within this long of each other share one count query. */
         private const val ENGAGEMENT_DEBOUNCE_MS = 300L
-        private val COUNT_RELAYS = listOf("wss://relay.damus.io", "wss://relay.primal.net")
         /** How long a profile waits for its relay list before giving up on the outbox. */
         private const val OUTBOX_WAIT_MS = 30_000L
         /** Spinner cap: two tries of relay list wait + EOSE wait, plus slack. */
@@ -233,22 +231,31 @@ class ProfileViewModel @Inject constructor(
     /** The default zap amount from Wallet settings, in sats (iOS `defaultZapSats`). */
     val defaultZapSats: Int get() = com.nostrvault.ui.components.quickZapSats(configStore.config.value.defaultZapAmount)
 
+    private val blockedHex: Flow<Set<String>> =
+        configStore.config.map { feedService.blockedHexForActiveAccount() }.distinctUntilChanged()
+
     /**
-     * Tagged lists other people's notes, so it passes the block list and the
-     * web of trust like replies do ([TrustGate]): strangers and blocked
-     * people are left out, you always show. Fails closed on an empty web.
+     * Tagged lists other people's notes, so it passes the block list and
+     * your web ([ProfileWebRules.allowsTagged]), whatever the Global shield
+     * says: strangers and blocked people are left out, you always show.
+     * Fails closed on an empty web.
      */
     private val shownTagged: Flow<List<FeedNote>> = combine(
         _taggedNotes,
-        feedService.trustGateSet,
-        configStore.config.map { feedService.blockedHexForActiveAccount() }.distinctUntilChanged(),
-    ) { tagged, trusted, blocked ->
+        feedService.webTrustSet,
+        blockedHex,
+    ) { tagged, web, blocked ->
         val always = setOf(nostrService.activeHexPubkey).filter { it.isNotEmpty() }.toSet()
-        tagged.filter { !FeedFilterEngine.involvesBlocked(it, blocked) && TrustGate.allows(it.pubkey, trusted, always) }
+        tagged.filter { !FeedFilterEngine.involvesBlocked(it, blocked) && ProfileWebRules.allowsTagged(it, web, always) }
+    }
+
+    /** The person's own notes, with reposts of blocked people left out (the Reposts tab). */
+    private val shownNotes: Flow<List<FeedNote>> = combine(_profileNotes, blockedHex) { notes, blocked ->
+        ProfileWebRules.withoutBlockedReposts(notes, blocked, _pubkey.value)
     }
 
     val filteredNotes: StateFlow<List<FeedNote>> = combine(
-        _profileNotes,
+        shownNotes,
         shownTagged,
         _selectedSection,
     ) { notes, tagged, section -> sectionNotes(section, notes, tagged) }
@@ -271,7 +278,7 @@ class ProfileViewModel @Inject constructor(
         }
 
     val counts: StateFlow<ProfileCounts> = combine(
-        _profileNotes,
+        shownNotes,
         shownTagged,
     ) { notes, tagged ->
         ProfileCounts(
@@ -282,6 +289,13 @@ class ProfileViewModel @Inject constructor(
             tagged = tagged.count { it.pubkey != _pubkey.value },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProfileCounts())
+
+    // Followers counted inside your web (see countFollowersInWeb). Declared
+    // before init, which reaches loadProfile().
+    private val webFollowers = ProfileWebFollowers(feedService, nostrService, configStore)
+    @Volatile private var linkedFollowers: List<String> = emptyList()
+    @Volatile private var countedWeb: Set<String> = emptySet()
+    private var followerCountJob: kotlinx.coroutines.Job? = null
 
     // Dedup + stream state
     private val seenNoteIds = mutableSetOf<String>()
@@ -341,8 +355,6 @@ class ProfileViewModel @Inject constructor(
         stream?.close(); stream = null; _streamOpen.value = false
         pageToken++
         seenNoteIds.clear(); seenTaggedIds.clear(); followerPubkeys.clear()
-        relayFollowerCount = null
-        vertexFollowerCount = null
         _profileNotes.value = emptyList()
         _taggedNotes.value = emptyList()
         _followersCount.value = null
@@ -409,7 +421,7 @@ class ProfileViewModel @Inject constructor(
     fun resumeStream() {
         val pk = _pubkey.value
         if (pk.isEmpty() || stream != null) return
-        mergeNotes(feedService.notes.value.filter { it.pubkey == pk })
+        mergeNotes(feedService.notes.value.filter { ProfileWebRules.belongsTo(it, pk) })
         startStream(pk)
     }
 
@@ -433,24 +445,19 @@ class ProfileViewModel @Inject constructor(
             if (own) {
                 _followingCount.value = feedService.followedPubkeys.value.count { it != pk }
                 // Your followers come from the relay's ledger, which is complete
-                // (spam left out); relay samples would cap at a page. It beats
-                // Vertex here so the header matches the list it opens and the
-                // Vault's Followers tab.
+                // (spam left out), counted inside your web only, so the header
+                // matches the Vault's Followers tab.
                 launch {
-                    val ledger = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        com.nostrvault.data.model.FollowerSnapshot.parse(com.nostrvault.relay.HavenBridge.getFollowers(pk))
-                    }
+                    val inWeb = webFollowers.own(pk)
                     synchronized(this@ProfileViewModel) {
-                        if (ledger != null && _pubkey.value == pk) {
+                        if (inWeb != null && _pubkey.value == pk) {
                             ownLedgerLoaded = true
-                            _followersCount.value = ledger.current.size
+                            _followersCount.value = inWeb
                         }
                     }
                 }
             }
-
-            fetchVertexFollowerCount(pk)
-            if (!own) fetchFollowerCount(pk)
+            countFollowersInWeb(pk)
 
             // Fetch metadata if missing.
             if (nostrService.profiles.value[pk] == null) {
@@ -458,7 +465,7 @@ class ProfileViewModel @Inject constructor(
             }
 
             // Seed instantly from cached feed notes (iOS parity).
-            val cached = feedService.notes.value.filter { it.pubkey == pk }
+            val cached = feedService.notes.value.filter { ProfileWebRules.belongsTo(it, pk) }
             // Merged, not assigned: a refresh keeps what the relays already
             // loaded (their notes are in seenNoteIds, so they won't come back).
             if (cached.isNotEmpty()) mergeNotes(cached)
@@ -477,49 +484,23 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    /** Largest NIP-45 COUNT any relay gave for this profile's followers. */
-    @Volatile private var relayFollowerCount: Int? = null
-
-    /** Vertex's count, the one npub.world shows. Once it answers, it's the one shown. */
-    @Volatile private var vertexFollowerCount: Int? = null
-
     /**
-     * Vertex counts follow lists from across Nostr, once per follower, so
-     * its answer replaces the relay COUNTs and streamed sample. On your own
-     * profile the ledger wins instead. Port of iOS
-     * ProfileView.displayedFollowersCount.
+     * Someone else's Followers: only those inside your web (Logen
+     * 2026-11-27), recounted as followers arrive and when the web loads or
+     * changes. Your own comes from the ledger instead, unless it can't be read.
      */
-    private fun fetchVertexFollowerCount(pk: String) {
-        viewModelScope.launch {
-            val count = nostrService.fetchVertexFollowerCount(pk) ?: return@launch
-            synchronized(this@ProfileViewModel) {
-                if (_pubkey.value != pk) return@launch
-                vertexFollowerCount = count
-                if (!ownLedgerLoaded) _followersCount.value = count
-            }
+    private fun countFollowersInWeb(pk: String) {
+        followerCountJob?.cancel()
+        followerCountJob = viewModelScope.launch {
+            linkedFollowers = webFollowers.linked(pk)
+            feedService.webTrustSet.collect { web -> countedWeb = web; recountFollowers(pk) }
         }
     }
 
-    /**
-     * The streamed kind 3s stop at a page per relay, so they undercount anyone
-     * with more followers. Relays that answer NIP-45 COUNT give the full
-     * number; the largest single answer wins, since relays hold overlapping
-     * subsets and adding them would double-count. Port of iOS
-     * ProfileView.fetchFollowerCount.
-     */
-    private fun fetchFollowerCount(pk: String) {
-        // damus and primal answer COUNT; most other popular relays refuse it.
-        val relays = (COUNT_RELAYS + configStore.config.value.readRelays.take(3))
-            .distinctBy { it.trim().trimEnd('/').lowercase() }
-        val filter = mapOf("kinds" to listOf(3), "#p" to listOf(pk))
-        for (url in relays) viewModelScope.launch {
-            val count = nostrService.countEvents(url, filter) ?: return@launch
-            synchronized(this@ProfileViewModel) {
-                if (_pubkey.value != pk) return@launch
-                val best = maxOf(relayFollowerCount ?: 0, count)
-                relayFollowerCount = best
-                if (vertexFollowerCount == null) _followersCount.value = maxOf(best, _followersCount.value ?: 0)
-            }
+    private fun recountFollowers(pk: String) {
+        synchronized(this) {
+            if (_pubkey.value != pk || ownLedgerLoaded) return
+            _followersCount.value = webFollowers.others(linkedFollowers, followerPubkeys.toList(), countedWeb)
         }
     }
 
@@ -534,11 +515,8 @@ class ProfileViewModel @Inject constructor(
         s.onFollower = { followerPk ->
             // Your ledger's count is exact; the relay sample only stands in
             // when the ledger can't be read.
-            synchronized(this@ProfileViewModel) {
-                if (followerPubkeys.add(followerPk) && !ownLedgerLoaded && vertexFollowerCount == null) {
-                    _followersCount.value = maxOf(followerPubkeys.size, relayFollowerCount ?: 0)
-                }
-            }
+            val added = synchronized(this@ProfileViewModel) { followerPubkeys.add(followerPk) }
+            if (added) recountFollowers(pk)
         }
         val load = ProfileFirstLoad().also { firstLoad = it }
         s.onEose = { subId, relayUrl ->
@@ -622,7 +600,7 @@ class ProfileViewModel @Inject constructor(
         // Authored by this user OR reposted by this user (a kind-6 repost resolves
         // to pubkey = original author, repostedBy = this profile).
         val isOwnRepost = note.repostedBy == _pubkey.value
-        if (note.pubkey != _pubkey.value && !isOwnRepost) return
+        if (!ProfileWebRules.belongsTo(note, _pubkey.value)) return
         if (!seenNoteIds.add(note.id)) return
         // Reposts show the ORIGINAL author — fetch their metadata if missing.
         if (isOwnRepost && nostrService.profiles.value[note.pubkey] == null) {
