@@ -270,15 +270,23 @@ fun FeedScreen(
             listState.layoutInfo.visibleItemsInfo.any { it.key == key }
         }
     }
-    // The room under the list follows its own rule (keepsTapRoom).
-    val keepsRoom by remember {
-        derivedStateOf {
-            val key = currentOpenRowKey ?: return@derivedStateOf false
+    // The room under the list follows its own rule (keepsTapRoom). It is
+    // read inside the LazyColumn's item DSL, so it is a plain state that
+    // changes only when the answer flips. A derivedStateOf over layoutInfo
+    // read there re-ran the DSL on every layout: each run rebuilt every
+    // visible row, which laid out again, every frame while a note was open
+    // (Feed perf review 2026-11-27 #1).
+    var keepsRoom by remember { mutableStateOf(false) }
+    val roomRows by rememberUpdatedState(Triple(isThreaded, feedThreads, notes))
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val key = currentOpenRowKey ?: return@snapshotFlow false
             val info = listState.layoutInfo
+            val (threaded, threads, rows) = roomRows
             val index = info.visibleItemsInfo.firstOrNull { it.key == key }?.index
-                ?: if (isThreaded) feedThreads.indexOfFirst { it.rootId == key } else notes.indexOfFirst { it.id == key }
+                ?: if (threaded) threads.indexOfFirst { it.rootId == key } else rows.indexOfFirst { it.id == key }
             keepsTapRoom(index, info.visibleItemsInfo.lastOrNull()?.index ?: -1)
-        }
+        }.collect { keepsRoom = it }
     }
 
     // Not while a tapped post is on screen: new posts landing on top would
