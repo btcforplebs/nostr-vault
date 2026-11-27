@@ -15,7 +15,12 @@ import kotlinx.serialization.json.jsonArray
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** One relay's answer to [askReplaceable]: [answered] sent its EOSE, [reached] connected. */
+/**
+ * One relay's answer to [askReplaceable]: [answered] sent its EOSE. [reached] is false only when the relay was down:
+ * its connect failed at the socket, or a hold such a failure started skipped the dial ([WebSocketClient.downAtConnect]).
+ * A connect that timed out, a 429, a blocked relay or a slow one still reached: it may hold the newest copy (Tom/Tron,
+ * web PR 2611).
+ */
 internal class RelayAsk(val answered: Boolean, val reached: Boolean)
 
 /**
@@ -32,7 +37,6 @@ internal suspend fun askReplaceable(
     onEvent: (JsonObject) -> Unit,
 ): RelayAsk = coroutineScope {
     val answered = AtomicBoolean(false)
-    val reached = AtomicBoolean(false)
     try {
         withTimeoutOrNull(timeoutMs) {
             val subId = "dmlist-${UUID.randomUUID().toString().take(6)}"
@@ -52,7 +56,6 @@ internal suspend fun askReplaceable(
             }
             val sender = launch {
                 client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
-                reached.set(true)
                 val dFilter = dTag?.let { ""","#d":[${JsonPrimitive(it)}]""" } ?: ""
                 client.send("""["REQ","$subId",{"kinds":[$kind],"authors":["$pubkey"]$dFilter,"limit":1}]""")
             }
@@ -73,5 +76,7 @@ internal suspend fun askReplaceable(
     } finally {
         client.disconnect()
     }
-    RelayAsk(answered.get(), reached.get())
+    // A socket disconnect() closed can't fail any more, so this is the connect's own outcome.
+    val down = client.downAtConnect
+    RelayAsk(answered.get(), answered.get() || !down)
 }

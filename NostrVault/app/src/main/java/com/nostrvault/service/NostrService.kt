@@ -421,8 +421,9 @@ class NostrService @Inject constructor(
          */
         val ahead: Boolean = false,
         /**
-         * The relays that connected (sent the request or answered), so a relay that never connected can drop out of
-         * the follow list's count ([FollowListKnown]). Null when not recorded: every relay asked counts then.
+         * The relays that weren't down ([RelayAsk.reached]: every relay asked but one whose connect failed at the
+         * socket), so a down relay drops out of the follow list's count ([FollowListKnown]). Null when not recorded:
+         * every relay asked counts then.
          */
         val reachedBy: Set<String>? = null,
     ) {
