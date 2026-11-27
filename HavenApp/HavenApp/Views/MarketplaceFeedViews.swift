@@ -39,7 +39,7 @@ struct MarketplaceCardView: View {
                     .foregroundColor(.accentText)
                     .lineLimit(1)
 
-                Text(profile?.bestName ?? "npub…" + String(listing.pubkey.suffix(6)))
+                Text(profile?.shownName ?? "npub…" + String(listing.pubkey.suffix(6)))
                     .font(.appSystem(size: 11))
                     .foregroundColor(.secondary)
                     .lineLimit(1)

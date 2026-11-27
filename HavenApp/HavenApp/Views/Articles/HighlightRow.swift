@@ -30,7 +30,7 @@ struct HighlightRow: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 AvatarView(url: profile?.pictureURL, pubkey: highlight.pubkey, size: 22)
-                Text(profile?.bestName ?? "npub…" + String(highlight.pubkey.suffix(6)))
+                Text(profile?.shownName ?? "npub…" + String(highlight.pubkey.suffix(6)))
                     .font(.appSystem(size: 13, weight: .semibold))
                 Text(highlight.createdAt, style: .relative)
                     .font(.appSystem(size: 11))

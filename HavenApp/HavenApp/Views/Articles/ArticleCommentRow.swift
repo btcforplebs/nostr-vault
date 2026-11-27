@@ -12,7 +12,7 @@ struct ArticleCommentRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     AvatarView(url: profile?.pictureURL, pubkey: note.pubkey, size: 24)
-                    Text(profile?.bestName ?? "npub…" + String(note.pubkey.suffix(6)))
+                    Text(profile?.shownName ?? "npub…" + String(note.pubkey.suffix(6)))
                         .font(.appSystem(size: 13, weight: .semibold))
                         .lineLimit(1)
                     Text(note.createdAt, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))

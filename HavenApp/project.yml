@@ -87,6 +87,8 @@ targets:
       - path: HavenApp/Resources/starter_packs.json
       # Every Unicode emoji with names, for the emoji picker (EmojiCatalog).
       - path: HavenApp/Resources/emoji.tsv
+      # Clean mode's word list, a copy of docs/clean-words/en.txt (CleanMode).
+      - path: HavenApp/Resources/clean-words-en.txt
 
     # Secrets come from the gitignored Config/Secrets.xcconfig (see Base.xcconfig).
     configFiles:
@@ -199,6 +201,8 @@ targets:
       - path: HavenApp/Resources/starter_packs.json
       # Every Unicode emoji with names, for the emoji picker (EmojiCatalog).
       - path: HavenApp/Resources/emoji.tsv
+      # Clean mode's word list, a copy of docs/clean-words/en.txt (CleanMode).
+      - path: HavenApp/Resources/clean-words-en.txt
 
     # Secrets come from the gitignored Config/Secrets.xcconfig (see Base.xcconfig).
     configFiles:

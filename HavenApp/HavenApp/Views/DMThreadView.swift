@@ -346,7 +346,7 @@ struct DMThreadView: View {
                     Button { showingProfile = IdentifiableString(id: counterpartyPubkey) } label: {
                         HStack(spacing: 8) {
                             AvatarView(url: counterpartyProfile?.pictureURL, pubkey: counterpartyPubkey, size: 28)
-                            Text(counterpartyProfile?.bestName ?? String(counterpartyPubkey.prefix(8)) + "…")
+                            Text(counterpartyProfile?.shownName ?? String(counterpartyPubkey.prefix(8)) + "…")
                                 .font(.appSystem(size: 15, weight: .semibold))
                                 .foregroundColor(.primary)
                                 .lineLimit(1)
@@ -775,7 +775,7 @@ struct MessageBubbleView: View {
                     if !split.text.isEmpty || (split.images.isEmpty && split.videos.isEmpty) {
                         // Links found as in a bio (no markdown read), and a tap
                         // opens the in-app browser by the post-link rules.
-                        Text(Self.linked(split.text, fromMe: message.isFromMe))
+                        Text(CleanMode.shown(Self.linked(split.text, fromMe: message.isFromMe)))
                             .font(.appSystem(size: 15))
                             .foregroundColor(message.isFromMe ? .onAccent : .primary)
                             .tint(message.isFromMe ? Color.onAccent : .havenPurple)

@@ -718,7 +718,7 @@ private struct FeedPicksSheet: View {
                     HStack(spacing: 12) {
                         AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 40)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(profile?.bestName ?? String(pubkey.prefix(10)))
+                            Text(profile?.shownName ?? String(pubkey.prefix(10)))
                                 .font(.appSubheadline.weight(.semibold))
                                 .lineLimit(1)
                             if let nip05 = profile?.nip05, !nip05.isEmpty {

@@ -67,7 +67,7 @@ struct ReactorsListView: View {
                             .shadow(color: Color.shade.opacity(0.1), radius: 3)
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(profile?.bestName ?? "npub…" + String(reactor.pubkey.suffix(6)))
+                            Text(profile?.shownName ?? "npub…" + String(reactor.pubkey.suffix(6)))
                                 .font(.appSystem(size: 16, weight: .semibold))
                                 .foregroundColor(.primary)
                             if let nip05 = profile?.nip05, !nip05.isEmpty {
@@ -144,7 +144,7 @@ struct RepostersListView: View {
                             .shadow(color: Color.shade.opacity(0.1), radius: 3)
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(profile?.bestName ?? "npub\u{2026}" + String(pubkey.suffix(6)))
+                            Text(profile?.shownName ?? "npub\u{2026}" + String(pubkey.suffix(6)))
                                 .font(.appSystem(size: 16, weight: .semibold))
                                 .foregroundColor(.primary)
                             if let nip05 = profile?.nip05, !nip05.isEmpty {
@@ -216,7 +216,7 @@ struct QuotersListView: View {
                             .shadow(color: Color.shade.opacity(0.1), radius: 3)
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(profile?.bestName ?? "npub\u{2026}" + String(pubkey.suffix(6)))
+                            Text(profile?.shownName ?? "npub\u{2026}" + String(pubkey.suffix(6)))
                                 .font(.appSystem(size: 16, weight: .semibold))
                                 .foregroundColor(.primary)
                             if let nip05 = profile?.nip05, !nip05.isEmpty {

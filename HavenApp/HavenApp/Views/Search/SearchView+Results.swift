@@ -183,7 +183,7 @@ extension SearchView {
                 AvatarView(url: profile.pictureURL, pubkey: pubkey, size: 40)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(profile.bestName)
+                    Text(profile.shownName)
                         .font(.appSystem(size: 13, weight: .semibold))
                         .foregroundColor(.primary)
                         .lineLimit(1)

@@ -19,7 +19,7 @@ struct OtherResponseCard: View {
         let card = VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 AvatarView(url: profile?.pictureURL, pubkey: note.pubkey, size: 22)
-                Text(profile?.bestName ?? String(note.pubkey.prefix(8)))
+                Text(profile?.shownName ?? String(note.pubkey.prefix(8)))
                     .font(.appSystem(size: 13, weight: .semibold))
                     .lineLimit(1)
                 Label(label.0, systemImage: label.1)

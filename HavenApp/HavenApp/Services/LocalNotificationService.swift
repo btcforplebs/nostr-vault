@@ -367,6 +367,8 @@ final class LocalNotificationService {
 
     private func deliver(id: String, type: String, name: String?, preview: String, npub: String,
                          carried: [String: String] = [:]) {
+        // What the banner shows, clean mode applied (never what is stored).
+        let name = name.map(CleanMode.shown), preview = CleanMode.shown(preview)
         if appInForeground {
             showInAppBanner(id: id, type: type, name: name, preview: preview, npub: npub, carried: carried)
         } else {

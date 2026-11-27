@@ -44,7 +44,7 @@ struct ArticleCardView: View {
                     AvatarView(url: profile?.pictureURL, pubkey: note.pubkey, size: 22)
                         .onTapGesture { onAuthorTap?(note.pubkey) }
 
-                    Text(profile?.bestName ?? "npub…" + String(note.pubkey.suffix(6)))
+                    Text(profile?.shownName ?? "npub…" + String(note.pubkey.suffix(6)))
                         .font(.appSystem(size: 12, weight: .semibold))
                         .foregroundColor(.secondary)
                         .lineLimit(1)

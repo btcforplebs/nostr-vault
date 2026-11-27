@@ -573,7 +573,7 @@ struct Kind3EventDetailView: View {
             let profile = NostrService.shared.profiles[pubkey]
             AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 34)
             VStack(alignment: .leading, spacing: 1) {
-                Text(profile?.bestName ?? abbreviatedKey(pubkey))
+                Text(profile?.shownName ?? abbreviatedKey(pubkey))
                     .font(.appSubheadline)
                     .lineLimit(1)
                 if let nip05 = profile?.nip05, !nip05.isEmpty {
@@ -712,7 +712,7 @@ struct SnapshotDetailView: View {
             let profile = NostrService.shared.profiles[pubkey]
             AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 34)
             VStack(alignment: .leading, spacing: 1) {
-                Text(profile?.bestName ?? abbreviatedKey(pubkey))
+                Text(profile?.shownName ?? abbreviatedKey(pubkey))
                     .font(.appSubheadline)
                     .lineLimit(1)
                 if let nip05 = profile?.nip05, !nip05.isEmpty {

@@ -77,7 +77,7 @@ extension ProfileContent {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(profile?.bestName ?? ProfileFormat.shortPubkey(pubkey))
+                    Text(profile?.shownName ?? ProfileFormat.shortPubkey(pubkey))
                         .font(.appSystem(size: 20, weight: .bold))
                         .foregroundColor(.primary)
                         .lineLimit(1)
@@ -150,7 +150,7 @@ extension ProfileContent {
     /// The bio as written, with every link tappable (https, `<npub>.fips`).
     /// A tap goes where a post's link goes: the in-app browser and its rules.
     func bioBlock(_ about: String) -> some View {
-        Text(ProfileBioLinks.attributed(about))
+        Text(CleanMode.shown(ProfileBioLinks.attributed(about)))
             .font(.appSystem(size: 13))
             .foregroundColor(.primary.opacity(0.85))
             .multilineTextAlignment(.leading)

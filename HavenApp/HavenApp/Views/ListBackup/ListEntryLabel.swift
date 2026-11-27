@@ -15,7 +15,7 @@ struct ListEntryLabel: View {
                 let profile = nostr.profiles[hex]
                 AvatarView(url: profile?.pictureURL, pubkey: hex, size: 28)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(profile.map(\.bestName) ?? Self.shortNpub(hex)).lineLimit(1)
+                    Text(profile.map(\.shownName) ?? Self.shortNpub(hex)).lineLimit(1)
                     if let note { Text(note).font(.appCaption).foregroundColor(.secondary) }
                 }
             } else {

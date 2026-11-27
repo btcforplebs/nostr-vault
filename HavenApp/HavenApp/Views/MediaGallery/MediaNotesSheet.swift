@@ -56,7 +56,7 @@ struct MediaNotesSheet: View {
             AvatarView(url: profile?.pictureURL, pubkey: note.pubkey, size: 36)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(profile?.bestName ?? String(note.pubkey.prefix(10)))
+                    Text(profile?.shownName ?? String(note.pubkey.prefix(10)))
                         .font(.appSystem(size: 15, weight: .semibold))
                         .lineLimit(1)
                     Text(note.createdAtDate, style: .relative)

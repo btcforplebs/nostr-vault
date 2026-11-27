@@ -42,7 +42,7 @@ struct LiveStreamCardView: View {
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(profile?.bestName ?? "npub…" + String(stream.hostPubkey.suffix(6)))
+                Text(profile?.shownName ?? "npub…" + String(stream.hostPubkey.suffix(6)))
                     .font(.appSystem(size: 11))
                     .foregroundColor(.secondary)
                     .lineLimit(1)

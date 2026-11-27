@@ -64,7 +64,7 @@ struct LinkPreviewCard: View {
 
                     // Title
                     if let title = meta.title {
-                        Text(title)
+                        Text(CleanMode.shown(title))
                             .font(.appSystem(size: 13, weight: .semibold))
                             .foregroundColor(.primary)
                             .lineLimit(2)
@@ -73,7 +73,7 @@ struct LinkPreviewCard: View {
 
                     // Description
                     if let desc = meta.description, !desc.isEmpty {
-                        Text(desc)
+                        Text(CleanMode.shown(desc))
                             .font(.appSystem(size: 12, weight: .regular))
                             .foregroundColor(.secondary)
                             .lineLimit(2)

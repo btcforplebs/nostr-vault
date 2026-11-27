@@ -60,7 +60,7 @@ struct ArticleReaderView: View {
                 HStack(spacing: 8) {
                     AvatarView(url: profile?.pictureURL, pubkey: note.pubkey, size: 28)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(profile?.bestName ?? "npub…" + String(note.pubkey.suffix(6)))
+                        Text(profile?.shownName ?? "npub…" + String(note.pubkey.suffix(6)))
                             .font(.appSystem(size: 13, weight: .semibold))
                         HStack(spacing: 4) {
                             Text(note.longFormDisplayDate, format: .dateTime.month(.abbreviated).day().year())
