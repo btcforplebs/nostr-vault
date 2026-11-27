@@ -252,7 +252,7 @@ private fun sellerName(pubkey: String, profile: FeedProfile?): String =
 
 /**
  * One listing: swipeable photos, price, category and location, seller, the
- * description, then Buy/Bid on Plebeian, Message seller, and Event Info.
+ * description, then Buy/Bid on Plebeian (Conduit for a Conduit listing), Message seller, and Event Info.
  * Shopstr was linked too until 2026-10-04, when Logen reported it dead.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -360,11 +360,11 @@ internal fun MarketListingSheet(
 
             Spacer(Modifier.height(18.dp))
             Button(
-                onClick = { runCatching { uriHandler.openUri(listing.plebeianUrl) } },
+                onClick = { runCatching { uriHandler.openUri(listing.buyLink.url) } },
                 colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = Color.Black),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (listing.hasPlebeianPage) "Buy on Plebeian" else "Seller on Plebeian", fontWeight = FontWeight.SemiBold)
+                Text(listing.buyLink.label, fontWeight = FontWeight.SemiBold)
             }
             if (onMessageSeller != null) {
                 Spacer(Modifier.height(8.dp))
