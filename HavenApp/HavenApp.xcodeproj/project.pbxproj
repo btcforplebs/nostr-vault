@@ -261,6 +261,7 @@
 		19DE6A06577C5C1E1BB9FF23 /* NotReadyShareReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CABE1283B9C60079654F154 /* NotReadyShareReviewView.swift */; };
 		19DE705D1A987D9C2F2AF4AF /* Confident.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4B5A4A8F28D8FA1A5E59F7EC /* Confident.mp3 */; };
 		1A0A552944F26FAECD8A310F /* DiscoveryReach.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AAD34A0C735A84D73CA7791 /* DiscoveryReach.swift */; };
+		1A1872F267A35D30C2D8677F /* AccountHexMemo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E1F29ECAEE2C4AE05C5F745 /* AccountHexMemo.swift */; };
 		1AA0201FCC0AF635FD0468D1 /* PublicOnWebSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0051B6D9E3354FCF3B5CEEA /* PublicOnWebSettingsView.swift */; };
 		1AB45C5CED3A1E6F20B9DC8C /* CalendarShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ADC40DC429546740845C49A /* CalendarShareHandler.swift */; };
 		1AE379FFA133164DF9D9612A /* HavenConfig+ConfigSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692CD6D93D1D798D71FE0AA4 /* HavenConfig+ConfigSecrets.swift */; };
@@ -623,6 +624,7 @@
 		3E29BA26158C9979FC763CE2 /* WebGate+Zaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13A1DB1083E3B5E7E5B06310 /* WebGate+Zaps.swift */; };
 		3E53AB37D8C661294466026D /* VertexReputation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B5E98764373253F27F8526F /* VertexReputation.swift */; };
 		3E87EEC2B0B45C4B4CAE2F25 /* MacVaultLockBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B617FFD5AD4CF201C13C67D /* MacVaultLockBanner.swift */; };
+		3EACBF4A7760D39B6D07BFDA /* NoteRowParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = A240B593DE2CCCBE5AA33789 /* NoteRowParse.swift */; };
 		3EB30962C252CDEDFB0AF584 /* MeshSyncStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1386794E709BFA3E18B9CC /* MeshSyncStatus.swift */; };
 		3EBEC2F605993B37DDB345AB /* NoteRow+EngagementBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CED90605A0EC0CF574801DE /* NoteRow+EngagementBar.swift */; };
 		3ECA71AB2B03A0121F13BA9E /* FollowPublishFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48BEB45D553BCE4A74C65F23 /* FollowPublishFailure.swift */; };
@@ -2059,6 +2061,7 @@
 		CE50FBB4E33CAEAE5056B052 /* EventPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0D438DE03F310940F4D19A /* EventPublisher.swift */; };
 		CE658646406692011C5ACEF1 /* QuotedNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0470608431CE649B6E55F7D /* QuotedNoteView.swift */; };
 		CE9BE3737EA6F24E11508EFD /* ShareInboxTrigger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64608CF1EFDCD7211E9AAE04 /* ShareInboxTrigger.swift */; };
+		CEA5CEC8E86A649DE1F6DF56 /* NoteRowParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = A240B593DE2CCCBE5AA33789 /* NoteRowParse.swift */; };
 		CEBA8A8FAE1C365867C7E9E3 /* VaultDashboardDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = D67ADBC1563448EB3D0AE077 /* VaultDashboardDetails.swift */; };
 		CEF852B80B0C6831D4FEDD9A /* BackupRestoreCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FD42DE3F81B42839907CD4 /* BackupRestoreCode.swift */; };
 		CF11F2A3B34BC8D6843AE229 /* QuoteReferenceIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */; };
@@ -2371,6 +2374,7 @@
 		EC13B7C36B4880936A026AEF /* MeshMediaRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B39AC9891DC2150ED3792D /* MeshMediaRouter.swift */; };
 		EC69E7FB15A8D973C111A810 /* NVSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A385719722D447ECB47AA2D8 /* NVSharedStore.swift */; };
 		EC856F48D76F9525619CCF4F /* MeshCopyV2Service+Background.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CCA9CE78BE9C4A184CF1FEB /* MeshCopyV2Service+Background.swift */; };
+		EC86D7ABAFB1D2934C1CD05A /* AccountHexMemo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E1F29ECAEE2C4AE05C5F745 /* AccountHexMemo.swift */; };
 		EC8E67328965FB384FEAB184 /* RelayCounters.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBEB2E914629F6633A39F2DD /* RelayCounters.swift */; };
 		EC907339E02BF6357A5CFC2D /* ArticleInlineBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E1BD51ACE15691E3AB709B /* ArticleInlineBody.swift */; };
 		EC9B93457FB387AC0A53E7DE /* RestoreBackupRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C2FB3DC49856C08EED41BF /* RestoreBackupRow.swift */; };
@@ -3351,6 +3355,7 @@
 		8D3F3AF45A6E0196F0F434A2 /* ArticleCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleCardView.swift; sourceTree = "<group>"; };
 		8D9F1F07AA851FF576668FCB /* ProfileRefreshPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileRefreshPlan.swift; sourceTree = "<group>"; };
 		8DE98382E71250C66C461CB5 /* FeedService+ContactList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+ContactList.swift"; sourceTree = "<group>"; };
+		8E1F29ECAEE2C4AE05C5F745 /* AccountHexMemo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountHexMemo.swift; sourceTree = "<group>"; };
 		8E33934D682D87D02C55AFF1 /* GlobeStorm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobeStorm.swift; sourceTree = "<group>"; };
 		8E831DEF8EF947BCDF35B52A /* ZapRepeatPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapRepeatPrompt.swift; sourceTree = "<group>"; };
 		8EE02D17B251A319CA3CAA1A /* VaultModeLists.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultModeLists.swift; sourceTree = "<group>"; };
@@ -3470,6 +3475,7 @@
 		A1E97DE0A79D54F91CAE7557 /* LockedKeyExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockedKeyExport.swift; sourceTree = "<group>"; };
 		A200B7EA08917B874F06B2AF /* NVShareInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVShareInbox.swift; sourceTree = "<group>"; };
 		A21B9BEF9DAADA51C5B8C4D3 /* LiveChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChat.swift; sourceTree = "<group>"; };
+		A240B593DE2CCCBE5AA33789 /* NoteRowParse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteRowParse.swift; sourceTree = "<group>"; };
 		A252F7C1254A15F107C98037 /* BookmarkList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkList.swift; sourceTree = "<group>"; };
 		A26B400CA78D02446D6677B0 /* ListWipeAlarmWording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListWipeAlarmWording.swift; sourceTree = "<group>"; };
 		A26E49B54EEEAFCC4F6D1D98 /* DMFileKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMFileKind.swift; sourceTree = "<group>"; };
@@ -4205,6 +4211,7 @@
 				266D5D4C9DCD35AD8D9A8C9E /* GenmojiField.swift */,
 				0CED90605A0EC0CF574801DE /* NoteRow+EngagementBar.swift */,
 				6D7F06C12BC798B50FBF8CA0 /* NoteRow+ExpandedLayout.swift */,
+				A240B593DE2CCCBE5AA33789 /* NoteRowParse.swift */,
 				436B49412CA8DD29DA49C857 /* OpensMessagesMode.swift */,
 				5AB87D6F419A5756C1655631 /* QuotedEventsView.swift */,
 				A6BE0E091BAC1028A89B70F5 /* RepostedNoteView.swift */,
@@ -5574,6 +5581,7 @@
 			children = (
 				1F6C3CE43A9AD195A971B04F /* AccentMath.swift */,
 				B85F3815F94E1E1DEBB94D27 /* AccentPalette.swift */,
+				8E1F29ECAEE2C4AE05C5F745 /* AccountHexMemo.swift */,
 				E2C295EC834C1EFDC6B042DC /* AccountUnreadStore.swift */,
 				815D5743884602474E33A86A /* AccountUnreadStore+ListRules.swift */,
 				518E7523B8F652B19F1A342A /* AppAppearance.swift */,
@@ -6174,6 +6182,7 @@
 				0A65ABE6A642C1496B8D1E8E /* AccountBunkerConfig.swift in Sources */,
 				90AD1055CA65A9166B52B947 /* AccountDataSweep.swift in Sources */,
 				FCF9E2A3BB6921EB9A467368 /* AccountDetailView.swift in Sources */,
+				EC86D7ABAFB1D2934C1CD05A /* AccountHexMemo.swift in Sources */,
 				D410A7FE304A764414F0C50D /* AccountReach.swift in Sources */,
 				66242A66978A22588517FD46 /* AccountSingleFlight.swift in Sources */,
 				3283FAB8FDC6A1A9D3B6254B /* AccountSwitchFlash.swift in Sources */,
@@ -6994,6 +7003,7 @@
 				B1652559DCB0259E5E7CC4AF /* NotePushLanding.swift in Sources */,
 				1FB591DE0A4D4D89DBA8378F /* NoteRow+EngagementBar.swift in Sources */,
 				A9BD6764846DB55ACAEBB348 /* NoteRow+ExpandedLayout.swift in Sources */,
+				CEA5CEC8E86A649DE1F6DF56 /* NoteRowParse.swift in Sources */,
 				93B73FF47BBBE288DEEFBB20 /* NoteSplitPane.swift in Sources */,
 				4627F52B057D4E506D1065CA /* NoteTagging.swift in Sources */,
 				91FF16E757B1DE588EA84AD3 /* NoteTranslateButton.swift in Sources */,
@@ -7484,6 +7494,7 @@
 				422734AE557FE5F2D6B426DB /* AccountBunkerConfig.swift in Sources */,
 				02A6C51E410C48B08E1D3195 /* AccountDataSweep.swift in Sources */,
 				EE5337DF2E952F3418103753 /* AccountDetailView.swift in Sources */,
+				1A1872F267A35D30C2D8677F /* AccountHexMemo.swift in Sources */,
 				2B03ED08706134B2C69BC248 /* AccountReach.swift in Sources */,
 				5FC32AC9623545321BA3210E /* AccountSingleFlight.swift in Sources */,
 				727A175702DD6CC3114B1248 /* AccountSwitchFlash.swift in Sources */,
@@ -8277,6 +8288,7 @@
 				708DF71CE849D28ECE7FD97B /* NotePushLanding.swift in Sources */,
 				3EBEC2F605993B37DDB345AB /* NoteRow+EngagementBar.swift in Sources */,
 				E66930E311700B1D4D32D634 /* NoteRow+ExpandedLayout.swift in Sources */,
+				3EACBF4A7760D39B6D07BFDA /* NoteRowParse.swift in Sources */,
 				BE4A78A11408E800B11048E0 /* NoteTagging.swift in Sources */,
 				4D3432B398C464F3FF5BAB5C /* NoteTranslateButton.swift in Sources */,
 				29A348BEE3CCE7F28369D001 /* NoteTranslation.swift in Sources */,
