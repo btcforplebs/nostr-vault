@@ -201,8 +201,12 @@ class Checker:
         log(f"drawing mode {mode} ({why})" + (f"; failed before: {', '.join(tried)}" if tried else ""))
         if nv_heal.note:
             log(nv_heal.note)
-        nv_heal.reap_strays(log)
         self.reap_leftovers()
+
+    def startup(self):
+        """The primary instance only (the shell's do_startup): a second launch that hands off over D-Bus never gets
+        here, so it can't end a running window's WebKit (nv_heal.reap_strays)."""
+        nv_heal.reap_strays(self.log)
 
     def reap_leftovers(self):
         """Children left from before this process started over (restart(), the shell's restart_as_tray): WebKit's
@@ -513,7 +517,7 @@ class Checker:
 
         def open_browser(*_):
             try:
-                Gio.AppInfo.launch_default_for_uri(origin, None)
+                nv_heal.launch_uri(origin)
             except GLib.Error as e:
                 self.log("couldn't open the browser: " + e.message)
 

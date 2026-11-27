@@ -29,6 +29,7 @@ import urllib.request
 # draws and starts over in the next way if it doesn't (nv_paint.py).
 sys.path.insert(0, os.environ.get("NV_DESKTOP_SHARE", "/usr/share/nostr-vault/desktop"))
 import nv_paint  # noqa: E402
+import nv_heal  # noqa: E402  (stray WebKit trees; what the window starts gets none of its variables)
 
 nv_paint.choose()
 
@@ -263,6 +264,7 @@ class App(Gtk.Application):
         Gtk.Application.do_startup(self)
         self.start_fault_log()
         nv_paint.listen_for_update(self.paint)
+        self.paint.startup()  # the primary instance only: ends stray WebKit trees (nv_heal.py)
         settings = Gtk.Settings.get_default()
         if settings:
             settings.set_property("gtk-application-prefer-dark-theme", True)
@@ -668,7 +670,7 @@ class App(Gtk.Application):
         # Anything else (a link to a website, a lightning: or nostr: link) goes to the system's own handler.
         decision.ignore()
         try:
-            Gio.AppInfo.launch_default_for_uri(uri, None)
+            nv_heal.launch_uri(uri)
         except GLib.Error:
             pass
         return True
@@ -677,7 +679,7 @@ class App(Gtk.Application):
         uri = action.get_request().get_uri() or ""
         if uri:
             try:
-                Gio.AppInfo.launch_default_for_uri(uri, None)
+                nv_heal.launch_uri(uri)
             except GLib.Error:
                 pass
         return None
@@ -844,7 +846,8 @@ class App(Gtk.Application):
             # window and restart_as_tray's exec, after which nothing here would reap it.
             if shutil.which("x-terminal-emulator"):
                 subprocess.run(["sh", "-c", 'x-terminal-emulator -e journalctl -fu nostr-vault -u nostr-vault-mesh &'],
-                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               env=nv_heal.child_env())  # not our variables (nv_heal.OWN_VARS)
 
     # ---- Flatpak: the window runs the vault (nv_flatpak.py)
 
@@ -864,7 +867,7 @@ class App(Gtk.Application):
             self.start_flatpak_vault()
         elif what == "logs":
             try:
-                Gio.AppInfo.launch_default_for_uri(GLib.filename_to_uri(fp.log_file(), None), None)
+                nv_heal.launch_uri(GLib.filename_to_uri(fp.log_file(), None))
             except GLib.Error:
                 pass
 
