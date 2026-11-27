@@ -23,6 +23,12 @@ export const PROFILE_TABS = [
 /** The tabs filled from the profile's note streams (ProfileSection.isNoteTab); Tagged pages its own stream. */
 export const isNoteTab = id => id !== "articles" && id !== "shop"
 
+/** Tabs drawn in the row itself; the rest open from its fourth, More, as a list (Logen 2026-11-27). */
+export const ROW_TABS = 3
+
+/** -> { row, more }: the first ROW_TABS of the tabs on show, and the rest, behind More. */
+export const splitTabRow = tabs => ({ row: tabs.slice(0, ROW_TABS), more: tabs.slice(ROW_TABS) })
+
 /** The tabs on show: the late ones (Articles, Shop) only when the profile has some; Shop always on your own
  *  (`shopAlways`), as the iPhone's MyProfileView. */
 export const visibleTabs = (articles, listings, shopAlways = false) => PROFILE_TABS.filter(t =>

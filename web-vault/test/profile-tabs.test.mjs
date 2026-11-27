@@ -4,7 +4,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
-import { splitProfileNotes, latestArticles, isReply, PROFILE_TABS, visibleTabs, taggedNotes, mergeOlder, emptyText } from "../src/net/profile-tabs.js"
+import { splitTabRow, ROW_TABS, splitProfileNotes, latestArticles, isReply, PROFILE_TABS, visibleTabs, taggedNotes, mergeOlder, emptyText } from "../src/net/profile-tabs.js"
 import { fetchPersonArticles, fetchTagged, ownOlder, syncOwnPage, syncPersonNotes, readPersonNotes } from "../src/net/person.js"
 
 const sk = generateSecretKey(), pk = getPublicKey(sk)
@@ -17,6 +17,15 @@ test("the tabs are the iPhone's, in its order; Articles only once the profile ha
   assert.deepEqual(visibleTabs([]).map(t => t.id), ["notes", "media", "replies", "reposts", "tagged"])
   assert.deepEqual(visibleTabs(null).map(t => t.id), ["notes", "media", "replies", "reposts", "tagged"])
   assert.deepEqual(visibleTabs([article("a", 1, "t")]).map(t => t.id).at(-1), "articles")
+})
+
+test("the row holds three tabs; every other kind on show sits behind More, in order", () => {
+  assert.equal(ROW_TABS, 3)
+  const ids = x => x.map(t => t.id)
+  const plain = splitTabRow(visibleTabs([]))
+  assert.deepEqual([ids(plain.row), ids(plain.more)], [["notes", "media", "replies"], ["reposts", "tagged"]])
+  const full = splitTabRow(visibleTabs([article("a", 1, "t")], [{}], true))
+  assert.deepEqual(ids(full.more), ["reposts", "tagged", "articles", "shop"])
 })
 
 test("a repost goes to Reposts, and its media stays out of Media", () => {
