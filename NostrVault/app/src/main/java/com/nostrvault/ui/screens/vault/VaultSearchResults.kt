@@ -78,6 +78,7 @@ private fun Section.icon(): ImageVector = when (this) {
  */
 @Composable
 internal fun VaultSearchResults(
+    mineOnly: Boolean,
     status: Status,
     results: VaultSearchModel.Results,
     resultsQuery: String,
@@ -92,7 +93,11 @@ internal fun VaultSearchResults(
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxWidth()) {
         when {
             status == Status.IDLE -> item {
-                Message("Search your Vault", "Notes, people, hashtags, links, articles and media stored on this device's relay.")
+                if (mineOnly) {
+                    Message("Search your notes", "Only what you posted from this account: notes, articles, media, hashtags and links.")
+                } else {
+                    Message("Search your Vault", "Notes, people, hashtags, links, articles and media stored on this device's relay.")
+                }
             }
             status == Status.SEARCHING && results.isEmpty -> item {
                 Row(
@@ -108,7 +113,7 @@ internal fun VaultSearchResults(
             else -> {
                 caveat(status)?.let { item { Caveat(it) } }
                 if (status != Status.SEARCHING && results.isEmpty) {
-                    item { Message("Nothing in your Vault matches", "“$resultsQuery”") }
+                    item { Message(if (mineOnly) "None of your notes match" else "Nothing in your Vault matches", "“$resultsQuery”") }
                 } else {
                     item {
                         LazyRow(

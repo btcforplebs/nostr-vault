@@ -37,6 +37,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -75,6 +76,11 @@ class GlobalSearchSession(
      * holds ([com.nostrvault.data.model.VaultSearchLogic.NOTE_KINDS]).
      */
     private val noteKinds: List<Int> = listOf(1),
+    /**
+     * Only notes by these keys (the Vault's "My notes"); null keeps everyone's.
+     * Set, the walk asks the store for these authors only and skips profiles.
+     */
+    private val noteAuthors: Set<String>? = null,
     private val onFinished: (GlobalSearchResults) -> Unit = {},
 ) {
     /**
@@ -104,6 +110,17 @@ class GlobalSearchSession(
         /** A source that timed out, failed or was CLOSED did not walk to its end. */
         fun isIncomplete(timedOut: Boolean, error: String?, closedReason: String?): Boolean =
             timedOut || error != null || closedReason != null
+
+        /**
+         * One page of a local store walk: one kind, newest first from [until].
+         * [noteAuthors] narrows note pages (never profiles) to those keys.
+         */
+        fun pageFilter(kind: Int, until: Long?, noteAuthors: Set<String>?): JsonObject = buildJsonObject {
+            put("kinds", JsonArray(listOf(JsonPrimitive(kind))))
+            if (kind != 0 && noteAuthors != null) put("authors", JsonArray(noteAuthors.sorted().map(::JsonPrimitive)))
+            put("limit", LocalRelaySearchPlan.PAGE_LIMIT)
+            if (until != null) put("until", until)
+        }
 
         /** haven's publicly readable routes: outbox, follows' notes, notes tagging the owner. */
         val READABLE_ROUTES = listOf("", "/feed", "/inbox")
@@ -163,7 +180,7 @@ class GlobalSearchSession(
     fun start() {
         if (!started.compareAndSet(false, true)) return
 
-        if (plan.phoneRelayUrl != null) addCachedProfiles()
+        if (plan.phoneRelayUrl != null && noteAuthors == null) addCachedProfiles()
 
         val workers = sources.map { src -> scope.launch { runSource(src) } }
         val publisher = scope.launch {
@@ -363,15 +380,11 @@ class GlobalSearchSession(
             fun sendPage(kind: Int, page: Int, until: Long?) {
                 val sid = newSubId("gp$kind")
                 streams[sid] = PageStream(kind, page, until)
-                val filter = buildJsonObject {
-                    put("kinds", JsonArray(listOf(JsonPrimitive(kind))))
-                    put("limit", LocalRelaySearchPlan.PAGE_LIMIT)
-                    if (until != null) put("until", until)
-                }
+                val filter = pageFilter(kind, until, noteAuthors)
                 socket.send("[\"REQ\",${JsonPrimitive(sid)},$filter]")
             }
 
-            sendPage(0, 1, null)
+            if (noteAuthors == null) sendPage(0, 1, null)
             for (kind in walkedNoteKinds) sendPage(kind, 1, null)
 
             for (msg in socket.incoming) {
@@ -445,6 +458,7 @@ class GlobalSearchSession(
         when (ev.kind) {
             in walkedNoteKinds -> {
                 if (verify && !matcher.matchesNote(ev.content, ev.tags)) return
+                if (noteAuthors != null && ev.pubkey !in noteAuthors) return
                 val note = FeedNote.fromEvent(ev.id, ev.pubkey, ev.content, ev.tags, ev.createdAt, ev.kind)
                 synchronized(lock) {
                     accumulator.addNote(note)

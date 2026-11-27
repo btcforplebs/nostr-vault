@@ -19,6 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.VaultSearchLogic
@@ -47,7 +48,11 @@ internal fun VaultSearchScreen(
     bottomInset: PaddingValues = PaddingValues(bottom = 120.dp),
 ) {
     val scope = rememberCoroutineScope()
-    val model = remember(nostrService, feedService) { VaultSearchModel(scope, nostrService, feedService) }
+    val context = LocalContext.current
+    val model = remember(nostrService, feedService) {
+        VaultSearchModel(scope, nostrService, feedService, mineOnly = VaultSearchScope.load(context))
+    }
+    var mineOnly by remember(model) { mutableStateOf(model.mineOnly) }
     DisposableEffect(model) { onDispose { model.cancel() } }
     var text by rememberSaveable { mutableStateOf("") }
     val status by model.status.collectAsState()
@@ -74,7 +79,17 @@ internal fun VaultSearchScreen(
             onClose = close,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
+        VaultSearchScopeToggle(
+            mineOnly = mineOnly,
+            onChange = { mine ->
+                mineOnly = mine
+                VaultSearchScope.save(context, mine)
+                model.setMineOnly(mine, text)
+            },
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
         VaultSearchResults(
+            mineOnly = mineOnly,
             status = status,
             results = results,
             resultsQuery = resultsQuery,

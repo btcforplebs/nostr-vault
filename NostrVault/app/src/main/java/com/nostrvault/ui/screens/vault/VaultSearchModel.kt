@@ -34,6 +34,7 @@ internal class VaultSearchModel(
     private val scope: CoroutineScope,
     private val nostrService: NostrService,
     private val feedService: FeedService,
+    mineOnly: Boolean = false,
 ) {
     data class Results(
         val people: List<FeedProfile> = emptyList(),
@@ -65,6 +66,29 @@ internal class VaultSearchModel(
 
     private var pending: Job? = null
     private var session: GlobalSearchSession? = null
+
+    /** "My notes": only notes the account in use wrote, no People. */
+    var mineOnly: Boolean = mineOnly
+        private set
+
+    /**
+     * Switches between Notes and My notes and searches the field's [query]
+     * again at once, so the results on screen never mix the two.
+     */
+    fun setMineOnly(mine: Boolean, query: String) {
+        if (mineOnly == mine) return
+        mineOnly = mine
+        pending?.cancel()
+        pending = null
+        stopWalk()
+        _results.value = Results()
+        state.reset()
+        search(query, now = true)
+    }
+
+    /** The authors notes are kept for: the account in use under My notes, else everyone (null). */
+    private fun noteAuthors(): Set<String>? =
+        if (mineOnly) setOfNotNull(nostrService.configStore.activeAccountHexPubkey.value.takeIf { it.isNotEmpty() }) else null
 
     private fun publishState() {
         _status.value = state.status
@@ -120,6 +144,7 @@ internal class VaultSearchModel(
             return
         }
         val matcher = SearchTermMatcher.create(query) ?: return
+        val authors = noteAuthors()
         val walk = GlobalSearchSession(
             query = query,
             matcher = matcher,
@@ -128,6 +153,7 @@ internal class VaultSearchModel(
             follows = feedService.followedPubkeys.value.toSet(),
             cachedProfiles = nostrService.profiles.value.values.toList(),
             noteKinds = VaultSearchLogic.NOTE_KINDS,
+            noteAuthors = authors,
         )
         session = walk
         walk.start()
@@ -138,7 +164,7 @@ internal class VaultSearchModel(
             if (searchState.isRunning && searchState.results.profiles.isEmpty() && searchState.results.notes.isEmpty()) {
                 return@first false
             }
-            land(query, searchState.results.profiles, searchState.results.notes, result)
+            land(query, searchState.results.profiles, searchState.results.notes, result, authors)
             !searchState.isRunning
         }
         if (session === walk) {
@@ -153,32 +179,33 @@ internal class VaultSearchModel(
         val profiles = nostrService.profiles.value.values.toList()
         val events = nostrService.events
         val feedNotes = feedService.notes.value
+        val authors = noteAuthors()
         val (people, notes) = withContext(Dispatchers.Default) {
             val kinds = VaultSearchLogic.NOTE_KINDS.toHashSet()
-            val people = profiles.filter(matcher::matchesProfile)
+            val people = if (authors != null) emptyList() else profiles.filter(matcher::matchesProfile)
             val seen = HashSet<String>()
             val notes = ArrayList<FeedNote>()
             for (event in events) {
-                if (event.kind in kinds && matcher.matchesNote(event.content, event.tags) && seen.add(event.id)) {
+                if (event.kind in kinds && (authors == null || event.pubkey in authors) && matcher.matchesNote(event.content, event.tags) && seen.add(event.id)) {
                     notes += FeedNote.fromEvent(event.id, event.pubkey, event.content, event.tags, event.createdAt, event.kind)
                 }
             }
             for (note in feedNotes) {
-                if (note.kind in kinds && matcher.matchesNote(note.content, note.tags) && seen.add(note.id)) notes += note
+                if (note.kind in kinds && (authors == null || note.pubkey in authors) && matcher.matchesNote(note.content, note.tags) && seen.add(note.id)) notes += note
             }
             people to notes
         }
-        land(query, people, notes, Status.IN_MEMORY)
+        land(query, people, notes, Status.IN_MEMORY, authors)
     }
 
     /** Sorts what was found into sections, off the main thread, and shows it if the field still holds [query]. */
-    private suspend fun land(query: String, profiles: List<FeedProfile>, found: List<FeedNote>, result: Status) {
+    private suspend fun land(query: String, profiles: List<FeedProfile>, found: List<FeedNote>, result: Status, authors: Set<String>?) {
         val cached = nostrService.profiles.value
         val blocked = feedService.blockedHexForActiveAccount()
         val follows = feedService.followedPubkeys.value.toHashSet()
         val sections = withContext(Dispatchers.Default) {
             sectionsFor(query, profiles, found, cached, blocked, follows,
-                decodeNpub = nostrService::npubToHex, authorOf = { feedService.findNote(it)?.pubkey })
+                decodeNpub = nostrService::npubToHex, authorOf = { feedService.findNote(it)?.pubkey }, authors = authors)
         }
         if (result == Status.SEARCHING) {
             // Matches so far, while the walk is still going: the status stays as it is.
@@ -208,7 +235,8 @@ internal class VaultSearchModel(
          * The sections for [query]: the people the query is about (a pasted npub
          * finds its person even with no profile stored), blocked people and their
          * notes taken out, people you follow first, notes newest first, and the
-         * hashtags and links those notes carry.
+         * hashtags and links those notes carry. [authors] set (My notes): no
+         * People, and only notes those keys wrote.
          */
         fun sectionsFor(
             query: String,
@@ -219,11 +247,12 @@ internal class VaultSearchModel(
             follows: Set<String>,
             decodeNpub: (String) -> String?,
             authorOf: (String) -> String? = { null },
+            authors: Set<String>? = null,
         ): Results {
-            var people = profiles.filter {
+            var people = if (authors != null) emptyList() else profiles.filter {
                 VaultSearchLogic.keepsPerson(it.pubkey, listOf(it.displayName, it.name, it.about, it.nip05), query, decodeNpub)
             }
-            if (people.isEmpty()) {
+            if (people.isEmpty() && authors == null) {
                 VaultSearchLogic.keyOnlyPerson(query, decodeNpub) { it in cached }?.let { key ->
                     people = listOf(cached[key] ?: FeedProfile(pubkey = key))
                 }
@@ -232,7 +261,7 @@ internal class VaultSearchModel(
                 .sortedWith(compareBy<FeedProfile> { it.pubkey !in follows }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.bestName })
             val kinds = VaultSearchLogic.NOTE_KINDS.toHashSet()
             val notes = found
-                .filter { it.kind in kinds && !FeedFilterEngine.involvesBlocked(it, blocked, authorOf) }
+                .filter { it.kind in kinds && (authors == null || it.pubkey in authors) && !FeedFilterEngine.involvesBlocked(it, blocked, authorOf) }
                 .sortedByDescending { it.createdAt.time }
             return Results(
                 people = people,

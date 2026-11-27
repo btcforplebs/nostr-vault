@@ -37,7 +37,8 @@ class VaultSearchModelTest {
         blocked: Set<String> = emptySet(),
         follows: Set<String> = emptySet(),
         authorOf: (String) -> String? = { null },
-    ) = VaultSearchModel.sectionsFor(query, profiles, found, cached, blocked, follows, decodeNpub, authorOf)
+        authors: Set<String>? = null,
+    ) = VaultSearchModel.sectionsFor(query, profiles, found, cached, blocked, follows, decodeNpub, authorOf, authors)
 
     @Test
     fun aProfileMatchedOnlyThroughItsHexIsDropped() {
@@ -158,4 +159,48 @@ class VaultSearchModelTest {
         assertFalse(com.nostrvault.service.GlobalSearchSession.isIncomplete(timedOut = false, error = null, closedReason = null))
     }
 
+
+    // ── My notes ──
+
+    @Test
+    fun myNotesKeepsOnlyTheAccountsOwnNotesAndNoPeople() {
+        val r = sections(
+            "hello",
+            profiles = listOf(FeedProfile(bob, name = "hello bob")),
+            found = listOf(note("mine", pubkey = alice, createdAt = 1), note("theirs", pubkey = bob, createdAt = 2)),
+            authors = setOf(alice),
+        )
+        assertTrue(r.people.isEmpty())
+        assertEquals(listOf("mine"), r.notes.map { it.id })
+    }
+
+    @Test
+    fun myNotesHasNoPastedKeyRow() {
+        assertTrue(sections(fakeNpub, authors = setOf(alice)).people.isEmpty())
+    }
+
+    @Test
+    fun myNotesHashtagsAndLinksComeOnlyFromOwnNotes() {
+        val r = sections(
+            "nostr",
+            found = listOf(
+                note("mine", pubkey = alice, content = "#nostr https://mine.example", tags = listOf(listOf("t", "nostr"))),
+                note("theirs", pubkey = bob, content = "#nostrich https://theirs.example", tags = listOf(listOf("t", "nostrich"))),
+            ),
+            authors = setOf(alice),
+        )
+        assertEquals(listOf("nostr"), r.hashtags)
+        assertEquals(listOf("https://mine.example"), r.links.map { it.url })
+    }
+
+    @Test
+    fun myNotesWithNoAccountShowsNothing() {
+        assertTrue(sections("hello", found = listOf(note("n")), authors = emptySet()).isEmpty)
+    }
+
+    @Test
+    fun notesScopeIsUnchanged() {
+        val r = sections("hello", found = listOf(note("a", pubkey = alice, createdAt = 1), note("b", pubkey = bob, createdAt = 2)))
+        assertEquals(listOf("b", "a"), r.notes.map { it.id })
+    }
 }
