@@ -7,8 +7,8 @@ import { Fragment } from "preact"
 import { useEffect, useMemo, useState } from "preact/hooks"
 import { Ranked } from "./PopularRankLine.jsx"
 import { useFeedTap } from "./feed-tap.js"
-import { NoteCard } from "./NoteCard.jsx"
-import { FeedThreadCard } from "./FeedThreadCard.jsx"
+import { NoteCardMemo } from "./NoteCard.jsx"
+import { FeedThreadCardMemo, openIn } from "./FeedThreadCard.jsx"
 import { hasKindBody } from "./FeedKinds.jsx"
 import { buildThreads } from "../net/feed-layout.js"
 import { fetchNotes } from "../net/notifications.js"
@@ -24,7 +24,7 @@ export function FeedRows({ notes, layout, keepFeedOrder = false, memoryOnly = fa
   const room = openId && <div class="tap-room" aria-hidden="true" />
   if (layout === "threaded") return <><Threads notes={notes} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} memoryOnly={memoryOnly} openId={openId} setOpenId={setOpenId} rankOf={rankOf} />{room}</>
   // A reply shows the note it answers above it, unless that note is the very next row (the iPhone's parentIsNext).
-  return notes.map((n, i) => <Fragment key={n.id}><Ranked id={n.id} rankOf={rankOf}><NoteCard event={n} memoryOnly={memoryOnly} showParent={!!threadRefs(n).parent && notes[i + 1]?.id !== threadRefs(n).parent} /></Ranked></Fragment>)
+  return notes.map((n, i) => <Fragment key={n.id}><Ranked id={n.id} rankOf={rankOf}><NoteCardMemo event={n} memoryOnly={memoryOnly} showParent={!!threadRefs(n).parent && notes[i + 1]?.id !== threadRefs(n).parent} /></Ranked></Fragment>)
 }
 
 function Threads({ notes, keepFeedOrder, fetchRoots, memoryOnly, openId, setOpenId, rankOf }) {
@@ -46,7 +46,9 @@ function Threads({ notes, keepFeedOrder, fetchRoots, memoryOnly, openId, setOpen
     }).catch(() => {})
     return () => { live = false }
   }, [key])
-  return threads.map(t => <Fragment key={t.rootId}><Ranked id={t.rootId} rankOf={rankOf}><FeedThreadCard thread={t} openId={openId} setOpenId={setOpenId} memoryOnly={memoryOnly}
+  // Memo cards (FeedThreadCardMemo): a live note or a wider draw window redraws only the cards it changed, and opening
+  // a line redraws the card it is in and the one it left, not every card (Feed perf review 11-27, #2 and #7).
+  return threads.map(t => <Fragment key={t.rootId}><Ranked id={t.rootId} rankOf={rankOf}><FeedThreadCardMemo thread={t} openId={openIn(t, openId)} setOpenId={setOpenId} memoryOnly={memoryOnly}
     rootUnavailable={!t.root && fetched.has(t.rootId)} /></Ranked></Fragment>)
 }
 
