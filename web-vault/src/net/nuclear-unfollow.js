@@ -44,10 +44,10 @@ export async function nuclearUnfollow({ ctx, target, remove, onBackup = () => {}
   if (!HEX.test(target ?? "") || target === me) throw new Error("That isn't someone you can unfollow.")
   const cut = new Set([...remove].filter(pk => HEX.test(pk) && pk !== me))
   if (!cut.size) throw new Error("Nobody is checked, so nothing was changed.")
-  const { base, seen, asked, answered, heard, netFound, ahead } = await findLatestList({ vault: ctx.vault, pubkey: me, relays: account.relays.listed ?? [], known: account.contacts, ask })
+  const { base, seen, asked, reached, answered, indexAnswered, netFound, ahead } = await findLatestList({ vault: ctx.vault, pubkey: me, relays: account.relays.listed ?? [], known: account.contacts, ask })
   // The base must be one every other follow edit would build on: checked unchanged, so a shrunken, stale or one-relay
   // copy refuses here. The cut itself is the user's (checked and confirmed), so it isn't held to the size rule.
-  const refused = wipeGuard({ base, tags: base?.tags ?? [], target, follow: false, seen, appCount: account.follows.length, asked, answered, heard, netFound, ahead })
+  const refused = wipeGuard({ base, tags: base?.tags ?? [], target, follow: false, seen, appCount: account.follows.length, asked, reached, answered, indexAnswered, netFound, ahead })
   if (refused) throw new Error(refused)
   if (!base) throw new Error("Your follow list wasn't found on your relays, so nothing was changed. Try again when they answer.")
   const before = followsOf(base)

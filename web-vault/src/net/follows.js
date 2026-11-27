@@ -4,10 +4,13 @@
 // most of what the user had. An account that never had a list may start one once every one of its relays answered
 // without one.
 import { verifyEvent } from "nostr-tools/pure"
-import { pool, publishRelays, PROFILE_RELAYS, uniq } from "./pool.js"
+import { pool, publishRelays, PROFILE_RELAYS, uniq, socketFailure } from "./pool.js"
 import { checkSigned } from "./sync.js"
 import { firstTaken } from "./actions.js"
 import { followError } from "./follow-failure.js"
+
+/** The one index relay that may stand in as a one-relay account's second answer (followListKnown). */
+export const INDEX_RELAY = "wss://purplepag.es"
 
 const HEX = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -37,6 +40,33 @@ export const allOwnAnswered = ({ asked, answered }) => asked > 0 && answered ===
  */
 export const ownMajority = ({ asked, answered, heard = answered }) => asked > 0 && answered * 2 > asked && heard >= 2
 
+/**
+ * The follow list's rule (Logen 2026-11-27, b6e725ef; iOS and Android build the same): an own write relay that never
+ * connected drops out of the count (`reached`: own relays that connected, answered or slow), and the edit needs
+ *  - at least 2 own relays answering (a real EOSE), always;
+ *  - a list found: more than half of the reached relays answering. A slow relay that connected but sent no EOSE in
+ *    time still counts against it: it may hold a newer copy;
+ *  - no list found: every own relay answering, dead ones too (allOwnAnswered): a relay that didn't answer may hold
+ *    the only copy, and a first list sent to it would replace that copy (Tron, PR 2611 review).
+ * One exception (Logen 2026-11-27, b219c87b): an account whose 10002 lists exactly ONE own write relay may count
+ * purplepag.es (INDEX_RELAY) as its second answer (`indexAnswered`: purplepag.es sent its EOSE). Only then: with 2 or
+ * more own relays the indexer never counts, and no other index relay ever does.
+ */
+export const followListKnown = ({ asked, reached, answered, found, indexAnswered = false }) =>
+  answered + (asked === 1 && indexAnswered ? 1 : 0) >= 2 &&
+  (found ? answered * 2 > reached : allOwnAnswered({ asked, answered }))
+
+/**
+ * Whether a connect failure means the relay is down for this ask: only nostr-tools' own socket error or close
+ * ("connection failed", "websocket closed"). A relay this app chose not to dial (cool-down, budget, socket cap, dead
+ * host list, plain ws:// on https: pool.js refuse/ensureRelay), one skipped as slow, and a connect timeout may all be
+ * healthy and hold the newest list, so they stay in the count as reached-but-silent (Tron, PR 2611 review). A relay
+ * skipped for a cool-down that a socket failure started (`socketDown`, pool.js ensureRelay) is down too, so a second
+ * follow inside the cool-down counts the same as the first (rd's dead relays, Tod 2026-11-27); a cool-down a timeout
+ * started stays in the count.
+ */
+export const socketFailed = err => !!err?.socketDown || socketFailure(err)
+
 /** A list edit's rule: a found copy needs ownMajority, "no list" needs allOwnAnswered. */
 export const editKnown = ({ asked, answered, heard, found }) =>
   found ? ownMajority({ asked, answered, heard }) : allOwnAnswered({ asked, answered })
@@ -59,13 +89,15 @@ export function newestList(lists, pubkey, at = now()) {
 }
 
 /**
- * One relay's answer to `filter`: { events, answered }. `answered` is true only on the relay's own EOSE. pool.querySync
+ * One relay's answer to `filter`: { events, answered, connected }. `answered` is true only on the relay's own EOSE;
+ * `connected` is false only when its socket errored or closed while connecting (socketFailed; followListKnown drops
+ * those from the count). pool.querySync
  * can't be used here: it turns an unreachable relay, and a relay that times out, into the same empty answer as
  * "no list" (nostr-tools counts its EOSE timeout as an EOSE), and that is the difference the guard needs.
  */
 export async function askRelay(url, filter, ms = ASK_MS) {
   let relay
-  try { relay = await pool.ensureRelay(url, { connectionTimeout: ms }) } catch { return { events: [], answered: false } }
+  try { relay = await pool.ensureRelay(url, { connectionTimeout: ms }) } catch (err) { return { events: [], answered: false, connected: !socketFailed(err) } }
   return new Promise(resolve => {
     const events = []
     let sub = null, finished = false
@@ -74,7 +106,7 @@ export async function askRelay(url, filter, ms = ASK_MS) {
       finished = true
       clearTimeout(timer)
       try { sub?.close() } catch {}
-      resolve({ events, answered })
+      resolve({ events, answered, connected: true })
     }
     const timer = setTimeout(() => done(false), ms)
     try {
@@ -92,7 +124,9 @@ export async function askRelay(url, filter, ms = ASK_MS) {
  * Nothing found here is written to the vault: a list the guard refuses must not become the app's follows.
  * `ahead`: a list of the user's was found but dated too far ahead to count, so a list exists somewhere.
  * `heard`: how many relays asked, purplepag.es too, sent their EOSE.
- * `ask` is for tests. -> { base, seen: [kind 3], asked, answered, heard, netFound, ahead }
+ * `reached`: how many own relays connected (answered or slow); one that never connected isn't (followListKnown).
+ * `indexAnswered`: purplepag.es sent its EOSE (followListKnown's one-own-relay case).
+ * `ask` is for tests. -> { base, seen: [kind 3], asked, reached, answered, heard, indexAnswered, netFound, ahead }
  */
 export async function findLatestList({ vault, pubkey, relays, known, ask = askRelay }) {
   const filter = { kinds: [3], authors: [pubkey] }
@@ -105,12 +139,15 @@ export async function findLatestList({ vault, pubkey, relays, known, ask = askRe
   const net = replies.flatMap(r => r.events).filter(ev => ev?.kind === 3 && ev.pubkey === pubkey && verifiedCopy(ev))
   const answered = replies.filter((r, i) => r.answered && own.includes(asked[i])).length
   const heard = replies.filter(r => r.answered).length
+  const indexAnswered = replies.some((r, i) => asked[i] === INDEX_RELAY && !own.includes(INDEX_RELAY) && r.answered)
+  // A reply that doesn't say (a test's ask) counts as connected: never dropping a relay is the old, stricter count.
+  const reached = replies.filter((r, i) => own.includes(asked[i]) && (r.answered || r.connected !== false)).length
   const at = now()
   const mine = [...local, ...net, ...(known ? [known] : [])].filter(ev => ev?.kind === 3 && ev.pubkey === pubkey)
   const seen = mine.filter(ev => ev.created_at < at + MAX_SKEW)
   const netFound = replies.some((r, i) => own.includes(asked[i]) &&
     r.events.some(ev => ev?.kind === 3 && ev.pubkey === pubkey && verifiedCopy(ev) && ev.created_at < at + MAX_SKEW))
-  return { base: newestList(seen, pubkey, at), seen, asked: own.length, answered, heard, netFound, ahead: mine.length > seen.length }
+  return { base: newestList(seen, pubkey, at), seen, asked: own.length, reached, answered, heard, indexAnswered, netFound, ahead: mine.length > seen.length }
 }
 
 /** The tags of `base` with `target` followed or not. Every other tag, and the content, are kept as they were. */
@@ -122,10 +159,10 @@ export function editedTags(base, target, follow) {
 
 /**
  * Why this list may not be published, or "" if it may. The rules, in order:
- *  - a list found: more than half of the user's own relays and at least two relays in all must have answered
- *    (ownMajority), and the base is the newest copy among them. A copy one relay sent alone isn't enough: a slower one
- *    may hold a newer list another app saved (list-wipe audit, Logen 2026-11-02 13:21Z).
- *  - no base list found: every one of the user's own relays must have answered (allOwnAnswered), then a first list of
+ *  - followListKnown: own relays that never connected drop out; at least 2 own relays must have answered, and more
+ *    than half of the reached ones for a found list, and the base is the newest copy among them. A copy one relay sent
+ *    alone isn't enough: a slower one may hold a newer list another app saved (list-wipe audit, Logen 2026-11-02).
+ *  - no base list found: every own relay must have answered, dead ones too (followListKnown), then a first list of
  *    one follow, as iOS (loadConfirmsList with foundList false). Refused for an unfollow, when the app shows follows,
  *    and when a list was found dated ahead (`ahead`): those mean a list exists somewhere;
  *  - nothing that would be empty, unless it is a single unfollow of the last follow (1 -> 0, as iOS);
@@ -139,13 +176,16 @@ export function editedTags(base, target, follow) {
 export const wipeGuard = o => guardRefusal(o)?.text ?? ""
 
 /** wipeGuard's refusal with its kind: -> { code, text } (codes as follow-failure.js), or null when the edit may go out. */
-export function guardRefusal({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, answered = 0, heard = answered, netFound = false, ahead = false, at = now() }) {
+export function guardRefusal({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, reached = asked, answered = 0, indexAnswered = false, netFound = false, ahead = false, at = now() }) {
   const no = (code, text) => ({ code, text })
   if (!asked) return no("noOwnRelays", NO_OWN_RELAYS)
-  if (!editKnown({ asked, answered, heard, found: !!base })) {
-    if (!answered) return no("relays", "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable.")
-    if (base && answered * 2 > asked) return no("relays", "Only one relay answered, so your newest follow list isn't known (another may hold a newer copy) and nothing was changed. Try again shortly.")
-    if (base) return no("relays", `Only ${answered} of your ${asked} relays answered, so your newest follow list isn't known (one that didn't may hold a newer copy) and nothing was changed. Try again when more of them are reachable.`)
+  if (!followListKnown({ asked, reached, answered, found: !!base, indexAnswered })) {
+    // One relay listed and neither it nor purplepag.es answered: adding a relay is the fix (Tao, Android #2612).
+    // When one of the two answered, the 0/1-answered reasons below say "try again".
+    if (asked === 1 && !answered && !indexAnswered) return no("oneRelay", "Your relay list has only one relay, and your newest follow list needs two of your relays to answer before it can be checked. Nothing was changed. Add a relay in Settings › Relays, then try again.")
+    if (!answered) return no("noAnswer", "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable.")
+    if (answered < 2) return no("oneAnswer", "Only one relay answered, so your newest follow list isn't known (another may hold a newer copy) and nothing was changed. Try again shortly.")
+    if (base) return no("relays", `Only ${answered} of your ${reached} relays answered, so your newest follow list isn't known (one that didn't may hold a newer copy) and nothing was changed. Try again when more of them are reachable.`)
     return no("relays", `${answered} of your ${asked} relays answered and none had a follow list. Your first one needs every relay to answer, so nothing was changed. Try again shortly.`)
   }
   if (!base && (!follow || appCount > 0 || ahead))
@@ -173,9 +213,9 @@ export function guardRefusal({ base, tags, target, follow, seen = [], appCount =
 export async function setFollow({ vault, signer, pubkey, target, follow, readRelays, writeRelays, ownRelays = [], known, appCount = 0, ask, publish = (urls, ev) => pool.publish(urls, ev) }) {
   if (!HEX.test(target ?? "")) throw new Error("That isn't a profile that can be followed.")
   if (target === pubkey) throw new Error("You can't follow or unfollow yourself.")
-  const { base, seen, asked, answered, heard, netFound, ahead } = await findLatestList({ vault, pubkey, relays: ownRelays, known, ask })
+  const { base, seen, asked, reached, answered, indexAnswered, netFound, ahead } = await findLatestList({ vault, pubkey, relays: ownRelays, known, ask })
   const tags = editedTags(base, target, follow)
-  const refused = guardRefusal({ base, tags, target, follow, seen, appCount, asked, answered, heard, netFound, ahead })
+  const refused = guardRefusal({ base, tags, target, follow, seen, appCount, asked, reached, answered, indexAnswered, netFound, ahead })
   // The tap's banner gives the reason in the apps' wording (follow-failure.js); exits with no shared text keep the
   // guard's own sentence.
   if (refused) throw followError(refused.code, { follow, answered, asked, detail: refused.text })

@@ -32,12 +32,19 @@ test("follow failure: 3 of 7 relays answering names the counts and the fix (rd's
     code: "relays",
     message: "Couldn't follow: only 3 of your 7 relays answered, so your newest follow list can't be checked. Nothing changed. Remove dead relays in Settings › Relays, then try again.",
   })
-  await assert.rejects(run({ ask: answering(0), follow: false, target: followsOf(base)[0] }), { code: "relays", message: /^Couldn.t unfollow: only 0 of your 7 relays answered/ })
+  await assert.rejects(run({ ask: answering(0), follow: false, target: followsOf(base)[0] }), { code: "noAnswer", message: /^Couldn.t unfollow: no relay answered, so your newest follow list can.t be checked\. Nothing changed\. Check your connection, then try again\.$/ })
 })
 
-test("follow failure: one relay of one answered reads 'not enough relays'", async () => {
-  await assert.rejects(run({ writeRelays: [seven[0]], ownRelays: [seven[0]], ask: answering(1) }),
-    { code: "relays", message: /^Couldn't follow: not enough relays answered, so your newest follow list can't be checked\. Nothing changed\. Try again in a moment\.$/ })
+test("follow failure: a one-relay list where neither it nor purplepag.es answered says to add a relay (Tao, Android #2612)", async () => {
+  const one = "Couldn't follow: your relay list has only one relay, and your newest follow list needs two of your relays to answer before it can be checked. Nothing changed. Add a relay in Settings › Relays, then try again."
+  await assert.rejects(run({ writeRelays: [seven[0]], ownRelays: [seven[0]], ask: answering(0) }), { code: "oneRelay", message: one })
+  // Its relay answered but purplepag.es didn't: one answer, "try again" (Logen 2026-11-27, b219c87b).
+  await assert.rejects(run({ writeRelays: [seven[0]], ownRelays: [seven[0]], ask: answering(1) }), { code: "oneAnswer" })
+})
+
+test("follow failure: every own relay answering but too few in all reads 'not enough relays'", () => {
+  assert.equal(followFailure("relays", { answered: 1, asked: 1 }),
+    "Couldn't follow: not enough relays answered, so your newest follow list can't be checked. Nothing changed. Try again in a moment.")
 })
 
 test("follow failure: the signer not signing, or signing with another key", async () => {
