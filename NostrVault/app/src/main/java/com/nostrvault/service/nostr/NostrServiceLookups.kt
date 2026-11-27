@@ -251,58 +251,20 @@ internal const val GONE_DRAIN_MS = 250L
             targets.map { url ->
                 launch(Dispatchers.IO) {
                     val client = WebSocketClient(url = url, scope = this, autoReconnect = false)
-                    try {
-                        withTimeoutOrNull(timeoutMs) {
-                            val subId = "dmlist-${UUID.randomUUID().toString().take(6)}"
-                            val done = CompletableDeferred<Unit>()
-                            val collector = launch {
-                                client.messages.collect { msg ->
-                                    val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
-                                    when ((arr.getOrNull(0) as? JsonPrimitive)?.contentOrNull) {
-                                        "EVENT" -> {
-                                            val obj = (arr.getOrNull(2) as? JsonObject) ?: return@collect
-                                            val ev = parseSignedEvent(obj.toString()) ?: return@collect
-                                            if (ev.kind != kind || ev.pubkey != pubkey || !HavenBridge.verifyEvent(obj.toString())) return@collect
-                                            if (dTag != null && ev.tags.none { it.size >= 2 && it[0] == "d" && it[1] == dTag }) return@collect
-                                            // Dated too far ahead: never the newest copy (an edit signed now would lose to it).
-                                            if (!ListMerge.notAhead(ev.createdAt)) { ahead.set(true); return@collect }
-                                            best.updateAndGet { cur -> if (cur == null || ev.createdAt > cur.createdAt) ev else cur }
-                                            newestBy.merge(url, ev) { a, b -> if (b.createdAt > a.createdAt) b else a }
-                                        }
-                                        "EOSE" -> {
-                                            val ours = (arr.getOrNull(1) as? JsonPrimitive)?.contentOrNull == subId
-                                            if (done.complete(Unit) && ours) {
-                                                answered.incrementAndGet()
-                                                answeredBy.add(url)
-                                            }
-                                        }
-                                        "CLOSED" -> done.complete(Unit)
-                                    }
-                                }
-                            }
-                            val sender = launch {
-                                client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
-                                reachedBy.add(url)
-                                val dFilter = dTag?.let { ""","#d":[${JsonPrimitive(it)}]""" } ?: ""
-                                client.send("""["REQ","$subId",{"kinds":[$kind],"authors":["$pubkey"]$dFilter,"limit":1}]""")
-                            }
-                            client.connect()
-                            // A relay that failed, closed or was never dialled (blocked, held)
-                            // is done now, not at the timeout; it still doesn't count as answered.
-                            val gone = launch {
-                                client.connectionState.first { it == WebSocketClient.ConnectionState.DISCONNECTED }
-                                // An EOSE sent just before the close may still sit in [messages].
-                                delay(GONE_DRAIN_MS)
-                                done.complete(Unit)
-                            }
-                            done.await()
-                            collector.cancel()
-                            sender.cancel()
-                            gone.cancel()
-                        }
-                    } finally {
-                        client.disconnect()
+                    val ask = askReplaceable(client, json, kind, pubkey, dTag, timeoutMs) { obj ->
+                        val ev = parseSignedEvent(obj.toString()) ?: return@askReplaceable
+                        if (ev.kind != kind || ev.pubkey != pubkey || !HavenBridge.verifyEvent(obj.toString())) return@askReplaceable
+                        if (dTag != null && ev.tags.none { it.size >= 2 && it[0] == "d" && it[1] == dTag }) return@askReplaceable
+                        // Dated too far ahead: never the newest copy (an edit signed now would lose to it).
+                        if (!ListMerge.notAhead(ev.createdAt)) { ahead.set(true); return@askReplaceable }
+                        best.updateAndGet { cur -> if (cur == null || ev.createdAt > cur.createdAt) ev else cur }
+                        newestBy.merge(url, ev) { a, b -> if (b.createdAt > a.createdAt) b else a }
                     }
+                    if (ask.answered) {
+                        answered.incrementAndGet()
+                        answeredBy.add(url)
+                    }
+                    if (ask.reached) reachedBy.add(url)
                 }
             }.joinAll()
         }
