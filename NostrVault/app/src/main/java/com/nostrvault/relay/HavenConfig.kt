@@ -54,6 +54,8 @@ data class HavenConfig(
     // public tags, and the private part when this device could open it.
     val mutedPerAccount: Map<String, com.nostrvault.data.model.MutedThings> = emptyMap(),
     val privateMutedPerAccount: Map<String, com.nostrvault.data.model.MutedThings> = emptyMap(),
+    // Clean mode: mask swear words on screen (util/CleanMode). This device only, never published.
+    val cleanMode: Boolean = false,
 
     // Private Relay
     val privateRelayName: String = "Nostr Vault Private",

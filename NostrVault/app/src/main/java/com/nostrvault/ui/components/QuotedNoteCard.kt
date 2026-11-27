@@ -207,8 +207,8 @@ private fun QuotedNoteText(note: FeedNote, profiles: Map<String, FeedProfile>, m
         return
     }
     Text(
-        text = remember(note.content, profiles, note.mediaURLs) {
-            NostrMentions.toPlainText(note.content, profiles, note.mediaURLs.toSet())
+        text = remember(note.content, profiles, note.mediaURLs, com.nostrvault.util.CleanMode.enabled) {
+            com.nostrvault.util.CleanMode.shown(NostrMentions.toPlainText(note.content, profiles, note.mediaURLs.toSet()))
         },
         color = SecondaryText,
         fontSize = 13.sp,

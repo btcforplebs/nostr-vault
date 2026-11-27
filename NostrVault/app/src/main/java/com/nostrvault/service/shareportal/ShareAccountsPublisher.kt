@@ -40,7 +40,7 @@ class ShareAccountsPublisher @Inject constructor(
                         val profile = if (HavenBridge.isLoaded) nostrService.npubToHex(npub)?.let { profiles[it] } else null
                         ShareAccountsSnapshot.Account(
                             npub = npub,
-                            name = profile?.bestName?.takeIf { it.isNotBlank() } ?: (npub.take(12) + "…"),
+                            name = profile?.rawBestName?.takeIf { it.isNotBlank() } ?: (npub.take(12) + "…"),
                             picture = profile?.pictureURL?.takeIf { it.startsWith("https://") },
                         )
                     },

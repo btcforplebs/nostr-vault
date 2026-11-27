@@ -81,7 +81,7 @@ import kotlinx.coroutines.launch
             profilesMap.values.asSequence()
                 .filter { it.pubkey != self }
                 .filter { p ->
-                    p.bestName.lowercase().contains(lower) ||
+                    p.rawBestName.lowercase().contains(lower) ||
                         (p.name?.lowercase()?.contains(lower) == true) ||
                         (p.displayName?.lowercase()?.contains(lower) == true) ||
                         (p.nip05?.lowercase()?.contains(lower) == true)
@@ -90,8 +90,8 @@ import kotlinx.coroutines.launch
                     compareByDescending<FeedProfile> { threadPubkeys.contains(it.pubkey) }
                         .thenByDescending { followedSet.contains(it.pubkey) }
                         .thenByDescending { wotSet.contains(it.pubkey) }
-                        .thenByDescending { it.bestName.lowercase().startsWith(lower) }
-                        .thenBy { it.bestName.length }
+                        .thenByDescending { it.rawBestName.lowercase().startsWith(lower) }
+                        .thenBy { it.rawBestName.length }
                 )
                 .take(8)
                 .toList()
@@ -140,7 +140,7 @@ import kotlinx.coroutines.launch
         val profilesMap = nostrService.profiles.value
         return NostrMentions.MENTION_REGEX.replace(text) { match ->
             val pubkey = NostrMentions.resolvePubkey(match.groupValues[1]) ?: return@replace match.value
-            val token = mentionToken(profilesMap[pubkey]?.bestName ?: "", pubkey)
+            val token = mentionToken(profilesMap[pubkey]?.rawBestName ?: "", pubkey)
             mentionMap[token] = pubkey
             token
         }

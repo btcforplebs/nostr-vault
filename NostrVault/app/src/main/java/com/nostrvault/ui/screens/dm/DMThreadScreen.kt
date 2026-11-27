@@ -649,8 +649,8 @@ private fun MessageBubble(
                         CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
                             SelectionContainer {
                                 Text(
-                                    text = remember(parts.text, profiles) {
-                                        NostrMentions.toPlainText(parts.text, profiles)
+                                    text = remember(parts.text, profiles, com.nostrvault.util.CleanMode.enabled) {
+                                        com.nostrvault.util.CleanMode.shown(NostrMentions.toPlainText(parts.text, profiles))
                                     },
                                     // Readable on both bubbles in light and dark: their
                                     // bubble is white in light mode.

@@ -29,8 +29,12 @@ data class FeedProfile(
     /** Best display name: display_name > name > truncated pubkey. Computed once at
      *  construction (profiles are replaced via copy(), never mutated in place), so
      *  hot-path reads (~30/frame across feed rows) don't re-run the fallback chain.
-     *  A body property is not serialized, so this stays out of profiles.json. */
-    val bestName: String = displayName?.takeIf { it.isNotBlank() }
+     *  Transient, so this stays out of profiles.json. */
+    @kotlinx.serialization.Transient
+    val rawBestName: String = displayName?.takeIf { it.isNotBlank() }
         ?: name?.takeIf { it.isNotBlank() }
         ?: "${pubkey.take(8)}..."
+
+    /** [rawBestName] as shown: masked while clean mode is on ([com.nostrvault.util.CleanMode]). Never publish this. */
+    val bestName: String get() = com.nostrvault.util.CleanMode.shown(rawBestName)
 }

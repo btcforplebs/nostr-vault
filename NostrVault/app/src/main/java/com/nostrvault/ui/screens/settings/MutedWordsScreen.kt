@@ -75,6 +75,9 @@ class MutedWordsViewModel @Inject constructor(
 
     fun remove(word: String) = change(remove = word)
 
+    /** Clean mode, this device only (CleanMode). */
+    fun setCleanMode(on: Boolean) = configStore.update { it.copy(cleanMode = on) }
+
     private fun change(add: String? = null, remove: String? = null, privately: Boolean = true) {
         if (_busy.value) return
         _busy.value = true
@@ -194,6 +197,9 @@ fun MutedWordsScreen(
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
+
+            Spacer(Modifier.height(24.dp))
+            CleanModeRow(config.cleanMode, viewModel::setCleanMode)
 
             Spacer(Modifier.height(24.dp))
             SectionLabel("Muted")

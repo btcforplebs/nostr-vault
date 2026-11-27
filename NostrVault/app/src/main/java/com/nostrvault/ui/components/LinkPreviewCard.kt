@@ -113,7 +113,7 @@ fun LinkPreviewCard(
                 // Title
                 if (!meta.title.isNullOrBlank()) {
                     Text(
-                        text = meta.title!!,
+                        text = com.nostrvault.util.CleanMode.shown(meta.title!!),
                         color = PrimaryText,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
@@ -127,7 +127,7 @@ fun LinkPreviewCard(
                 if (!meta.description.isNullOrBlank()) {
                     if (!meta.title.isNullOrBlank()) Spacer(Modifier.height(2.dp))
                     Text(
-                        text = meta.description!!,
+                        text = com.nostrvault.util.CleanMode.shown(meta.description!!),
                         color = SecondaryText,
                         fontSize = 12.sp,
                         lineHeight = 16.sp,
