@@ -790,6 +790,7 @@
 		4D402DAC2C8C49A2EA5FEE7B /* GenmojiImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EFF51C982DC4BD7D23DB4FF /* GenmojiImage.swift */; };
 		4D4F65FFA3B6C568ACC21D09 /* DMService+GiftWrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BC759260F54CE352A66B934 /* DMService+GiftWrap.swift */; };
 		4D7A192E427244EA1BD91C6A /* MeshPairingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7567E9537DDD4C41851540B /* MeshPairingSession.swift */; };
+		4DB9E76CF3FC927F6EAF8A85 /* FeedThreadCardInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D201507EB4EB736B850C8EF0 /* FeedThreadCardInput.swift */; };
 		4DBA35F131CB3140A800A69A /* SignerWaitGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66050958913C4DFE7CAABBA /* SignerWaitGate.swift */; };
 		4DE267161A88607F4968894A /* FilesSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98235F306F5C5673E905F5B4 /* FilesSocket.swift */; };
 		4DEFCA91D158AF9326AF6D87 /* ComposerContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF788B89ACD8B1FE30E03676 /* ComposerContext.swift */; };
@@ -827,6 +828,7 @@
 		4FE172118ED099EE11B16D2D /* UseNostrKeyStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = E662ABBCA6DC83B396C0F5CE /* UseNostrKeyStep.swift */; };
 		4FEC966A0ABD24B2D59F79D4 /* GlobeSphereField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AA41D9DA72B84AE97A88FEC /* GlobeSphereField.swift */; };
 		500F0C4287E67F5563CC48D3 /* FeedService+ContactList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DE98382E71250C66C461CB5 /* FeedService+ContactList.swift */; };
+		50519EB37924625877D4B744 /* FeedThreadCardInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D201507EB4EB736B850C8EF0 /* FeedThreadCardInput.swift */; };
 		50983AAA7396E43037CD88B0 /* DMPhotoQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = E905DA3B12A262533B3AB511 /* DMPhotoQuality.swift */; };
 		50ADAE37B7796A07D93D0145 /* SpaceLayoutStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5346BF3D2C7C44DA8123EA6B /* SpaceLayoutStore.swift */; };
 		50AE4C0D3AE887BDF760229C /* ImportCouldNotStartButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72DFD54673471C63A265F7C /* ImportCouldNotStartButton.swift */; };
@@ -3836,6 +3838,7 @@
 		D1C54EC3846583043C553DC3 /* FeedSpeedPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedSpeedPolicy.swift; sourceTree = "<group>"; };
 		D1C7C91CAEA1EE00D27551E2 /* TrustRankCopyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustRankCopyStore.swift; sourceTree = "<group>"; };
 		D1CBD42B98E57609F77CA5E7 /* TrustPathService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustPathService.swift; sourceTree = "<group>"; };
+		D201507EB4EB736B850C8EF0 /* FeedThreadCardInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedThreadCardInput.swift; sourceTree = "<group>"; };
 		D23E2F257E6BF9573B8CA257 /* LiveChatMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChatMedia.swift; sourceTree = "<group>"; };
 		D2643BF4514DA7D43F2E9774 /* NostrService+ListMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+ListMerge.swift"; sourceTree = "<group>"; };
 		D27AC592B3A258559EAF7732 /* FollowListLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowListLogic.swift; sourceTree = "<group>"; };
@@ -5519,6 +5522,7 @@
 				558FCD15C2C7144DF3D20135 /* EmojiPickerView.swift */,
 				6F4A9C4C8BD9711513C84185 /* ErrorNotificationBanner.swift */,
 				BBCC2C40E48A867FA28814D4 /* FeedThreadCard.swift */,
+				D201507EB4EB736B850C8EF0 /* FeedThreadCardInput.swift */,
 				FE65F95458326DF0C43FCEAC /* FilterButton.swift */,
 				9A664D7B9DA0F01928BA669B /* GenmojiReactSheet.swift */,
 				A3A6344C6C038AF79FCEC23D /* HoldToConfirmButton.swift */,
@@ -6676,6 +6680,7 @@
 				05481E2CFD4F82F52DBA68FF /* FeedStayPut.swift in Sources */,
 				EF5CEF9B198DAA688F173768 /* FeedSubscriptionLedger.swift in Sources */,
 				2CB176ED82313ACA85A8AE44 /* FeedThreadCard.swift in Sources */,
+				50519EB37924625877D4B744 /* FeedThreadCardInput.swift in Sources */,
 				60135B288D01F67F43BF7E6B /* FeedThreadGrouping.swift in Sources */,
 				49EA2403462DCF0BEBB73F28 /* FeedThreadRegroup.swift in Sources */,
 				3DDC8D7732A373DA233D80BB /* FeedTopFade.swift in Sources */,
@@ -8016,6 +8021,7 @@
 				4A7D96C141ED7B314641743D /* FeedStayPut.swift in Sources */,
 				E9141B58283771D0767528D0 /* FeedSubscriptionLedger.swift in Sources */,
 				F7E4D75941ED6FAE9AF5480E /* FeedThreadCard.swift in Sources */,
+				4DB9E76CF3FC927F6EAF8A85 /* FeedThreadCardInput.swift in Sources */,
 				E9B017046B79DE70C07E4574 /* FeedThreadGrouping.swift in Sources */,
 				EB0E5A0CD38344F30DED2813 /* FeedThreadRegroup.swift in Sources */,
 				BD635CBEEF22960E058843E8 /* FeedTopFade.swift in Sources */,

@@ -261,7 +261,14 @@ extension FeedView {
     /// thread line still when a note opens in place; the Hashtags feed has no
     /// line tracking of its own and passes nil.
     func feedThreadCard(_ thread: FeedThread<FeedNote>, proxy: ScrollViewProxy?) -> some View {
-        FeedThreadCard(
+        // Skipped when nothing it draws changed (Feed perf review 11-27 #3).
+        let rootUnavailable = feedService.unavailableNoteIds.contains(thread.rootId)
+        let input = FeedThreadCardInput(
+            thread: thread, openNoteId: expandedNoteId, isExpanded: expandedThreadIds.contains(thread.rootId),
+            rootUnavailable: rootUnavailable, profileFor: { nostrService.profiles[$0] },
+            rowDataFor: { rowData(for: $0) }, find: { feedService.findNote(id: $0) },
+            unavailable: feedService.unavailableNoteIds, isOLED: configService.config.useOLED)
+        return EquatableFeedThreadCard(input: input, card: FeedThreadCard(
             thread: thread,
             // One open note across every thread card.
             openNoteId: $expandedNoteId,
@@ -289,7 +296,7 @@ extension FeedView {
             onMedia: { url, urls in
                 showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
             },
-            rootUnavailable: feedService.unavailableNoteIds.contains(thread.rootId),
+            rootUnavailable: rootUnavailable,
             lineTops: proxy == nil ? nil : threadLineTops,
             onOpenedInPlace: proxy.map { proxy in
                 { id, y in
@@ -297,7 +304,8 @@ extension FeedView {
                     glideToLandingLine(id, proxy: proxy) { [threadLineTops] in threadLineTops.justOpened == id }
                 }
             }
-        )
+        ))
+        .equatable()
     }
 
     /// Followed hashtags; rows open and act like the main timeline's, in
