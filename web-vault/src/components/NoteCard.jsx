@@ -12,7 +12,8 @@ import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { repostWithUndo } from "./repost-undo.js"
 import { act, actionContext, actionState, actionTarget, compose, gateIds, isDeleted, loadSent, onActionState } from "../net/actions.js"
 import { rememberNote } from "../desktop/noteIndex.js"
-import { replyRefs, replyToPubkey, repostInner, repostedId } from "../net/thread.js"
+import { replyToPubkey, repostInner, repostedId, threadRefs } from "../net/thread.js"
+import { parentHintRelays } from "../net/parent-hints.js"
 import { Badges } from "./Badges.jsx"
 import { ParentPreview } from "./ParentPreview.jsx"
 import { KindBody, hasKindBody } from "./FeedKinds.jsx"
@@ -132,11 +133,11 @@ function FetchedRepost({ q, memoryOnly, kinds = NOTE_ONLY, trusted }) {
 export function NoteBody({ event, memoryOnly, showParent = false, trusted }) {
   const ok = trusted ? !!trusted(event.pubkey) : true
   const replyTo = replyToPubkey(event) ?? commentParentAuthor(event)
-  const parent = showParent && event.kind === 1 ? replyRefs(event).parent : null
-  const hint = parent && (event.tags ?? []).find(t => t[0] === "e" && t[1] === parent)?.[2]
+  // A kind 1 reply or a NIP-22 comment on a note: its parent above it, asked on its reachable e/E hints.
+  const parent = showParent ? threadRefs(event).parent : null
   return (
     <>
-      {parent && <ParentPreview id={parent} relay={/^wss?:\/\//.test(hint ?? "") ? hint : null} memoryOnly={memoryOnly} trusted={trusted} />}
+      {parent && <ParentPreview id={parent} relays={parentHintRelays(event, parent)} memoryOnly={memoryOnly} trusted={trusted} />}
       <div class="note-head">
         <AvatarMenu pubkey={event.pubkey} load={ok} />
         <div class="note-byline">

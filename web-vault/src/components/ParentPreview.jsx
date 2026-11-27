@@ -17,8 +17,8 @@ import { fetchQuote, forgetQuote, quoteSource } from "../net/quotes.js"
 
 export const PARENT_TIMEOUT_MS = 12_000
 
-export function ParentPreview({ id, relay, memoryOnly = false, trusted }) {
-  const q = { type: "note", id, relays: relay ? [relay] : [] }
+export function ParentPreview({ id, relays = [], memoryOnly = false, trusted }) {
+  const q = { type: "note", id, relays }
   const ev = useQuote(q, memoryOnly)
   const [late, setLate] = useState(false)
   const [tries, setTries] = useState(0)
@@ -34,7 +34,8 @@ export function ParentPreview({ id, relay, memoryOnly = false, trusted }) {
     if (src) fetchQuote(q, { ...src, save: !memoryOnly }).catch(() => {})
     setTries(tries + 1)
   }
-  if (ev?.kind === 1) return <ParentCard ev={ev} trusted={trusted} />
+  // A comment's parent may be a comment too (NIP-22 threads under a note).
+  if (ev?.kind === 1 || ev?.kind === 1111) return <ParentCard ev={ev} trusted={trusted} />
 
   if (ev === null || late) {
     return (

@@ -25,6 +25,17 @@ export function replyRefs(ev) {
   return { root: positional[0][1], parent: positional.at(-1)[1] }
 }
 
+/** Where a feed note sits in a thread: a kind 1 by NIP-10 (replyRefs); a NIP-22 comment on a kind 1 note (`K` 1) by
+ *  its uppercase `E` root and lowercase `e` parent, as the iPhone reads it (NIP10Thread.rootEventId). Anything else,
+ *  including a comment on a video or an article, is not a note thread. -> { root, parent }, nulls when it says none */
+export function threadRefs(ev) {
+  if (ev?.kind === 1) return replyRefs(ev)
+  if (ev?.kind !== 1111 || !(ev.tags ?? []).some(t => t[0] === "K" && t[1] === "1")) return { root: null, parent: null }
+  const ref = name => (ev.tags ?? []).find(t => t[0] === name && HEX64.test(t[1] ?? "") && t[1] !== ev.id)?.[1] ?? null
+  const root = ref("E"), parent = ref("e") ?? root
+  return { root: root ?? parent, parent }
+}
+
 /** Who a note replies to, for the card's "reply to @name" line: the parent's author, as the iPhone's
  *  NIP10Thread.parentAuthor. The parent's `e` tag carries it in its fifth slot (our composers and most clients send it).
  *  Failing that, the `p` tags: a reply copies the parent's `p` tags and most clients append the parent's author, so a

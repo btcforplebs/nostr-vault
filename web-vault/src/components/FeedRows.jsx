@@ -14,7 +14,8 @@ import { buildThreads } from "../net/feed-layout.js"
 import { fetchNotes } from "../net/notifications.js"
 import { fetchFromParentRelays } from "../net/parent-hints.js"
 import { fetchProfiles } from "../net/profiles.js"
-import { replyRefs } from "../net/thread.js"
+import { threadRefs } from "../net/thread.js"
+import { isNoteComment } from "../net/feed-kinds.js"
 
 /** `rankOf(id)` -> { rank, score } or null: Popular's rank line above a card (PopularRankLine.jsx). */
 export function FeedRows({ notes, layout, keepFeedOrder = false, memoryOnly = false, fetchRoots, rankOf = null }) {
@@ -23,13 +24,13 @@ export function FeedRows({ notes, layout, keepFeedOrder = false, memoryOnly = fa
   const room = openId && <div class="tap-room" aria-hidden="true" />
   if (layout === "threaded") return <><Threads notes={notes} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} memoryOnly={memoryOnly} openId={openId} setOpenId={setOpenId} rankOf={rankOf} />{room}</>
   // A reply shows the note it answers above it, unless that note is the very next row (the iPhone's parentIsNext).
-  return notes.map((n, i) => <Fragment key={n.id}><Ranked id={n.id} rankOf={rankOf}><NoteCard event={n} memoryOnly={memoryOnly} showParent={n.kind === 1 && !!replyRefs(n).parent && notes[i + 1]?.id !== replyRefs(n).parent} /></Ranked></Fragment>)
+  return notes.map((n, i) => <Fragment key={n.id}><Ranked id={n.id} rankOf={rankOf}><NoteCard event={n} memoryOnly={memoryOnly} showParent={!!threadRefs(n).parent && notes[i + 1]?.id !== threadRefs(n).parent} /></Ranked></Fragment>)
 }
 
 function Threads({ notes, keepFeedOrder, fetchRoots, memoryOnly, openId, setOpenId, rankOf }) {
   // id -> the root event, or null once a fetch came back without it.
   const [fetched, setFetched] = useState(() => new Map())
-  const threads = useMemo(() => buildThreads(notes.filter(n => n.kind === 1 || n.kind === 6 || hasKindBody(n)), { keepFeedOrder, resolve: id => fetched.get(id) ?? null }), [notes, fetched, keepFeedOrder])
+  const threads = useMemo(() => buildThreads(notes.filter(n => n.kind === 1 || n.kind === 6 || isNoteComment(n) || hasKindBody(n)), { keepFeedOrder, resolve: id => fetched.get(id) ?? null }), [notes, fetched, keepFeedOrder])
   const missing = threads.filter(t => !t.root && !fetched.has(t.rootId)).map(t => t.rootId)
   const key = missing.join()
   useEffect(() => {

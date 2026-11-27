@@ -50,6 +50,15 @@ export function parentRefs(events, ids) {
   return { hints: [...new Set(hints)], authors: [...new Set(authors)] }
 }
 
+/** The relay hints the card's parent preview asks, at most two: the parent's own `e`/`E` tag hint first, then the
+ *  other thread tags' (a NIP-22 comment's root `E` often names the relay the whole thread lives on, when the parent's
+ *  hint is the poster's 127.0.0.1). Loopback and home-network hints are dropped. */
+export function parentHintRelays(ev, parentId) {
+  const tags = (ev?.tags ?? []).filter(t => isRef(t) && t[3] !== "mention")
+  const own = tags.filter(t => t[1] === parentId), rest = tags.filter(t => t[1] !== parentId)
+  return [...new Set([...own, ...rest].map(t => reachableHint(t[2])).filter(Boolean))].slice(0, 2)
+}
+
 /** The relays to add for `ids` beyond `known`: hints first, then up to 3 write relays per author, MAX_EXTRA in all. */
 export function extraRelays({ hints, authors }, outbox, known = []) {
   const seen = new Set(known.map(key)), out = []
