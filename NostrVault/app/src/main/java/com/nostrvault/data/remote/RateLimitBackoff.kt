@@ -27,7 +27,8 @@ object RateLimitBackoff {
     /** Refusals this long after the last hold ended start the ladder over. */
     internal const val REFUSAL_FORGET_MS = 30 * 60_000L
 
-    private class Hold(val untilMs: Long, val strikes: Int, val refusals: Int = 0)
+    /** [failed]: the hold's end was set by a refused upgrade, a failed connect, not by a 429. */
+    private class Hold(val untilMs: Long, val strikes: Int, val refusals: Int = 0, val failed: Boolean = false)
     private val holds = HashMap<String, Hold>()
 
     fun hostOf(url: String): String =
@@ -58,7 +59,8 @@ object RateLimitBackoff {
         val refusals = (if (fresh) 0 else old!!.refusals) + 1
         val hold = REFUSAL_HOLDS_MS[(refusals - 1).coerceAtMost(REFUSAL_HOLDS_MS.size - 1)]
         val until = maxOf(nowMs + hold, old?.untilMs ?: 0L)
-        holds[host] = Hold(until, old?.strikes ?: 0, refusals)
+        val failed = nowMs + hold >= (old?.untilMs ?: 0L) || old?.failed == true
+        holds[host] = Hold(until, old?.strikes ?: 0, refusals, failed)
         return until - nowMs
     }
 
@@ -66,6 +68,16 @@ object RateLimitBackoff {
     @Synchronized
     fun remainingMs(url: String, nowMs: Long = System.currentTimeMillis()): Long =
         ((holds[hostOf(url)]?.untilMs ?: 0L) - nowMs).coerceAtLeast(0L)
+
+    /**
+     * Whether [url]'s host is held now because it refused the upgrade (a failed connect), not for a 429. The follow
+     * list's count leaves such a relay out, as it left it out on the ask that started the hold (FollowListKnown).
+     */
+    @Synchronized
+    fun heldForFailure(url: String, nowMs: Long = System.currentTimeMillis()): Boolean {
+        val hold = holds[hostOf(url)] ?: return false
+        return hold.failed && hold.untilMs > nowMs
+    }
 
     /** A connection to [url] stayed up: its host starts over. */
     @Synchronized

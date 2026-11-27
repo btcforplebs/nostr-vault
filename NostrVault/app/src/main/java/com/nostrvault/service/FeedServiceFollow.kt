@@ -85,7 +85,7 @@ import com.nostrvault.ui.notification.FollowKind
                     // web guardRefusal's appCount (Tron, #2612). A fresh key and a backup restore carry their own list.
                     val noneUnproven = fetched == null && knownContactList?.owner != owner && !freshKey &&
                         edit.replaceWith == null && (shown.toSet() - edit.add.toSet() - edit.remove.toSet()).isNotEmpty()
-                    val confirmedNone = lookup != null && !noneUnproven && FollowListKnown.confirmsNone(own, lookup)
+                    val confirmedNone = lookup != null && !noneUnproven && FollowListKnown.confirmsNone(own, lookup, held = knownContactList?.owner == owner)
                     val base = ContactManager.saveBase(owner, fetched, confirmedNone, freshKey, knownContactList, why)
                     if (base == null) {
                         refusal = when {

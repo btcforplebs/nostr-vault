@@ -212,10 +212,16 @@ class FollowMajorityTest {
         assertEquals(PUBLISHED, follow(before = emptyList()))
     }
 
-    @Test fun `no list yet with a dead relay left out publishes the first one`() {
-        // Old rule: "none" needed every relay asked to answer.
+    @Test fun `no list yet with a dead relay is refused`() {
+        // A relay that didn't answer may hold the only copy; a first list sent to it would replace it (Tron, PR 2611).
         own = seven.take(3)
         onRelays = lookup(answered = own.take(2), reached = own.take(2), found = false)
+        assertEquals(short(2, 3), follow(before = emptyList()))
+    }
+
+    @Test fun `no list yet with every own relay answering publishes the first one`() {
+        own = seven.take(3)
+        onRelays = lookup(answered = own, reached = own, found = false)
         assertEquals(PUBLISHED, follow(before = emptyList()))
     }
 
@@ -224,7 +230,8 @@ class FollowMajorityTest {
         // connect say "none": signing would publish a list of 1 follow.
         val shown = (1..300).map { it.toString().padStart(64, 'c') }
         onRelays = lookup(answered = seven.take(2), reached = seven.take(2), found = false)
-        assertEquals(notEnough, follow(before = shown))
+        // Refused on the count now (no list needs every own relay); the screen check is the next line of defence.
+        assertEquals(short(2, 7), follow(before = shown))
     }
 
     @Test fun `no list found with a held copy builds on the copy`() {

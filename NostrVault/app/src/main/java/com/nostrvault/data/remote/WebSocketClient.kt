@@ -184,6 +184,15 @@ class WebSocketClient(
     @Volatile var lastError: String? = null
         private set
 
+    /**
+     * The last connect failed at the socket: no route, refused, TLS or an HTTP answer but 101 and 429, or the dial
+     * was skipped for a hold such a failure started ([RateLimitBackoff.heldForFailure]). False for a connect that timed
+     * out, a 429, a blocked relay and any other hold or skip: those relays may be up and hold the newest copy. The
+     * follow list's count leaves a down relay out ([com.nostrvault.service.FollowListKnown], Tom/Tron PR 2611).
+     */
+    @Volatile var downAtConnect: Boolean = false
+        private set
+
     private val socketLock = Any()
     private var webSocket: WebSocket? = null
     private var reconnectAttempts = 0
@@ -285,6 +294,7 @@ class WebSocketClient(
         val heldMs = RateLimitBackoff.remainingMs(url)
         if (heldMs > 0) {
             if (BuildConfig.DEBUG) Log.d(TAG, "Held host, waiting ${heldMs / 1000}s: $url")
+            downAtConnect = RateLimitBackoff.heldForFailure(url)
             _connectionState.value = ConnectionState.DISCONNECTED
             reconnectJob?.cancel()
             if (shouldReconnect && autoReconnect) {
@@ -309,6 +319,7 @@ class WebSocketClient(
 
         synchronized(socketLock) {
             if (webSocket != null) return
+            downAtConnect = false
             _connectionState.value = if (reconnectAttempts > 0) {
                 ConnectionState.RECONNECTING
             } else {
@@ -317,11 +328,14 @@ class WebSocketClient(
             // Callbacks take socketLock in isCurrent/release, so none can run
             // before this assignment lands.
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
+            @Volatile private var opened = false
+
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (!isCurrent(webSocket)) {
                     webSocket.cancel()
                     return
                 }
+                opened = true
                 if (BuildConfig.DEBUG) Log.d(TAG, "Connected to $url")
                 _generation.value++
                 _connectionState.value = ConnectionState.CONNECTED
@@ -362,8 +376,10 @@ class WebSocketClient(
                 Log.w(TAG, "WebSocket failure ($url): ${t.message}")
                 if (!release(webSocket)) return
                 lastError = t.message
-                _connectionState.value = ConnectionState.DISCONNECTED
                 val code = response?.code
+                // A timeout says nothing about the relay; a 429 means it is up.
+                if (!opened && code != 429 && t !is java.io.InterruptedIOException) downAtConnect = true
+                _connectionState.value = ConnectionState.DISCONNECTED
                 // 429 = rate-limited by the relay; retrying soon makes it worse
                 // (damus bans and lists the IP). Every socket to this host
                 // holds off for an hour or more; see [RateLimitBackoff].
