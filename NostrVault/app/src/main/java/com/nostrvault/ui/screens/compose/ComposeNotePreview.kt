@@ -37,11 +37,17 @@ import kotlinx.coroutines.withTimeoutOrNull
 /**
  * The note as it will post, drawn by the feed's own [NoteCard]: links,
  * live-stream cards, quoted notes, hashtags and mentions look exactly as
- * readers will see them. Photos show once their upload has a link.
+ * readers will see them. Photos show once their upload has a link. A
+ * reply carries its reply tags; the parent itself is not drawn in the card
+ * (NoteCard's showReplyContext stays off), since the "Replying to" strip
+ * above the preview already shows it.
  */
 internal fun ComposeNoteViewModel.previewNote(draft: ComposeNoteDraft): FeedNote {
     var content = convertMentionsToNostr(draft.previewBody())
-    val tags = mutableListOf<List<String>>()
+    // A reply previews as one: the same reply tags and kind the post signs
+    // (buildReplyTags), so the card shows "reply to X" and the reply edge.
+    val (replyTags, kind) = buildReplyTags()
+    val tags = replyTags.toMutableList()
     quoteTarget()?.let { quoted ->
         tags += listOf("q", quoted.id, "", quoted.pubkey)
         HavenBridge.hexToNote1(quoted.id)?.let { content += "\nnostr:$it" }
@@ -58,7 +64,7 @@ internal fun ComposeNoteViewModel.previewNote(draft: ComposeNoteDraft): FeedNote
         content = content,
         tags = tags,
         createdAt = System.currentTimeMillis() / 1000,
-        kind = 1,
+        kind = kind,
     )
 }
 
