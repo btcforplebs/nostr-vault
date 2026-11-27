@@ -93,4 +93,19 @@ final class TrustedWebMemo: @unchecked Sendable {
         lastGate = (saved, follows, scope, generation, whitelist, blocked, mutes, gate)
         return gate
     }
+
+    /// Which of `follows` follow `target`, from the relay's links file
+    /// (each entry lists the follows that follow that key). Empty with no
+    /// links file. Lets a profile count followers inside your web without
+    /// fetching anyone's contact list.
+    func followers(of target: String, among follows: Set<String>) -> Set<String> {
+        lock.lock(); defer { lock.unlock() }
+        guard let links, let from = links.links[target.lowercased()] else { return [] }
+        var out = Set<String>()
+        for index in from where links.follows.indices.contains(index) {
+            let key = links.follows[index]
+            if follows.contains(key) { out.insert(key) }
+        }
+        return out
+    }
 }

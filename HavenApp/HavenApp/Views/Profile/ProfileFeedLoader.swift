@@ -35,6 +35,8 @@ final class ProfileFeedLoader: ObservableObject {
     // MARK: - What the screen reads
 
     @Published var selectedSection: ProfileSection = .notes
+    /// The Tagged tab's "from outside your web" fold is open.
+    @Published var showsOutsideTagged = false
 
     // Not published: views read `buckets`, which every change to these
     // rebuilds, so publishing them too only sent extra change notices.
@@ -69,9 +71,9 @@ final class ProfileFeedLoader: ObservableObject {
     @Published var relayFollowerCount: Int?
     /// Vertex's count, the one npub.world shows. Preferred when it answers.
     @Published var vertexFollowerCount: Int?
-    /// Your own followers on your relay's ledger, spam left out: the list the
-    /// FOLLOWERS button opens and the Vault's Followers tab, so the header
-    /// shows the same number. Only set when `usesOwnLedger`.
+    /// Your own followers on your relay's ledger inside your web, spam left
+    /// out: what the header shows (`followersShownText`). Only set when
+    /// `usesOwnLedger`.
     @Published var ownLedgerCount: Int?
 
     // MARK: - Bookkeeping
@@ -169,25 +171,10 @@ final class ProfileFeedLoader: ObservableObject {
     /// with — a repost's media is someone else's, so it stays out.
     /// Articles have their own tab (`ProfileExtrasLoader`, newest version of
     /// each); listing every saved version here too showed them twice.
-    private func rebucket() {
-        var top: [FeedNote] = [], media: [FeedNote] = []
-        var replies: [FeedNote] = [], reposts: [FeedNote] = []
-        for note in profileNotes {
-            if note.kind == 6 {
-                reposts.append(note)
-                continue
-            }
-            if note.kind == 30023 { continue }
-            if note.isReply { replies.append(note) } else { top.append(note) }
-            if !note.mediaURLs.isEmpty { media.append(note) }
-        }
-        buckets = ProfileNoteBuckets(
-            top: top,
-            media: media,
-            replies: replies,
-            reposts: reposts,
-            tagged: taggedNotes.filter { $0.pubkey != pubkey }
-        )
+    func rebucket() {
+        let feed = feedService
+        buckets = ProfileBucketing.buckets(notes: profileNotes, tagged: taggedNotes, owner: pubkey,
+                                           gate: feed.feedGate, authorOf: { feed.findNote(id: $0)?.pubkey })
     }
 
     func scheduleFlush() {
@@ -235,7 +222,9 @@ final class ProfileFeedLoader: ObservableObject {
         case .media: return buckets.media
         case .replies: return buckets.replies
         case .reposts: return buckets.reposts
-        case .tagged: return buckets.tagged
+        case .tagged:
+            return showsOutsideTagged && ConfigService.shared.config.showsOutsideUnderPosts
+                ? (buckets.tagged + buckets.taggedOutside).sorted(by: Self.newestFirst) : buckets.tagged
         case .shop, .articles, .divines, .music: return []
         }
     }
@@ -287,8 +276,9 @@ final class ProfileFeedLoader: ObservableObject {
 
     // MARK: - Follow counts
 
-    /// Your own profile shows your relay's ledger, so the header matches the
-    /// list it opens and the Vault. Anyone else: Vertex counts follow lists
+    /// Every follower, inside your web or not: only decides whether the
+    /// follower list may hold more to load. The header shows
+    /// `followersShownText`. Your own: your relay's ledger. Anyone else: Vertex counts follow lists
     /// from across Nostr, once per follower, so its answer wins. Without it: the streamed kind-3 events stop at 100
     /// per relay, so they undercount anyone with more followers. Relays that
     /// answer NIP-45 COUNT give the full number; show whichever is larger.

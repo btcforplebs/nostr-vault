@@ -9,7 +9,7 @@ extension NoteDetailView {
             feedService: feedService,
             nostrService: nostrService
         )
-        let hasEngagement = (!detailedReactions.isEmpty && !configService.config.zapsOnlyMode) || !detailedZaps.isEmpty || !detailedReposts.isEmpty
+        let hasEngagement = (!insideReactions.isEmpty && !configService.config.zapsOnlyMode) || !detailedZaps.isEmpty || !insideReposts.isEmpty
 
         return mainNoteLayout(profile: profile, rowData: rowData, hasEngagement: hasEngagement)
             .transition(.asymmetric(

@@ -21,11 +21,13 @@ final class FollowListLogicTests: XCTestCase {
         XCTAssertEqual(onlyOutside.map(\.group), [.outside])
     }
 
-    func testRankedExtendedNetworkCountsAsTrustEvenOutsideTheGraph() {
+    /// Audit fix 5 (11-27): the group is the gate's inside set only. A rank
+    /// in the extended network orders rows; it does not let anyone in.
+    func testRankedExtendedNetworkOutsideTheGateStaysOutside() {
         let sections = FollowListLogic.sections(
             people: [p("x", "Xena")], follows: [], webOfTrust: [], trustRank: ["x": 3], sort: .trusted
         )
-        XCTAssertEqual(sections.first?.group, .webOfTrust)
+        XCTAssertEqual(sections.first?.group, .outside)
     }
 
     func testSpamIsHiddenAndDuplicatesCollapse() {

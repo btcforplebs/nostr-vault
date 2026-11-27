@@ -156,6 +156,8 @@ extension ProfileContent {
         case .articles: return extras.articles.count
         case .divines: return extras.reels.count
         case .music: return extras.tracks.count
+        // Only tagged notes from inside your web are counted, folded or not.
+        case .tagged: return loader.buckets.tagged.count
         default: return loader.notes(for: section).count
         }
     }
@@ -260,6 +262,9 @@ extension ProfileContent {
     @ViewBuilder
     private var noteSectionContent: some View {
         let notes = loader.currentSectionNotes
+        if selectedSection == .tagged {
+            ProfileOutsideFold(loader: loader, folds: configService.config.showsOutsideUnderPosts)
+        }
         if notes.isEmpty {
             emptyNoteSection
         } else if selectedSection == .media {

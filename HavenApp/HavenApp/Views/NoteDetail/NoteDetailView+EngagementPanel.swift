@@ -6,7 +6,7 @@ extension NoteDetailView {
 
     private var groupedReactions: [ReactionGrouping.Group] {
         if configService.config.zapsOnlyMode { return [] }
-        let reactions = detailedReactions.map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at, tags: $0.tags) }
+        let reactions = insideReactions.map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at, tags: $0.tags) }
         return ReactionGrouping.groups(tagged: reactions)
     }
 
@@ -49,12 +49,22 @@ extension NoteDetailView {
         parsedZaps.reduce(0) { $0 + $1.amountSats }
     }
 
+    /// Likes and reposts from inside your web only (Logen 11-27): the counts,
+    /// the pills and the lists they open. Blocked people and people outside
+    /// your web are left out, as on profile rows.
+    var insideReactions: [NostrEvent] { Self.inside(detailedReactions, gate: feedService.feedGate) }
+    var insideReposts: [NostrEvent] { Self.inside(detailedReposts, gate: feedService.feedGate) }
+
+    private static func inside(_ events: [NostrEvent], gate: WebGate.Web) -> [NostrEvent] {
+        events.filter { WebGate.isInside($0.pubkey, in: gate) }
+    }
+
     var reactorsMapped: [(pubkey: String, emoji: String)] {
-        detailedReactions.map { (pubkey: $0.pubkey, emoji: ($0.content == "+" || $0.content.isEmpty) ? "❤️" : $0.content) }
+        insideReactions.map { (pubkey: $0.pubkey, emoji: ($0.content == "+" || $0.content.isEmpty) ? "❤️" : $0.content) }
     }
 
     var repostersMapped: [String] {
-        Array(Set(detailedReposts.map { $0.pubkey }))
+        Array(Set(insideReposts.map { $0.pubkey }))
     }
 
     // MARK: - Engagement Panel View
@@ -119,7 +129,7 @@ extension NoteDetailView {
             }
 
             // Reposts — compact
-            if !detailedReposts.isEmpty {
+            if !insideReposts.isEmpty {
                 Button {
                     showingRepostersSheet = true
                 } label: {

@@ -75,10 +75,10 @@ extension ProfileFeedLoader {
     private func fetchFollowerCount() {
         let target = pubkey
         if usesOwnLedger {
+            // Followers inside your web only (Logen 11-27).
+            let gate = feedService.feedGate
             Task { [weak self] in
-                let count = await Task.detached(priority: .userInitiated) {
-                    FollowerSnapshot.load(owner: target)?.current.count
-                }.value
+                let count = await Self.insideLedgerCount(owner: target, gate: gate)
                 guard let count, let self, self.ownLedgerCount != count else { return }
                 self.ownLedgerCount = count
             }
@@ -150,7 +150,9 @@ extension ProfileFeedLoader {
         isLoadingNotes = true
         notesLoadStarted = true
 
-        let existing = feedService.notes.filter { $0.pubkey == pubkey }
+        // A repost is the reposter's (`repostedBy`): a stranger's repost of
+        // this person's post carries their name as `pubkey`.
+        let existing = feedService.notes.filter { ($0.repostedBy ?? $0.pubkey) == pubkey }
         for note in existing {
             if !seenNoteIds.contains(note.id) {
                 seenNoteIds.insert(note.id)
