@@ -1,6 +1,8 @@
 // The Marketplace feed, ported from the iPhone's MarketplaceFeedService, MarketListing, MarketCategory and
 // MarketListingBook (Models/MarketListing.swift): NIP-15 products and auctions (30018, 30020) and NIP-99 classifieds
-// (30402). Sellers are mostly strangers, so nothing is written to Haven; buying hands off to Plebeian Market.
+// (30402). Sellers are mostly strangers, so nothing is written to Haven; buying hands off to Plebeian Market, or to
+// Conduit for a listing Conduit's merchant portal published.
+import { npubEncode } from "nostr-tools/nip19"
 import { pool } from "../net/pool.js"
 import { globalTrust, trustedFilters } from "./trust.js"
 
@@ -103,7 +105,7 @@ export function parseListing(ev) {
     id: ev.id, pubkey: ev.pubkey, kind: ev.kind, d: val("d"), title, summary, images, price: price || "?",
     currency: currency.trim().toUpperCase(), location: val("location"), createdAt: ev.created_at,
     category: classify(tags.filter(t => t.length >= 2 && t[0] === "t").map(t => t[1]), `${title} ${summary}`),
-    isAuction: ev.kind === AUCTION,
+    isAuction: ev.kind === AUCTION, conduit: isConduit(tags),
   }
 }
 
@@ -115,10 +117,11 @@ export function priceLabel({ price, currency }) {
 }
 
 /** The opening line of a message to the seller (MarketplaceListingSheet.messageToSeller): which listing, and its
- *  Plebeian link only when that is the listing's own page (a seller's profile says nothing about which item). */
+ *  shop link only when that is the listing's own page (a seller's profile says nothing about which item). */
 export function sellerMessage(l) {
   const title = l.title ? `“${l.title}”` : "your listing"
-  return `Hi! I'm interested in ${title}.` + (hasPlebeianPage(l) ? `\n${plebeianUrl(l)}` : "")
+  const buy = buyLink(l)
+  return `Hi! I'm interested in ${title}.` + (buy.ownPage ? `\n${buy.url}` : "")
 }
 
 /** The DM with the seller, the message typed in for you to edit or send (dmPrefill reads ?text=). */
@@ -133,6 +136,30 @@ export const hasPlebeianPage = l => l.kind === CLASSIFIED
 export const plebeianUrl = l => hasPlebeianPage(l)
   ? `https://plebeian.market/products/${l.id}`
   : `https://plebeian.market/profile/${l.pubkey}`
+
+/** Conduit's merchant portal names itself in the `client` tag: `["client", "Conduit Merchant Portal",
+ *  "31990:<pubkey>:conduit-merchant", relay]`. Match the name or the handler address, as the name is a display string
+ *  (RESEARCH/NV_CONDUIT_BUY_LINK_2026_11_26.md). Neither the relay nor the content shape tells. */
+export const CONDUIT_CLIENT = "Conduit Merchant Portal"
+const CONDUIT_HANDLER = /^31990:[0-9a-f]{64}:conduit-merchant$/
+export const isConduit = tags => (tags ?? []).some(t => Array.isArray(t) && t[0] === "client"
+  && (t[1] === CONDUIT_CLIENT || (typeof t[2] === "string" && CONDUIT_HANDLER.test(t[2]))))
+
+/** Conduit opens 30402 classifieds only: by coordinate (`30402:<pk>:<d>`, follows the seller's edits), or by event
+ *  id when there is no `d`. Anything else goes to the seller's shop, `shop.conduit.market/<npub>`. */
+export const hasConduitPage = l => l.kind === CLASSIFIED
+export function conduitUrl(l) {
+  if (!hasConduitPage(l)) return `https://shop.conduit.market/${npubEncode(l.pubkey)}`
+  return `https://shop.conduit.market/products/${encodeURIComponent(l.d ? `${CLASSIFIED}:${l.pubkey}:${l.d}` : l.id)}`
+}
+
+/** The listing's one buy button: Conduit for a Conduit listing, else Plebeian. -> { site, url, label, ownPage } */
+export function buyLink(l) {
+  const conduit = !!l.conduit, ownPage = conduit ? hasConduitPage(l) : hasPlebeianPage(l)
+  const site = conduit ? "Conduit" : "Plebeian"
+  const verb = ownPage ? (l.isAuction ? "Bid" : "Buy") : "Seller"
+  return { site, url: conduit ? conduitUrl(l) : plebeianUrl(l), label: `${verb} on ${site}`, ownPage }
+}
 
 /** The newest event at each address wins, even one that no longer parses (sold, hidden, out of stock), which removes
  *  the listing; blocked sellers are left out. Newest first, ties by id. */
