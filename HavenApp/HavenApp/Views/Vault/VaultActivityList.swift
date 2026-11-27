@@ -129,16 +129,14 @@ extension VaultView {
         if isOtherAccount {
             Button { openActivity(line, account: account) } label: { row }
                 .buttonStyle(.plain)
-        } else if let id = line.openId, let event = nostrService.events.first(where: { $0.id == id }) {
+        } else if line.openId != nil {
             row
             .contentShape(Rectangle())
             // A tap, not a Button: the row's own Buttons would die inside one
             // (NoteNavigationLink.swift). Not a NavigationLink: every Vault
-            // row opens through openNote, one push path.
-            .onTapGesture {
-                openNote(FeedNote(id: event.id, pubkey: event.pubkey, content: event.content,
-                                  createdAt: event.createdAtDate, tags: event.tags, kind: event.kind))
-            }
+            // row opens through openNote, one push path. The store is looked
+            // up on the tap, not on every redraw (Vault review 2026-11-27 #2).
+            .onTapGesture { openActivityNote(line) }
             .accessibilityAddTraits(.isButton)
         } else {
             Button { openActivity(line) } label: { row }
@@ -149,6 +147,18 @@ extension VaultView {
             .buttonStyle(.plain)
         #endif
     }
+
+    #if os(iOS)
+    /// Opens the line's note from the store when it's there, else by id.
+    private func openActivityNote(_ line: VaultActivity) {
+        if let id = line.openId, let event = nostrService.events.first(where: { $0.id == id }) {
+            openNote(FeedNote(id: event.id, pubkey: event.pubkey, content: event.content,
+                              createdAt: event.createdAtDate, tags: event.tags, kind: event.kind))
+        } else {
+            openActivity(line)
+        }
+    }
+    #endif
 
     /// The name the account picker shows for one of your accounts.
     private func accountName(_ hex: String) -> String {

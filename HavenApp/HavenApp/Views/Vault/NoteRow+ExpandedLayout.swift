@@ -80,11 +80,12 @@ extension NoteRow {
                 // Regular note content
                 // An old "Share as a note" live post: its playlist and cover
                 // leave the text and the cards (LiveNoteCleanup).
-                let live = LiveNoteCleanup.cleaned(content: cleanContent, mediaURLs: event.mediaURLs,
-                                                   linkURLs: event.linkURLs,
+                let parsed = parsed
+                let live = LiveNoteCleanup.cleaned(content: cleanContent, mediaURLs: parsed.mediaURLs,
+                                                   linkURLs: parsed.linkURLs,
                                                    find: { FeedService.shared.findNote(id: $0) })
-                let urls = live?.mediaURLs ?? event.mediaURLs
-                let links = LinkCards.shown(live?.linkURLs ?? event.linkURLs)
+                let urls = live?.mediaURLs ?? parsed.mediaURLs
+                let links = LinkCards.shown(live?.linkURLs ?? parsed.linkURLs)
 
                 // Each link's card sits where the link was written. Collapsed,
                 // the text pieces share one 8-line budget, so the clamp still

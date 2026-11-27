@@ -7,9 +7,12 @@ struct iPhoneTabView: View {
     @Binding var selectedTab: Int
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
-    @StateObject private var nostrService = NostrService.shared
-    @StateObject private var feedService = FeedService.shared
-    @StateObject private var dmService = DMService.shared
+    // Plain references, not observed: every profile, note or DM landing
+    // re-ran this body, which rebuilt the hidden tabs too (Vault review
+    // 2026-11-27 #1). The dock (`BottomTabBar`) observes them itself.
+    private let nostrService = NostrService.shared
+    private let feedService = FeedService.shared
+    private let dmService = DMService.shared
 
     @State private var searchPath = NavigationPath()
     @State private var profilePath = NavigationPath()

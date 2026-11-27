@@ -46,14 +46,10 @@ struct NoteRow: View {
     }
 
     /// For kind 6 reposts, parse the embedded JSON to extract the original note
-    var repostedEvent: NostrEvent? {
-        guard event.kind == 6,
-              let data = event.content.data(using: .utf8),
-              let inner = try? JSONDecoder().decode(NostrEvent.self, from: data) else {
-            return nil
-        }
-        return inner
-    }
+    var repostedEvent: NostrEvent? { parsed.reposted }
+
+    /// The event's repost, media and links, worked out once (`NoteRowParse`).
+    var parsed: NoteRowParse.Parsed { NoteRowParse.parsed(event) }
 
     var displayName: String {
         let profile = nostrService.profiles[event.pubkey]
@@ -184,9 +180,7 @@ struct NoteRow: View {
     }
 
     func timeAgo(from date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        NoteRowParse.relativeFormatter.localizedString(for: date, relativeTo: Date())
     }
 
 }
