@@ -103,6 +103,7 @@ import androidx.compose.material.icons.outlined.ArrowCircleDown
 import androidx.compose.material.icons.outlined.ArrowCircleUp
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.PersonOff
+import androidx.compose.material.icons.filled.SpeakerNotesOff
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
@@ -159,6 +160,7 @@ object NostrVaultIcons {
     val Accounts: ImageVector = Icons.Filled.Key           // person.badge.key
     val Key: ImageVector = Icons.Filled.Key                // key.fill
     val Blocked: ImageVector = Icons.Filled.PersonOff      // person.crop.circle.badge.xmark
+    val MutedWords: ImageVector = Icons.Filled.SpeakerNotesOff // text.badge.xmark
     val FilterOff: ImageVector = Icons.Filled.Block        // circle.slash
     val Messages: ImageVector = Icons.Outlined.Email       // envelope
     val Appearance: ImageVector = Icons.Filled.Palette     // paintpalette

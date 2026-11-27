@@ -75,6 +75,8 @@ class UserListSignGuardTest {
                 "com/nostrvault/service/nostr/DesktopVaultListEdit.kt" to setOf(10002, 10050, 10063),
                 // 10000 Block, 10002/10050 Save in Relays, 10006 + 10063 Save in Media servers / relay sets.
                 "com/nostrvault/service/nostr/NostrServiceListPublishing.kt" to setOf(10000, 10002, 10006, 10050, 10063),
+                // 10000 Mute / Unmute in Settings › Muted words: one word on the newest list.
+                "com/nostrvault/service/nostr/NostrServiceMutedWords.kt" to setOf(10000),
                 // Save in Edit profile.
                 "com/nostrvault/ui/screens/profile/ProfileEditSheet.kt" to setOf(0),
                 // A new account finishing setup (no list exists yet).

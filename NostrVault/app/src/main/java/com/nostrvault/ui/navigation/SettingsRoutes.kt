@@ -10,6 +10,7 @@ import com.nostrvault.ui.screens.settings.AppearanceSettingsScreen
 import com.nostrvault.ui.screens.settings.FeedSettingsScreen
 import com.nostrvault.ui.screens.settings.BackupSettingsScreen
 import com.nostrvault.ui.screens.settings.BlockedSettingsScreen
+import com.nostrvault.ui.screens.settings.MutedWordsScreen
 import com.nostrvault.ui.screens.settings.RecentlyDeletedSettingsScreen
 import com.nostrvault.ui.screens.settings.BlossomSettingsScreen
 import com.nostrvault.ui.screens.settings.FollowingBackupScreen
@@ -73,6 +74,12 @@ internal fun NavGraphBuilder.settingsRoutes(
 
     composable(Screen.BlockedSettings.route) {
         BlockedSettingsScreen(
+            onBack = { navController.popBackStack() },
+        )
+    }
+
+    composable(Screen.MutedWordsSettings.route) {
+        MutedWordsScreen(
             onBack = { navController.popBackStack() },
         )
     }

@@ -15,7 +15,7 @@ class SettingsGroupsTest {
         )
         assertEquals(
             listOf(
-                "Accounts & Keys", "Blocked", "Recently Deleted", "Following Backup", "List backups", "Wallet", "Privacy",
+                "Accounts & Keys", "Blocked", "Muted words", "Recently Deleted", "Following Backup", "List backups", "Wallet", "Privacy",
                 "Feed", "Appearance", "Media & Cache",
                 "Notifications",
                 "Relays", "Media Servers",
