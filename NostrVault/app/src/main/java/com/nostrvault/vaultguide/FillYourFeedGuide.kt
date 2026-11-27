@@ -69,8 +69,9 @@ object FillYourFeedGuide {
         else -> meter.progressText
     }
 
+    /** Under 5 it says how many are left: "3 more to go" (same as iOS). */
     fun meterSubtitle(meter: VaultMeter): String = when (meter.stage) {
-        VaultMeter.Stage.FILLING -> "Look before you follow"
+        VaultMeter.Stage.FILLING -> FillYourFeedGate.leftText(meter)
         VaultMeter.Stage.MASTER -> "${VaultMeter.GOAL} people followed"
     }
 

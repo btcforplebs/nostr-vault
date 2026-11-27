@@ -47,7 +47,7 @@ class FillYourFeedGuideTest {
     @Test fun meterTextsAcrossStages() {
         assertEquals("3 of 5", FillYourFeedGuide.meterTitle(meter(3), compact = false))
         assertEquals("3/5", FillYourFeedGuide.meterTitle(meter(3), compact = true))
-        assertEquals("Look before you follow", FillYourFeedGuide.meterSubtitle(meter(3)))
+        assertEquals("2 more to go", FillYourFeedGuide.meterSubtitle(meter(3)))
         assertEquals("3/5", FillYourFeedGuide.pillText(meter(3)))
         assertEquals("Web of trust", FillYourFeedGuide.meterTitle(meter(5), compact = false))
         assertEquals("5 people followed", FillYourFeedGuide.meterSubtitle(meter(5)))
