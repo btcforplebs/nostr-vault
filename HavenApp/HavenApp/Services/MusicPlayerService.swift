@@ -8,9 +8,9 @@ import UIKit
 import AppKit
 #endif
 
-/// Something the app-wide player can play: a Wavlake song, or the sound of
+/// Something the app-wide player can play: a Wavlake song, the sound of
 /// a live stream (so a stream keeps going in the mini player and on the
-/// lock screen while you browse).
+/// lock screen while you browse), or a minimized video clip.
 struct PlayerTrack: Identifiable, Hashable {
     let id: String
     let title: String
@@ -19,6 +19,9 @@ struct PlayerTrack: Identifiable, Hashable {
     let audioURL: URL?
     let duration: Int?
     var isLive = false
+    /// A full-screen clip minimized into the bar: plays once, can be
+    /// scrubbed, and reopens as video (MusicPlayerService+Video).
+    var isVideo = false
     var albumTitle: String? = nil
     var pageURL: URL? = nil
     /// The song behind this item, for Share and the artist's profile.
@@ -75,14 +78,22 @@ final class MusicPlayerService: ObservableObject {
         didSet { refreshRemoteCommandStates() }
     }
     private var unshuffledQueue: [PlayerTrack] = []
+    /// The minimized clip's asset and the time to start at.
+    var videoHandOff: VideoHandOff?
+    /// A minimized clip is seeking to the viewer's time before it plays: it
+    /// already counts as playing (the session and the bar's button), so the
+    /// paused player in the meantime must not flip that back.
+    private var awaitsHandOffSeek = false
 
     var current: PlayerTrack? { queue.indices.contains(index) ? queue[index] : nil }
     /// The player behind a live item. The stream window shows its video
     /// rather than opening the stream a second time, so popping out and
     /// back in never stops the sound.
     var livePlayer: AVPlayer? { current?.isLive == true ? player : nil }
+    /// Live or a minimized clip: what the mini bar draws in its round artwork.
+    var visiblePlayer: AVPlayer? { current?.sharesPlayer == true ? player : nil }
     var hasNext: Bool {
-        index + 1 < queue.count || (repeatMode == .all && !queue.isEmpty && current?.isLive != true)
+        index + 1 < queue.count || (repeatMode == .all && !queue.isEmpty && current?.playsOnce != true)
     }
     /// The songs after this one, in play order, as the full player's Up Next lists them.
     var upNext: ArraySlice<PlayerTrack> { queue.indices.contains(index + 1) ? queue[(index + 1)...] : [] }
@@ -112,7 +123,7 @@ final class MusicPlayerService: ObservableObject {
                 // The stream window's own controls play and pause this player
                 // too; keep the mini player's button and the lock screen true.
                 let playing = status != .paused
-                if self.current?.isLive == true, playing != self.isPlaying {
+                if !self.awaitsHandOffSeek, self.current?.sharesPlayer == true, playing != self.isPlaying {
                     self.isPlaying = playing
                     self.updateNowPlaying()
                 }
@@ -284,6 +295,8 @@ final class MusicPlayerService: ObservableObject {
         player.replaceCurrentItem(with: nil)
         queue = []
         liveStream = nil
+        videoHandOff = nil
+        awaitsHandOffSeek = false
         isShuffled = false
         unshuffledQueue = []
         index = 0
@@ -298,12 +311,32 @@ final class MusicPlayerService: ObservableObject {
 
     private func loadCurrent(autoplay: Bool) {
         guard let track = current, let url = MediaCacheService.offMeshURL(track.audioURL) else { return }
-        let item = makeItem(url: url, isLive: track.isLive)
+        let item = handedOverItem(for: track, url: url) ?? makeItem(url: url, isLive: track.isLive)
+        // A minimized clip picks up at the viewer's time, then plays.
+        let seeksFirst = autoplay && waitsForHandOffSeek(track)
+        awaitsHandOffSeek = seeksFirst
         statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             let seconds = item.duration.seconds
             Task { @MainActor in
                 guard let self else { return }
                 if seconds.isFinite, seconds > 0 { self.duration = seconds }
+                if item.status == .readyToPlay, self.player.currentItem === item,
+                   let start = self.takeHandOffStart(for: track) {
+                    self.elapsed = start
+                    self.player.seek(to: CMTime(seconds: start, preferredTimescale: 600),
+                                     toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                        Task { @MainActor in
+                            guard self.player.currentItem === item else { return }
+                            self.awaitsHandOffSeek = false
+                            // Paused from the bar during the seek: stay paused.
+                            if autoplay && self.isPlaying { self.startPlayback() } else { self.updateNowPlaying() }
+                        }
+                    }
+                }
+                if item.status == .failed, self.player.currentItem === item {
+                    self.awaitsHandOffSeek = false
+                    self.dropHandOffStart(for: track)
+                }
                 // Past an unplayable song, but never round again under repeat
                 // all: a queue where nothing plays would spin forever.
                 guard item.status == .failed, self.current?.audioURL == url else { return }
@@ -326,10 +359,24 @@ final class MusicPlayerService: ObservableObject {
         }
         elapsed = 0
         duration = Double(track.duration ?? 0)
+        // A clip reopened full screen can set its speed on this player.
+        player.defaultRate = 1
         refreshRemoteCommandStates()
+        // Whatever played before must not run the clip from 0:00 meanwhile.
+        if seeksFirst { player.pause() }
         player.replaceCurrentItem(with: item)
         loadArtwork(for: track)
-        if autoplay { startPlayback() } else { updateNowPlaying() }
+        if seeksFirst {
+            // The sound is this clip's from the tap: the viewer letting go of
+            // the session mid-seek must not hand it back to other apps.
+            activateSession()
+            isPlaying = true
+            updateNowPlaying()
+        } else if autoplay {
+            startPlayback()
+        } else {
+            updateNowPlaying()
+        }
     }
 
     /// A live HLS stream plays through `HLSLowLatencyStripper`: zap.stream's
@@ -354,6 +401,9 @@ final class MusicPlayerService: ObservableObject {
     }
 
     private func trackEnded() {
+        // A minimized clip plays once: left to loop, it would run on with
+        // the screen off.
+        if current?.isVideo == true { return stop() }
         if repeatMode == .one, current?.isLive != true {
             seek(to: 0)
             resume()

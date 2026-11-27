@@ -7,18 +7,34 @@ import SwiftUI
 /// previous / play / next / repeat, and AirPlay, Up Next and more along
 /// the bottom.
 /// What opening the mini player shows: a minimized live stream pops back
-/// out into its full window (video, chat and all) and keeps playing; a song
-/// opens the music player.
+/// out into its full window (video, chat and all) and keeps playing; a
+/// minimized clip opens full screen again at the bar's time; a song opens
+/// the music player.
 struct PlayerSheet: View {
     @ObservedObject private var player = MusicPlayerService.shared
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        content
+            // A clip that played to its end, or a stop: nothing left to show.
+            .onChange(of: player.current == nil) { _, ended in if ended { dismiss() } }
+    }
+
+    @ViewBuilder private var content: some View {
         if player.current?.isLive == true, let stream = player.liveStream {
             // The window shows the mini player's own video, so the stream
             // plays straight through opening it and swiping it away.
             LiveStreamPlayerView(stream: stream)
                 .environmentObject(NostrService.shared)
                 .environmentObject(ConfigService.shared)
+        } else if let clip = player.videoPlayer, let url = player.current?.audioURL {
+            // The bar's own player, so the sound plays straight through;
+            // Minimize or a swipe down puts it back in the bar.
+            FullScreenVideoPlayer(url: url, onPiPStart: { dismiss() }, sharedPlayer: clip, sharedIsClip: true)
+                .ignoresSafeArea()
+                #if os(macOS)
+                .frame(minWidth: 560, minHeight: 360)
+                #endif
         } else {
             NowPlayingView()
         }
