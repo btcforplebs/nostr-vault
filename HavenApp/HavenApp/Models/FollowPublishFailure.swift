@@ -20,8 +20,8 @@ enum FollowPublishFailure: Equatable {
     /// Fewer than two of the account's own relays answered the fresh
     /// lookup, `answered` of them (ListMerge.followMajority).
     case tooFewAnswered(answered: Int)
-    /// The account's relay list names one relay, and the follow list needs
-    /// two of its own relays to answer (ListMerge.followMajority).
+    /// The account's relay list names one relay, and it or purplepag.es (its
+    /// second answer, ListMerge.followCounted) didn't answer.
     case oneRelayList
     /// The signer returned nothing (a bunker that refused or timed out).
     case notSigned
@@ -65,12 +65,15 @@ enum FollowPublishFailure: Equatable {
     }
 
     /// Why a lookup left the follow list `.unknown`, counting only the
-    /// account's `own` relays (ListMerge.followMajority): a one-relay list,
-    /// under two own answers, or not most of the ones that connected.
+    /// account's `own` relays (ListMerge.followMajority): a one-relay list
+    /// whose relay or purplepag.es didn't answer, under two own answers, or
+    /// not most of the ones that connected. A one-relay list where both did
+    /// answer (refused by another guard) gets the general text.
     static func didNotAnswer<Event>(_ lookup: ReplaceableLookup<Event>, own: [String]) -> FollowPublishFailure {
-        let reason = relaysDidNotAnswer(answeredBy: lookup.answeredBy, own: own)
+        let oneRelay = Set(own.map(ListMerge.relayKey)).count == 1
+        let reason = relaysDidNotAnswer(answeredBy: lookup.answeredBy, own: ListMerge.followCounted(own: own))
         guard case .relaysDidNotAnswer(let ownAnswered, let ownCount) = reason else { return reason }
-        if ownCount == 1 { return .oneRelayList }
+        if oneRelay { return ownAnswered < ownCount ? .oneRelayList : reason }
         return ownAnswered < 2 ? .tooFewAnswered(answered: ownAnswered) : reason
     }
 
