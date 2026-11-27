@@ -87,7 +87,7 @@ extension FeedView {
     var recipeGridView: some View {
         VStack(spacing: 12) {
             if !recipeService.categories.isEmpty {
-                RecipeCategoryBar(categories: recipeService.categories, selected: $recipeService.selectedCategory)
+                RecipeCategoryBar(categories: recipeService.categories, selected: Binding(get: { recipeService.selectedCategory }, set: { recipeService.selectedCategory = $0 }))
             }
 
             if recipeService.isLoading && recipeService.visibleRecipes.isEmpty {
@@ -162,7 +162,7 @@ extension FeedView {
     var marketplaceGridView: some View {
         VStack(spacing: 12) {
             if !marketplaceService.categories.isEmpty {
-                MarketplaceCategoryBar(categories: marketplaceService.categories, selected: $marketplaceService.selectedCategory)
+                MarketplaceCategoryBar(categories: marketplaceService.categories, selected: Binding(get: { marketplaceService.selectedCategory }, set: { marketplaceService.selectedCategory = $0 }))
             }
 
             if marketplaceService.isLoading && marketplaceService.visibleListings.isEmpty {
@@ -185,7 +185,7 @@ extension FeedView {
         .padding(.vertical, 16)
         .onAppear { marketplaceService.loadIfNeeded() }
         // Global waits for the global feed's warning (MarketScopeGate).
-        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $marketplaceService.globalWarningPending) {
+        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: Binding(get: { marketplaceService.globalWarningPending }, set: { marketplaceService.globalWarningPending = $0 })) {
             Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
                 marketplaceService.confirmGlobal()
             }

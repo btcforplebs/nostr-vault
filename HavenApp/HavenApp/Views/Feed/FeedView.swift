@@ -3,15 +3,18 @@ import SwiftUI
 // MARK: - FeedView
 
 struct FeedView: View {
-    @StateObject var feedService = FeedService.shared
-    @EnvironmentObject var relayManager: RelayProcessManager
-    @EnvironmentObject var configService: ConfigService
-    @EnvironmentObject var nostrService: NostrService
+    /// Everything below is read, not observed: `screen` forwards their
+    /// changes only while the Feed is on screen (Feed perf review 11-27 #4).
+    @StateObject var screen = FeedScreenWatch()
+    var feedService: FeedService { .shared }
+    var relayManager: RelayProcessManager { .shared }
+    var configService: ConfigService { .shared }
+    var nostrService: NostrService { .shared }
     /// Not observed: the manager publishes every countdown tick (10 a
     /// second), and the whole feed would redraw for each. Only the pill
     /// watches it; the Mac's edit request comes in by `onReceive`.
     var pendingManager: PendingPostManager { .shared }
-    @ObservedObject var tutorialCenter = TutorialCenter.shared
+    var tutorialCenter: TutorialCenter { .shared }
     @State var composeContext: ComposeContext?
     /// The diVine, article or recipe composer, when the post button opens one.
     @State var modeComposer: ModeComposer?
@@ -22,16 +25,16 @@ struct FeedView: View {
     var menuModes: [FeedMode] { FeedMode.menuModes(order: feedMenuOrder, hidden: feedMenuHidden) }
     @State var showingNoteId: String?
     @State var showingProfileKey: IdentifiableString?
-    @ObservedObject var fillGuide = FillYourVaultCoordinator.shared
+    var fillGuide: FillYourVaultCoordinator { .shared }
     @State var showingMediaUrl: IdentifiableURL?
     @Namespace var mediaZoom
     /// macOS presents the article reader as a sheet; iOS pushes it.
     @State var showingArticle: ArticleRoute?
-    @StateObject var recipeService = RecipeFeedService.shared
-    @StateObject var marketplaceService = MarketplaceFeedService.shared
+    var recipeService: RecipeFeedService { .shared }
+    var marketplaceService: MarketplaceFeedService { .shared }
     @State var selectedListing: MarketListing?
-    @StateObject var liveService = LiveFeedService.shared
-    @StateObject var reelsService = ReelsFeedService.shared
+    var liveService: LiveFeedService { .shared }
+    var reelsService: ReelsFeedService { .shared }
     @State var playingStream: LiveStream?
     @State var selectedGridMediaNoteId: String?
     /// The grid viewer's notes travel with the presentation: a separate
@@ -77,10 +80,14 @@ struct FeedView: View {
     @State var newPostsDropWork: DispatchWorkItem?
     /// Debounce work item for rebuilding the row data cache to prevent
     /// expensive synchronous operations during active scrolling.
-    @State var cacheRebuildWork: DispatchWorkItem?
+    var cacheRebuildWork: DispatchWorkItem? {
+        get { rowStore.cacheRebuildWork }
+        nonmutating set { rowStore.cacheRebuildWork = newValue }
+    }
     /// Row data and thread grouping (`rowDataCache`, `feedThreads`), held by
     /// reference so view copies don't each keep their own; see FeedRowStore.
-    @StateObject var rowStore = FeedRowStore()
+    /// Observed through `screen`, so hidden row writes don't redraw.
+    var rowStore: FeedRowStore { screen.rowStore }
 
     /// The note open in place in a thread card (nil = none).
     @State var expandedNoteId: String? = nil
@@ -92,12 +99,25 @@ struct FeedView: View {
     /// Each shown thread's sort key when it was first shown. Threads keep
     /// that place while the feed is on screen, so a reply doesn't lift its
     /// card from under the reader; `resortThreads()` clears it.
-    @State var frozenThreadKeys: [String: Date] = [:]
-    @State var threadRebuildWork: DispatchWorkItem?
+    var frozenThreadKeys: [String: Date] {
+        get { rowStore.frozenThreadKeys }
+        nonmutating set { rowStore.frozenThreadKeys = newValue }
+    }
+    var threadRebuildWork: DispatchWorkItem? {
+        get { rowStore.threadRebuildWork }
+        nonmutating set { rowStore.threadRebuildWork = newValue }
+    }
     /// A gap-fill regroup is already queued; see regroupIfGapFilled.
-    @State var gapRegroupScheduled = false
+    var gapRegroupScheduled: Bool {
+        get { rowStore.gapRegroupScheduled }
+        nonmutating set { rowStore.gapRegroupScheduled = newValue }
+    }
     /// Popular rank per note id, rebuilt once per `filteredNotes` change.
-    @State var popularRanks: [String: Int] = [:]
+    /// In the row store, so a rebuild while hidden doesn't redraw.
+    var popularRanks: [String: Int] {
+        get { rowStore.popularRanks }
+        nonmutating set { rowStore.popularRanks = newValue }
+    }
     /// The rows' actions, built once (`feedActionsValue`). Its closures only
     /// reach the shared services.
     @State var feedActions = FeedActions.make(feedService: .shared, nostrService: .shared)
@@ -149,9 +169,16 @@ struct FeedView: View {
         #if os(iOS)
         feedStack
             .onAppear {
+                // Posts that came in while hidden go in now, not 1.5 s
+                // into reading (scheduleAutoLoad).
+                if screen.show() { autoLoadOnReturn() }
                 openNotificationNote()
                 FeedActions.refreshEmoji(nostrService: nostrService)
             }
+            // Behind another tab (the TabView keeps this view), or on the
+            // iPad under a page pushed in the Feed's own stack: stop
+            // redrawing for changes nobody sees.
+            .onDisappear { screen.hide() }
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenNotificationNote)) { _ in
                 openNotificationNote()
             }
