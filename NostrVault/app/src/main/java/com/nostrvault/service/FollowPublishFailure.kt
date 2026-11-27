@@ -18,6 +18,12 @@ sealed interface FollowPublishFailure {
      */
     data object OneOwnRelay : FollowPublishFailure
 
+    /** None of the account's own relays answered. */
+    data object NoneAnswered : FollowPublishFailure
+
+    /** One own relay answered: it takes two ([FollowListKnown]). */
+    data object OneAnswered : FollowPublishFailure
+
     /** Every own relay answered, yet not enough to know the list (fewer than two relays in all, or "none" unproven). */
     data object NotEnoughAnswered : FollowPublishFailure
 
@@ -29,7 +35,8 @@ sealed interface FollowPublishFailure {
 
     companion object {
         /**
-         * The failure when the newest list isn't known: [OneOwnRelay] with a single own relay, [OwnRelaysShort] while
+         * The failure when the newest list isn't known: [OneOwnRelay] with a single own relay, [NoneAnswered] / [OneAnswered]
+         * under two own relays answering, then [OwnRelaysShort] while
          * some of the [own] relays didn't answer (counted against all of them, dead ones too, as the text says),
          * [NotEnoughAnswered] once all of them did. [answeredBy] is every relay that answered, null when the lookup
          * itself failed (none did).
@@ -39,6 +46,9 @@ sealed interface FollowPublishFailure {
             if (mine.isEmpty()) return NoRelayList
             if (mine.size < 2) return OneOwnRelay
             val answered = answeredBy.orEmpty().map(ListMerge::key).toSet().count { it in mine }
+            // Same order as iOS (Tory, nv-apple 2026-11-27): under two answering first, then "only X of your Y".
+            if (answered == 0) return NoneAnswered
+            if (answered == 1) return OneAnswered
             return if (answered < mine.size) OwnRelaysShort(answered, mine.size) else NotEnoughAnswered
         }
     }
@@ -56,6 +66,12 @@ internal fun followFailedMessage(follow: Boolean, failure: FollowPublishFailure?
         FollowPublishFailure.OneOwnRelay ->
             "Couldn't $verb: your relay list has only one relay, and your newest follow list needs two of your relays " +
                 "to answer before it can be checked. Nothing changed. Add a relay in Settings › Relays, then try again."
+        FollowPublishFailure.NoneAnswered ->
+            "Couldn't $verb: no relay answered, so your newest follow list can't be checked. Nothing changed. " +
+                "Check your connection, then try again."
+        FollowPublishFailure.OneAnswered ->
+            "Couldn't $verb: only 1 relay answered, and it takes 2 to check your newest follow list. Nothing changed. " +
+                "Try again in a moment."
         FollowPublishFailure.NotEnoughAnswered ->
             "Couldn't $verb: not enough relays answered, so your newest follow list can't be checked. " +
                 "Nothing changed. Try again in a moment."

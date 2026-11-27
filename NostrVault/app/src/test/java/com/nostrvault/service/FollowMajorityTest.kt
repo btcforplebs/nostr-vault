@@ -142,12 +142,20 @@ class FollowMajorityTest {
 
     @Test fun `1 answering is refused, even with only it connected and an indexer answering`() {
         onRelays = lookup(answered = seven.take(1), reached = seven.take(1), others = setOf("wss://purplepag.es"))
-        assertEquals(short(1, 7), follow())
+        assertEquals(
+            "Couldn't follow: only 1 relay answered, and it takes 2 to check your newest follow list. Nothing changed. " +
+                "Try again in a moment.",
+            follow(),
+        )
     }
 
     @Test fun `0 answering is refused`() {
         onRelays = lookup(answered = emptyList(), reached = seven.take(3))
-        assertEquals(short(0, 7), follow())
+        assertEquals(
+            "Couldn't follow: no relay answered, so your newest follow list can't be checked. Nothing changed. " +
+                "Check your connection, then try again.",
+            follow(),
+        )
     }
 
     @Test fun `a relay list of one relay can never be checked and says so`() {
