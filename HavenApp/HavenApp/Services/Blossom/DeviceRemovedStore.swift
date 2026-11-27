@@ -19,6 +19,17 @@ final class DeviceRemovedStore: @unchecked Sendable {
     private var lists: [String: DeviceRemovedHashes] = [:] // by file path
     private var inFlight = Set<String>() // hashes set aside by a delete running now
 
+    /// File moves and folder reads for the set-aside files: the real ones,
+    /// or failing ones in tests.
+    private let move: (URL, URL) throws -> Void
+    private let listDir: (URL) -> [String]?
+
+    init(move: @escaping (URL, URL) throws -> Void = { try FileManager.default.moveItem(at: $0, to: $1) },
+         listDir: @escaping (URL) -> [String]? = { try? FileManager.default.contentsOfDirectory(atPath: $0.path) }) {
+        self.move = move
+        self.listDir = listDir
+    }
+
     /// The list in `relayDataDir` (empty when none was saved).
     func list(relayDataDir: URL) -> DeviceRemovedHashes {
         let url = DeviceRemovedHashes.fileURL(relayDataDir: relayDataDir)
@@ -86,12 +97,15 @@ final class DeviceRemovedStore: @unchecked Sendable {
                 }
                 for file in files {
                     let to = dir.appendingPathComponent(file.lastPathComponent)
-                    try FileManager.default.moveItem(at: file, to: to)
+                    try move(file, to)
                     moved.append((file, to))
                 }
             } catch {
-                for (from, to) in moved { try? FileManager.default.moveItem(at: to, to: from) }
-                try? FileManager.default.removeItem(at: dir)
+                // Back where they were. A file that could not go back stays
+                // aside, with its folder, for recoverSetAside: never removed
+                // here, or the only copy goes unchecked (Tron, #2657 low 1).
+                for (from, to) in moved { try? move(to, from) }
+                removeEmptyAside(dir)
                 return false
             }
             inFlight.insert(hash)
@@ -144,21 +158,30 @@ final class DeviceRemovedStore: @unchecked Sendable {
         }
     }
 
+    /// Removes `dir` when it holds nothing but the marker; true when it is gone.
+    @discardableResult
+    private func removeEmptyAside(_ dir: URL) -> Bool {
+        guard let names = listDir(dir) else { return !FileManager.default.fileExists(atPath: dir.path) }
+        guard names.allSatisfy({ $0 == Self.listedBeforeMarker }) else { return false }
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent(Self.listedBeforeMarker))
+        return (try? FileManager.default.removeItem(at: dir)) != nil
+    }
+
     private func putBackLocked(_ hash: String, relayDataDir: URL, vault: URL) -> Bool {
         let dir = asideDir(relayDataDir).appendingPathComponent(hash, isDirectory: true)
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        // Not read: nothing is known to be back, so nothing is removed (Tron, #2657 low 2).
+        guard let names = listDir(dir) else { return false }
         let wasListed = names.contains(Self.listedBeforeMarker)
         var all = true
         for name in names where name != Self.listedBeforeMarker {
             let from = dir.appendingPathComponent(name), to = vault.appendingPathComponent(name)
             if FileManager.default.fileExists(atPath: to.path) {
                 try? FileManager.default.removeItem(at: from)
-            } else if (try? FileManager.default.moveItem(at: from, to: to)) == nil {
+            } else if (try? move(from, to)) == nil {
                 all = false
             }
         }
-        guard all else { return false }
-        try? FileManager.default.removeItem(at: dir)
+        guard all, removeEmptyAside(dir) else { return false }
         if !wasListed { removeLocked(hash, url: DeviceRemovedHashes.fileURL(relayDataDir: relayDataDir)) }
         return true
     }

@@ -78,4 +78,42 @@ final class DeviceRemovedStoreTests: XCTestCase {
         XCTAssertTrue(store.putBack(sha, relayDataDir: dir, vault: vault))
         XCTAssertFalse(store.list(relayDataDir: dir).contains(sha))
     }
+
+    private struct Refused: Error {}
+
+    /// #2657 low 1: a set-aside that fails half way, and whose undo fails too,
+    /// keeps the file aside for recovery instead of removing the folder.
+    func testFailedUndoKeepsTheFileAside() throws {
+        let vault = dir.appendingPathComponent("blossom")
+        let first = vault.appendingPathComponent(sha), second = vault.appendingPathComponent(sha + ".jpg")
+        try Data("only copy".utf8).write(to: first)
+        try Data("second".utf8).write(to: second)
+        var calls = 0
+        // Move 1 (first aside) works; move 2 (second aside) and move 3 (undo first) fail.
+        let store = DeviceRemovedStore(move: { from, to in
+            calls += 1
+            guard calls == 1 else { throw Refused() }
+            try FileManager.default.moveItem(at: from, to: to)
+        })
+        XCTAssertFalse(store.setAside([first, second], sha256: sha, wasListed: false, relayDataDir: dir))
+        let aside = dir.appendingPathComponent(DeviceRemovedStore.asideFolder).appendingPathComponent(sha).appendingPathComponent(sha)
+        XCTAssertEqual(try Data(contentsOf: aside), Data("only copy".utf8))
+        DeviceRemovedStore().recoverSetAside(relayDataDir: dir, vault: vault)
+        XCTAssertEqual(try Data(contentsOf: first), Data("only copy".utf8))
+    }
+
+    /// #2657 low 2: a set-aside folder that cannot be read is not put back,
+    /// so nothing in it is removed.
+    func testUnreadableAsideIsNotRemoved() throws {
+        let vault = dir.appendingPathComponent("blossom")
+        let file = vault.appendingPathComponent(sha)
+        try Data("only copy".utf8).write(to: file)
+        let hashDir = dir.appendingPathComponent(DeviceRemovedStore.asideFolder).appendingPathComponent(sha)
+        let store = DeviceRemovedStore(listDir: { $0.standardizedFileURL.path == hashDir.standardizedFileURL.path ? nil : try? FileManager.default.contentsOfDirectory(atPath: $0.path) })
+        XCTAssertTrue(store.add(sha, owner: owner, relayDataDir: dir))
+        XCTAssertTrue(store.setAside([file], sha256: sha, wasListed: false, relayDataDir: dir))
+        XCTAssertFalse(store.putBack(sha, relayDataDir: dir, vault: vault))
+        XCTAssertEqual(try Data(contentsOf: hashDir.appendingPathComponent(sha)), Data("only copy".utf8))
+        XCTAssertTrue(store.list(relayDataDir: dir).contains(sha), "still listed while it is aside")
+    }
 }
