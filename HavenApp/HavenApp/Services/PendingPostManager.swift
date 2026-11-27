@@ -177,7 +177,7 @@ class PendingPostManager: ObservableObject {
             // NIP-18: e tag MUST include a relay URL as its third entry.
             let relayHint = ConfigService.shared.config.activeFeedRelays.first
                 ?? ConfigService.shared.config.activeBlastrRelays.first
-                ?? ConfigService.shared.config.nostrURL
+                ?? ConfigService.shared.config.replyRelayHint
 
             // NIP-18: kind 6 is reserved for reposting kind-1 notes. Anything else
             // (e.g. a kind-30023 long-form article) needs kind 16 with a "k" tag

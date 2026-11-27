@@ -308,7 +308,7 @@ struct ArticleReaderView: View {
         feedService.likedEventIds.insert(noteId)
         feedService.saveInteractionState()
         let tags = ArticleEngagement.reactionTags(id: noteId, kind: note.kind, pubkey: note.pubkey, tags: note.tags,
-                                                  relayHint: ConfigService.shared.config.nostrURL)
+                                                  relayHint: ConfigService.shared.config.replyRelayHint)
         Task {
             let powSnap = PowPreferences.snapshot()
             let powDiff = powSnap.reactionEnabled ? powSnap.reactionDifficulty : 0
@@ -498,7 +498,8 @@ struct ArticleReaderView: View {
     }
 
     private func publishHighlight(passage: String, context: String, comment: String) {
-        let relay = ConfigService.shared.config.nostrURL
+        // Never this phone's own 127.0.0.1: no other client could find the article.
+        let relay = ConfigService.shared.config.replyRelayHint
         let tags = ArticleEngagement.highlightTags(id: note.id, kind: note.kind, pubkey: note.pubkey, tags: note.tags,
                                                    relayHint: relay, passage: passage, context: context, comment: comment)
         let content = passage.trimmingCharacters(in: .whitespacesAndNewlines)

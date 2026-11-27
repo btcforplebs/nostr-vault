@@ -95,7 +95,7 @@ final class PollModel: ObservableObject {
         sendError = nil
         let pollRelays = poll.relays.filter(NIP88Poll.isPublicRelay)
         let tags = NIP88Poll.responseTags(poll: poll, optionIds: optionIds,
-                                          relayHint: pollRelays.first ?? ConfigService.shared.config.nostrURL)
+                                          relayHint: pollRelays.first ?? ConfigService.shared.config.replyRelayHint)
         Task {
             defer { isSending = false }
             do {
