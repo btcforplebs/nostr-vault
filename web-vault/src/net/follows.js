@@ -4,7 +4,7 @@
 // most of what the user had. An account that never had a list may start one once every one of its relays answered
 // without one.
 import { verifyEvent } from "nostr-tools/pure"
-import { pool, publishRelays, PROFILE_RELAYS, uniq } from "./pool.js"
+import { pool, publishRelays, PROFILE_RELAYS, uniq, socketFailure } from "./pool.js"
 import { checkSigned } from "./sync.js"
 import { firstTaken } from "./actions.js"
 import { followError } from "./follow-failure.js"
@@ -53,9 +53,12 @@ export const followListKnown = ({ asked, reached, answered, found }) =>
  * Whether a connect failure means the relay is down for this ask: only nostr-tools' own socket error or close
  * ("connection failed", "websocket closed"). A relay this app chose not to dial (cool-down, budget, socket cap, dead
  * host list, plain ws:// on https: pool.js refuse/ensureRelay), one skipped as slow, and a connect timeout may all be
- * healthy and hold the newest list, so they stay in the count as reached-but-silent (Tron, PR 2611 review).
+ * healthy and hold the newest list, so they stay in the count as reached-but-silent (Tron, PR 2611 review). A relay
+ * skipped for a cool-down that a socket failure started (`socketDown`, pool.js ensureRelay) is down too, so a second
+ * follow inside the cool-down counts the same as the first (rd's dead relays, Tod 2026-11-27); a cool-down a timeout
+ * started stays in the count.
  */
-export const socketFailed = err => !err?.refused && /^(connection failed|websocket closed)$/.test(String(err?.message ?? err))
+export const socketFailed = err => !!err?.socketDown || socketFailure(err)
 
 /** A list edit's rule: a found copy needs ownMajority, "no list" needs allOwnAnswered. */
 export const editKnown = ({ asked, answered, heard, found }) =>

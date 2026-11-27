@@ -65,6 +65,10 @@ export const oneAsk = () => ({ open: 0, onOpen: new Set() })
 // and watch): nostr-tools spreads the params into every relay.subscribe, symbol keys included.
 const SEEN_VERIFIED = Symbol("seen verified")
 
+/** nostr-tools' own rejects when the socket itself errored or closed while connecting (abstract-relay.js), never a
+ *  connect timeout or one of this pool's gates. */
+export const socketFailure = err => !err?.refused && /^(connection failed|websocket closed)$/.test(String(err?.message ?? err))
+
 export class LivePool extends SimplePool {
   signerRelays = new Set()
   maxOpenRelays = MAX_OPEN_RELAYS
@@ -80,7 +84,7 @@ export class LivePool extends SimplePool {
   retryTimers = new Map() // url -> timeout
   retryCounts = new Map() // url -> attempts, for the backoff
   rawConnect = new WeakMap() // relay -> its own connect, before watch() wrapped it
-  coolDowns = new Map() // url -> { until, n }: fresh opens skip it until then (connect failed or timed out n times in a row)
+  coolDowns = new Map() // url -> { until, n, socket }: fresh opens skip it until then (connect failed or timed out n times in a row; socket: the last one was a socket failure, socketFailure)
   quickConnectMs = QUICK_CONNECT_MS
   quickOpen = null // the open one-shot ask ({ open, onOpen }) while subscribeMap opens its relays, read synchronously by ensureRelay
   writeOpen = false // set while publish opens its relays, read synchronously by ensureRelay
@@ -202,9 +206,9 @@ export class LivePool extends SimplePool {
     const c = this.coolDowns.get(key)
     return !!c && Date.now() < c.until && !this.signerRelays.has(key)
   }
-  coolDown(key) {
+  coolDown(key, socket = false) {
     const n = (this.coolDowns.get(key)?.n ?? 0) + 1
-    this.coolDowns.set(key, { n, until: Date.now() + COOL_DOWN_MS[Math.min(n - 1, COOL_DOWN_MS.length - 1)] })
+    this.coolDowns.set(key, { n, socket, until: Date.now() + COOL_DOWN_MS[Math.min(n - 1, COOL_DOWN_MS.length - 1)] })
   }
   async ensureRelay(url, params) {
     const ask = this.quickOpen, write = this.writeOpen // before any await: see subscribeMap and publish
@@ -215,7 +219,10 @@ export class LivePool extends SimplePool {
     // A relay nostr-tools is reconnecting by itself is gated in watch(), which charges what that reconnect re-fires.
     // Taking a unit here too would spend two on one open.
     if (!(held && held.reconnectAttempts > 0)) {
-      if (!held?.connected && !write && this.coolingDown(key)) throw new Error(`relay skipped, its last connect failed: ${url}`)
+      // `socketDown`: that failed connect was the socket itself failing (not a timeout), so the follow list's count
+      // can leave this relay out (follows.js socketFailed) on a second ask inside the cool-down too.
+      if (!held?.connected && !write && this.coolingDown(key))
+        throw Object.assign(new Error(`relay skipped, its last connect failed: ${url}`), { socketDown: !!this.coolDowns.get(key)?.socket })
       const no = this.refuse(url, 1)
       if (no) throw new Error(no)
     }
@@ -233,7 +240,7 @@ export class LivePool extends SimplePool {
     const opening = super.ensureRelay(url, params), fresh = this.relays.get(key)
     if (fresh) { this.watch(fresh); this.lastUsed.set(fresh, Date.now()) }
     // A connect that fails or times out (not one the gates refused) starts the relay's cool-down; one that opens ends it.
-    opening.then(() => this.coolDowns.delete(key), err => { if (!err?.refused && !params?.abort?.aborted) this.coolDown(key) })
+    opening.then(() => this.coolDowns.delete(key), err => { if (!err?.refused && !params?.abort?.aborted) this.coolDown(key, socketFailure(err)) })
     let relay
     try {
       if (ask && !wasOpen) {

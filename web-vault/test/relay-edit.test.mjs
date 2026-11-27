@@ -216,9 +216,8 @@ test("real pool, no mocks: relays that refuse the connection are not answers (Tr
   const quick = (url, filter) => askRelay(url, filter, 1500)
   const r = await latestList(ctx, 10063, { online: true, ask: quick })
   assert.deepEqual([r.event, r.checked, r.answered], [undefined, false, 0])
-  // ws://127.0.0.1:1 is in its cool-down now (latestList's connect failed): not dialed, so still counted as reached
-  // (Tron, PR 2611 review). A relay whose socket fails in this ask is the one that drops out.
-  assert.deepEqual(await askRelay("ws://127.0.0.1:1", { kinds: [10063] }, 1500), { events: [], answered: false, connected: true })
+  // ws://127.0.0.1:1 is in its cool-down now, started by latestList's socket failure: not dialed, and still down.
+  assert.deepEqual(await askRelay("ws://127.0.0.1:1", { kinds: [10063] }, 1500), { events: [], answered: false, connected: false })
   assert.deepEqual(await askRelay("ws://127.0.0.1:3", { kinds: [10063] }, 1500), { events: [], answered: false, connected: false })
 })
 

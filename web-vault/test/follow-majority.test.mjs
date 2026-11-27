@@ -90,3 +90,29 @@ test("socketFailed: only a real socket error or close drops a relay out of the c
     assert.equal(socketFailed(new Error(e)), false, e)
   assert.equal(socketFailed(Object.assign(new Error("connection failed"), { refused: true })), false, "a gate refusal")
 })
+
+test("real pool: a second follow inside a socket failure's cool-down counts the same as the first (rd, Tod 11-27)", async () => {
+  const { pool } = await import("../src/net/pool.js")
+  const { askRelay } = await import("../src/net/follows.js")
+  // 4 of 7 own relays refuse the connection (real sockets on closed ports); the other 3 answer with the list.
+  const dead = ["ws://127.0.0.1:11", "ws://127.0.0.1:12", "ws://127.0.0.1:13", "ws://127.0.0.1:14"]
+  const live = ["wss://l1.example", "wss://l2.example", "wss://l3.example"], own = [...dead, ...live]
+  for (const u of dead) pool.coolDowns.delete(u.replace(/\/?$/, "/"))
+  const ask = (url, filter) => live.includes(url) ? Promise.resolve({ events: [base], answered: true, connected: true }) : askRelay(url, filter, 1500)
+  const follow = () => setFollow({ vault: fakeVault([base]), signer: { signEvent: async t => finalizeEvent(t, me) }, pubkey: mePk, target: pk(),
+    follow: true, readRelays: [], writeRelays: own, ownRelays: own, ask, publish: urls => urls.map(() => Promise.resolve("")) })
+  assert.equal(followsOf((await follow()).event).length, 3, "first follow: 3 of 3 reached")
+  assert.ok(dead.every(u => pool.coolingDown(u.replace(/\/?$/, "/")) || pool.coolingDown(u)), "the dead relays are cooling down now")
+  assert.equal(followsOf((await follow()).event).length, 3, "second follow inside the cool-down: still 3 of 3")
+})
+
+test("real pool: a cool-down that wasn't a socket failure (a timeout) still counts as reached", async () => {
+  const { pool } = await import("../src/net/pool.js")
+  const { askRelay } = await import("../src/net/follows.js")
+  const url = "ws://127.0.0.1:15", key = "ws://127.0.0.1:15/"
+  for (const k of [url, key]) pool.coolDowns.set(k, { n: 1, socket: false, until: Date.now() + 60000 })
+  assert.deepEqual(await askRelay(url, { kinds: [3] }, 1500), { events: [], answered: false, connected: true })
+  for (const k of [url, key]) pool.coolDowns.set(k, { n: 1, socket: true, until: Date.now() + 60000 })
+  assert.deepEqual(await askRelay(url, { kinds: [3] }, 1500), { events: [], answered: false, connected: false })
+  for (const k of [url, key]) pool.coolDowns.delete(k)
+})
