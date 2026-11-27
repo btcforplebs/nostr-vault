@@ -100,8 +100,10 @@ export function links(notes) {
  * Search this browser's relay. `stores`: Haven clients ({ query }) to read: the user's own notes, what others sent
  * them, the feed cache (where profiles are kept too). -> { people, notes, articles, media, hashtags, links, cut }
  * People you follow come first, then by name; notes newest first. Blocked authors are left out.
+ * `mine`: the pubkey of the account in use, for "My notes": only notes it wrote (asked with `authors`, which Haven's
+ * search applies before the words, haven-go/search.go) and no People section. Other added accounts don't count.
  */
-export async function searchVault(stores, query, { follows = [], blocked = new Set(), decode, limit = 500 } = {}) {
+export async function searchVault(stores, query, { follows = [], blocked = new Set(), decode, limit = 500, mine = null } = {}) {
   const words = terms(query)
   const empty = { people: [], notes: [], articles: [], media: [], hashtags: [], links: [], cut: false }
   if (!words) return empty
@@ -114,8 +116,8 @@ export async function searchVault(stores, query, { follows = [], blocked = new S
     return evs
   }))).flat()
   const [profiles, found] = await Promise.all([
-    key ? (await Promise.all(stores.map(s => s.query({ kinds: [0], authors: [key], limit: 1 }).catch(() => [])))).flat() : ask({ kinds: [0] }),
-    ask({ kinds: NOTE_KINDS }),
+    mine ? [] : key ? (await Promise.all(stores.map(s => s.query({ kinds: [0], authors: [key], limit: 1 }).catch(() => [])))).flat() : ask({ kinds: [0] }),
+    ask(mine ? { kinds: NOTE_KINDS, authors: [mine] } : { kinds: NOTE_KINDS }),
   ])
   const newest = new Map()
   for (const ev of profiles) if (ev?.kind === 0 && !blocked.has(ev.pubkey) && keepsPerson(ev, words, key) && !(newest.get(ev.pubkey)?.created_at >= ev.created_at)) newest.set(ev.pubkey, ev)
@@ -123,9 +125,9 @@ export async function searchVault(stores, query, { follows = [], blocked = new S
   const fset = new Set(follows)
   const people = [...newest.values()].sort((a, b) => (fset.has(b.pubkey) - fset.has(a.pubkey)) || name(a).localeCompare(name(b))).map(ev => ev.pubkey)
   // A pasted npub finds its person even with no profile here yet.
-  if (!people.length && key && String(query).trim().toLowerCase().replace(/^nostr:/, "").startsWith("npub1") && !blocked.has(key)) people.push(key)
+  if (!mine && !people.length && key && String(query).trim().toLowerCase().replace(/^nostr:/, "").startsWith("npub1") && !blocked.has(key)) people.push(key)
   const byId = new Map()
-  for (const ev of found) if (NOTE_KINDS.includes(ev?.kind) && !blocked.has(ev.pubkey) && matchesNote(words, ev)) byId.set(ev.id, ev)
+  for (const ev of found) if (NOTE_KINDS.includes(ev?.kind) && !blocked.has(ev.pubkey) && (!mine || ev.pubkey === mine) && matchesNote(words, ev)) byId.set(ev.id, ev)
   const all = [...byId.values()].sort((a, b) => b.created_at - a.created_at)
   return {
     people,
@@ -137,3 +139,9 @@ export async function searchVault(stores, query, { follows = [], blocked = new S
     cut,
   }
 }
+
+// The "Notes / My notes" switch over the Vault's search (plan NV_SEARCH_PLAN_2026_11_27.md 2.3, Logen 5d1ce4cb): it
+// remembers its last setting, in this browser. Default Notes (everything in the Vault).
+const MINE_KEY = "nv-vault-search-mine"
+export const searchesMine = (storage = globalThis.localStorage) => { try { return storage?.getItem(MINE_KEY) === "on" } catch { return false } }
+export const setSearchesMine = (on, storage = globalThis.localStorage) => { try { storage?.setItem(MINE_KEY, on ? "on" : "off") } catch {} }
