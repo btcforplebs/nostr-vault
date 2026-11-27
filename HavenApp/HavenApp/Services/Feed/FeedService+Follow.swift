@@ -139,8 +139,9 @@ extension FeedService {
             guard owner == ConfigService.shared.activeAccountHexPubkey else { fail(.accountSwitched, nil); return }
             let base: (tags: [[String]], content: String, createdAt: Int64)
             let held = Self.lastSignedContactList[owner]
-            let found = ListMerge.editBase(lookup, held: held, own: NostrService.ownListRelays(for: owner), createdAt: { $0.created_at })
-            switch ListMerge.freshKeyBase(found, fresh: fresh, lookup: lookup, held: held, createdAt: { $0.created_at }) {
+            let found = ListMerge.followEditBase(lookup, held: held, own: NostrService.ownListRelays(for: owner), createdAt: { $0.created_at })
+            let known = ListMerge.freshKeyBase(found, fresh: fresh, lookup: lookup, held: held, createdAt: { $0.created_at })
+            switch ListMerge.followBase(known, held: held, before: before, after: attempted) {
             case .noRelayList:
                 fail(.noRelayList, nil)
                 return
@@ -148,7 +149,7 @@ extension FeedService {
                 #if DEBUG
                 print("FeedService: follow list not published — relays didn't answer (\(lookup.answered)/\(lookup.asked))")
                 #endif
-                fail(.relaysDidNotAnswer(answeredBy: lookup.answeredBy, own: NostrService.ownListRelays(for: owner)), nil)
+                fail(.didNotAnswer(lookup, own: NostrService.ownListRelays(for: owner)), nil)
                 return
             case .none: base = ([], "", 0)
             case .list(let newest): base = (newest.tags, newest.content, newest.created_at)

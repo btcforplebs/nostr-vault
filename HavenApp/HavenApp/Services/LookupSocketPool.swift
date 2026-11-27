@@ -110,6 +110,8 @@ final class LookupSocketPool {
 
     private var entries: [String: Entry] = [:]
     private var cooldownUntil: [String: Date] = [:]
+    /// Relays whose current or last socket failed before connecting.
+    private var handshakeFailed = Set<String>()
     /// Sockets this pool has dialled since it was made (diagnostics, tests).
     private(set) var socketsOpened = 0
 
@@ -179,6 +181,14 @@ final class LookupSocketPool {
         return lookup
     }
 
+    /// Whether the last socket dialled to `url` failed before its handshake
+    /// finished: the relay was dialled and could not be reached. A relay not
+    /// dialled (cooling down, pool full), still connecting, or one that
+    /// connected and then dropped is not this (ListMerge.followMajority).
+    func failedToConnect(_ url: URL) -> Bool {
+        handshakeFailed.contains(Self.relayKey(url))
+    }
+
     /// Closes every pooled socket (background, account switch). Lookups still
     /// open end as `.failed`; cooldowns are kept and none are added.
     func closeAll() {
@@ -196,6 +206,7 @@ final class LookupSocketPool {
         if let entry = entries[key] { return entry }
         if entries.count >= maxSockets && !evictIdle() { return nil }
         let entry = Entry(key: key, connection: makeConnection())
+        handshakeFailed.remove(key)
         entries[key] = entry
         socketsOpened += 1
         entry.connection.frames
@@ -212,11 +223,13 @@ final class LookupSocketPool {
                     break
                 case .connected:
                     entry.connected = true
+                    self.handshakeFailed.remove(entry.key)
                     let queued = entry.pending
                     entry.pending.removeAll()
                     for item in queued { entry.connection.send(item.frame) }
                     if entry.lookups.isEmpty { self.scheduleIdleClose(entry) }
                 case .failed:
+                    if !entry.connected { self.handshakeFailed.insert(entry.key) }
                     self.cooldownUntil[entry.key] = self.now().addingTimeInterval(self.cooldown)
                     self.shut(entry)
                 }

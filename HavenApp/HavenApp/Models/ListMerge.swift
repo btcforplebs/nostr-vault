@@ -218,6 +218,45 @@ enum ListMerge {
     static func editBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String],
                                 now: Int64 = Int64(Date().timeIntervalSince1970),
                                 createdAt: (Event) -> Int64) -> EditBase<Event> {
+        editBase(lookup, held: held, own: own, now: now, createdAt: createdAt) { mine, ownAnswered in
+            ownMajority(ownAnswered: ownAnswered, own: mine.count, answered: lookup.answered)
+        }
+    }
+
+    /// `editBase` for the follow list (kind 3) only: an own relay that was
+    /// dialled and failed to connect (`lookup.unreachable`) drops out of the
+    /// count (`followMajority`). One not dialled or that timed out still
+    /// counts. Every other list keeps `ownMajority`. "None" (a first follow
+    /// with no list found) still needs every own relay answering, dead ones
+    /// included (Tron, web #2611).
+    static func followEditBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String],
+                                      now: Int64 = Int64(Date().timeIntervalSince1970),
+                                      createdAt: (Event) -> Int64) -> EditBase<Event> {
+        let unreachable = Set(lookup.unreachable.subtracting(lookup.answeredBy).map(relayKey))
+        return editBase(lookup, held: held, own: own, now: now, createdAt: createdAt) { mine, ownAnswered in
+            followMajority(ownAnswered: ownAnswered, ownReached: mine.subtracting(unreachable).count)
+        }
+    }
+
+    /// `base` for a follow or unfollow made on `before` (the list on screen)
+    /// that gives `after`. "No list anywhere" is not believed while the
+    /// screen still shows people this tap doesn't touch and no signed copy
+    /// is held here: a restored snapshot, or a list kept only on relays
+    /// dropped from the 10002. Building on `[]` then would sign a 1-person
+    /// list over 300 (Tron on #2613; web guardRefusal appCount > 0, Android
+    /// noneUnproven). Unfollowing the last person, or a first follow on an
+    /// empty screen, still builds on none.
+    static func followBase<Event>(_ base: EditBase<Event>, held: Event?, before: [[String]], after: [[String]]) -> EditBase<Event> {
+        guard case .none = base, held == nil else { return base }
+        func people(_ tags: [[String]]) -> Set<String> {
+            Set(tags.compactMap { $0.count >= 2 && $0[0] == "p" ? $0[1].lowercased() : nil })
+        }
+        return people(before).isDisjoint(with: people(after)) ? base : .unknown
+    }
+
+    private static func editBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String], now: Int64,
+                                        createdAt: (Event) -> Int64,
+                                        enough: (_ mine: Set<String>, _ ownAnswered: Int) -> Bool) -> EditBase<Event> {
         let mine = Set(own.map(relayKey))
         guard !mine.isEmpty else { return .noRelayList }
         guard lookup.answered > 0 else { return .unknown }
@@ -225,7 +264,7 @@ enum ListMerge {
         let copies = [lookup.event, held].compactMap { $0 }
         let usable = copies.filter { createdAt($0) < now + maxSkew }
         if let newest = usable.max(by: { createdAt($0) < createdAt($1) }) {
-            return ownMajority(ownAnswered: ownAnswered, own: mine.count, answered: lookup.answered) ? .list(newest) : .unknown
+            return enough(mine, ownAnswered) ? .list(newest) : .unknown
         }
         let ahead = lookup.ahead || usable.count < copies.count
         return !ahead && knowsNone(asked: lookup.asked, answered: lookup.answered) && ownAnswered == mine.count ? .none : .unknown
@@ -260,6 +299,22 @@ enum ListMerge {
     /// follows.js ownMajority.
     static func ownMajority(ownAnswered: Int, own: Int, answered: Int) -> Bool {
         own > 0 && ownAnswered * 2 > own && answered >= 2
+    }
+
+    /// Whether enough relays answered to edit the follow list (Logen
+    /// 2026-11-27): own relays whose dial failed to connect drop out, at least two
+    /// own relays answered (an indexer such as purplepag.es doesn't count),
+    /// and more than half of the other `ownReached` ones answered (a relay
+    /// that was slow, timed out connecting, or was not dialled at all counts
+    /// as not answering). A
+    /// relay list of one relay never passes. Same rule as web
+    /// followListKnown and Android FollowListKnown:
+    /// - 7 own, 3 never connect, 4 answer: yes.
+    /// - 7 own, 4 never connect, 3 answer: yes (was no under ownMajority).
+    /// - 3 connect, 2 answer, 1 slow: yes. 5 connect, 2 answer, 3 slow: no.
+    /// - 1 own relay answered (with or without an indexer), or none: no.
+    static func followMajority(ownAnswered: Int, ownReached: Int) -> Bool {
+        ownAnswered >= 2 && ownAnswered * 2 > ownReached
     }
 
     /// "You have no list" is known only when at least two relays answered and

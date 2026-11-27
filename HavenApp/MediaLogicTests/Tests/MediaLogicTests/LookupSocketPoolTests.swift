@@ -156,6 +156,31 @@ final class LookupSocketPoolTests: XCTestCase {
         XCTAssertEqual(sockets.count, 2)
     }
 
+    func testOnlyAFailedHandshakeIsFailedToConnect() {
+        // ListMerge.followMajority drops only these relays from the count.
+        let pool = makePool(maxSockets: 2)
+        pool.query(url: damus, subId: "a", filters: filter, timeout: 5, onMessage: { _ in })
+        XCTAssertFalse(pool.failedToConnect(damus), "still connecting")
+        sockets[0].stateSubject.send(.failed)
+        XCTAssertTrue(pool.failedToConnect(damus), "dialled and refused")
+
+        pool.query(url: primal, subId: "a", filters: filter, timeout: 5, onMessage: { _ in })
+        sockets[1].connect()
+        sockets[1].stateSubject.send(.failed)
+        XCTAssertFalse(pool.failedToConnect(primal), "connected, then dropped")
+
+        var end: LookupSocketPool.Outcome?
+        let third = URL(string: "wss://nos.lol")!
+        pool.query(url: third, subId: "a", filters: filter, timeout: 5, onMessage: { _ in }, onEnd: { end = $0 })
+        clock.advance(6)
+        XCTAssertEqual(end, .timeout)
+        XCTAssertFalse(pool.failedToConnect(third), "a connect timeout is not a failed dial")
+
+        clock.advance(121)
+        pool.query(url: damus, subId: "b", filters: filter, timeout: 5, onMessage: { _ in })
+        XCTAssertFalse(pool.failedToConnect(damus), "dialled again: the old failure no longer counts")
+    }
+
     func testDuplicateSubIdOnOneRelayIsSkipped() {
         let pool = makePool()
         pool.query(url: damus, subId: "a", filters: filter, timeout: 5, onMessage: { _ in })
