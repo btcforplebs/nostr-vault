@@ -4,6 +4,7 @@
 // arrow out. Opens in a new tab and never opens the card around it.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { cachedPreview, canPreview, loadPreview } from "./link-preview.js"
+import { clean } from "../net/clean-mode.js"
 
 /** Whether the card asks the page for its preview: a public https page not yet read, and the note's author trusted. */
 export const mayFetchPreview = (url, load) => !!load && cachedPreview(url) === undefined && canPreview(url)
@@ -36,8 +37,8 @@ export function LinkCard({ url, load = true }) {
         {meta.image && !badImage && <img class="link-card-image" src={meta.image} alt="" loading="lazy" referrerpolicy="no-referrer" onError={() => setBadImage(true)} />}
         <span class="link-card-text">
           {meta.siteName && <span class="link-card-site">{meta.siteName}</span>}
-          <span class="link-card-title">{meta.title}</span>
-          {meta.description && <span class="link-card-desc">{meta.description}</span>}
+          <span class="link-card-title">{clean(meta.title)}</span>
+          {meta.description && <span class="link-card-desc">{clean(meta.description)}</span>}
           <span class="link-card-host">{domain(url)}</span>
         </span>
       </a>

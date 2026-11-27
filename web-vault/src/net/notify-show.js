@@ -3,6 +3,7 @@
 // shows one (`new Notification` throws there). The worker's notificationclick focuses an open app tab and tells it
 // where to go, or opens one. No push: the page decides what to show, while it is open.
 // Without a worker (it isn't registered yet, or this browser has none), `new Notification` and its onclick.
+import { clean } from "./clean-mode.js"
 
 export const OPEN_MESSAGE = "nv-open"
 
@@ -27,6 +28,7 @@ export function askWorker(sw = globalThis.navigator?.serviceWorker, wait = 3000)
  * -> "worker" | "page" | "none"
  */
 export async function showNotice(n, { sw = globalThis.navigator?.serviceWorker, N = globalThis.Notification, icon = "./icon-192.png" } = {}) {
+  n = { ...n, title: clean(n.title), body: clean(n.body) } // clean mode: what the notification shows, nothing else
   const opts = { body: n.body, tag: n.tag, icon, data: { href: n.href } }
   // The worker when it opens clicks, or when the page can't show one itself (Chrome on Android).
   const viaWorker = sw?.controller && (typeof N !== "function" || await askWorker(sw))

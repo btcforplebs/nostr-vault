@@ -22,6 +22,7 @@ import { settleWatch } from "./settle-early.js"
 import { fileContentOf, isFileLink, isVideoLink } from "./dm-file.js"
 import { assertNoSecretKey, containsSecretKey, secretKeyError } from "./secret-key-leak.js"
 import { dmHiddenPeers } from "./dm-muted.js"
+import { clean } from "./clean-mode.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -630,7 +631,8 @@ export const peerOf = (hash = location.hash) => /^#\/?dm\/([0-9a-f]{64})$/.exec(
  *  "No message content" for an empty message. Runs of white space are one space (the row is one line here). */
 export function lastPreview(content) {
   if (isFileLink(String(content ?? "").trim())) return isVideoLink(content) ? "Video" : "Photo"
-  const t = String(content ?? "").replace(/\s+/g, " ").trim()
+  // Clean mode masks the row's line only, before the cut, so a word cut short is masked too.
+  const t = clean(String(content ?? "").replace(/\s+/g, " ").trim())
   if (!t) return "No message content"
   const chars = [...t]
   return chars.length > 60 ? chars.slice(0, 60).join("").trim() + "…" : t

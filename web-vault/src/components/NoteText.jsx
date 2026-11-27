@@ -23,6 +23,7 @@ import { parseHtree } from "../net/htree.js"
 import { liveDrops, liveRefs, trimAroundLive } from "../net/live-note.js"
 import { emojiMap } from "../net/custom-emoji.js"
 import { emojiNodes } from "./CustomEmoji.jsx"
+import { clean } from "../net/clean-mode.js"
 
 // A BUD-10 blossom:<sha256>.<ext>?… link is one token too, so its query never reads as text (BlossomMedia).
 // An htree://nhash1…/<name> link (Iris hashtree) is one token as well (HtreeMedia).
@@ -131,7 +132,7 @@ function withMarks(text, key, emoji) {
   if (marks.length === 1 && marks[0].type === "text") return withHashtags(text, key, emoji)
   return marks.map((m, j) => {
     const k = `${key}.${j}`
-    if (m.type === "code") return <code key={k}>{m.text}</code>
+    if (m.type === "code") return <code key={k}>{clean(m.text)}</code>
     const body = withHashtags(m.text, k, emoji)
     return m.type === "strong" ? <strong key={k}>{body}</strong> : m.type === "em" ? <em key={k}>{body}</em>
       : m.type === "del" ? <del key={k}>{body}</del> : <span key={k}>{body}</span>
@@ -144,7 +145,7 @@ function withHashtags(text, key, emoji) {
   const parts = splitHashtags(text)
   if (parts.length === 1) return emojiNodes(text, emoji, key)
   return parts.map((s, i) => i % 2 === 0 ? emojiNodes(s, emoji, `${key}-${i}`)
-    : <a key={`${key}-${i}`} class="hashtag" href={`#/feed?tag=${encodeURIComponent(s.slice(1).toLowerCase())}`} onClick={e => e.stopPropagation()}>{s}</a>)
+    : <a key={`${key}-${i}`} class="hashtag" href={`#/feed?tag=${encodeURIComponent(s.slice(1).toLowerCase())}`} onClick={e => e.stopPropagation()}>{clean(s)}</a>)
 }
 
 /** An image link in a stranger's DM: nothing is fetched until it is tapped. */
