@@ -85,12 +85,16 @@ class BlossomService @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
     internal val mirrorSemaphore = Semaphore(MIRROR_CONCURRENCY)
 
-    internal val localClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(120, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .applyLocalhostTrust()
-        .build()
+    // Lazy, both clients: they were built while Hilt injected the app's
+    // onCreate, on the main thread, before the Feed's first frame (Feed perf
+    // review 2026-11-27 #6).
+    internal val localClient: OkHttpClient by lazy {
+        LocalTls.localClientBuilder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(120, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+    }
 
     /**
      * One mirror-from-servers run shared by Settings, the dashboard and the
@@ -197,11 +201,13 @@ class BlossomService @Inject constructor(
     // Idle limits (no bytes moving), not totals: a big video keeps uploading
     // as long as bytes flow. 10-15 minutes of silence from a dead server used
     // to hold the post.
-    internal val remoteClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .build()
+    internal val remoteClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+    }
 
     /**
      * [remoteClient] for a URL another app chose (the clipboard): every hop,
@@ -209,15 +215,17 @@ class BlossomService @Inject constructor(
      * can't reach this device's relay on 127.0.0.1 or a LAN host. Checked on
      * the connected socket, so a name that re-resolves to 127.0.0.1 is caught too.
      */
-    internal val publicOnlyClient = remoteClient.newBuilder()
-        .addNetworkInterceptor { chain ->
-            val addr = chain.connection()?.socket()?.inetAddress
-            if (addr == null || com.nostrvault.util.UrlSafety.isInternalAddress(addr)) {
-                throw IOException("Refused: ${chain.request().url.host} is not a public address")
+    internal val publicOnlyClient: OkHttpClient by lazy {
+        remoteClient.newBuilder()
+            .addNetworkInterceptor { chain ->
+                val addr = chain.connection()?.socket()?.inetAddress
+                if (addr == null || com.nostrvault.util.UrlSafety.isInternalAddress(addr)) {
+                    throw IOException("Refused: ${chain.request().url.host} is not a public address")
+                }
+                chain.proceed(chain.request())
             }
-            chain.proceed(chain.request())
-        }
-        .build()
+            .build()
+    }
 
     // ══════════════════════════════════════════════════════════════════
     // Upload + Mirror
@@ -960,11 +968,6 @@ class BlossomService @Inject constructor(
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
-    }
-
-    /** This device's relay and LAN relays: trust follows [LocalTls]. */
-    internal fun OkHttpClient.Builder.applyLocalhostTrust(): OkHttpClient.Builder {
-        return with(LocalTls) { localTrust() }
     }
 
     sealed class UploadSource {

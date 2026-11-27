@@ -260,8 +260,11 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
         // Fetch missing profiles for new note authors
         val newPubkeys = batch.notes.map { it.pubkey }.distinct()
         nostrService.fetchMissingProfiles(newPubkeys)
-
-        recomputeFilteredNotes()
+        // No recompute here: inserted notes and engagement go through the
+        // merge worker, which recomputes once they are in, and staged notes
+        // aren't in the feed until they're applied (which recomputes). This
+        // one ran a second filter of the whole feed per batch (Feed perf
+        // review 2026-11-27 #8).
     }
 
     /**

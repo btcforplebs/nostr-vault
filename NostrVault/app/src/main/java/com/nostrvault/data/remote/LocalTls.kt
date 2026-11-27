@@ -184,14 +184,32 @@ object LocalTls {
         override fun getAcceptedIssuers(): Array<X509Certificate> = systemTrust.acceptedIssuers
     }
 
-    /** OkHttp's own hostname check, through its public API. */
-    private val defaultHostnameVerifier = OkHttpClient().hostnameVerifier
+    /**
+     * OkHttp's own hostname check, through its public API. Lazy: building
+     * a default client reads the whole system CA list, which cold start
+     * paid on the main thread (Feed perf review 2026-11-27 #6).
+     */
+    private val defaultHostnameVerifier by lazy { OkHttpClient().hostnameVerifier }
+
+    /** One TLS context for the process, built on first use. */
+    private val sslContext: SSLContext by lazy {
+        SSLContext.getInstance("TLS").apply { init(null, arrayOf(trustManager), null) }
+    }
+
+    /**
+     * The one client every local-trust client is derived from. OkHttp builds
+     * its certificate chain cleaner from [trustManager]'s accepted issuers
+     * (every system CA) each time a builder is given a socket factory, so a
+     * [OkHttpClient.newBuilder] of this pays that once per process.
+     */
+    private val baseClient: OkHttpClient by lazy { OkHttpClient.Builder().localTrust().build() }
+
+    /** A builder with [localTrust] already applied, sharing [baseClient]'s pools. */
+    fun localClientBuilder(): OkHttpClient.Builder = baseClient.newBuilder()
 
     /** Uses [trustManager]; local and LAN names skip the hostname check, which the pin replaces. */
     fun OkHttpClient.Builder.localTrust(): OkHttpClient.Builder {
-        val context = SSLContext.getInstance("TLS")
-        context.init(null, arrayOf(trustManager), null)
-        sslSocketFactory(context.socketFactory, trustManager)
+        sslSocketFactory(sslContext.socketFactory, trustManager)
         hostnameVerifier { hostname, session ->
             kind(hostname) != Kind.PUBLIC || defaultHostnameVerifier.verify(hostname, session)
         }
