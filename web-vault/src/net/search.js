@@ -190,7 +190,10 @@ const hostLabel = url => { try { return new URL(url).hostname } catch { return u
 /** The last finished answers, so a query asked again (a Recent chip, a retyped word) shows at once while it re-asks. */
 const answered = new Map()
 const ANSWERED_MAX = 12
-export const forgetAnswers = () => answered.clear()
+let answeredFor = null // whose searches `answered` holds: another account's answers are never shown
+/** Drop the kept answers. main.jsx calls it whenever the signed-in account changes (switch, sign out, sign in), and
+ *  startSearch drops them itself when `me` isn't the account they were kept for. */
+export const forgetAnswers = () => { answered.clear(); answeredFor = null }
 
 /**
  * Starts one Global search. `onUpdate({ people: [kind 0], notes: [kind 1], sources: [{ id, label, state, count, reason }],
@@ -201,6 +204,7 @@ export function startSearch(text, { vault, me, relays = SEARCH_RELAYS, onUpdate,
   subscribe = (urls, filter, params) => pool.subscribeEose(urls, filter, params), hardCap = HARD_CAP_MS,
   setTimer = setTimeout, clearTimer = clearTimeout }) {
   const key = text.trim().toLowerCase()
+  if (answeredFor !== (me ?? null)) { answered.clear(); answeredFor = me ?? null }
   const people = new Map(), notes = new Map(), sources = new Map()
   let done = false, cancelled = false, scheduled = null, started = false, cap = null
   const closers = []

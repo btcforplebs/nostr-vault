@@ -142,3 +142,21 @@ test("a relay's reason fits a chip", () => {
   assert.equal(shortReason(""), "no answer")
   assert.equal(shortReason("CLOSED: blocked: " + "x".repeat(60)).length, 40)
 })
+
+test("kept answers belong to the account that asked: another account's search starts empty; main.jsx forgets on a switch", async () => {
+  forgetAnswers()
+  const a = rig({ feed: [note("a", "f"), person("f")] })
+  startSearch("bitcoin", a.opts)
+  await tick()
+  a.cap() // finish: the answer is kept for this query
+  const again = rig()
+  startSearch("Bitcoin", again.opts)
+  await Promise.resolve()
+  assert.equal(again.updates[0].notes.length, 1, "the same account asking again sees the kept answer at once")
+  const other = rig()
+  startSearch("bitcoin", { ...other.opts, me: pk("o") })
+  await Promise.resolve()
+  assert.deepEqual([other.updates[0].notes.length, other.updates[0].people.length], [0, 0], "a new account never sees the last one's answers")
+  const { readFileSync } = await import("node:fs")
+  assert.match(readFileSync(new URL("../main.jsx", import.meta.url), "utf8"), /useEffect\(\(\) => forgetAnswers\(\), \[session\?\.pubkey\]\)/)
+})

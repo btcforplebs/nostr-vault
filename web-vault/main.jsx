@@ -17,6 +17,7 @@ import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
 import { readKept, keep as keepNeverConnect } from "./src/net/never-connect.js"
 import { resetEverything } from "./src/net/reset-all.js"
 import { putProfile } from "./src/net/profiles.js"
+import { forgetAnswers } from "./src/net/search.js"
 import { setActionContext } from "./src/net/actions.js"
 import { setQuoteSource } from "./src/net/quotes.js"
 import { setMeshPeople } from "./src/net/fips-media.js"
@@ -225,6 +226,8 @@ function App() {
     })().catch(e => { log("boot-error", { err: String(e) }); setError(String(e?.message ?? e)) })
     return () => { live = false }
   }, [session?.pubkey])
+  // Search's kept answers belong to the account that asked (search.js forgetAnswers): a new account starts with none.
+  useEffect(() => forgetAnswers(), [session?.pubkey])
 
   // An approval link the user never tapped (they approved in the bunker app) is done with once sign-in succeeds.
   const onSignedIn = ({ signer, session, firstEvents: first }) => { firstEvents = first ?? null; logging = true; clearAuthUrl(); saveSession(session); setSigner(signer); setSession(session); log("signed-in", { method: session.method }); registerWorker() }
