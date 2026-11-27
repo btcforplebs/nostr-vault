@@ -99,6 +99,72 @@ alive "$o" && ok "strays: another app's WebKit process ($o) is left alone" || no
 drawn "$OUT/$MODE-spin-2-reap.png" "$MODE: and the window draws" >/dev/null || true
 stop; unserve; kill "$o" 2>/dev/null
 
+# 2b. A running window's WebKit is never a stray (Tron, PR 2622 review): not when the window was started by its
+# shebang (named "nostr-vault-des", not python), not when a second launch hands off to it, not when another window
+# starts on its own D-Bus. The control (owner by command name, as before) ends it.
+live() { # live <name> <share or ''>: a window on the spinning page; sets wp (window) and w1 (its web process)
+  fresh; serve "live-$1" "$tok"
+  if [ -n "$2" ]; then start "live-$1" env NV_DESKTOP_SHARE="$2" NV_PAINT_GIVE_UP_S=600 $CMD
+  else start "live-$1" env NV_PAINT_GIVE_UP_S=600 $CMD; fi
+  w1=""; for i in $(seq 1 20); do w1=$(webproc); [ -n "$w1" ] && break; sleep 1; done
+  sleep 3; wp=""; p=$w1
+  while [ -n "$p" ] && [ "$p" -gt 1 ]; do
+    tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null | grep -q 'nostr-vault-desktop' && { wp=$p; break; }
+    p=$(sed 's/.*) . \([0-9]*\).*/\1/' "/proc/$p/stat" 2>/dev/null)
+  done
+}
+live owner ""
+if [ -n "$w1" ] && [ -n "$wp" ]; then
+  ok "live window $wp ($(cat /proc/$wp/comm)) with its web process $w1"
+  bus=$(tr '\0' '\n' <"/proc/$wp/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')
+  env DBUS_SESSION_BUS_ADDRESS="$bus" timeout 20 $CMD --open feed >"$OUT/$MODE-spin-handoff.log" 2>&1; r=$?
+  sleep 3
+  [ "$r" = 0 ] && alive "$w1" && ok "a second launch (--open feed) hands off and exits; the window's web process lives on" \
+    || no "a second launch (exit $r): the window's web process $w1 $(alive "$w1" && echo lives || echo was ended)"
+  start other $CMD
+  waitlog "$OUT/$MODE-spin-other.log" "drawing mode" 20; sleep 5
+  alive "$w1" && ok "another window starting on its own D-Bus leaves the running window's web process alone" \
+    || no "another window starting ended the running window's web process ($(grep -o 'ending .*' "$OUT/$MODE-spin-other.log" | head -1))"
+else no "live window: couldn't find it (window '$wp', web process '$w1')"; fi
+stop; unserve
+if [ "${NV_WT_CONTROL:-1}" = 1 ]; then
+  rm -rf "$RUN/share-bycomm"; cp -r "$SHARE_DIR" "$RUN/share-bycomm"
+  sed -i 's/if _window(p):/if procs[p][1].startswith("python") and _marked(p):/' "$RUN/share-bycomm/nv_heal.py"
+  if cmp -s "$SHARE_DIR/nv_heal.py" "$RUN/share-bycomm/nv_heal.py"; then no "control: couldn't put the by-name owner test back"
+  else
+    live bycomm ""
+    start other-bycomm env NV_DESKTOP_SHARE="$RUN/share-bycomm" $CMD
+    waitlog "$OUT/$MODE-spin-other-bycomm.log" "drawing mode" 20; sleep 5
+    alive "$w1" && no "control: with the by-name owner test the running window's web process lived too: this check can't tell" \
+      || ok "control: with the by-name owner test (as before) another window's start ended the running window's web process"
+    stop; unserve
+  fi
+fi
+
+# 2c. What the window opens (a link, the logs) gets none of its variables: another app's WebKit started from a link
+# must never carry NV_DESKTOP_RENDERER (it would be "ours" once our window had gone).
+mkdir -p "$HOME/.local/share/applications" "$HOME/.config"
+printf '#!/bin/sh\nenv >"%s/link-env.txt"\n' "$RUN" >"$RUN/envdump"; chmod 755 "$RUN/envdump"
+printf '[Desktop Entry]\nType=Application\nName=nvwt env\nExec=%s %%u\nMimeType=x-scheme-handler/nvwtenv;\n' "$RUN/envdump" \
+  >"$HOME/.local/share/applications/nvwt-env.desktop"
+printf '[Default Applications]\nx-scheme-handler/nvwtenv=nvwt-env.desktop\n' >"$HOME/.config/mimeapps.list"
+linkenv() { # linkenv <python>: runs it with our variables set; prints how many of them the handler got
+  rm -f "$RUN/link-env.txt"
+  env NV_DESKTOP_RENDERER=dmabuf NV_DESKTOP_TRIED=default WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+    dbus-run-session -- python3 -I -c "import sys; sys.path.insert(0, '$SHARE_DIR'); import nv_heal; from gi.repository import Gio; $1" \
+    >>"$OUT/$MODE-spin-linkenv.log" 2>&1
+  for i in $(seq 1 10); do [ -s "$RUN/link-env.txt" ] && break; sleep 0.5; done
+  [ -s "$RUN/link-env.txt" ] || { echo none; return; }
+  grep -c -E '^(NV_DESKTOP_RENDERER|NV_DESKTOP_TRIED|WEBKIT_DISABLE_DMABUF_RENDERER|WEBKIT_DISABLE_COMPOSITING_MODE)=' "$RUN/link-env.txt"
+}
+n=$(linkenv "nv_heal.launch_uri('nvwtenv:x')")
+[ "$n" = 0 ] && ok "a link the window opens starts its app without our variables" || no "a link the window opens: its app got $n of our variables"
+[ "${NV_WT_CONTROL:-1}" = 1 ] && { n=$(linkenv "Gio.AppInfo.launch_default_for_uri('nvwtenv:x', None)")
+  [ "$n" = 4 ] && ok "control: launched as before (no launch context) the same app gets all 4" || no "control: launched as before it got '$n' of 4: this check can't tell"; }
+n=$(linkenv "import subprocess; subprocess.run(['$RUN/envdump'], env=nv_heal.child_env())")
+[ "$n" = 0 ] && ok "the logs terminal (child_env) starts without our variables" || no "child_env: the process got $n of our variables"
+rm -f "$HOME/.local/share/applications/nvwt-env.desktop" "$HOME/.config/mimeapps.list"
+
 # 3. The frame clock (Wayland: sway can power its output off; Xvfb has no such thing): no judgement while it stops.
 if [ "$MODE" = wayland ]; then
   export SWAYSOCK=$(ls "$RUN"/sway-ipc.*.sock 2>/dev/null | head -1)

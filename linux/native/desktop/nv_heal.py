@@ -7,7 +7,7 @@ another drawing mode, the window moves WebKit's cache aside and starts over, and
 vault (reset_cache):
   - What moves: everything in ~/.cache/nostr-vault-desktop except window.log (WebKit's HTTP cache, the service
     worker's CacheStorage, HSTS), plus the service worker registrations in ~/.local/share/nostr-vault-desktop
-    (serviceworkers: the stored sw.js and its scope). Into ~/.cache/nostr-vault-desktop.bak-<time>, which is kept.
+    (serviceworkers: the stored sw.js and its scope). Into ~/.cache/nostr-vault-desktop.bak-<time>, kept (the newest 3).
   - What never moves: localStorage (nv-session and nv-accounts: every sign-in, and a key made in this window, kept as
     an ncryptsec), IndexedDB (the keyring that seals it, the web app's stores) and cookies.sqlite. Moving any of
     those signs people out, or loses a key nobody saved (web-vault/src/session.js, signer/local.js, signer/keyring.js).
@@ -22,8 +22,15 @@ window ends each one that is ours and that no running window owns, with its whol
   - ours: this user's, named WebKit* (or bwrap / xdg-dbus-proxy, WebKit's sandbox), with NV_DESKTOP_RENDERER in its
     environment (set by nv_paint.choose() and inherited by everything WebKit starts). Another app's WebKit (a browser,
     a mail client) has no such variable and is never touched.
-  - owned: one of its ancestors is this process (those are nv_paint's leftovers, reaped there) or another python
-    process with the variable (another window, still running).
+  - owned: one of its ancestors is this process (those are nv_paint's leftovers, reaped there) or another window,
+    still running: a process whose command line runs this program (nostr-vault-desktop, by its shebang or as
+    python3 -I .../nostr-vault-desktop after starting over). Not by its command name: a window started by its
+    shebang is named "nostr-vault-des", not python (Tron, PR 2622 review). Nor by the variable: choose() sets it
+    after the exec, so /proc/<pid>/environ of a window started from the launcher doesn't show it.
+  - Only the primary instance reaps (Checker.startup, from do_startup): a second launch (the launcher, the tray, an
+    --open link) hands off to the running window over D-Bus and exits; it never reaps.
+  - Nothing this window starts carries the variable (launch_uri, child_env): another WebKit app opened from a link
+    (a mail client, a WebKit browser) would otherwise be "ours" and be ended once our window had gone.
 SIGTERM, then SIGKILL after STRAY_TERM_S. (A web process of this process's own WebKit is never killed here: one that
 hadn't finished its handshake made WebKit abort the window, see nv_paint.reap_leftovers. Strays have no window.)
 """
@@ -39,6 +46,12 @@ SW_DIR = "serviceworkers"  # WebKit's service worker registrations, in the data 
 STRAY_TERM_S = 2
 SANDBOX = ("bwrap", "xdg-dbus-proxy")
 MARK = b"NV_DESKTOP_RENDERER="
+# The window's own variables, never handed to what it starts: the marker, the start-over chain's, and the drawing
+# mode's (WebKit's, set by nv_paint.set_mode; another app's WebKit must draw its own way).
+OWN_VARS = ("NV_DESKTOP_RENDERER", "NV_DESKTOP_TRIED", RESET,
+            "WEBKIT_DISABLE_DMABUF_RENDERER", "WEBKIT_DISABLE_COMPOSITING_MODE")
+PROGRAM = "nostr-vault-desktop"
+KEEP_BAKS = 3  # reset_cache keeps the newest this many old caches (at most one a day), and deletes the rest
 
 note = ""  # what pending_reset did, for the log (it runs before the log is set up)
 
@@ -104,7 +117,44 @@ def reset_cache():
         os.makedirs(bak, exist_ok=True)
         shutil.move(sw, os.path.join(bak, SW_DIR))  # ~/.local/share may be another file system than ~/.cache
         moved.append(SW_DIR)
+    prune_baks()
     return bak, moved
+
+
+def prune_baks():
+    """Deletes all but the newest KEEP_BAKS <cache>.bak-* folders (by name: their time, sortable)."""
+    parent, prefix = os.path.dirname(cache_dir()), os.path.basename(cache_dir()) + ".bak-"
+    try:
+        baks = sorted(n for n in os.listdir(parent) if n.startswith(prefix))
+    except OSError:
+        return
+    for n in baks[:-KEEP_BAKS]:
+        shutil.rmtree(os.path.join(parent, n), ignore_errors=True)
+
+
+# ---- what the window starts: without its own variables
+
+def child_env(env=None):
+    """A copy of env (default: this process's) without OWN_VARS, for a process this window starts."""
+    env = dict(os.environ if env is None else env)
+    for k in OWN_VARS:
+        env.pop(k, None)
+    return env
+
+
+def launch_context():
+    """A Gio.AppLaunchContext that leaves OWN_VARS out of what it launches."""
+    from gi.repository import Gio
+    ctx = Gio.AppLaunchContext()
+    for k in OWN_VARS:
+        ctx.unsetenv(k)
+    return ctx
+
+
+def launch_uri(uri):
+    """Gio.AppInfo.launch_default_for_uri, without OWN_VARS (raises GLib.Error as it does)."""
+    from gi.repository import Gio
+    return Gio.AppInfo.launch_default_for_uri(uri, launch_context())
 
 
 # ---- stray WebKit processes
@@ -137,12 +187,22 @@ def _marked(pid):
         return False
 
 
+def _window(pid):
+    """pid runs this program: one of its first three arguments (python3 [-I] <script>, or the shebang's) is it."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            args = f.read().split(b"\0")[:3]
+    except OSError:
+        return False
+    return any(os.path.basename(a) == PROGRAM.encode() for a in args)
+
+
 def _web(comm):
     return comm.startswith("WebKit") or comm in SANDBOX
 
 
 def _owned(pid, procs):
-    """An ancestor of pid is this process, or another running window (python, with the variable)."""
+    """An ancestor of pid is this process, or another running window (this program)."""
     me, seen, p = os.getpid(), set(), procs.get(pid, (0, ""))[0]
     while p > 1 and p not in seen:
         seen.add(p)
@@ -150,7 +210,7 @@ def _owned(pid, procs):
             return True
         if p not in procs:
             return False  # another user's (or gone): not a window of ours
-        if procs[p][1].startswith("python") and _marked(p):
+        if _window(p):
             return True
         p = procs[p][0]
     return False
