@@ -74,6 +74,11 @@ test("minimizeVideo reads the time at the tap and pauses the viewer in the same 
   assert.equal(v.paused, true)
   assert.equal(current().mediaUrl, clip)
   assert.equal(current().at, 17.25)
+  const end = { currentTime: 9.6, duration: 10, pause() {} }
+  minimizeVideo(end, clip)
+  assert.equal(current().at, 0, "within a second of the end it starts over, not a moment's sound and gone")
+  minimizeVideo({ currentTime: 8.9, duration: 10, pause() {} }, clip)
+  assert.equal(current().at, 8.9)
   assert.equal(minimizeVideo(null, clip), false)
   assert.equal(minimizeVideo(v, ""), false)
 })
