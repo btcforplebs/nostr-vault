@@ -5,6 +5,7 @@ import com.nostrvault.data.model.MutedThings
 import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.service.NostrService.Companion.TAG
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Muted words on the active account's kind 10000 (NIP-51 `word` tags), a list
@@ -22,6 +23,18 @@ object MutedWords {
         val word = input.trim().lowercase().replace(Regex("\\s+"), " ")
         return word.takeIf { it.isNotEmpty() && it.length <= MAX_LENGTH }
     }
+
+    /**
+     * The word an add or unmute works on. An add is [normalize]d; an unmute
+     * takes the stored row as it is, only trimmed and lowercased the way rows
+     * are read (MutedThings.from), so a word another app saved with other
+     * spacing or past [MAX_LENGTH] still comes off (Tron #2669 F1).
+     */
+    fun changed(add: String?, remove: String?): String? = when {
+        add != null -> normalize(add)
+        remove != null -> remove.trim().lowercase().takeIf { it.isNotEmpty() }
+        else -> null
+    }
 }
 
 /**
@@ -37,7 +50,19 @@ internal suspend fun NostrService.publishMutedWordChange(
     remove: String? = null,
     privately: Boolean = true,
 ): String? {
-    val word = MutedWords.normalize(add ?: remove ?: return null) ?: return "That word can't be muted."
+    if (add == null && remove == null) return null
+    // One kind 10000 edit at a time, shared with blocks: two edits built on the
+    // same base would drop the earlier one (Tron #2669 F2).
+    return muteListPublishMutex.withLock { publishMutedWordChangeLocked(accountNpub, add, remove, privately) }
+}
+
+private suspend fun NostrService.publishMutedWordChangeLocked(
+    accountNpub: String,
+    add: String?,
+    remove: String?,
+    privately: Boolean,
+): String? {
+    val word = MutedWords.changed(add, remove) ?: return "That word can't be muted."
     val adding = add != null
     val notSaved = if (adding) "Muted word not saved" else "Unmute not saved"
     val switched = "$notSaved: the account changed before your mute list was published."

@@ -73,6 +73,20 @@ class MutedWordsEditTest {
         assertNull(MutedWords.normalize("x".repeat(MutedWords.MAX_LENGTH + 1)))
     }
 
+    @Test fun `an unmute takes another app's word as stored`() {
+        val odd = "foo  bar"
+        val long = "y".repeat(MutedWords.MAX_LENGTH + 5)
+        assertEquals("foo  bar", MutedWords.changed(add = null, remove = " Foo  Bar "))
+        assertEquals(long, MutedWords.changed(add = null, remove = long))
+        assertEquals("foo bar", MutedWords.changed(add = "Foo  Bar", remove = null))
+        assertNull(MutedWords.changed(add = long, remove = null))
+        val tags = listOf(listOf("word", odd), listOf("word", long), listOf("p", "aaa"))
+        assertEquals(listOf(listOf("word", long), listOf("p", "aaa")),
+            ListMerge.edit("word", tags, emptyList(), listOf(MutedWords.changed(null, odd)!!)))
+        val r = edit(seal("""[["word","foo  bar"],["p","aaa"]]""", false), remove = listOf(MutedWords.changed(null, odd)!!))
+        assertEquals(listOf(listOf("p", "aaa")), tagsOf(r))
+    }
+
     @Test fun `rows show each word once, private wins`() {
         val rows = mutedWordRows(MutedThings(words = listOf("b", "a")), MutedThings(words = listOf("a")))
         assertEquals(listOf(MutedWordRow("a", true), MutedWordRow("b", false)), rows)
