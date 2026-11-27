@@ -118,8 +118,9 @@ fun ProfileScreen(
     val canPageOlderTagged by viewModel.canPageOlderTagged.collectAsState()
     val followersCount by viewModel.followersCount.collectAsState()
     val followingCount by viewModel.followingCount.collectAsState()
-    val allProfiles by viewModel.profiles.collectAsState()
-    val quotedNotes by viewModel.quotedNotesCache.collectAsState()
+    // States, not values: each card reads only its own profiles (rememberCardProfiles).
+    val profilesState = viewModel.profiles.collectAsState()
+    val quotedState = viewModel.quotedNotesCache.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
     // Collected, not read once, so a card's like button updates after a reaction.
     val likedIds by viewModel.likedEventIds.collectAsState()
@@ -328,7 +329,7 @@ fun ProfileScreen(
                 item {
                     NostrContentText(
                         content = bio,
-                        profiles = allProfiles,
+                        profiles = profilesState.value,
                         onProfileClick = openOtherProfile,
                         textColor = PrimaryText.copy(alpha = 0.85f),
                         fontSize = 13.sp,
@@ -575,6 +576,8 @@ fun ProfileScreen(
                 }
             } else {
                 items(items = filteredNotes, key = { it.id }) { note ->
+                    val cardProfiles by rememberCardProfiles(note, profilesState, quotedState)
+                    val cardQuotes by rememberCardQuotes(note, quotedState)
                     val engagement by remember(note.effectiveEventId, selectedSection) {
                         derivedStateOf {
                             if (selectedSection == ProfileSection.TAGGED) null
@@ -587,12 +590,12 @@ fun ProfileScreen(
                         // A repost on this profile is someone else's note:
                         // credit its author, not the profile's owner.
                         profile = if (selectedSection == ProfileSection.TAGGED || note.kind == 6)
-                            allProfiles[note.pubkey] else profile,
-                        profiles = allProfiles,
-                        quotedNotes = quotedNotes,
+                            cardProfiles[note.pubkey] else profile,
+                        profiles = cardProfiles,
+                        quotedNotes = cardQuotes,
                         isLiked = note.effectiveEventId in likedIds,
                         isReposted = note.effectiveEventId in repostedIds,
-                        repostedByProfile = note.repostedBy?.let { allProfiles[it] },
+                        repostedByProfile = note.repostedBy?.let { cardProfiles[it] },
                         onNoteClick = onNoteClick,
                         onArticleClick = onArticleClick,
                         onProfileClick = openOtherProfile,

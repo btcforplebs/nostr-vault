@@ -570,18 +570,28 @@ class NostrService @Inject constructor(
                 relays.add(relayUrl)
                 // Sent again on a new socket whenever the old one drops.
                 jobs.add(scope.launch {
-                    lookupPool.stream(relayUrl, initialSubId, initialFilters()) { msg -> handleMessage(msg, relayUrl) }
+                    lookupPool.stream(relayUrl, initialSubId, initialFilters(relayUrl)) { msg -> handleMessage(msg, relayUrl) }
                 })
             }
         }
 
-        private fun initialFilters(): List<String> = listOf(
+        private fun initialFilters(relayUrl: String): List<String> = listOfNotNull(
             """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"authors":["$pubkey"],"limit":50}""",
             """{"kinds":[0],"authors":["$pubkey"],"limit":1}""",
             """{"kinds":[3],"authors":["$pubkey"],"limit":1}""",
-            """{"kinds":[3],"#p":["$pubkey"],"limit":100}""",
+            // A follower sample is 100 whole follow lists, 2-6 MB a relay on
+            // real data (perf review 2026-11-27 #1). Someone else's count is
+            // taken from your web (ProfileWebFollowers), so only your own
+            // vault is asked for theirs; your own profile asks everywhere,
+            // standing in when the relay's ledger can't be read. iOS
+            // ProfileFeedLoader+Loading.swift asks only for your own.
+            """{"kinds":[3],"#p":["$pubkey"],"limit":100}"""
+                .takeIf { pubkey in ourHexKeys || isOwnVault(relayUrl) },
             """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"#p":["$pubkey"],"limit":50}""",
         )
+
+        private fun isOwnVault(relayUrl: String): Boolean =
+            configStore.config.value.nostrURL?.let { LookupSocketPool.relayKey(it) == LookupSocketPool.relayKey(relayUrl) } == true
 
         /** Pages [pubkey]'s notes older than [until]; see [OlderRequest]. */
         fun loadOlder(until: Long) = askOlder("older-", """"authors":["$pubkey"]""", until)
