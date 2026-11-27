@@ -153,6 +153,7 @@ val SETTINGS_GROUPS: List<SettingsGroup> = listOf(
     SettingsGroup("Account", listOf(
         SettingsRow("Accounts & Keys", NostrVaultIcons.Accounts, SettingsTile.Blue, Screen.AccountSettings),
         SettingsRow("Blocked", NostrVaultIcons.Blocked, SettingsTile.Red, Screen.BlockedSettings),
+        SettingsRow("Muted words", NostrVaultIcons.MutedWords, SettingsTile.Orange, Screen.MutedWordsSettings),
         SettingsRow("Recently Deleted", NostrVaultIcons.Delete, SettingsTile.Gray, Screen.RecentlyDeletedSettings),
         SettingsRow("Following Backup", NostrVaultIcons.SettingsFollowingBackup, SettingsTile.Teal, Screen.FollowingBackup),
         SettingsRow("List backups", NostrVaultIcons.History, SettingsTile.Indigo, Screen.ListBackup),

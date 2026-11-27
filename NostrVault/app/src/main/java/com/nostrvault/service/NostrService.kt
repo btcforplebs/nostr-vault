@@ -387,7 +387,12 @@ class NostrService @Inject constructor(
         localBlocks: List<String>,
         privateBefore: Collection<String> = emptyList(),
         privately: Boolean = false,
-    ): String? = publishMuteListChangeImpl(accountNpub, add, remove, localBlocks, privateBefore, privately)
+    ): String? = muteListPublishMutex.withLock {
+        publishMuteListChangeImpl(accountNpub, add, remove, localBlocks, privateBefore, privately)
+    }
+
+    /** One kind 10000 lookup, sign and post at a time (blocks and muted words); two built on one base lose the first. */
+    internal val muteListPublishMutex = Mutex()
 
 
     fun adoptPublishedDMRelayList() { adoptPublishedDMRelayListImpl() }
