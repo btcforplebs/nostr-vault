@@ -17,14 +17,15 @@ internal const val FIND_SOMEONE_LIMIT = 8
 internal fun findSomeone(
     query: String,
     profiles: Collection<FeedProfile>,
-    me: String,
+    /** You: every account on this phone ([com.nostrvault.service.ownSearchPubkeys]). */
+    own: Set<String>,
     follows: Set<String>,
     web: Set<String>,
     copy: TrustRankCopy?,
     blocked: Set<String>,
     limit: Int = FIND_SOMEONE_LIMIT,
 ): List<TrustMap.PersonHit> {
-    val circle = PeopleSearchRank.Circle(own = setOf(me), follows = follows, web = web, copy = copy)
+    val circle = PeopleSearchRank.Circle(own = own, follows = follows, web = web, copy = copy)
     return PeopleSearchRank.rank(profiles, query, circle, blocked = blocked, limit = limit, person = PeopleSearchRank::person)
         .map { TrustMap.PersonHit(it.pubkey, rowTier(it.pubkey, circle)) }
 }

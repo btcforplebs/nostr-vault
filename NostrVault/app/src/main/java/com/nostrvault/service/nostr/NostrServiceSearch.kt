@@ -9,15 +9,18 @@ import kotlinx.serialization.json.*
 import com.nostrvault.service.NostrService.SearchCaller
 import com.nostrvault.data.model.SearchTermMatcher
 
-    /** Active account and the owner (iOS parity: `request.own`). */
+    /**
+     * "You" for every people box (search plan §1a): the active account and
+     * every account on this phone, owner included, as lowercase hex.
+     */
     internal fun NostrService.ownSearchPubkeys(): Set<String> {
-        val owner = configStore.config.value.ownerNpub
-            .takeIf { it.startsWith("npub1") }
-            ?.let { HavenBridge.decodeNpub(it) }
-        return setOfNotNull(
-            configStore.activeAccountHexPubkey.value.takeIf { it.isNotEmpty() },
-            owner?.takeIf { it.isNotEmpty() },
-        )
+        val out = HashSet<String>()
+        configStore.activeAccountHexPubkey.value.takeIf { it.isNotEmpty() }?.let { out += it.lowercase() }
+        for (npub in configStore.config.value.allAccountNpubs()) {
+            if (!npub.startsWith("npub1")) continue
+            HavenBridge.decodeNpub(npub)?.takeIf { it.isNotEmpty() }?.let { out += it.lowercase() }
+        }
+        return out
     }
 
     /** Profiles a search discovered join the cache, so result rows and mentions resolve. */

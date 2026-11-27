@@ -10,7 +10,10 @@ import com.nostrvault.data.model.PeopleSearchRank
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.theme.*
+import com.nostrvault.service.ownSearchPubkeys
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -52,7 +55,13 @@ private const val MENTION_LIMIT = 8
         searchMentionProfiles(query)
     }
 
+    /**
+     * Ranks the whole profile cache for [query] off the main thread (it ran on
+     * main for each keystroke, 7-43 ms by cache size) and posts the rows if
+     * the query is still the one being edited.
+     */
     private fun ComposeNoteViewModel.filterMentionResults(query: String) {
+        // Read the services' state here on main; only the ranking leaves it.
         val profilesMap = nostrService.profiles.value
         val followed = feedService.followedPubkeys.value
         val self = nostrService.activeHexPubkey
@@ -68,32 +77,39 @@ private const val MENTION_LIMIT = 8
         threadPubkeys.remove(self)
 
         val blocked = feedService.blockedHexForActiveAccount()
-        val results: List<FeedProfile> = if (query.isEmpty()) {
+        if (query.isEmpty()) {
+            mentionFilterJob?.cancel()
             // Just typed `@`: thread participants first, then followed.
             val threadProfiles = threadPubkeys.filter { it !in blocked }.mapNotNull { profilesMap[it] }
             val followedProfiles = followed.asSequence()
                 .filter { it != self && it !in blocked }
                 .mapNotNull { profilesMap[it] }
                 .filter { p -> threadProfiles.none { it.pubkey == p.pubkey } }
-            (threadProfiles + followedProfiles).take(MENTION_LIMIT)
-        } else {
-            // Search the entire profile cache (feed authors, search results, etc.),
-            // not just follows, in the shared people order (PeopleSearchRank):
-            // thread participants, follows, your web, then the best name match.
-            val circle = PeopleSearchRank.Circle(
-                own = setOf(self),
-                follows = followed.toHashSet(),
-                web = feedService.webOfTrustForRanking(),
-                copy = feedService.discoveryReach.copy.value,
-                thread = threadPubkeys,
-            )
-            PeopleSearchRank.rank(
-                profilesMap.values.filter { it.pubkey != self }, query, circle,
-                blocked = blocked, limit = MENTION_LIMIT, person = PeopleSearchRank::person,
-            )
+            _mentionResults.value = (threadProfiles + followedProfiles).take(MENTION_LIMIT)
+            return
         }
 
-        _mentionResults.value = results
+        // Search the entire profile cache (feed authors, search results, etc.),
+        // not just follows, in the shared people order (PeopleSearchRank):
+        // thread participants, follows, your web, then the best name match.
+        // Off main: it ranks every cached profile on each keystroke.
+        val circle = PeopleSearchRank.Circle(
+            own = nostrService.ownSearchPubkeys() + self.lowercase(),
+            follows = followed.toHashSet(),
+            web = feedService.webOfTrustForRanking(),
+            copy = feedService.discoveryReach.copy.value,
+            thread = threadPubkeys,
+        )
+        mentionFilterJob?.cancel()
+        mentionFilterJob = viewModelScope.launch {
+            val results = withContext(Dispatchers.Default) {
+                PeopleSearchRank.rank(
+                    profilesMap.values.filter { it.pubkey != self }, query, circle,
+                    blocked = blocked, limit = MENTION_LIMIT, person = PeopleSearchRank::person,
+                )
+            }
+            if (currentMentionQuery == query) _mentionResults.value = results
+        }
     }
 
     /**
@@ -119,6 +135,7 @@ private const val MENTION_LIMIT = 8
         mentionEndOffset = null
         currentMentionQuery = null
         mentionSearchJob?.cancel()
+        mentionFilterJob?.cancel()
         _mentionResults.value = emptyList()
     }
 
