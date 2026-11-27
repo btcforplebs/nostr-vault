@@ -32,9 +32,9 @@ import kotlinx.coroutines.flow.*
 @Composable
 internal fun MediaListRow(
     item: BlossomMediaItem,
-    index: Int,
     backup: BackupBadgeState,
-    contextMenuTarget: Int?,
+    /** This file's long-press menu is open (held by sha, not position). */
+    menuOpen: Boolean,
     noteId: String?,
     onNoteClick: (String) -> Unit,
     onTap: () -> Unit,
@@ -169,7 +169,7 @@ internal fun MediaListRow(
 
         // Context menu
         MediaItemContextMenu(
-            expanded = contextMenuTarget == index,
+            expanded = menuOpen,
             item = item,
             backup = backup,
             noteId = noteId,

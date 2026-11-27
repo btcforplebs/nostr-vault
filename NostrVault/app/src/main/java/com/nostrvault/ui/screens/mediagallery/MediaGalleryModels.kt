@@ -148,3 +148,12 @@ internal fun withPostDates(items: List<BlossomMediaItem>, postDates: Map<String,
 internal fun listedUploaded(existing: BlossomMediaItem, listed: Long?, fromThisVault: Boolean): Long? =
     if (fromThisVault) existing.uploaded else oldestUploaded(existing.uploaded, listed)
 
+
+/**
+ * Whether [item]'s long-press menu is the open one. The menu is held by the
+ * file's sha, never by grid position: a file landing or a load finishing
+ * while it is open shifts positions, and Delete, Mirror and Report would then
+ * act on another tile (Vault tab review 2026-11-27, finding 1).
+ */
+internal fun isMenuTarget(target: String?, item: BlossomMediaItem): Boolean =
+    target != null && target.equals(item.sha256, ignoreCase = true)

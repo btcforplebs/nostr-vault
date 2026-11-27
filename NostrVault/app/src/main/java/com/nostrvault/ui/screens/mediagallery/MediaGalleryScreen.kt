@@ -130,7 +130,9 @@ fun MediaGalleryScreen(
             if (isGrid) gridState.animateScrollToItem(0) else listState.animateScrollToItem(0)
         }
     }
-    var contextMenuTarget by remember { mutableStateOf<Int?>(null) }
+    // The file's sha, not its grid position: a file landing while the menu is
+    // open shifts positions, and Delete/Mirror/Report then hit another tile.
+    var contextMenuTarget by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<Pair<BlossomMediaItem, DeleteScope>?>(null) }
     // Report Media / Block User from the long-press menu: the author's pubkey.
     var reportTarget by remember { mutableStateOf<String?>(null) }
@@ -457,7 +459,6 @@ fun MediaGalleryScreen(
                             val index = section.startIndex + offset
                             MediaGridCell(
                                 item = item,
-                                index = index,
                                 tileAspect = MediaMosaicLayout.clampedAspect(shapes[item.sha256]),
                                 onFrameSize = { size -> mosaicSizes.learn(item.sha256, size.width, size.height) },
                                 backup = BackupBadgeState(
@@ -468,14 +469,14 @@ fun MediaGalleryScreen(
                                     onMirror = { viewModel.mirrorMissing(item) },
                                     onSaveToVault = { viewModel.saveToVault(item) },
                                 ),
-                                contextMenuTarget = contextMenuTarget,
+                                menuOpen = isMenuTarget(contextMenuTarget, item),
                                 noteId = noteIdByHash[item.sha256.lowercase()],
                                 onNoteClick = onNoteClick,
                                 onTap = {
                                     MediaGalleryBridge.currentItems = filteredItems
                                     onMediaClick(index)
                                 },
-                                onLongPress = { contextMenuTarget = index },
+                                onLongPress = { contextMenuTarget = item.sha256 },
                                 onDismissMenu = { contextMenuTarget = null },
                                 mediaCacheService = mediaCacheService,
                                 clipboardManager = clipboardManager,
@@ -524,7 +525,6 @@ fun MediaGalleryScreen(
                             val index = section.startIndex + offset
                             MediaListRow(
                                 item = item,
-                                index = index,
                                 backup = BackupBadgeState(
                                     summary = viewModel.backupSummary(item.sha256, mirrorPresence),
                                     mirrorCount = blossomMirrors.size,
@@ -533,14 +533,14 @@ fun MediaGalleryScreen(
                                     onMirror = { viewModel.mirrorMissing(item) },
                                     onSaveToVault = { viewModel.saveToVault(item) },
                                 ),
-                                contextMenuTarget = contextMenuTarget,
+                                menuOpen = isMenuTarget(contextMenuTarget, item),
                                 noteId = noteIdByHash[item.sha256.lowercase()],
                                 onNoteClick = onNoteClick,
                                 onTap = {
                                     MediaGalleryBridge.currentItems = filteredItems
                                     onMediaClick(index)
                                 },
-                                onLongPress = { contextMenuTarget = index },
+                                onLongPress = { contextMenuTarget = item.sha256 },
                                 onDismissMenu = { contextMenuTarget = null },
                                 mediaCacheService = mediaCacheService,
                                 clipboardManager = clipboardManager,

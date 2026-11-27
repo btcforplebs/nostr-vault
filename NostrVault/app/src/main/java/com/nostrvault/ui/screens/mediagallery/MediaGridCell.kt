@@ -90,13 +90,13 @@ internal fun vaultGridImageRequest(
 @Composable
 internal fun MediaGridCell(
     item: BlossomMediaItem,
-    index: Int,
     /** Tile width ÷ height: the media's known shape (MediaMosaic.kt), set before the picture loads. */
     tileAspect: Float,
     /** The loaded picture's or video frame's size, kept for the next visit's tile. */
     onFrameSize: (androidx.compose.ui.geometry.Size) -> Unit,
     backup: BackupBadgeState,
-    contextMenuTarget: Int?,
+    /** This file's long-press menu is open (held by sha, not position). */
+    menuOpen: Boolean,
     noteId: String?,
     onNoteClick: (String) -> Unit,
     onTap: () -> Unit,
@@ -148,7 +148,7 @@ internal fun MediaGridCell(
 
         // Context menu
         MediaItemContextMenu(
-            expanded = contextMenuTarget == index,
+            expanded = menuOpen,
             item = item,
             backup = backup,
             noteId = noteId,
