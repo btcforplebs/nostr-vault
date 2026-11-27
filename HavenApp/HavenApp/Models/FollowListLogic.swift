@@ -97,8 +97,29 @@ enum FollowListLogic {
         }
         return FollowListGroup.allCases.compactMap { group in
             guard let members = buckets[group], !members.isEmpty else { return nil }
-            return FollowListSection(group: group, people: ordered(members, by: sort, trustRank: trustRank))
+            let sorted = ordered(members, by: sort, trustRank: trustRank)
+            return FollowListSection(group: group, people: queryMatchesFirst(sorted, query: query))
         }
+    }
+
+    /// While a query is typed, inside each group: names that are the query,
+    /// then names that start with it, then the rest; the picked sort holds
+    /// within each part (search plan §2.8). Same folding as `PeopleSearchRank`.
+    static func queryMatchesFirst(_ people: [FollowListPerson], query: String) -> [FollowListPerson] {
+        let folded = PeopleSearchRank.fold(query)
+        guard !folded.isEmpty else { return people }
+        func part(_ person: FollowListPerson) -> Int {
+            let match = PeopleSearchRank.match(folded, PeopleSearchRank.Person(
+                pubkey: person.pubkey, displayName: person.name, nip05: person.nip05))
+            switch match {
+            case PeopleSearchRank.Match.exact: return 0
+            case PeopleSearchRank.Match.prefix: return 1
+            default: return 2
+            }
+        }
+        var parts: [[FollowListPerson]] = [[], [], []]
+        for person in people { parts[part(person)].append(person) }
+        return parts.flatMap { $0 }
     }
 
     static func ordered(_ people: [FollowListPerson], by sort: FollowListSort, trustRank: [String: Int]) -> [FollowListPerson] {
