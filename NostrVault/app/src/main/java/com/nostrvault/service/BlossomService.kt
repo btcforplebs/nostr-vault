@@ -44,6 +44,8 @@ class BlossomService @Inject constructor(
     private val presenceStore: BlossomPresenceStore = BlossomPresenceStore(file = null),
     /** Auto-Mirror's last start and fetched links, kept across launches. */
     internal val autoMirrorState: AutoMirrorState = AutoMirrorState(dir = null),
+    /** Files taken off this device with "Delete from this device" (BlossomServiceDeleteHere.kt). */
+    internal val removedHere: DeviceRemovedHashes = DeviceRemovedHashes(dir = null),
 ) {
     companion object {
         internal const val TAG = "BlossomService"
@@ -454,6 +456,9 @@ class BlossomService @Inject constructor(
     suspend fun saveUrlToVault(url: String): VaultSaveResult {
         val saved = mirrorUrlToLocal(url) ?: return VaultSaveResult(VaultSave.FAILED, null)
         val hash = blossomHashInUrl(url)
+        // Save to Vault is the owner asking for it here again: Auto-Mirror may keep it.
+        removedHere.allow(saved)
+        hash?.let(removedHere::allow)
         if (hash == null || configStore.config.value.activeBlossomMirrors.isEmpty()) {
             return VaultSaveResult(VaultSave.ON_PHONE, saved)
         }
@@ -581,7 +586,8 @@ class BlossomService @Inject constructor(
                 val blobs = json.decodeFromString<List<BlobDescriptor>>(body)
                 for (hash in blobs.mapNotNull { it.sha256 }) {
                     if (hash in missingSet || hash in heldHere) continue
-                    if (mediaCacheService.isInLocalBlossom(hash)) heldHere += hash else missingSet += hash
+                    // Taken off this device by the owner: it stays on the servers.
+                    if (mediaCacheService.isInLocalBlossom(hash) || removedHere.isRemoved(ownerPubkey, hash)) heldHere += hash else missingSet += hash
                 }
                 for ((hash, secs) in CopiedInDate.uploadedByHash(blobs)) {
                     if ((uploadedDates[hash] ?: Long.MAX_VALUE) > secs) uploadedDates[hash] = secs
@@ -744,6 +750,9 @@ class BlossomService @Inject constructor(
 
     /** Who runs a Blossom server, as [askServerOwner] reads it. */
     enum class ServerOwner { OWNER, OTHER, UNKNOWN }
+
+    /** [askServerHolds], swapped in tests. */
+    internal var heldCopyProbe: (server: String, hash: String, length: Long) -> Boolean = { s, h, l -> askServerHolds(s, h, l) }
 
     /** [askServerOwner], swapped in tests. */
     internal var serverOwner: suspend (server: String, ownerHex: String) -> ServerOwner = { server, owner -> askServerOwner(server, owner) }

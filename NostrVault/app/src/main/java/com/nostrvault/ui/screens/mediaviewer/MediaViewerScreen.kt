@@ -437,6 +437,7 @@ fun MediaViewerScreen(
                     DeleteScope.EVERYWHERE -> viewModel.deleteEverywhere(currentItem, sticky = true, deletePosts = deletePosts) { allGone ->
                         if (allGone) onBack()
                     }
+                    DeleteScope.THIS_DEVICE -> viewModel.deleteFromThisDevice(currentItem)
                 }
                 pendingDelete = null
             }

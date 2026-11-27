@@ -572,6 +572,7 @@ fun MediaGalleryScreen(
             when (scope) {
                 DeleteScope.MIRRORS -> mediaActions.deleteFromMirrors(item) { viewModel.refresh() }
                 DeleteScope.EVERYWHERE -> mediaActions.deleteEverywhere(item, deletePosts = deletePosts) { viewModel.refresh() }
+                DeleteScope.THIS_DEVICE -> mediaActions.deleteFromThisDevice(item) { viewModel.refresh() }
             }
         }
         DeleteBlobConfirmDialog(

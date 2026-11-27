@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.service.deleteFromThisDevice
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -269,6 +270,28 @@ class MediaViewerViewModel @Inject constructor(
             // delete, a full one too, so it stops showing the pre-delete count (as iOS does).
             checkMirrors(item.sha256)
             onDone(leftover == null)
+        }
+    }
+
+    /**
+     * Delete from this device: the vault copy goes only when an outside server
+     * holds the file, checked now ([deleteFromThisDevice]); otherwise it stays and says why.
+     */
+    fun deleteFromThisDevice(item: BlossomMediaItem, onDone: () -> Unit = {}) {
+        if (!isBlobHash(item.sha256)) {
+            notificationManager.showError(DELETE_NO_HASH_MESSAGE)
+            return
+        }
+        viewModelScope.launch {
+            when (val result = blossomService.deleteFromThisDevice(item.sha256)) {
+                is com.nostrvault.service.DeleteHereResult.Removed ->
+                    notificationManager.showToast("Deleted from this device. Freed ${com.nostrvault.ui.screens.dashboard.formatSize(result.freedBytes)}.")
+                com.nostrvault.service.DeleteHereResult.NotHere -> notificationManager.showToast("Not on this device")
+                is com.nostrvault.service.DeleteHereResult.Kept -> notificationManager.showError(result.reason)
+            }
+            _sourceVersion.value++
+            checkMirrors(item.sha256)
+            onDone()
         }
     }
 

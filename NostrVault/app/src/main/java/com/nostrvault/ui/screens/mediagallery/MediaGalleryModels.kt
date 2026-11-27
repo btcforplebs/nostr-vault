@@ -108,7 +108,8 @@ internal fun mediaModerationTarget(author: String?, ownerHex: String, activeHex:
     author?.takeIf { it.isNotEmpty() && it != ownerHex && it != activeHex }
 
 /** Scope for a pending destructive delete in MediaViewerScreen. */
-enum class DeleteScope { MIRRORS, EVERYWHERE }
+/** [THIS_DEVICE]: only this device's vault copy, kept on the media servers (BlossomServiceDeleteHere). */
+enum class DeleteScope { MIRRORS, EVERYWHERE, THIS_DEVICE }
 
 /** Media type filter matching iOS MediaTypeFilter. */
 enum class MediaTypeFilter {
