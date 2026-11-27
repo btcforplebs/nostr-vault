@@ -5,7 +5,10 @@ import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.model.BlockedPeople
+import com.nostrvault.data.model.DMMutes
 import com.nostrvault.data.model.DMTrust
+import com.nostrvault.data.model.MuteRules
+import com.nostrvault.data.model.muteRulesForActiveAccount
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
@@ -89,9 +92,25 @@ class DMService @Inject constructor(
      * The inbox as shown: conversations with a blocked person are hidden. They
      * stay in [_conversations] (and the cache), so unblocking brings them back.
      */
+    private val mutedSplit: StateFlow<Pair<List<DMConversation>, List<DMConversation>>> =
+        combine(
+            _conversations,
+            configStore.config.map { blockedHex(it) }.distinctUntilChanged(),
+            configStore.config.map { it.muteRulesForActiveAccount() }.distinctUntilChanged(),
+        ) { convos, blocked, mutes ->
+            DMMutes.split(BlockedPeople.visibleConversations(convos, blocked) { it.id }) { it.isMuted(mutes) }
+        }.stateIn(scope, SharingStarted.Eagerly, emptyList<DMConversation>() to emptyList())
+
+    /** Conversations a muted word hides ([DMMutes]); shown again while [showMutedConversations] is on. */
+    val mutedConversations: StateFlow<List<DMConversation>> = mutedSplit
+        .map { it.second }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    /** "N hidden: muted word" was tapped: they show until the app restarts. */
+    val showMutedConversations = MutableStateFlow(false)
+
     val conversations: StateFlow<List<DMConversation>> =
-        combine(_conversations, configStore.config.map { blockedHex(it) }.distinctUntilChanged()) { convos, blocked ->
-            BlockedPeople.visibleConversations(convos, blocked) { it.id }
+        combine(mutedSplit, showMutedConversations) { (shown, muted), show ->
+            if (show && muted.isNotEmpty()) (shown + muted).sortedByDescending { it.lastMessage?.timestamp ?: 0L } else shown
         }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     internal val _isLoading = MutableStateFlow(false)
@@ -472,3 +491,7 @@ internal fun MutableList<Job>.cancelAll() {
     forEach { it.cancel() }
     clear()
 }
+
+/** A message someone sent you here holds one of [rules]' muted words. */
+internal fun DMConversation.isMuted(rules: MuteRules): Boolean =
+    DMMutes.hides(messages, rules, { it.isFromMe }, { it.content })
