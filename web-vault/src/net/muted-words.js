@@ -48,6 +48,6 @@ export async function setMutedWord(ctx, word, { mute = true, isPrivate = true, a
  *  shows once, under Public, since anyone can see it. */
 export function mutedWordSections({ publicWords, privateWords } = {}) {
   const pub = [...(publicWords ?? [])]
-  const seen = new Set(pub)
-  return { publicWords: pub, privateWords: [...(privateWords ?? [])].filter(w => !seen.has(w)) }
+  const seen = new Set(pub.map(mutedWordKey))
+  return { publicWords: pub, privateWords: [...(privateWords ?? [])].filter(w => !seen.has(mutedWordKey(w))) }
 }

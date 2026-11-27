@@ -13,12 +13,13 @@ export function MutedWordsPage({ ctx }) {
   const [pub, setPub] = useState(false)
   const [busy, setBusy] = useState("")
   const [err, setErr] = useState("")
+  const [note, setNote] = useState("")
   const canPrivate = !!ctx.signer?.crypto && !blocks.privateNote
   const isPrivate = !pub
   const typed = mutedWordKey(text)
   const problem = typed ? mutedWordProblem(text, [...publicWords, ...privateWords]) : ""
   const run = async (key, fn) => {
-    setBusy(key); setErr("")
+    setBusy(key); setErr(""); setNote("")
     try { await fn(); return true } catch (e) { setErr(String(e?.message ?? e)); return false } finally { setBusy("") }
   }
   const add = async e => {
@@ -26,7 +27,13 @@ export function MutedWordsPage({ ctx }) {
     if (!typed || problem || busy) return
     if (await run("add", () => setMutedWord(ctx, text, { mute: true, isPrivate }))) { setText(""); setPub(false) }
   }
-  const remove = w => run(w, () => setMutedWord(ctx, w, { mute: false }))
+  // A public word unmuted while the private part can't be opened: it comes out of the public part, but the same word
+  // may also be in the private part, which is republished as it was, so say so rather than claim it's gone.
+  const remove = async w => {
+    const unchecked = blocks.privateNote
+    if (await run(w, () => setMutedWord(ctx, w, { mute: false })) && unchecked)
+      setNote(`Unmuted “${w}” in the public part. Your private part couldn't be opened (${unchecked}), so it may still be muted there.`)
+  }
   const waiting = ctx.signer?.method === "nip46" ? "Waiting for your signer…" : null
   return (
     <>
@@ -50,6 +57,7 @@ export function MutedWordsPage({ ctx }) {
           : `Words can't be muted privately right now: ${blocks.privateNote || "your signer can't encrypt"}. Tick Mute publicly to add one anyway.`}</p>
         {problem && <p class="error small" role="status">{problem}</p>}
         {err && <p class="error small" role="alert">{err}</p>}
+        {note && <p class="settings-note small" role="status">{note}</p>}
       </section>
       <WordSection title="Public" words={publicWords} busy={busy} onRemove={remove}
         empty="No public muted words." note="Anyone can see these in your mute list." />

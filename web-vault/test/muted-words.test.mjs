@@ -117,4 +117,5 @@ test("setMutedWord: a bad word, a private mute without encryption, or a refused 
 test("sections: public words first; a word in both parts shows once, under Public", () => {
   assert.deepEqual(mutedWordSections({ publicWords: ["a", "b"], privateWords: ["b", "c"] }), { publicWords: ["a", "b"], privateWords: ["c"] })
   assert.deepEqual(mutedWordSections(), { publicWords: [], privateWords: [] })
+  assert.deepEqual(mutedWordSections({ publicWords: ["foo bar"], privateWords: ["foo  bar"] }).privateWords, [], "folded the same way")
 })
