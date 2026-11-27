@@ -43,10 +43,19 @@ export const ownMajority = ({ asked, answered, heard = answered }) => asked > 0 
  *  - at least 2 own relays answering (a real EOSE), always;
  *  - a list found: more than half of the reached relays answering. A slow relay that connected but sent no EOSE in
  *    time still counts against it: it may hold a newer copy;
- *  - no list found: every reached relay answering, since the one that didn't may hold it.
+ *  - no list found: every own relay answering, dead ones too (allOwnAnswered): a relay that didn't answer may hold
+ *    the only copy, and a first list sent to it would replace that copy (Tron, PR 2611 review).
  */
-export const followListKnown = ({ reached, answered, found }) =>
-  answered >= 2 && (found ? answered * 2 > reached : answered === reached)
+export const followListKnown = ({ asked, reached, answered, found }) =>
+  answered >= 2 && (found ? answered * 2 > reached : allOwnAnswered({ asked, answered }))
+
+/**
+ * Whether a connect failure means the relay is down for this ask: only nostr-tools' own socket error or close
+ * ("connection failed", "websocket closed"). A relay this app chose not to dial (cool-down, budget, socket cap, dead
+ * host list, plain ws:// on https: pool.js refuse/ensureRelay), one skipped as slow, and a connect timeout may all be
+ * healthy and hold the newest list, so they stay in the count as reached-but-silent (Tron, PR 2611 review).
+ */
+export const socketFailed = err => !err?.refused && /^(connection failed|websocket closed)$/.test(String(err?.message ?? err))
 
 /** A list edit's rule: a found copy needs ownMajority, "no list" needs allOwnAnswered. */
 export const editKnown = ({ asked, answered, heard, found }) =>
@@ -71,13 +80,14 @@ export function newestList(lists, pubkey, at = now()) {
 
 /**
  * One relay's answer to `filter`: { events, answered, connected }. `answered` is true only on the relay's own EOSE;
- * `connected` is false only when the relay never connected (followListKnown drops those from the count). pool.querySync
+ * `connected` is false only when its socket errored or closed while connecting (socketFailed; followListKnown drops
+ * those from the count). pool.querySync
  * can't be used here: it turns an unreachable relay, and a relay that times out, into the same empty answer as
  * "no list" (nostr-tools counts its EOSE timeout as an EOSE), and that is the difference the guard needs.
  */
 export async function askRelay(url, filter, ms = ASK_MS) {
   let relay
-  try { relay = await pool.ensureRelay(url, { connectionTimeout: ms }) } catch { return { events: [], answered: false, connected: false } }
+  try { relay = await pool.ensureRelay(url, { connectionTimeout: ms }) } catch (err) { return { events: [], answered: false, connected: !socketFailed(err) } }
   return new Promise(resolve => {
     const events = []
     let sub = null, finished = false
@@ -140,7 +150,7 @@ export function editedTags(base, target, follow) {
  *  - followListKnown: own relays that never connected drop out; at least 2 own relays must have answered, and more
  *    than half of the reached ones for a found list, and the base is the newest copy among them. A copy one relay sent
  *    alone isn't enough: a slower one may hold a newer list another app saved (list-wipe audit, Logen 2026-11-02).
- *  - no base list found: every reached own relay must have answered (followListKnown), then a first list of
+ *  - no base list found: every own relay must have answered, dead ones too (followListKnown), then a first list of
  *    one follow, as iOS (loadConfirmsList with foundList false). Refused for an unfollow, when the app shows follows,
  *    and when a list was found dated ahead (`ahead`): those mean a list exists somewhere;
  *  - nothing that would be empty, unless it is a single unfollow of the last follow (1 -> 0, as iOS);
@@ -157,11 +167,13 @@ export const wipeGuard = o => guardRefusal(o)?.text ?? ""
 export function guardRefusal({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, reached = asked, answered = 0, netFound = false, ahead = false, at = now() }) {
   const no = (code, text) => ({ code, text })
   if (!asked) return no("noOwnRelays", NO_OWN_RELAYS)
-  if (!followListKnown({ reached, answered, found: !!base })) {
-    if (!answered) return no("relays", "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable.")
-    if (answered < 2) return no("relays", "Only one relay answered, so your newest follow list isn't known (another may hold a newer copy) and nothing was changed. Try again shortly.")
+  if (!followListKnown({ asked, reached, answered, found: !!base })) {
+    // One relay listed can never make 2 answers: retrying won't help, adding a relay will (Tao, Android #2612).
+    if (asked === 1) return no("oneRelay", "Your relay list has only one relay, and your newest follow list needs two of your relays to answer before it can be checked. Nothing was changed. Add a relay in Settings › Relays, then try again.")
+    if (!answered) return no("noAnswer", "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable.")
+    if (answered < 2) return no("oneAnswer", "Only one relay answered, so your newest follow list isn't known (another may hold a newer copy) and nothing was changed. Try again shortly.")
     if (base) return no("relays", `Only ${answered} of your ${reached} relays answered, so your newest follow list isn't known (one that didn't may hold a newer copy) and nothing was changed. Try again when more of them are reachable.`)
-    return no("relays", `${answered} of your ${reached} relays answered and none had a follow list. Your first one needs every relay to answer, so nothing was changed. Try again shortly.`)
+    return no("relays", `${answered} of your ${asked} relays answered and none had a follow list. Your first one needs every relay to answer, so nothing was changed. Try again shortly.`)
   }
   if (!base && (!follow || appCount > 0 || ahead))
     return no("notFound", "Your follow list wasn't found on your relays, so nothing was changed. Try again when they answer.")

@@ -73,7 +73,7 @@ test("guard: relays all down and only an old vault copy -> nothing is signed or 
   await assert.rejects(run({ vault, target: pk(), follow: true, known: old, appCount: 4,
     ask: async () => ({ events: [], answered: false }),
     signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } },
-    publish: urls => { sent = true; return okPublish(urls) } }), /only 0 of your \d+ relays answered/)
+    publish: urls => { sent = true; return okPublish(urls) } }), /no relay answered/)
   assert.equal(signed, false)
   assert.equal(sent, false)
   assert.deepEqual(vault.outbox.evs, [old])
@@ -82,11 +82,11 @@ test("guard: relays all down and only an old vault copy -> nothing is signed or 
 test("guard: an answer from purplepag.es alone doesn't count; one of the user's relays does", async () => {
   const base = contacts([pk()], T0 + 100)
   const onlyIndex = async url => ({ events: [], answered: PROFILE_RELAYS.includes(url) })
-  await assert.rejects(run({ vault: fakeVault([base]), target: pk(), follow: true, ask: onlyIndex }), /only 0 of your \d+ relays answered/)
+  await assert.rejects(run({ vault: fakeVault([base]), target: pk(), follow: true, ask: onlyIndex }), /no relay answered/)
   // One own relay answering is never enough (Logen 2026-11-02 13:21Z), and purplepag.es doesn't make it two: the
   // follow-list rule needs 2 of the user's own relays (followListKnown, Logen 2026-11-27).
   const ownAndIndex = async url => ({ events: [], answered: url === "wss://w.example" || PROFILE_RELAYS.includes(url) })
-  await assert.rejects(run({ vault: fakeVault([base]), target: pk(), follow: true, ask: ownAndIndex }), /only 1 of your 2 relays answered/)
+  await assert.rejects(run({ vault: fakeVault([base]), target: pk(), follow: true, ask: ownAndIndex }), /only 1 relay answered, and it takes 2/)
   // Both own relays: enough.
   const bothOwn = async url => ({ events: [], answered: url.startsWith("wss://w") })
   const r = await run({ vault: fakeVault([base]), target: pk(), follow: true, ask: bothOwn })
@@ -101,7 +101,7 @@ test("guard: one own relay times out, the other answers empty, the vault has an 
   const ask = async url => url === "wss://b.example" ? { events: [], answered: true } : { events: [], answered: false }
   await assert.rejects(run({ vault, readRelays: ["wss://a.example"], writeRelays: ["wss://b.example"], target: pk(), follow: true, known: old, appCount: 4, ask,
     signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } },
-    publish: urls => { sent = true; return okPublish(urls) } }), /only 1 of your 2 relays answered/)
+    publish: urls => { sent = true; return okPublish(urls) } }), /only 1 relay answered, and it takes 2/)
   assert.equal(signed, false)
   assert.equal(sent, false)
   assert.deepEqual(vault.outbox.evs, [old])
@@ -115,7 +115,7 @@ test("guard: own relays both time out, purplepag.es has an old copy -> refused, 
   const ask = async url => PROFILE_RELAYS.includes(url) ? { events: [old], answered: true } : { events: [], answered: false }
   await assert.rejects(run({ vault, readRelays: ["wss://a.example"], writeRelays: ["wss://b.example"], target: pk(), follow: true, known: old, appCount: 4, ask,
     signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } },
-    publish: urls => { sent = true; return okPublish(urls) } }), /only 0 of your \d+ relays answered/)
+    publish: urls => { sent = true; return okPublish(urls) } }), /no relay answered/)
   assert.equal(signed, false)
   assert.equal(sent, false)
   assert.deepEqual(vault.outbox.evs, [old])
@@ -130,7 +130,7 @@ test("guard: one relay's answer is never enough; then the newest copy any of the
   const signer = { signEvent: async t => { signed = true; return finalizeEvent(t, me) } }
   // wss://a sends an old copy, wss://b (which holds the newer one) is slow and never answers: refused, not built on a.
   await assert.rejects(run({ vault: fakeVault([old]), ...relays, target: pk(), follow: true, signer,
-    ask: async url => url === "wss://a.example" ? { events: [stale], answered: true } : { events: [], answered: false } }), /only 1 of your 2 relays answered/)
+    ask: async url => url === "wss://a.example" ? { events: [stale], answered: true } : { events: [], answered: false } }), /only 1 relay answered, and it takes 2/)
   assert.equal(signed, false, "the signer is never asked")
   // Both answer and wss://b's copy is newer: b's is the base, nothing it has is dropped.
   const t = pk()
@@ -157,7 +157,7 @@ test("guard: most of your relays answering is enough for a found list, never one
   // 1 of 3: refused before the signer is asked (the silent ones may hold a newer list).
   let signed = false
   await assert.rejects(run({ vault: fakeVault([small]), ...relays, target: pk(), follow: true, ask: answering("wss://a.example"),
-    signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } } }), /only 1 of your 3 relays answered/)
+    signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } } }), /only 1 relay answered, and it takes 2/)
   assert.equal(signed, false)
   // The edges, on the guard alone, a list found: more than half and at least two answers.
   const base = contacts([pk()], T0 + 100), t = pk(), tags = editedTags(base, t, true)
@@ -167,8 +167,8 @@ test("guard: most of your relays answering is enough for a found list, never one
   assert.equal(guard(3, 4), "")
   assert.match(guard(2, 4, 5), /Only 2 of your 4/, "half is not more than half")
   assert.match(guard(1, 2, 3), /Only one relay answered/)
-  assert.match(guard(1, 1), /Only one relay answered/, "a single answer")
-  assert.match(guard(1, 1, 2), /Only one relay answered/, "its one relay and an indexer: the indexer doesn't count (Logen 11-27)")
+  assert.match(guard(1, 1), /only one relay, .*Add a relay/, "a one-relay list can never make 2: its own reason (Tao #2612)")
+  assert.match(guard(1, 1, 2), /only one relay, .*Add a relay/, "its one relay and an indexer: the indexer doesn't count (Logen 11-27)")
   // No list found: every own relay.
   const first = (answered, asked) => wipeGuard({ base: undefined, tags: [["p", t]], target: t, follow: true, answered, asked })
   assert.equal(first(3, 3), "")
@@ -219,7 +219,7 @@ test("guard: with every relay answering, the old wipe cases still refuse", async
   await assert.rejects(run({ vault: fakeVault([future]), ...relays, target: pk(), follow: true, ask: allThree, signer }), /wasn't found/)
   // purplepag.es alone can't confirm: 1 of 3 own relays answered, the index relay has a list.
   const idx = async url => PROFILE_RELAYS.includes(url) ? { events: [old], answered: true } : { events: [], answered: url === "wss://c.example" }
-  await assert.rejects(run({ vault: fakeVault([old]), ...relays, target: pk(), follow: true, ask: idx, signer }), /only 1 of your 3/)
+  await assert.rejects(run({ vault: fakeVault([old]), ...relays, target: pk(), follow: true, ask: idx, signer }), /only 1 relay answered, and it takes 2/)
   assert.equal(signed, false, "the signer is never asked")
 })
 

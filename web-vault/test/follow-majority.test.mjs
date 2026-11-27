@@ -4,7 +4,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
-import { setFollow, followsOf, followListKnown } from "../src/net/follows.js"
+import { setFollow, followsOf, followListKnown, socketFailed } from "../src/net/follows.js"
 
 const me = generateSecretKey(), mePk = getPublicKey(me)
 const pk = () => getPublicKey(generateSecretKey())
@@ -44,12 +44,12 @@ test("majority: 5 of 7 dead and 2 answering is enough (the old rule wanted 4 of 
 
 test("majority: 1 answering is refused, even with every other relay dead", async () => {
   await assert.rejects(run(["answer", ...times(6, "dead")]),
-    { code: "relays", message: /^Couldn't follow: only 1 of your 7 relays answered, so your newest follow list can't be checked\. Nothing changed\. Remove dead relays in Settings › Relays, then try again\.$/ })
+    { code: "oneAnswer", message: "Couldn't follow: only 1 relay answered, and it takes 2 to check your newest follow list. Nothing changed. Try again in a moment." })
 })
 
 test("majority: 0 answering is refused", async () => {
-  await assert.rejects(run(times(7, "dead")), { code: "relays", message: /^Couldn't follow: only 0 of your 7 relays answered/ })
-  await assert.rejects(run(times(7, "slow")), { code: "relays", message: /^Couldn't follow: only 0 of your 7 relays answered/ })
+  await assert.rejects(run(times(7, "dead")), { code: "noAnswer", message: /^Couldn.t follow: no relay answered, so your newest follow list can.t be checked\. Nothing changed\. Check your connection, then try again\.$/ })
+  await assert.rejects(run(times(7, "slow")), { code: "noAnswer", message: /^Couldn.t follow: no relay answered, so your newest follow list can.t be checked\. Nothing changed\. Check your connection, then try again\.$/ })
 })
 
 test("majority: a slow relay that connected still counts against the majority", async () => {
@@ -61,10 +61,32 @@ test("majority: a slow relay that connected still counts against the majority", 
 })
 
 test("followListKnown: the cases on the rule alone", () => {
-  assert.equal(followListKnown({ reached: 4, answered: 4, found: true }), true)
-  assert.equal(followListKnown({ reached: 2, answered: 2, found: true }), true)
-  assert.equal(followListKnown({ reached: 1, answered: 1, found: true }), false, "below 2")
-  assert.equal(followListKnown({ reached: 4, answered: 2, found: true }), false, "half is not a majority")
-  assert.equal(followListKnown({ reached: 3, answered: 2, found: false }), false, "no list found: every reached relay")
-  assert.equal(followListKnown({ reached: 2, answered: 2, found: false }), true)
+  assert.equal(followListKnown({ asked: 7, reached: 4, answered: 4, found: true }), true)
+  assert.equal(followListKnown({ asked: 7, reached: 2, answered: 2, found: true }), true)
+  assert.equal(followListKnown({ asked: 7, reached: 1, answered: 1, found: true }), false, "below 2")
+  assert.equal(followListKnown({ asked: 7, reached: 4, answered: 2, found: true }), false, "half is not a majority")
+  // No list found: every own relay, dead ones too: a dead one may hold the only copy (Tron, PR 2611 review).
+  assert.equal(followListKnown({ asked: 3, reached: 2, answered: 2, found: false }), false)
+  assert.equal(followListKnown({ asked: 2, reached: 2, answered: 2, found: false }), true)
+})
+
+test("majority: no list found and one own relay cooling down is refused, never a first list over its copy (Tron #2)", async () => {
+  // A and B answer empty, C (which may hold a 300-follow list) is skipped by the pool's cool-down; a fresh browser.
+  const abc = ["wss://a.example", "wss://b.example", "wss://c.example"]
+  const ask = async url => url === abc[2] ? { events: [], answered: false, connected: socketFailed(new Error(`relay skipped, its last connect failed: ${url}`)) ? false : true }
+    : { events: [], answered: abc.includes(url), connected: abc.includes(url) }
+  await assert.rejects(setFollow({ vault: fakeVault(), signer: { signEvent: async t => finalizeEvent(t, me) }, pubkey: mePk, target: pk(), follow: true,
+    readRelays: [], writeRelays: abc, ownRelays: abc, ask, publish: () => assert.fail("published") }), { code: "relays" })
+  // Even if C's socket really failed, it may hold the list: still refused.
+  const dead = async url => ({ events: [], answered: url !== abc[2] && abc.includes(url), connected: url !== abc[2] })
+  await assert.rejects(setFollow({ vault: fakeVault(), signer: { signEvent: async t => finalizeEvent(t, me) }, pubkey: mePk, target: pk(), follow: true,
+    readRelays: [], writeRelays: abc, ownRelays: abc, ask: dead, publish: () => assert.fail("published") }), { code: "relays" })
+})
+
+test("socketFailed: only a real socket error or close drops a relay out of the count (Tron #1)", () => {
+  for (const e of ["connection failed", "websocket closed"]) assert.equal(socketFailed(e), true, e)
+  for (const e of ["connection timed out", "relay skipped, its last connect failed: wss://c", "relay skipped, read budget used: wss://damus",
+    "relay skipped, 24 sockets busy: wss://c", "dead relay skipped: wss://c", "relay slow to connect, skipped for this ask: wss://c"])
+    assert.equal(socketFailed(new Error(e)), false, e)
+  assert.equal(socketFailed(Object.assign(new Error("connection failed"), { refused: true })), false, "a gate refusal")
 })
