@@ -43,7 +43,13 @@ enum DeleteHereGate {
         if let cache = a.cacheStatus?.lowercased(), cache.contains("hit") { return false }
         if let age = a.age?.trimmingCharacters(in: .whitespaces), !age.isEmpty, age != "0" { return false }
         if let type = a.contentType?.lowercased(), type.hasPrefix("text/html") { return false }
-        if let url = a.finalURL, !url.absoluteString.lowercased().contains(sha256.lowercased()) { return false }
+        // Where it ended must be https and still this hash. The probe asks
+        // https, but URLSession follows a redirect to http (the Mac allows
+        // arbitrary loads, iOS local networking), and an http answer could
+        // come from anything on the way, this device included (Tron, delete-here
+        // close-out). No final URL: nothing to check, so no proof.
+        guard let url = a.finalURL, url.scheme?.lowercased() == "https",
+              url.absoluteString.lowercased().contains(sha256.lowercased()) else { return false }
         switch a.status {
         case 200:
             return a.contentLength.flatMap { Int64($0.trimmingCharacters(in: .whitespaces)) } == localSize
