@@ -19,7 +19,6 @@ extension FeedService {
         pendingNotes.removeAll()
         noteBuffer.removeAll()
         seenIds.removeAll()
-        searchResults.removeAll()
         noteStats.removeAll()
         popularNoteScores.removeAll()
         noteLanguageCache.removeAll()
