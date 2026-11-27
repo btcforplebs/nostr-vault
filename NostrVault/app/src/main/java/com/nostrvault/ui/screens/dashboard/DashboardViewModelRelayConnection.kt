@@ -327,20 +327,8 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
             return
         }
 
-        // NIP-57: a zap receipt is spoofable by anyone who can reach a relay
-        // we query — only trust it if it came from the pubkey the recipient's
-        // own LNURL endpoint designates as authorized to publish on their behalf.
-        if (kind == 9735) {
-            val recipientPubkey = tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
-            if (recipientPubkey == null || !ZapValidationService.isValidReceipt(
-                    receiptPubkey = pubkey,
-                    recipientPubkey = recipientPubkey,
-                    profiles = nostrService.profiles.value,
-                )
-            ) {
-                return
-            }
-        }
+        // Same checks as older pages (VaultRowAdmission.kt): forged zap receipts stay out.
+        if (!vaultRowAdmitted(kind, pubkey, createdAt, tags, VaultActivity.nowSeconds(), ::validZapReceipt)) return
 
         val nostrEvent = NostrEvent(
             id = id,
@@ -371,6 +359,10 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
         nostrService.fetchMissingProfiles(listOf(pubkey))
         scheduleUpdateDisplayData()
     }
+
+    /** NIP-57 publisher check against the profiles loaded now ([ZapValidationService.isValidReceipt]). */
+    internal suspend fun DashboardViewModel.validZapReceipt(receiptPubkey: String, recipientPubkey: String): Boolean =
+        ZapValidationService.isValidReceipt(receiptPubkey, recipientPubkey, nostrService.profiles.value)
 
     /** Caller must hold [allEventsMutex]. Trims oldest events past the cap. */
     internal fun DashboardViewModel.trimAllEventsLocked() {
