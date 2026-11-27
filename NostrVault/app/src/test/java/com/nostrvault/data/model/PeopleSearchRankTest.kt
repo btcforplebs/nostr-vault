@@ -159,8 +159,29 @@ class PeopleSearchRankTest {
         )
         val people = listOf(FeedProfile(key(1), name = "zed"), FeedProfile(key(2), name = "zedd"))
         val out = SearchResultsOrder.apply(GlobalSearchResults(people, notes), "zed", c)
-        assertEquals(listOf(key(2), key(1)), out.profiles.map { it.pubkey })
-        // Follow, then 3+ steps (inside), then outside, whatever the time.
-        assertEquals(listOf("c", "b", "a"), out.notes.map { it.id })
+        assertEquals(listOf(key(2)), out.inside.profiles.map { it.pubkey })
+        // Follow, then 3+ steps (inside), whatever the time; the outsider's note folds.
+        assertEquals(listOf("c", "b"), out.inside.notes.map { it.id })
+        assertEquals(listOf(key(1)), out.outside.profiles.map { it.pubkey })
+        assertEquals(listOf("a"), out.outside.notes.map { it.id })
+        assertEquals(2, out.outsideCount)
+    }
+
+    /** D4: the fold opens by itself only when its exact name is the only one (Logen 5d1ce4cb #1). */
+    @Test fun searchTabFoldOpensItselfForTheOnlyExactName() {
+        val people = listOf(FeedProfile(key(1), name = "zed"), FeedProfile(key(2), name = "zedd"))
+        val followsZedd = SearchResultsOrder.apply(GlobalSearchResults(people), "Zed", circle(follows = setOf(key(2))))
+        assertTrue(SearchResultsOrder.opensItself(followsZedd, "Zed"))
+        val followsZed = SearchResultsOrder.apply(GlobalSearchResults(people), "zed", circle(follows = setOf(key(1))))
+        assertFalse(SearchResultsOrder.opensItself(followsZed, "zed"))
+        assertTrue(followsZed.outside.profiles.map { it.pubkey } == listOf(key(2)))
+    }
+
+    /** With no web yet, only you and your follows are inside (fails closed, as on iOS). */
+    @Test fun searchTabWithNoWebFoldsEveryoneElse() {
+        val notes = listOf(FeedNote.fromEvent("a", key(1), "x", emptyList(), 1, 1), FeedNote.fromEvent("m", key(5), "x", emptyList(), 2, 1))
+        val out = SearchResultsOrder.apply(GlobalSearchResults(notes = notes), "x", circle(own = setOf(key(5))))
+        assertEquals(listOf("m"), out.inside.notes.map { it.id })
+        assertEquals(listOf("a"), out.outside.notes.map { it.id })
     }
 }

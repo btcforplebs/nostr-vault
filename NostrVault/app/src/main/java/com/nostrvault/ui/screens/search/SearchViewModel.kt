@@ -92,6 +92,16 @@ class SearchViewModel @Inject constructor(
     private val _results = MutableStateFlow(GlobalSearchResults())
     val results = _results.asStateFlow()
 
+    /** People and notes from outside your web, folded under one line (D4; iOS outsideUsers / outsideNotes). */
+    private val _outside = MutableStateFlow(GlobalSearchResults())
+    val outside = _outside.asStateFlow()
+
+    /** Whether the "N from outside your web" fold is open. Closed again for each new query. */
+    private val _showsOutside = MutableStateFlow(false)
+    val showsOutside = _showsOutside.asStateFlow()
+    /** The query the fold last opened itself for, so a fold you closed stays closed while it streams. */
+    private var outsideAutoOpenedFor = ""
+
     private val _isSearching = MutableStateFlow(false)
     val isSearching = _isSearching.asStateFlow()
 
@@ -269,6 +279,7 @@ class SearchViewModel @Inject constructor(
 
     fun setQuery(text: String) {
         _query.value = text
+        _showsOutside.value = false
         searchJob?.cancel()
         stopSession()
 
@@ -339,6 +350,10 @@ class SearchViewModel @Inject constructor(
         _resultFilter.value = SearchResultFilter.ALL
     }
 
+    fun toggleOutside() {
+        _showsOutside.value = !_showsOutside.value
+    }
+
     fun setResultFilter(filter: SearchResultFilter) {
         _resultFilter.value = filter
     }
@@ -392,7 +407,14 @@ class SearchViewModel @Inject constructor(
             feedService.findNote(it)?.pubkey
         }
         val shown = _filter.value.apply(unblocked, nostrService.activeHexPubkey, feedService.followedPubkeys.value.toSet())
-        return circle?.let { SearchResultsOrder.apply(shown, sessionQuery, it) } ?: shown
+        val circle = circle ?: return shown.also { _outside.value = GlobalSearchResults() }
+        val split = SearchResultsOrder.apply(shown, sessionQuery, circle)
+        _outside.value = split.outside
+        if (!_showsOutside.value && outsideAutoOpenedFor != sessionQuery && SearchResultsOrder.opensItself(split, sessionQuery)) {
+            outsideAutoOpenedFor = sessionQuery
+            _showsOutside.value = true
+        }
+        return split.inside
     }
 
     /** Note authors from outside the follow graph have no cached profile yet. */
@@ -407,6 +429,7 @@ class SearchViewModel @Inject constructor(
         session?.cancel()
         session = null
         rawResults = GlobalSearchResults()
+        _outside.value = GlobalSearchResults()
         _foundAnything.value = false
         _sources.value = emptyList()
     }

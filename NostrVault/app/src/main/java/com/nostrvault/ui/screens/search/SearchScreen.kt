@@ -55,6 +55,8 @@ fun SearchScreen(
     val query by viewModel.query.collectAsState()
     val canSign = com.nostrvault.ui.components.rememberCanSign()
     val results by viewModel.results.collectAsState()
+    val outside by viewModel.outside.collectAsState()
+    val showsOutside by viewModel.showsOutside.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     val resultFilter by viewModel.resultFilter.collectAsState()
     val searchFilter by viewModel.filter.collectAsState()
@@ -88,7 +90,12 @@ fun SearchScreen(
     // Hashtags and links are read out of the matching notes, as on the iPhone.
     val hashtagResults = remember(results.notes, query) { SearchResultSections.hashtags(results.notes, query) }
     val linkResults = remember(results.notes) { SearchResultSections.links(results.notes) }
-    val anyResults = results.profiles.isNotEmpty() || results.notes.isNotEmpty()
+    // People and notes from outside your web fold under one line; their hashtags and links stay out with them.
+    val outsidePeople = if (SearchResultSections.shows(resultFilter, SearchResultFilter.USERS)) outside.profiles else emptyList()
+    val outsideNotes = if (SearchResultSections.shows(resultFilter, SearchResultFilter.NOTES)) outside.notes else emptyList()
+    val showOutside = outsidePeople.isNotEmpty() || outsideNotes.isNotEmpty()
+    val anyResults = results.profiles.isNotEmpty() || results.notes.isNotEmpty() ||
+        outside.profiles.isNotEmpty() || outside.notes.isNotEmpty()
     val showUsers = SearchResultSections.shows(resultFilter, SearchResultFilter.USERS) && results.profiles.isNotEmpty()
     val showNotes = SearchResultSections.shows(resultFilter, SearchResultFilter.NOTES) && results.notes.isNotEmpty()
     val showHashtags = SearchResultSections.shows(resultFilter, SearchResultFilter.HASHTAGS) && hashtagResults.isNotEmpty()
@@ -398,6 +405,7 @@ fun SearchScreen(
                     val firstSection = when {
                         showUsers -> SearchResultFilter.USERS
                         showNotes -> SearchResultFilter.NOTES
+                        showOutside -> SearchResultFilter.ALL
                         showHashtags -> SearchResultFilter.HASHTAGS
                         else -> SearchResultFilter.LINKS
                     }
@@ -423,6 +431,22 @@ fun SearchScreen(
                             item(key = "notes-header") { SearchSectionHeader("Notes", firstSection == SearchResultFilter.NOTES) }
                             items(results.notes, key = { it.id }) { note -> noteCard(note) }
                         }
+                        // Outside your web, after Notes as on iOS.
+                        searchOutsideFold(
+                            people = outsidePeople,
+                            notes = outsideNotes,
+                            open = showsOutside,
+                            onToggle = viewModel::toggleOutside,
+                            personRow = { profile, modifier ->
+                                SearchProfileRow(
+                                    profile = profile,
+                                    profiles = profiles,
+                                    onClick = { onProfileClick(profile.pubkey) },
+                                    modifier = modifier,
+                                )
+                            },
+                            noteCard = noteCard,
+                        )
                         // Hashtags written in the matching notes
                         if (showHashtags) {
                             item(key = "hashtags-header") { SearchSectionHeader("Hashtags", firstSection == SearchResultFilter.HASHTAGS) }
@@ -446,7 +470,7 @@ fun SearchScreen(
                                 )
                             }
                         }
-                        if (!showUsers && !showNotes && !showHashtags && !showLinks) {
+                        if (!showUsers && !showNotes && !showHashtags && !showLinks && !showOutside) {
                             item(key = "empty-filter") { SearchEmptyTabState(resultFilter, query) }
                         }
                     }
