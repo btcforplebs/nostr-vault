@@ -3,9 +3,11 @@ import SwiftUI
 /// What the Vault's search found, in place of the Vault's list while the bar
 /// is open: a row of section chips, then People, Notes, Articles, Media,
 /// Hashtags and Links. "All" shows the first few of each; a chip shows that
-/// section whole.
+/// section whole. Above them all, the Notes / My notes switch.
 struct VaultSearchResults: View {
     @ObservedObject var model: VaultSearchModel
+    /// The switch was flipped.
+    let onScope: (VaultSearchScope) -> Void
     let onProfile: (String) -> Void
     /// The Mac opens a note by tap; iOS rows are navigation links.
     let onNote: (String) -> Void
@@ -21,11 +23,14 @@ struct VaultSearchResults: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            VaultSearchScopePicker(scope: model.scope, onScope: onScope)
             switch model.status {
             case .idle:
                 message(icon: "magnifyingglass",
-                        title: "Search your Vault",
-                        detail: "Notes, people, hashtags, links, articles and media stored on this device's relay.")
+                        title: model.scope == .mine ? "Search your notes" : "Search your Vault",
+                        detail: model.scope == .mine
+                            ? "Notes, articles and media you wrote, stored on this device's relay."
+                            : "Notes, people, hashtags, links, articles and media stored on this device's relay.")
             case .searching where model.results.isEmpty:
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
@@ -41,7 +46,7 @@ struct VaultSearchResults: View {
                 }
                 if model.results.isEmpty {
                     message(icon: "doc.text.magnifyingglass",
-                            title: "Nothing in your Vault matches",
+                            title: model.scope == .mine ? "None of your notes match" : "Nothing in your Vault matches",
                             detail: "“\(model.resultsQuery)”")
                 } else {
                     chips

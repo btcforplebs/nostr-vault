@@ -507,6 +507,7 @@
 		309B32F737870929628309E8 /* NostrService+RelayListSave.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3418518C726F177780E29385 /* NostrService+RelayListSave.swift */; };
 		30D8A68AB9D5370D2047AD1D /* ZapService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6DAA5E7383F9175577A61C7 /* ZapService.swift */; };
 		30E12A573FF1C91A56D820CE /* PublicKeyRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD810C2E912881022A5DD25A /* PublicKeyRegistry.swift */; };
+		313828979530F731F289641A /* VaultSearchScopePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C208463C96165C4E26678981 /* VaultSearchScopePicker.swift */; };
 		31409DF40877139C30BAAF30 /* MacModeComposeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDC471CDEB623A380FC45C62 /* MacModeComposeButton.swift */; };
 		31678CD3AA73D9AE222E8179 /* NWCService+PayInvoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = F720A3057EBF19D5EE421C52 /* NWCService+PayInvoice.swift */; };
 		316A42CFB310571FFBEA0C2A /* MeshSiteRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC0483F9DFD12CDCE049B7B /* MeshSiteRetry.swift */; };
@@ -1064,6 +1065,7 @@
 		6814DBA708E44A94F8A812F1 /* VaultModeLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EE02D17B251A319CA3CAA1A /* VaultModeLists.swift */; };
 		686EE5082CCB234DF3CC056F /* ListMergeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F64A10CB00EB5F885628A70 /* ListMergeView.swift */; };
 		6870E10A5F5EE4981B2B9B00 /* NotificationRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = A757B80073FA3D8B05BABC7D /* NotificationRoute.swift */; };
+		68942CC93C4B44E76EA0B39A /* VaultSearchScopePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C208463C96165C4E26678981 /* VaultSearchScopePicker.swift */; };
 		68A3EED2EC265326D3DB2650 /* VaultNewsState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 301B08D8931695D7D8A7A086 /* VaultNewsState.swift */; };
 		68AFE6A8E06823D333CA5D58 /* WebGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F848192E0B5A6F19F740ACDB /* WebGate.swift */; };
 		68B07631D12BD4CAFDE6AF86 /* NIP49Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75ABEDE255E82775CCD37559 /* NIP49Service.swift */; };
@@ -1154,6 +1156,7 @@
 		71E58FDE4D99BD778B9B0842 /* NVShareActionAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2FCF76956407B87D86624D6 /* NVShareActionAvailability.swift */; };
 		71ED54075DC0C0DE0469B00E /* InterestListService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 427E36EC7A40E85FF4710BBD /* InterestListService.swift */; };
 		71F6E797CE55D8AB98FB386F /* HavenConfig+ActiveRelays.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC519F29A70073D2E13FFEC /* HavenConfig+ActiveRelays.swift */; };
+		720E6DD4A69929A2DB88D14E /* VaultSearchScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B1AA98538D10D552AD81372 /* VaultSearchScope.swift */; };
 		723E7B87349A4ED4D6963959 /* DMDrafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 822410AD281E73BA6C0862C1 /* DMDrafts.swift */; };
 		727A175702DD6CC3114B1248 /* AccountSwitchFlash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 237450654ADB147CD7C0C031 /* AccountSwitchFlash.swift */; };
 		728B5BEF5348F83F42B2E4A0 /* RecipeReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFD1A3AF031A0C2AF3F16E77 /* RecipeReviewView.swift */; };
@@ -2415,6 +2418,7 @@
 		EB757B8BCE5DE46338963484 /* QuotedNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0470608431CE649B6E55F7D /* QuotedNoteView.swift */; };
 		EB768E6AF0FC0E50D4DC8894 /* KeyPasswordStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = B49340F07334186EE08FB327 /* KeyPasswordStep.swift */; };
 		EB8BFAB4C98C897995CF8D9F /* FeedPickerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C1A932217ECF4B07B2089F6 /* FeedPickerMenu.swift */; };
+		EBBD318A4DCB21906E804C6D /* VaultSearchScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B1AA98538D10D552AD81372 /* VaultSearchScope.swift */; };
 		EBD75B2ECB62E5C48B37EC36 /* TutorialContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 451C1EC5891AAECA7401505F /* TutorialContent.swift */; };
 		EBDBBCF393BACEC6DCE2E45F /* StatusShareTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 950A4AEC4559ADDDA57CEE49 /* StatusShareTags.swift */; };
 		EC05976F014D8D0EA368495B /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CCBF9ECF9001937FA713A9 /* ShareSheet.swift */; };
@@ -3146,6 +3150,7 @@
 		5AAD34A0C735A84D73CA7791 /* DiscoveryReach.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryReach.swift; sourceTree = "<group>"; };
 		5AB87D6F419A5756C1655631 /* QuotedEventsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotedEventsView.swift; sourceTree = "<group>"; };
 		5ADC40DC429546740845C49A /* CalendarShareHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarShareHandler.swift; sourceTree = "<group>"; };
+		5B1AA98538D10D552AD81372 /* VaultSearchScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultSearchScope.swift; sourceTree = "<group>"; };
 		5B5F614D06F85D01C096F9F2 /* WelcomeStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeStepView.swift; sourceTree = "<group>"; };
 		5B6672D48C006A66A27305B9 /* RelayLogFastPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayLogFastPath.swift; sourceTree = "<group>"; };
 		5B779245F219AC33231205A4 /* MirrorStatusSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorStatusSheet.swift; sourceTree = "<group>"; };
@@ -3726,6 +3731,7 @@
 		C195BA5D2C81A999B4CB28B5 /* VaultSearchResults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultSearchResults.swift; sourceTree = "<group>"; };
 		C1E86774B03C002CF9C52500 /* RelayProcessManager+StartupMarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RelayProcessManager+StartupMarks.swift"; sourceTree = "<group>"; };
 		C2081C5036501377E9739B97 /* DMEchoMatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMEchoMatch.swift; sourceTree = "<group>"; };
+		C208463C96165C4E26678981 /* VaultSearchScopePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultSearchScopePicker.swift; sourceTree = "<group>"; };
 		C24B09F436EDE17DCFDCC810 /* AccountReach.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountReach.swift; sourceTree = "<group>"; };
 		C24FF7AFE3FFD1EBFFD119FA /* ZapBurstView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapBurstView.swift; sourceTree = "<group>"; };
 		C2A3F35A589A5F015A971F7D /* MeshQRCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshQRCode.swift; sourceTree = "<group>"; };
@@ -4316,6 +4322,7 @@
 				0E82F3342C8C1BDDEF52BF87 /* VaultSearch.swift */,
 				89481C18D3B08E23CC1A680F /* VaultSearchBar.swift */,
 				C195BA5D2C81A999B4CB28B5 /* VaultSearchResults.swift */,
+				C208463C96165C4E26678981 /* VaultSearchScopePicker.swift */,
 				A4006EAE38E09D8D31A4D607 /* VaultTabView.swift */,
 				2FE41D591439EC1513D51DAF /* VaultToolbar.swift */,
 				ABD60255398375B7A8772D93 /* VaultView.swift */,
@@ -5448,6 +5455,7 @@
 				17D5FD74D905BFF2FB07AFF4 /* VaultNoteScope.swift */,
 				1F9219034E71FF230B258B6C /* VaultReturnRules.swift */,
 				60872FCCCF59C889353D525F /* VaultSearchLogic.swift */,
+				5B1AA98538D10D552AD81372 /* VaultSearchScope.swift */,
 				0DCCEF6A04471A1EE6CC26A7 /* VaultSeedRelays.swift */,
 				1C421342CE309F6D5E901538 /* VaultSessionCore.swift */,
 				E3948FD4D07D86EBFBDEEBF7 /* VaultStatus.swift */,
@@ -7507,6 +7515,8 @@
 				0503E16608673524E6FB14EC /* VaultSearchBar.swift in Sources */,
 				305543D05B24677D3185A8E9 /* VaultSearchLogic.swift in Sources */,
 				3553989FE5735CE97BCB1848 /* VaultSearchResults.swift in Sources */,
+				720E6DD4A69929A2DB88D14E /* VaultSearchScope.swift in Sources */,
+				68942CC93C4B44E76EA0B39A /* VaultSearchScopePicker.swift in Sources */,
 				02D60A05486E27106615465D /* VaultSeedRelays.swift in Sources */,
 				3A942403FE036CEE30A317C9 /* VaultSessionCore.swift in Sources */,
 				D47D70ECF006E3E8495E8F7F /* VaultSocket.swift in Sources */,
@@ -8806,6 +8816,8 @@
 				7490BB8400281B5F1160493C /* VaultSearchBar.swift in Sources */,
 				AFADB5BDCA19AECC36373E4C /* VaultSearchLogic.swift in Sources */,
 				734DE40CDD82756ED3875A94 /* VaultSearchResults.swift in Sources */,
+				EBBD318A4DCB21906E804C6D /* VaultSearchScope.swift in Sources */,
+				313828979530F731F289641A /* VaultSearchScopePicker.swift in Sources */,
 				BD5BFB3341B91B7CD9B412CE /* VaultSeedRelays.swift in Sources */,
 				E5439312A59DE5AFE1C0FF61 /* VaultSessionCore.swift in Sources */,
 				0A2BC17BD50DA203AF274ECD /* VaultSocket.swift in Sources */,

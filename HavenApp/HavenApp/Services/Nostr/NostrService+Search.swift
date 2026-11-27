@@ -120,10 +120,13 @@ extension NostrService {
     ///   - allTerms: every word must appear, in any order, and an article's
     ///     title and summary count — Global search's matching. Off by
     ///     default: one phrase, as typed, in the text.
+    ///   - authors: only these authors' profiles and notes (the Vault's My
+    ///     notes). nil searches everyone.
     func localRelaySearch(query: String,
                           relayURL: URL,
                           noteKinds: [Int] = [1],
                           allTerms: Bool = false,
+                          authors: [String]? = nil,
                           completion: @escaping (GlobalSearchResults) -> Void) {
         cancelLocalRelaySearch()
 
@@ -135,7 +138,8 @@ extension NostrService {
         let base = relayURL.absoluteString
         let routes = [base, base + "/feed", base + "/inbox"].compactMap { URL(string: $0) }
 
-        let session = LocalRelaySearchSession(matcher: matcher, routes: routes, noteKinds: noteKinds) { [weak self] results in
+        let session = LocalRelaySearchSession(matcher: matcher, routes: routes, noteKinds: noteKinds,
+                                              authors: authors) { [weak self] results in
             guard let self = self else { return }
             DispatchQueue.main.async {
                 for profile in results.profiles where self.profiles[profile.pubkey] == nil {

@@ -556,7 +556,8 @@ extension VaultView {
     func runVaultSearch(now: Bool = false) {
         vaultSearch.search(searchQueryDraft, now: now,
                            nostrService: nostrService, feedService: feedService,
-                           blocked: configService.activeAccountBlockedHexPubkeys)
+                           blocked: configService.activeAccountBlockedHexPubkeys,
+                           me: configService.activeAccountHexPubkey)
     }
 
     @ViewBuilder
@@ -572,6 +573,10 @@ extension VaultView {
 
     var vaultSearchResults: some View {
         VaultSearchResults(model: vaultSearch,
+                           onScope: { scope in
+                               vaultSearch.setScope(scope)
+                               runVaultSearch(now: true)
+                           },
                            onProfile: { showingProfilePubkey = $0 },
                            onNote: { openNote($0) })
             .environment(\.openURL, nostrLinkAction)

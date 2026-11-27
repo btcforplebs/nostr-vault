@@ -40,6 +40,17 @@ enum LocalRelaySearchPlan {
         return [0] + noteKinds.filter { seen.insert($0).inserted }
     }
 
+    /// One page's filter. `authors` narrows the walk to those keys (the
+    /// Vault's My notes); the store applies it through its index before the
+    /// text is matched, so a narrowed walk is also a shorter one. nil leaves
+    /// the filter open.
+    static func pageFilter(kind: Int, until: Int64?, authors: [String]?) -> [String: Any] {
+        var filter: [String: Any] = ["kinds": [kind], "limit": pageLimit]
+        if let until { filter["until"] = until }
+        if let authors { filter["authors"] = authors }
+        return filter
+    }
+
     /// Seconds per kind the walk gets before it is cut short. Kinds are
     /// walked one after another, so the budget grows with them: profiles
     /// plus kind 1 keep the 6 s they always had.
