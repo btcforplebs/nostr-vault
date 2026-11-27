@@ -196,3 +196,33 @@ test("a quote inside a stranger's note (save: false) comes from the relays but i
   assert.equal(getQuote(ev.id).id, ev.id, "kept in memory")
   assert.equal(vault.stored.length, 0, "not written into Haven")
 })
+
+test("a note missing from the read relays and its dead hint is read from the author's 10002 write relays", async () => {
+  // Tidy 2026-11-27: the hint (nostr.mom) is down and the note sits only on one of the author's own relays.
+  const { fetchQuote, parseRef } = await load()
+  const ev = note("only on the author's relay")
+  const q = parseRef(neventEncode({ id: ev.id, author: pk, relays: ["wss://nostr.mom"] }))
+  assert.equal(q.author, pk)
+  const list = finalizeEvent({ kind: 10002, created_at: 1, content: "", tags: [
+    ["r", "wss://a"], ["r", "ws://127.0.0.1:4869"], ["r", "wss://nos.lol"], ["r", "wss://inbox.example", "read"],
+    ...Array.from({ length: 10 }, (_, i) => ["r", `wss://w${i}.example`]), ["r", "wss://home.example", "write"]] }, sk)
+  const asked = []
+  const query = async (relays, f) => {
+    asked.push({ relays, f })
+    if (f.kinds?.[0] === 10002) return [list]
+    return relays.includes("wss://w6.example") ? [ev] : []
+  }
+  const got = await fetchQuote(q, { vault: fakeVault(), relays: ["wss://a"], query })
+  assert.equal(got?.id, ev.id, "the quote draws")
+  const last = asked.at(-1)
+  assert.deepEqual(last.f, { ids: [ev.id] })
+  assert.deepEqual(last.relays, Array.from({ length: 8 }, (_, i) => `wss://w${i}.example`), "8 write relays, none asked before, no loopback/dead/read-only")
+})
+
+test("an nevent with no author and nothing found asks no relay list", async () => {
+  const { fetchQuote } = await load()
+  let calls = 0
+  const query = async () => { calls++; return [] }
+  assert.equal(await fetchQuote({ type: "note", id: note("gone2").id, relays: [] }, { vault: fakeVault(), relays: ["wss://a"], query }), null)
+  assert.equal(calls, 1)
+})
