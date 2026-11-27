@@ -3,16 +3,25 @@ import Foundation
 /// Reads and writes this device's "removed from this device" list
 /// (`DeviceRemovedHashes`, A3) in the relay data folder, from any thread.
 /// The engine and the Android app read the same file.
+///
+/// Also holds a file set aside while its delete is being checked: it moves
+/// out of the vault folder (to `removed_here_aside/`) before the servers are
+/// asked, so no address of this device (its tunnel domain, Tailscale or LAN
+/// name) can answer for it and prove its own copy (Tron, PR 2652 M1). Not a
+/// `<hash>.deleting` rename: the engine serves `<hash>.<any ext>` apart from
+/// its partial suffixes (haven-go load_blob.go), so that would still answer.
 final class DeviceRemovedStore: @unchecked Sendable {
     static let shared = DeviceRemovedStore()
+    static let asideFolder = "removed_here_aside"
 
     private let lock = NSLock()
     private var lists: [String: DeviceRemovedHashes] = [:] // by file path
+    private var inFlight = Set<String>() // hashes set aside by a delete running now
 
     /// The list in `relayDataDir` (empty when none was saved).
     func list(relayDataDir: URL) -> DeviceRemovedHashes {
         let url = DeviceRemovedHashes.fileURL(relayDataDir: relayDataDir)
-        return lock.withLock { loadLocked(url) }
+        return lock.withLock { loadLocked(url) ?? lists[url.path] ?? DeviceRemovedHashes() }
     }
 
     /// `hashes` without the ones removed here.
@@ -21,11 +30,12 @@ final class DeviceRemovedStore: @unchecked Sendable {
     }
 
     /// Puts `sha256` on `owner`'s list and writes it. false when it could not
-    /// be written: the caller must not delete, or the next run pulls it back.
+    /// be read or written: the caller must not delete, or the next run pulls
+    /// it back.
     func add(_ sha256: String, owner: String, relayDataDir: URL) -> Bool {
         let url = DeviceRemovedHashes.fileURL(relayDataDir: relayDataDir)
         return lock.withLock {
-            var list = loadLocked(url)
+            guard var list = loadLocked(url) else { return false }
             list.add(sha256, owner: owner)
             guard list.contains(sha256), saveLocked(list, to: url) else { return false }
             lists[url.path] = list
@@ -37,28 +47,81 @@ final class DeviceRemovedStore: @unchecked Sendable {
     /// or a delete that did not happen).
     func remove(_ sha256: String, relayDataDir: URL) {
         let url = DeviceRemovedHashes.fileURL(relayDataDir: relayDataDir)
-        lock.withLock {
-            var list = loadLocked(url)
-            guard list.contains(sha256) else { return }
-            list.remove(sha256)
-            if saveLocked(list, to: url) { lists[url.path] = list }
+        lock.withLock { removeLocked(sha256, url: url) }
+    }
+
+    // MARK: Set aside while the delete is checked
+
+    /// Moves `file` (the vault copy of `sha256`) out of the vault folder.
+    /// The new place, or nil when it could not be moved (then nothing changed).
+    func setAside(_ file: URL, sha256: String, relayDataDir: URL) -> URL? {
+        let dir = relayDataDir.standardizedFileURL.appendingPathComponent(Self.asideFolder, isDirectory: true)
+        let aside = dir.appendingPathComponent(file.lastPathComponent)
+        return lock.withLock {
+            do {
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                if FileManager.default.fileExists(atPath: aside.path) { try FileManager.default.removeItem(at: aside) }
+                try FileManager.default.moveItem(at: file, to: aside)
+            } catch {
+                return nil
+            }
+            inFlight.insert(sha256.lowercased())
+            return aside
         }
     }
 
-    /// The file's list, read again each time it is asked for: one read of a
-    /// small file, and a cached copy could miss a write by another process.
-    /// An unreadable file keeps the last list read, so a half-written file
-    /// cannot let everything back in (as the engine does).
-    private func loadLocked(_ url: URL) -> DeviceRemovedHashes {
-        guard let data = try? Data(contentsOf: url) else {
-            if !FileManager.default.fileExists(atPath: url.path) { lists[url.path] = nil; return DeviceRemovedHashes() }
-            return lists[url.path] ?? DeviceRemovedHashes()
+    /// The delete of `sha256` is over (deleted, or put back).
+    func finished(_ sha256: String) {
+        lock.withLock { _ = inFlight.remove(sha256.lowercased()) }
+    }
+
+    /// Puts back every file a delete left aside and never finished (the app
+    /// quit mid-check), and takes it off the list: it is still here.
+    func recoverSetAside(relayDataDir: URL, vault: URL) {
+        let dir = relayDataDir.standardizedFileURL.appendingPathComponent(Self.asideFolder, isDirectory: true)
+        let url = DeviceRemovedHashes.fileURL(relayDataDir: relayDataDir)
+        lock.withLock {
+            guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path), !names.isEmpty else { return }
+            for name in names {
+                let hash = String(name.prefix(64)).lowercased()
+                guard MediaSizeCache.isHash(hash), !inFlight.contains(hash) else { continue }
+                let from = dir.appendingPathComponent(name), to = vault.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: to.path) {
+                    try? FileManager.default.removeItem(at: from)
+                } else if (try? FileManager.default.moveItem(at: from, to: to)) == nil {
+                    continue
+                }
+                removeLocked(hash, url: url)
+            }
         }
-        guard let saved = try? JSONDecoder().decode(DeviceRemovedHashes.self, from: data) else {
-            return lists[url.path] ?? DeviceRemovedHashes()
+    }
+
+    // MARK: File
+
+    private func removeLocked(_ sha256: String, url: URL) {
+        guard var list = loadLocked(url), list.contains(sha256) else { return }
+        list.remove(sha256)
+        if saveLocked(list, to: url) { lists[url.path] = list }
+    }
+
+    /// The file's list, read again each time: one read of a small file, and
+    /// a cached copy could miss a write by another process. No file: empty.
+    /// A file that could not be read just now (iOS data protection, I/O):
+    /// nil, so nothing is written over it. A file that is not a list is set
+    /// aside as `removed_here.json.corrupt-<time>` and kept, never written
+    /// over by the next add (Tron, PR 2652 S2); then the last list read in
+    /// this process carries on.
+    private func loadLocked(_ url: URL) -> DeviceRemovedHashes? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return DeviceRemovedHashes() }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        if let saved = try? JSONDecoder().decode(DeviceRemovedHashes.self, from: data) {
+            lists[url.path] = saved
+            return saved
         }
-        lists[url.path] = saved
-        return saved
+        let aside = url.deletingLastPathComponent()
+            .appendingPathComponent(url.lastPathComponent + ".corrupt-\(Int(Date().timeIntervalSince1970))")
+        guard (try? FileManager.default.moveItem(at: url, to: aside)) != nil else { return nil }
+        return lists[url.path] ?? DeviceRemovedHashes()
     }
 
     private func saveLocked(_ list: DeviceRemovedHashes, to url: URL) -> Bool {

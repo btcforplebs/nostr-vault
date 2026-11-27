@@ -4,8 +4,8 @@ import Foundation
 /// §4): removes this device's vault copy of one file and keeps it on the
 /// servers. The file goes only after a fresh check proves another place holds
 /// the same bytes (`DeleteHereGate`), and it goes on the "removed here" list
-/// first (`DeviceRemovedStore`) so Auto-Mirror and the imports
-/// never pull it back. Twin: Android `service/blossom/BlossomServiceDeleteHere.kt`.
+/// first (`DeviceRemovedStore`) so Auto-Mirror (servers and note media)
+/// never pulls it back. Twin: Android `service/blossom/BlossomServiceDeleteHere.kt`.
 extension BlossomService {
     enum DeleteHereResult: Equatable {
         case deleted(holders: [String])
@@ -26,17 +26,44 @@ extension BlossomService {
             // On a Mac its own relay and the other vaults are never counted:
             // only media servers can prove the copy.
             let all = config.activeBlossomMirrors.filter { !HavenConfig.isHomeNetworkServer($0) }
-            let own = Set(config.vaultMediaServers.compactMap { URL(string: $0)?.host?.lowercased() })
+            // Its own tunnel domain too: it can reach Media Servers by hand or by 10063 adoption (Tron, PR 2652 M1).
+            var own = Set(config.vaultMediaServers.compactMap { URL(string: $0)?.host?.lowercased() })
+            if let host = DeleteHereGate.relayHost(config.sanitizedRelayURL) { own.insert(host) }
             #endif
             return (configService.relayDataDir, config.blossomPath, nostrService.ownerHexPubkey, all, own)
         }
         let vault = relayDataDir.appendingPathComponent(blossomPath)
+        let store = DeviceRemovedStore.shared
+        store.recoverSetAside(relayDataDir: relayDataDir, vault: vault)
         guard let file = Self.localVaultFile(hash: hash, in: vault),
               let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.int64Value,
               size > 0 else {
             return .refused("This file isn't on this device.")
         }
         let candidates = DeleteHereGate.candidates(servers.filter { !MeshDeleteTargets.isMeshAddress($0) }, ownHosts: ownHosts)
+        guard !candidates.isEmpty else {
+            return .refused("No media server or other device to keep it. Copy it to a server first.")
+        }
+
+        // On the list first, so a run starting now skips it; then out of the
+        // vault folder, so no address of this device can answer the check
+        // with its own copy (Tron, PR 2652 M1).
+        guard store.add(hash, owner: owner, relayDataDir: relayDataDir) else {
+            return .failed("Couldn't save the list of files removed here, so nothing was deleted.")
+        }
+        guard let aside = store.setAside(file, sha256: hash, relayDataDir: relayDataDir) else {
+            store.remove(hash, relayDataDir: relayDataDir)
+            return .failed("Couldn't remove the file from this device.")
+        }
+        defer { store.finished(hash) }
+        func putBack() {
+            if (try? FileManager.default.moveItem(at: aside, to: file)) != nil {
+                store.remove(hash, relayDataDir: relayDataDir)
+            } else {
+                // Left aside and listed: the next delete-here run puts it back.
+                logger.error("deleteHere: \(hash.prefix(8)) not put back; recovered on the next run")
+            }
+        }
 
         // Asked now, every one, no cached answer.
         let answers = await withTaskGroup(of: (String, DeleteHereGate.Answer?).self) { group in
@@ -47,24 +74,20 @@ extension BlossomService {
         }
         let decision = DeleteHereGate.decide(answers: answers, sha256: hash, localSize: size)
         guard case .allowed(let holders) = decision else {
+            putBack()
             if case .refused(let why) = decision { return .refused(why) }
             return .refused("Not deleted.")
         }
-
-        // On the list before the file goes, so a run starting now skips it.
-        guard DeviceRemovedStore.shared.add(hash, owner: owner, relayDataDir: relayDataDir) else {
-            return .failed("Couldn't save the list of files removed here, so nothing was deleted.")
+        do {
+            try FileManager.default.removeItem(at: aside)
+        } catch {
+            putBack()
+            logger.error("deleteHere: \(hash.prefix(8)) not removed: \(error.localizedDescription)")
+            return .failed("Couldn't remove the file from this device.")
         }
         #if os(iOS)
         await MainActor.run { HomeVaultSender.shared.forget(blobSha256: hash) }
         #endif
-        do {
-            try FileManager.default.removeItem(at: file)
-        } catch {
-            DeviceRemovedStore.shared.remove(hash, relayDataDir: relayDataDir)
-            logger.error("deleteHere: \(hash.prefix(8)) not removed: \(error.localizedDescription)")
-            return .failed("Couldn't remove the file from this device.")
-        }
         logger.info("deleteHere: removed \(hash.prefix(8)) from this device; held by \(holders.count) server(s)")
         return .deleted(holders: holders)
     }
@@ -81,14 +104,11 @@ extension BlossomService {
     /// (a GET, not HEAD: some servers keep answering HEAD for blobs they have
     /// dropped). nil when it could not be asked.
     private func deleteHereProbe(server: String, sha256: String) async -> DeleteHereGate.Answer? {
-        guard var base = URL(string: server) else { return nil }
-        if base.scheme == "http", var c = URLComponents(url: base, resolvingAgainstBaseURL: false) {
-            c.scheme = "https"
-            if let u = c.url { base = u }
-        }
-        var request = URLRequest(url: base.appendingPathComponent(sha256))
+        guard let url = DeleteHereGate.probeURL(server: server, sha256: sha256, nonce: UUID().uuidString.lowercased()) else { return nil }
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.timeoutInterval = 10
         do {
@@ -99,15 +119,22 @@ extension BlossomService {
                                          contentType: http.value(forHTTPHeaderField: "Content-Type"),
                                          contentLength: http.value(forHTTPHeaderField: "Content-Length"),
                                          contentRange: http.value(forHTTPHeaderField: "Content-Range"),
-                                         finalURL: http.url)
+                                         finalURL: http.url,
+                                         cacheStatus: http.value(forHTTPHeaderField: "cf-cache-status") ?? http.value(forHTTPHeaderField: "x-cache"),
+                                         age: http.value(forHTTPHeaderField: "Age"))
         } catch {
             return nil
         }
     }
 
     /// The relay data folder, where the "removed here" list lives.
+    /// First puts back any file a delete left aside when the app quit mid-check.
     func removedHereDir() async -> URL {
-        await MainActor.run { configService.relayDataDir }
+        let (dir, vault) = await MainActor.run {
+            (configService.relayDataDir, configService.relayDataDir.appendingPathComponent(configService.config.blossomPath))
+        }
+        DeviceRemovedStore.shared.recoverSetAside(relayDataDir: dir, vault: vault)
+        return dir
     }
 
     /// `hashes` without the ones removed from this device (every pass that

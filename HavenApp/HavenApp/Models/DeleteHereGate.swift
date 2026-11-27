@@ -18,6 +18,10 @@ enum DeleteHereGate {
         var contentRange: String?
         /// Where redirects ended.
         var finalURL: URL?
+        /// `cf-cache-status` (or `x-cache`): a HIT is a CDN's copy, not the server's.
+        var cacheStatus: String? = nil
+        /// `Age`: seconds a cache has held this answer.
+        var age: String? = nil
     }
 
     enum Decision: Equatable {
@@ -31,9 +35,13 @@ enum DeleteHereGate {
     /// all. A full 200 must give the whole length; a 206 must give the total
     /// in `Content-Range: bytes 0-0/<total>`. Anything else (a placeholder
     /// page, a redirect away from the hash, an empty or wrong length, no
-    /// length at all) proves nothing.
+    /// length at all) proves nothing. Nor does an answer a cache gave (a
+    /// HIT, or an `Age` above 0): a "Cache Everything" edge can keep a blob
+    /// for days after the origin dropped it (Tron, PR 2652 S1).
     static func proves(_ a: Answer, sha256: String, localSize: Int64) -> Bool {
         guard localSize > 0 else { return false }
+        if let cache = a.cacheStatus?.lowercased(), cache.contains("hit") { return false }
+        if let age = a.age?.trimmingCharacters(in: .whitespaces), !age.isEmpty, age != "0" { return false }
         if let type = a.contentType?.lowercased(), type.hasPrefix("text/html") { return false }
         if let url = a.finalURL, !url.absoluteString.lowercased().contains(sha256.lowercased()) { return false }
         switch a.status {
@@ -46,6 +54,27 @@ enum DeleteHereGate {
         default:
             return false
         }
+    }
+
+    /// The probe for `sha256` on `server`: `GET <server>/<sha256>?nv=<nonce>`,
+    /// so no cache can answer it from an earlier request. nil for a bad URL.
+    static func probeURL(server: String, sha256: String, nonce: String) -> URL? {
+        guard var base = URL(string: server), base.host != nil else { return nil }
+        if base.scheme == "http", var c = URLComponents(url: base, resolvingAgainstBaseURL: false) {
+            c.scheme = "https"
+            if let u = c.url { base = u }
+        }
+        guard var c = URLComponents(url: base.appendingPathComponent(sha256), resolvingAgainstBaseURL: false) else { return nil }
+        c.queryItems = [URLQueryItem(name: "nv", value: nonce)]
+        return c.url
+    }
+
+    /// The host of this Mac's own public relay address (`sanitizedRelayURL`,
+    /// `host[:port][/path]`, the tunnel domain), nil when there is none.
+    static func relayHost(_ sanitizedRelayURL: String) -> String? {
+        let trimmed = sanitizedRelayURL.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        return URL(string: "https://" + trimmed)?.host?.lowercased()
     }
 
     /// `servers` minus this device's own relay (loopback, or `ownHosts`).

@@ -78,4 +78,32 @@ final class DeleteHereGateTests: XCTestCase {
         let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(mine)) as? [String: [String: [String]]]
         XCTAssertEqual(json, ["byAccount": [owner: [sha]]])
     }
+
+    /// S1: a cache's answer proves nothing; the probe always misses the cache.
+    func testCachedAnswerProvesNothing() {
+        var a = DeleteHereGate.Answer(status: 206, contentType: "image/jpeg", contentLength: "1",
+                                      contentRange: "bytes 0-0/100", finalURL: nil)
+        XCTAssertTrue(DeleteHereGate.proves(a, sha256: sha, localSize: 100))
+        a.cacheStatus = "HIT"
+        XCTAssertFalse(DeleteHereGate.proves(a, sha256: sha, localSize: 100))
+        a.cacheStatus = "DYNAMIC"
+        a.age = "0"
+        XCTAssertTrue(DeleteHereGate.proves(a, sha256: sha, localSize: 100))
+        a.age = "3600"
+        XCTAssertFalse(DeleteHereGate.proves(a, sha256: sha, localSize: 100))
+
+        let url = DeleteHereGate.probeURL(server: "http://a.example/media/", sha256: sha, nonce: "n1")
+        XCTAssertEqual(url?.absoluteString, "https://a.example/media/\(sha)?nv=n1")
+        XCTAssertNil(DeleteHereGate.probeURL(server: "nonsense", sha256: sha, nonce: "n"))
+    }
+
+    /// M1: the Mac's own tunnel domain is one of its own hosts.
+    func testRelayHostFromSanitizedRelayURL() {
+        XCTAssertEqual(DeleteHereGate.relayHost("Vault.Example.com/relay"), "vault.example.com")
+        XCTAssertEqual(DeleteHereGate.relayHost("vault.example.com:8443"), "vault.example.com")
+        XCTAssertNil(DeleteHereGate.relayHost(" "))
+        let c = DeleteHereGate.candidates(["https://vault.example.com", "https://a.example"],
+                                          ownHosts: [DeleteHereGate.relayHost("vault.example.com/relay")!])
+        XCTAssertEqual(c, ["https://a.example"])
+    }
 }

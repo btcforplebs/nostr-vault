@@ -1,10 +1,12 @@
 import Foundation
 
 /// Files the owner removed from THIS device with "Delete from this device"
-/// (A3), by account (hex pubkey) and sha256. Every pass that fills the vault
-/// on its own (Auto-Mirror from servers, the note-media pass, Moving-in and
-/// setup imports) skips them, or the copy would be back within hours. Only
-/// an explicit Save to Vault of that file takes it off the list.
+/// (A3), by account (hex pubkey) and sha256. The passes that fill the vault
+/// on their own (Auto-Mirror from servers and from note media, and in the
+/// engine the mesh copy catch-up and the mesh door) skip them, or the copy
+/// would be back within hours. Explicit bulk actions (Moving in, setup's
+/// import, zip and emoji restores) do not: at worst they bring a file back,
+/// nothing is lost. An explicit Save to Vault takes it off the list.
 ///
 /// One file, `removed_here.json` in the relay data folder, shared with the
 /// engine (haven-go copyv2_removed_here.go: the copy v2 catch-up and the
