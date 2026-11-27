@@ -6,6 +6,7 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.service.BlossomService
+import com.nostrvault.service.deleteHere
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.MediaSaveService
 import com.nostrvault.service.DELETE_NO_HASH_MESSAGE
@@ -197,6 +198,12 @@ class FeedMediaMirrorViewModel @Inject constructor(
             _deleting.value = true
             try {
                 when (scope) {
+                    // Not offered from a post's media; handled the same way if it ever is.
+                    DeleteScope.HERE -> when (val r = blossomService.deleteHere(sha)) {
+                        is com.nostrvault.service.DeleteHereResult.Deleted -> onMessage("Removed from this device.", ok = true)
+                        is com.nostrvault.service.DeleteHereResult.Refused -> onMessage(r.why, ok = false)
+                        is com.nostrvault.service.DeleteHereResult.Failed -> onMessage(r.why, ok = false)
+                    }
                     DeleteScope.MIRRORS -> {
                         val report = withContext(Dispatchers.IO) { blossomService.deleteFromServers(sha, url, includeHomeVault = false) }
                         refreshCloudBadges(sha)

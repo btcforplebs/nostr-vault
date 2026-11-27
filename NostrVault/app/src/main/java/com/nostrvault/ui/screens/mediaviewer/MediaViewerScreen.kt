@@ -434,6 +434,7 @@ fun MediaViewerScreen(
             fun confirm(deletePosts: Boolean) {
                 when (scope) {
                     DeleteScope.MIRRORS -> viewModel.deleteFromMirrors(currentItem, sticky = true)
+                    DeleteScope.HERE -> viewModel.deleteHere(currentItem)
                     DeleteScope.EVERYWHERE -> viewModel.deleteEverywhere(currentItem, sticky = true, deletePosts = deletePosts) { allGone ->
                         if (allGone) onBack()
                     }

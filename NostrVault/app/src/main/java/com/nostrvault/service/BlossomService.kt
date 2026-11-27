@@ -452,6 +452,7 @@ class BlossomService @Inject constructor(
      * `MediaBackupActions.saveToVault`, which guards on `blossomHash(in:)`.
      */
     suspend fun saveUrlToVault(url: String): VaultSaveResult {
+        blossomHashInUrl(url)?.let { clearRemovedHere(it) } // saved here on purpose: off the "removed here" list
         val saved = mirrorUrlToLocal(url) ?: return VaultSaveResult(VaultSave.FAILED, null)
         val hash = blossomHashInUrl(url)
         if (hash == null || configStore.config.value.activeBlossomMirrors.isEmpty()) {
@@ -592,7 +593,7 @@ class BlossomService @Inject constructor(
             }
         }
 
-        val missing = missingSet.toList()
+        val missing = withoutRemovedHere(missingSet.toList()) // removed from this device stays off it (D3)
         uploadedDates.keys.retainAll(missing.mapTo(HashSet()) { it.lowercase() })
         onLogMessage?.invoke("Found ${missing.size} blobs to mirror")
         if (missing.isEmpty()) return@withContext 0

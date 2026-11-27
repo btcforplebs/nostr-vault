@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.BlossomService
+import com.nostrvault.service.deleteHere
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.MediaSaveService
 import com.nostrvault.service.NostrService
@@ -149,6 +150,29 @@ class MediaViewerViewModel @Inject constructor(
                 ok -> notificationManager.showToast(message)
                 report.failed.isEmpty() -> notificationManager.showError(message)
                 else -> reportLeftover(message, sticky)
+            }
+            checkMirrors(item.sha256)
+            onDone()
+        }
+    }
+
+    /**
+     * "Delete from this device" (D3): this phone's copy goes only when a server, asked now, proves a full copy
+     * ([com.nostrvault.service.deleteHere]); it is then kept off this phone until Save to Vault.
+     */
+    fun deleteHere(item: BlossomMediaItem, onDone: () -> Unit = {}) {
+        if (!isBlobHash(item.sha256)) {
+            notificationManager.showError(DELETE_NO_HASH_MESSAGE)
+            return
+        }
+        viewModelScope.launch {
+            when (val r = blossomService.deleteHere(item.sha256)) {
+                is com.nostrvault.service.DeleteHereResult.Deleted -> {
+                    val hosts = r.holders.mapNotNull { runCatching { java.net.URI(it).host }.getOrNull() }
+                    notificationManager.showToast("Removed from this device. Still on ${hosts.singleOrNull() ?: "${hosts.size} places"}.")
+                }
+                is com.nostrvault.service.DeleteHereResult.Refused -> notificationManager.showError(r.why)
+                is com.nostrvault.service.DeleteHereResult.Failed -> notificationManager.showError(r.why)
             }
             checkMirrors(item.sha256)
             onDone()

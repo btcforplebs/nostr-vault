@@ -108,7 +108,8 @@ internal fun mediaModerationTarget(author: String?, ownerHex: String, activeHex:
     author?.takeIf { it.isNotEmpty() && it != ownerHex && it != activeHex }
 
 /** Scope for a pending destructive delete in MediaViewerScreen. */
-enum class DeleteScope { MIRRORS, EVERYWHERE }
+/** HERE: "Delete from this device" (D3), only for a file on this phone. */
+enum class DeleteScope { MIRRORS, EVERYWHERE, HERE }
 
 /** Media type filter matching iOS MediaTypeFilter. */
 enum class MediaTypeFilter {

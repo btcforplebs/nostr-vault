@@ -103,6 +103,18 @@ internal fun MediaItemContextMenu(
         // Order as iOS: saving and mirroring, then the deletes (each asks
         // for confirmation first, as in the viewer), then Mark as 404.
         HorizontalDivider()
+        if (item.isLocal) {
+            DropdownMenuItem(
+                text = { Text("Delete from this device", color = ErrorRed) },
+                leadingIcon = {
+                    Icon(NostrVaultIcons.Delete, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+                },
+                onClick = {
+                    onDismiss()
+                    onDelete(DeleteScope.HERE)
+                },
+            )
+        }
         DropdownMenuItem(
             text = { Text("Delete from media servers", color = ErrorRed) },
             leadingIcon = {

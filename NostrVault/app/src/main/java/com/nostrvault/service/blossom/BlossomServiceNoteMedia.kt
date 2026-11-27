@@ -58,7 +58,9 @@ internal suspend fun BlossomService.copyNoteMediaIn(
         }
         noteDates.size < room
     }
-    val toImport = noteDates.keys.toList()
+    // A file removed from this device (D3) is not fetched again.
+    val removed = removedHereList()
+    val toImport = noteDates.keys.filterNot { url -> blossomHashInUrl(url)?.let(removed::contains) == true }
     onLogMessage?.invoke("Found $linkCount media link(s) in $noteCount note(s)")
     if (toImport.isEmpty()) {
         onLogMessage?.invoke("All note media already exists locally")

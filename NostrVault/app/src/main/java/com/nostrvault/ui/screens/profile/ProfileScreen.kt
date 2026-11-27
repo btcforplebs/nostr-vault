@@ -714,6 +714,7 @@ fun ProfileScreen(
                 com.nostrvault.ui.screens.DeleteScope.MIRRORS -> mediaActions.deleteFromMirrors(item)
                 com.nostrvault.ui.screens.DeleteScope.EVERYWHERE ->
                     mediaActions.deleteEverywhere(item, deletePosts = deletePosts) {}
+                com.nostrvault.ui.screens.DeleteScope.HERE -> mediaActions.deleteHere(item)
             }
         }
         com.nostrvault.ui.screens.DeleteBlobConfirmDialog(
