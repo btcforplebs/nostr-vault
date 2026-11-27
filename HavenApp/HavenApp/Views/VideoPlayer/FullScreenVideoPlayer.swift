@@ -181,7 +181,9 @@ struct FullScreenVideoPlayer: View {
     /// player. Needs a way to close the viewer (`onPiPStart`); live streams
     /// have their own button in their window.
     private var minimizeAction: (() -> Void)? {
-        guard let close = onPiPStart, !isLive else { return nil }
+        // A decrypted DM file stays out of the bar: it would outlive Delete
+        // Account, Clear Cache and switching accounts.
+        guard let close = onPiPStart, !isLive, !DMFileTransfer.isOpenedFile(url) else { return nil }
         if sharedPlayer != nil { return sharedIsClip ? close : nil }
         return { minimize(then: close) }
     }
@@ -193,6 +195,7 @@ struct FullScreenVideoPlayer: View {
     private func minimize(then close: () -> Void) {
         guard let player, let item = player.currentItem else { return }
         let playing = (item.asset as? AVURLAsset)?.url ?? meshFile ?? url
+        guard !DMFileTransfer.isOpenedFile(playing) else { return }
         let time = CMTimeGetSeconds(player.currentTime())
         // PiP on this clip would play under the mini player.
         if PiPManager.shared.isShowing(url) { PiPManager.shared.stop() }
@@ -203,7 +206,8 @@ struct FullScreenVideoPlayer: View {
         VideoNowPlaying.shared.end(player: player)
         let author = (envNote ?? tappedNote).flatMap { NostrService.shared.profiles[$0.author] }
         MusicPlayerService.shared.playVideo(
-            asset: item.asset, url: playing, at: time, duration: CMTimeGetSeconds(item.duration),
+            asset: item.asset, url: playing,
+            mimeOverride: VideoPlaybackService.shared.mimeOverride(for: url), at: time, duration: CMTimeGetSeconds(item.duration),
             title: Self.nowPlayingTitle, artist: author?.bestName ?? "Nostr Vault",
             artworkURL: author?.pictureURL
         )

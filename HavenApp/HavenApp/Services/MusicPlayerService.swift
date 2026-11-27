@@ -80,6 +80,10 @@ final class MusicPlayerService: ObservableObject {
     private var unshuffledQueue: [PlayerTrack] = []
     /// The minimized clip's asset and the time to start at.
     var videoHandOff: VideoHandOff?
+    /// A minimized clip is seeking to the viewer's time before it plays: it
+    /// already counts as playing (the session and the bar's button), so the
+    /// paused player in the meantime must not flip that back.
+    private var awaitsHandOffSeek = false
 
     var current: PlayerTrack? { queue.indices.contains(index) ? queue[index] : nil }
     /// The player behind a live item. The stream window shows its video
@@ -119,7 +123,7 @@ final class MusicPlayerService: ObservableObject {
                 // The stream window's own controls play and pause this player
                 // too; keep the mini player's button and the lock screen true.
                 let playing = status != .paused
-                if self.current?.sharesPlayer == true, playing != self.isPlaying {
+                if !self.awaitsHandOffSeek, self.current?.sharesPlayer == true, playing != self.isPlaying {
                     self.isPlaying = playing
                     self.updateNowPlaying()
                 }
@@ -292,6 +296,7 @@ final class MusicPlayerService: ObservableObject {
         queue = []
         liveStream = nil
         videoHandOff = nil
+        awaitsHandOffSeek = false
         isShuffled = false
         unshuffledQueue = []
         index = 0
@@ -306,9 +311,10 @@ final class MusicPlayerService: ObservableObject {
 
     private func loadCurrent(autoplay: Bool) {
         guard let track = current, let url = MediaCacheService.offMeshURL(track.audioURL) else { return }
-        let item = handedOverItem(for: track) ?? makeItem(url: url, isLive: track.isLive)
+        let item = handedOverItem(for: track, url: url) ?? makeItem(url: url, isLive: track.isLive)
         // A minimized clip picks up at the viewer's time, then plays.
-        let waitsForSeek = waitsForHandOffSeek(track)
+        let seeksFirst = autoplay && waitsForHandOffSeek(track)
+        awaitsHandOffSeek = seeksFirst
         statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             let seconds = item.duration.seconds
             Task { @MainActor in
@@ -321,9 +327,15 @@ final class MusicPlayerService: ObservableObject {
                                      toleranceBefore: .zero, toleranceAfter: .zero) { _ in
                         Task { @MainActor in
                             guard self.player.currentItem === item else { return }
-                            if autoplay { self.startPlayback() } else { self.updateNowPlaying() }
+                            self.awaitsHandOffSeek = false
+                            // Paused from the bar during the seek: stay paused.
+                            if autoplay && self.isPlaying { self.startPlayback() } else { self.updateNowPlaying() }
                         }
                     }
+                }
+                if item.status == .failed, self.player.currentItem === item {
+                    self.awaitsHandOffSeek = false
+                    self.dropHandOffStart(for: track)
                 }
                 // Past an unplayable song, but never round again under repeat
                 // all: a queue where nothing plays would spin forever.
@@ -350,9 +362,21 @@ final class MusicPlayerService: ObservableObject {
         // A clip reopened full screen can set its speed on this player.
         player.defaultRate = 1
         refreshRemoteCommandStates()
+        // Whatever played before must not run the clip from 0:00 meanwhile.
+        if seeksFirst { player.pause() }
         player.replaceCurrentItem(with: item)
         loadArtwork(for: track)
-        if autoplay && !waitsForSeek { startPlayback() } else { updateNowPlaying() }
+        if seeksFirst {
+            // The sound is this clip's from the tap: the viewer letting go of
+            // the session mid-seek must not hand it back to other apps.
+            activateSession()
+            isPlaying = true
+            updateNowPlaying()
+        } else if autoplay {
+            startPlayback()
+        } else {
+            updateNowPlaying()
+        }
     }
 
     /// A live HLS stream plays through `HLSLowLatencyStripper`: zap.stream's

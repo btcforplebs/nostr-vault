@@ -15,6 +15,12 @@ struct PlayerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        content
+            // A clip that played to its end, or a stop: nothing left to show.
+            .onChange(of: player.current == nil) { _, ended in if ended { dismiss() } }
+    }
+
+    @ViewBuilder private var content: some View {
         if player.current?.isLive == true, let stream = player.liveStream {
             // The window shows the mini player's own video, so the stream
             // plays straight through opening it and swiping it away.

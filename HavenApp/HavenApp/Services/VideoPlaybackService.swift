@@ -274,6 +274,15 @@ final class VideoPlaybackService: @unchecked Sendable {
         return out
     }
 
+    /// The MIME type the source now playing for `url` was opened as, so a
+    /// clip handed to the mini player can be opened again the same way.
+    func mimeOverride(for url: URL) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let ladder = ladders[url], ladder.candidates.indices.contains(ladder.index) else { return nil }
+        return ladder.candidates[ladder.index].mimeOverride
+    }
+
     private func makeItem(for candidate: Candidate) -> AVPlayerItem {
         let asset = AVURLAsset(url: candidate.assetURL, options: candidate.assetOptions)
         if candidate.lowLatencyOff {

@@ -2,13 +2,16 @@ import AVFoundation
 import Foundation
 
 /// A full-screen clip handed to the mini player (Minimize): the asset the
-/// viewer was playing — a cached or mesh-rescued file, with its MIME
-/// override — and where to pick it up.
+/// viewer was playing — a cached or mesh-rescued file — the MIME type it was
+/// opened as, and where to pick it up.
 struct VideoHandOff {
     let trackID: String
-    let asset: AVAsset
-    /// Seconds in; cleared once used, so a reload after a failure starts
-    /// from the bar's own time rather than the tap's.
+    /// Used for the first load only: an asset keeps a load failure, so a
+    /// reload opens the file again (`mimeOverride`).
+    var asset: AVAsset?
+    let mimeOverride: String?
+    /// Seconds in; cleared once used or once the item fails, so a reload
+    /// starts from the bar's own time rather than the tap's.
     var start: Double?
 }
 
@@ -29,10 +32,14 @@ extension MusicPlayerService {
     /// Minimize on a full-screen clip: its sound carries on in the mini
     /// player from `start`, and plays once. Replaces whatever was queued,
     /// as a minimized live stream does.
-    func playVideo(asset: AVAsset, url: URL, at start: Double, duration: Double?,
+    /// Never a decrypted DM file: the bar outlives Delete Account, Clear
+    /// Cache and account switches, which remove those copies.
+    func playVideo(asset: AVAsset, url: URL, mimeOverride: String?, at start: Double, duration: Double?,
                    title: String, artist: String, artworkURL: URL?) {
+        guard !DMFileTransfer.isOpenedFile(url) else { return }
         let id = "video:\(url.absoluteString)"
-        videoHandOff = VideoHandOff(trackID: id, asset: asset, start: start.isFinite ? max(0, start) : nil)
+        videoHandOff = VideoHandOff(trackID: id, asset: asset, mimeOverride: mimeOverride,
+                                    start: start.isFinite ? max(0, start) : nil)
         play(tracks: [PlayerTrack(
             id: id, title: title, artist: artist, artworkURL: artworkURL, audioURL: url,
             duration: duration.flatMap { $0.isFinite && $0 > 0 ? Int($0) : nil }, isVideo: true
@@ -40,10 +47,23 @@ extension MusicPlayerService {
     }
 
     /// The viewer's own asset in a new item, so a local or mesh file and its
-    /// MIME type carry over and nothing downloads again.
-    func handedOverItem(for track: PlayerTrack) -> AVPlayerItem? {
+    /// MIME type carry over and nothing downloads again. Later loads (resume
+    /// after a failure) open the URL fresh with the same MIME type.
+    func handedOverItem(for track: PlayerTrack, url: URL) -> AVPlayerItem? {
         guard track.isVideo, let handOff = videoHandOff, handOff.trackID == track.id else { return nil }
-        return AVPlayerItem(asset: handOff.asset)
+        if let asset = handOff.asset {
+            videoHandOff?.asset = nil
+            return AVPlayerItem(asset: asset)
+        }
+        let options = handOff.mimeOverride.map { [AVURLAssetOverrideMIMETypeKey: $0] } ?? [:]
+        return AVPlayerItem(asset: AVURLAsset(url: url, options: options))
+    }
+
+    /// The handed-over clip failed before its first seek: a reload starts
+    /// from the bar's time, not back at the tap's.
+    func dropHandOffStart(for track: PlayerTrack) {
+        guard track.isVideo, videoHandOff?.trackID == track.id else { return }
+        videoHandOff?.start = nil
     }
 
     /// Where the handed-over clip starts, once: a reload after a failure
