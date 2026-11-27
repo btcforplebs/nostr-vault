@@ -29,4 +29,13 @@ class MediaMenuTargetTest {
     fun caseOfTheHashDoesNotMatter() {
         assertEquals(true, isMenuTarget("AB", item("ab")))
     }
+
+    @Test
+    fun targetClearsWhenItsFileLeavesTheList() {
+        // Deleted while its menu is open: the target goes, so the menu cannot
+        // reopen by itself when the same file comes back.
+        assertEquals(null, menuTargetAfter("bb", listOf(item("aa"), item("cc"))))
+        assertEquals("BB", menuTargetAfter("BB", listOf(item("aa"), item("bb"))))
+        assertEquals(null, menuTargetAfter(null, listOf(item("aa"))))
+    }
 }

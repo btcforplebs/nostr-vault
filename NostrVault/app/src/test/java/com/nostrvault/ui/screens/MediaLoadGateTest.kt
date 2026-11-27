@@ -41,4 +41,13 @@ class MediaLoadGateTest {
         val reload = gate.begin()      // the reload after the delete: a server kept the file
         assertEquals(listOf("bb"), gate.result(reload, listOf(item("bb")))?.map { it.sha256 })
     }
+
+    @Test
+    fun fileThatComesBackDuringTheSameLoadShowsAgain() {
+        val gate = MediaLoadGate()
+        val load = gate.begin()
+        gate.removed("bb")             // another device deletes it
+        gate.landed("BB")              // and uploads it again before the load ends
+        assertEquals(listOf("aa", "bb"), gate.result(load, listOf(item("aa"), item("bb")))?.map { it.sha256 })
+    }
 }
