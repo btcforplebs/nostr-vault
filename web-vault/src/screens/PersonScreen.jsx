@@ -15,7 +15,8 @@ import { useProfile } from "../components/useProfile.js"
 import { npubEncode } from "nostr-tools/nip19"
 import { fetchProfiles } from "../net/profiles.js"
 import { followsOf, relation, setFollow } from "../net/follows.js"
-import { fetchPersonArticles, fetchPersonLists, fetchTagged, openPersonNotes, readPersonNotes, syncPersonNotes, PERSON_PAGE } from "../net/person.js"
+import { fetchPersonArticles, fetchPersonLists, fetchTagged, keepPersonNotes, openPersonNotes, readPersonNotes, syncPersonNotes, PERSON_PAGE } from "../net/person.js"
+import { watchProfile } from "../net/profile-live.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { fetchShop } from "../net/profile-tabs.js"
 import { WOT_GLOBE } from "../components/wot-glyph.js"
@@ -86,8 +87,23 @@ export function PersonScreen({ ctx, pubkey }) {
     return more
   }, [pubkey])
   const tagRelays = async () => uniq([...(await listsP).relays.read, ...hints])
-  const tagged = useNoteStream(async () => (navigator.onLine ? fetchTagged(pubkey, await tagRelays()) : []),
+  const tagged = useNoteStream(async () => (navigator.onLine ? fetchTagged(pubkey, await tagRelays(), { newerOnly: true }) : []),
     async until => (navigator.onLine ? fetchTagged(pubkey, await tagRelays(), { until }) : []), [pubkey])
+
+  // Their new notes while you are on their profile, from their write relays and the defaults (net/profile-live.js):
+  // kept with what this page fetched, not in Haven (person.js), and put on top of the list.
+  useEffect(() => {
+    let close = null, live = true
+    listsP.then(l => {
+      if (!live) return
+      close = watchProfile({
+        pubkey, relays: uniq([...l.relays.write, ...DEFAULT_RELAYS]),
+        onNotes: evs => { keepPersonNotes(pubkey, evs); notes.prepend(evs) },
+        onReopen: () => notes.reload(),
+      })
+    })
+    return () => { live = false; close?.() }
+  }, [pubkey])
 
   const iFollow = account.follows.includes(pubkey)
   const followsMe = followsOf(lists?.contacts).includes(session.pubkey)

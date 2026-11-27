@@ -1,7 +1,8 @@
 // The user's profile: the tabs (ProfileTabs.jsx) over their notes, replies and reposts, read from Haven's outbox route
 // after a network backfill into it and paged further back the same way, the notes that tag them, and their articles.
-// It looks again on its own while it is at the top (components/auto-look.js: no Refresh button, Logen 2026-11-04), and
-// when Profile is tapped again while on it (MyProfileView's havenProfileScrollToTop).
+// New notes arrive live (net/profile-live.js). It looks again, for what is newer only, when the page comes back to the
+// front or online while it is at the top (components/auto-look.js: no Refresh button, Logen 2026-11-04), and when
+// Profile is tapped again while on it (MyProfileView's havenProfileScrollToTop).
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { feedScroller, scrollTopOf } from "../components/FeedExtras.jsx"
 import { useAutoLook } from "../components/auto-look.js"
@@ -14,8 +15,9 @@ import { useWebTrust } from "../components/useWebTrust.js"
 import { ProfileTabs, useNoteStream } from "./ProfileTabs.jsx"
 import { WotButton } from "./PersonScreen.jsx"
 import { EditProfile } from "./EditProfile.jsx"
-import { readOwn, syncOwn } from "../net/sync.js"
-import { NOTE_KINDS, fetchTagged, ownOlder, syncOwnPage } from "../net/person.js"
+import { readOwn, storeAll, syncOwn } from "../net/sync.js"
+import { markOwnAsked, ownSince, watchProfile } from "../net/profile-live.js"
+import { NOTE_KINDS, anyConnected, fetchTagged, ownOlder, syncOwnPage } from "../net/person.js"
 import { fetchShop } from "../net/profile-tabs.js"
 import { parseHash } from "../desktop/routes.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
@@ -27,7 +29,6 @@ const PERSON = "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0"
 const Icon = ({ d, fill }) => <svg viewBox="0 0 24 24" width="18" height="18" fill={fill ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 // The opening load, as deep as syncOwn's notes; older pages go PERSON_PAGE at a time.
 const OPENING = 300
-const PROFILE_RECHECK_MS = 5 * 60_000 // your notes are looked for again this often while Profile is at the top
 
 export function ProfileScreen({ ctx }) {
   const { vault, account, session } = ctx
@@ -44,18 +45,22 @@ export function ProfileScreen({ ctx }) {
   const writeRelays = uniq([...account.relays.write, ...DEFAULT_RELAYS])
 
   const notes = useNoteStream(async show => {
-    show(await readOwn(vault, me, NOTE_KINDS, OPENING))
+    const held = await readOwn(vault, me, NOTE_KINDS, OPENING)
+    show(held)
     if (navigator.onLine) {
       // syncOwn brings no reposts: they come as deep as its notes, so the newest OPENING read below has no gap.
       // Each relay's notes draw as they land (syncOwn `on`): the list never waits on the slowest write relay.
+      // Opened again in this page load, or looked at again: only what is newer than the newest held (profile-live.js).
+      const since = ownSince(me, held), startedAt = Math.floor(Date.now() / 1000)
       const draw = async () => show(await readOwn(vault, me, NOTE_KINDS, OPENING))
-      await Promise.all([syncOwn(vault, me, writeRelays, { on: draw }), syncOwnPage(vault, me, writeRelays, { kinds: [6], limit: OPENING })]).catch(() => {})
+      await Promise.all([syncOwn(vault, me, writeRelays, { on: draw, since }), syncOwnPage(vault, me, writeRelays, { kinds: [6], limit: OPENING, since })]).catch(() => {})
+      if (anyConnected(writeRelays)) markOwnAsked(me, startedAt) // no relay connected: keep the old mark, ask the gap again
     }
     const all = await readOwn(vault, me, NOTE_KINDS, OPENING)
     setArticles(await readOwn(vault, me, [30023], 50))
     return all
   }, until => ownOlder(vault, me, writeRelays, until, { online: navigator.onLine }), [round])
-  const tagged = useNoteStream(async () => (navigator.onLine ? fetchTagged(me, uniq([...account.relays.read, ...DEFAULT_RELAYS])) : []),
+  const tagged = useNoteStream(async () => (navigator.onLine ? fetchTagged(me, uniq([...account.relays.read, ...DEFAULT_RELAYS]), { newerOnly: true }) : []),
     async until => (navigator.onLine ? fetchTagged(me, uniq([...account.relays.read, ...DEFAULT_RELAYS]), { until }) : []), [round])
 
   useEffect(() => { readOwn(vault, me, [30023], 50).then(setArticles).catch(() => {}) }, [])
@@ -70,7 +75,15 @@ export function ProfileScreen({ ctx }) {
   // A look reads the list again from its first page, so only while the reader is at the top: further down it would
   // drop the pages scrolled through.
   const screen = useRef(null)
-  useAutoLook(() => { if (scrollTopOf(feedScroller(screen.current)) < AT_TOP_PX && !notes.opening) refresh() }, { every: PROFILE_RECHECK_MS })
+  // No timer: your new notes come live (below). Only when the page comes back to the front or online.
+  useAutoLook(() => { if (scrollTopOf(feedScroller(screen.current)) < AT_TOP_PX && !notes.opening) refresh() }, { every: 0 })
+  // Your notes from your write relays as you post them, from any app: saved to Haven's outbox, on top of the list.
+  useEffect(() => watchProfile({
+    pubkey: me, relays: writeRelays,
+    save: evs => storeAll(vault.outbox, evs),
+    onNotes: evs => notes.prepend(evs),
+    onReopen: () => refresh(),
+  }), [me, writeRelays.join()])
 
   // Profile tapped again while on it, from the tab bar or the sidebar: back to the top, and from the top, fetched
   // fresh, as the iPhone's tab does.

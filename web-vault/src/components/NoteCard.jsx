@@ -1,4 +1,5 @@
 import { OUTSIDE_TEXT, useOutside } from "./outside-web.js"
+import { memoCard } from "./memo-card.js"
 import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Mention, NoteText } from "./NoteText.jsx"
@@ -242,3 +243,6 @@ const RepostIcon = () => (
     <path d={ICONS.repost} />
   </svg>
 )
+
+/** NoteCard for long lists (profile tabs, the Feed): drawn again only when its note (by id) or another prop changed. */
+export const NoteCardMemo = memoCard(NoteCard)

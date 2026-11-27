@@ -221,7 +221,7 @@ export const FEED_MAX_PAGES = 20
  * notes from the first relay instead of after the slowest (10 s vs 1.4 s for someone else's, Ted's web sweep
  * 2026-11-01). -> how many were stored
  */
-export async function syncOwn(vault, pubkey, relays, { on, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+export async function syncOwn(vault, pubkey, relays, { on, since, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
   let stored = 0
   const group = oneAsk() // see syncFeed
   const ask = filter => Promise.all(uniq(relays).map(async url => {
@@ -231,7 +231,9 @@ export async function syncOwn(vault, pubkey, relays, { on, query = (r, f, o) => 
     if (n) await on?.()
   }))
   // Articles get their own filter: with one shared limit, a busy account's notes fill it and no article comes back.
-  await Promise.all([ask({ kinds: [1], authors: [pubkey], limit: 300 }), ask({ kinds: [30023], authors: [pubkey], limit: 50 })])
+  // `since`: only what came after it (a profile opened again, net/profile-live.js), not the whole first page again.
+  const from = since ? { since } : {}
+  await Promise.all([ask({ kinds: [1], authors: [pubkey], limit: 300, ...from }), ask({ kinds: [30023], authors: [pubkey], limit: 50, ...from })])
   return stored
 }
 
