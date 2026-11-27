@@ -126,11 +126,30 @@ export function isMutedNote(ev, { words, hashtags, threads } = {}) {
     if ((root && threads.has(root)) || (parent && threads.has(parent))) return true
   }
   if (hashtags?.size && (ev.tags ?? []).some(t => t[0] === "t" && hashtags.has(String(t[1] ?? "").toLowerCase().replace(/^#/, "")))) return true
-  if (words?.length) {
-    const text = String(ev.content ?? "").toLowerCase()
-    if (text && words.some(w => text.includes(w))) return true
+  return hasMutedWord(ev.content, words)
+}
+
+// A muted word matches as a whole word or phrase, in any case: not inside a longer word ("ass" never hides "class"),
+// with any run of spaces between a phrase's words (Logen 11-27). A letter, number or combining mark on either side
+// means it is part of a longer word. Apple (MuteList.hides, P2) and Android (A3) are to match this rule.
+const wordRes = new Map()
+const EDGE = "[\\p{L}\\p{N}\\p{M}]"
+/** The pattern for one muted word (lowercased, as muteEntries keeps them), built once per word. */
+export function mutedWordRe(word) {
+  let re = wordRes.get(word)
+  if (!re) {
+    const body = word.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")
+    re = new RegExp(`(?<!${EDGE})${body}(?!${EDGE})`, "u")
+    wordRes.set(word, re)
   }
-  return false
+  return re
+}
+
+/** True when `text` holds one of `words` (lowercased) as a whole word or phrase. */
+export function hasMutedWord(text, words) {
+  if (!words?.length || !text) return false
+  const t = String(text).toLowerCase()
+  return words.some(w => w && mutedWordRe(w).test(t))
 }
 
 /** Step 1 alone, for a surface that only hides (a quote card, a DM row). */
