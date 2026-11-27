@@ -4,7 +4,7 @@
 // their own notes out of Tagged, `blocked` keeps out people the user blocked. `shop` is their listings (net/profile-tabs.js
 // fetchShop), null while they load; `own` keeps the Shop tab up on your own profile with nothing listed.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
-import { NoteCard } from "../components/NoteCard.jsx"
+import { NoteCardMemo } from "../components/NoteCard.jsx"
 import { ArticleCard } from "../components/ArticleCard.jsx"
 import { MediaGrid } from "../components/MediaGrid.jsx"
 import { OlderButton, SkeletonRows } from "../components/FeedExtras.jsx"
@@ -15,10 +15,14 @@ import { ProfileTabRow, TabIcon } from "./ProfileTabRow.jsx"
 
 if (import.meta.env) import("../styles/feeds.css")
 
+/** The opening list draws at most this often while relays answer. */
+export const DRAW_MS = 150
+
 /**
  * One of a profile's note streams, paged back as the iPhone's ProfileFeedLoader pages: `open(show)` loads the opening
  * list (show() puts up a first, cached one meanwhile); `older(until)` a page at or before `until`. Two quiet pages in a
- * row end it. `deps` start it again. -> { items, opening, paging, hasMore, loadOlder, reload }
+ * row end it. `deps` start it again. `prepend(evs)` puts live notes on top.
+ * -> { items, opening, paging, hasMore, loadOlder, reload, prepend }
  */
 export function useNoteStream(open, older, deps) {
   const [items, setItems] = useState([])
@@ -32,10 +36,26 @@ export function useNoteStream(open, older, deps) {
     const gen = ++s.gen
     s.quiet = 0; s.opening = true
     setOpening(true); setHasMore(true)
-    const show = evs => { if (gen === s.gen) { s.items = evs; setItems(evs) } }
-    try { show(await fns.current.open(show)) } catch {} finally { if (gen === s.gen) { s.opening = false; setOpening(false) } }
+    clearTimeout(s.drawAt); s.drawAt = null
+    // The opening's in-between lists (one per relay answer) draw at most every DRAW_MS, the first at once and the last
+    // as soon as the opening ends: each draw redrew the list, 9-12 times per open (profile perf review 11-27, #4).
+    let drawn = false
+    const draw = () => { s.drawAt = null; if (gen === s.gen) setItems(s.items) }
+    const show = evs => {
+      if (gen !== s.gen) return
+      s.items = evs
+      if (!drawn) { drawn = true; setItems(evs) } else s.drawAt ??= setTimeout(draw, DRAW_MS)
+    }
+    const last = evs => { if (gen !== s.gen) return; clearTimeout(s.drawAt); s.drawAt = null; s.items = evs; setItems(evs) }
+    try { last(await fns.current.open(show)) } catch {} finally { if (gen === s.gen) { s.opening = false; setOpening(false) } }
   }
-  useEffect(() => { reload(); return () => { s.gen++ } }, deps)
+  useEffect(() => { reload(); return () => { s.gen++; clearTimeout(s.drawAt); s.drawAt = null } }, deps)
+  // Notes that arrived live (profile-live.js): on top of the list, once each, newest first, without reading it again.
+  const prepend = evs => {
+    const { list, grew } = mergeOlder(s.items, evs) // merges and sorts newest first, whichever end they belong at
+    if (!grew) return
+    s.items = list; setItems(list)
+  }
   const loadOlder = async () => {
     // Not while the opening load runs: its list replaces what a page would add.
     if (s.opening || s.paging || !s.items.length) return
@@ -50,7 +70,7 @@ export function useNoteStream(open, older, deps) {
       s.items = list; setItems(list)
     } finally { s.paging = false; setPaging(false) }
   }
-  return { items, opening, paging, hasMore, loadOlder, reload }
+  return { items, opening, paging, hasMore, loadOlder, reload, prepend }
 }
 
 export function ProfileTabs({ notes, tagged, articles, shop, own = false, pubkey, blocked, inside }) {
@@ -97,7 +117,7 @@ export function ProfileTabs({ notes, tagged, articles, shop, own = false, pubkey
         </>
       ) : on === "media" ? <MediaGrid tiles={list} />
         : on === "articles" ? list.map(a => <ArticleCard key={a.id} event={a} />)
-        : list.map(n => <NoteCard key={n.id} event={n} memoryOnly={on === "tagged"} />)}
+        : list.map(n => <NoteCardMemo key={n.id} event={n} memoryOnly={on === "tagged"} />)}
       {list.length > 0 && isNoteTab(on) && !stream.opening && <OlderButton onOlder={stream.loadOlder} state={stream.paging ? "busy" : stream.hasMore ? "" : "end"} />}
     </>
   )

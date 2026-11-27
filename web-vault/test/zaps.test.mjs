@@ -254,17 +254,17 @@ test("trusted receipts: payees' zap services are asked side by side, not one aft
   assert.deepEqual(kept, [], "none resolved, so none kept")
 })
 
-test("totals are asked in groups of ten, one filter per call, once per note", async () => {
+test("totals are asked in groups of ten, every group a filter of one ask to all relays, once per note", async () => {
   const calls = []
-  const query = async (relays, filter) => { calls.push({ relays, filter }); return [] }
+  const many = async (relays, filters) => { calls.push({ relays, filters }); return [] }
   const ids = Array.from({ length: 12 }, () => note().id)
-  for (const id of ids) wantTotals(ctxFor(), id, { query, delayMs: 5 })
-  wantTotals(ctxFor(), ids[0], { query, delayMs: 5 })
+  for (const id of ids) wantTotals(ctxFor(), id, { many, delayMs: 5 })
+  wantTotals(ctxFor(), ids[0], { many, delayMs: 5 })
   await new Promise(r => setTimeout(r, 50))
-  assert.equal(calls.length, 2)
-  assert.ok(!Array.isArray(calls[0].filter))
-  assert.deepEqual(calls[0].filter, { kinds: [9735], "#e": ids.slice(0, 10), limit: 500 })
-  assert.deepEqual(calls[1].filter["#e"], ids.slice(10))
+  assert.equal(calls.length, 1, "one ask: one REQ per relay, not one per group per relay in turn")
+  assert.equal(calls[0].filters.length, 2)
+  assert.deepEqual(calls[0].filters[0], { kinds: [9735], "#e": ids.slice(0, 10), limit: 500 })
+  assert.deepEqual(calls[0].filters[1]["#e"], ids.slice(10))
   assert.deepEqual(calls[0].relays, ["wss://relay.example.com", "wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com"])
 })
 

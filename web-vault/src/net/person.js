@@ -85,11 +85,17 @@ export async function fetchPersonArticles(pubkey, writeRelays, { limit = 50, que
 }
 
 const tagged = new Map() // pubkey -> Map(id -> event): notes by others that tag them, for the same profiles as `fetched`
+/** A `since` asked a little before the newest note held: a relay may have stored a note dated just before it late. */
+export const SINCE_SLACK_S = 60
+/** Their notes that arrived live (profile-live.js), kept with the ones this page fetched. */
+export const keepPersonNotes = (pubkey, evs) => remember(pubkey, evs.filter(e => e?.pubkey === pubkey && NOTE_KINDS.includes(e.kind)))
 /** One page of notes by others that tag them (ProfileFeedLoader's tagged filter, kind 1 here) at or before `until`,
  *  from `relays` (their read relays: NIP-65 sends mentions there) and the index relays, kept in memory.
  *  -> what is kept for them at or before `until`, newest first */
-export async function fetchTagged(pubkey, relays, { until, limit = PERSON_PAGE, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
-  const evs = await query(uniq([...relays, ...DEFAULT_RELAYS]), { kinds: [1], "#p": [pubkey], limit, ...(until ? { until } : {}) }, { maxWait: 8000 })
+export async function fetchTagged(pubkey, relays, { until, newerOnly = false, limit = PERSON_PAGE, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+  // `newerOnly` (the opening list, asked again): with notes already kept for them, only what came after the newest.
+  const keptNewest = newerOnly && !until ? newest([...(tagged.get(pubkey)?.values() ?? [])])?.created_at : undefined
+  const evs = await query(uniq([...relays, ...DEFAULT_RELAYS]), { kinds: [1], "#p": [pubkey], limit, ...(until ? { until } : {}), ...(keptNewest ? { since: keptNewest - SINCE_SLACK_S } : {}) }, { maxWait: 8000 })
   const page = evs.filter(e => e.kind === 1 && e.pubkey !== pubkey && e.tags.some(t => t[0] === "p" && t[1] === pubkey))
   const have = tagged.get(pubkey) ?? new Map()
   tagged.delete(pubkey)
@@ -110,8 +116,8 @@ export async function ownOlder(vault, pubkey, relays, until, { online = true, li
 
 /** Your own notes and reposts from the network into Haven's outbox (`kinds`: one of them). syncOwn fetches no
  *  reposts, so the opening load asks for them here, as deep as its 300 notes. -> how many were stored */
-export async function syncOwnPage(vault, pubkey, relays, { until, limit = PERSON_PAGE, kinds = NOTE_KINDS, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
-  const evs = await query(uniq(relays), { kinds, authors: [pubkey], limit, ...(until ? { until } : {}) }, { maxWait: 8000 })
+export async function syncOwnPage(vault, pubkey, relays, { until, since, limit = PERSON_PAGE, kinds = NOTE_KINDS, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+  const evs = await query(uniq(relays), { kinds, authors: [pubkey], limit, ...(until ? { until } : {}), ...(since ? { since } : {}) }, { maxWait: 8000 })
   let stored = 0
   for (const ev of evs) if (ev.pubkey === pubkey && kinds.includes(ev.kind) && (await vault.outbox.event(ev)).ok) stored++
   return stored

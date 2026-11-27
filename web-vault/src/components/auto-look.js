@@ -18,12 +18,13 @@ export function lookInFront(look, { every = 60_000, on = true, doc = globalThis.
     busy = true
     Promise.resolve().then(() => look()).catch(() => {}).finally(() => { busy = false })
   }
-  const t = setInterval(run, every)
-  t.unref?.() // node (the tests) only
+  // `every` 0: no timer, only the looks when the page comes back to the front or online (a screen kept current live).
+  const t = every > 0 ? setInterval(run, every) : null
+  t?.unref?.() // node (the tests) only
   const back = () => { if (!doc?.hidden) run() }
   globalThis.addEventListener("online", run)
   doc?.addEventListener?.("visibilitychange", back)
-  return () => { clearInterval(t); globalThis.removeEventListener("online", run); doc?.removeEventListener?.("visibilitychange", back) }
+  return () => { if (t) clearInterval(t); globalThis.removeEventListener("online", run); doc?.removeEventListener?.("visibilitychange", back) }
 }
 
 /** `look()` -> maybe a promise. `every`: ms between looks while in front. `on`: false pauses. `deps`: start again. */

@@ -79,7 +79,7 @@ test("a repost, quote, reply-to and mention of someone outside your web: a short
   assert.match(quote, /const skip = !!\(q\?\.author && outside\?\.\(q\.author\)\)\n  const ev = useQuote\(q, memoryOnly, skip\)/, "fix 2: an nevent naming its author isn't fetched")
   assert.match(quote, /if \(skip\) return\n/)
   assert.match(quote, /if \(outside\?\.\(ev\.pubkey\)\) return <div class="quote quote-missing">\{OUTSIDE_TEXT\.quote\}/, "fix 2")
-  assert.match(quote, /if \(ev && src && !outside\?\.\(ev\.pubkey\)\) fetchProfiles/, "fix 2: no kind 0 for them")
+  assert.match(quote, /if \(ev && src && !outside\?\.\(ev\.pubkey\)\) wantProfile/, "fix 2: no kind 0 for them")
   assert.match(text, /if \(outside\?\.\(pubkey\)\) return <a class="mention mention-outside"/, "fix 6 (and every @name on the page)")
   assert.equal(OUTSIDE_TEXT.reply, "someone outside your web")
 })

@@ -2,10 +2,10 @@
 // nostr:npub / nprofile -> the person's name, linking to their profile. nostr:nevent / note / naddr -> the quoted
 // note as a card (QuotedNote). A quote inside a quoted note stays a short reference, so cards don't nest forever.
 import { useOutside } from "./outside-web.js"
+import { wantProfile } from "../net/profile-batch.js"
 import { npubEncode } from "nostr-tools/nip19"
 import { useEffect, useState } from "preact/hooks"
 import { useProfile } from "./useProfile.js"
-import { fetchProfiles } from "../net/profiles.js"
 import { getQuote, onQuotes, parseRef, quoteSource } from "../net/quotes.js"
 import { QuotedNote } from "./QuotedNote.jsx"
 import { splitHashtags } from "../net/hashtags.js"
@@ -176,7 +176,8 @@ export function Mention({ pubkey, memoryOnly = false }) {
 function NamedMention({ pubkey, memoryOnly }) {
   const p = useProfile(pubkey)
   useEffect(() => {
-    const load = () => { const src = quoteSource(); if (src) fetchProfiles(src.vault, [pubkey], src.relays, { save: !memoryOnly }).catch(() => {}) }
+    // Queued with every other name asked for in the same moment: one REQ per relay, not one per card (profile-batch.js).
+    const load = () => { if (quoteSource()) wantProfile(pubkey, quoteSource, { save: !memoryOnly }) }
     load()
     return onQuotes(load) // again once main.jsx registers the vault
   }, [pubkey, memoryOnly])

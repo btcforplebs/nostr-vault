@@ -8,7 +8,7 @@ import { SnoCard } from "./SnoObject.jsx"
 import { SNO_KIND } from "../readers/sno.js"
 import { LiveEmbed, embeddedStream } from "../readers/LiveEmbed.jsx"
 import { ago } from "./time.js"
-import { fetchProfiles } from "../net/profiles.js"
+import { wantProfile } from "../net/profile-batch.js"
 import { getBlocks, isBlockedNote, onBlocks } from "../net/blocks.js"
 import { fetchQuote, getQuote, hasQuote, onQuotes, quoteHash, quoteKey, quoteSource } from "../net/quotes.js"
 import { OUTSIDE_TEXT, useOutside } from "./outside-web.js"
@@ -42,7 +42,7 @@ export function useQuote(q, memoryOnly = false, skip = false) {
   useEffect(() => {
     const src = quoteSource()
     // Not on a profile page for someone outside your web: their card is a short line with no name (outside-web.js).
-    if (ev && src && !outside?.(ev.pubkey)) fetchProfiles(src.vault, [ev.pubkey], src.relays, { save: !memoryOnly }).catch(() => {})
+    if (ev && src && !outside?.(ev.pubkey)) wantProfile(ev.pubkey, quoteSource, { save: !memoryOnly })
   }, [ev?.pubkey])
   return ev
 }

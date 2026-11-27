@@ -4,6 +4,7 @@
 // them (PostEngagementQuery), a receipt from anyone but the recipient's own zap service left out (ZapValidationService).
 // Unlike the iPhone, a receipt whose zap service can't be looked up is left out too (fails closed): anyone can publish
 // a 9735, so one nobody can check proves nothing.
+import { queryMany } from "./query-many.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, isLoopback, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
 import { getProfile } from "./profiles.js"
@@ -318,7 +319,7 @@ export const receiptTrust = ctx => async evs =>
 
 let queue = new Set(), timer = null
 /** Ask for `id`'s zap total from the account's read relays. Asked once per note per session. */
-export function wantTotals(ctx, id, { query = (r, f, o) => pool.querySync(r, f, o), delayMs = 300 } = {}) {
+export function wantTotals(ctx, id, { query = (r, f, o) => pool.querySync(r, f, o), many = queryMany, delayMs = 300 } = {}) {
   if (!HEX64.test(id ?? "") || seen.has(id)) return
   seen.set(id, new Set())
   queue.add(id)
@@ -326,11 +327,11 @@ export function wantTotals(ctx, id, { query = (r, f, o) => pool.querySync(r, f, 
     const ids = [...queue]
     queue = new Set(); timer = null
     const relays = uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS])
-    // Small groups: a relay applies `limit` per filter, and one filter per call (pool wraps it in the REQ itself).
-    for (let i = 0; i < ids.length; i += 10) {
-      const group = ids.slice(i, i + 10)
-      const evs = await query(relays, { kinds: [9735], "#e": group, limit: 500 }, { maxWait: 6000 }).catch(() => [])
-      await countReceipts(evs, group, ctx.session.pubkey, pk => lightningAddressOf(ctx, pk, { query })).catch(() => {})
-    }
+    // Small groups, since a relay applies `limit` per filter: every group a filter of the same REQ, one REQ per relay
+    // at once (query-many.js), not one REQ per group per relay in turn (profile perf review 11-27, finding 8).
+    const groups = []
+    for (let i = 0; i < ids.length; i += 10) groups.push(ids.slice(i, i + 10))
+    const evs = await many(relays, groups.map(group => ({ kinds: [9735], "#e": group, limit: 500 })), { maxWait: 6000 }).catch(() => [])
+    await countReceipts(evs, ids, ctx.session.pubkey, pk => lightningAddressOf(ctx, pk, { query })).catch(() => {})
   }, delayMs)
 }
