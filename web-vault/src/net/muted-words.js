@@ -12,13 +12,13 @@ export const MUTED_WORD_MAX = 100
 /** A muted word as it is stored: NFC, lowercased, trimmed, inner spaces folded to one. "" when there is nothing. */
 export const mutedWordKey = s => String(s ?? "").normalize("NFC").toLowerCase().trim().replace(/\s+/g, " ")
 
-/** Why `s` can't be muted, or "". `have` holds the words already muted (keys), for the duplicate check. */
+/** Why `s` can't be muted, or "". `have` holds the words already muted, as any app saved them, for the duplicate check. */
 export function mutedWordProblem(s, have = []) {
   const w = mutedWordKey(s)
   if (!w) return "Type a word or phrase."
   if ([...w].length > MUTED_WORD_MAX) return `That's longer than ${MUTED_WORD_MAX} characters.`
   if (!/[\p{L}\p{N}]/u.test(w)) return "That has no letters or numbers to match."
-  if (have.includes(w)) return "That word is already muted."
+  if (have.some(h => mutedWordKey(h) === w)) return "That word is already muted." // another app may have saved "Foo  Bar"
   return ""
 }
 

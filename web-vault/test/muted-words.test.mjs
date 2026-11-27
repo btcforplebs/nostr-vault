@@ -44,6 +44,7 @@ test("a word is stored lowercased, trimmed and with its spaces folded; empty, sy
   assert.match(mutedWordProblem("x".repeat(MUTED_WORD_MAX + 1)), /longer than/)
   assert.equal(mutedWordProblem("x".repeat(MUTED_WORD_MAX)), "")
   assert.match(mutedWordProblem("Scam", ["scam"]), /already muted/)
+  assert.match(mutedWordProblem("foo bar", ["foo  bar"]), /already muted/, "another app's spacing is the same word")
   assert.equal(mutedWordProblem("日本"), "", "any script's letters")
 })
 
