@@ -30,7 +30,7 @@ internal fun FeedMissingNotesEffects(notes: List<FeedNote>, viewModel: FeedViewM
             viewModel.warmNoteIndex()
             notes.flatMap { note ->
                 // A bare repost's row shows the note it points at.
-                listOfNotNull(note.parentEventId, note.repostedEventId?.takeIf { note.isBareRepost })
+                FeedAncestorBatch.rowFetchIds(note)
                     .filter { viewModel.parentNoteFor(it) == null }
             }.distinct()
         }

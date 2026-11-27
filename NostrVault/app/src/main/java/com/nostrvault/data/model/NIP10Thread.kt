@@ -164,7 +164,10 @@ object NIP10Thread {
         parentTags: List<List<String>>,
         relayHint: String
     ): List<List<String>> {
-        val tags = parentTags.filter { it.size >= 2 && it[0] in setOf("E", "A", "I", "K", "P") }.toMutableList()
+        // A hint copied from the parent can be its author's own phone (another
+        // client's, or an older one of ours): it is blanked, never passed on.
+        val tags = parentTags.filter { it.size >= 2 && it[0] in setOf("E", "A", "I", "K", "P") }
+            .map(::withoutPrivateHint).toMutableList()
         tags.add(listOf("e", parentId, relayHint, parentPubkey))
         tags.add(listOf("k", COMMENT_KIND.toString()))
         tags.add(listOf("p", parentPubkey))
@@ -172,4 +175,13 @@ object NIP10Thread {
     }
 
     private fun marker(tag: List<String>): String = if (tag.size >= 4) tag[3] else ""
+
+    /** [tag] with its relay hint (slot 2) blanked when it names a loopback or LAN relay. */
+    internal fun withoutPrivateHint(tag: List<String>): List<String> {
+        if (tag.size < 3 || tag[0] !in setOf("E", "A", "e", "a")) return tag
+        val hint = tag[2].trim()
+        val hostPort = hint.substringAfter("://", "")
+        if (hint.isEmpty() || hostPort.isEmpty() || !com.nostrvault.relay.DMInbox.isPrivateNetworkHost(hostPort)) return tag
+        return tag.toMutableList().also { it[2] = "" }
+    }
 }
