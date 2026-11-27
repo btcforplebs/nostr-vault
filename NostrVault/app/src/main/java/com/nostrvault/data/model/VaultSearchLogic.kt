@@ -32,8 +32,9 @@ object VaultSearchLogic {
         else -> Section.NOTES
     }
 
-    // (?U): `\w` as Unicode word characters, like NSRegularExpression, so #日本 and #café are tags.
-    private val hashtagRegex = Regex("(?U)#(\\w+)")
+    // Unicode word characters, like NSRegularExpression, so #日本 and #café are tags.
+    // Spelled out, not `(?U)\w`: Android's ICU regex rejects (?U) and threw on first use.
+    private val hashtagRegex = Regex("#([\\p{L}\\p{M}\\p{Nd}\\p{Pc}]+)")
 
     /**
      * Hashtags on the matched notes that contain any word of the query, from the
