@@ -29,6 +29,15 @@ internal class MediaLoadGate {
         if (generation > 0) removedIn[sha256.lowercase()] = generation
     }
 
+    /**
+     * A file came back (folder Landed or a file-note Added) after a removal while
+     * the same load ran: the load may show it again.
+     */
+    @Synchronized
+    fun landed(sha256: String) {
+        removedIn.remove(sha256.lowercase())
+    }
+
     /** [items] as [load] may publish them, or null when a newer load started. */
     @Synchronized
     fun result(load: Long, items: List<BlossomMediaItem>): List<BlossomMediaItem>? {

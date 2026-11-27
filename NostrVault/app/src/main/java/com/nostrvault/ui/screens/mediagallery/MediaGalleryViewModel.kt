@@ -262,6 +262,7 @@ class MediaGalleryViewModel @Inject constructor(
                     ?: dir.listFiles { f -> f.isFile && MediaLiveRules.blobHash(f.name) == change.sha256 }?.firstOrNull()
                     ?: return@launch
                 val item = localItem(file, change.sha256)
+                loadGate.landed(item.sha256)
                 if (_isLoading.value) landedDuringLoad[item.sha256] = item
                 _mediaItems.update { MediaLiveRules.landed(it, item) }
             }
@@ -298,6 +299,7 @@ class MediaGalleryViewModel @Inject constructor(
         when (change) {
             is com.nostrvault.fips.FileNotesState.Change.Added -> {
                 val item = noteTiles.firstOrNull { it.sha256 == change.sha256 }?.let(MediaLiveRules::noteItem) ?: return
+                loadGate.landed(item.sha256)
                 _mediaItems.update { MediaLiveRules.noteLanded(it, item) }
             }
             is com.nostrvault.fips.FileNotesState.Change.Removed -> {

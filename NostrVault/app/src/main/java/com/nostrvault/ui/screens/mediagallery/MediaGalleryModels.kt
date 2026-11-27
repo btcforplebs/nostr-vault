@@ -157,3 +157,10 @@ internal fun listedUploaded(existing: BlossomMediaItem, listed: Long?, fromThisV
  */
 internal fun isMenuTarget(target: String?, item: BlossomMediaItem): Boolean =
     target != null && target.equals(item.sha256, ignoreCase = true)
+
+/**
+ * The menu target once [items] changed: cleared when its file left the list, so
+ * the menu does not reopen by itself if that file comes back.
+ */
+internal fun menuTargetAfter(target: String?, items: List<BlossomMediaItem>): String? =
+    target?.takeIf { t -> items.any { isMenuTarget(t, it) } }
