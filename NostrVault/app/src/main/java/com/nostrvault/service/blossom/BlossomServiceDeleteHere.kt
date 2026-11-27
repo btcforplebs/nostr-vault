@@ -58,7 +58,11 @@ suspend fun BlossomService.deleteFromThisDevice(sha256: String): DeleteHereResul
 
     if (servers.isEmpty()) return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_COPY)
     val asideDir = deleteHereAsideDir() ?: return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_SAVE)
-    if (!deleteHereInFlight.add(hash)) return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_SAVE)
+    // Under the recovery lock: a recovery already running finishes (list and marks
+    // included) before this check starts, and every later one skips this hash.
+    if (!synchronized(deleteHereAsideLock) { deleteHereInFlight.add(hash) }) {
+        return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_SAVE)
+    }
     try {
         restoreDeleteHereAside()
         // Listed first, so Auto-Mirror can't pull it back while it is out of the vault.
@@ -123,6 +127,9 @@ private fun isThisDeviceAddress(server: String): Boolean {
     return host == "localhost" || host == "0.0.0.0" || host == "::1" || host.startsWith("127.")
 }
 
+/** Held by recovery for its whole pass, and by a check while it claims its hash. */
+private val deleteHereAsideLock = Any()
+
 /** Hashes a "Delete from this device" is checking right now (their files are aside). */
 private val deleteHereInFlight: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
@@ -138,7 +145,7 @@ internal fun BlossomService.deleteHereAsideDir(): File? =
  * quit mid-check), and the list as it was before that check: unlisted only if
  * the check listed it. Runs at start and before each delete; skips checks still running.
  */
-internal fun BlossomService.restoreDeleteHereAside() {
+internal fun BlossomService.restoreDeleteHereAside(): Unit = synchronized(deleteHereAsideLock) {
     val asideDir = deleteHereAsideDir() ?: return
     val config = configStore.config.value
     val vault = config.relayDataDir?.let { File(it, config.blossomPath) } ?: return
@@ -187,6 +194,7 @@ internal fun BlossomService.askServerHolds(server: String, hash: String, length:
             blobPresence(r.code, r.header("Content-Type"), r.header("Content-Length"), sha256 = hash, finalUrl = r.request.url.toString()),
             r.code, r.header("Content-Range"), r.header("Content-Length"), length,
             cacheStatus = r.header("cf-cache-status"), age = r.header("Age"),
+            finalUrl = r.request.url.toString(),
         )
     }
 } catch (e: Exception) {
@@ -209,8 +217,14 @@ internal fun deleteHereHolds(
     cacheStatus: String? = null,
     /** `Age` over 0: a cache answered. */
     age: String? = null,
+    /**
+     * Where redirects ended: an http hop could be answered by anyone on that
+     * network (Tron, #2658). Required, so no caller can skip it (Apple fails closed on nil too).
+     */
+    finalUrl: String,
 ): Boolean {
     if (presence != BlobPresence.PRESENT) return false
+    if (!finalUrl.startsWith("https://", ignoreCase = true)) return false
     if (cacheStatus?.trim()?.uppercase() in setOf("HIT", "STALE", "UPDATING")) return false
     if ((age?.trim()?.toLongOrNull() ?: 0L) > 0L) return false
     val total = when (code) {

@@ -164,8 +164,10 @@ class BlossomService @Inject constructor(
         return true
     }
 
+    /** Puts back files a quit left aside mid-check; tests join it before they touch the aside folder. */
+    internal val asideRestore = scope.launch { restoreDeleteHereAside() }
+
     init {
-        scope.launch { restoreDeleteHereAside() }
         homeVault.hostPublicly = { sha256, contentType, server, auth ->
             hostLocalBlob(sha256, contentType, servers = listOf(server), authHeader = auth) == "$server/$sha256"
         }

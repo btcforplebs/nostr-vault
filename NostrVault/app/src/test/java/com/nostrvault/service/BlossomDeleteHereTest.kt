@@ -46,14 +46,18 @@ class BlossomDeleteHereTest {
         return BlossomService(
             configStore, nostr, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true),
             removedHere = removed,
-        ).apply { serverOwner = { _, _ -> BlossomService.ServerOwner.OTHER } }
+        ).apply {
+            serverOwner = { _, _ -> BlossomService.ServerOwner.OTHER }
+            // The start-up recovery runs on IO: let it finish, or it can land mid-test (Tron, #2660).
+            kotlinx.coroutines.runBlocking { asideRestore.join() }
+        }
     }
 
     @Test
     fun `removes the vault file and marks it when an outside server holds it`() = runTest {
         val (dir, blob) = vault()
         val removed = DeviceRemovedHashes(dir = null)
-        val asked = mutableListOf<Pair<String, Long>>()
+        val asked = java.util.Collections.synchronizedList(mutableListOf<Pair<String, Long>>()) // probes run in parallel on IO
         val svc = service(dir, listOf("https://cdn.example.com", "https://down.example.com"), removed)
         svc.heldCopyProbe = { server, _, len -> asked += server to len; server == "https://cdn.example.com" }
         val result = svc.deleteFromThisDevice(sha)
@@ -89,7 +93,7 @@ class BlossomDeleteHereTest {
         val (dir, blob) = vault()
         // Logen 2026-11-27: a LAN box or a .local Mac the owner runs holds a real second copy.
         val svc = service(dir, listOf("https://192.168.4.99:3355", "https://studio.local", "http://127.0.0.1:3355"))
-        val probed = mutableListOf<String>()
+        val probed = java.util.Collections.synchronizedList(mutableListOf<String>()) // probes run in parallel on IO
         svc.heldCopyProbe = { server, _, _ -> probed += server; server.contains("192.168.4.99") }
         assertEquals(DeleteHereResult.Removed(freedBytes = 5, heldBy = 1), svc.deleteFromThisDevice(sha))
         assertFalse(probed.any { it.contains("127.0.0.1") })
@@ -179,7 +183,7 @@ class BlossomDeleteHereTest {
     fun `a plain-http LAN server is asked over https only`() = runTest {
         val (dir, blob) = vault()
         val svc = service(dir, listOf("http://192.168.4.20:3355"))
-        val probed = mutableListOf<String>()
+        val probed = java.util.Collections.synchronizedList(mutableListOf<String>())
         svc.heldCopyProbe = { server, _, _ -> probed += server; server.startsWith("http://") }
         assertEquals(DeleteHereResult.Kept(DELETE_HERE_NO_COPY), svc.deleteFromThisDevice(sha))
         assertEquals(listOf("https://192.168.4.20:3355"), probed)
@@ -246,29 +250,34 @@ class BlossomDeleteHereTest {
     @Test
     fun `an answer proves a copy only with this file's length`() {
         val p = BlobPresence.PRESENT
-        assertTrue(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5))
-        assertTrue(deleteHereHolds(p, 200, null, "5", 5))
+        val ok = "https://cdn.example.com/$sha"
+        assertTrue(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, finalUrl = ok))
+        assertTrue(deleteHereHolds(p, 200, null, "5", 5, finalUrl = ok))
+        // A redirect that ended on http proves nothing: anyone on that network could answer.
+        assertTrue(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, finalUrl = "https://cdn.example.com/$sha"))
+        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, finalUrl = "http://cdn.example.com/$sha"))
         // A different size is another file (or a placeholder).
-        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/9", "1", 5))
-        assertFalse(deleteHereHolds(p, 200, null, "9", 5))
+        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/9", "1", 5, finalUrl = ok))
+        assertFalse(deleteHereHolds(p, 200, null, "9", 5, finalUrl = ok))
         // No size given is not proof.
-        assertFalse(deleteHereHolds(p, 206, null, "1", 5))
-        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/*", "1", 5))
-        assertFalse(deleteHereHolds(p, 200, null, null, 5))
+        assertFalse(deleteHereHolds(p, 206, null, "1", 5, finalUrl = ok))
+        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/*", "1", 5, finalUrl = ok))
+        assertFalse(deleteHereHolds(p, 200, null, null, 5, finalUrl = ok))
         // 206's Content-Length is the 1-byte range, never the file.
-        assertFalse(deleteHereHolds(p, 206, null, "5", 5))
-        assertFalse(deleteHereHolds(BlobPresence.ABSENT, 206, "bytes 0-0/5", "1", 5))
-        assertFalse(deleteHereHolds(BlobPresence.UNREACHABLE, 206, "bytes 0-0/5", "1", 5))
+        assertFalse(deleteHereHolds(p, 206, null, "5", 5, finalUrl = ok))
+        assertFalse(deleteHereHolds(BlobPresence.ABSENT, 206, "bytes 0-0/5", "1", 5, finalUrl = ok))
+        assertFalse(deleteHereHolds(BlobPresence.UNREACHABLE, 206, "bytes 0-0/5", "1", 5, finalUrl = ok))
     }
 
     @Test
     fun `a cached answer is not proof`() {
         val p = BlobPresence.PRESENT
-        assertTrue(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, cacheStatus = "MISS", age = "0"))
-        assertTrue(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, cacheStatus = "DYNAMIC"))
-        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, cacheStatus = "HIT"))
-        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, cacheStatus = "stale"))
-        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, age = "120"))
+        val ok = "https://cdn.example.com/$sha"
+        assertTrue(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, cacheStatus = "MISS", age = "0", finalUrl = ok))
+        assertTrue(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, cacheStatus = "DYNAMIC", finalUrl = ok))
+        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, cacheStatus = "HIT", finalUrl = ok))
+        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, cacheStatus = "stale", finalUrl = ok))
+        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, age = "120", finalUrl = ok))
     }
 
     // ── The removed-here list ───────────────────────────────────
