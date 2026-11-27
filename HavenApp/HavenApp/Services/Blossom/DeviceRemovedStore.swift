@@ -5,7 +5,8 @@ import Foundation
 /// The engine and the Android app read the same file.
 ///
 /// Also holds a file set aside while its delete is being checked: it moves
-/// out of the vault folder (to `removed_here_aside/`) before the servers are
+/// out of the vault folder (to `removed_here_aside/<hash>/`, every name it
+/// is served by) before the servers are
 /// asked, so no address of this device (its tunnel domain, Tailscale or LAN
 /// name) can answer for it and prove its own copy (Tron, PR 2652 M1). Not a
 /// `<hash>.deleting` rename: the engine serves `<hash>.<any ext>` apart from
@@ -52,22 +53,64 @@ final class DeviceRemovedStore: @unchecked Sendable {
 
     // MARK: Set aside while the delete is checked
 
-    /// Moves `file` (the vault copy of `sha256`) out of the vault folder.
-    /// The new place, or nil when it could not be moved (then nothing changed).
-    func setAside(_ file: URL, sha256: String, relayDataDir: URL) -> URL? {
-        let dir = relayDataDir.standardizedFileURL.appendingPathComponent(Self.asideFolder, isDirectory: true)
-        let aside = dir.appendingPathComponent(file.lastPathComponent)
+    private static let listedBeforeMarker = ".listed-before"
+
+    /// Every vault file of `sha256`: the bare hash and each `<hash>.<ext>`,
+    /// so no name of it is left to answer the check (Tron, #2654 low 2).
+    static func vaultFiles(of sha256: String, in vault: URL) -> [URL] {
+        let hash = sha256.lowercased()
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: vault.path) else { return [] }
+        return names.filter { let n = $0.lowercased(); return n == hash || n.hasPrefix(hash + ".") }
+            .sorted().map { vault.appendingPathComponent($0) }
+    }
+
+    private func asideDir(_ relayDataDir: URL) -> URL {
+        relayDataDir.standardizedFileURL.appendingPathComponent(Self.asideFolder, isDirectory: true)
+    }
+
+    /// Moves `files` (the vault copies of `sha256`) out of the vault folder,
+    /// into `removed_here_aside/<hash>/`. `wasListed`: the hash was on the
+    /// list before this check, so putting the files back leaves it listed
+    /// (Tron, #2654 low 3); a marker file keeps that for a later process.
+    /// false when they could not all be moved (then nothing changed).
+    func setAside(_ files: [URL], sha256: String, wasListed: Bool, relayDataDir: URL) -> Bool {
+        let hash = sha256.lowercased()
+        let dir = asideDir(relayDataDir).appendingPathComponent(hash, isDirectory: true)
         return lock.withLock {
+            guard !files.isEmpty, !FileManager.default.fileExists(atPath: dir.path) else { return false }
+            var moved: [(URL, URL)] = []
             do {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                if FileManager.default.fileExists(atPath: aside.path) { try FileManager.default.removeItem(at: aside) }
-                try FileManager.default.moveItem(at: file, to: aside)
+                if wasListed {
+                    try Data().write(to: dir.appendingPathComponent(Self.listedBeforeMarker))
+                }
+                for file in files {
+                    let to = dir.appendingPathComponent(file.lastPathComponent)
+                    try FileManager.default.moveItem(at: file, to: to)
+                    moved.append((file, to))
+                }
             } catch {
-                return nil
+                for (from, to) in moved { try? FileManager.default.moveItem(at: to, to: from) }
+                try? FileManager.default.removeItem(at: dir)
+                return false
             }
-            inFlight.insert(sha256.lowercased())
-            return aside
+            inFlight.insert(hash)
+            return true
         }
+    }
+
+    /// The check refused, or the delete failed: every file goes back to the
+    /// vault, and the list is as it was before the check. false when a file
+    /// could not go back (it stays aside and listed; the next pass retries).
+    @discardableResult
+    func putBack(_ sha256: String, relayDataDir: URL, vault: URL) -> Bool {
+        lock.withLock { putBackLocked(sha256.lowercased(), relayDataDir: relayDataDir, vault: vault) }
+    }
+
+    /// The check allowed it: the set-aside files go for good.
+    func discardSetAside(_ sha256: String, relayDataDir: URL) throws {
+        let dir = asideDir(relayDataDir).appendingPathComponent(sha256.lowercased(), isDirectory: true)
+        try lock.withLock { try FileManager.default.removeItem(at: dir) }
     }
 
     /// The delete of `sha256` is over (deleted, or put back).
@@ -76,16 +119,21 @@ final class DeviceRemovedStore: @unchecked Sendable {
     }
 
     /// Puts back every file a delete left aside and never finished (the app
-    /// quit mid-check), and takes it off the list: it is still here.
+    /// quit mid-check), with the list as it was before that check.
     func recoverSetAside(relayDataDir: URL, vault: URL) {
-        let dir = relayDataDir.standardizedFileURL.appendingPathComponent(Self.asideFolder, isDirectory: true)
+        let root = asideDir(relayDataDir)
         let url = DeviceRemovedHashes.fileURL(relayDataDir: relayDataDir)
         lock.withLock {
-            guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path), !names.isEmpty else { return }
+            guard let names = try? FileManager.default.contentsOfDirectory(atPath: root.path), !names.isEmpty else { return }
             for name in names {
                 let hash = String(name.prefix(64)).lowercased()
                 guard MediaSizeCache.isHash(hash), !inFlight.contains(hash) else { continue }
-                let from = dir.appendingPathComponent(name), to = vault.appendingPathComponent(name)
+                if name.count == 64 {
+                    putBackLocked(hash, relayDataDir: relayDataDir, vault: vault)
+                    continue
+                }
+                // A file set aside by 3.3.1 before (65) (one flat file, never listed before).
+                let from = root.appendingPathComponent(name), to = vault.appendingPathComponent(name)
                 if FileManager.default.fileExists(atPath: to.path) {
                     try? FileManager.default.removeItem(at: from)
                 } else if (try? FileManager.default.moveItem(at: from, to: to)) == nil {
@@ -94,6 +142,25 @@ final class DeviceRemovedStore: @unchecked Sendable {
                 removeLocked(hash, url: url)
             }
         }
+    }
+
+    private func putBackLocked(_ hash: String, relayDataDir: URL, vault: URL) -> Bool {
+        let dir = asideDir(relayDataDir).appendingPathComponent(hash, isDirectory: true)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        let wasListed = names.contains(Self.listedBeforeMarker)
+        var all = true
+        for name in names where name != Self.listedBeforeMarker {
+            let from = dir.appendingPathComponent(name), to = vault.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: to.path) {
+                try? FileManager.default.removeItem(at: from)
+            } else if (try? FileManager.default.moveItem(at: from, to: to)) == nil {
+                all = false
+            }
+        }
+        guard all else { return false }
+        try? FileManager.default.removeItem(at: dir)
+        if !wasListed { removeLocked(hash, url: DeviceRemovedHashes.fileURL(relayDataDir: relayDataDir)) }
+        return true
     }
 
     // MARK: File
