@@ -206,12 +206,12 @@ fun MediaGalleryScreen(
     val filteredItems = remember(mediaItems, typeSelection, sortOption) {
         sortOption.sorted(mediaItems.filter { MediaTypeSelection.matches(typeSelection, it) })
     }
-    // Today / This Week / This Month / month headings, only under a date sort.
     // A file deleted while its menu is open: drop the target, or the menu
     // reopens on its own when that file comes back.
     LaunchedEffect(filteredItems) {
         contextMenuTarget = menuTargetAfter(contextMenuTarget, filteredItems)
     }
+    // Today / This Week / This Month / month headings, only under a date sort.
     val sections = remember(filteredItems, sortOption) {
         MediaDateGrouping.sections(filteredItems, sortOption)
     }
