@@ -393,7 +393,9 @@ extension FeedView {
     /// Below the top, the post being read stays put while the new ones go in
     /// above it (the layout switch's anchor, FeedView+Layout).
     func applyPendingKeepingPlace() {
-        let reading = FeedStayPut.keepsReading(isAtTop: isAtTop) ? topVisibleNoteId() : nil
+        // Back from another tab the visible-row set is empty (rows left it
+        // on hide), so fall back to the scroll position, which survives.
+        let reading = FeedStayPut.keepsReading(isAtTop: isAtTop) ? (topVisibleNoteId() ?? scrolledNoteID) : nil
         feedService.applyPendingNotes()
         if let reading, let row = rowId(showing: reading) {
             pendingLayoutAnimation = nil

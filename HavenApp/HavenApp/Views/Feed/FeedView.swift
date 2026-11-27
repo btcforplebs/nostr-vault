@@ -80,7 +80,10 @@ struct FeedView: View {
     @State var newPostsDropWork: DispatchWorkItem?
     /// Debounce work item for rebuilding the row data cache to prevent
     /// expensive synchronous operations during active scrolling.
-    @State var cacheRebuildWork: DispatchWorkItem?
+    var cacheRebuildWork: DispatchWorkItem? {
+        get { rowStore.cacheRebuildWork }
+        nonmutating set { rowStore.cacheRebuildWork = newValue }
+    }
     /// Row data and thread grouping (`rowDataCache`, `feedThreads`), held by
     /// reference so view copies don't each keep their own; see FeedRowStore.
     /// Observed through `screen`, so hidden row writes don't redraw.
@@ -96,10 +99,19 @@ struct FeedView: View {
     /// Each shown thread's sort key when it was first shown. Threads keep
     /// that place while the feed is on screen, so a reply doesn't lift its
     /// card from under the reader; `resortThreads()` clears it.
-    @State var frozenThreadKeys: [String: Date] = [:]
-    @State var threadRebuildWork: DispatchWorkItem?
+    var frozenThreadKeys: [String: Date] {
+        get { rowStore.frozenThreadKeys }
+        nonmutating set { rowStore.frozenThreadKeys = newValue }
+    }
+    var threadRebuildWork: DispatchWorkItem? {
+        get { rowStore.threadRebuildWork }
+        nonmutating set { rowStore.threadRebuildWork = newValue }
+    }
     /// A gap-fill regroup is already queued; see regroupIfGapFilled.
-    @State var gapRegroupScheduled = false
+    var gapRegroupScheduled: Bool {
+        get { rowStore.gapRegroupScheduled }
+        nonmutating set { rowStore.gapRegroupScheduled = newValue }
+    }
     /// Popular rank per note id, rebuilt once per `filteredNotes` change.
     /// In the row store, so a rebuild while hidden doesn't redraw.
     var popularRanks: [String: Int] {

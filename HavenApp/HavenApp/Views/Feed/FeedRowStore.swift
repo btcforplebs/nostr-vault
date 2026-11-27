@@ -22,6 +22,14 @@ final class FeedRowStore: ObservableObject {
     var threadFloor = 0
     /// The newest generation shown, so an older result can't replace it.
     var appliedThreadGeneration = 0
+    /// Rebuild bookkeeping, never drawn. Plain vars, not FeedView `@State`:
+    /// each new work item was a state change, so a regroup while the Feed was
+    /// hidden still ran FeedView.body (Tron, #2704 review).
+    var cacheRebuildWork: DispatchWorkItem?
+    var threadRebuildWork: DispatchWorkItem?
+    var gapRegroupScheduled = false
+    /// See FeedView's `frozenThreadKeys`.
+    var frozenThreadKeys: [String: Date] = [:]
     /// Rows drawn before they were in `rows`; see `FeedRowDrafts`. Not
     /// published: it is written while the feed draws.
     var drafts = FeedRowDrafts<FeedNoteRowData>()
