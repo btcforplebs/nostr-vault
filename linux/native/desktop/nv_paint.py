@@ -10,7 +10,8 @@ person looking at it shouldn't have to change a setting. So:
         no-dmabuf       WEBKIT_DISABLE_DMABUF_RENDERER=1 (what the NVIDIA driver needs; the first try there)
         no-compositing  that, plus WEBKIT_DISABLE_COMPOSITING_MODE=1 (no GPU at all: always draws, a little slower)
     the one that worked last time first, if one did (renderer.json, next to window.log's folder in ~/.config).
-  - After a window opens (Checker.watch), it checks every 2 s, for up to 45 s, that the page answers JavaScript and
+  - After a window opens (Checker.watch), it checks every 2 s, for up to 45 s of ticking frame clock (screen off or
+    idle: not counted), that the page answers JavaScript and
     that WebKit put pixels into the window (the view drawn into an offscreen picture: nothing at all = not drawn).
     The first check that passes ends it, and the mode is remembered.
   - If the time runs out, or the page's web process ends first, the window starts over (exec, the same process id)
@@ -33,6 +34,8 @@ import signal
 import sys
 import time
 import weakref
+
+import nv_heal  # a fresh cache for a page that never answers; stray WebKit processes (nv_heal.py)
 
 MODES = ("dmabuf", "no-dmabuf", "no-compositing")
 DMABUF = "WEBKIT_DISABLE_DMABUF_RENDERER"
@@ -112,6 +115,7 @@ def apply(m):
 def choose():
     """Before WebKit loads: the mode this process draws in."""
     global mode, tried, why
+    nv_heal.pending_reset()  # before WebKit loads: nothing has its cache open yet
     own = os.environ.get(OURS)
     if own in MODES or own == "user":
         mode, why = own, "carried over from before this process started over"
@@ -192,7 +196,12 @@ class Checker:
         self._web_left = set()  # leftover WebKit/bwrap processes from before starting over, still running
         self._held = None  # the window the shell asked for while they run (hold)
         self._hold_until = 0  # hold never waits past this (monotonic): a killed process stuck in the kernel stays
+        self._frames = None  # the window's frame counter at the last check (frames_stalled)
+        self._stalled = False
         log(f"drawing mode {mode} ({why})" + (f"; failed before: {', '.join(tried)}" if tried else ""))
+        if nv_heal.note:
+            log(nv_heal.note)
+        nv_heal.reap_strays(log)
         self.reap_leftovers()
 
     def reap_leftovers(self):
@@ -226,6 +235,7 @@ class Checker:
             if left and time.monotonic() - began >= LEFTOVER_KILL_S and not getattr(step, "killed", False):
                 step.killed = True
                 web = [p for p, c in left.items() if c.startswith("WebKit") or c == "bwrap"]
+                web += [k[0] for p in list(web) for k in descendants(p)]  # the whole tree: bwrap's sandboxed child too
                 if web:
                     self.log(f"killing {len(web)} WebKit process(es) left from before starting over, still running "
                              f"after {LEFTOVER_KILL_S} s")
@@ -260,6 +270,7 @@ class Checker:
         self.view = view
         self.js_ok = False
         self.done = False
+        self._frames, self._stalled = None, False
         self.deadline = time.monotonic() + GIVE_UP_S
         failed = load_state().get("failed")
         if mode != "user" and not tried and failed and failed == webkit_version_string():
@@ -289,6 +300,16 @@ class Checker:
         if not view.get_mapped():
             self.deadline = time.monotonic() + GIVE_UP_S  # not on screen (minimised): nothing to judge yet
             return True
+        if self.frames_stalled(view):
+            # No frame since the last check, though one was asked for: the screen is off (DPMS), the session idle or
+            # locked, the window hidden on a Wayland desktop. Nothing draws then, healthy or not: not judged, and the
+            # time doesn't count (the false alarm of a window opened just before the screen went off).
+            self.deadline += EVERY_S
+            if not self._stalled:
+                self.log("drawing check: the window's frame clock isn't ticking (screen off or idle): waiting")
+            self._stalled = True
+            return True
+        self._stalled = False
         d = self.drew_or_unknown(view)
         self.log(f"drawing check: js={'yes' if self.js_ok else 'no'} drew={d}")
         if self.js_ok and d is not False:
@@ -310,6 +331,16 @@ class Checker:
 
         view.run_javascript("document.readyState", None, answered, None)
         return True
+
+    def frames_stalled(self, view):
+        """True when the window drew no frame since the last check. Each check asks for one (queue_draw), so a window
+        on a running screen always has a new frame by the next check, even with a page that never paints."""
+        clock = view.get_frame_clock()
+        n = clock.get_frame_counter() if clock is not None else None
+        stalled = n is not None and self._frames is not None and n == self._frames
+        self._frames = n
+        view.queue_draw()
+        return stalled
 
     def drew_or_unknown(self, view):
         """drew(): True, False, or "unknown" when the check can't tell (or fails itself). Only False starts the
@@ -407,6 +438,8 @@ class Checker:
     def worked(self):
         global tried
         self.log(f"the window draws (mode {mode})")
+        if os.environ.pop(nv_heal.RESET, None) == "done":
+            self.log("it draws with a fresh WebKit cache (the old one is kept in " + nv_heal.cache_dir() + ".bak-*)")
         os.environ[TRIED] = ""
         tried = []
         if mode == "user":
@@ -419,6 +452,17 @@ class Checker:
             self.log(f"remembered drawing mode {mode}")
 
     def failed(self, reason):
+        st = load_state()
+        if not self.js_ok and nv_heal.may_reset(st):
+            # A page that never answers may be a copy of the web app that spins, kept in WebKit's cache: the same
+            # copy spins in every drawing mode. First the same mode again with a fresh cache (nv_heal.py).
+            nv_heal.ask_reset(st)
+            save_state(st)
+            self.log(f"the window didn't draw in mode {mode} ({reason}): starting over with WebKit's cache moved "
+                     "aside, in the same mode")
+            route = self.app.pending_route
+            self.restart(["--open", route] if route else [], failing=True)
+            return
         if mode == "user":
             self.log(f"the window didn't draw ({reason}); WebKit's drawing was set by hand, so it stays as set")
             self.show_browser_page(False)

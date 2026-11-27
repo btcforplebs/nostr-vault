@@ -36,7 +36,7 @@ set -u
 MODE=${1:-}; STAGE=${2:-}; OUT=${3:-}
 CMD=${NV_WT_CMD:-nostr-vault-desktop}
 MIN_COLOURS=${NV_WT_MIN_COLOURS:-64} # a drawn page has hundreds (anti-aliased text); a blank window has 1 or 2
-case "$MODE.$STAGE" in x11.setup|x11.vault|x11.blank|wayland.blank|x11.paste|x11.desk|x11.narrow|x11.close|wayland.setup|wayland.vault|wayland.desk|wayland.close) ;; *) echo "usage: $0 <x11|wayland> <setup|vault> <out dir>  (or: x11 paste <out dir>)" >&2; exit 2 ;; esac
+case "$MODE.$STAGE" in x11.setup|x11.vault|x11.blank|wayland.blank|x11.spin|wayland.spin|x11.paste|x11.desk|x11.narrow|x11.close|wayland.setup|wayland.vault|wayland.desk|wayland.close) ;; *) echo "usage: $0 <x11|wayland> <setup|vault> <out dir>  (or: x11 paste <out dir>)" >&2; exit 2 ;; esac
 [ -n "$OUT" ] || { echo "no out dir" >&2; exit 2; }
 
 if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
@@ -49,6 +49,17 @@ if [ "$(id -u)" = 0 ] && [ -z "${NV_WT_INNER:-}" ]; then
   cp "$(dirname "$0")/narrow-probe.py" /tmp/nvwt-narrow-probe.py && chmod 644 /tmp/nvwt-narrow-probe.py
   cp "$(dirname "$0")/close-probe.py" /tmp/nvwt-close-probe.py && chmod 644 /tmp/nvwt-close-probe.py
   cp "$(dirname "$0")/blank-stage.sh" /tmp/blank-stage.sh && chmod 644 /tmp/blank-stage.sh
+  cp "$(dirname "$0")/spin-stage.sh" /tmp/spin-stage.sh && chmod 644 /tmp/spin-stage.sh
+  cp "$(dirname "$0")/spin-server.py" /tmp/nvwt-spin-server.py && chmod 644 /tmp/nvwt-spin-server.py
+  if [ "$STAGE" = spin ]; then
+    # spin-stage.sh's stand-in vault: vault.env names an owner and its port, put back as it was after (before setup).
+    E=/etc/nostr-vault/vault.env; [ -e "$E" ] && cp -p "$E" /tmp/nvwt-vault.env.orig
+    mkdir -p /etc/nostr-vault && printf 'NV_OWNER=npub1spinstagetest\nNV_PORT=%s\n' "${NV_WT_SPIN_PORT:-18471}" >"$E" && chmod 644 "$E"
+    runuser -u nvwt -- env NV_WT_INNER=1 NV_WT_CMD="$CMD" NV_WT_CONTROL="${NV_WT_CONTROL:-1}" NV_WT_SPIN_SERVER=/tmp/nvwt-spin-server.py \
+      NV_WT_MIN_COLOURS="$MIN_COLOURS" PATH="$PATH" HOME=/home/nvwt sh /tmp/nvwt-window-test.sh "$MODE" "$STAGE" "$OUT"; r=$?
+    if [ -e /tmp/nvwt-vault.env.orig ]; then mv /tmp/nvwt-vault.env.orig "$E"; else rm -f "$E"; fi
+    exit $r
+  fi
   exec runuser -u nvwt -- env NV_WT_INNER=1 NV_WT_CMD="$CMD" NV_WT_CONTROL="${NV_WT_CONTROL:-1}" NV_WT_VAULT_URL="${NV_WT_VAULT_URL:-}" \
     NV_WT_PROBE=/tmp/nvwt-ua-probe.py NV_WT_PASTE_PROBE=/tmp/nvwt-paste-probe.py NV_WT_DESK_PROBE=/tmp/nvwt-desk-probe.py NV_WT_NARROW_PROBE=/tmp/nvwt-narrow-probe.py NV_WT_CLOSE_PROBE=/tmp/nvwt-close-probe.py \
     NV_WT_OWNER="${NV_WT_OWNER:-}" NV_WT_DESK_EXPECT="${NV_WT_DESK_EXPECT:-classic}" NV_WT_PY="${NV_WT_PY:-}" NV_WT_BIN="${NV_WT_BIN:-}" \
@@ -228,6 +239,11 @@ fi
 
 if [ "$STAGE" = blank ]; then
   . "$(dirname "$0")/blank-stage.sh"
+  echo "RESULT $MODE $STAGE pass=$pass fail=$fail"
+  [ "$fail" = 0 ]; exit
+fi
+if [ "$STAGE" = spin ]; then
+  . "$(dirname "$0")/spin-stage.sh"
   echo "RESULT $MODE $STAGE pass=$pass fail=$fail"
   [ "$fail" = 0 ]; exit
 fi
