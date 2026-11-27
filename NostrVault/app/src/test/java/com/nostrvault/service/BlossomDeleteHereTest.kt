@@ -53,7 +53,7 @@ class BlossomDeleteHereTest {
     fun `removes the vault file and marks it when an outside server holds it`() = runTest {
         val (dir, blob) = vault()
         val removed = DeviceRemovedHashes(dir = null)
-        val asked = mutableListOf<Pair<String, Long>>()
+        val asked = java.util.Collections.synchronizedList(mutableListOf<Pair<String, Long>>()) // probes run in parallel on IO
         val svc = service(dir, listOf("https://cdn.example.com", "https://down.example.com"), removed)
         svc.heldCopyProbe = { server, _, len -> asked += server to len; server == "https://cdn.example.com" }
         val result = svc.deleteFromThisDevice(sha)
@@ -89,7 +89,7 @@ class BlossomDeleteHereTest {
         val (dir, blob) = vault()
         // Logen 2026-11-27: a LAN box or a .local Mac the owner runs holds a real second copy.
         val svc = service(dir, listOf("https://192.168.4.99:3355", "https://studio.local", "http://127.0.0.1:3355"))
-        val probed = mutableListOf<String>()
+        val probed = java.util.Collections.synchronizedList(mutableListOf<String>()) // probes run in parallel on IO
         svc.heldCopyProbe = { server, _, _ -> probed += server; server.contains("192.168.4.99") }
         assertEquals(DeleteHereResult.Removed(freedBytes = 5, heldBy = 1), svc.deleteFromThisDevice(sha))
         assertFalse(probed.any { it.contains("127.0.0.1") })
@@ -179,7 +179,7 @@ class BlossomDeleteHereTest {
     fun `a plain-http LAN server is asked over https only`() = runTest {
         val (dir, blob) = vault()
         val svc = service(dir, listOf("http://192.168.4.20:3355"))
-        val probed = mutableListOf<String>()
+        val probed = java.util.Collections.synchronizedList(mutableListOf<String>())
         svc.heldCopyProbe = { server, _, _ -> probed += server; server.startsWith("http://") }
         assertEquals(DeleteHereResult.Kept(DELETE_HERE_NO_COPY), svc.deleteFromThisDevice(sha))
         assertEquals(listOf("https://192.168.4.20:3355"), probed)
