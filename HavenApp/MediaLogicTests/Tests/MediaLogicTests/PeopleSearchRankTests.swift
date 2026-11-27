@@ -152,4 +152,23 @@ final class PeopleSearchRankTests: XCTestCase {
         XCTAssertEqual(GlobalSearchRanking.tier(pubkey: key(1), own: [], follows: [], wot: []),
                        GlobalSearchRanking.outsideTier)
     }
+
+    // MARK: Folded names are kept per person
+
+    func testARenamedProfileIsFoldedAgain() {
+        let pubkey = key(42)
+        let before = PeopleSearchRank.Person(pubkey: pubkey, displayName: "Zoë Quill")
+        XCTAssertEqual(PeopleSearchRank.match("zoe", before), PeopleSearchRank.Match.prefix)
+        let after = PeopleSearchRank.Person(pubkey: pubkey, displayName: "Mira", about: "Zoë's friend")
+        XCTAssertNil(PeopleSearchRank.match("quill", after))
+        XCTAssertEqual(PeopleSearchRank.match("zoe", after), PeopleSearchRank.Match.aboutOnly)
+        XCTAssertEqual(PeopleSearchRank.match("mira", after), PeopleSearchRank.Match.exact)
+    }
+
+    func testWideAndAccentedNamesMatchOnBytes() {
+        let person = PeopleSearchRank.Person(pubkey: key(43), displayName: "Ｊｏｓé Ńunez")
+        XCTAssertEqual(PeopleSearchRank.match(PeopleSearchRank.fold("JOSE"), person), PeopleSearchRank.Match.prefix)
+        XCTAssertEqual(PeopleSearchRank.match("nun", person), PeopleSearchRank.Match.wordPrefix)
+        XCTAssertEqual(PeopleSearchRank.match("une", person), PeopleSearchRank.Match.contains)
+    }
 }

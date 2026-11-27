@@ -106,10 +106,10 @@ enum FollowListLogic {
     /// then names that start with it, then the rest; the picked sort holds
     /// within each part (search plan §2.8). Same folding as `PeopleSearchRank`.
     static func queryMatchesFirst(_ people: [FollowListPerson], query: String) -> [FollowListPerson] {
-        let folded = PeopleSearchRank.fold(query)
+        let folded = PeopleSearchRank.queryBytes(PeopleSearchRank.fold(query))
         guard !folded.isEmpty else { return people }
         func part(_ person: FollowListPerson) -> Int {
-            let match = PeopleSearchRank.match(folded, PeopleSearchRank.Person(
+            let match = PeopleSearchRank.match(bytes: folded, PeopleSearchRank.Person(
                 pubkey: person.pubkey, displayName: person.name, nip05: person.nip05))
             switch match {
             case PeopleSearchRank.Match.exact: return 0

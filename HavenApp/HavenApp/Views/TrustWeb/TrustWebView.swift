@@ -92,6 +92,9 @@ struct TrustWebView: View {
     @State var vouches: [String: Int]?
     @State var closeHaze: Set<String> = []
     @State var query = ""
+    /// Find someone's last answer, so body passes that change nothing
+    /// don't re-rank every cached profile.
+    @State var searchMemo = TrustWebSearchMemo()
     @FocusState var searchFocused: Bool
     @State var searchingRelays = false
     @State var relaySearch: Task<Void, Never>?

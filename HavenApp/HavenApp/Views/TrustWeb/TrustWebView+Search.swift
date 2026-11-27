@@ -39,18 +39,32 @@ extension TrustWebView {
 
     /// Who the search finds: a pasted key, or names you've seen, in the
     /// shared people order (`PeopleSearchRank`, the Search tab's too).
-    /// Blocked people are left out.
+    /// Blocked people are left out. Read on every body pass, so the answer
+    /// is kept until the query or what it ranks over changes; any profile
+    /// write (a relay's newer name too) counts as a change.
     private var searchMatches: [String] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.count == 64, text.allSatisfy(\.isHexDigit) { return [text.lowercased()] }
         let bare = text.hasPrefix("nostr:") ? String(text.dropFirst(6)) : text
         if bare.lowercased().hasPrefix("npub1"), let hex = NpubValidation.hexPubkey(fromNpub: bare) { return [hex] }
-        let circle = PeopleSearchRank.Circle(own: [me], follows: myFollows, web: web,
-                                             copy: DiscoveryReachStore.shared.copy)
-        return PeopleSearchRank.rank(Array(nostrService.profiles.values), query: text, circle: circle,
-                                     blocked: ConfigService.shared.activeAccountBlockedHexPubkeys,
-                                     limit: Self.searchLimit, person: PeopleSearchRank.person)
+        let profiles = nostrService.profiles
+        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+        let copy = DiscoveryReachStore.shared.copy
+        let key = TrustWebSearchMemo.Key(query: text, me: me, profiles: nostrService.profilesVersion, follows: myFollows.count,
+                                         web: web.count, blocked: blocked.count, copy: copy.map { Int($0.builtAt) &+ $0.people.count } ?? -1)
+        if let hit = searchMemo.answer(for: key) { return hit }
+        let answer = PeopleSearchRank.rank(Array(profiles.values), query: text, circle: searchCircle(copy: copy),
+                                           blocked: blocked, limit: Self.searchLimit, person: PeopleSearchRank.person)
             .map(\.pubkey)
+        searchMemo.keep(answer, for: key)
+        return answer
+    }
+
+    /// Who is how close: "You" is every account on this device (search plan
+    /// §1a, Logen 11-22), then follows, your web and the Haven's rank copy.
+    private func searchCircle(copy: TrustRankCopy?) -> PeopleSearchRank.Circle {
+        PeopleSearchRank.Circle(own: ConfigService.shared.allAccountHexes.union([me]), follows: myFollows,
+                                web: web, copy: copy)
     }
 
     /// Rows Find someone shows.
@@ -93,8 +107,9 @@ extension TrustWebView {
     }
 
     private func searchRow(_ pubkey: String) -> some View {
+        // 3+ steps ranks inside your web, so it gets the same chip.
         let tag = pubkey == me ? "You" : myFollows.contains(pubkey) ? "You follow"
-            : web.contains(pubkey) ? "In your web" : nil
+            : (web.contains(pubkey) || DiscoveryReachStore.shared.copy?[pubkey] != nil) ? "In your web" : nil
         return HStack(spacing: 12) {
             AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 32)
             VStack(alignment: .leading, spacing: 1) {
@@ -154,5 +169,29 @@ extension TrustWebView {
         searchFocused = false
         relaySearch?.cancel()
         searchingRelays = false
+    }
+}
+
+/// Find someone's last answer and what it was ranked from. A class, so the
+/// view can keep it from its body without a state change.
+final class TrustWebSearchMemo {
+    struct Key: Equatable {
+        let query: String
+        let me: String
+        let profiles: Int
+        let follows: Int
+        let web: Int
+        let blocked: Int
+        let copy: Int
+    }
+
+    private var key: Key?
+    private var answer: [String] = []
+
+    func answer(for key: Key) -> [String]? { self.key == key ? answer : nil }
+
+    func keep(_ answer: [String], for key: Key) {
+        self.key = key
+        self.answer = answer
     }
 }

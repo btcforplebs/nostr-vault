@@ -187,11 +187,12 @@ extension SearchView {
         searchResults = filteredResults(from: snapshot, query: trimmedQuery)
     }
 
-    /// Who is how close, for ranking people: follows, your web and the
+    /// Who is how close, for ranking people: "You" is every account on this
+    /// device (search plan §1a, Logen 11-22), then follows, your web and the
     /// Haven's rank copy (hops 3+ and trust scores).
     func peopleSearchCircle(own: String, follows: Set<String>) -> PeopleSearchRank.Circle {
-        PeopleSearchRank.Circle(own: [own], follows: follows, web: feedService.webOfTrustForRanking,
-                                copy: DiscoveryReachStore.shared.copy)
+        PeopleSearchRank.Circle(own: configService.allAccountHexes.union([own]), follows: follows,
+                                web: feedService.webOfTrustForRanking, copy: DiscoveryReachStore.shared.copy)
     }
 
     /// The fold opens by itself, once per query, when the only exact name
