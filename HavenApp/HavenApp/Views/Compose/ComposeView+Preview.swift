@@ -61,7 +61,13 @@ extension ComposeView {
         return ComposerPlacement.contentOrder(hosted, link: { $0.url?.absoluteString ?? "" }, in: text).map(\.descriptor)
     }
 
-    /// What changes the preview. Typing settles for a moment before it redraws.
+    /// Builds the preview from the text as it is now.
+    func drawPreview() {
+        previewDrawnAt = Date()
+        previewNote = makePreviewNote()
+    }
+
+    /// What changes the preview. Redrawn at most once per PreviewThrottle.window while you type.
     var previewKey: String {
         let media = attachments.map { "\($0.id)\($0.upload)\($0.altText)" }.joined(separator: ",")
         return "\(content)|\(media)|\(effectiveQuoteTo?.id ?? "")"
@@ -75,9 +81,11 @@ extension ComposeView {
         .environmentObject(nostrService)
         .task(id: previewKey) {
             // Live, but not every keystroke: the row lays out links and media.
-            if previewNote != nil { try? await Task.sleep(nanoseconds: 250_000_000) }
+            // A throttle (PreviewThrottle), so it keeps up while you type.
+            let wait = PreviewThrottle.wait(lastDrawAt: previewDrawnAt, now: Date())
+            if previewNote != nil, wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
             guard !Task.isCancelled else { return }
-            previewNote = makePreviewNote()
+            drawPreview()
         }
     }
 
@@ -88,6 +96,9 @@ extension ComposeView {
     /// Preview and Post on the right without overlapping on a phone.
     var previewButton: some View {
         Button {
+            // Built before the pane shows, so a reopen never shows the text
+            // from the last time it was open.
+            if !showingPreview { drawPreview() }
             showingPreview.toggle()
             isEditorFocused = !showingPreview
         } label: {

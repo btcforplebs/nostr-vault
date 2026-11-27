@@ -61,6 +61,8 @@ struct ComposeView: View {
     @State var composerWidth: CGFloat = 0
     /// What the preview draws, rebuilt a moment after each edit.
     @State var previewNote: FeedNote?
+    /// When the preview was last built (PreviewThrottle).
+    @State var previewDrawnAt = Date.distantPast
 
     // Blossom media picker state
     @State var showBlossomPicker = false
