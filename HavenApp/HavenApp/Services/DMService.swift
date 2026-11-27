@@ -18,6 +18,9 @@ class DMService: ObservableObject {
     /// offline, slow or refused). Shown on the Messages screen, retried on
     /// their own, and again on every refresh.
     @Published var waitingForSignerCount = 0
+    /// The inbox's "hidden by muted words" row was tapped: those
+    /// conversations show until the app restarts (DMService+MutedWords).
+    @Published var showsMutedWordConversations = false
 
     /// The inbox as shown: conversations with a blocked person are hidden, and
     /// so are strangers outside your Web of Trust (`DMTrust`), who wait under
@@ -30,7 +33,8 @@ class DMService: ObservableObject {
     var requestConversations: [DMConversation] { trustSplit.requests }
 
     private var trustSplit: (inbox: [DMConversation], requests: [DMConversation]) {
-        let unblocked = BlockedPeople.visibleConversations(conversations, blocked: ConfigService.shared.activeAccountBlockedHexPubkeys) { $0.id }
+        let unblocked = withoutMutedWords(
+            BlockedPeople.visibleConversations(conversations, blocked: ConfigService.shared.activeAccountBlockedHexPubkeys) { $0.id })
         return DMTrust.split(unblocked, trusted: dmTrusted, own: [loadedAccountPubkey],
                              counterparty: { $0.id },
                              youWrote: { $0.messages.contains(where: \.isFromMe) })

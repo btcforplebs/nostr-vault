@@ -824,6 +824,7 @@
 		51100A24E2561C1B68EA7B5E /* PowPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9953E9DA772C31A74141B335 /* PowPreferences.swift */; };
 		51159D6D70A1ECF17FCEF895 /* FeedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9DFAEDCEEB44DDC5F4F127 /* FeedSettingsView.swift */; };
 		5120A9C3B0465879E4964E8F /* VaultView+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FDD0CE72E864D3D545A708A /* VaultView+Layout.swift */; };
+		5125230E80443C156BFF1A3A /* MutedWordMatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 341750D256A83192C0EE815F /* MutedWordMatch.swift */; };
 		515DE6D307A4933B47E7C799 /* UploadShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF6F98928C8180139589F245 /* UploadShareHandler.swift */; };
 		51860C5B141689612762EC0D /* MenuBarStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 325A99A7D646C515AB620EE5 /* MenuBarStatusView.swift */; };
 		51AFD9FFCB02E5638830DEF3 /* HavenConfig+VaultWhitelist.swift in Sources */ = {isa = PBXBuildFile; fileRef = F15FF0204E747F1C394AD0BB /* HavenConfig+VaultWhitelist.swift */; };
@@ -1574,6 +1575,7 @@
 		9ADA599F058F66294C9B84F8 /* SoundOnlyStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4EE3A08A385329682E48B6 /* SoundOnlyStream.swift */; };
 		9B1CE1207B5F72076408993B /* TrustWhy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C95642AC6A5B84209DEFCA79 /* TrustWhy.swift */; };
 		9B36C7E8BC56AB1A40F0473B /* DMService+Listening.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4B4F101243738073676072E /* DMService+Listening.swift */; };
+		9B53732A8A5D0E7BBABB9980 /* DMService+MutedWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6563749AFA0C20D092EEB8 /* DMService+MutedWords.swift */; };
 		9B68AC8D69813A0AC6418E45 /* DMFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4D67D86F1E9429A57FEB224 /* DMFile.swift */; };
 		9B692850B1F877C9E5E76246 /* RelayProcessManager+Readiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30FB368C842D044344C828BA /* RelayProcessManager+Readiness.swift */; };
 		9B6948E6D9FEA4B14F009535 /* VideoAirPlayButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBD7C59BB3FACB321C50C4BC /* VideoAirPlayButton.swift */; };
@@ -1747,6 +1749,7 @@
 		ACC26F1D0C0082D8CE56EA5F /* WhatsInsideSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46A74F76189F907327A5125A /* WhatsInsideSheet.swift */; };
 		ACDC529EBD39E03CF54E889A /* SearchFilterMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7EDB2EA15D2E68ACF4B64F0 /* SearchFilterMenu.swift */; };
 		ACE35DD0C1A49CAA3B2103A3 /* GlobeHops.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AED9F5C683DD139EDE3D72F /* GlobeHops.swift */; };
+		ACE3FB3ED6F60F19D61BF981 /* MutedWordMatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 341750D256A83192C0EE815F /* MutedWordMatch.swift */; };
 		ACF015B03A548365BDBCA65E /* AccountTabHoldItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 177631ABDA7A587B84D0EF59 /* AccountTabHoldItem.swift */; };
 		AD093FA032369C6ECBD22018 /* IdentityInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54BCCF618B0F0045B3B8C3EB /* IdentityInput.swift */; };
 		AD09CAB3FDA4AF35E77DEE62 /* CondensedNoteLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 382B059DAE5A61E52A3387E7 /* CondensedNoteLine.swift */; };
@@ -1962,6 +1965,7 @@
 		C380D6AF533F10193F82D76C /* BookmarkList.swift in Sources */ = {isa = PBXBuildFile; fileRef = A252F7C1254A15F107C98037 /* BookmarkList.swift */; };
 		C38236D78103252B16C00B94 /* TopicFeedFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F893631E7565E9BB00A8EEC /* TopicFeedFilter.swift */; };
 		C39B28CDD9F403F866A5A715 /* RecipeLdParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC5D3B60854E6910103D57D3 /* RecipeLdParser.swift */; };
+		C3E1B39146609BE3CE935E56 /* DMMutedWordsRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 086AE6CAA37896A4FAE0C3EF /* DMMutedWordsRow.swift */; };
 		C3E34CBBE3F92F5C5A725EAE /* PillLane.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D2013AEB38F680462597BB /* PillLane.swift */; };
 		C3EA66192B05DCCA934E6862 /* AutoMirrorGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A294B831F0A06B650CF1C3E8 /* AutoMirrorGuard.swift */; };
 		C3F113A6C51BCD236F6E2304 /* MediaUploadQualitySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAF8DF0A0A729E4BB0078814 /* MediaUploadQualitySettingsView.swift */; };
@@ -2060,6 +2064,7 @@
 		CC6DCD55AF385C33270F09A9 /* FeedFilterBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1561DFB2E86099BD5DDA1160 /* FeedFilterBadge.swift */; };
 		CC7D29B6BFE172527D71D037 /* VaultActivity+OutsideFold.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98F9D76A5D5B603B5BA58513 /* VaultActivity+OutsideFold.swift */; };
 		CCDD2DE2A5F8B1ECDA15E248 /* FollowingBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81B813614AC332D9C184C78 /* FollowingBackupService.swift */; };
+		CD2BCBA87D7E6A16C61FD29F /* MuteList+DM.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72953F47399745F7AB99919F /* MuteList+DM.swift */; };
 		CD5E95391ABDC976A31925F9 /* VaultNewsState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 301B08D8931695D7D8A7A086 /* VaultNewsState.swift */; };
 		CD730E06FFDED680951AF275 /* FeedService+ExtendedNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90EE1AC599A9743E3EFC73CC /* FeedService+ExtendedNetwork.swift */; };
 		CDCA7BD2C08A31E082391BD4 /* NostrEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D0631CF48FD1659E6F1005 /* NostrEvent.swift */; };
@@ -2218,6 +2223,7 @@
 		DC040E2F965DE84F4C1BE9CC /* AvatarImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6558C31748490E315EA4DE8E /* AvatarImageCache.swift */; };
 		DC05554129C704BB4A5F5DE3 /* SharePortalAccountSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A88BE7DC7382E20346565E4 /* SharePortalAccountSection.swift */; };
 		DC086288AE1B4C22C7455AB8 /* GenmojiSaver.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2E53E0B250B0C8AE445ECE /* GenmojiSaver.swift */; };
+		DC0D8E5C4CF6E329764990B5 /* DMService+MutedWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6563749AFA0C20D092EEB8 /* DMService+MutedWords.swift */; };
 		DC564055F17E779B59E55881 /* FeedServiceTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19809A765C51F397B19FD14 /* FeedServiceTypes.swift */; };
 		DC772259D55A0ED167A9748A /* DMSendStatusLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC76F99AF72151E62332F43D /* DMSendStatusLine.swift */; };
 		DC9A0FA4F0780BAE878C7E23 /* PagerNeighbors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 264737BC8AA75A18D2E77AF1 /* PagerNeighbors.swift */; };
@@ -2261,6 +2267,7 @@
 		DFA500676066690C57933ABC /* ShareAccountSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F11ABB72E1624690FAF60C9 /* ShareAccountSection.swift */; };
 		DFABCE1B4E353FFA66402575 /* NVShareAction+Display.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11DACF33881364138C48F3B4 /* NVShareAction+Display.swift */; };
 		DFAD3A01030B319261DE9567 /* DesktopVaultsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9AEF4E086BE0AB0610CFC72 /* DesktopVaultsSettingsView.swift */; };
+		DFD0360F6040E4F5A65B2CE9 /* DMMutedWordsRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 086AE6CAA37896A4FAE0C3EF /* DMMutedWordsRow.swift */; };
 		DFDA2D4ADCC88506D3F07CF0 /* SleepWakeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B403C7767568BFB3E44E0CE /* SleepWakeMonitor.swift */; };
 		DFFC01343DA4371437214187 /* MacRelayDomainSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B94D10CDC71BCC7F67AC26E1 /* MacRelayDomainSettingsView.swift */; };
 		E01DF9F1CDC3F700FE2785A5 /* FileNotesOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F88792EDD2E8C589B090CD9 /* FileNotesOutbox.swift */; };
@@ -2585,6 +2592,7 @@
 		FD29733B400C52203B785137 /* PullDownToClose.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A5E48B6B5A7D86DDF84F92 /* PullDownToClose.swift */; };
 		FD399D2262ACE1EE5C50413E /* NostrService+Signing.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCD09B9E9DBEE997A0AF1832 /* NostrService+Signing.swift */; };
 		FD3E98B120857414C51192C0 /* VaultView+Content.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DBB01D87B267D0ACA43B8EC /* VaultView+Content.swift */; };
+		FD4F889B7717519FEBFF72AF /* MuteList+DM.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72953F47399745F7AB99919F /* MuteList+DM.swift */; };
 		FD5E837F1BF269C6A816BB02 /* VideoControlBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A64F14DD4D2F4DA10D102C /* VideoControlBar.swift */; };
 		FD65D43DEE0787CE9F4732B5 /* ConfigService+PlainOwnerKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = C67A42F2619D7CBB8616F3DB /* ConfigService+PlainOwnerKey.swift */; };
 		FD819DD8DD0F76DF6CAEF815 /* PublishTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A3EE75F17D363C0E2C9E44 /* PublishTargets.swift */; };
@@ -2685,6 +2693,7 @@
 		0802E590CDCCA7978BB8D2C6 /* AvatarThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarThumbnail.swift; sourceTree = "<group>"; };
 		083AB9E96216A0440D26D501 /* LiveNowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNowModel.swift; sourceTree = "<group>"; };
 		0842F86AEFC979CFBDF29054 /* CustomEmojiText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomEmojiText.swift; sourceTree = "<group>"; };
+		086AE6CAA37896A4FAE0C3EF /* DMMutedWordsRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMMutedWordsRow.swift; sourceTree = "<group>"; };
 		08B8C6912FB25B264EDAE511 /* VaultAccountChips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultAccountChips.swift; sourceTree = "<group>"; };
 		0909C6301A67A52A5CA1E250 /* GatedArticleBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatedArticleBody.swift; sourceTree = "<group>"; };
 		090FAA33204672CD9F7F6431 /* DashboardRelayRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardRelayRow.swift; sourceTree = "<group>"; };
@@ -2904,6 +2913,7 @@
 		3372E556A97C4A238D2EAF9C /* NostrService+Broadcast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+Broadcast.swift"; sourceTree = "<group>"; };
 		33A10CEB2C60DA33D62A752D /* BookmarkShareReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkShareReviewView.swift; sourceTree = "<group>"; };
 		33EF69906D14085C32707F25 /* TabButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabButton.swift; sourceTree = "<group>"; };
+		341750D256A83192C0EE815F /* MutedWordMatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MutedWordMatch.swift; sourceTree = "<group>"; };
 		3418518C726F177780E29385 /* NostrService+RelayListSave.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+RelayListSave.swift"; sourceTree = "<group>"; };
 		34514E56570393BEB67F9D54 /* MusicBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicBrowserView.swift; sourceTree = "<group>"; };
 		3479233DA13D1E79374B68FD /* MediaTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTabView.swift; sourceTree = "<group>"; };
@@ -3239,6 +3249,7 @@
 		71AB0175468D57FB7435B690 /* ImportNotesStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportNotesStep.swift; sourceTree = "<group>"; };
 		71B83064688F922769785D5B /* RelayProcessManager+Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RelayProcessManager+Config.swift"; sourceTree = "<group>"; };
 		71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MempoolAPIService.swift; sourceTree = "<group>"; };
+		72953F47399745F7AB99919F /* MuteList+DM.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MuteList+DM.swift"; sourceTree = "<group>"; };
 		7365F550F494F44F0C9A4FF5 /* PreviewThrottle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewThrottle.swift; sourceTree = "<group>"; };
 		737C297DFD1BEAF9966EB868 /* AccountWeb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountWeb.swift; sourceTree = "<group>"; };
 		73E44B69C6E3B33929DAA817 /* DesktopVaultListedSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopVaultListedSection.swift; sourceTree = "<group>"; };
@@ -3797,6 +3808,7 @@
 		D9246F5D41787687F53D8D1D /* RunInBackgroundToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunInBackgroundToggle.swift; sourceTree = "<group>"; };
 		D9BF8915977BBEB966F333A8 /* HashtagFeedModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashtagFeedModel.swift; sourceTree = "<group>"; };
 		D9F3DFD5E2E8E28D91D81FAB /* MacMeshMediaSwitch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMeshMediaSwitch.swift; sourceTree = "<group>"; };
+		DA6563749AFA0C20D092EEB8 /* DMService+MutedWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+MutedWords.swift"; sourceTree = "<group>"; };
 		DA7634DBEF7C0811783DC804 /* ReactionTapback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionTapback.swift; sourceTree = "<group>"; };
 		DA7C28CF4FEF54D4C0FE1E90 /* FeedService+Follow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+Follow.swift"; sourceTree = "<group>"; };
 		DA8EC80FB31CC3B6EB777D12 /* libhaven_ios.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhaven_ios.a; path = build/ios/libhaven_ios.a; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -4216,6 +4228,7 @@
 				63656F79DB488FE9FB6ACC67 /* DMBlockedNotice.swift */,
 				2EDFE860C08936FFDE7DC31E /* DMFileChip.swift */,
 				1D167E2A8A59209914A2B120 /* DMInboxLoadingView.swift */,
+				086AE6CAA37896A4FAE0C3EF /* DMMutedWordsRow.swift */,
 				53C95FE53DB43E5D1D3B8E2A /* DMNewChatPicker.swift */,
 				E905DA3B12A262533B3AB511 /* DMPhotoQuality.swift */,
 				8CB9E79782AB55A41F57E213 /* DMRequestsButton.swift */,
@@ -5255,7 +5268,9 @@
 				C955166884F1CE9A5BA4B36E /* MeshSiteIngress.swift */,
 				8AC0483F9DFD12CDCE049B7B /* MeshSiteRetry.swift */,
 				AF1386794E709BFA3E18B9CC /* MeshSyncStatus.swift */,
+				341750D256A83192C0EE815F /* MutedWordMatch.swift */,
 				CD94E113C1DDF3CF7D6351B2 /* MuteList.swift */,
+				72953F47399745F7AB99919F /* MuteList+DM.swift */,
 				E6123D97505D017C00A6C40C /* MyDevicesCheckGate.swift */,
 				9FEFD738FD3D4C13BCD7D2A6 /* MyDevicesStatus.swift */,
 				22900149BE690CB8BA39CE5A /* NewToVaultQuestion.swift */,
@@ -5822,6 +5837,7 @@
 				E4B4F101243738073676072E /* DMService+Listening.swift */,
 				FF7F829220B15EED46D2CA7D /* DMService+LocalInjection.swift */,
 				D4FBCB45EE5F7F14C5CCFF74 /* DMService+MessageProcessing.swift */,
+				DA6563749AFA0C20D092EEB8 /* DMService+MutedWords.swift */,
 				EAC81DE3E07D6D955930EB56 /* DMService+Persistence.swift */,
 				9B66DBC6F906E98DB63E2AAD /* DMService+Publishing.swift */,
 				B5AF9325362206BD88D81991 /* DMService+Reconnect.swift */,
@@ -6397,6 +6413,7 @@
 				E657A41D5C0D4A7B00251FB8 /* DMInboxLoadingView.swift in Sources */,
 				67938D55AFB00C021B910C99 /* DMInboxView.swift in Sources */,
 				EEADBCA880B3902FEAF6C231 /* DMMessage.swift in Sources */,
+				DFD0360F6040E4F5A65B2CE9 /* DMMutedWordsRow.swift in Sources */,
 				13D555EE4C8D248304BC5A26 /* DMNewChatPicker.swift in Sources */,
 				50983AAA7396E43037CD88B0 /* DMPhotoQuality.swift in Sources */,
 				581018DEDAD645E329211DF9 /* DMReadAuth.swift in Sources */,
@@ -6413,6 +6430,7 @@
 				9B36C7E8BC56AB1A40F0473B /* DMService+Listening.swift in Sources */,
 				488D494114E341C186B085CF /* DMService+LocalInjection.swift in Sources */,
 				DB27F3B8347422198AD4B586 /* DMService+MessageProcessing.swift in Sources */,
+				DC0D8E5C4CF6E329764990B5 /* DMService+MutedWords.swift in Sources */,
 				02E4607DB895BC1BF47BC315 /* DMService+Persistence.swift in Sources */,
 				358A1A18DE8227A6CC491966 /* DMService+Publishing.swift in Sources */,
 				3C92F74F6D8341C0B3C6101F /* DMService+Reconnect.swift in Sources */,
@@ -6944,8 +6962,10 @@
 				FA85C3B0A6B2562BB1B27D75 /* MusicPlayerService.swift in Sources */,
 				89440327256FCFB044CAA230 /* MusicSheetHost.swift in Sources */,
 				E1612DF2F9C7C762F1BE148B /* MusicToolbarButtons.swift in Sources */,
+				FD4F889B7717519FEBFF72AF /* MuteList+DM.swift in Sources */,
 				69170CD0B1E86E665FD42AD6 /* MuteList.swift in Sources */,
 				A35A0C243436DD3ED5ECD9A7 /* MuteListStore.swift in Sources */,
+				ACE3FB3ED6F60F19D61BF981 /* MutedWordMatch.swift in Sources */,
 				B48CEACD25BDA8CC00F51073 /* MyDevicesCheckGate.swift in Sources */,
 				A02AA3F157AEC7214947E370 /* MyDevicesPanel.swift in Sources */,
 				5CD2FC6F43509E54FFE1E4AE /* MyDevicesPanelModel.swift in Sources */,
@@ -7714,6 +7734,7 @@
 				440A1FFEE471320693A03FB3 /* DMInboxLoadingView.swift in Sources */,
 				52B1CF6FDF93928ECC60D213 /* DMInboxView.swift in Sources */,
 				F5357A352DC309F2E4BB19CA /* DMMessage.swift in Sources */,
+				C3E1B39146609BE3CE935E56 /* DMMutedWordsRow.swift in Sources */,
 				55B88409F2F78647ADC57A0E /* DMNewChatPicker.swift in Sources */,
 				EAF8A5223FDDAE0074294C3C /* DMPhotoQuality.swift in Sources */,
 				D88848DFFE3875AE38EEF8AA /* DMReadAuth.swift in Sources */,
@@ -7730,6 +7751,7 @@
 				A558978CF9CB4165A1C0665D /* DMService+Listening.swift in Sources */,
 				0A2936729AA7F1B7BED2C374 /* DMService+LocalInjection.swift in Sources */,
 				55F1C5E7B8BC4E41CE94171E /* DMService+MessageProcessing.swift in Sources */,
+				9B53732A8A5D0E7BBABB9980 /* DMService+MutedWords.swift in Sources */,
 				4CB97B6BED6A0C7F9B4117B0 /* DMService+Persistence.swift in Sources */,
 				D6DB303C4F4CADFF7AF5053B /* DMService+Publishing.swift in Sources */,
 				D50939A6B0EB9A8CEED1E6D6 /* DMService+Reconnect.swift in Sources */,
@@ -8254,8 +8276,10 @@
 				2CF4B408A85E82C349EA0380 /* MusicPlayerService.swift in Sources */,
 				BF1CF1BFBC3601ECC6A57600 /* MusicSheetHost.swift in Sources */,
 				2E7ADAF0E7EDA2CAA24D2FD2 /* MusicToolbarButtons.swift in Sources */,
+				CD2BCBA87D7E6A16C61FD29F /* MuteList+DM.swift in Sources */,
 				E84B9ACAF376EFD779DFB6D9 /* MuteList.swift in Sources */,
 				2E296760F5CEF9DFF67EE3CD /* MuteListStore.swift in Sources */,
+				5125230E80443C156BFF1A3A /* MutedWordMatch.swift in Sources */,
 				2E753EEDBAA72E05D88ED434 /* MyDevicesCheckGate.swift in Sources */,
 				32A4EFC561EE35CE57FE33D4 /* MyDevicesStatus.swift in Sources */,
 				D438A7C7A163F62FD69AE216 /* MyProfileView.swift in Sources */,

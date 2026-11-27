@@ -287,6 +287,10 @@ struct DMInboxView: View {
                             .buttonStyle(.plain)
                         }
 
+                        DMMutedWordsRow(dmService: dmService)
+                            .frame(maxWidth: 360)
+                            .padding(.horizontal, 24)
+
                         Spacer()
                     }
                     .frame(width: geometry.size.width, height: geometry.size.height)
@@ -312,6 +316,9 @@ struct DMInboxView: View {
                     .listRowBackground(Color.platformSecondaryGroupedBackground)
                     .listRowSeparator(.hidden)
                 }
+                DMMutedWordsRow(dmService: dmService)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -423,6 +430,9 @@ extension DMInboxView {
                             Text("Requests").font(.appSystem(size: 13, weight: .semibold))
                         }
                     } footer: {
+                        if !showingRequestsInPane {
+                            DMMutedWordsRow(dmService: dmService)
+                        }
                         if showingRequestsInPane {
                             Text(dmService.requestConversations.isEmpty
                                  ? "No requests right now."

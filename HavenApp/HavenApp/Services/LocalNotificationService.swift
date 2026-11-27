@@ -331,7 +331,7 @@ final class LocalNotificationService {
                 return
             }
             // An unopened NIP-04 DM still names its sender.
-            if !(DMService.shared.isInboxConversation(author)) { return }
+            if !(DMService.shared.isInboxConversation(author)) || DMService.shared.isHiddenByMutedWords(author) { return }
             await Self.awaitAuthor(author)
             let name = author.isEmpty ? nil : NostrService.shared.profiles[author]?.bestName
             deliver(id: id, type: type, name: name, preview: "", npub: npub)
@@ -353,7 +353,8 @@ final class LocalNotificationService {
                                  ownAccounts: ConfigService.shared.allAccountHexes,
                                  blocked: ConfigService.shared.blockedHexPubkeys(forAccount: npub),
                                  inInbox: DMService.shared.isInboxConversation(opened.conversationId),
-                                 onScreen: onScreen) else { return }
+                                 onScreen: onScreen),
+              !DMService.shared.isHiddenByMutedWords(opened.conversationId) else { return }
         Task { @MainActor in
             await Self.awaitAuthor(sender)
             let name = NostrService.shared.profiles[sender]?.bestName

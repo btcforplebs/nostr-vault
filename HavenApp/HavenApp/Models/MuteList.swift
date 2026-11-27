@@ -12,7 +12,8 @@ import Foundation
 /// block public. The same rules as the web app (web-vault/src/net/blocks.js).
 struct MuteList: Equatable, Codable {
     var privatePubkeys: Set<String> = []
-    /// Lowercased; a note whose text contains one is hidden.
+    /// Lowercased; a note whose text has one as a whole word is hidden
+    /// (`MutedWordMatch`).
     var words: [String] = []
     /// Lowercased, without the "#".
     var hashtags: Set<String> = []
@@ -65,10 +66,7 @@ struct MuteList: Equatable, Codable {
             let value = tag[1].lowercased()
             return hashtags.contains(value.hasPrefix("#") ? String(value.dropFirst()) : value)
         }) { return true }
-        if !words.isEmpty {
-            let text = content.lowercased()
-            if !text.isEmpty, words.contains(where: { text.contains($0) }) { return true }
-        }
+        if !words.isEmpty, MutedWordMatch.containsAny(content, words: words) { return true }
         return false
     }
 
