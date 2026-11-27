@@ -198,7 +198,7 @@ jobs:
   # Software rendering only: no runner has a GPU, so this can't show a GPU driver's own failure.
   window-test:
     needs: build
-    timeout-minutes: 40
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -281,6 +281,12 @@ jobs:
           r=0
           docker exec nv sh /w/linux/native/test/window-test.sh x11 blank /tmp/nvwt-out || r=1
           docker exec nv sh /w/linux/native/test/window-test.sh wayland blank /tmp/nvwt-out || r=1
+          exit $r
+      - name: Before setup, X11 and Wayland - a cached web app that spins (fresh cache, sign-in kept), stray WebKit trees, screen off
+        run: |
+          r=0
+          docker exec nv sh /w/linux/native/test/window-test.sh x11 spin /tmp/nvwt-out || r=1
+          docker exec nv sh /w/linux/native/test/window-test.sh wayland spin /tmp/nvwt-out || r=1
           exit $r
       - name: X11 - a half-width tile (600 px) doesn't clip the window
         run: docker exec nv sh /w/linux/native/test/window-test.sh x11 narrow /tmp/nvwt-out
