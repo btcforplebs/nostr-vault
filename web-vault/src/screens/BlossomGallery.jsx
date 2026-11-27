@@ -23,6 +23,7 @@ import { ago } from "../components/time.js"
 import { vaultNotesUsing, notePreview } from "../net/media-notes.js"
 import { MediaListRows } from "./MediaListRows.jsx"
 import { clampAspect, columnsFor, deal, learnShape, shapeOf, shapesNow } from "../net/media-mosaic.js"
+import { MinimizeButton } from "../components/MinimizeVideo.jsx"
 if (import.meta.env) import("../styles/blossom.css")
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
@@ -279,6 +280,8 @@ function Viewer({ ctx, blob, servers, order = [], onStep, onClose, onDeleted, on
         <div class="row">
           <button class="small" disabled={!!busy} onClick={copy}>Copy link</button>
           <a class="button small" href={blob.url} target="_blank" rel="noopener noreferrer">Open</a>
+          {blob.kind === "video" && <MinimizeButton video={() => ref.current?.querySelector(".blossom-view video")} url={blob.url}
+            meta={{ title: "Video from your Vault", author: ctx.session?.pubkey ?? null }} onDone={onClose} />}
           {!readOnly && missing.length > 0 && <button class="small" disabled={!!busy} onClick={mirror} aria-busy={busy === "mirror" || undefined}>{busy === "mirror" ? "Copying…" : `Copy to ${missing.length} more`}</button>}
         </div>
         {!readOnly && (asking

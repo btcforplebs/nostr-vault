@@ -1,11 +1,13 @@
 // The player bar (the iPhone's MiniPlayerBar): cover, title and artist (a LIVE badge for a minimized stream),
-// play/pause, next (songs only), ✕ to stop, and a progress line. Tapping it opens the full Now Playing. Music and
+// play/pause, next (songs only), ✕ to stop, and a progress line. A minimized video has "Back to the video", from any
+// bar (VideoReopen.jsx). Tapping it opens the full Now Playing. Music and
 // Live draw their own; everywhere else the app's FloatingPlayer draws one while something plays, so a song or a
 // minimized stream always has its controls (FloatingButtonRow). The floating one hides while a screen's own is up.
 import { useEffect, useState } from "preact/hooks"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { NowPlaying } from "./NowPlaying.jsx"
 import { current, hasNext, next, onPlayer, playerState, stop, toggle } from "./player.js"
+import { backToVideo } from "./VideoReopen.jsx"
 
 // How many screen-hosted bars are up (Music, Live): the floating bar stays hidden while any is.
 let hosted = 0
@@ -36,11 +38,13 @@ export function PlayerBar({ onOpen, onOpenLive, floating = false }) {
           {t.art ? <img src={t.art} alt="" referrerpolicy="no-referrer" /> : <div class="music-art small" />}
           <span class="music-track-text">
             <span class="music-track-title">{t.title}</span>
-            <span class="muted small">{t.live && <span class="music-live">LIVE</span>}{s.error || (t.live && t.stream?.host ? <AuthorName pubkey={t.stream.host} /> : t.artist)}</span>
+            <span class="muted small">{t.live && <span class="music-live">LIVE</span>}{s.error || (t.live && t.stream?.host ? <AuthorName pubkey={t.stream.host} />
+              : t.video && t.author ? <AuthorName pubkey={t.author} /> : t.artist)}</span>
           </span>
         </button>
         <button type="button" class="icon play" onClick={toggle} aria-label={s.playing ? "Pause" : "Play"}>{s.playing ? "⏸" : "▶"}</button>
-        {!t.live && <button type="button" class="icon" onClick={next} aria-label="Next" disabled={!hasNext(s)}>⏭</button>}
+        {t.video && <button type="button" class="small music-back" onClick={() => backToVideo(s)}>Back to the video</button>}
+        {!t.live && !t.video && <button type="button" class="icon" onClick={next} aria-label="Next" disabled={!hasNext(s)}>⏭</button>}
         <button type="button" class="icon" onClick={stop} aria-label="Stop and close the player">✕</button>
         <span class="music-progress" aria-hidden="true"><span style={{ width: `${progress * 100}%` }} /></span>
       </div>

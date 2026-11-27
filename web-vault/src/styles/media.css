@@ -68,3 +68,14 @@
 .lightbox-note:hover { background: var(--s2); }
 .lightbox-note-text { display: grid; min-width: 0; }
 .lightbox-note-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Minimize over a video (components/MinimizeVideo.jsx): its sound goes on in the player bar. The box is the video's
+   own size wherever it sits: a single video, a carousel page, the lightbox, a link in the text, a DM bubble. */
+.video-min-box { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+.media-one .video-min-box, .video-min-box.text { height: auto; }
+.video-min-box.text { display: block; }
+.lightbox-page .video-min-box video { max-height: 100%; }
+.video-minimize.overlay { position: absolute; top: 8px; left: 8px; z-index: 1; min-height: 0; padding: 4px 10px; border: 0;
+  border-radius: 999px; background: rgb(0 0 0 / .6); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .25); color: #fff; font: var(--t-foot); cursor: pointer; }
+.video-min-box.text .video-minimize.overlay { top: 18px; }
+.lightbox .video-minimize.overlay { top: calc(env(safe-area-inset-top) + 14px); left: 12px; padding: 8px 14px; }
