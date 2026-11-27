@@ -96,7 +96,7 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
                 val asked = ownRelays + firstHints.keys
                 val askedKeys = asked.map { normalizeRelay(it) }.toSet()
                 val fallbacks = FALLBACK_NOTE_RELAYS.filter { normalizeRelay(it) !in askedKeys }
-                val hints = hintRelays(stillMissing, asked + fallbacks, cap = 24, refs)
+                val hints = hintRelays(stillMissing, asked + fallbacks, cap = 24, refs, wide = true)
                 requestNotes(fallbacks.associateWith { stillMissing } + hints, arrived)
             }
         }
@@ -114,7 +114,7 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
      * that cover the most ids. Keeping them in arrival order let the first
      * ids fill the cap, so later ids got no hint relay at all.
      */
-    private fun FeedService.hintRelays(ids: List<String>, exclude: Collection<String>, cap: Int, refs: (String) -> Pair<String?, String?>): Map<String, List<String>> {
+    private fun FeedService.hintRelays(ids: List<String>, exclude: Collection<String>, cap: Int, refs: (String) -> Pair<String?, String?>, wide: Boolean = false): Map<String, List<String>> {
         val skip = exclude.map { normalizeRelay(it) }.toSet()
         // Keyed by the normalized form to merge duplicates, but the request
         // goes to the URL as written: lowercasing would change a path.
@@ -124,7 +124,7 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
             val (hint, author) = refs(id)
             val urls = buildList {
                 hint?.let { add(it) }
-                author?.let { a -> nostrService.outboxRelays.value[a]?.take(3)?.let { addAll(it) } }
+                author?.let { a -> addAll(authorRelaysToAsk(nostrService.outboxRelays.value[a], wide)) }
             }
             for (url in urls) {
                 val key = normalizeRelay(url)
@@ -138,6 +138,14 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
             .take(cap)
             .associate { urlForKey.getValue(it.key) to it.value.distinct() }
     }
+
+    /**
+     * The author's write relays to ask for a note: the first 3, or up to 8
+     * (loopback skipped) once the first pass came back without it. A quote
+     * Tidy found 11-27 sat only on the 7th of 9 (nostr-02.yakihonne.com).
+     */
+    internal fun authorRelaysToAsk(writeRelays: List<String>?, wide: Boolean): List<String> =
+        writeRelays.orEmpty().filterNot(NostrService::isLoopbackRelay).take(if (wide) 8 else 3)
 
     /**
      * Who wrote each note that loaded notes quote by `nostr:nevent1…`, by id.
