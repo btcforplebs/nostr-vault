@@ -2,7 +2,6 @@ package com.nostrvault.data.remote
 
 import android.util.Log
 import com.nostrvault.BuildConfig
-import com.nostrvault.data.remote.LocalTls.localTrust
 import com.nostrvault.relay.RelayBlocklist
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -160,12 +159,11 @@ class WebSocketClient(
 
         /** Shared OkHttpClient for this device's relay and LAN relays; trust follows [LocalTls]. */
         val sharedLocalhostClient: OkHttpClient by lazy {
-            OkHttpClient.Builder()
+            LocalTls.localClientBuilder()
                 .minWebSocketMessageToCompress(NEVER_COMPRESS)
                 .pingInterval(0, TimeUnit.SECONDS) // see WATCHDOG_IDLE_MS
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(0, TimeUnit.SECONDS)
-                .localTrust()
                 .build()
         }
     }
