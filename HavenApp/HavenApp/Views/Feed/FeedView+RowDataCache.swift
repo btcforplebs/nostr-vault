@@ -413,7 +413,8 @@ extension FeedView {
 
     // MARK: - Feed Actions (environment for FeedNoteRow)
 
-    var feedActionsValue: FeedActions {
-        .make(feedService: feedService, nostrService: nostrService)
-    }
+    /// Built once per FeedView (`feedActions`), not on every body pass: a new
+    /// struct of closures changed the environment value each time and
+    /// invalidated every row under it (Feed perf review 11-27 #3).
+    var feedActionsValue: FeedActions { feedActions }
 }

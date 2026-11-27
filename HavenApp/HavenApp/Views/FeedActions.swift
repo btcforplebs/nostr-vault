@@ -242,13 +242,20 @@ struct FeedActions {
         }
     }
 
+    /// The picker's own custom emoji, read with this account's relays. Called
+    /// when actions are built, and by a screen that keeps its actions when it
+    /// appears.
+    @MainActor
+    static func refreshEmoji(nostrService: NostrService) {
+        EmojiListService.shared.nostrService = nostrService
+        EmojiListService.shared.refresh()
+    }
+
     /// Shared factory so FeedView, NoteDetailView, ProfileView, and MenuBarView
     /// don't each duplicate ~70 lines of closure construction.
     @MainActor
     static func make(feedService: FeedService, nostrService: NostrService) -> FeedActions {
-        // The picker's own custom emoji are read with this account's relays.
-        EmojiListService.shared.nostrService = nostrService
-        EmojiListService.shared.refresh()
+        refreshEmoji(nostrService: nostrService)
         return FeedActions(
             likeNote: { note in
                 react(to: feedService.originalNote(for: note), with: ConfigService.shared.config.defaultReactionEmoji,

@@ -98,6 +98,9 @@ struct FeedView: View {
     @State var gapRegroupScheduled = false
     /// Popular rank per note id, rebuilt once per `filteredNotes` change.
     @State var popularRanks: [String: Int] = [:]
+    /// The rows' actions, built once (`feedActionsValue`). Its closures only
+    /// reach the shared services.
+    @State var feedActions = FeedActions.make(feedService: .shared, nostrService: .shared)
 
     // MARK: - Helper Functions
 
@@ -145,11 +148,15 @@ struct FeedView: View {
     var body: some View {
         #if os(iOS)
         feedStack
-            .onAppear { openNotificationNote() }
+            .onAppear {
+                openNotificationNote()
+                FeedActions.refreshEmoji(nostrService: nostrService)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenNotificationNote)) { _ in
                 openNotificationNote()
             }
             .onReceive(feedService.$filteredNotes, perform: updatePopularRanks)
+            .onChange(of: configService.activeAccountHexPubkey) { _, _ in FeedActions.refreshEmoji(nostrService: nostrService) }
             .task(id: feedService.feedMode) { await feedService.refreshWhileOnScreen() }
         #else
         VStack(spacing: 0) {
@@ -157,6 +164,8 @@ struct FeedView: View {
             Divider()
             rootContent
         }
+        .onAppear { FeedActions.refreshEmoji(nostrService: nostrService) }
+        .onChange(of: configService.activeAccountHexPubkey) { _, _ in FeedActions.refreshEmoji(nostrService: nostrService) }
         .onReceive(feedService.$filteredNotes, perform: updatePopularRanks)
         .task(id: feedService.feedMode) { await feedService.refreshWhileOnScreen() }
         #endif
