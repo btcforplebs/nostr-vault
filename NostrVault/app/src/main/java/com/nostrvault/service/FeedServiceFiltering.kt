@@ -35,6 +35,8 @@ import kotlinx.serialization.json.*
             isGlobalMedia = _mediaFeedMode.value == MediaFeedMode.GLOBAL,
             globalRequiresTrust = !config.globalShowsEveryone,
             authorOf = ::authorOf,
+            mutes = config.muteRulesForActiveAccount(),
+            ownPubkeys = deviceAccountHexes(),
         )
 
         _parentIsNextNote.value = feedFilterEngine.computeParentIsNext(_filteredNotes.value)
@@ -64,6 +66,7 @@ import kotlinx.serialization.json.*
         reach = currentFeedReach(),
         ownPubkeys = deviceAccountHexes(),
         discovery = discoveryReach.admitted,
+        mutes = config.muteRulesForActiveAccount(),
     )
 
     /** The saved web plus your follows, so Global shows a new follow at once. */

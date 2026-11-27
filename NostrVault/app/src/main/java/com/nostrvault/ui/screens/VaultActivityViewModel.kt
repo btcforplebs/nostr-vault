@@ -4,6 +4,8 @@ import com.nostrvault.ui.components.rememberFilterNoteState
 import com.nostrvault.ui.components.countNote
 import com.nostrvault.ui.components.VaultRightPill
 import com.nostrvault.data.model.VaultActivityFilter
+import com.nostrvault.data.model.muteRulesForActiveAccount
+import com.nostrvault.data.model.mutedFor
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -333,7 +335,7 @@ class VaultActivityViewModel @Inject constructor(
             combine(
                 feedService.wotPubkeys,
                 feedService.followedPubkeys,
-                configStore.config.map { it.blockedForActiveAccount() }.distinctUntilChanged(),
+                configStore.config.map { it.blockedForActiveAccount() to it.mutedFor(it.activeOrOwnerNpub()) }.distinctUntilChanged(),
             ) { _, _, _ -> }.drop(1).collect { scheduleRebuild() }
         }
     }
@@ -512,7 +514,10 @@ class VaultActivityViewModel @Inject constructor(
         val owner = nostrService.activeHexPubkey
         val gen = generation
         val (isBlocked, isOutside) = listRules(owner)
+        val mutes = configStore.config.value.muteRulesForActiveAccount()
+        // Replies and mentions a muted word, hashtag or thread hides; yours always show.
         val snapshot = eventsMutex.withLock { events.values.toList() }
+            .filter { it.pubkey == owner || !mutes.hides(it.id, it.content, it.tags) }
         val lines = VaultActivity.build(
             events = snapshot,
             owner = owner,

@@ -71,6 +71,9 @@ import com.nostrvault.service.NostrService.Companion.TAG
                 blockedNpubsPerAccount = config.blockedNpubsPerAccount + (npub to public),
                 privateBlockedNpubsPerAccount = if (private == null) config.privateBlockedNpubsPerAccount
                     else config.privateBlockedNpubsPerAccount + (npub to private),
+                mutedPerAccount = config.mutedPerAccount + (npub to entries.publicMuted),
+                privateMutedPerAccount = entries.privateMuted?.let { config.privateMutedPerAccount + (npub to it) }
+                    ?: config.privateMutedPerAccount,
             )
         }
     }

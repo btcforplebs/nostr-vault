@@ -6,7 +6,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
 /**
- * The people in a NIP-51 kind 10000 mute list. Public entries are the `p`
+ * A NIP-51 kind 10000 mute list: its people, and (MuteListHides.kt) its
+ * muted words, hashtags and threads. Public entries are the `p`
  * tags. A private part, when there is one, is the content: a JSON array of
  * tags encrypted to the author's own key, NIP-44 or (older clients) NIP-04.
  * Only the author can open it. Web: web-vault/src/net/blocks.js.
@@ -18,7 +19,16 @@ object MuteList {
      * [private] is null when there is a private part this device could not
      * open (no key here, signer offline, unreadable): it is unknown, not empty.
      */
-    data class Entries(val public: List<String>, val private: List<String>?)
+    data class Entries(
+        val public: List<String>,
+        val private: List<String>?,
+        /** Words, hashtags and threads in the public tags ([MutedThings]). */
+        val publicMuted: MutedThings = MutedThings.EMPTY,
+        /** The same in the private part; null when it could not be opened. */
+        val privateMuted: MutedThings? = emptyMutedOrNull(private),
+    )
+
+    private fun emptyMutedOrNull(private: List<String>?): MutedThings? = if (private == null) null else MutedThings.EMPTY
 
     /** Hex pubkeys of the `p` entries, lowercased and deduped. */
     fun people(tags: List<List<String>>): List<String> =
@@ -44,9 +54,10 @@ object MuteList {
         decrypt: suspend (String, Boolean) -> String?,
     ): Entries {
         val public = people(tags)
-        if (content.isBlank()) return Entries(public, emptyList())
+        val publicMuted = MutedThings.from(tags)
+        if (content.isBlank()) return Entries(public, emptyList(), publicMuted, MutedThings.EMPTY)
         val plaintext = runCatching { decrypt(content, isNip04(content)) }.getOrNull()
-        val private = plaintext?.let(::privateTags)?.let(::people)
-        return Entries(public, private)
+        val opened = plaintext?.let(::privateTags)
+        return Entries(public, opened?.let(::people), publicMuted, opened?.let(MutedThings::from))
     }
 }
