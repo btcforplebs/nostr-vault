@@ -189,6 +189,12 @@ final class LookupSocketPool {
         handshakeFailed.contains(Self.relayKey(url))
     }
 
+    /// Whether a lookup to `url` that ended with `outcome` leaves the relay
+    /// out of the follow count (`ReplaceableLookup.unreachable`).
+    func unreachable(_ url: URL, after outcome: Outcome) -> Bool {
+        outcome == .failed && failedToConnect(url)
+    }
+
     /// Closes every pooled socket (background, account switch). Lookups still
     /// open end as `.failed`; cooldowns are kept and none are added.
     func closeAll() {

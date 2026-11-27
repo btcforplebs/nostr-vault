@@ -116,7 +116,7 @@ extension NostrService {
                             // A relay that can't be reached is done, not answered.
                             // Only a dial that failed to connect is unreachable:
                             // skipped (never dialled) and timeouts still count.
-                            if outcome == .failed, LookupSocketPool.shared.failedToConnect(url) {
+                            if LookupSocketPool.shared.unreachable(url, after: outcome) {
                                 lock.lock(); unreachable.insert(index); lock.unlock()
                             }
                             if outcome == .failed || outcome == .skipped { relayDone(index, answered: false) }
