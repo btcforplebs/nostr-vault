@@ -227,18 +227,14 @@ enum ContactManager {
         signingMode != "nip46" && !hasKey
     }
 
-    /// What to tell the user when a follow or unfollow was put back. "Try
-    /// again" only where trying again can work.
+    /// What to tell the user when a follow or unfollow was refused before
+    /// the list changed. A publish that failed says why instead
+    /// (FollowPublishFailure.message).
     /// `noRelayList`: the account has no kind 10002 of its own yet, so its
     /// newest follow list can't be checked (ListMerge.EditBase.noRelayList).
     static func publishFailedMessage(follow: Bool, readOnly: Bool, noRelayList: Bool = false) -> String {
-        if readOnly {
-            return follow ? "This account is read-only. Add its key to follow."
-                          : "This account is read-only. Add its key to unfollow."
-        }
-        if noRelayList {
-            return (follow ? "Couldn't follow. " : "Couldn't unfollow. ") + ListMerge.noRelayListMessage
-        }
+        if readOnly { return FollowPublishFailure.readOnly.message(follow: follow) }
+        if noRelayList { return FollowPublishFailure.noRelayList.message(follow: follow) }
         return follow ? "Couldn't follow, try again" : "Couldn't unfollow, try again"
     }
 

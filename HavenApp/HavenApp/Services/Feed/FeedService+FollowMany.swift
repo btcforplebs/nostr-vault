@@ -8,7 +8,7 @@ extension FeedService {
     /// (`applyPendingFollowActions`). Yourself and people already followed
     /// are skipped. Nothing is said on screen: setup has just shown who.
     /// `onPublishFailed`: as for `followUser`.
-    func followUsers(_ pubkeys: [String], onPublishFailed: (() -> Void)? = nil) {
+    func followUsers(_ pubkeys: [String], onPublishFailed: ((FollowPublishFailure) -> Void)? = nil) {
         let me = ConfigService.shared.activeAccountHexPubkey
         let wanted = pubkeys.filter { $0 != me }
         guard !wanted.isEmpty else { return }
@@ -32,7 +32,7 @@ extension FeedService {
 
     /// Puts a prepared follow edit on screen and publishes it, rolling back
     /// if it can't go out. Shared by one follow and many.
-    func applyFollowEdit(pTags: [[String]], pubkeys: [String], onPublishFailed: (() -> Void)?) {
+    func applyFollowEdit(pTags: [[String]], pubkeys: [String], onPublishFailed: ((FollowPublishFailure) -> Void)?) {
         let previous = (pTags: contactListPTags, pubkeys: followedPubkeys)
         contactListPTags = pTags
         followedPubkeys = pubkeys

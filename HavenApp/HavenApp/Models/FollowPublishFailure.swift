@@ -1,0 +1,62 @@
+import Foundation
+
+/// Why `FeedService.publishContactList` put a follow or unfollow back. Each
+/// exit names its own reason so the banner can say what went wrong, not just
+/// "try again" (rd, 2026-11-27). Same strings as Android and web.
+enum FollowPublishFailure: Equatable {
+    /// The new list would drop below half of the last one (ContactManager.mayPublish).
+    case wouldShrink
+    /// No key here and no bunker.
+    case readOnly
+    /// The tap carried no list to build on.
+    case noBefore
+    /// The active account changed while the list was being made.
+    case accountSwitched
+    /// The account has no kind 10002 of its own (ListMerge.EditBase.noRelayList).
+    case noRelayList
+    /// Not enough relays answered the fresh lookup (ListMerge.EditBase.unknown).
+    /// `ownAnswered` of the account's `own` write relays answered.
+    case relaysDidNotAnswer(ownAnswered: Int, own: Int)
+    /// The signer returned nothing (a bunker that refused or timed out).
+    case notSigned
+    /// The signer signed with a key that isn't the account's.
+    case wrongSigner
+    /// Signed and sent, and every relay refused it.
+    case refused
+
+    /// The banner text for a follow (`follow`) or unfollow tap.
+    func message(follow: Bool) -> String {
+        let verb = follow ? "follow" : "unfollow"
+        let lead = "Couldn't \(verb): "
+        switch self {
+        case .readOnly:
+            return "This account is read-only. Add its key to \(verb)."
+        case .noRelayList:
+            return "Couldn't \(verb). " + ListMerge.noRelayListMessage
+        case .relaysDidNotAnswer(let ownAnswered, let own) where ownAnswered < own:
+            return lead + "only \(ownAnswered) of your \(own) relays answered, so your newest follow list can't be checked. Nothing changed. Remove dead relays in Settings › Relays, then try again."
+        case .relaysDidNotAnswer:
+            return lead + "not enough relays answered, so your newest follow list can't be checked. Nothing changed. Try again in a moment."
+        case .notSigned:
+            return lead + "your signer didn't sign it. Nothing changed. Check your signer, then try again."
+        case .wrongSigner:
+            return lead + "your signer signed with a different key. Nothing changed. Check which account your signer is on."
+        case .refused:
+            return lead + "every relay refused it. Nothing changed. Check your relays in Settings › Relays."
+        case .wouldShrink:
+            return lead + "the new list would have less than half the people of your last one, so it was stopped to protect your follows. Nothing changed."
+        case .accountSwitched:
+            return lead + "you switched accounts before it was sent. Nothing changed."
+        case .noBefore:
+            return lead + "the app lost track of the list this tap was made on. Nothing changed. Try again."
+        }
+    }
+
+    /// How many of the account's `own` relays are in `answeredBy`, as
+    /// ListMerge.editBase counts them.
+    static func relaysDidNotAnswer(answeredBy: Set<String>, own: [String]) -> FollowPublishFailure {
+        let mine = Set(own.map(ListMerge.relayKey))
+        let answered = mine.intersection(Set(answeredBy.map(ListMerge.relayKey))).count
+        return .relaysDidNotAnswer(ownAnswered: answered, own: mine.count)
+    }
+}

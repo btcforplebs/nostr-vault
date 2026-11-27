@@ -622,6 +622,7 @@
 		3E87EEC2B0B45C4B4CAE2F25 /* MacVaultLockBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B617FFD5AD4CF201C13C67D /* MacVaultLockBanner.swift */; };
 		3EB30962C252CDEDFB0AF584 /* MeshSyncStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1386794E709BFA3E18B9CC /* MeshSyncStatus.swift */; };
 		3EBEC2F605993B37DDB345AB /* NoteRow+EngagementBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CED90605A0EC0CF574801DE /* NoteRow+EngagementBar.swift */; };
+		3ECA71AB2B03A0121F13BA9E /* FollowPublishFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48BEB45D553BCE4A74C65F23 /* FollowPublishFailure.swift */; };
 		3F0795E41E737AE32C43A280 /* ConfigService+DesktopVaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D25CFED269B308D78127A9F /* ConfigService+DesktopVaults.swift */; };
 		3F1912B0B6E9174C7D16751A /* TrustWebView+HopLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EBC10C59E71295572B111A0 /* TrustWebView+HopLayers.swift */; };
 		3F21BB94AF95CD331C1DD1EE /* BlossomService+LocalUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB509F2A30B9B45176A3489 /* BlossomService+LocalUpload.swift */; };
@@ -2151,6 +2152,7 @@
 		D77C6C30CC8998E4A0341043 /* ActionToastBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 160DAD117DA05D7B6AF3460D /* ActionToastBanner.swift */; };
 		D78888FE41863CB9D7B18949 /* MarketplaceFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECAA69E57DB3F7947D9032C /* MarketplaceFeedService.swift */; };
 		D78A86476C9F266C9AE64BF4 /* NVShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200B7EA08917B874F06B2AF /* NVShareInbox.swift */; };
+		D8076911924B3C8B427F3519 /* FollowPublishFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48BEB45D553BCE4A74C65F23 /* FollowPublishFailure.swift */; };
 		D82E6B7E8F48027A2A29D7BA /* RecipeFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998E2BF3A6A7EE811FD18ED7 /* RecipeFeedViews.swift */; };
 		D836F792618248C8A0771D7D /* NIP46Service+OwnerSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4179E0679998B43B177F2D87 /* NIP46Service+OwnerSession.swift */; };
 		D8539D3F01467070FA9F195D /* SearchView+Recommendations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A6A21B92242B4E25D313103 /* SearchView+Recommendations.swift */; };
@@ -2958,6 +2960,7 @@
 		476EF8F1B938508F9475B764 /* DockClearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockClearance.swift; sourceTree = "<group>"; };
 		48195BBEE6772A2281169446 /* LabelReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelReviewView.swift; sourceTree = "<group>"; };
 		481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeFeedService.swift; sourceTree = "<group>"; };
+		48BEB45D553BCE4A74C65F23 /* FollowPublishFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowPublishFailure.swift; sourceTree = "<group>"; };
 		48CA2811713E8B33E246FC55 /* LocalNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNotificationService.swift; sourceTree = "<group>"; };
 		48F5705A371573904C7229D4 /* VaultNetworking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultNetworking.swift; sourceTree = "<group>"; };
 		4923B705BC207579814003D7 /* VideoCompressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoCompressor.swift; sourceTree = "<group>"; };
@@ -5102,6 +5105,7 @@
 				C7DEF7BD10034E4F4D917073 /* FollowerSnapshot.swift */,
 				BFE4FF1BF35D7CF7BEF59AD4 /* FollowingSnapshot.swift */,
 				D27AC592B3A258559EAF7732 /* FollowListLogic.swift */,
+				48BEB45D553BCE4A74C65F23 /* FollowPublishFailure.swift */,
 				6A66B764FCF1CB44F6DBFBEB /* GatedArticle.swift */,
 				D199DA259B7DA070C714E363 /* GenericRepost.swift */,
 				2EFF51C982DC4BD7D23DB4FF /* GenmojiImage.swift */,
@@ -6532,6 +6536,7 @@
 				C48109A117C642C10E628398 /* FollowListLogic.swift in Sources */,
 				F92E912DC9EBF56167EF289E /* FollowListView.swift in Sources */,
 				01BF75E899D8D7E974F5796C /* FollowNotificationBanner.swift in Sources */,
+				3ECA71AB2B03A0121F13BA9E /* FollowPublishFailure.swift in Sources */,
 				973F789C1EA161EB41F60B88 /* FollowerSnapshot.swift in Sources */,
 				CCDD2DE2A5F8B1ECDA15E248 /* FollowingBackupService.swift in Sources */,
 				3AEB8B86A7A7F02EB9885F69 /* FollowingBackupView.swift in Sources */,
@@ -7830,6 +7835,7 @@
 				EE5DFB36A8769509D2517FBD /* FollowListLogic.swift in Sources */,
 				F49E32FCADAF1E2E1573892F /* FollowListView.swift in Sources */,
 				B2F24DD85032BA530BD637F8 /* FollowNotificationBanner.swift in Sources */,
+				D8076911924B3C8B427F3519 /* FollowPublishFailure.swift in Sources */,
 				D653A36AC1BBB40D91E501F9 /* FollowerSnapshot.swift in Sources */,
 				B90CCC03D296B8EDD6E7AC90 /* FollowingBackupService.swift in Sources */,
 				9A218E4A2B203DE0C9D92A48 /* FollowingBackupView.swift in Sources */,

@@ -33,11 +33,9 @@ extension ProfileShareHandler {
     @MainActor
     static func follow(_ hex: String) -> FollowOutcome {
         let name = displayName(hex)
-        let result = FeedService.shared.followUser(hex) {
+        let result = FeedService.shared.followUser(hex) { reason in
             ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
-                                           message: ContactManager.publishFailedMessage(
-                                               follow: true, readOnly: FeedService.activeAccountIsReadOnly,
-                                               noRelayList: FeedService.activeAccountHasNoRelayList),
+                                           message: reason.message(follow: true),
                                            tone: .error)
         }
         switch result {
