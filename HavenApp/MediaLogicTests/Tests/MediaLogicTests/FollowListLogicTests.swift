@@ -56,6 +56,27 @@ final class FollowListLogicTests: XCTestCase {
         XCTAssertEqual(hits.flatMap { $0.people.map(\.pubkey) }, ["b"])
     }
 
+    /// Search plan A6: a typed name puts exact, then prefix, matches first in
+    /// each group; the picked sort holds within each part; groups stay.
+    func testQueryMatchesFirstWithinEachGroup() {
+        let people = [p("a", "Big Dan", 9), p("b", "Daniel", 5), p("c", "dan", 1),
+                      p("d", "Danny", 8), p("e", "Jordan", 7, nip05: "dan@x.com")]
+        let sections = FollowListLogic.sections(
+            people: people, follows: ["a", "b", "c"], webOfTrust: [], trustRank: [:], sort: .recent, query: "Dan"
+        )
+        XCTAssertEqual(sections.map(\.group), [.follows, .outside])
+        // Follows: "dan" exact; "Daniel" prefix; "Big Dan" only a word.
+        XCTAssertEqual(sections[0].people.map(\.pubkey), ["c", "b", "a"])
+        // Outside: Jordan's NIP-05 local part is exactly "dan"; Danny a prefix.
+        XCTAssertEqual(sections[1].people.map(\.pubkey), ["e", "d"])
+    }
+
+    func testNoQueryKeepsThePickedSort() {
+        let people = [p("a", "Dan", 1), p("b", "Daniel", 5)]
+        XCTAssertEqual(FollowListLogic.queryMatchesFirst(people, query: " ").map(\.pubkey), ["a", "b"])
+        XCTAssertEqual(FollowListLogic.queryMatchesFirst(people, query: "dani").map(\.pubkey), ["b", "a"])
+    }
+
     func testCountTextMarksAPartialCountWithPlus() {
         XCTAssertEqual(FollowListLogic.countText(100, more: true), "100+")
         XCTAssertEqual(FollowListLogic.countText(100, more: false), "100")
