@@ -220,6 +220,8 @@ enum MediaBackupActions {
     /// the user's Blossom servers that do not have it yet.
     static func saveToVault(url: URL, configService: ConfigService, nostrService: NostrService) async -> SaveOutcome {
         let service = BlossomService(configService: configService, nostrService: nostrService)
+        // Saving it here on purpose takes it off the "removed here" list (A3).
+        if let hash = MediaCacheService.blossomHash(in: url) { await service.clearRemovedHere(hash) }
         let saved = HtreeLink.isURI(url)
             ? await service.saveHtree(url: url)
             : await service.downloadFromURL(url: url, mirrorToExternal: false)

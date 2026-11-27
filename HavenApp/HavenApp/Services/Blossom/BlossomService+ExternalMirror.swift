@@ -101,8 +101,9 @@ extension BlossomService {
             }
         }
 
-        // Find blobs that exist remotely but not locally
-        let missingHashes = remoteBlobHashes.subtracting(localHashes)
+        // Find blobs that exist remotely but not locally, less the ones the
+        // owner removed from this device (A3: they stay on the servers).
+        let missingHashes = Set(await withoutRemovedHere(Array(remoteBlobHashes.subtracting(localHashes))))
         guard !missingHashes.isEmpty else {
             logger.info("All remote blobs already mirrored locally")
             logMessage?("All \(remoteBlobHashes.count) remote blob(s) already exist locally", "INFO")
@@ -186,7 +187,13 @@ extension BlossomService {
                 knownHashes.merge(AutoMirrorLedger.imetaHashes(tags)) { first, _ in first }
             }
         }
-        let wanted = ledger.toDownload(candidates, localHashes: localHashes, knownHashes: knownHashes)
+        let (removedVault, removedOwner) = await removedHereScope()
+        let removed = DeviceRemovedStore.shared.list(owner: removedOwner, vault: removedVault)
+        // A file removed from this device (A3) is not fetched again; one whose
+        // hash only shows after the download is dropped in autoMirrorStore.
+        let wanted = ledger.toDownload(candidates, localHashes: localHashes, knownHashes: knownHashes).filter { url in
+            AutoMirrorGuard.expectedHash(for: url, imeta: knownHashes).map { !removed.contains($0) } ?? true
+        }
         guard !wanted.isEmpty else {
             logger.info("No missing media found in note events")
             logMessage?("All note media already exists locally", "INFO")
