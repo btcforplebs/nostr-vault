@@ -5,7 +5,7 @@
 import { accountKey } from "./account-key.js"
 import { decode } from "nostr-tools/nip19"
 import { pool } from "./pool.js"
-import { fromRankCopy, isInside, rankPeople, tierOf } from "./people-rank.js"
+import { byNameMatch, fromRankCopy, isInside, rankPeople, rankTags, tierOf } from "./people-rank.js"
 
 // The iPhone's Global search services (SearchRelayDefaults.relays), probed again 2026-10-25: nostr.wine answers people
 // and notes in 0.4-1.3 s, search.nos.today in 0.6-1.6 s (its people now and then 13 s), relay.vertexlab.io and
@@ -94,15 +94,17 @@ export function shapeResults({ people, notes }, query, { me, follows = [], wot, 
   }
 }
 
-/** Hashtags written in the notes whose name contains the query, lowercased, A-Z. */
+/** Hashtags written in the notes whose name contains the query, lowercased: the exact tag first, then the one most
+ *  notes carry, then A-Z (people-rank.js rankTags). */
 export function hashtagsIn(notes, query) {
   const q = String(query ?? "").trim().toLowerCase().replace(/^#/, "")
-  const found = new Set()
-  for (const n of notes) for (const m of String(n.content ?? "").matchAll(/#([\p{L}\p{N}_]+)/gu)) {
-    const tag = m[1].toLowerCase()
-    if (tag.includes(q)) found.add(tag)
+  const counts = new Map()
+  for (const n of notes) {
+    const own = new Set()
+    for (const m of String(n.content ?? "").matchAll(/#([\p{L}\p{N}_]+)/gu)) { const tag = m[1].toLowerCase(); if (tag.includes(q)) own.add(tag) }
+    for (const tag of own) counts.set(tag, (counts.get(tag) ?? 0) + 1)
   }
-  return [...found].sort()
+  return rankTags(counts, q)
 }
 
 /** Each link in the notes once, titled without its scheme, with the note it came from. */
@@ -148,7 +150,7 @@ export function activePosters(notes, me, blocked = new Set()) {
   return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([pk]) => pk)
 }
 
-/** Kind 0 results, one per pubkey (newest wins), in the order the relays ranked them. */
+/** Kind 0 results, one per pubkey (newest wins), in the order the relays sent them. */
 export function dedupePeople(events) {
   const best = new Map()
   for (const ev of events) {
@@ -167,8 +169,9 @@ export function sortNotes(events) {
 
 /** Kind 0 only (people, no notes): the read-only sign-in's "find yourself by name", the mention and New message
  *  pickers, the Welcome and referrer steps. */
-export async function searchPeople(text, { limit = 20, relays = SEARCH_RELAYS } = {}) {
-  return dedupePeople(await pool.querySync(relays, { kinds: [0], search: text, limit }, { maxWait: 6000 }))
+export async function searchPeople(text, { limit = 20, relays = SEARCH_RELAYS, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+  // Best name match first (exact > starts with > a word starts with > contains), relay order inside each.
+  return byNameMatch(dedupePeople(await query(relays, { kinds: [0], search: text, limit }, { maxWait: 6000 })), text)
 }
 
 // Global search, as the iPhone's GlobalSearchSession: this browser's Haven (/feed and your own notes) and every search
