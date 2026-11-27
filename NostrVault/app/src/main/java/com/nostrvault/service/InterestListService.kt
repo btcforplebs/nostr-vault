@@ -154,9 +154,11 @@ class InterestListService @Inject constructor(
         }
         if (event == null || accountHex != hex) return@withContext revert(hex)
         accept(next.copy(createdAt = maxOf(event.createdAt, list.createdAt + 1)))
-        nostrService.postEvent(event)
-        // The key has a hashtag list now; from here on a save must find it.
-        FreshAccountKeys.clear(context, hex, InterestList.KIND)
+        // The key has a hashtag list once a relay holds it; from then on a save must find it.
+        // Not at sign: refused everywhere, the next save still starts from this cached list.
+        nostrService.postEvent(event) { outcome ->
+            if (outcome == BroadcastTally.Outcome.ACCEPTED) FreshAccountKeys.clear(context, hex, InterestList.KIND)
+        }
         true
     }
 

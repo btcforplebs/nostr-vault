@@ -13,7 +13,9 @@ import android.content.Context
  * scan-join follow publishes a kind 3 at the end of setup; that clears only
  * kind 3, so the guide's first hashtag save still knows it starts from empty
  * (2026-11-26: with one relay down it was rolled back). Each kind is cleared
- * on its own first publish. iOS: FreshAccountKeys.swift.
+ * once a relay accepts its first publish, not at sign: a list refused
+ * everywhere is on no relay, so the key is still fresh after a restart
+ * (Tron, 3.3.1 ship check §2). iOS: FreshAccountKeys.swift.
  */
 object FreshAccountKeys {
     internal const val PREFS = "fresh_account_keys"

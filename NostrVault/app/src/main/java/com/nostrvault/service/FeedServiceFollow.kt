@@ -109,8 +109,6 @@ import com.nostrvault.ui.notification.FollowKind
                             null
                         } ?: return@withLock null
                     lastContactListCreatedAt.updateAndGet { maxOf(it, event.createdAt) }
-                    // The key has a list now; from here on its load must find it.
-                    FreshAccountKeys.clear(appContext, owner, 3)
                     ContactManager.ListCopy(owner, tags, base.content, event.createdAt).also {
                         knownContactList = it
                         // Record the published list's created_at + a durable backup so a
@@ -124,7 +122,11 @@ import com.nostrvault.ui.notification.FollowKind
                             forAccountKey = accountKey,
                         )
                         nostrService.postEvent(event) { outcome ->
-                            if (outcome == BroadcastTally.Outcome.REFUSED) fail(event.createdAt)
+                            // The key has a list once a relay holds it; from then on its load must find it.
+                            // Not at sign: refused everywhere and the app restarted, a still-fresh key
+                            // would need every relay to answer "none" first (Tron, 3.3.1 ship check §2).
+                            if (outcome == BroadcastTally.Outcome.ACCEPTED) FreshAccountKeys.clear(appContext, owner, 3)
+                            else fail(event.createdAt)
                         }
                     }
                 }
