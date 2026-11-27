@@ -1,7 +1,7 @@
 // The Feed's two layouts, as on the iPhone (FeedLayoutMode, FeedView+Layout, FeedThreadGrouping): full cards
 // (expanded) or whole conversations (threaded). One setting per feed, toggled by one button; kept in this browser.
 // Compact View is gone (Logen, 2026-11-11): a saved "condensed" reads as expanded.
-import { replyRefs } from "./thread.js"
+import { threadRefs } from "./thread.js"
 
 export const LAYOUTS = ["expanded", "threaded"]
 export const LAYOUT_NAME = { expanded: "Expanded View", threaded: "Threaded View" }
@@ -44,9 +44,10 @@ export function migrateCondensedLayouts(storage = globalThis.localStorage) {
   return true
 }
 
-/** The note a kind 1 answers (NIP-10), or null. Reposts and anything else answer nothing. */
-const parentOf = ev => ev?.kind === 1 ? replyRefs(ev).parent : null
-const taggedRoot = ev => ev?.kind === 1 ? (ev.tags ?? []).find(t => t[0] === "e" && t[3] === "root")?.[1] ?? null : null
+/** The note a kind 1 (NIP-10) or a note comment (NIP-22 `e`) answers, or null. Reposts and the rest answer nothing. */
+const parentOf = ev => threadRefs(ev).parent
+/** The root a reply's tags name: NIP-10's "root" marker, or a comment's `E` tag. */
+const taggedRoot = ev => ev?.kind === 1 ? (ev.tags ?? []).find(t => t[0] === "e" && t[3] === "root")?.[1] ?? null : ev?.kind === 1111 ? threadRefs(ev).root : null
 
 /**
  * Arrange a newest-first feed into threads (FeedThreadGrouping.build): each note under the topmost ancestor that is
