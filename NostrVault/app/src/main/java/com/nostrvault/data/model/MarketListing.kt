@@ -7,6 +7,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
+import com.nostrvault.relay.HavenBridge
+import java.net.URLEncoder
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -62,16 +64,52 @@ data class MarketListing(
     /** Whether [plebeianUrl] is this listing's own page, not its seller's. */
     val hasPlebeianPage: Boolean get() = kind == CLASSIFIED_KIND
 
-    /** The opening line of Message seller: which listing, and its Plebeian page when it has one. */
+    /**
+     * Conduit's merchant portal names itself in the `client` tag:
+     * `["client", "Conduit Merchant Portal", "31990:<pk>:conduit-merchant", relay]`. Match the name or the
+     * handler address, as the name is a display string (RESEARCH/NV_CONDUIT_BUY_LINK_2026_11_26.md).
+     */
+    val isConduit: Boolean get() = isConduit(tags)
+
+    /**
+     * Conduit opens 30402 classifieds only: by coordinate (`/products/30402%3A<pk>%3A<d>`, which follows the
+     * seller's edits), or by event id when there is no `d`. Anything else goes to the seller's shop by npub.
+     */
+    val hasConduitPage: Boolean get() = kind == CLASSIFIED_KIND
+
+    val conduitUrl: String?
+        get() {
+            if (!hasConduitPage) return HavenBridge.encodeNpub(pubkey)?.let { "https://shop.conduit.market/$it" }
+            val ref = dTag?.let { "$CLASSIFIED_KIND:$pubkey:$it" } ?: id
+            return "https://shop.conduit.market/products/${URLEncoder.encode(ref, "UTF-8").replace("+", "%20")}"
+        }
+
+    /** The listing's one buy button: Conduit for a Conduit listing, else Plebeian. */
+    data class BuyLink(val site: String, val url: String, val ownPage: Boolean) {
+        val label: String get() = "${if (ownPage) "Buy" else "Seller"} on $site"
+    }
+
+    val buyLink: BuyLink
+        get() = conduitUrl?.takeIf { isConduit }?.let { BuyLink("Conduit", it, hasConduitPage) }
+            ?: BuyLink("Plebeian", plebeianUrl, hasPlebeianPage)
+
+    /** The opening line of Message seller: which listing, and its shop page when it has one. */
     val messageToSeller: String
         get() = "Hi! I'm interested in ${if (title.isEmpty()) "your listing" else "“$title”"}." +
-            if (hasPlebeianPage) "\n$plebeianUrl" else ""
+            buyLink.let { if (it.ownPage) "\n${it.url}" else "" }
 
     companion object {
         const val PRODUCT_KIND = 30018
         const val AUCTION_KIND = 30020
         const val CLASSIFIED_KIND = 30402
         val KINDS = listOf(PRODUCT_KIND, AUCTION_KIND, CLASSIFIED_KIND)
+
+        const val CONDUIT_CLIENT = "Conduit Merchant Portal"
+        private val CONDUIT_HANDLER = Regex("^31990:[0-9a-f]{64}:conduit-merchant$")
+
+        fun isConduit(tags: List<List<String>>): Boolean = tags.any { t ->
+            t.size >= 2 && t[0] == "client" && (t[1] == CONDUIT_CLIENT || (t.size >= 3 && CONDUIT_HANDLER.matches(t[2])))
+        }
 
         private val SAT_UNITS = setOf("SAT", "SATS", "SATOSHI", "SATOSHIS")
         private val json = Json { ignoreUnknownKeys = true; isLenient = true }
