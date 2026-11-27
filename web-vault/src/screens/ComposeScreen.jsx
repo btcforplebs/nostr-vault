@@ -84,6 +84,8 @@ function ComposeTarget({ mode, note }) {
 }
 
 /** The text of the note being replied to, without its media links and nostr: references, on one line. */
+/** The people in the note being replied to or quoted: its author and every p tag (mentions offer them first). */
+export const threadPeople = parent => (parent ? [...new Set([parent.pubkey, ...(parent.tags ?? []).filter(t => t[0] === "p" && /^[0-9a-f]{64}$/.test(t[1] ?? "")).map(t => t[1])])] : [])
 export const replySnippet = content => content.replace(/https?:\/\/\S+|nostr:\S+/g, " ").replace(/\s+/g, " ").trim()
 
 export { draftKey, idbDrafts } from "./compose/drafts.js"
@@ -436,7 +438,7 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
           onInput={e => { setText(e.currentTarget.value); track(e.currentTarget) }}
           onKeyUp={e => { if (e.key.startsWith("Arrow") && !mention) track(e.currentTarget) }} onClick={e => track(e.currentTarget)}
           onPaste={e => { const files = [...(e.clipboardData?.files ?? [])]; if (files.some(isMedia)) { e.preventDefault(); addFiles(files) } }} />
-        {mention && <MentionPicker ctx={ctx} query={mention.query} onPick={pick} onClose={closePicker} input={box} />}
+        {mention && <MentionPicker ctx={ctx} query={mention.query} onPick={pick} onClose={closePicker} input={box} thread={threadPeople(parent)} />}
         <ComposeAttachments photos={photos} onAlt={setAltFor} onRetry={id => { const p = photos.find(x => x.id === id); if (p?.file) upload(id, p.file) }} onRemove={removePhoto} />
         {altFor != null && photos.some(p => p.id === altFor) && (
           <AltDialog value={photos.find(p => p.id === altFor).alt ?? ""} video={isVideo(photos.find(p => p.id === altFor))}

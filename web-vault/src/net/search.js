@@ -5,6 +5,7 @@
 import { accountKey } from "./account-key.js"
 import { decode } from "nostr-tools/nip19"
 import { pool } from "./pool.js"
+import { fromRankCopy, isInside, rankPeople, tierOf } from "./people-rank.js"
 
 // The iPhone's Global search services (SearchRelayDefaults.relays), probed again 2026-10-25: nostr.wine answers people
 // and notes in 0.4-1.3 s, search.nos.today in 0.6-1.6 s (its people now and then 13 s), relay.vertexlab.io and
@@ -60,11 +61,10 @@ export function filterCaption(f) {
   return parts.length ? parts.join(" · ") : null
 }
 
-/** Own first, then the people you follow, then the rest of your web of trust, then everyone; the order inside each
- *  group is kept (GlobalSearchMerge's ranking). */
-function rank(list, pubkeyOf, me, follows, wot = new Set()) {
-  const tier = pk => (pk === me ? 0 : follows.has(pk) ? 1 : wot.has(pk) ? 2 : 3)
-  return list.map((x, i) => [x, i]).sort((a, b) => tier(pubkeyOf(a[0])) - tier(pubkeyOf(b[0])) || a[1] - b[1]).map(([x]) => x)
+/** Notes by closeness (you -> follows -> your web -> further out -> everyone), the order inside each tier kept
+ *  (newest first, as the sources hand them over). */
+function byTier(list, pubkeyOf, c) {
+  return list.map((x, i) => [x, i, tierOf(pubkeyOf(x), c)]).sort((a, b) => a[2] - b[2] || a[1] - b[1]).map(([x]) => x)
 }
 
 /** What the search relays answered, through the who/when filter and ranked own -> follows -> web of trust -> everyone, with the
@@ -74,13 +74,18 @@ function rank(list, pubkeyOf, me, follows, wot = new Set()) {
  *  Their hashtags and links stay out, as their notes do. Fails closed: with no `wot` yet only you and your follows are
  *  inside. `fold: false` (a pasted npub, which names one person on purpose) keeps everyone in `people`.
  *  -> { people: [pubkey], notes: [event], outsidePeople: [pubkey], outsideNotes: [event], hashtags: [tag], links: [{ url, title, noteId }] } */
-export function shapeResults({ people, notes }, query, { me, follows = [], wot, filter = NO_FILTER, now = Date.now() / 1000, fold = true }) {
+export function shapeResults({ people, notes }, query, { me, follows = [], wot, filter = NO_FILTER, now = Date.now() / 1000, fold = true, profileOf, rankCopy }) {
   const fset = new Set(follows)
   const allows = pk => filter.who === "you" ? pk === me : filter.who === "follows" ? fset.has(pk) : true
   const window = WHEN.find(w => w.id === filter.when)?.window
-  const rankedPeople = rank(people.filter(allows), pk => pk, me, fset, wot)
-  const rankedNotes = rank(notes.filter(n => allows(n.pubkey) && (!window || n.created_at >= now - window)), n => n.pubkey, me, fset, wot)
-  const inside = pk => !fold || pk === me || fset.has(pk) || !!wot?.has(pk)
+  // People by the shared ranker (people-rank.js): closeness, then how well the name matches, trust score, length.
+  // The relays already matched them, so none is dropped for a weak name match.
+  const c = { me, follows: fset, web: wot, profileOf, ...fromRankCopy(rankCopy), match: "any" }
+  const rankedPeople = rankPeople(people.filter(allows), query, c)
+  const rankedNotes = byTier(notes.filter(n => allows(n.pubkey) && (!window || n.created_at >= now - window)), n => n.pubkey, c)
+  // Inside your web: you, follows, your web and people 3+ steps away (Logen 5d1ce4cb). An exact name from outside
+  // stays in the fold.
+  const inside = pk => !fold || isInside(pk, c)
   const shownPeople = rankedPeople.filter(inside), shownNotes = rankedNotes.filter(n => inside(n.pubkey))
   return {
     people: shownPeople, notes: shownNotes,
@@ -160,18 +165,10 @@ export function sortNotes(events) {
   return [...byId.values()].sort((a, b) => b.created_at - a.created_at)
 }
 
-/** Kind 0 only: the read-only sign-in's "find yourself by name". */
+/** Kind 0 only (people, no notes): the read-only sign-in's "find yourself by name", the mention and New message
+ *  pickers, the Welcome and referrer steps. */
 export async function searchPeople(text, { limit = 20, relays = SEARCH_RELAYS } = {}) {
   return dedupePeople(await pool.querySync(relays, { kinds: [0], search: text, limit }, { maxWait: 6000 }))
-}
-
-/** People (kind 0) and notes (kind 1) matching text, from the search relays, after the slowest (the mention picker). */
-export async function searchNostr(text, { limit = 20, relays = SEARCH_RELAYS } = {}) {
-  const [people, notes] = await Promise.all([
-    pool.querySync(relays, { kinds: [0], search: text, limit }, { maxWait: 6000 }),
-    pool.querySync(relays, { kinds: [1], search: text, limit }, { maxWait: 6000 }),
-  ])
-  return { people: dedupePeople(people), notes: sortNotes(notes) }
 }
 
 // Global search, as the iPhone's GlobalSearchSession: this browser's Haven (/feed and your own notes) and every search

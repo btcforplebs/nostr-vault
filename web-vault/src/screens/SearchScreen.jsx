@@ -13,7 +13,8 @@ import { useProfile } from "../components/useProfile.js"
 import { SearchStart } from "./SearchStart.jsx"
 import { OutsideFold } from "../components/OutsideFold.jsx"
 import { parseQuery, hashtagOf, startSearch, shapeResults, filterCaption, loadRecent, saveRecent, clearRecent, MIN_QUERY, NO_FILTER, WHO, WHEN } from "../net/search.js"
-import { fetchProfiles, putProfile } from "../net/profiles.js"
+import { fetchProfiles, getProfile, putProfile } from "../net/profiles.js"
+import { rankCopyFor } from "../net/rank-copy-store.js"
 import { useWot } from "../components/useWot.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { visibleNotes, visiblePeople } from "../net/blocks.js"
@@ -107,7 +108,7 @@ export function useSearch(ctx) {
   const shown = found && shapeResults({
     people: found.direct ? found.people : visiblePeople(found.people, blocked),
     notes: visibleNotes(found.notes, blocked),
-  }, text, { me: ctx.session.pubkey, follows: ctx.account.follows, wot, filter: found.direct ? NO_FILTER : filter, fold: !found.direct })
+  }, text, { me: ctx.session.pubkey, follows: ctx.account.follows, wot, filter: found.direct ? NO_FILTER : filter, fold: !found.direct, profileOf: getProfile, rankCopy: rankCopyFor(ctx.session.pubkey) })
   return { text, setText, found, sources, finished, filter, setFilter, recent, setRecent, submit, clear, shown, blocked }
 }
 

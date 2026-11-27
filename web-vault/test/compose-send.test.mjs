@@ -143,7 +143,7 @@ globalThis.indexedDB = {
     return req
   },
 }
-const { ComposeScreen, replySnippet, reachedRelay } = await import("../src/screens/ComposeScreen.jsx")
+const { ComposeScreen, replySnippet, reachedRelay, threadPeople } = await import("../src/screens/ComposeScreen.jsx")
 // Preact runs effects after a paint timer (~35 ms without requestAnimationFrame); setTimeout isn't mocked.
 const flush = async () => { for (let i = 0; i < 3; i++) { await new Promise(r => setTimeout(r, 50)); await new Promise(r => setImmediate(r)) } }
 
@@ -518,4 +518,11 @@ test("#7: an edited note after a failed send is a new note", async t => {
   assert.equal(c.signed.length, 2)
   assert.notEqual(c.published[0].e.id, c.published[1].e.id)
   c.unmount()
+})
+
+test("mentions offer the thread's people first: the replied-to author and its p tags, each once", () => {
+  const a = "a".repeat(64), b = "b".repeat(64)
+  assert.deepEqual(threadPeople({ pubkey: a, tags: [["p", b], ["p", a], ["p", "nothex"], ["e", b]] }), [a, b])
+  assert.deepEqual(threadPeople(null), [])
+  assert.match(readFileSync(new URL("../src/screens/ComposeScreen.jsx", import.meta.url), "utf8"), /thread=\{threadPeople\(parent\)\}/)
 })

@@ -172,7 +172,7 @@ test("suggestions: blocked people are never offered; strangers' pictures don't l
   assert.deepEqual(rankPeople("alp", [A, B, C], [A], new Set([B])), [A, C])
   assert.deepEqual(rankPeople("", [A], [A], new Set([A])), [])
   const src = readFileSync(new URL("../src/components/MentionPicker.jsx", import.meta.url), "utf8")
-  assert.match(src, /rankPeople\(query, \[\.\.\.follows, \.\.\.found\], follows, blocked\)/)
+  assert.match(src, /rankPeople\(query, \[\.\.\.thread, \.\.\.follows, \.\.\.found\], follows, blocked, \{/)
   assert.match(src, /<Avatar pubkey=\{pk\} size=\{28\} load=\{follows\.includes\(pk\) \|\| pk === ctx\.session\?\.pubkey\} \/>/)
   const thread = readFileSync(new URL("../src/screens/ConversationScreen.jsx", import.meta.url), "utf8")
   assert.doesNotMatch(thread, /blocked this person on your phone/, "a block made on the web isn't 'on your phone'")
