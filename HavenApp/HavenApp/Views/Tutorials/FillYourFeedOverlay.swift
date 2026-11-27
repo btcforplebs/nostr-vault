@@ -353,7 +353,7 @@ private struct IntroCard: View {
     @ObservedObject private var guide = FillYourVaultCoordinator.shared
 
     var body: some View {
-        GuideCard(step: 1, onSkip: guide.closeGuide) {
+        GuideCard(step: 1, onSkip: guide.skipAction) {
             title("Fill your feed")
             WebOfTrustDiagram()
                 .frame(height: 132)
@@ -361,11 +361,13 @@ private struct IntroCard: View {
             bodyText("Nostr starts empty. No algorithm picks for you. Follow a few people, and the people they follow become your web of trust. It fills your feed and filters out spam.")
             HStack(spacing: 8) {
                 Spacer()
-                Button("Not now", action: guide.closeGuide)
-                    .font(.appBody)
-                    .foregroundColor(.secondary)
-                    .frame(minHeight: 44)
-                    .padding(.horizontal, 8)
+                if guide.canLeave {
+                    Button("Not now", action: guide.closeGuide)
+                        .font(.appBody)
+                        .foregroundColor(.secondary)
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, 8)
+                }
                 PrimaryButton(title: "Let's fill it", action: guide.beginFilling)
             }
         }
@@ -431,7 +433,7 @@ private struct TopicsCard: View {
     @State private var seeded = false
 
     var body: some View {
-        GuideCard(step: 2, onSkip: guide.closeGuide) {
+        GuideCard(step: 2, onSkip: guide.skipAction) {
             title("What are you into?")
             bodyText("Pick a few topics. You'll see posts about them from everyone, so you can find people to follow.")
             ScrollView {
@@ -603,7 +605,7 @@ private struct HintCard: View {
     @ObservedObject private var guide = FillYourVaultCoordinator.shared
 
     var body: some View {
-        GuideCard(step: 3, onSkip: guide.closeGuide) {
+        GuideCard(step: 3, onSkip: guide.skipAction) {
             title("Find people you like")
             bodyText("Tap anyone to see their profile and posts first. When you like what you see, follow them. Each follow fills a spot in the meter at the bottom. Five builds your web of trust.")
             HStack {
@@ -733,10 +735,12 @@ private struct FeedPicksSheet: View {
                 }
                 PrimaryButton(title: "Done", wide: true) { dismiss() }
                     .padding(.top, 6)
-                Button("Hide the meter", action: onHide)
-                    .font(.appBody)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                if guide.canLeave {
+                    Button("Hide the meter", action: onHide)
+                        .font(.appBody)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
             }
             .padding(20)
         }

@@ -634,6 +634,7 @@ struct SetupWizardView: View {
         // yet, so there is nothing to wait for (the follow-list check can
         // take 15s or more on slow relays, or never finish).
         FillYourVaultCoordinator.shared.start()
+        FillYourVaultCoordinator.shared.requireFive(account: ownerHex)
         TutorialCenter.shared.startIfEligible(.fillYourVault, account: ownerHex)
         let name = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
         let photo = profilePhotoJPEG

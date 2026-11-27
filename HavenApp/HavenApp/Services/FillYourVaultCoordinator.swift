@@ -35,9 +35,13 @@ final class FillYourVaultCoordinator: ObservableObject {
     @Published private(set) var topicSaveError: String?
     /// The person whose small profile card is open.
     @Published var profileCardPubkey: String?
+    /// This account was made by New to Nostr here and hasn't reached 5:
+    /// the guide can't be skipped, dismissed or its meter hidden yet.
+    @Published private(set) var required = false
 
     private let masterStore = VaultMasterStore()
     private let meterStore = FeedMeterStore(store: UserDefaultsTutorialStore())
+    private let requiredStore = FeedGuideRequiredStore(store: UserDefaultsTutorialStore())
     private var cancellables = Set<AnyCancellable>()
     private var started = false
     /// Count the last time the rule ran, per account; nil before the list is known.
@@ -50,6 +54,20 @@ final class FillYourVaultCoordinator: ObservableObject {
 
     /// True while the meter is drawn.
     var meterShowing: Bool { FillYourFeedGuide.showsMeter(phase: phase, meterOn: meterOn) }
+
+    /// Skip, "Not now" and "Hide the meter" are offered.
+    var canLeave: Bool { FillYourFeedGuide.canLeave(required: required, count: meter.count) }
+
+    /// The cards' Skip: closes the guide, or nil (no Skip) while it can't be left.
+    var skipAction: (() -> Void)? {
+        canLeave ? { [weak self] in self?.closeGuide() } : nil
+    }
+
+    /// New to Nostr setup made this key: hold the guide until 5 follows.
+    func requireFive(account: String) {
+        requiredStore.set(true, account: account)
+        if account == self.account { required = true }
+    }
 
     /// How far the open meter pushes Post up and the feed's end in. The
     /// collapsed pill shares Post's row on the leading edge, so it takes none.
@@ -170,6 +188,7 @@ final class FillYourVaultCoordinator: ObservableObject {
     /// Skip, "Not now" or "Hide the meter": the guide closes (done past 5,
     /// skipped below) and the meter goes away.
     func closeGuide() {
+        guard canLeave else { return }
         if TutorialCenter.shared.isActive(.fillYourVault) { close() }
         meterStore.set(false, account: account)
         meterOn = false
@@ -190,6 +209,7 @@ final class FillYourVaultCoordinator: ObservableObject {
 
     private func loadMeterState() {
         meterOn = meterStore.isOn(account: account)
+        required = requiredStore.isRequired(account: account)
         meterCollapsed = meter.count >= VaultMeter.goal
         profileCardPubkey = nil
         if !TutorialCenter.shared.isActive(.fillYourVault) { phase = .off }
@@ -222,6 +242,10 @@ final class FillYourVaultCoordinator: ObservableObject {
         let known = feed.followListIsKnown && !account.isEmpty
         let previous = lastCount?.account == account ? lastCount?.count : nil
         if known { lastCount = (account, meter.count) }
+        if known, required, meter.count >= VaultMeter.goal {
+            requiredStore.set(false, account: account)
+            required = false
+        }
 
         if known, masterStore.record(meter, owner: account) {
             meter = VaultMeter(follows: feed.followedPubkeys, owner: account, masterEarned: true)
