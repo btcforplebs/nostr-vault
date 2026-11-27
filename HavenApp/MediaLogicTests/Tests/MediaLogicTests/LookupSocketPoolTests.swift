@@ -13,6 +13,7 @@ final class LookupSocketPoolTests: XCTestCase {
         var opened: URL?
         var sent: [String] = []
         var closed = false
+        var lastFailureTimedOut = false
         func open(_ url: URL) { opened = url; stateSubject.send(.connecting) }
         func send(_ text: String) { sent.append(text) }
         func close() { closed = true }
@@ -242,5 +243,68 @@ final class LookupSocketPoolTests: XCTestCase {
         let body = lookups[start.lowerBound..<end.lowerBound]
         XCTAssertFalse(body.contains("WebSocketClient()"), "lookupNewestReplaceable opens its own sockets")
         XCTAssertTrue(body.contains("LookupSocketPool.shared.query("))
+    }
+    // Web #2611 / b5cb8f8f5 (rd's dead relays, Tod 2026-11-27): 4 of 7 own
+    // relays refuse the dial. The first follow drops them from the count; a
+    // second follow inside their cool-down is skipped and must drop them too,
+    // or it is refused as 3 of 7 where the first passed at 3 of 3.
+    func testSecondFollowInsideAFailedDialsCooldownStillLeavesTheRelayOut() {
+        let pool = makePool()
+        var first: LookupSocketPool.Outcome?
+        pool.query(url: damus, subId: "follow-1", filters: filter, timeout: 5, onMessage: { _ in }, onEnd: { first = $0 })
+        sockets[0].stateSubject.send(.failed)
+        XCTAssertEqual(first, .failed)
+        XCTAssertTrue(pool.unreachable(damus, after: .failed), "first follow: dialled and refused")
+
+        clock.advance(60)
+        var second: LookupSocketPool.Outcome?
+        pool.query(url: damus, subId: "follow-2", filters: filter, timeout: 5, onMessage: { _ in }, onEnd: { second = $0 })
+        XCTAssertEqual(second, .skipped, "still cooling down: not dialled")
+        XCTAssertEqual(sockets.count, 1)
+        XCTAssertTrue(pool.unreachable(damus, after: .skipped),
+                      "a skip for a failed dial's cool-down counts like the failed dial")
+    }
+
+    // A dial that timed out may be a slow, healthy relay holding the newest
+    // list: its cool-down keeps the relay in the count, on the first follow
+    // and on a second one inside the cool-down (web: socketFailure).
+    func testATimedOutDialsCooldownStillCountsAsReached() {
+        let pool = makePool()
+        var first: LookupSocketPool.Outcome?
+        pool.query(url: damus, subId: "follow-1", filters: filter, timeout: 30, onMessage: { _ in }, onEnd: { first = $0 })
+        sockets[0].lastFailureTimedOut = true
+        sockets[0].stateSubject.send(.failed)
+        XCTAssertEqual(first, .failed)
+        XCTAssertTrue(pool.isCoolingDown(damus), "a timed-out dial still cools down")
+        XCTAssertFalse(pool.unreachable(damus, after: .failed), "first follow: a timeout is not a failed dial")
+
+        clock.advance(60)
+        var second: LookupSocketPool.Outcome?
+        pool.query(url: damus, subId: "follow-2", filters: filter, timeout: 5, onMessage: { _ in }, onEnd: { second = $0 })
+        XCTAssertEqual(second, .skipped)
+        XCTAssertFalse(pool.unreachable(damus, after: .skipped), "second follow: the timeout's cool-down still counts")
+    }
+
+    // Skips that are not a failed dial's cool-down still count as reached:
+    // a full pool, a connected socket that dropped, a busy subscription id.
+    func testOtherSkipsStillCountAsReached() {
+        let pool = makePool(maxSockets: 1)
+        pool.query(url: primal, subId: "busy", filters: filter, timeout: 5, onMessage: { _ in })
+        var full: LookupSocketPool.Outcome?
+        pool.query(url: damus, subId: "a", filters: filter, timeout: 5, onMessage: { _ in }, onEnd: { full = $0 })
+        XCTAssertEqual(full, .skipped)
+        XCTAssertFalse(pool.unreachable(damus, after: .skipped), "pool full")
+        var dup: LookupSocketPool.Outcome?
+        pool.query(url: primal, subId: "busy", filters: filter, timeout: 5, onMessage: { _ in }, onEnd: { dup = $0 })
+        XCTAssertEqual(dup, .skipped)
+        XCTAssertFalse(pool.unreachable(primal, after: .skipped), "subscription id in use")
+
+        sockets[0].connect()
+        sockets[0].stateSubject.send(.failed)
+        XCTAssertTrue(pool.isCoolingDown(primal))
+        XCTAssertFalse(pool.unreachable(primal, after: .skipped), "connected, then dropped")
+
+        clock.advance(121)
+        XCTAssertFalse(pool.unreachable(primal, after: .skipped), "cool-down over")
     }
 }
