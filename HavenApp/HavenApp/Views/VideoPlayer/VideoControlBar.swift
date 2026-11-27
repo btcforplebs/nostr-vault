@@ -18,6 +18,8 @@ struct VideoControlBar: View {
     var onResumeLive: (() -> Void)? = nil
     /// Live, or someone else's player: no skip or speed.
     var isLive: Bool = false
+    /// Non-nil shows Minimize: the clip carries on in the mini player.
+    var onMinimize: (() -> Void)? = nil
 
     @State private var isPlaying: Bool = true
     @State private var isMuted: Bool = false
@@ -27,7 +29,8 @@ struct VideoControlBar: View {
 
     var body: some View {
         VStack(spacing: 2) {
-            VideoExtraControls(player: player, isLive: isLive, onPiP: onPiP, onInteract: onInteract)
+            VideoExtraControls(player: player, isLive: isLive, onPiP: onPiP, onInteract: onInteract,
+                               onMinimize: onMinimize)
             mainRow
         }
         .onReceive(player.publisher(for: \.timeControlStatus)) { status in

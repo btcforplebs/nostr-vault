@@ -3,17 +3,24 @@ import AVFoundation
 
 /// The row above the full-screen player's scrubber: skip back and forward,
 /// speed, captions, AirPlay and PiP (Logen 2026-11-19: keep our player, add
-/// what the system one has). A live stream leaves out skip and speed.
+/// what the system one has), led by Minimize when the viewer offers it.
+/// A live stream leaves out skip and speed.
 struct VideoExtraControls: View {
     let player: AVPlayer
     let isLive: Bool
     var onPiP: (() -> Void)? = nil
     var onInteract: (() -> Void)? = nil
+    var onMinimize: (() -> Void)? = nil
 
     @State private var rate: Float = 1
 
     var body: some View {
         HStack(spacing: 4) {
+            // Where a live stream's Minimize is: first, a chevron down.
+            if let onMinimize {
+                iconButton("chevron.down", label: "Minimize", action: onMinimize)
+                    .accessibilityHint("Keeps the sound playing in the mini player")
+            }
             if VideoPlayerControls.showsSpeedAndSkip(isLive: isLive) {
                 iconButton("gobackward.10", label: "Back 10 seconds") { skip(-VideoPlayerControls.skipSeconds) }
                 iconButton("goforward.10", label: "Forward 10 seconds") { skip(VideoPlayerControls.skipSeconds) }

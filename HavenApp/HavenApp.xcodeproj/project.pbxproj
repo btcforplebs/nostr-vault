@@ -272,6 +272,7 @@
 		1A1872F267A35D30C2D8677F /* AccountHexMemo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E1F29ECAEE2C4AE05C5F745 /* AccountHexMemo.swift */; };
 		1AA0201FCC0AF635FD0468D1 /* PublicOnWebSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0051B6D9E3354FCF3B5CEEA /* PublicOnWebSettingsView.swift */; };
 		1AB45C5CED3A1E6F20B9DC8C /* CalendarShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ADC40DC429546740845C49A /* CalendarShareHandler.swift */; };
+		1ACABAD89E8227E4E862D93C /* MusicPlayerService+Video.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FD929D26C9B82413301DAF2 /* MusicPlayerService+Video.swift */; };
 		1AE379FFA133164DF9D9612A /* HavenConfig+ConfigSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692CD6D93D1D798D71FE0AA4 /* HavenConfig+ConfigSecrets.swift */; };
 		1AE80BECD4D48E91C29D0EC2 /* GenericRepost.swift in Sources */ = {isa = PBXBuildFile; fileRef = D199DA259B7DA070C714E363 /* GenericRepost.swift */; };
 		1AEBBB148ACA1D8A09E4810F /* ListWipeWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30B10189BB85A90260B86AE9 /* ListWipeWatcher.swift */; };
@@ -532,6 +533,7 @@
 		33175E1EE38C3E0ACA2C57A8 /* KeySnapshotShield.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E91E565928BCB538F36A98 /* KeySnapshotShield.swift */; };
 		332286964CF79A632A9B088B /* NIP44Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5717FE059897D5903CA56549 /* NIP44Service.swift */; };
 		3324BB9222C391CF8AE84F4D /* HashtagFeedModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9BF8915977BBEB966F333A8 /* HashtagFeedModel.swift */; };
+		336921208CA40E2532A9CBF3 /* MusicPlayerService+Video.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FD929D26C9B82413301DAF2 /* MusicPlayerService+Video.swift */; };
 		336E68E6BDE53D0459D4C9C1 /* DMFileKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = A26E49B54EEEAFCC4F6D1D98 /* DMFileKind.swift */; };
 		3396ACABC418FE7CE9773F3D /* LinkPreviewCacheKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A0BB929DA965323CDD105A /* LinkPreviewCacheKey.swift */; };
 		339EE6A8F01759E30F37112C /* NoteDetailSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EF4AC7240C6AB9CCD609AAE /* NoteDetailSelection.swift */; };
@@ -2872,6 +2874,7 @@
 		1F9219034E71FF230B258B6C /* VaultReturnRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultReturnRules.swift; sourceTree = "<group>"; };
 		1F9BBC06F0AE2BC8D187209F /* UploadSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadSigner.swift; sourceTree = "<group>"; };
 		1FA3615DADD2C113A8BFF7E6 /* LiveNowWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNowWidget.swift; sourceTree = "<group>"; };
+		1FD929D26C9B82413301DAF2 /* MusicPlayerService+Video.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MusicPlayerService+Video.swift"; sourceTree = "<group>"; };
 		1FDD0CE72E864D3D545A708A /* VaultView+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VaultView+Layout.swift"; sourceTree = "<group>"; };
 		206D33B8D9B41298F867EA55 /* DraftPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftPickerView.swift; sourceTree = "<group>"; };
 		207340FB8D3B36C2D991C22A /* QuickBarRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickBarRow.swift; sourceTree = "<group>"; };
@@ -5827,6 +5830,7 @@
 				CB1613215C4C17A2C82C64F4 /* ModePostPublisher.swift */,
 				70A6C2A292B935922711F19B /* Motion.swift */,
 				4305ED0FAA1EFC4C5F3CFE00 /* MusicPlayerService.swift */,
+				1FD929D26C9B82413301DAF2 /* MusicPlayerService+Video.swift */,
 				FCCAC7159663216216258B08 /* MuteListStore.swift */,
 				C2F57E728F782BF1D8DD5B13 /* NetworkSyncService.swift */,
 				7167339BB13F4557E0E0BB77 /* NIP04Service.swift */,
@@ -7067,6 +7071,7 @@
 				CFA3FAE3FE9E3F35516F2419 /* MusicBrowserView.swift in Sources */,
 				5C60E85EC57E92CF0DFB371E /* MusicComponents.swift in Sources */,
 				D5778075947AE59D116895E3 /* MusicFeedState.swift in Sources */,
+				1ACABAD89E8227E4E862D93C /* MusicPlayerService+Video.swift in Sources */,
 				FA85C3B0A6B2562BB1B27D75 /* MusicPlayerService.swift in Sources */,
 				89440327256FCFB044CAA230 /* MusicSheetHost.swift in Sources */,
 				E1612DF2F9C7C762F1BE148B /* MusicToolbarButtons.swift in Sources */,
@@ -8404,6 +8409,7 @@
 				E132D8C9EABBA9ED40694B45 /* MusicBrowserView.swift in Sources */,
 				461A76D356816D9F40923F71 /* MusicComponents.swift in Sources */,
 				4A017D78CCF991A696CD3199 /* MusicFeedState.swift in Sources */,
+				336921208CA40E2532A9CBF3 /* MusicPlayerService+Video.swift in Sources */,
 				2CF4B408A85E82C349EA0380 /* MusicPlayerService.swift in Sources */,
 				BF1CF1BFBC3601ECC6A57600 /* MusicSheetHost.swift in Sources */,
 				2E7ADAF0E7EDA2CAA24D2FD2 /* MusicToolbarButtons.swift in Sources */,

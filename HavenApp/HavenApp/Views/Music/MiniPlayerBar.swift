@@ -28,11 +28,11 @@ struct MiniPlayerBar: View {
                 // Round, so it sits inside the capsule's end instead of
                 // poking its corners out of the curve.
                 MusicArtwork(url: track.artworkURL, size: 40)
-                    // A live stream shows its own picture, moving, over the
-                    // stream's image (which stays as the fallback while it loads).
+                    // A live stream or a minimized clip shows its own picture,
+                    // moving, over its image (the fallback while it loads).
                     .overlay {
-                        if let live = player.livePlayer {
-                            InlinePlayerLayer(player: live, videoGravity: .resizeAspectFill,
+                        if let visible = player.visiblePlayer {
+                            InlinePlayerLayer(player: visible, videoGravity: .resizeAspectFill,
                                               keepsPlayingInBackground: true)
                                 .allowsHitTesting(false)
                         }
@@ -62,7 +62,7 @@ struct MiniPlayerBar: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
                 }
-                if !track.isLive && !compact {
+                if !track.playsOnce && !compact {
                     Button(action: player.next) {
                         Image(systemName: "forward.fill")
                             .font(.appSystem(size: 15, weight: .bold))
@@ -82,7 +82,7 @@ struct MiniPlayerBar: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Stop music")
+                .accessibilityLabel(track.isVideo ? "Stop video" : "Stop music")
             }
             .padding(.leading, 4)
             .frame(height: Self.height)

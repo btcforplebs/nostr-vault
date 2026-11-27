@@ -20,6 +20,9 @@ struct FullScreenVideoPlayer: View {
     var sharedPlayer: AVPlayer? = nil
     /// Play on a shared player, which its owner rejoins the broadcast for.
     var onSharedResume: (() -> Void)? = nil
+    /// The shared player is a minimized clip, not a stream: it keeps skip,
+    /// speed and the scrubber, and Minimize just closes this again.
+    var sharedIsClip = false
 
     @State private var player: AVPlayer?
     @ObservedObject private var failures = VideoPlaybackFailures.shared
@@ -63,7 +66,8 @@ struct FullScreenVideoPlayer: View {
                     Spacer()
                     VideoControlBar(player: player, onPiP: pipAction, onInteract: scheduleAutoHide,
                                     onResumeLive: sharedPlayer != nil ? onSharedResume : isLive ? { rejoinLive() } : nil,
-                                    isLive: isLive || sharedPlayer != nil)
+                                    isLive: isLive || (sharedPlayer != nil && !sharedIsClip),
+                                    onMinimize: minimizeAction)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 8)
                         .background(alignment: .bottom) {
@@ -172,6 +176,39 @@ struct FullScreenVideoPlayer: View {
         AudioSessionManager.shared.enableMixingWithOthers()
     }
 
+
+    /// Minimize, like a live stream's: the clip's sound goes on in the mini
+    /// player. Needs a way to close the viewer (`onPiPStart`); live streams
+    /// have their own button in their window.
+    private var minimizeAction: (() -> Void)? {
+        guard let close = onPiPStart, !isLive else { return nil }
+        if sharedPlayer != nil { return sharedIsClip ? close : nil }
+        return { minimize(then: close) }
+    }
+
+    /// Hands the clip to the mini player at the time it is at now, and goes
+    /// quiet in the same step so it never plays twice. A new item on the
+    /// mini player's own player, from the asset playing here: a cached or
+    /// mesh-rescued file plays on with nothing downloaded again.
+    private func minimize(then close: () -> Void) {
+        guard let player, let item = player.currentItem else { return }
+        let playing = (item.asset as? AVURLAsset)?.url ?? meshFile ?? url
+        let time = CMTimeGetSeconds(player.currentTime())
+        // PiP on this clip would play under the mini player.
+        if PiPManager.shared.isShowing(url) { PiPManager.shared.stop() }
+        player.pause()
+        player.isMuted = true
+        player.defaultRate = 1
+        // The lock screen goes back to the music player, which takes it next.
+        VideoNowPlaying.shared.end(player: player)
+        let author = (envNote ?? tappedNote).flatMap { NostrService.shared.profiles[$0.author] }
+        MusicPlayerService.shared.playVideo(
+            asset: item.asset, url: playing, at: time, duration: CMTimeGetSeconds(item.duration),
+            title: Self.nowPlayingTitle, artist: author?.bestName ?? "Nostr Vault",
+            artworkURL: author?.pictureURL
+        )
+        close()
+    }
 
     private func rejoinLive() {
         guard let player else { return }
