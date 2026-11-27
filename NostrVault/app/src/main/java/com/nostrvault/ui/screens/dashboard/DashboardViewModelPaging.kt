@@ -82,9 +82,12 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.OLDER_PA
                 // Query inbox for older tagged notes
                 val (inboxRaw, _) = queryRelayEndpoint(inboxUrl, filters, "inbox-hist", LOAD_MORE_TIMEOUT_MS)
 
+                val now = VaultActivity.nowSeconds()
+                val page = (outboxRaw + inboxRaw).filter {
+                    vaultRowAdmitted(it.kind, it.pubkey, it.createdAt, it.tags, now) { r, p -> validZapReceipt(r, p) }
+                }
                 allEventsMutex.withLock {
-                    allEvents.addAll(outboxRaw)
-                    allEvents.addAll(inboxRaw)
+                    allEvents.addAll(page)
                     trimAllEventsLocked()
                 }
 
@@ -160,8 +163,13 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.OLDER_PA
                 val (raw, _) = queryRelayEndpoint(url, filter, label, LOAD_MORE_TIMEOUT_MS, dedupe = false, answered = answered)
                 // A relay that never answered says nothing about what's older.
                 if (!answered.get()) return cursor to emptyList()
+                val now = VaultActivity.nowSeconds()
                 val page = raw.filter(keep)
-                return cursor.after(page.map { it.createdAt }) to page
+                // The cursor moves past every row the relay gave, admitted or not.
+                val admitted = page.filter {
+                    vaultRowAdmitted(it.kind, it.pubkey, it.createdAt, it.tags, now) { r, p -> validZapReceipt(r, p) }
+                }
+                return cursor.after(page.map { it.createdAt }) to admitted
             }
 
             val authorsJson = authors.joinToString(",") { "\"$it\"" }
