@@ -79,6 +79,17 @@ class DeviceRemovedHashes(private val folderOf: () -> File?) {
         false
     }
 
+    /** Takes [sha256] off [accountHex] only: a delete that didn't go ahead. */
+    fun unmark(accountHex: String, sha256: String) {
+        synchronized(lock) {
+            val key = accountHex.lowercase()
+            val map = loaded()
+            if (map[key]?.remove(sha256.lowercase()) != true) return
+            if (map[key]?.isEmpty() == true) map.remove(key)
+            save(map)
+        }
+    }
+
     /** Save to Vault: the owner wants it here again, under every account. */
     fun allow(sha256: String) {
         synchronized(lock) {

@@ -127,6 +127,41 @@ class BlossomDeleteHereTest {
         assertEquals(DeleteHereResult.NotHere, svc.deleteFromThisDevice("not-a-hash"))
     }
 
+    @Test
+    fun `the file is out of the vault folder while servers are asked, and back if none holds it`() = runTest {
+        val (dir, blob) = vault()
+        val removed = DeviceRemovedHashes(dir = null)
+        val svc = service(dir, listOf("https://cdn.example.com"), removed)
+        var inVaultDuringProbe: Boolean? = null
+        var listedDuringProbe: Boolean? = null
+        svc.heldCopyProbe = { _, _, _ ->
+            inVaultDuringProbe = blob.exists() || svc.vaultFile(sha) != null
+            listedDuringProbe = removed.isRemoved(owner, sha)
+            false
+        }
+        assertEquals(DeleteHereResult.Kept(DELETE_HERE_NO_COPY), svc.deleteFromThisDevice(sha))
+        // A self-alias (tunnel, LAN name) would now answer 404, never this file (Tron M1).
+        assertEquals(false, inVaultDuringProbe)
+        assertEquals(true, listedDuringProbe)
+        assertTrue(blob.exists())
+        assertEquals(5L, blob.length())
+        assertFalse(removed.isRemoved(owner, sha))
+        assertTrue(File(dir, "removed_here_aside").listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `a file left aside by a check that never finished goes back and comes off the list`() {
+        val dir = tempDir()
+        val removed = DeviceRemovedHashes(dir = null)
+        assertTrue(removed.markRemoved(owner, sha))
+        val left = File(File(dir, "removed_here_aside").apply { mkdirs() }, sha).apply { writeBytes(ByteArray(5) { 7 }) }
+        val svc = service(dir, listOf("https://cdn.example.com"), removed)
+        svc.restoreDeleteHereAside()
+        assertFalse(left.exists())
+        assertEquals(5L, File(File(dir, "blossom"), sha).length())
+        assertFalse(removed.isRemoved(owner, sha))
+    }
+
     // ── Delete from mirrors after Delete from this device (Tron, #2649) ──
 
     @Test
