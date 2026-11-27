@@ -511,27 +511,23 @@ class VaultActivityViewModel @Inject constructor(
     private suspend fun rebuild() = withContext(Dispatchers.Default) {
         val owner = nostrService.activeHexPubkey
         val gen = generation
-        val config = configStore.config.value
-        val blocked = config.blockedForActiveAccount().mapNotNull { nostrService.npubToHex(it) }.toSet()
-        val whitelist = config.whitelistedNpubs?.mapNotNull { nostrService.npubToHex(it) }?.toSet().orEmpty()
-        val trusted = feedService.relayTabTrustedPubkeys()
-        val quietOwn = ownAccountTagRule(config)
+        val (isBlocked, isOutside) = listRules(owner)
         val snapshot = eventsMutex.withLock { events.values.toList() }
         val lines = VaultActivity.build(
             events = snapshot,
             owner = owner,
             noteKinds = VaultMode.RELAY_TAB_NOTE_KINDS,
             follows = follows,
-            isBlocked = { it in blocked || quietOwn(it, owner) },
-            isOutside = { VaultContentFilter.isOutside(it, owner, whitelist, trusted) },
+            isBlocked = isBlocked,
+            isOutside = isOutside,
             foldsOutsideLikes = true,
         )
         val outside = VaultActivity.build(
             events = snapshot,
             owner = owner,
             noteKinds = VaultMode.RELAY_TAB_NOTE_KINDS,
-            isBlocked = { it in blocked || quietOwn(it, owner) },
-            isOutside = { VaultContentFilter.isOutside(it, owner, whitelist, trusted) },
+            isBlocked = isBlocked,
+            isOutside = isOutside,
             outsideOnly = true,
             foldsOutsideLikes = true,
         )
@@ -748,6 +744,16 @@ class VaultActivityViewModel @Inject constructor(
         return { author, owner -> AccountUnread.hidesOwnAccountTag(author, owner, accounts, notify = false) }
     }
 
+    /** The list's author rules for [owner]: (blocked or a quiet own-account tag, outside your web). */
+    private fun listRules(owner: String): Pair<(String) -> Boolean, (String) -> Boolean> {
+        val config = configStore.config.value
+        val blocked = config.blockedForActiveAccount().mapNotNull { nostrService.npubToHex(it) }.toSet()
+        val whitelist = config.whitelistedNpubs?.mapNotNull { nostrService.npubToHex(it) }?.toSet().orEmpty()
+        val trusted = feedService.relayTabTrustedPubkeys()
+        val quietOwn = ownAccountTagRule(config)
+        return Pair({ a: String -> a in blocked || quietOwn(a, owner) }, { a: String -> VaultContentFilter.isOutside(a, owner, whitelist, trusted) })
+    }
+
     /** Followers seen here, as on the Followers list. */
     fun markFollowersSeen() = seenStore.markSeen(nostrService.activeHexPubkey)
 
@@ -763,8 +769,10 @@ class VaultActivityViewModel @Inject constructor(
         if (asked.isEmpty()) return
         val held = eventsMutex.withLock { events.values.toList() }
         val own = accountHexes.value.toSet()
+        // What the list hides (blocked, outside your web) lights nothing.
+        val (isBlocked, isOutside) = withContext(Dispatchers.Default) { listRules(owner) }
         RelayForegroundService.newsDot.settle(asked, owner) { mode ->
-            VaultActivityNews.hasNews(held, mode, owner, own, seenStore.newsVisit(owner, mode.name))
+            VaultActivityNews.hasNews(held, mode, owner, own, seenStore.newsVisit(owner, mode.name)) { isBlocked(it) || isOutside(it) }
         }
     }
 

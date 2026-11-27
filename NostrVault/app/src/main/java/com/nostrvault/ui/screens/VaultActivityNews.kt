@@ -19,6 +19,12 @@ internal object VaultActivityNews {
      * Whether [events] hold news for [account]'s [mode] list: an event from
      * someone not among [ownAccounts], tagging [account], dated after
      * [lastVisit]. A catch-up of something already seen is not.
+     *
+     * [hides] is the list's own rule for an author (blocked, or outside your
+     * web): what the list leaves out is no news either. Spam replies from
+     * outside your web lit the dot within seconds of each post while the list
+     * never showed them (Tao 904cff18, 2026-11-27). Zap receipts are signed by
+     * the LNURL server, not the sender, and the list never folds them.
      */
     fun hasNews(
         events: Collection<VaultActivity.Event>,
@@ -26,12 +32,14 @@ internal object VaultActivityNews {
         account: String,
         ownAccounts: Set<String>,
         lastVisit: Long?,
+        hides: (author: String) -> Boolean = { false },
     ): Boolean {
         val owner = account.lowercase()
         val dates = events.filter { e ->
             VaultMode.listing(e.kind) == mode &&
                 e.pubkey.lowercase() !in ownAccounts && e.pubkey.lowercase() != owner &&
-                e.tags.any { it.size >= 2 && it[0] == "p" && it[1].lowercase() == owner }
+                e.tags.any { it.size >= 2 && it[0] == "p" && it[1].lowercase() == owner } &&
+                (e.kind == VaultActivity.ZAP_KIND || !hides(e.pubkey))
         }.map { it.createdAt }
         return VaultNewsAccounts.isNews(dates, lastVisit)
     }
