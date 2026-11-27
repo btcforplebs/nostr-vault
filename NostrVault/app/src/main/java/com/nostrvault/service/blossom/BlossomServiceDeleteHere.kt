@@ -51,6 +51,10 @@ suspend fun BlossomService.deleteFromThisDevice(sha256: String): DeleteHereResul
     val published = nostrService.serverLists.value[owner].orEmpty()
     val servers = config.blossomDeleteTargets(published, photoUrl = null, includeHomeVault = true)
         .filterNot(::isThisDeviceAddress)
+        // Asked over https only, like iOS DeleteHereGate.probeURL: a plain-http
+        // answer on the LAN can come from anyone on the Wi-Fi (Tron, #2658).
+        .mapNotNull(::httpsOnly)
+        .distinct()
 
     if (servers.isEmpty()) return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_COPY)
     val asideDir = deleteHereAsideDir() ?: return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_SAVE)
@@ -62,7 +66,9 @@ suspend fun BlossomService.deleteFromThisDevice(sha256: String): DeleteHereResul
         if (!removedHere.markRemoved(owner, hash)) return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_SAVE)
         // A quit mid-check must put the list back as it was: note whom to unlist (Tron low 3).
         val mark = File(File(asideDir, MARKS), hash)
-        val marked = wasListed || runCatching { mark.parentFile?.mkdirs(); mark.writeText(owner) }.isSuccess
+        // Listed already: clear any stale mark a quit left behind, or recovery would unlist it.
+        val marked = if (wasListed) mark.delete() || !mark.exists()
+        else runCatching { mark.parentFile?.mkdirs(); mark.writeText(owner) }.isSuccess
         // Every `<hash>` / `<hash>.<ext>` copy out of the vault folder (Tron low 2). Not
         // renamed in place: the engine serves `<hash>.<any ext>` (haven-go load_blob.go).
         val moved = mutableListOf<Pair<File, File>>()
@@ -102,6 +108,13 @@ suspend fun BlossomService.deleteFromThisDevice(sha256: String): DeleteHereResul
     } finally {
         deleteHereInFlight.remove(hash)
     }
+}
+
+/** [server] as https: http becomes https (it then fails closed without TLS), anything else is dropped. */
+private fun httpsOnly(server: String): String? = when {
+    server.startsWith("https://", ignoreCase = true) -> server
+    server.startsWith("http://", ignoreCase = true) -> "https://" + server.substring("http://".length)
+    else -> null
 }
 
 /** Loopback: this device's own relay under its plainest name. */

@@ -176,6 +176,31 @@ class BlossomDeleteHereTest {
     }
 
     @Test
+    fun `a plain-http LAN server is asked over https only`() = runTest {
+        val (dir, blob) = vault()
+        val svc = service(dir, listOf("http://192.168.4.20:3355"))
+        val probed = mutableListOf<String>()
+        svc.heldCopyProbe = { server, _, _ -> probed += server; server.startsWith("http://") }
+        assertEquals(DeleteHereResult.Kept(DELETE_HERE_NO_COPY), svc.deleteFromThisDevice(sha))
+        assertEquals(listOf("https://192.168.4.20:3355"), probed)
+        assertTrue(blob.exists())
+    }
+
+    @Test
+    fun `a stale unlist mark is cleared when the hash was listed already`() = runTest {
+        val (dir, _) = vault()
+        val removed = DeviceRemovedHashes(dir = null)
+        assertTrue(removed.markRemoved(owner, sha))
+        File(File(dir, "removed_here_aside/unlist").apply { mkdirs() }, sha).writeText(owner) // left by a quit
+        val svc = service(dir, listOf("https://cdn.example.com"), removed)
+        var markDuringProbe: Boolean? = null
+        svc.heldCopyProbe = { _, _, _ -> markDuringProbe = File(dir, "removed_here_aside/unlist/$sha").exists(); false }
+        svc.deleteFromThisDevice(sha)
+        assertEquals(false, markDuringProbe)
+        assertTrue(removed.isRemoved(owner, sha))
+    }
+
+    @Test
     fun `every vault copy of the hash is out of the folder during the probe`() = runTest {
         val (dir, blob) = vault()
         val withExt = File(blob.parentFile, "$sha.jpg").apply { writeBytes(ByteArray(5) { 7 }) }
