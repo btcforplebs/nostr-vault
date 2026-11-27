@@ -33,3 +33,18 @@ final class ReplyRelayHintTests: XCTestCase {
         XCTAssertEqual(c.replyRelayHint, "")
     }
 }
+
+/// A reaction's `e` hint is the same public hint a reply uses, not the
+/// phone's own relay (FeedActions.react; Tod 2026-11-27).
+final class ReactionRelayHintTests: XCTestCase {
+    func testFeedReactionsUseTheReplyHint() throws {
+        let file = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("HavenApp/Views/FeedActions.swift")
+        let src = try String(contentsOf: file, encoding: .utf8)
+        let react = try XCTUnwrap(src.range(of: "private static func react(to note: FeedNote"))
+        let body = src[react.upperBound...].prefix(2500)
+        XCTAssertTrue(body.contains("let relayHint = ConfigService.shared.config.replyRelayHint"))
+        XCTAssertFalse(body.contains("config.nostrURL"), "the kind 7 hint must not be this phone's relay")
+    }
+}
