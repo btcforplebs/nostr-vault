@@ -116,3 +116,10 @@ test("searchVault people: the shared ranker, so an exact name beats one that onl
   const r = await searchVault([feed], "mary", { follows: [A.pk], decode })
   assert.deepEqual(r.people, [A.pk, E.pk, D.pk])
 })
+
+test("searchVault people: your other accounts count as you, and your web ranks before strangers (Tron #2689 read)", async () => {
+  const D = key(), E = key(), G = key()
+  const feed = store([profile(D, { name: "Sam" }), profile(E, { name: "Sam" }), profile(G, { name: "Sam" })])
+  const r = await searchVault([feed], "sam", { decode, me: A.pk, own: new Set([A.pk, G.pk]), web: new Set([E.pk]) })
+  assert.deepEqual(r.people, [G.pk, E.pk, D.pk], "your other account, then your web, then a stranger")
+})

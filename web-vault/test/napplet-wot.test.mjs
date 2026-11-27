@@ -15,7 +15,7 @@ const read = p => fs.readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
 const html = injectWot(read("napplets/wot/index.html"), [read("src/net/wot-pure.js"), read("src/net/wot-globe.js"), read("src/net/people-rank.js")])
 const script = html.slice(html.indexOf("<script>") + 8, html.indexOf("// ---- end pure ----"))
 const box = {}
-vm.runInNewContext(`${script}\n;Object.assign(box, { webOf, litOf, nodesOf, findPeople, trustPathText, layout })`, { box, TextEncoder, Map, Set })
+vm.runInNewContext(`${script}\n;Object.assign(box, { webOf, litOf, nodesOf, findPeople, findContext, trustPathText, layout })`, { box, TextEncoder, Map, Set })
 const plain = x => JSON.parse(JSON.stringify(x))
 const H = c => c.repeat(64)
 
@@ -188,4 +188,12 @@ test("the WoT napplet's whole script compiles with the maths injected (no name d
   const all = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1])
   assert.ok(all.length >= 1)
   for (const s of all) assert.doesNotThrow(() => new vm.Script(s), "a script block that doesn't compile")
+})
+
+test("find: built once per scene, so a keystroke doesn't rebuild the web's Sets (Tron #2689 read)", () => {
+  const web = box.webOf({ me: ME, follows: F, extended: [], further: O, linkers: {}, followsMe: [] })
+  const names = { [F[2]]: ["Ann Lee"] }
+  assert.equal(box.findContext(web, names), box.findContext(web, names))
+  assert.notEqual(box.findContext(web, { ...names }), box.findContext(web, names), "a new scene's names, a new context")
+  assert.deepEqual(plain(box.findPeople(web, names, "ann")), [F[2]])
 })

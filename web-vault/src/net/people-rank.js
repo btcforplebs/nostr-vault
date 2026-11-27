@@ -19,30 +19,47 @@ export const INSIDE_MAX = TIER.further
 export const foldText = s => String(s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim()
 
 /** The names a person is found by: name, display name and NIP-05 (with its "_@" and its local part). */
-export function namesOf(p) {
-  const out = []
-  for (const v of [p?.name, p?.display_name, p?.displayName]) if (typeof v === "string" && v.trim()) out.push(foldText(v))
-  if (typeof p?.nip05 === "string" && p.nip05.trim()) {
+export const namesOf = p => folded(p).names
+
+// Folded names (and their words) per profile object: a box re-ranks on every keystroke and every profile batch, and
+// folding (NFD + regex) every name each time was ~10x the old filter on a 150k web (Tron, #2689 read). Profiles are
+// replaced, never edited, when a newer kind 0 lands (profiles.js store), so an object's names never go stale.
+const foldCache = new WeakMap()
+const NO_NAMES = { names: [], words: [] }
+function folded(p) {
+  if (!p || typeof p !== "object") return NO_NAMES
+  let f = foldCache.get(p)
+  if (f) return f
+  const names = []
+  for (const v of [p.name, p.display_name, p.displayName]) if (typeof v === "string" && v.trim()) names.push(foldText(v))
+  if (typeof p.nip05 === "string" && p.nip05.trim()) {
     const n = foldText(p.nip05).replace(/^_@/, "")
-    out.push(n)
+    names.push(n)
     const local = n.split("@")[0]
-    if (local && local !== n && local !== "_") out.push(local)
+    if (local && local !== n && local !== "_") names.push(local)
   }
-  return out
+  f = { names, words: names.flatMap(n => n.split(/[\s._\-@]+/).filter(Boolean)) }
+  foldCache.set(p, f)
+  return f
+}
+
+const foldQuery = query => foldText(query).replace(/^@/, "")
+function matchFolded(q, p) {
+  if (!q) return 4
+  const { names, words } = folded(p)
+  if (names.some(n => n === q)) return 0
+  if (names.some(n => n.startsWith(q))) return 1
+  if (words.some(w => w.startsWith(q))) return 2
+  if (names.some(n => n.includes(q))) return 3
+  return 4
 }
 
 /** How well `query` names someone with profile `p`: 0 exact, 1 starts with, 2 a word starts with, 3 contains,
  *  4 the about alone (or nothing). An empty query is 4 for everyone, so closeness decides. */
-export function nameMatch(query, p) {
-  const q = foldText(query).replace(/^@/, "")
-  if (!q) return 4
-  const names = namesOf(p)
-  if (names.some(n => n === q)) return 0
-  if (names.some(n => n.startsWith(q))) return 1
-  if (names.some(n => n.split(/[\s._\-@]+/).some(w => w && w.startsWith(q)))) return 2
-  if (names.some(n => n.includes(q))) return 3
-  return 4
-}
+export const nameMatch = (query, p) => matchFolded(foldQuery(query), p)
+
+/** `nameMatch` for one query over many people: the query is folded once. -> (p) -> 0..4 */
+export const nameMatcher = query => { const q = foldQuery(query); return p => matchFolded(q, p) }
 
 /** The closeness tier for `pk`. `c`: { me, own: Set (your other accounts), follows: Set, web: Set (hop 2), hopOf(pk)
  *  -> number|null (the rank copy), thread: Set }. */
@@ -70,11 +87,12 @@ const shownName = p => String(p?.display_name || p?.displayName || p?.name || ""
 export function rankPeople(pubkeys, query, c = {}) {
   const profileOf = c.profileOf ?? (() => null)
   const keepAll = c.match === "any" || !foldText(query)
+  const match = nameMatcher(query)
   const rows = []
   for (const pk of new Set(pubkeys)) {
     if (typeof pk !== "string" || c.blocked?.has(pk)) continue
     const p = profileOf(pk)
-    const m = nameMatch(query, p)
+    const m = match(p)
     if (!keepAll && m > 3) continue
     const score = c.scoreOf?.(pk)
     rows.push({ pk, tier: tierOf(pk, c), m, score: typeof score === "number" ? score : -1, len: shownName(p).length || 999 })
@@ -95,7 +113,8 @@ export function fromRankCopy(copy) {
  *  have no web of trust yet (plan 2.9). */
 export function byNameMatch(events, query) {
   const profile = ev => { try { const p = JSON.parse(ev?.content ?? ""); return p && typeof p === "object" ? p : null } catch { return null } }
-  return events.map((ev, i) => [ev, nameMatch(query, profile(ev)), i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(([ev]) => ev)
+  const match = nameMatcher(query)
+  return events.map((ev, i) => [ev, match(profile(ev)), i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(([ev]) => ev)
 }
 
 /** Hashtags in results (plan 1c): the tag that is exactly the query first, then the one the most results carry,

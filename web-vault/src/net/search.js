@@ -74,13 +74,13 @@ function byTier(list, pubkeyOf, c) {
  *  Their hashtags and links stay out, as their notes do. Fails closed: with no `wot` yet only you and your follows are
  *  inside. `fold: false` (a pasted npub, which names one person on purpose) keeps everyone in `people`.
  *  -> { people: [pubkey], notes: [event], outsidePeople: [pubkey], outsideNotes: [event], hashtags: [tag], links: [{ url, title, noteId }] } */
-export function shapeResults({ people, notes }, query, { me, follows = [], wot, filter = NO_FILTER, now = Date.now() / 1000, fold = true, profileOf, rankCopy }) {
+export function shapeResults({ people, notes }, query, { me, follows = [], wot, filter = NO_FILTER, now = Date.now() / 1000, fold = true, profileOf, rankCopy, own }) {
   const fset = new Set(follows)
   const allows = pk => filter.who === "you" ? pk === me : filter.who === "follows" ? fset.has(pk) : true
   const window = WHEN.find(w => w.id === filter.when)?.window
   // People by the shared ranker (people-rank.js): closeness, then how well the name matches, trust score, length.
   // The relays already matched them, so none is dropped for a weak name match.
-  const c = { me, follows: fset, web: wot, profileOf, ...fromRankCopy(rankCopy), match: "any" }
+  const c = { me, own, follows: fset, web: wot, profileOf, ...fromRankCopy(rankCopy), match: "any" }
   const rankedPeople = rankPeople(people.filter(allows), query, c)
   const rankedNotes = byTier(notes.filter(n => allows(n.pubkey) && (!window || n.created_at >= now - window)), n => n.pubkey, c)
   // Inside your web: you, follows, your web and people 3+ steps away (Logen 5d1ce4cb). An exact name from outside

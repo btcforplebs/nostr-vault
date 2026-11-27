@@ -224,7 +224,7 @@ export function WotScreen({ ctx, pubkey }) {
           <WotToolbar searchOpen={searchOpen} onSearch={() => { setSearchOpen(!searchOpen); setPicked(null) }} followsBack={followsBackOn} onFollowsBack={flipFollowsBack}
             listOpen={listOpen} onList={() => { setListOpen(!listOpen); setPicked(null); setSearchOpen(false) }} />
         </div>
-        {searchOpen && <WotSearch web={web} me={me} blocked={blocked} onClose={() => setSearchOpen(false)} onPick={pk => { setSearchOpen(false); if (root !== me) goTo(me); setPicked(pk); setCentre(pk) }} />}
+        {searchOpen && <WotSearch web={web} me={me} blocked={blocked} profilesIn={profilesIn} onClose={() => setSearchOpen(false)} onPick={pk => { setSearchOpen(false); if (root !== me) goTo(me); setPicked(pk); setCentre(pk) }} />}
         {crumbs.length > 1 && (
           <nav class="wot-crumbs" aria-label="Whose web">
             {crumbs.map((pk, i) => [

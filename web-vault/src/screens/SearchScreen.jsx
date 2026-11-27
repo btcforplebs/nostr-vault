@@ -5,7 +5,7 @@
 // Active (SearchStart.jsx). A pasted npub / nprofile / hex pubkey shows that one profile (Return opens it); a note1 /
 // nevent opens the note; "#tag" + Return opens the tag's feed. People and notes come from this browser's Haven and
 // every search relay at once, each with a chip saying how it went, as the iPhone's Global search (net/search.js).
-import { useEffect, useRef, useState } from "preact/hooks"
+import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
 import { NoteCard } from "../components/NoteCard.jsx"
@@ -19,6 +19,7 @@ import { useWot } from "../components/useWot.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { visibleNotes, visiblePeople } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
+import { ownPubkeys } from "../session.js"
 import { SkeletonList, Spinner } from "../components/Loading.jsx"
 
 const SEARCHING = "Searching…"
@@ -56,6 +57,7 @@ export function useSearch(ctx) {
   const cancelSearch = useRef(null)
   const { blocked } = useBlocks(ctx)
   const wot = useWot(ctx)
+  const own = useMemo(() => ownPubkeys(), [ctx.session.pubkey]) // "You" is every account added here (spec 1a)
   useEffect(() => () => cancelSearch.current?.(), [])
   const openNote = id => { location.hash = `#/thread/${id}` } // the thread screen fetches a note Haven lacks
 
@@ -108,7 +110,7 @@ export function useSearch(ctx) {
   const shown = found && shapeResults({
     people: found.direct ? found.people : visiblePeople(found.people, blocked),
     notes: visibleNotes(found.notes, blocked),
-  }, text, { me: ctx.session.pubkey, follows: ctx.account.follows, wot, filter: found.direct ? NO_FILTER : filter, fold: !found.direct, profileOf: getProfile, rankCopy: rankCopyFor(ctx.session.pubkey) })
+  }, text, { me: ctx.session.pubkey, follows: ctx.account.follows, wot, filter: found.direct ? NO_FILTER : filter, fold: !found.direct, profileOf: getProfile, rankCopy: rankCopyFor(ctx.session.pubkey), own })
   return { text, setText, found, sources, finished, filter, setFilter, recent, setRecent, submit, clear, shown, blocked }
 }
 

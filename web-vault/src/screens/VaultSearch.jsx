@@ -10,6 +10,9 @@ import { useBlocks } from "../components/useBlocks.js"
 import { useProfile } from "../components/useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
+import { useWot } from "../components/useWot.js"
+import { rankCopyFor } from "../net/rank-copy-store.js"
+import { ownPubkeys } from "../session.js"
 import { SECTIONS, searchVault, searchesMine, setSearchesMine, terms } from "../net/vault-search.js"
 import { Spinner } from "../components/Loading.jsx"
 
@@ -29,12 +32,15 @@ export function useVaultSearch(ctx) {
   const { blocked } = useBlocks(ctx)
   const live = useRef("")
   const mineRef = useRef(mine)
+  const wot = useRef(null)
+  wot.current = useWot(ctx) // your web, so people in it rank before strangers (people-rank.js)
 
   const run = async (q, onlyMine = mineRef.current) => {
     live.current = q
     if (!terms(q)) { setFound(null); setBusy(false); return }
     setBusy(true)
-    const r = await searchVault([vault.outbox, vault.inbox, vault.feed], q, { follows: account.follows, blocked, decode, mine: onlyMine ? session.pubkey : null, me: session.pubkey }).catch(() => null)
+    const r = await searchVault([vault.outbox, vault.inbox, vault.feed], q, { follows: account.follows, blocked, decode, mine: onlyMine ? session.pubkey : null, me: session.pubkey,
+      own: ownPubkeys(), web: wot.current, rankCopy: rankCopyFor(session.pubkey) }).catch(() => null)
     if (live.current !== q || mineRef.current !== onlyMine) return // the field or the switch has moved on
     setFound(r && { query: q, ...r }); setBusy(false)
     if (r?.people.length) fetchProfiles(vault, r.people.slice(0, 40), uniq([...account.relays.read, ...DEFAULT_RELAYS])).catch(() => {})
