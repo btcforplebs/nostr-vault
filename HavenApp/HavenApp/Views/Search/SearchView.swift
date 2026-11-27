@@ -18,6 +18,9 @@ struct SearchView: View {
     @State var searchResults: SearchResults = .empty
     /// Whether the "from outside your web" fold is open (SearchView+Outside).
     @State var showsOutside = false
+    /// The query the fold last opened itself for, so a fold you closed
+    /// stays closed while that query's results stream in.
+    @State var outsideAutoOpenedFor = ""
     @State var isSearching = false
     @State var searchDebounceTask: Task<Void, Never>?
     @State var showingNoteDetail: FeedNote?
