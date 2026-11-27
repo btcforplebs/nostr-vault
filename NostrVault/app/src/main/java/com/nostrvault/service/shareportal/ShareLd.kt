@@ -61,7 +61,7 @@ object ShareLd {
 
     private val tagRegex = Regex("<[^>]*>")
     private val entityRegex = Regex("&(#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+|#39);")
-    private val spaceRegex = Regex("(?U)\\s+")
+    private val spaceRegex = Regex("[\\s\\p{Z}]+") // not (?U): Android's ICU regex rejects it
     private val named = mapOf(
         "amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "#39" to "'", "apos" to "'", "nbsp" to " ",
     )

@@ -270,4 +270,9 @@ class VaultSearchLogicTest {
         assertEquals(listOf("https://x.y/"), links.map { it.url })
     }
 
+
+    @Test
+    fun hashtagsInTextKeepUnicodeWords() {
+        assertEquals(listOf("日本", "café", "snake_case", "x2"), VaultSearchLogic.hashtagsInText("#日本 #Café, #snake_case #x2!"))
+    }
 }
