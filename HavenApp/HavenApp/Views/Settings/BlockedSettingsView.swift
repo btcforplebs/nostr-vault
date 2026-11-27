@@ -77,6 +77,8 @@ struct BlockedSettingsView: View {
                 Text("Only you can see these. They are encrypted in your block list.")
             }
 
+            MutedWordsSettingsView()
+
             CleanModeSettingsView()
         }
         .warmFormBackground()

@@ -24,36 +24,11 @@ extension NostrService {
         let action = add.isEmpty ? "Unblock" : "Block"
         let notSaved = privately ? "Private block not saved" : "\(action) saved on this device only"
 
-        Task {
-            // The relays the mute list is read from at launch, so a block
-            // builds on the list another app last wrote, not an older copy.
-            let alsoAsk = Array(Set(ConfigService.shared.config.readRelays + MuteListStore.extraRelays))
-            let lookup = await lookupNewestReplaceable(kind: 10000, for: author, alsoAsk: alsoAsk, skipAhead: true)
-            let base: (tags: [[String]], content: String)
-            let baseAt: Int64?
-            switch ListMerge.editBase(lookup, held: MuteListStore.shared.storedEvent(forHex: author),
-                                            own: Self.ownListRelays(for: author), createdAt: { $0.created_at }) {
-            case .list(let event):
-                base = (event.tags, event.content)
-                baseAt = event.created_at
-            case .none:
-                base = (hexKeys(localBlocks).map { ["p", $0] }, "")
-                baseAt = nil
-            case .noRelayList:
-                ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
-                                               message: "\(notSaved). \(ListMerge.noRelayListMessage)",
-                                               tone: .error)
-                return
-            case .unknown:
-                #if DEBUG
-                print("NostrService: Kind 10000: list not fetched (\(lookup.answered)/\(lookup.asked) relays answered); not published")
-                #endif
-                ActionToastManager.shared.show(
-                    icon: "exclamationmark.triangle.fill",
-                    message: "\(notSaved): your relays didn't send your mute list, and publishing without it would erase blocks set in other apps. Try again later.",
-                    tone: .error)
-                return
-            }
+        // One kind 10000 edit at a time, each on the list the last one published.
+        MuteListEdits.run { [self] in
+            guard let start = await muteListEditBase(author: author, localBlocks: hexKeys(localBlocks),
+                                                     notSaved: notSaved) else { return }
+            let base = start.base, baseAt = start.baseAt
             // A private block goes in the encrypted part. An unblock takes the
             // person out of it too, or reading the published list back blocks
             // them again.

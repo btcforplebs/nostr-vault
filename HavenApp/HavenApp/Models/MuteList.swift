@@ -15,6 +15,10 @@ struct MuteList: Equatable, Codable {
     /// Lowercased; a note whose text has one as a whole word is hidden
     /// (`MutedWordMatch`).
     var words: [String] = []
+    /// The words in the public tags, and in the encrypted part (Settings ›
+    /// Muted words shows which). A word in both counts as public.
+    var publicWords: Set<String> = []
+    var privateWords: Set<String> = []
     /// Lowercased, without the "#".
     var hashtags: Set<String> = []
     /// Event ids: the note itself, and every reply under it.
@@ -39,6 +43,15 @@ struct MuteList: Equatable, Codable {
             return out
         }
         words = values("word")
+        func wordSet(_ tags: [[String]]) -> Set<String> {
+            Set(tags.compactMap { tag in
+                guard tag.count >= 2, tag[0] == "word" else { return nil }
+                let value = tag[1].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return value.isEmpty ? nil : value
+            })
+        }
+        publicWords = wordSet(publicTags)
+        privateWords = wordSet(privateTags)
         hashtags = Set(values("t").map { $0.hasPrefix("#") ? String($0.dropFirst()) : $0 })
         threads = Set(values("e").filter(Self.isHex64))
         privatePubkeys = Set(privateTags.compactMap { tag -> String? in

@@ -75,6 +75,8 @@ final class UserListSignGuardTests: XCTestCase {
             "HavenApp/Services/InterestListService.swift": ["10015"],
             // 10000 Block, 10006 relay sets, 10063 media servers.
             "HavenApp/Services/Nostr/NostrService+ListPublishing.swift": ["10000", "10006", "10063"],
+            // 10000 Settings › Blocked › Muted words: only on a tap, on the newest list (muteListEditBase).
+            "HavenApp/Services/Nostr/NostrService+MutedWords.swift": ["10000"],
             // Save in Relays.
             "HavenApp/Services/Nostr/NostrService+RelayListSave.swift": ["10002", "10050"],
             // A desktop Vault switch (Desktop Vaults P3): only on a tap, one Vault's

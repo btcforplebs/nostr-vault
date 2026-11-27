@@ -113,9 +113,10 @@ final class ListSaveRulesTests: XCTestCase {
         // NostrService+ListRestore.swift: a restore from the vault's list history.
         // NostrService+ListVersionSave.swift: the emoji list and emoji sets (undo copy in the vault first).
         // DesktopVaultListEdit.swift: a desktop Vault's media server switch (10063).
+        // NostrService+MuteListBase.swift: the kind 10000 base for blocks and muted words.
         XCTAssertEqual(sites.sorted(), ["DesktopVaultListEdit.swift", "FeedService+Follow.swift", "NostrService+ListPublishing.swift",
-                                        "NostrService+ListPublishing.swift", "NostrService+ListPublishing.swift",
-                                        "NostrService+ListRestore.swift", "NostrService+ListVersionSave.swift"])
+                                        "NostrService+ListPublishing.swift", "NostrService+ListRestore.swift",
+                                        "NostrService+ListVersionSave.swift", "NostrService+MuteListBase.swift"])
         let interests = try String(contentsOf: app.appendingPathComponent("Services/InterestListService.swift"), encoding: .utf8)
         XCTAssertTrue(interests.contains("InterestList.saveBase(") && interests.contains("own: NostrService.ownListRelays(for: hex)"),
                       "the interest list's save base names the own relays")
