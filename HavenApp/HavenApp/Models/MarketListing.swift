@@ -65,6 +65,69 @@ struct MarketListing: Identifiable, Hashable {
     /// Whether plebeianURL is this listing's own page, not its seller's.
     var hasPlebeianPage: Bool { kind == Self.classifiedKind }
 
+    /// Conduit's merchant portal names itself in the `client` tag:
+    /// `["client", "Conduit Merchant Portal", "31990:<pk>:conduit-merchant", relay]`.
+    /// Match the name or the handler address, as the name is a display string
+    /// (RESEARCH/NV_CONDUIT_BUY_LINK_2026_11_26.md). Neither the relay nor the
+    /// content shape tells a Conduit listing apart.
+    var isConduit: Bool { Self.isConduit(tags: tags) }
+
+    static let conduitClient = "Conduit Merchant Portal"
+
+    static func isConduit(tags: [[String]]) -> Bool {
+        tags.contains { t in
+            guard t.count >= 2, t[0] == "client" else { return false }
+            if t[1] == conduitClient { return true }
+            guard t.count >= 3 else { return false }
+            let parts = t[2].split(separator: ":", omittingEmptySubsequences: false)
+            return parts.count == 3 && parts[0] == "31990" && parts[1].count == 64
+                && parts[1].allSatisfy(\.isHexDigit) && parts[2] == "conduit-merchant"
+        }
+    }
+
+    /// Conduit opens 30402 classifieds only: by coordinate
+    /// (`/products/30402%3A<pk>%3A<d>`, which follows the seller's edits), or
+    /// by event id when there is no `d`. Anything else goes to the seller's
+    /// shop, `shop.conduit.market/<npub>`.
+    var hasConduitPage: Bool { kind == Self.classifiedKind }
+
+    var conduitURL: URL? {
+        guard hasConduitPage else {
+            guard let data = Bech32.hexToData(pubkey), let npub = Bech32.encode(hrp: "npub", data: data) else { return nil }
+            return URL(string: "https://shop.conduit.market/\(npub)")
+        }
+        let ref = dTag.map { "\(Self.classifiedKind):\(pubkey):\($0)" } ?? id
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: ":/?#")
+        guard let encoded = ref.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
+        return URL(string: "https://shop.conduit.market/products/\(encoded)")
+    }
+
+    /// The listing's one buy button: Conduit for a Conduit listing, else Plebeian.
+    struct BuyLink: Equatable {
+        let site: String
+        let url: URL
+        /// Whether `url` is the listing's own page, not its seller's.
+        let ownPage: Bool
+        var label: String { "\(ownPage ? "Buy" : "Seller") on \(site)" }
+    }
+
+    /// The opening line of a message to the seller: which listing, and its
+    /// shop link only when that is the listing's own page (a seller's page
+    /// says nothing about which item).
+    var messageToSeller: String {
+        let name = title.isEmpty ? "your listing" : "“\(title)”"
+        var text = "Hi! I'm interested in \(name)."
+        if let buy = buyLink, buy.ownPage { text += "\n\(buy.url.absoluteString)" }
+        return text
+    }
+
+    var buyLink: BuyLink? {
+        if isConduit, let url = conduitURL { return BuyLink(site: "Conduit", url: url, ownPage: hasConduitPage) }
+        guard let url = plebeianURL else { return nil }
+        return BuyLink(site: "Plebeian", url: url, ownPage: hasPlebeianPage)
+    }
+
     private static let satUnits: Set<String> = ["SAT", "SATS", "SATOSHI", "SATOSHIS"]
 
     private static let groupedFormatter: NumberFormatter = {
