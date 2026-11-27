@@ -17,6 +17,9 @@ enum FollowPublishFailure: Equatable {
     /// Not enough relays answered the fresh lookup (ListMerge.EditBase.unknown).
     /// `ownAnswered` of the account's `own` write relays answered.
     case relaysDidNotAnswer(ownAnswered: Int, own: Int)
+    /// Fewer than two relays answered the fresh lookup, `answered` of them
+    /// (ListMerge.followMajority).
+    case tooFewAnswered(answered: Int)
     /// The signer returned nothing (a bunker that refused or timed out).
     case notSigned
     /// The signer signed with a key that isn't the account's.
@@ -35,6 +38,10 @@ enum FollowPublishFailure: Equatable {
             return "Couldn't \(verb). " + ListMerge.noRelayListMessage
         case .relaysDidNotAnswer(let ownAnswered, let own) where ownAnswered < own:
             return lead + "only \(ownAnswered) of your \(own) relays answered, so your newest follow list can't be checked. Nothing changed. Remove dead relays in Settings › Relays, then try again."
+        case .tooFewAnswered(0):
+            return lead + "no relay answered, so your newest follow list can't be checked. Nothing changed. Check your connection, then try again."
+        case .tooFewAnswered:
+            return lead + "only 1 relay answered, and it takes 2 to check your newest follow list. Nothing changed. Try again in a moment."
         case .relaysDidNotAnswer:
             return lead + "not enough relays answered, so your newest follow list can't be checked. Nothing changed. Try again in a moment."
         case .notSigned:
@@ -50,6 +57,12 @@ enum FollowPublishFailure: Equatable {
         case .noBefore:
             return lead + "the app lost track of the list this tap was made on. Nothing changed. Try again."
         }
+    }
+
+    /// Why a lookup left the follow list `.unknown`: under two answers in
+    /// all, or too few of the account's `own` relays.
+    static func didNotAnswer<Event>(_ lookup: ReplaceableLookup<Event>, own: [String]) -> FollowPublishFailure {
+        lookup.answered < 2 ? .tooFewAnswered(answered: lookup.answered) : relaysDidNotAnswer(answeredBy: lookup.answeredBy, own: own)
     }
 
     /// How many of the account's `own` relays are in `answeredBy`, as

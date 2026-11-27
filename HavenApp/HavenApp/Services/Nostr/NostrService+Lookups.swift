@@ -51,14 +51,17 @@ extension NostrService {
             // this used to open a socket per call per relay.
             var lookups: [LookupSocketPool.Lookup] = []
 
+            // Main queue only (the pool is): every caller is an onEnd or
+            // onMessage callback, or the timeout below.
             func finish() {
+                let reached = Set(targets.filter { LookupSocketPool.shared.isConnected($0) }.map(\.absoluteString))
                 lock.lock()
                 guard !resumed else { lock.unlock(); return }
                 resumed = true
                 let from = newestBy.filter { $0.value.id == best?.id }.keys.map { targets[$0].absoluteString }
                 let result = ReplaceableLookup(event: best, asked: targets.count, answered: answered.count,
                                                answeredBy: Set(answered.map { targets[$0].absoluteString }),
-                                               from: Set(from), ahead: ahead)
+                                               from: Set(from), reached: reached, ahead: ahead)
                 lock.unlock()
                 DispatchQueue.main.async {
                     lookups.forEach { $0.cancel() }

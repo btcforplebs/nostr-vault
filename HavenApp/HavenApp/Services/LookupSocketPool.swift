@@ -179,6 +179,11 @@ final class LookupSocketPool {
         return lookup
     }
 
+    /// Whether `url`'s pooled socket finished its handshake and is still open.
+    func isConnected(_ url: URL) -> Bool {
+        entries[Self.relayKey(url)]?.connected == true
+    }
+
     /// Closes every pooled socket (background, account switch). Lookups still
     /// open end as `.failed`; cooldowns are kept and none are added.
     func closeAll() {

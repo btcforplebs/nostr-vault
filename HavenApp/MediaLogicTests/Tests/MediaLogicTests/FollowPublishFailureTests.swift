@@ -24,7 +24,8 @@ final class FollowPublishFailureTests: XCTestCase {
 
     func testEveryExitHasItsOwnText() {
         let reasons: [FollowPublishFailure] = [.wouldShrink, .readOnly, .noBefore, .accountSwitched, .noRelayList,
-                                               .relaysDidNotAnswer(ownAnswered: 3, own: 7), .notSigned, .wrongSigner, .refused]
+                                               .relaysDidNotAnswer(ownAnswered: 3, own: 7), .tooFewAnswered(answered: 0), .tooFewAnswered(answered: 1),
+                                               .notSigned, .wrongSigner, .refused]
         let follow = reasons.map { $0.message(follow: true) }
         XCTAssertEqual(Set(follow).count, reasons.count)
         XCTAssertFalse(follow.contains("Couldn't follow, try again"))

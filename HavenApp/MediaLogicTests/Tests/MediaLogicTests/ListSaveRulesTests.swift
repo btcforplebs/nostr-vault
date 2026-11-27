@@ -99,7 +99,8 @@ final class ListSaveRulesTests: XCTestCase {
             && url.lastPathComponent != "ListMerge.swift" && url.lastPathComponent != "InterestList.swift" {
             let src = try String(contentsOf: url, encoding: .utf8)
             var rest = src[...]
-            while let call = rest.range(of: "ListMerge.editBase(") {
+            // followEditBase is the follow list's (FeedService+Follow.swift).
+            while let call = rest.range(of: "ListMerge.editBase(") ?? rest.range(of: "ListMerge.followEditBase(") {
                 let tail = rest[call.upperBound...]
                 let end = try XCTUnwrap(tail.range(of: "createdAt:")).lowerBound
                 let args = tail[..<end]

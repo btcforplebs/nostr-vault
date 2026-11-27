@@ -218,6 +218,26 @@ enum ListMerge {
     static func editBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String],
                                 now: Int64 = Int64(Date().timeIntervalSince1970),
                                 createdAt: (Event) -> Int64) -> EditBase<Event> {
+        editBase(lookup, held: held, own: own, now: now, createdAt: createdAt) { mine, ownAnswered in
+            ownMajority(ownAnswered: ownAnswered, own: mine.count, answered: lookup.answered)
+        }
+    }
+
+    /// `editBase` for the follow list (kind 3) only: an own relay that never
+    /// connected drops out of the count (`followMajority`). Every other list
+    /// keeps `ownMajority`. "None" still needs every own relay answering.
+    static func followEditBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String],
+                                      now: Int64 = Int64(Date().timeIntervalSince1970),
+                                      createdAt: (Event) -> Int64) -> EditBase<Event> {
+        let reached = Set(lookup.reached.union(lookup.answeredBy).map(relayKey))
+        return editBase(lookup, held: held, own: own, now: now, createdAt: createdAt) { mine, ownAnswered in
+            followMajority(ownAnswered: ownAnswered, ownReached: mine.intersection(reached).count, answered: lookup.answered)
+        }
+    }
+
+    private static func editBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String], now: Int64,
+                                        createdAt: (Event) -> Int64,
+                                        enough: (_ mine: Set<String>, _ ownAnswered: Int) -> Bool) -> EditBase<Event> {
         let mine = Set(own.map(relayKey))
         guard !mine.isEmpty else { return .noRelayList }
         guard lookup.answered > 0 else { return .unknown }
@@ -225,7 +245,7 @@ enum ListMerge {
         let copies = [lookup.event, held].compactMap { $0 }
         let usable = copies.filter { createdAt($0) < now + maxSkew }
         if let newest = usable.max(by: { createdAt($0) < createdAt($1) }) {
-            return ownMajority(ownAnswered: ownAnswered, own: mine.count, answered: lookup.answered) ? .list(newest) : .unknown
+            return enough(mine, ownAnswered) ? .list(newest) : .unknown
         }
         let ahead = lookup.ahead || usable.count < copies.count
         return !ahead && knowsNone(asked: lookup.asked, answered: lookup.answered) && ownAnswered == mine.count ? .none : .unknown
@@ -260,6 +280,20 @@ enum ListMerge {
     /// follows.js ownMajority.
     static func ownMajority(ownAnswered: Int, own: Int, answered: Int) -> Bool {
         own > 0 && ownAnswered * 2 > own && answered >= 2
+    }
+
+    /// Whether enough relays answered to edit the follow list (Logen
+    /// 2026-11-27): own relays that never connected drop out, more than half
+    /// of the `ownReached` ones that did connect answered (a connected relay
+    /// that was too slow counts as not answering), and at least two relays
+    /// answered in all (`answered` counts every relay asked, indexers too).
+    /// Same rule as Android and web followMajority:
+    /// - 7 own, 3 never connect, 4 answer: yes.
+    /// - 7 own, 4 never connect, 3 answer: yes (was no under ownMajority).
+    /// - 3 connect, 2 answer, 1 slow: yes. 3 connect, 1 answers, 2 slow: no.
+    /// - 1 relay answered in all, or none: no.
+    static func followMajority(ownAnswered: Int, ownReached: Int, answered: Int) -> Bool {
+        ownAnswered * 2 > ownReached && answered >= 2
     }
 
     /// "You have no list" is known only when at least two relays answered and

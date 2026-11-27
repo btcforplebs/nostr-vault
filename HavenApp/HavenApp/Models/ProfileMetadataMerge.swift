@@ -57,6 +57,10 @@ struct ReplaceableLookup<Event> {
     var answeredBy: Set<String> = []
     /// The relays that sent `event`.
     var from: Set<String> = []
+    /// The relays whose socket was connected when the lookup ended, answered
+    /// or not. A relay missing from here and from `answeredBy` never
+    /// connected (ListMerge.followMajority leaves it out).
+    var reached: Set<String> = []
     /// A copy was sent but skipped for being dated `ListMerge.maxSkew` or more
     /// ahead: a list exists, so `event == nil` doesn't mean there is none.
     var ahead = false
