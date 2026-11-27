@@ -8,47 +8,99 @@ import Photos
 extension ProfileContent {
     // MARK: - Section tab bar
 
+    /// Three kinds on the bar and a "more" button that lists the rest
+    /// (Logen 11-27), the same on your own profile and anyone else's.
     var sectionTabBar: some View {
-        HStack(spacing: 0) {
-            ForEach(visibleSections) { section in
-                Button(action: {
-                    // No animation: the old and new sections cross-faded at
-                    // different heights, and the page jumped while they did.
-                    var instant = Transaction()
-                    instant.disablesAnimations = true
-                    withTransaction(instant) {
-                        // The other section's notes are not this one's: an
-                        // anchor left over would pull the page to it.
-                        scrolledNoteID = nil
-                        loader.selectedSection = section
-                    }
-                }) {
-                    VStack(spacing: 6) {
+        let split = ProfileTabSplit.split(visible: visibleSections, pinned: ProfileSection.barKinds)
+        return HStack(spacing: 0) {
+            ForEach(split.bar) { section in
+                Button { select(section) } label: {
+                    tabCell(selected: selectedSection == section) {
                         // Icons only, no names (Logen): icon and count, or the
                         // icon alone on a tab too narrow for the count.
                         ViewThatFits(in: .horizontal) {
                             tabLabel(section, showsCount: true)
                             tabLabel(section, showsCount: false)
                         }
-                        .foregroundColor(selectedSection == section ? .accentText : .secondary)
-
-                        Rectangle()
-                            .fill(selectedSection == section ? Color.havenPurple : Color.clear)
-                            .frame(height: 2)
                     }
-                    .padding(.top, 4)
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(section.rawValue))
                 .accessibilityValue(Text(countLabel(for: section)))
+                .accessibilityAddTraits(selectedSection == section ? .isSelected : [])
                 #if os(macOS)
                 .help(section.rawValue)
                 #endif
             }
+            if !split.more.isEmpty {
+                moreTab(split.more)
+            }
         }
         .padding(.horizontal, 16)
+    }
+
+    /// The fourth tab. Shows the kind picked from its list, so the bar still
+    /// says what is under it; otherwise the "more" icon.
+    private func moreTab(_ kinds: [ProfileSection]) -> some View {
+        let picked = kinds.first { $0 == selectedSection }
+        return Menu {
+            ForEach(kinds) { section in
+                Button { select(section) } label: {
+                    let count = countLabel(for: section)
+                    Label(count.isEmpty ? section.rawValue : "\(section.rawValue)  \(count)",
+                          systemImage: section == selectedSection ? "checkmark" : section.symbol)
+                }
+            }
+        } label: {
+            tabCell(selected: picked != nil) {
+                HStack(spacing: 3) {
+                    Image(systemName: picked?.symbol ?? "ellipsis.circle")
+                        .font(.appSystem(size: 14, weight: .semibold))
+                    if picked != nil {
+                        Image(systemName: "chevron.down")
+                            .font(.appSystem(size: 8, weight: .bold))
+                    }
+                }
+                .frame(height: 20)
+            }
+        }
+        .menuIndicator(.hidden)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(picked?.rawValue ?? "More"))
+        .accessibilityHint(Text("Other kinds of posts"))
+        .accessibilityAddTraits(picked != nil ? .isSelected : [])
+        #if os(macOS)
+        .help(picked?.rawValue ?? "More")
+        #endif
+    }
+
+    /// One slot of the bar: its label over the underline that marks the
+    /// selected kind.
+    private func tabCell<Content: View>(selected: Bool, @ViewBuilder label: () -> Content) -> some View {
+        VStack(spacing: 6) {
+            label()
+                .foregroundColor(selected ? .accentText : .secondary)
+            Rectangle()
+                .fill(selected ? Color.havenPurple : Color.clear)
+                .frame(height: 2)
+        }
+        .padding(.top, 4)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+    }
+
+    private func select(_ section: ProfileSection) {
+        // No animation: the old and new sections cross-faded at different
+        // heights, and the page jumped while they did.
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            // The other section's notes are not this one's: an anchor left
+            // over would pull the page to it.
+            scrolledNoteID = nil
+            loader.selectedSection = section
+        }
     }
 
     private func tabLabel(_ section: ProfileSection, showsCount: Bool) -> some View {
