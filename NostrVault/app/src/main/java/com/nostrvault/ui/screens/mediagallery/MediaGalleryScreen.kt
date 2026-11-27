@@ -555,6 +555,7 @@ fun MediaGalleryScreen(
                                 moderationTarget = viewModel.moderationTarget(item.sha256, authorByHash),
                                 onReport = { reportTarget = it },
                                 onBlock = { blockTarget = it },
+                                sizeLookup = viewModel.sizeLookup,
                             )
                         }
                     }

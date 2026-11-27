@@ -42,6 +42,8 @@ class MediaGalleryViewModel @Inject constructor(
     blobNoteIndexStore: com.nostrvault.data.local.BlobNoteIndexStore,
     private val fileNotesLive: com.nostrvault.fips.FileNotesLive,
     private val emojiVault: com.nostrvault.service.emoji.EmojiVaultStore,
+    /** Z1: a list row's missing size, asked of its server once. */
+    val sizeLookup: BlobSizeLookup,
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)

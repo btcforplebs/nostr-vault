@@ -5,6 +5,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.fips.FileNoteTile
 import com.nostrvault.fips.FileNotesLive
 import com.nostrvault.relay.HavenConfig
+import com.nostrvault.service.BlobSizeLookup
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.NostrService
@@ -75,7 +76,7 @@ class MediaGalleryFileNotesTest {
         val emoji = mockk<com.nostrvault.service.emoji.EmojiVaultStore>(relaxed = true) { every { hiddenFromMedia } returns emojiHidden }
         return MediaGalleryViewModel(
             config, nostr, stats, mockk<MediaCacheService>(relaxed = true), mockk<BlossomService>(relaxed = true),
-            mockk<NotificationManager>(relaxed = true), index, notes, emoji,
+            mockk<NotificationManager>(relaxed = true), index, notes, emoji, BlobSizeLookup(null),
         )
     }
 
