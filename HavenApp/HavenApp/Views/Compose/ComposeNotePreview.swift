@@ -32,7 +32,7 @@ struct ComposeNotePreview: View {
                         note: note,
                         profile: nostrService.profiles[note.pubkey],
                         rowData: FeedNoteRowData.resolve(for: note, feedService: FeedService.shared, nostrService: nostrService),
-                        showParent: false
+                        showParent: true
                     )
                     .environment(\.feedActions, actions)
                     .id(arrivedQuotes)
