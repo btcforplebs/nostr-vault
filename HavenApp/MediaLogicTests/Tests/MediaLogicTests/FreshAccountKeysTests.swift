@@ -61,4 +61,34 @@ final class FreshAccountKeysTests: XCTestCase {
             return XCTFail("the scan-join's first hashtag save was refused")
         }
     }
+
+    /// NV_331_SHIP_CHECK_TRON_2026_11_26 §2: a held new account's first
+    /// follow is signed, then refused by every relay, then the app relaunches
+    /// (the signed copy is held in memory only). One own relay stays silent.
+    /// The pass must still be there, or that account can't follow anyone and
+    /// can't reach the 5 it needs.
+    func testARefusedFirstFollowKeepsThePassAcrossARelaunch() throws {
+        let d = try defaults()
+        FreshAccountKeys.mark("abc", kinds: FreshAccountKeys.newAccountKinds, defaults: d)
+        for kind in FreshAccountKeys.newAccountKinds {
+            FreshAccountKeys.settle("abc", kind: kind, accepted: false, defaults: d)
+            XCTAssertTrue(FreshAccountKeys.isFresh("abc", kind: kind, defaults: d), "kind \(kind) refused everywhere is still nowhere")
+        }
+
+        let own = ["wss://relay.primal.net", "wss://relay.damus.io"]
+        let lookup = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 2,
+                                              answeredBy: ["wss://relay.primal.net", "wss://nos.lol"])
+        let base = ListMerge.editBase(lookup, held: nil, own: own, createdAt: { $0 })
+        guard case .unknown = base else { return XCTFail("one silent own relay leaves the list unknown") }
+        guard case .none = ListMerge.freshKeyBase(base, fresh: FreshAccountKeys.isFresh("abc", kind: 3, defaults: d),
+                                                  lookup: lookup, held: nil, createdAt: { $0 }) else {
+            return XCTFail("the next follow after a relaunch was refused")
+        }
+
+        FreshAccountKeys.settle("abc", kind: 3, accepted: true, defaults: d)
+        XCTAssertFalse(FreshAccountKeys.isFresh("abc", kind: 3, defaults: d), "a relay took it: the key has a follow list")
+        XCTAssertTrue(FreshAccountKeys.isFresh("abc", kind: 10015, defaults: d))
+        FreshAccountKeys.settle("abc", kind: 10015, accepted: true, defaults: d)
+        XCTAssertFalse(FreshAccountKeys.isFresh("abc", kind: 10015, defaults: d))
+    }
 }

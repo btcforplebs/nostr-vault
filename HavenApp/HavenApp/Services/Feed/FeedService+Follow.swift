@@ -122,8 +122,9 @@ extension FeedService {
         }
         let owner = ConfigService.shared.activeAccountHexPubkey
         // A key setup made here has no list anywhere yet. Read now, cleared
-        // only once a list is signed: clearing it before a publish that then
-        // failed made every retry wait on every relay (Android FeedServiceFollow).
+        // only once a relay took a signed list: clearing it before a publish
+        // that then failed made every retry wait on every relay (Android
+        // FeedServiceFollow).
         let fresh = FreshAccountKeys.isFresh(owner, kind: 3)
         // One at a time, so a second tap builds on the first one's list.
         let previousPublish = Self.contactListPublishTail
@@ -171,9 +172,6 @@ extension FeedService {
                 return
             }
             Self.lastSignedContactList[owner] = event
-            // The key has a follow list now; from here on its load must find it. Its
-            // other lists keep their own pass (FreshAccountKeys).
-            FreshAccountKeys.clear(owner, kind: 3)
             // What went out is now the list, unless another tap is already on screen.
             if self.contactListPTags == attempted {
                 let parsed = ContactManager.parseContactList(pTags: tags.filter { $0.count >= 2 && $0[0] == "p" })
@@ -185,6 +183,10 @@ extension FeedService {
             self.recordOwnContactList(event: event)
             self.watchForRebuiltWeb()
             NostrService.shared.postEvent(event, onBroadcastOutcome: { outcome in
+                // Once a relay took it the key has a follow list, and its load
+                // must find it. Refused everywhere, it still has none: the pass
+                // stays (FreshAccountKeys.settle). Other kinds keep their own.
+                FreshAccountKeys.settle(owner, kind: 3, accepted: outcome == .accepted)
                 guard outcome == .refused else { return }
                 Task { @MainActor in fail(event.created_at) }
             })

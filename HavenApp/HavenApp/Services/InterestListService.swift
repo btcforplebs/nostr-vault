@@ -85,9 +85,11 @@ final class InterestListService: ObservableObject {
         var published = next
         published.createdAt = max(event.created_at, list.createdAt + 1)
         accept(published)
-        // It has an interest list now: the next save must find it.
-        FreshAccountKeys.clear(hex, kind: 10015)
-        NostrService.shared.postEvent(event)
+        // Once a relay took it, it has an interest list: the next save must
+        // find it. Refused everywhere, the pass stays (FreshAccountKeys.settle).
+        NostrService.shared.postEvent(event, onBroadcastOutcome: { outcome in
+            FreshAccountKeys.settle(hex, kind: 10015, accepted: outcome == .accepted)
+        })
         return true
     }
 
