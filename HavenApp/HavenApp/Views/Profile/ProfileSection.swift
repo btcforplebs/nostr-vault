@@ -32,6 +32,10 @@ enum ProfileSection: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The kinds that keep a slot on the tab bar; the rest sit behind its
+    /// "more" button (`ProfileTabSplit`).
+    static let barKinds: [ProfileSection] = [.notes, .media, .replies]
+
     /// The tabs filled from the profile's own note stream.
     var isNoteTab: Bool {
         switch self {

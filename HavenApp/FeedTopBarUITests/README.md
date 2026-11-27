@@ -57,3 +57,11 @@ the nostrconnect:// QR is on screen while the app stays in front (no jump to
 Clave), then that Cancel goes back. Nothing is signed or posted. Run it alone
 with `-only-testing:UIT/SignInQRTests`; `TEST_RUNNER_SIGNIN_SHOTS=<dir>` saves
 a screenshot.
+
+## Profile kind tabs (iPhone)
+
+`ProfileTabsTests` (scheme `UIT`) opens your own profile and checks the kind
+tabs: Notes, Media and Replies on the bar, a fourth "More" button that lists
+the rest (Reposts, Tagged, …), and that picking one from the list puts it in
+the fourth slot, selected. Pass a throwaway npub as `TEST_RUNNER_TOPBAR_NPUB`.
+Run it alone with `-only-testing:UIT/ProfileTabsTests`.
