@@ -49,18 +49,33 @@ final class DeleteHereGateTests: XCTestCase {
     }
 
     func testRemovedListSkipsAndClears() {
+        let owner = String(repeating: "0a", count: 32), other = String(repeating: "0b", count: 32)
         var list = DeviceRemovedHashes()
-        list.add(sha.uppercased())
-        list.add("not-a-hash")
-        let other = String(repeating: "cd", count: 32)
+        list.add(sha.uppercased(), owner: owner.uppercased())
+        list.add("not-a-hash", owner: owner)
+        list.add(sha, owner: "../etc")
+        let kept = String(repeating: "cd", count: 32)
         XCTAssertTrue(list.contains(sha))
-        XCTAssertEqual(list.keeping([other, sha]), [other])
-        list.remove(sha)
-        XCTAssertEqual(list.keeping([other, sha]), [other, sha])
-        XCTAssertEqual(list.removed.count, 0)
-        XCTAssertNil(DeviceRemovedHashes.fileURL(owner: "../etc", vault: URL(fileURLWithPath: "/tmp/blossom/")))
-        // Beside the vault folder, where the engine looks (haven-go removed_here.go).
-        XCTAssertEqual(DeviceRemovedHashes.fileURL(owner: sha, vault: URL(fileURLWithPath: "/db/blossom/", isDirectory: true))?.path, "/db/removed_here/\(sha).json")
-        XCTAssertEqual(DeviceRemovedHashes.fileURL(owner: sha.uppercased(), vault: URL(fileURLWithPath: "/db/blossom"))?.path, "/db/removed_here/\(sha).json")
+        XCTAssertEqual(list.byAccount, [owner: [sha]])
+        XCTAssertEqual(list.keeping([kept, sha.uppercased()]), [kept])
+        // Listed under two accounts; Save to Vault takes it off both.
+        list.add(sha, owner: other)
+        list.remove(sha.uppercased())
+        XCTAssertEqual(list.keeping([kept, sha]), [kept, sha])
+        XCTAssertTrue(list.byAccount.isEmpty)
+        // One file in the relay data folder, the engine's working folder.
+        XCTAssertEqual(DeviceRemovedHashes.fileURL(relayDataDir: URL(fileURLWithPath: "/db/", isDirectory: true)).path, "/db/removed_here.json")
+    }
+
+    /// The file Android and the engine (copyv2_removed_here.go) read and write.
+    func testRemovedListSharesTheAndroidAndEngineShape() throws {
+        let owner = String(repeating: "0a", count: 32)
+        let android = Data(#"{"byAccount":{"\#(owner)":["\#(sha.uppercased())"]},"later":1}"#.utf8)
+        let read = try JSONDecoder().decode(DeviceRemovedHashes.self, from: android)
+        XCTAssertTrue(read.contains(sha))
+        var mine = DeviceRemovedHashes()
+        mine.add(sha, owner: owner)
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(mine)) as? [String: [String: [String]]]
+        XCTAssertEqual(json, ["byAccount": [owner: [sha]]])
     }
 }

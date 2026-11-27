@@ -187,8 +187,7 @@ extension BlossomService {
                 knownHashes.merge(AutoMirrorLedger.imetaHashes(tags)) { first, _ in first }
             }
         }
-        let (removedVault, removedOwner) = await removedHereScope()
-        let removed = DeviceRemovedStore.shared.list(owner: removedOwner, vault: removedVault)
+        let removed = DeviceRemovedStore.shared.list(relayDataDir: await removedHereDir())
         // A file removed from this device (A3) is not fetched again; one whose
         // hash only shows after the download is dropped in autoMirrorStore.
         let wanted = ledger.toDownload(candidates, localHashes: localHashes, knownHashes: knownHashes).filter { url in

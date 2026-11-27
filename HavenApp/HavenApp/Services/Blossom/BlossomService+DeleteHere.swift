@@ -3,8 +3,8 @@ import Foundation
 /// "Delete from this device" (A3, plan RESEARCH/NV_MEDIA_LIST_SIZE_2026_11_26.md
 /// §4): removes this device's vault copy of one file and keeps it on the
 /// servers. The file goes only after a fresh check proves another place holds
-/// the same bytes (`DeleteHereGate`), and it goes on the owner's "removed
-/// here" list first (`DeviceRemovedStore`) so Auto-Mirror and the imports
+/// the same bytes (`DeleteHereGate`), and it goes on the "removed here" list
+/// first (`DeviceRemovedStore`) so Auto-Mirror and the imports
 /// never pull it back. Twin: Android `service/blossom/BlossomServiceDeleteHere.kt`.
 extension BlossomService {
     enum DeleteHereResult: Equatable {
@@ -52,7 +52,7 @@ extension BlossomService {
         }
 
         // On the list before the file goes, so a run starting now skips it.
-        guard DeviceRemovedStore.shared.add(hash, owner: owner, vault: vault) else {
+        guard DeviceRemovedStore.shared.add(hash, owner: owner, relayDataDir: relayDataDir) else {
             return .failed("Couldn't save the list of files removed here, so nothing was deleted.")
         }
         #if os(iOS)
@@ -61,7 +61,7 @@ extension BlossomService {
         do {
             try FileManager.default.removeItem(at: file)
         } catch {
-            DeviceRemovedStore.shared.remove(hash, owner: owner, vault: vault)
+            DeviceRemovedStore.shared.remove(hash, relayDataDir: relayDataDir)
             logger.error("deleteHere: \(hash.prefix(8)) not removed: \(error.localizedDescription)")
             return .failed("Couldn't remove the file from this device.")
         }
@@ -105,23 +105,19 @@ extension BlossomService {
         }
     }
 
-    /// The vault folder and its owner, for the "removed here" list.
-    func removedHereScope() async -> (vault: URL, owner: String) {
-        await MainActor.run {
-            (configService.relayDataDir.appendingPathComponent(configService.config.blossomPath), nostrService.ownerHexPubkey)
-        }
+    /// The relay data folder, where the "removed here" list lives.
+    func removedHereDir() async -> URL {
+        await MainActor.run { configService.relayDataDir }
     }
 
     /// `hashes` without the ones removed from this device (every pass that
     /// fills the vault on its own calls this).
     func withoutRemovedHere(_ hashes: [String]) async -> [String] {
-        let (vault, owner) = await removedHereScope()
-        return DeviceRemovedStore.shared.keeping(hashes, owner: owner, vault: vault)
+        DeviceRemovedStore.shared.keeping(hashes, relayDataDir: await removedHereDir())
     }
 
     /// An explicit Save to Vault of `sha256`: it may come back.
     func clearRemovedHere(_ sha256: String) async {
-        let (vault, owner) = await removedHereScope()
-        DeviceRemovedStore.shared.remove(sha256, owner: owner, vault: vault)
+        DeviceRemovedStore.shared.remove(sha256, relayDataDir: await removedHereDir())
     }
 }
