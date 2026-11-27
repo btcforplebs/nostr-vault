@@ -5,18 +5,22 @@
 import { watchLive } from "./feed-live.js"
 import { NOTE_KINDS, SINCE_SLACK_S } from "./person.js"
 
-// Accounts whose whole opening page was asked for in this page load. The first open asks for all of it (a note
-// written elsewhere long ago may be missing from Haven); after that only what is newer.
-const asked = new Set()
+// Accounts whose whole opening page was asked for in this page load -> when (unix s, this device's clock) the last
+// opening ask started. The first open asks for all of it (a note written elsewhere long ago may be missing from
+// Haven); after that only what reached the relays since that ask. Not the newest note held: the web saves its own
+// posts to the outbox as you post (actions.js), so a note from the phone written before a web post would be left
+// out, and a note dated ahead by another device's clock would hold back every later ask (#2705 review).
+const asked = new Map()
+const nowS = () => Math.floor(Date.now() / 1000)
 
-/** `since` for your own profile's opening ask: none on the first open of this page load, then just before the newest
- *  note held (`held`, newest first or not). */
+/** `since` for your own profile's opening ask: none on the first open of this page load (or with nothing held),
+ *  then a little before the last opening ask started. */
 export function ownSince(me, held) {
   if (!asked.has(me) || !held?.length) return undefined
-  return Math.max(...held.map(e => e.created_at)) - SINCE_SLACK_S
+  return asked.get(me) - SINCE_SLACK_S
 }
-/** The whole opening page has been asked for (ownSince asks only what is newer from now on). */
-export const markOwnAsked = me => asked.add(me)
+/** The opening ask that started `at` (unix s) has finished: later ones ask only for what came after it. */
+export const markOwnAsked = (me, at = nowS()) => asked.set(me, at)
 /** For the tests. */
 export const forgetOwnAsked = () => asked.clear()
 

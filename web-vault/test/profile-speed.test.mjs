@@ -56,14 +56,24 @@ test("#8 queryMany: every filter to every relay in one subscribeMap (one REQ a r
   assert.deepEqual(await queryMany([], [{}], { p }), [])
 })
 
-test("#2: your own profile asks the whole page once a page load, then only since just before the newest held", () => {
+test("#2: your own profile asks the whole page once a page load, then only since just before the last ask", () => {
   forgetOwnAsked()
   const me = key(5), held = [{ created_at: 1000 }, { created_at: 3000 }, { created_at: 2000 }]
   assert.equal(ownSince(me, held), undefined, "first open: the whole page")
-  markOwnAsked(me)
-  assert.equal(ownSince(me, held), 3000 - SINCE_SLACK_S)
+  markOwnAsked(me, 2500)
+  assert.equal(ownSince(me, held), 2500 - SINCE_SLACK_S, "from the ask's time, not the newest note held (3000)")
   assert.equal(ownSince(me, []), undefined, "nothing held: the whole page")
   assert.equal(ownSince(key(6), held), undefined, "another account")
+})
+
+test("#2 review: a web post saved to the outbox doesn't hide a phone note written before it", () => {
+  forgetOwnAsked()
+  const me = key(5), T = 1_000_000
+  markOwnAsked(me, T - 600) // the profile was opened 10 minutes before the phone note
+  // Phone note at T (only on the relays), then a web post at T+5 min saved straight to the outbox.
+  const held = [{ created_at: T + 300 }]
+  const since = ownSince(me, held)
+  assert.ok(since <= T, `since ${since} must not pass the phone note at ${T}`)
 })
 
 test("#2: syncOwn, syncOwnPage and Tagged pass `since` on to the relays", async () => {
@@ -75,14 +85,26 @@ test("#2: syncOwn, syncOwnPage and Tagged pass `since` on to the relays", async 
   filters.length = 0
   await syncOwn({ outbox: {} }, key(1), ["wss://a"], { query })
   assert.ok(filters.every(f => !("since" in f)), "no since: the whole page")
-  // Tagged: nothing kept yet asks everything; once a note is kept, only from just before it.
+  // Tagged: the first opening ask asks everything; after it, only from just before that ask started.
   const P = key(7), note = { id: key(8), kind: 1, pubkey: key(9), created_at: 4000, tags: [["p", P]] }
   const tq = []
+  const before = Math.floor(Date.now() / 1000)
   await fetchTagged(P, [], { newerOnly: true, query: async (r, f) => { tq.push(f); return [note] } })
   await fetchTagged(P, [], { newerOnly: true, query: async (r, f) => { tq.push(f); return [] } })
   assert.equal(tq[0].since, undefined)
-  assert.equal(tq[1].since, 4000 - SINCE_SLACK_S)
+  assert.ok(tq[1].since >= before - SINCE_SLACK_S && tq[1].since <= Math.floor(Date.now() / 1000) - SINCE_SLACK_S)
   assert.equal((await fetchTagged(P, [], { newerOnly: true, query: async () => [] })).length, 1, "the kept note stays in the list")
+})
+
+test("#2 review: a stranger's note dated in 2100 doesn't freeze the Tagged tab", async () => {
+  const P = key(10), future = { id: key(11), kind: 1, pubkey: key(9), created_at: 4102444800, tags: [["p", P]] }
+  const now = Math.floor(Date.now() / 1000), real = { id: key(12), kind: 1, pubkey: key(9), created_at: now, tags: [["p", P]] }
+  const tq = []
+  await fetchTagged(P, [], { newerOnly: true, query: async (r, f) => { tq.push(f); return [future] } })
+  const relay = [future, real]
+  const got = await fetchTagged(P, [], { newerOnly: true, query: async (r, f) => { tq.push(f); return relay.filter(e => !f.since || e.created_at >= f.since) } })
+  assert.ok(tq[1].since <= now, `since ${tq[1].since} must not pass now`)
+  assert.ok(got.some(e => e.id === real.id), "the real mention shows")
 })
 
 test("#6: a profile keeps one live subscription for its owner's notes and reposts; others' notes are dropped", () => {

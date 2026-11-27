@@ -85,6 +85,10 @@ export async function fetchPersonArticles(pubkey, writeRelays, { limit = 50, que
 }
 
 const tagged = new Map() // pubkey -> Map(id -> event): notes by others that tag them, for the same profiles as `fetched`
+// pubkey -> when (unix s, this device's clock) the last opening ask for their tagged notes started. `since` comes
+// from here, never from the notes kept: those are strangers' notes, and one dated in the year 2100 would hold every
+// later ask past any real mention (#2705 review).
+const taggedAskedAt = new Map()
 /** A `since` asked a little before the newest note held: a relay may have stored a note dated just before it late. */
 export const SINCE_SLACK_S = 60
 /** Their notes that arrived live (profile-live.js), kept with the ones this page fetched. */
@@ -93,15 +97,17 @@ export const keepPersonNotes = (pubkey, evs) => remember(pubkey, evs.filter(e =>
  *  from `relays` (their read relays: NIP-65 sends mentions there) and the index relays, kept in memory.
  *  -> what is kept for them at or before `until`, newest first */
 export async function fetchTagged(pubkey, relays, { until, newerOnly = false, limit = PERSON_PAGE, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
-  // `newerOnly` (the opening list, asked again): with notes already kept for them, only what came after the newest.
-  const keptNewest = newerOnly && !until ? newest([...(tagged.get(pubkey)?.values() ?? [])])?.created_at : undefined
-  const evs = await query(uniq([...relays, ...DEFAULT_RELAYS]), { kinds: [1], "#p": [pubkey], limit, ...(until ? { until } : {}), ...(keptNewest ? { since: keptNewest - SINCE_SLACK_S } : {}) }, { maxWait: 8000 })
+  // `newerOnly` (the opening list, asked again): with an opening ask already made for them, only what came after it.
+  const opening = !until, startedAt = Math.floor(Date.now() / 1000)
+  const askedAt = newerOnly && opening && tagged.has(pubkey) ? taggedAskedAt.get(pubkey) : undefined
+  const evs = await query(uniq([...relays, ...DEFAULT_RELAYS]), { kinds: [1], "#p": [pubkey], limit, ...(until ? { until } : {}), ...(askedAt ? { since: askedAt - SINCE_SLACK_S } : {}) }, { maxWait: 8000 })
+  if (opening) taggedAskedAt.set(pubkey, startedAt)
   const page = evs.filter(e => e.kind === 1 && e.pubkey !== pubkey && e.tags.some(t => t[0] === "p" && t[1] === pubkey))
   const have = tagged.get(pubkey) ?? new Map()
   tagged.delete(pubkey)
   tagged.set(pubkey, have)
   for (const ev of page) have.set(ev.id, ev)
-  while (tagged.size > KEEP_PROFILES) tagged.delete(tagged.keys().next().value)
+  while (tagged.size > KEEP_PROFILES) { const gone = tagged.keys().next().value; tagged.delete(gone); taggedAskedAt.delete(gone) }
   return [...have.values()].filter(e => !until || e.created_at <= until).sort((a, b) => b.created_at - a.created_at)
 }
 

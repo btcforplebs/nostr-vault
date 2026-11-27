@@ -51,10 +51,10 @@ export function ProfileScreen({ ctx }) {
       // syncOwn brings no reposts: they come as deep as its notes, so the newest OPENING read below has no gap.
       // Each relay's notes draw as they land (syncOwn `on`): the list never waits on the slowest write relay.
       // Opened again in this page load, or looked at again: only what is newer than the newest held (profile-live.js).
-      const since = ownSince(me, held)
+      const since = ownSince(me, held), startedAt = Math.floor(Date.now() / 1000)
       const draw = async () => show(await readOwn(vault, me, NOTE_KINDS, OPENING))
       await Promise.all([syncOwn(vault, me, writeRelays, { on: draw, since }), syncOwnPage(vault, me, writeRelays, { kinds: [6], limit: OPENING, since })]).catch(() => {})
-      if (!since) markOwnAsked(me)
+      markOwnAsked(me, startedAt)
     }
     const all = await readOwn(vault, me, NOTE_KINDS, OPENING)
     setArticles(await readOwn(vault, me, [30023], 50))
