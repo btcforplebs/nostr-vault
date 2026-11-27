@@ -69,9 +69,9 @@ object FillYourFeedGuide {
         else -> meter.progressText
     }
 
-    /** [locked]: a new account short of 5 ([FillYourFeedGate]) is told how many are left. */
-    fun meterSubtitle(meter: VaultMeter, locked: Boolean = false): String = when (meter.stage) {
-        VaultMeter.Stage.FILLING -> if (locked) FillYourFeedGate.leftText(meter) else "Look before you follow"
+    /** Under 5 it says how many are left: "3 more to go" (same as iOS). */
+    fun meterSubtitle(meter: VaultMeter): String = when (meter.stage) {
+        VaultMeter.Stage.FILLING -> FillYourFeedGate.leftText(meter)
         VaultMeter.Stage.MASTER -> "${VaultMeter.GOAL} people followed"
     }
 

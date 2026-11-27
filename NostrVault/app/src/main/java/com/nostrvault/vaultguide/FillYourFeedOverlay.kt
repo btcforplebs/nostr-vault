@@ -606,8 +606,7 @@ private fun MeterBar(
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 if (!compact) {
-                    val locked by FillYourVaultCoordinator.locked.collectAsState()
-                    Text(FillYourFeedGuide.meterSubtitle(meter, locked), color = SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(FillYourFeedGuide.meterSubtitle(meter), color = SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             IconButton(onClick = onCollapse, modifier = Modifier.size(48.dp)) {

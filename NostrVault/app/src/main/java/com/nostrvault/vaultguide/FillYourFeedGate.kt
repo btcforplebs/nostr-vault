@@ -7,7 +7,8 @@ import com.nostrvault.tutorials.TutorialStore
  * key made by "New to Nostr" on this device can't finish, skip or hide the
  * "Fill your feed" guide until it follows 5 people, on every path (scan-join
  * at 1-4 → Discover, skip-referrer → topics). Skip, "Not now" and "Hide the
- * meter" are gone while it is locked, and the meter says how many are left.
+ * meter" are gone while it is locked. The meter says how many are left
+ * ("3 more to go"), for every account.
  *
  * Only keys setup marks here are held: an account someone signed in with, or
  * any account from before this rule, keeps the old way out.
@@ -21,11 +22,8 @@ object FillYourFeedGate {
     /** Follows still needed, 0 once there. */
     fun left(meter: VaultMeter): Int = maxOf(0, VaultMeter.GOAL - meter.count)
 
-    /** The meter's second line while locked: "Follow 3 more to finish". */
-    fun leftText(meter: VaultMeter): String {
-        val n = left(meter)
-        return if (n == 1) "Follow 1 more to finish" else "Follow $n more to finish"
-    }
+    /** The meter's second line under 5, for every account: "3 more to go". */
+    fun leftText(meter: VaultMeter): String = "${left(meter)} more to go"
 }
 
 /** Per account: whether setup made this key here, so the 5-follow rule holds. */

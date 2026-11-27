@@ -34,11 +34,10 @@ class FillYourFeedGateTest {
     }
 
     @Test fun meterSaysHowManyAreLeft() {
-        assertEquals("Follow 5 more to finish", FillYourFeedGuide.meterSubtitle(meter(0), locked = true))
-        assertEquals("Follow 2 more to finish", FillYourFeedGuide.meterSubtitle(meter(3), locked = true))
-        assertEquals("Follow 1 more to finish", FillYourFeedGuide.meterSubtitle(meter(4), locked = true))
-        assertEquals("Look before you follow", FillYourFeedGuide.meterSubtitle(meter(3), locked = false))
-        assertEquals("5 people followed", FillYourFeedGuide.meterSubtitle(meter(5), locked = true))
+        assertEquals("5 more to go", FillYourFeedGuide.meterSubtitle(meter(0)))
+        assertEquals("2 more to go", FillYourFeedGuide.meterSubtitle(meter(3)))
+        assertEquals("1 more to go", FillYourFeedGuide.meterSubtitle(meter(4)))
+        assertEquals("5 people followed", FillYourFeedGuide.meterSubtitle(meter(5)))
     }
 
     @Test fun storeIsPerAccountAndOnlyForMarkedKeys() {
