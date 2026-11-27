@@ -125,8 +125,12 @@ class FollowFailureReasonTest {
     }
 
     @Test fun `every own relay answered but too few in all`() {
-        own = listOf("wss://one")
-        onRelays = copy(setOf("wss://one"))
+        // Both own relays answered and none had a list, but another relay connected and stayed silent: it may hold it.
+        own = listOf("wss://one", "wss://two")
+        onRelays = NostrService.ReplaceableLookup(
+            null, asked = 3, answered = 2, answeredBy = setOf("wss://one", "wss://two"),
+            reachedBy = setOf("wss://one", "wss://two", "wss://inbox"),
+        )
         assertEquals(
             "Couldn't follow: not enough relays answered, so your newest follow list can't be checked. " +
                 "Nothing changed. Try again in a moment.",

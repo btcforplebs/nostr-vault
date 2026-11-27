@@ -229,10 +229,10 @@ class FeedServiceFollowListTest {
 
     @Test
     fun `the own relays are asked for the follow list too`() {
-        own = listOf("wss://own-only.example")
-        // Its one relay and purplepag.es answered: two answers, as a single one is never enough.
+        own = listOf("wss://own-only.example", "wss://own-two.example")
+        // Two of its own relays answered, as a single one is never enough (an indexer doesn't make two, Logen 2026-11-27).
         onRelays = relayCopy(200, listOf(listOf("p", bob)), sentBy = "wss://own-only.example",
-            answeredBy = setOf("wss://own-only.example", "wss://purplepag.es"))
+            answeredBy = setOf("wss://own-only.example", "wss://own-two.example", "wss://purplepag.es"))
         feed.publishContactList(listOf(bob, alice), ContactManager.FollowEdit(add = listOf(alice)))
         coVerify(timeout = 5_000) { nostr.lookupNewestReplaceable(3, alice, match { "wss://own-only.example" in it }, any(), any()) }
         coVerify(timeout = 5_000) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any(), any()) }

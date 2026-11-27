@@ -77,9 +77,10 @@ import com.nostrvault.ui.notification.FollowKind
                         .onFailure { if (it is CancellationException) throw it }
                         .getOrNull()
                     val fetched = lookup?.event?.let { ContactManager.ListCopy(owner, it.tags, it.content, it.createdAt) }
+                    // Own relays that never connected drop out of the count (FollowListKnown, Logen 2026-11-27).
                     val why = if (lookup == null) ListMerge.NOT_ANSWERED
-                        else ListMerge.unknownWhy(own, lookup.answeredBy, fetched != null || knownContactList?.owner == owner, lookup.ahead)
-                    val base = ContactManager.saveBase(owner, fetched, lookup?.confirmedNone == true, freshKey, knownContactList, why)
+                        else FollowListKnown.unknownWhy(own, lookup, fetched != null || knownContactList?.owner == owner)
+                    val base = ContactManager.saveBase(owner, fetched, lookup != null && FollowListKnown.confirmsNone(own, lookup), freshKey, knownContactList, why)
                     if (base == null) {
                         refusal = if (why == ListMerge.NO_RELAY_LIST) FollowPublishFailure.NoRelayList
                             else FollowPublishFailure.notKnown(own, lookup?.answeredBy)

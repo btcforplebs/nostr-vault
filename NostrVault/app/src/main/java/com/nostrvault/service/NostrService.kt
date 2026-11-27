@@ -420,6 +420,11 @@ class NostrService @Inject constructor(
          * "none" isn't known.
          */
         val ahead: Boolean = false,
+        /**
+         * The relays that connected (sent the request or answered), so a relay that never connected can drop out of
+         * the follow list's count ([FollowListKnown]). Null when not recorded: every relay asked counts then.
+         */
+        val reachedBy: Set<String>? = null,
     ) {
         val confirmedNone: Boolean get() = event == null && !ahead && asked > 0 && answered >= asked
     }

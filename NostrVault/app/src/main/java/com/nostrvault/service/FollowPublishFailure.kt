@@ -12,6 +12,12 @@ sealed interface FollowPublishFailure {
     /** Only [answered] of the account's [own] write relays answered: the newest list can't be checked. */
     data class OwnRelaysShort(val answered: Int, val own: Int) : FollowPublishFailure
 
+    /**
+     * The relay list names one relay: a follow edit needs two own relays to answer ([FollowListKnown]), so it can
+     * never be checked until another is added (Logen 2026-11-27).
+     */
+    data object OneOwnRelay : FollowPublishFailure
+
     /** Every own relay answered, yet not enough to know the list (fewer than two relays in all, or "none" unproven). */
     data object NotEnoughAnswered : FollowPublishFailure
 
@@ -23,13 +29,15 @@ sealed interface FollowPublishFailure {
 
     companion object {
         /**
-         * The failure when the newest list isn't known: [OwnRelaysShort] while some of the [own] relays didn't answer,
+         * The failure when the newest list isn't known: [OneOwnRelay] with a single own relay, [OwnRelaysShort] while
+         * some of the [own] relays didn't answer (counted against all of them, dead ones too, as the text says),
          * [NotEnoughAnswered] once all of them did. [answeredBy] is every relay that answered, null when the lookup
          * itself failed (none did).
          */
         fun notKnown(own: Collection<String>, answeredBy: Collection<String>?): FollowPublishFailure {
             val mine = own.map(ListMerge::key).toSet()
             if (mine.isEmpty()) return NoRelayList
+            if (mine.size < 2) return OneOwnRelay
             val answered = answeredBy.orEmpty().map(ListMerge::key).toSet().count { it in mine }
             return if (answered < mine.size) OwnRelaysShort(answered, mine.size) else NotEnoughAnswered
         }
@@ -45,6 +53,9 @@ internal fun followFailedMessage(follow: Boolean, failure: FollowPublishFailure?
         is FollowPublishFailure.OwnRelaysShort ->
             "Couldn't $verb: only ${failure.answered} of your ${failure.own} relays answered, so your newest follow " +
                 "list can't be checked. Nothing changed. Remove dead relays in Settings › Relays, then try again."
+        FollowPublishFailure.OneOwnRelay ->
+            "Couldn't $verb: your relay list has only one relay, and your newest follow list needs two of your relays " +
+                "to answer before it can be checked. Nothing changed. Add a relay in Settings › Relays, then try again."
         FollowPublishFailure.NotEnoughAnswered ->
             "Couldn't $verb: not enough relays answered, so your newest follow list can't be checked. " +
                 "Nothing changed. Try again in a moment."

@@ -244,6 +244,7 @@ internal const val GONE_DRAIN_MS = 250L
         val best = java.util.concurrent.atomic.AtomicReference<NostrEvent?>(null)
         val answered = java.util.concurrent.atomic.AtomicInteger(0)
         val answeredBy = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        val reachedBy = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
         val ahead = java.util.concurrent.atomic.AtomicBoolean(false)
         val newestBy = java.util.concurrent.ConcurrentHashMap<String, NostrEvent>()
         coroutineScope {
@@ -281,6 +282,7 @@ internal const val GONE_DRAIN_MS = 250L
                             }
                             val sender = launch {
                                 client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                                reachedBy.add(url)
                                 val dFilter = dTag?.let { ""","#d":[${JsonPrimitive(it)}]""" } ?: ""
                                 client.send("""["REQ","$subId",{"kinds":[$kind],"authors":["$pubkey"]$dFilter,"limit":1}]""")
                             }
@@ -306,7 +308,7 @@ internal const val GONE_DRAIN_MS = 250L
         }
         val newest = best.get()
         val from = newestBy.filterValues { newest != null && it.id == newest.id }.keys
-        return ReplaceableLookup(newest, targets.size, answered.get(), answeredBy.toSet(), from.toSet(), ahead.get())
+        return ReplaceableLookup(newest, targets.size, answered.get(), answeredBy.toSet(), from.toSet(), ahead.get(), reachedBy.toSet() + answeredBy)
     }
 
     /**
