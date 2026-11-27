@@ -109,7 +109,7 @@ export async function refreshBlockList(vault, pubkey, relays, { query = (r, f, o
 }
 
 // What the screens read. One list per signed-in account; a new account starts empty.
-const empty = pubkey => ({ pubkey, blocked: muteSet(), publicBlocked: new Set(), privateBlocked: new Set(), privateNote: "", eventId: null, publicEntries: 0 })
+const empty = pubkey => ({ pubkey, blocked: muteSet(), publicBlocked: new Set(), privateBlocked: new Set(), publicWords: [], privateWords: [], privateNote: "", eventId: null, publicEntries: 0 })
 let state = empty(null)
 let loading = null
 let asked = new Set() // relays already asked for this account's list
@@ -127,7 +127,7 @@ async function apply(pubkey, ev, opener) {
   if (state.eventId && ev.id !== state.eventId && ev.created_at < (state.created_at ?? 0)) return // never go back to an older list
   const priv = await privateBlocks(ev, opener)
   if (state.pubkey !== pubkey) return // signed out or switched while decrypting
-  state = { pubkey, blocked: muteSet([...pTags(ev.tags), ...priv.pubkeys], [...(ev.tags ?? []), ...priv.tags]), publicBlocked: new Set(pTags(ev.tags)), privateBlocked: new Set(priv.pubkeys), privateNote: priv.note, eventId: ev.id, created_at: ev.created_at, publicEntries: entryCount(ev.tags) }
+  state = { pubkey, blocked: muteSet([...pTags(ev.tags), ...priv.pubkeys], [...(ev.tags ?? []), ...priv.tags]), publicBlocked: new Set(pTags(ev.tags)), privateBlocked: new Set(priv.pubkeys), publicWords: muteEntries(ev.tags).words, privateWords: muteEntries(priv.tags).words, privateNote: priv.note, eventId: ev.id, created_at: ev.created_at, publicEntries: entryCount(ev.tags) }
   for (const cb of listeners) cb()
 }
 
