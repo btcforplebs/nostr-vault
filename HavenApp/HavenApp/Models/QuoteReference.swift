@@ -200,14 +200,14 @@ enum QuoteReference {
 
     // MARK: - TLV
 
-    private struct TLVEntry {
+    struct TLVEntry {
         let type: UInt8
         let value: Data
     }
 
     /// Walks a NIP-19 TLV payload. A truncated entry ends the walk rather than
     /// being read past — a malformed reference should yield nothing, not garbage.
-    private static func tlvEntries(_ payload: Data) -> [TLVEntry] {
+    static func tlvEntries(_ payload: Data) -> [TLVEntry] {
         var entries: [TLVEntry] = []
         var rest = Data(payload)
         while rest.count >= 2 {
