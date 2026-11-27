@@ -181,7 +181,8 @@ private struct MarketplaceAuctionBadge: View {
 
 /// A listing opened from the grid: photos, price, what and where, the
 /// seller, the description, and where to buy it. Nostr Vault doesn't run a
-/// checkout, so buying hands off to Plebeian Market, or the buyer messages
+/// checkout, so buying hands off to Plebeian Market (Conduit, for a listing
+/// Conduit's merchant portal published), or the buyer messages
 /// the seller. Shopstr was linked too until 2026-10-04, when Logen reported
 /// it dead.
 struct MarketplaceListingSheet: View {
@@ -375,10 +376,9 @@ struct MarketplaceListingSheet: View {
     @ViewBuilder
     private var buyButtons: some View {
         VStack(spacing: 10) {
-            if let url = listing.plebeianURL {
-                Button { PlatformURL.openLink(url) } label: {
-                    Label(listing.hasPlebeianPage ? "Buy on Plebeian" : "Seller on Plebeian",
-                          systemImage: listing.hasPlebeianPage ? "cart" : "person.crop.circle")
+            if let buy = listing.buyLink {
+                Button { PlatformURL.openLink(buy.url) } label: {
+                    Label(buy.label, systemImage: buy.ownPage ? "cart" : "person.crop.circle")
                         .font(.appSystem(size: 15, weight: .bold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
@@ -408,12 +408,7 @@ struct MarketplaceListingSheet: View {
     }
 
     /// The opening line of a message to the seller: which listing, and its
-    /// Plebeian link so the seller can see exactly what is being asked about.
-    private var messageToSeller: String {
-        let title = listing.title.isEmpty ? "your listing" : "“\(listing.title)”"
-        var text = "Hi! I'm interested in \(title)."
-        // Only the listing's own page: a seller's profile says nothing about which item.
-        if listing.hasPlebeianPage, let url = listing.plebeianURL { text += "\n\(url.absoluteString)" }
-        return text
-    }
+    /// shop link (Plebeian, or Conduit for a Conduit listing) so the seller can
+    /// see exactly what is being asked about.
+    private var messageToSeller: String { listing.messageToSeller }
 }
