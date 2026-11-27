@@ -1,3 +1,4 @@
+import { OUTSIDE_TEXT, useOutside } from "./outside-web.js"
 import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Mention, NoteText } from "./NoteText.jsx"
@@ -41,7 +42,8 @@ export function AuthorName({ pubkey }) {
  *  previews and quoted notes load; a stranger's wait, or drawing the card would tell their server your IP. Not given
  *  (the feeds), everything loads as before. */
 export function NoteCard({ event, memoryOnly = false, showParent = false, footer = null, trusted }) {
-  return <Undeleted ids={gateIds(event)}>{card(event, memoryOnly, showParent, footer, trusted)}</Undeleted>
+  const outside = useOutside()
+  return <Undeleted ids={gateIds(event)}>{card(event, memoryOnly, showParent, footer, trusted, outside)}</Undeleted>
 }
 
 /** Its children, until this account deletes one of `ids` (a post, or the note a repost carries): then nothing, at
@@ -57,8 +59,10 @@ export function Undeleted({ ids, children }) {
 }
 
 // `footer`: drawn inside the card under the actions (a thread note's reactions).
-function card(event, memoryOnly, showParent, footer, trusted) {
-  if (event.kind === GENERIC_REPOST_KIND) return genericRepost(event, memoryOnly, footer, trusted)
+// `outside(pk)`: on a profile page (outside-web.js), a repost of someone outside your web is its repost line and one
+// short line, with nothing of theirs drawn or fetched.
+function card(event, memoryOnly, showParent, footer, trusted, outside) {
+  if (event.kind === GENERIC_REPOST_KIND) return genericRepost(event, memoryOnly, footer, trusted, outside)
   if (event.kind === 6) {
     // The embedded note is only as good as whoever reposted it: unsigned or tampered, it is fetched by id instead,
     // so its pubkey never stands in as the author (whose mesh vault a photo would dial).
@@ -66,6 +70,7 @@ function card(event, memoryOnly, showParent, footer, trusted) {
     const target = actionTarget(event)
     if (target) rememberNote(target)
     const open = inner?.id ?? repostedId(event)
+    if (inner?.pubkey && outside?.(inner.pubkey)) return outsideRepost(event, footer)
     return (
       <article class="note note-card" data-note-id={target?.id} onClick={open && openThread(open)} onAuxClick={open && openThread(open)}>
         {repostLine(event)}
@@ -99,9 +104,10 @@ const repostLine = event =>
  *  a 6 and draws the original. The embedded copy is used only when its signature checks out (an article, poll or
  *  picture is not a note's text, so an unchecked copy could put words in someone's mouth); else it is fetched by its
  *  e tag or a coordinate. */
-function genericRepost(event, memoryOnly, footer, trusted) {
+function genericRepost(event, memoryOnly, footer, trusted, outside) {
   const inner = genericRepostInner(event)
   const ref = repostRef(event)
+  if (inner && outside?.(inner.pubkey)) return outsideRepost(event, footer)
   if (inner) rememberNote(inner)
   const open = inner?.id ?? (ref?.type === "note" ? ref.id : null)
   return (
@@ -115,15 +121,25 @@ function genericRepost(event, memoryOnly, footer, trusted) {
   )
 }
 
+/** A repost on a profile page whose note is by someone outside your web: who reposted, and that something was there. */
+const outsideRepost = (event, footer) => (
+  <article class="note note-card note-outside" data-note-id={event.id}>
+    {repostLine(event)}
+    <div class="note-text muted">{OUTSIDE_TEXT.repost}</div>
+    {footer}
+  </article>
+)
+
 /** A repost that carried only the e tag (FeedNoteRow+NoteBody fetches the original the same way): the note it points
  *  at, from Haven /feed or the relays, with its own actions. `kinds`: what it may be (a kind 6: a note; a kind 16:
  *  any kind a timeline draws). */
 const NOTE_ONLY = new Set([1])
 function FetchedRepost({ q, memoryOnly, kinds = NOTE_ONLY, trusted }) {
-  const ev = useQuote(q, memoryOnly), state = repostState(ev, kinds, useBlocked())
+  const ev = useQuote(q, memoryOnly), state = repostState(ev, kinds, useBlocked()), outside = useOutside()
   if (state === "loading") return <div class="note-text muted">Loading the reposted note…</div>
   if (state === "missing") return <div class="note-text muted">The reposted note couldn't be found</div>
   if (state === "blocked") return <div class="note-text muted">Repost of someone you blocked</div>
+  if (outside?.(ev.pubkey)) return <div class="note-text muted">{OUTSIDE_TEXT.repost}</div>
   rememberNote(ev)
   return <><NoteBody event={ev} memoryOnly={memoryOnly} trusted={trusted} /><NoteActions note={ev} /></>
 }
@@ -132,6 +148,7 @@ function FetchedRepost({ q, memoryOnly, kinds = NOTE_ONLY, trusted }) {
  *  `trusted`: as NoteCard's; the gate is the note's author (a repost's: the reposted note's). */
 export function NoteBody({ event, memoryOnly, showParent = false, trusted }) {
   const ok = trusted ? !!trusted(event.pubkey) : true
+  const outside = useOutside()
   const replyTo = replyToPubkey(event) ?? commentParentAuthor(event)
   // A kind 1 reply or a NIP-22 comment on a note: its parent above it, asked on its reachable e/E hints.
   const parent = showParent ? threadRefs(event).parent : null
@@ -149,7 +166,7 @@ export function NoteBody({ event, memoryOnly, showParent = false, trusted }) {
             <time class="note-time" datetime={new Date(event.created_at * 1000).toISOString()} title={new Date(event.created_at * 1000).toLocaleString()}>{ago(event.created_at)}</time>
             <NoteMore note={event} />
           </div>
-          {replyTo && <div class="reply-to"><ReplyIcon />reply to <Mention pubkey={replyTo} memoryOnly={memoryOnly} /></div>}
+          {replyTo && <div class="reply-to"><ReplyIcon />reply to {outside?.(replyTo) ? OUTSIDE_TEXT.reply : <Mention pubkey={replyTo} memoryOnly={memoryOnly} />}</div>}
         </div>
       </div>
       {event.kind === SNO_KIND ? <SnoBody event={event} /> : hasKindBody(event) ? <KindBody event={event} memoryOnly={memoryOnly} /> : <NoteText content={event.content} tags={event.tags} author={event.pubkey} memoryOnly={memoryOnly} linkCards images={ok} trusted={trusted} />}

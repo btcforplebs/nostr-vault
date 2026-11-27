@@ -14,12 +14,13 @@ export const KEEP_MS = 10 * 60 * 1000
 
 const kept = new Map() // pubkey -> { count, at }
 
-/** One relay's COUNT, or null when it refuses, fails or takes longer than `ms`. */
+/** One relay's COUNT of `filter` (or of several filters at once, an array), or null when it refuses, fails or takes
+ *  longer than `ms`. */
 export async function relayCount(url, filter, { ms = ASK_MS, ensure = u => pool.ensureRelay(u) } = {}) {
   let timer
   try {
     const relay = await ensure(url)
-    const n = await Promise.race([relay.count([filter], {}), new Promise(r => { timer = setTimeout(() => r(null), ms) })])
+    const n = await Promise.race([relay.count(Array.isArray(filter) ? filter : [filter], {}), new Promise(r => { timer = setTimeout(() => r(null), ms) })])
     return Number.isInteger(n) && n >= 0 ? n : null
   } catch {
     return null
@@ -28,9 +29,9 @@ export async function relayCount(url, filter, { ms = ASK_MS, ensure = u => pool.
   }
 }
 
-/** The kept count for pubkey, or undefined. */
-export function keptFollowers(pubkey, now = Date.now()) {
-  const hit = kept.get(pubkey)
+/** The kept count for pubkey, or undefined. `web`: the in-web count's key (fetchFollowersInWeb). */
+export function keptFollowers(pubkey, now = Date.now(), web = "") {
+  const hit = kept.get(web ? `${pubkey}:${web}` : pubkey)
   return hit && now - hit.at < KEEP_MS ? hit.count : undefined
 }
 
@@ -49,4 +50,46 @@ export async function fetchFollowers(pubkey, onCount = () => {}, { relays = COUN
     onCount(n)
   }))
   return best
+}
+
+/** Authors per filter and filters per COUNT ask: 250 keys in one filter is what both COUNT relays took (11-27); a
+ *  thousand in one filter made damus drop the socket, four filters of 250 in one ask didn't. */
+export const WEB_CHUNK = 250
+export const WEB_FILTERS = 4
+
+/** Who the in-web counts count: the gate's web and your own keys, without anyone blocked (useWebTrust's `gate`). */
+export const webKeysOf = gate => [...new Set([...(gate?.web ?? []), ...(gate?.own ?? [])])].filter(k => !gate?.blocked?.has(k))
+
+/** The kept key for an in-web count: the web changes size as the follows' lists come in (useGateWeb fails closed). */
+export const webKey = webKeys => `web${webKeys.length}`
+
+/**
+ * Followers inside your web (Logen 2026-11-27: on your own profile and on everyone else's): how many of `webKeys`
+ * (the gate's web, net/web-gate.js) have a kind 3 naming `pubkey`, as each relay's NIP-45 COUNT with the web as the
+ * authors. Only a number comes back, never the lists (a list is 20-50 KB; the iPhone dropped the follower-list ask for
+ * that). The web goes out WEB_CHUNK keys a filter and WEB_FILTERS filters an ask; for each ask the largest relay answer
+ * is kept (as fetchFollowers) and the asks are added, since their authors don't overlap. `onCount` gets the total so
+ * far. -> the total, or null when no relay counted any ask
+ */
+export async function fetchFollowersInWeb(pubkey, webKeys, onCount = () => {}, { relays = COUNT_RELAYS, count = relayCount, now = Date.now } = {}) {
+  const authors = [...new Set(webKeys)].filter(k => k && k !== pubkey)
+  const asks = []
+  for (let i = 0; i < authors.length; i += WEB_CHUNK * WEB_FILTERS) {
+    const part = authors.slice(i, i + WEB_CHUNK * WEB_FILTERS), filters = []
+    for (let j = 0; j < part.length; j += WEB_CHUNK) filters.push({ kinds: [3], "#p": [pubkey], authors: part.slice(j, j + WEB_CHUNK) })
+    asks.push(filters)
+  }
+  const key = `${pubkey}:${webKey(webKeys)}`
+  if (!asks.length) { kept.set(key, { count: 0, at: now() }); onCount(0); return 0 }
+  const best = asks.map(() => null)
+  const total = () => best.some(n => n != null) ? best.reduce((a, n) => a + (n ?? 0), 0) : null
+  await Promise.all(asks.flatMap((filters, i) => relays.map(async url => {
+    const n = await count(url, filters)
+    if (n == null || n <= (best[i] ?? -1)) return
+    best[i] = n
+    const t = total()
+    kept.set(key, { count: t, at: now() })
+    onCount(t)
+  })))
+  return total()
 }

@@ -1,6 +1,7 @@
 // Plain text with links, inline images and video, named @mentions and quoted notes.
 // nostr:npub / nprofile -> the person's name, linking to their profile. nostr:nevent / note / naddr -> the quoted
 // note as a card (QuotedNote). A quote inside a quoted note stays a short reference, so cards don't nest forever.
+import { useOutside } from "./outside-web.js"
 import { npubEncode } from "nostr-tools/nip19"
 import { useEffect, useState } from "preact/hooks"
 import { useProfile } from "./useProfile.js"
@@ -164,8 +165,15 @@ function nostrRef(ref, key, depth, dm, memoryOnly, trusted) {
   return <span key={key} class="mention">{shortRef(ref)}</span>
 }
 
-/** @name for a pubkey, linking to their profile. Unknown names are fetched once the vault is registered. */
+/** @name for a pubkey, linking to their profile. Unknown names are fetched once the vault is registered. On a
+ *  profile page (outside-web.js), someone outside your web stays a short npub and nothing is fetched for them. */
 export function Mention({ pubkey, memoryOnly = false }) {
+  const outside = useOutside()
+  if (outside?.(pubkey)) return <a class="mention mention-outside" href={`#/profile/${pubkey}`} onClick={e => e.stopPropagation()}>@{npubEncode(pubkey).slice(0, 12)}…</a>
+  return <NamedMention pubkey={pubkey} memoryOnly={memoryOnly} />
+}
+
+function NamedMention({ pubkey, memoryOnly }) {
   const p = useProfile(pubkey)
   useEffect(() => {
     const load = () => { const src = quoteSource(); if (src) fetchProfiles(src.vault, [pubkey], src.relays, { save: !memoryOnly }).catch(() => {}) }

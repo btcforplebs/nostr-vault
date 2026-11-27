@@ -11,6 +11,7 @@ import { ago } from "./time.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { getBlocks, isBlockedNote, onBlocks } from "../net/blocks.js"
 import { fetchQuote, getQuote, hasQuote, onQuotes, quoteHash, quoteKey, quoteSource } from "../net/quotes.js"
+import { OUTSIDE_TEXT, useOutside } from "./outside-web.js"
 
 /** The cached event for a parsed reference (undefined while loading, null when not found), fetching it once.
  *  `memoryOnly`: the card is a stranger's, so what the relays return isn't written to Haven /feed. */
@@ -21,40 +22,48 @@ export function useBlocked() {
   return blocked
 }
 
-export function useQuote(q, memoryOnly = false) {
+export function useQuote(q, memoryOnly = false, skip = false) {
   const key = quoteKey(q)
+  const outside = useOutside()
   const [ev, setEv] = useState(() => getQuote(key))
   useEffect(() => {
     setEv(getQuote(key))
     // Runs now and whenever a quote lands or the vault is registered (main.jsx may do that after the first render).
     const load = () => {
+      if (skip) return
       if (hasQuote(key)) return setEv(getQuote(key))
       const src = quoteSource()
       if (src) fetchQuote(q, { ...src, save: !memoryOnly }).catch(() => {})
     }
     load()
     return onQuotes(load)
-  }, [key])
+  }, [key, skip])
   // Its author is named too: a quoted, reposted or replied-to note is often by someone the feed hasn't asked about.
   useEffect(() => {
     const src = quoteSource()
-    if (ev && src) fetchProfiles(src.vault, [ev.pubkey], src.relays, { save: !memoryOnly }).catch(() => {})
+    // Not on a profile page for someone outside your web: their card is a short line with no name (outside-web.js).
+    if (ev && src && !outside?.(ev.pubkey)) fetchProfiles(src.vault, [ev.pubkey], src.relays, { save: !memoryOnly }).catch(() => {})
   }, [ev?.pubkey])
   return ev
 }
 
 export function QuotedNote({ q, short, depth = 0, memoryOnly = false, trusted }) {
-  const ev = useQuote(q, memoryOnly)
+  // On a profile page, a quote whose reference names an author outside your web isn't fetched at all (outside-web.js).
+  const outside = useOutside()
+  const skip = !!(q?.author && outside?.(q.author))
+  const ev = useQuote(q, memoryOnly, skip)
   // Someone you blocked says nothing inside another's note either (QuotedNoteView's blocked placeholder).
   const blocked = useBlocked()
   // A quote no relay answers for gives up after 12 s, as the iPhone's does, instead of loading forever.
   const [late, setLate] = useState(false)
   useEffect(() => { const t = setTimeout(() => setLate(true), 12_000); return () => clearTimeout(t) }, [quoteKey(q)])
 
+  if (skip) return <div class="quote quote-missing">{OUTSIDE_TEXT.quote}</div>
   if (ev === undefined && late) return <div class="quote quote-missing">Quoted note unavailable</div>
   if (ev === undefined) return <div class="quote quote-pending"><span class="quote-ref">{short}</span> Loading…</div>
   if (ev === null) return <div class="quote quote-missing"><span class="quote-ref">{short}</span> Note not found</div>
   if (blocked && isBlockedNote(ev, blocked)) return <div class="quote quote-missing">Quote from someone you blocked</div>
+  if (outside?.(ev.pubkey)) return <div class="quote quote-missing">{OUTSIDE_TEXT.quote}</div>
 
   // A live stream is its Live tile, ENDED once it is off air (LiveStreamEmbedView). A stranger's, in the Vault lists,
   // draws without its picture: the tile's <img> would tell their image host your IP.

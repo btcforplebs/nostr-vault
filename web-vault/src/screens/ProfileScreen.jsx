@@ -2,11 +2,13 @@
 // after a network backfill into it and paged further back the same way, the notes that tag them, and their articles.
 // It looks again on its own while it is at the top (components/auto-look.js: no Refresh button, Logen 2026-11-04), and
 // when Profile is tapped again while on it (MyProfileView's havenProfileScrollToTop).
-import { useEffect, useRef, useState } from "preact/hooks"
+import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { feedScroller, scrollTopOf } from "../components/FeedExtras.jsx"
 import { useAutoLook } from "../components/auto-look.js"
 import { AT_TOP_PX } from "../components/feed-stay.js"
 import { ProfileHeader } from "../components/ProfileHeader.jsx"
+import { webKeysOf } from "../net/followers.js"
+import { OutsideWeb, profileOutside } from "../components/outside-web.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { useWebTrust } from "../components/useWebTrust.js"
 import { ProfileTabs, useNoteStream } from "./ProfileTabs.jsx"
@@ -36,6 +38,9 @@ export function ProfileScreen({ ctx }) {
   const [editing, setEditing] = useState(false)
   const { blocked } = useBlocks(ctx)
   const web = useWebTrust(ctx)
+  // Following, Followers and whoever the page brings in count or show only inside your web (outside-web.js).
+  const webKeys = useMemo(() => webKeysOf(web.gate), [web.gate])
+  const outside = useMemo(() => profileOutside(web.inside, me), [web.gate, me])
   const writeRelays = uniq([...account.relays.write, ...DEFAULT_RELAYS])
 
   const notes = useNoteStream(async show => {
@@ -85,6 +90,7 @@ export function ProfileScreen({ ctx }) {
 
   if (editing) return <EditProfile ctx={ctx} onClose={() => { setEditing(false); scrollTo({ top: 0 }) }} />
   return (
+    <OutsideWeb.Provider value={outside}>
     <main class="screen" ref={screen}>
       {/* The phone's Profile toolbar: the Wallet on the left, Settings on the right, over the banner. */}
       <header class="screen-head profile-hud">
@@ -94,7 +100,7 @@ export function ProfileScreen({ ctx }) {
           <a class="vault-pill-btn" href="#/settings" aria-label="Settings" title="Settings"><Icon d={GEAR} /></a>
         </div>
       </header>
-      <ProfileHeader pubkey={me} follows={account.follows.length}>
+      <ProfileHeader pubkey={me} follows={account.follows.filter(pk => web.inside(pk)).length} webKeys={webKeys}>
         <div class="person-actions">
           {/* A read-only sign-in can't sign a kind 0, so it gets no Edit Profile. */}
           {!ctx.signer?.readOnly && <button type="button" class="follow-btn" onClick={() => { setEditing(true); scrollTo({ top: 0 }) }}><Icon d={PERSON} />Edit Profile</button>}
@@ -104,5 +110,6 @@ export function ProfileScreen({ ctx }) {
       </ProfileHeader>
       <ProfileTabs notes={notes} tagged={tagged} articles={articles} shop={shop} own pubkey={me} blocked={blocked} inside={web.inside} />
     </main>
+    </OutsideWeb.Provider>
   )
 }
