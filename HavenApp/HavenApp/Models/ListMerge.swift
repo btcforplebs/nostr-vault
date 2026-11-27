@@ -231,7 +231,7 @@ enum ListMerge {
                                       createdAt: (Event) -> Int64) -> EditBase<Event> {
         let reached = Set(lookup.reached.union(lookup.answeredBy).map(relayKey))
         return editBase(lookup, held: held, own: own, now: now, createdAt: createdAt) { mine, ownAnswered in
-            followMajority(ownAnswered: ownAnswered, ownReached: mine.intersection(reached).count, answered: lookup.answered)
+            followMajority(ownAnswered: ownAnswered, ownReached: mine.intersection(reached).count)
         }
     }
 
@@ -283,17 +283,18 @@ enum ListMerge {
     }
 
     /// Whether enough relays answered to edit the follow list (Logen
-    /// 2026-11-27): own relays that never connected drop out, more than half
-    /// of the `ownReached` ones that did connect answered (a connected relay
-    /// that was too slow counts as not answering), and at least two relays
-    /// answered in all (`answered` counts every relay asked, indexers too).
-    /// Same rule as Android and web followMajority:
+    /// 2026-11-27): own relays that never connected drop out, at least two
+    /// own relays answered (an indexer such as purplepag.es doesn't count),
+    /// and more than half of the `ownReached` ones that did connect answered
+    /// (a connected relay that was too slow counts as not answering). A
+    /// relay list of one relay never passes. Same rule as web
+    /// followListKnown and Android FollowListKnown:
     /// - 7 own, 3 never connect, 4 answer: yes.
     /// - 7 own, 4 never connect, 3 answer: yes (was no under ownMajority).
-    /// - 3 connect, 2 answer, 1 slow: yes. 3 connect, 1 answers, 2 slow: no.
-    /// - 1 relay answered in all, or none: no.
-    static func followMajority(ownAnswered: Int, ownReached: Int, answered: Int) -> Bool {
-        ownAnswered * 2 > ownReached && answered >= 2
+    /// - 3 connect, 2 answer, 1 slow: yes. 5 connect, 2 answer, 3 slow: no.
+    /// - 1 own relay answered (with or without an indexer), or none: no.
+    static func followMajority(ownAnswered: Int, ownReached: Int) -> Bool {
+        ownAnswered >= 2 && ownAnswered * 2 > ownReached
     }
 
     /// "You have no list" is known only when at least two relays answered and

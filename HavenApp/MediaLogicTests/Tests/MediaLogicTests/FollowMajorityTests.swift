@@ -2,9 +2,9 @@ import XCTest
 @testable import MediaLogic
 
 /// The follow list's save rule (Logen 2026-11-27): own write relays that
-/// never connect drop out, more than half of the ones that do connect must
-/// answer, and at least two relays must answer in all. Web and Android
-/// (followMajority) are tested on the same cases.
+/// never connect drop out, at least two own relays must answer (indexers
+/// don't count), and more than half of the ones that connect must answer.
+/// Web (followListKnown) and Android (FollowListKnown, #2612) test the same cases.
 final class FollowMajorityTests: XCTestCase {
     private let own = (1...7).map { "wss://r\($0).example" }
     private let indexer = "wss://purplepag.es"
@@ -17,8 +17,8 @@ final class FollowMajorityTests: XCTestCase {
                                  answeredBy: answeredBy, from: answeredBy, reached: answeredBy.union(slow))
     }
 
-    private func base(_ lookup: ReplaceableLookup<Int64>) -> Int64? {
-        if case .list(let at) = ListMerge.followEditBase(lookup, held: nil, own: own, createdAt: { $0 }) { return at }
+    private func base(_ lookup: ReplaceableLookup<Int64>, own: [String]? = nil) -> Int64? {
+        if case .list(let at) = ListMerge.followEditBase(lookup, held: nil, own: own ?? self.own, createdAt: { $0 }) { return at }
         return nil
     }
 
@@ -37,7 +37,24 @@ final class FollowMajorityTests: XCTestCase {
         XCTAssertNil(base(one))
         XCTAssertEqual(FollowPublishFailure.didNotAnswer(one, own: own), .tooFewAnswered(answered: 1))
         XCTAssertEqual(FollowPublishFailure.tooFewAnswered(answered: 1).message(follow: true),
-                       "Couldn't follow: only 1 relay answered, and it takes 2 to check your newest follow list. Nothing changed. Try again in a moment.")
+                       "Couldn't follow: only 1 of your relays answered, and it takes 2 of them to check your newest follow list. Nothing changed. Try again in a moment.")
+    }
+
+    func testOneOwnRelayAndAnIndexerIsRefused() {
+        // purplepag.es is not the account's relay: it can't be the second answer.
+        let withIndexer = lookup(answering: [own[0]], indexer: true)
+        XCTAssertNil(base(withIndexer))
+        XCTAssertEqual(FollowPublishFailure.didNotAnswer(withIndexer, own: own), .tooFewAnswered(answered: 1))
+        XCTAssertTrue(ListMerge.ownMajority(ownAnswered: 1, own: 1, answered: 2), "the old rule let one own relay and an indexer through")
+    }
+
+    func testAOneRelayListIsRefusedWithItsOwnReason() {
+        let single = [own[0]]
+        let both = lookup(answering: single, indexer: true)
+        XCTAssertNil(base(both, own: single))
+        XCTAssertEqual(FollowPublishFailure.didNotAnswer(both, own: single), .oneRelayList)
+        XCTAssertEqual(FollowPublishFailure.oneRelayList.message(follow: true),
+                       "Couldn't follow: your relay list has only one relay, and your newest follow list needs two of your relays to answer before it can be checked. Nothing changed. Add a relay in Settings › Relays, then try again.")
     }
 
     func testZeroAnsweringIsRefused() {
@@ -45,22 +62,18 @@ final class FollowMajorityTests: XCTestCase {
         XCTAssertNil(base(none))
         XCTAssertEqual(FollowPublishFailure.didNotAnswer(none, own: own), .tooFewAnswered(answered: 0))
         XCTAssertEqual(FollowPublishFailure.tooFewAnswered(answered: 0).message(follow: false),
-                       "Couldn't unfollow: no relay answered, so your newest follow list can't be checked. Nothing changed. Check your connection, then try again.")
+                       "Couldn't unfollow: none of your relays answered, so your newest follow list can't be checked. Nothing changed. Check your connection, then try again.")
     }
 
     func testASlowButConnectedRelayStillCounts() {
         // 4 never connect, 3 connect: two answer and one is slow, so 2 of 3.
         XCTAssertEqual(base(lookup(answering: Array(own.prefix(2)), slow: [own[2]])), 100)
         XCTAssertFalse(ListMerge.ownMajority(ownAnswered: 2, own: 7, answered: 2), "the old rule refused this")
-        // 3 connect, one answers and two are slow: 1 of 3 is not most, even
-        // with an indexer making two answers. Dropping slow relays would say yes.
-        let slow = lookup(answering: [own[0]], slow: [own[1], own[2]], indexer: true)
+        // 5 connect, two answer and three are slow: 2 of 5 is not most.
+        // Dropping slow relays would say yes (2 of 2).
+        let slow = lookup(answering: Array(own.prefix(2)), slow: Array(own[2..<5]))
         XCTAssertNil(base(slow))
-        XCTAssertEqual(FollowPublishFailure.didNotAnswer(slow, own: own), .relaysDidNotAnswer(ownAnswered: 1, own: 7))
-    }
-
-    func testOneOwnRelayAndAnIndexerIsStillEnough() {
-        XCTAssertEqual(base(lookup(answering: [own[0]], indexer: true)), 100)
+        XCTAssertEqual(FollowPublishFailure.didNotAnswer(slow, own: own), .relaysDidNotAnswer(ownAnswered: 2, own: 7))
     }
 
     func testOtherListsKeepTheOldRule() {

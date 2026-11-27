@@ -17,9 +17,12 @@ enum FollowPublishFailure: Equatable {
     /// Not enough relays answered the fresh lookup (ListMerge.EditBase.unknown).
     /// `ownAnswered` of the account's `own` write relays answered.
     case relaysDidNotAnswer(ownAnswered: Int, own: Int)
-    /// Fewer than two relays answered the fresh lookup, `answered` of them
-    /// (ListMerge.followMajority).
+    /// Fewer than two of the account's own relays answered the fresh
+    /// lookup, `answered` of them (ListMerge.followMajority).
     case tooFewAnswered(answered: Int)
+    /// The account's relay list names one relay, and the follow list needs
+    /// two of its own relays to answer (ListMerge.followMajority).
+    case oneRelayList
     /// The signer returned nothing (a bunker that refused or timed out).
     case notSigned
     /// The signer signed with a key that isn't the account's.
@@ -38,10 +41,12 @@ enum FollowPublishFailure: Equatable {
             return "Couldn't \(verb). " + ListMerge.noRelayListMessage
         case .relaysDidNotAnswer(let ownAnswered, let own) where ownAnswered < own:
             return lead + "only \(ownAnswered) of your \(own) relays answered, so your newest follow list can't be checked. Nothing changed. Remove dead relays in Settings › Relays, then try again."
+        case .oneRelayList:
+            return lead + "your relay list has only one relay, and your newest follow list needs two of your relays to answer before it can be checked. Nothing changed. Add a relay in Settings › Relays, then try again."
         case .tooFewAnswered(0):
-            return lead + "no relay answered, so your newest follow list can't be checked. Nothing changed. Check your connection, then try again."
+            return lead + "none of your relays answered, so your newest follow list can't be checked. Nothing changed. Check your connection, then try again."
         case .tooFewAnswered:
-            return lead + "only 1 relay answered, and it takes 2 to check your newest follow list. Nothing changed. Try again in a moment."
+            return lead + "only 1 of your relays answered, and it takes 2 of them to check your newest follow list. Nothing changed. Try again in a moment."
         case .relaysDidNotAnswer:
             return lead + "not enough relays answered, so your newest follow list can't be checked. Nothing changed. Try again in a moment."
         case .notSigned:
@@ -59,10 +64,14 @@ enum FollowPublishFailure: Equatable {
         }
     }
 
-    /// Why a lookup left the follow list `.unknown`: under two answers in
-    /// all, or too few of the account's `own` relays.
+    /// Why a lookup left the follow list `.unknown`, counting only the
+    /// account's `own` relays (ListMerge.followMajority): a one-relay list,
+    /// under two own answers, or not most of the ones that connected.
     static func didNotAnswer<Event>(_ lookup: ReplaceableLookup<Event>, own: [String]) -> FollowPublishFailure {
-        lookup.answered < 2 ? .tooFewAnswered(answered: lookup.answered) : relaysDidNotAnswer(answeredBy: lookup.answeredBy, own: own)
+        let reason = relaysDidNotAnswer(answeredBy: lookup.answeredBy, own: own)
+        guard case .relaysDidNotAnswer(let ownAnswered, let ownCount) = reason else { return reason }
+        if ownCount == 1 { return .oneRelayList }
+        return ownAnswered < 2 ? .tooFewAnswered(answered: ownAnswered) : reason
     }
 
     /// How many of the account's `own` relays are in `answeredBy`, as
