@@ -76,11 +76,25 @@ enum FillYourFeedGuide {
         return compact ? meter.compactProgressText : meter.progressText
     }
 
+    /// While filling it says how many are left ("2 more to go"), so a new
+    /// account that can't leave the guide yet sees what it is waiting for.
     static func meterSubtitle(_ meter: VaultMeter) -> String {
         switch meter.stage {
-        case .filling: return "Look before you follow"
+        case .filling: return "\(left(meter.count)) more to go"
         case .master: return "\(VaultMeter.goal) people followed"
         }
+    }
+
+    /// Follows still needed for 5.
+    static func left(_ count: Int) -> Int { max(VaultMeter.goal - count, 0) }
+
+    /// Whether the guide can be skipped, dismissed or its meter hidden. A key
+    /// made by New to Nostr on this device (`FeedGuideRequiredStore`) has to
+    /// reach 5 follows first, on every path, topics included (Logen
+    /// 2026-11-27 fc2719f6). Every other account keeps its way out.
+    /// Android: FillYourFeedGuide.canLeave.
+    static func canLeave(required: Bool, count: Int) -> Bool {
+        !required || count >= VaultMeter.goal
     }
 
     /// The collapsed pill: "3/5", or the title once built.
@@ -117,5 +131,23 @@ struct FeedMeterStore {
     func set(_ on: Bool, account: String) {
         guard !account.isEmpty else { return }
         store.set(on ? "on" : "off", forKey: key(account))
+    }
+}
+
+/// Per account: the guide must reach 5 follows before it can be left. Set
+/// only by New to Nostr setup for the key it just made, so accounts that
+/// existed before, or were imported, are never held. Cleared at 5.
+struct FeedGuideRequiredStore {
+    let store: TutorialStore
+
+    private func key(_ account: String) -> String { "fillYourFeed.required.\(account)" }
+
+    func isRequired(account: String) -> Bool {
+        !account.isEmpty && store.string(forKey: key(account)) == "on"
+    }
+
+    func set(_ on: Bool, account: String) {
+        guard !account.isEmpty else { return }
+        store.set(on ? "on" : nil, forKey: key(account))
     }
 }

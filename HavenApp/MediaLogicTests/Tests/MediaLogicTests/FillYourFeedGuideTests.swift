@@ -35,7 +35,9 @@ final class FillYourFeedGuideTests: XCTestCase {
     func testMeterTextsAcrossStages() {
         XCTAssertEqual(FillYourFeedGuide.meterTitle(meter(3), compact: false), "3 of 5")
         XCTAssertEqual(FillYourFeedGuide.meterTitle(meter(3), compact: true), "3/5")
-        XCTAssertEqual(FillYourFeedGuide.meterSubtitle(meter(3)), "Look before you follow")
+        XCTAssertEqual(FillYourFeedGuide.meterSubtitle(meter(3)), "2 more to go")
+        XCTAssertEqual(FillYourFeedGuide.meterSubtitle(meter(0)), "5 more to go")
+        XCTAssertEqual(FillYourFeedGuide.meterSubtitle(meter(4)), "1 more to go")
         XCTAssertEqual(FillYourFeedGuide.pillText(meter(3)), "3/5")
         XCTAssertEqual(FillYourFeedGuide.meterTitle(meter(5), compact: false), "Web of trust")
         XCTAssertEqual(FillYourFeedGuide.meterSubtitle(meter(5)), "5 people followed")
@@ -77,5 +79,32 @@ final class FillYourFeedGuideTests: XCTestCase {
         XCTAssertTrue(FillYourFeedGuide.topicSaveFailedText(noRelayList: true).contains("relay list"))
         XCTAssertTrue(FillYourFeedGuide.topicSaveFailedText(noRelayList: false).contains("relays answered"))
         XCTAssertNotEqual(FillYourFeedGuide.retryTopicsTitle, FillYourFeedGuide.showPostsTitle(selected: 1))
+    }
+
+    // MARK: New account: 5 follows before the guide can be left
+
+    func testNewAccountCannotLeaveBeforeFive() {
+        for count in 0..<5 {
+            XCTAssertFalse(FillYourFeedGuide.canLeave(required: true, count: count), "\(count)")
+        }
+        XCTAssertTrue(FillYourFeedGuide.canLeave(required: true, count: 5))
+        XCTAssertTrue(FillYourFeedGuide.canLeave(required: true, count: 9))
+    }
+
+    func testExistingAccountsKeepTheirWayOut() {
+        for count in [0, 1, 4, 5, 40] {
+            XCTAssertTrue(FillYourFeedGuide.canLeave(required: false, count: count), "\(count)")
+        }
+    }
+
+    func testRequiredIsPerAccountAndOffByDefault() {
+        let store = FeedGuideRequiredStore(store: DictStore())
+        XCTAssertFalse(store.isRequired(account: "old"))
+        store.set(true, account: "new")
+        XCTAssertTrue(store.isRequired(account: "new"))
+        XCTAssertFalse(store.isRequired(account: "old"))
+        XCTAssertFalse(store.isRequired(account: ""))
+        store.set(false, account: "new")
+        XCTAssertFalse(store.isRequired(account: "new"))
     }
 }
