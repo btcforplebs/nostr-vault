@@ -47,19 +47,73 @@ suspend fun BlossomService.deleteFromThisDevice(sha256: String): DeleteHereResul
     val published = nostrService.serverLists.value[owner].orEmpty()
     val servers = config.blossomDeleteTargets(published, photoUrl = null, includeHomeVault = false)
 
-    val heldBy = servers.map { server ->
-        async {
-            serverOwner(server, owner) == BlossomService.ServerOwner.OTHER && heldCopyProbe(server, hash, length)
+    if (servers.isEmpty()) return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_COPY)
+    val asideDir = deleteHereAsideDir() ?: return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_SAVE)
+    if (!deleteHereInFlight.add(hash)) return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_SAVE)
+    try {
+        restoreDeleteHereAside()
+        // Listed first, so Auto-Mirror can't pull it back while it is out of the vault.
+        val wasListed = removedHere.isRemoved(owner, hash)
+        if (!removedHere.markRemoved(owner, hash)) return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_SAVE)
+        // Out of the vault folder while the servers are asked: any name this
+        // device answers under (tunnel, LAN name, Tailscale) now gives 404, so
+        // it can't prove its own copy (Tron M1). Not `<hash>.<ext>` in place:
+        // the engine serves that name too (haven-go load_blob.go).
+        val aside = File(asideDir, file.name)
+        if (!asideDir.isDirectory && !asideDir.mkdirs() || !file.renameTo(aside)) {
+            if (!wasListed) removedHere.unmark(owner, hash)
+            return@withContext DeleteHereResult.Kept("Couldn't remove the file from this device.")
         }
-    }.awaitAll().count { it }
-    if (heldBy == 0) {
-        Log.i(BlossomService.TAG, "Delete here ${hash.take(8)}: kept, 0 of ${servers.size} servers hold it")
-        return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_COPY)
+        val heldBy = servers.map { server ->
+            async {
+                serverOwner(server, owner) == BlossomService.ServerOwner.OTHER && heldCopyProbe(server, hash, length)
+            }
+        }.awaitAll().count { it }
+        if (heldBy == 0) {
+            val back = aside.renameTo(file)
+            if (back && !wasListed) removedHere.unmark(owner, hash)
+            Log.i(BlossomService.TAG, "Delete here ${hash.take(8)}: kept, 0 of ${servers.size} servers hold it (back=$back)")
+            return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_COPY)
+        }
+        homeVault.forgetBlob(hash)
+        if (!aside.delete()) {
+            aside.renameTo(file)
+            if (!wasListed) removedHere.unmark(owner, hash)
+            return@withContext DeleteHereResult.Kept("Couldn't remove the file from this device.")
+        }
+        // Any other `<hash>.<ext>` copy left in the vault.
+        deleteFromLocal(hash)
+        Log.i(BlossomService.TAG, "Delete here ${hash.take(8)}: removed, $heldBy server(s) hold it")
+        DeleteHereResult.Removed(length, heldBy)
+    } finally {
+        deleteHereInFlight.remove(hash)
     }
-    if (!removedHere.markRemoved(owner, hash)) return@withContext DeleteHereResult.Kept(DELETE_HERE_NO_SAVE)
-    if (!deleteFromLocal(hash)) return@withContext DeleteHereResult.Kept("Couldn't remove the file from this device.")
-    Log.i(BlossomService.TAG, "Delete here ${hash.take(8)}: removed, $heldBy server(s) hold it")
-    DeleteHereResult.Removed(length, heldBy)
+}
+
+/** Hashes a "Delete from this device" is checking right now (their files are aside). */
+private val deleteHereInFlight: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+/** Where a file waits, outside the vault folder, while the servers are asked. */
+internal fun BlossomService.deleteHereAsideDir(): File? =
+    configStore.config.value.relayDataDir?.let { File(it, "removed_here_aside") }
+
+/**
+ * Puts back any file left aside by a check that never finished (the app
+ * quit mid-check) and takes its hash off the list: the owner keeps it.
+ * Runs at start and before each delete; skips checks still running.
+ */
+internal fun BlossomService.restoreDeleteHereAside() {
+    val asideDir = deleteHereAsideDir() ?: return
+    val config = configStore.config.value
+    val vault = config.relayDataDir?.let { File(it, config.blossomPath) } ?: return
+    val left = asideDir.listFiles { f -> f.isFile } ?: return
+    for (f in left) {
+        val hash = f.name.substringBefore('.').lowercase()
+        if (hash in deleteHereInFlight) continue
+        val ok = if (vaultFile(hash) != null) f.delete() else vault.mkdirs().let { f.renameTo(File(vault, f.name)) }
+        if (ok && AutoMirrorRules.isHash(hash)) removedHere.allow(hash)
+        Log.i(BlossomService.TAG, "Delete here ${hash.take(8)}: put back after an unfinished check (ok=$ok)")
+    }
 }
 
 /** The vault file for [hash]: the bare-hash name the relay uses, else `<hash>.<ext>`. */

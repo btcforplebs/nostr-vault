@@ -165,6 +165,7 @@ class BlossomService @Inject constructor(
     }
 
     init {
+        scope.launch { restoreDeleteHereAside() }
         homeVault.hostPublicly = { sha256, contentType, server, auth ->
             hostLocalBlob(sha256, contentType, servers = listOf(server), authHeader = auth) == "$server/$sha256"
         }
