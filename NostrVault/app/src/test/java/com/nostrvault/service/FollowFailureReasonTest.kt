@@ -107,26 +107,40 @@ class FollowFailureReasonTest {
     }
 
     @Test fun `own relays below majority say how many answered`() {
-        onRelays = copy(setOf("wss://one", "wss://purplepag.es"))
+        own = listOf("wss://one", "wss://two", "wss://three", "wss://four", "wss://five")
+        onRelays = copy(setOf("wss://one", "wss://two", "wss://purplepag.es"))
         assertEquals(
-            "Couldn't follow: only 1 of your 3 relays answered, so your newest follow list can't be checked. " +
+            "Couldn't follow: only 2 of your 5 relays answered, so your newest follow list can't be checked. " +
                 "Nothing changed. Remove dead relays in Settings › Relays, then try again.",
             pill(),
         )
     }
 
-    @Test fun `no answer at all counts zero`() {
+    @Test fun `one own relay answering says it takes two`() {
+        onRelays = copy(setOf("wss://one", "wss://purplepag.es"))
+        assertEquals(
+            "Couldn't follow: only 1 of your relays answered, and it takes 2 of them to check your newest follow list. " +
+                "Nothing changed. Try again in a moment.",
+            pill(),
+        )
+    }
+
+    @Test fun `no answer at all says none of your relays answered`() {
         coEvery { nostr.lookupNewestReplaceable(3, alice, any(), any(), any()) } throws RuntimeException("offline")
         assertEquals(
-            "Couldn't unfollow: only 0 of your 3 relays answered, so your newest follow list can't be checked. " +
-                "Nothing changed. Remove dead relays in Settings › Relays, then try again.",
+            "Couldn't unfollow: none of your relays answered, so your newest follow list can't be checked. Nothing changed. " +
+                "Check your connection, then try again.",
             pill(follow = false),
         )
     }
 
     @Test fun `every own relay answered but too few in all`() {
-        own = listOf("wss://one")
-        onRelays = copy(setOf("wss://one"))
+        // Both own relays answered and none had a list, but another relay connected and stayed silent: it may hold it.
+        own = listOf("wss://one", "wss://two")
+        onRelays = NostrService.ReplaceableLookup(
+            null, asked = 3, answered = 2, answeredBy = setOf("wss://one", "wss://two"),
+            reachedBy = setOf("wss://one", "wss://two", "wss://inbox"),
+        )
         assertEquals(
             "Couldn't follow: not enough relays answered, so your newest follow list can't be checked. " +
                 "Nothing changed. Try again in a moment.",

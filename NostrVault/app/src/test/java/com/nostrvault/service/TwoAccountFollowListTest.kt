@@ -61,10 +61,10 @@ class TwoAccountFollowListTest {
         every { nostr.activeHexPubkey } returns accountA
         every { nostr.lockPostingAccount() } returns lockA
         every { nostr.profiles } returns MutableStateFlow(emptyMap())
-        // Account A has a relay list of its own and that relay answered: the list is known to be empty.
-        coEvery { nostr.ownListRelays(accountA) } returns listOf("wss://own.example")
+        // Account A has a relay list of its own and both its relays answered: the list is known to be empty.
+        coEvery { nostr.ownListRelays(accountA) } returns listOf("wss://own.example", "wss://own2.example")
         coEvery { nostr.lookupNewestReplaceable(3, accountA, any(), any(), any()) } returns
-            NostrService.ReplaceableLookup(null, asked = 2, answered = 2, answeredBy = setOf("wss://own.example", "wss://purplepag.es"))
+            NostrService.ReplaceableLookup(null, asked = 3, answered = 3, answeredBy = setOf("wss://own.example", "wss://own2.example", "wss://purplepag.es"))
         val tags = slot<List<List<String>>>()
         coEvery { nostr.signEventAsync(3, any(), capture(tags), any(), any(), any(), any(), any()) } answers {
             NostrEvent(

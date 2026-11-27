@@ -77,12 +77,22 @@ import com.nostrvault.ui.notification.FollowKind
                         .onFailure { if (it is CancellationException) throw it }
                         .getOrNull()
                     val fetched = lookup?.event?.let { ContactManager.ListCopy(owner, it.tags, it.content, it.createdAt) }
+                    // Own relays that never connected drop out of the count (FollowListKnown, Logen 2026-11-27).
                     val why = if (lookup == null) ListMerge.NOT_ANSWERED
-                        else ListMerge.unknownWhy(own, lookup.answeredBy, fetched != null || knownContactList?.owner == owner, lookup.ahead)
-                    val base = ContactManager.saveBase(owner, fetched, lookup?.confirmedNone == true, freshKey, knownContactList, why)
+                        else FollowListKnown.unknownWhy(own, lookup, fetched != null || knownContactList?.owner == owner)
+                    // "No list" while the screen shows follows (restored at launch, no copy held yet) is unproven, however
+                    // many relays answered: building on nothing would publish just this edit and wipe the list. Same as
+                    // web guardRefusal's appCount (Tron, #2612). A fresh key and a backup restore carry their own list.
+                    val noneUnproven = fetched == null && knownContactList?.owner != owner && !freshKey &&
+                        edit.replaceWith == null && (shown.toSet() - edit.add.toSet() - edit.remove.toSet()).isNotEmpty()
+                    val confirmedNone = lookup != null && !noneUnproven && FollowListKnown.confirmsNone(own, lookup)
+                    val base = ContactManager.saveBase(owner, fetched, confirmedNone, freshKey, knownContactList, why)
                     if (base == null) {
-                        refusal = if (why == ListMerge.NO_RELAY_LIST) FollowPublishFailure.NoRelayList
-                            else FollowPublishFailure.notKnown(own, lookup?.answeredBy)
+                        refusal = when {
+                            why == ListMerge.NO_RELAY_LIST -> FollowPublishFailure.NoRelayList
+                            why == null && noneUnproven -> FollowPublishFailure.NotEnoughAnswered
+                            else -> FollowPublishFailure.notKnown(own, lookup?.answeredBy)
+                        }
                         Log.w(TAG, "contact list not signed: ${why ?: "relays didn't answer"} (${lookup?.answered ?: 0}/${lookup?.asked ?: 0}, ${own.size} own)")
                         return@withLock null
                     }
