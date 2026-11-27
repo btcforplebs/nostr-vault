@@ -44,8 +44,9 @@ extension RelayProcessManager {
         // a notification arrived. The array is copied as a value here.
         let own = ConfigService.shared.allAccountHexes
         let events = NostrService.shared.events
+        let shows = Self.listShowsRule(account: account)
         Task.detached(priority: .utility) { [weak self] in
-            let newest = Self.newestFromOthers(in: events, modes: waiting, account: account, own: own)
+            let newest = Self.newestFromOthers(in: events, modes: waiting, account: account, own: own, shows: shows)
             guard !newest.isEmpty else { return }
             await self?.lightNews(newest: newest, account: account)
         }
@@ -64,16 +65,36 @@ extension RelayProcessManager {
         if !waiting.isEmpty { newActivityModes.formUnion(waiting) }
     }
 
-    /// The newest event from someone else tagging `account`, per list in
-    /// `modes`; a list with none is left out. For the background scan.
+    /// The newest event from someone else tagging `account` that the Vault
+    /// list shows (`shows`), per list in `modes`; a list with none is left
+    /// out. For the background scan.
     nonisolated static func newestFromOthers(in events: [NostrEvent], modes: Set<VaultMode>,
-                                             account: String, own: Set<String>) -> [VaultMode: Int64] {
+                                             account: String, own: Set<String>,
+                                             shows: @escaping @Sendable (NostrEvent) -> Bool) -> [VaultMode: Int64] {
         VaultNewsAccounts<VaultMode>.newest(
             in: events, modes: modes,
             listing: { VaultMode.listing(inboxKind: $0.kind) },
             counts: { VaultNewsAccounts<VaultMode>.isFromOthersTagging(pubkey: $0.pubkey, tags: $0.tags,
-                                                                       account: account, own: own) },
+                                                                       account: account, own: own) && shows($0) },
             createdAt: { $0.created_at })
+    }
+
+    /// The Vault list's own hiding rules for `account`, taken on the main
+    /// thread (the same inputs as `VaultView.updateDisplayData`), to run in
+    /// the background scan.
+    private static func listShowsRule(account: String) -> @Sendable (NostrEvent) -> Bool {
+        let config = ConfigService.shared
+        let blocked = config.activeAccountBlockedHexPubkeys
+        let whitelist = config.whitelistedHexPubkeys
+        let trusted = FeedService.shared.relayTabTrustedPubkeys()
+        let mutes = MuteListStore.shared.active
+        return { event in
+            VaultNewsAccounts<VaultMode>.listShows(
+                kind: event.kind, author: event.pubkey,
+                isMuted: mutes.hides(id: event.id, content: event.content, tags: event.tags),
+                isBlocked: { blocked.contains($0) },
+                isOutside: { ContentFilter.isOutside(author: $0, owner: account, whitelist: whitelist, trusted: trusted) })
+        }
     }
 
     /// An account switch: the old account keeps its dot for when you come

@@ -130,6 +130,19 @@ struct VaultNewsAccounts<Mode: Hashable> {
             && tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1].lowercased() == account }
     }
 
+    /// Whether the Vault list shows an event at all, so the dot lights only
+    /// for what you would find there (Tao 2026-11-27: spam replies from
+    /// outside the web lit it within seconds of each post, while the list hid
+    /// them). Blocked authors and muted words, hashtags or threads are hidden
+    /// everywhere. From outside your web, posts and likes are hidden from the
+    /// list (likes fold into its "N from outside your web" line); a zap still
+    /// shows, with its amount only.
+    static func listShows(kind: Int, author: String, isMuted: Bool,
+                          isBlocked: (String) -> Bool, isOutside: (String) -> Bool) -> Bool {
+        if isMuted || isBlocked(author) { return false }
+        return kind == 9735 || !isOutside(author)
+    }
+
     /// The newest `createdAt` per list in `modes` among `events` that count
     /// (`counts`); a list with none is left out. One pass, no main actor, so
     /// the dot's scan can run in the background.
