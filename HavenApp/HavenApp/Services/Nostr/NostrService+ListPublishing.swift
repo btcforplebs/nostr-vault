@@ -24,7 +24,8 @@ extension NostrService {
         let action = add.isEmpty ? "Unblock" : "Block"
         let notSaved = privately ? "Private block not saved" : "\(action) saved on this device only"
 
-        Task {
+        // One kind 10000 edit at a time, each on the list the last one published.
+        MuteListEdits.run { [self] in
             guard let start = await muteListEditBase(author: author, localBlocks: hexKeys(localBlocks),
                                                      notSaved: notSaved) else { return }
             let base = start.base, baseAt = start.baseAt

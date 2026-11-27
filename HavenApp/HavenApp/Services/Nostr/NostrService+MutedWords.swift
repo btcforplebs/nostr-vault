@@ -23,7 +23,8 @@ extension NostrService {
             done?(false)
         }
 
-        Task {
+        // One kind 10000 edit at a time, each on the list the last one published.
+        MuteListEdits.run { [self] in
             guard let start = await muteListEditBase(author: author, localBlocks: blocks, notSaved: notSaved) else {
                 done?(false); return
             }

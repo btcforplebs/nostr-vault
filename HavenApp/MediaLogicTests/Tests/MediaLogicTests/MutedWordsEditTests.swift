@@ -133,4 +133,31 @@ final class MutedWordsEditTests: XCTestCase {
         XCTAssertEqual(list.privateWords, ["priv", "both"])
         XCTAssertEqual(Set(list.words), ["pub", "both", "priv"])
     }
+
+    /// Tron #2663 F2: a word another app saved over `maxLength` can still be
+    /// removed and moved.
+    func testAWordLongerThanTheCapCanBeRemovedAndMoved() async throws {
+        let long = String(repeating: "a", count: MutedWordsEdit.maxLength + 20)
+        let content = Self.part([["p", "bb"], ["word", long]])
+        guard case .success(let removed) = await run(tags: [["word", long], ["p", "aa"]], content: content,
+                                                     remove: [long], known: [long]) else { return XCTFail() }
+        XCTAssertEqual(removed.tags, [["p", "aa"]])
+        XCTAssertEqual(try privateTags(removed.content), [["p", "bb"]])
+
+        guard case .success(let moved) = await run(content: content, add: [long], publicly: true,
+                                                   known: [long]) else { return XCTFail() }
+        XCTAssertEqual(moved.tags, [["word", long]])
+        XCTAssertEqual(try privateTags(moved.content), [["p", "bb"]])
+    }
+
+    /// Tron #2663 F3: a part that opens to empty text is an empty part, so a
+    /// private add works and starts it in the same scheme.
+    func testAPartThatOpensToEmptyTextTakesAPrivateAdd() async throws {
+        for blank in ["", "  \n"] {
+            let content = Self.seal(blank, true)
+            guard case .success(let out) = await run(content: content, add: ["spoiler"]) else { return XCTFail(blank) }
+            XCTAssertTrue(MuteList.isNip04(out.content))
+            XCTAssertEqual(try privateTags(out.content), [["word", "spoiler"]])
+        }
+    }
 }

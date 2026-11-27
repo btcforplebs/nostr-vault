@@ -1,5 +1,22 @@
 import Foundation
 
+/// Kind 10000 edits (blocks and muted words) run one at a time: each waits
+/// for the one before it to finish before it looks up the list. Two at once
+/// would both build on the same list, and whichever was signed last would
+/// drop the other's change while both showed success (Tron #2663 F1).
+@MainActor
+enum MuteListEdits {
+    private static var last: Task<Void, Never>?
+
+    static func run(_ edit: @escaping @MainActor () async -> Void) {
+        let previous = last
+        last = Task { @MainActor in
+            await previous?.value
+            await edit()
+        }
+    }
+}
+
 extension NostrService {
     /// What an edit of `author`'s kind 10000 builds on: the newest list from
     /// the relays it is read from at launch, so an edit builds on the list
