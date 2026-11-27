@@ -606,7 +606,7 @@ class ProfileViewModel @Inject constructor(
         if (isOwnRepost && nostrService.profiles.value[note.pubkey] == null) {
             nostrService.fetchMissingProfiles(listOf(note.pubkey))
         }
-        _profileNotes.value = (_profileNotes.value + note).sortedByDescending { it.createdAt }
+        _profileNotes.value = ProfileNoteOrder.inserted(_profileNotes.value, note)
         feedService.cacheNote(note)
         olderPage?.onArrival()
     }
@@ -624,7 +624,7 @@ class ProfileViewModel @Inject constructor(
         if (nostrService.profiles.value[note.pubkey] == null) {
             nostrService.fetchMissingProfiles(listOf(note.pubkey))
         }
-        _taggedNotes.value = (_taggedNotes.value + note).sortedByDescending { it.createdAt }
+        _taggedNotes.value = ProfileNoteOrder.inserted(_taggedNotes.value, note)
         feedService.cacheNote(note)
         olderPage?.onArrival()
     }
