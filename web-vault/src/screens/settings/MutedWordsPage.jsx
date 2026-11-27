@@ -1,9 +1,10 @@
 // Settings › Muted Words: the `word` entries of the user's kind 10000 (net/muted-words.js), in Public and Private
 // sections like Blocked, with an add field and ✕ to remove. A new word is private unless "Mute publicly" is ticked
 // (Logen 11-27). When the list's private part couldn't be opened, its words aren't shown and a private add is refused
-// (setMutedWord throws), the same as a private block.
+// (setMutedWord throws), the same as a private block. Clean mode's switch (CleanModeSwitch) is at the foot.
 import { useState } from "preact/hooks"
 import { useBlocks } from "../../components/useBlocks.js"
+import { CleanModeSwitch } from "../../components/CleanModeSwitch.jsx"
 import { MUTED_WORD_MAX, mutedWordKey, mutedWordProblem, mutedWordSections, setMutedWord } from "../../net/muted-words.js"
 
 export function MutedWordsPage({ ctx }) {
@@ -56,6 +57,7 @@ export function MutedWordsPage({ ctx }) {
       <WordSection title="Private" words={privateWords} busy={busy} onRemove={remove}
         empty={blocks.privateNote ? `Private words aren't shown: ${blocks.privateNote}.` : "No private muted words."}
         note="Only you can see these. They are encrypted in your mute list." />
+      <CleanModeSwitch />
     </>
   )
 }

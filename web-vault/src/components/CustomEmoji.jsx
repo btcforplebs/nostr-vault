@@ -1,6 +1,7 @@
 // NIP-30 custom emoji drawn as pictures (net/custom-emoji.js): in a note's text, a name, a reaction.
 import { useEffect, useState } from "preact/hooks"
 import { splitShortcodes, seenEmoji, onSeenEmoji } from "../net/custom-emoji.js"
+import { clean } from "../net/clean-mode.js"
 
 /** One emoji picture, sized to the text around it. */
 export const EmojiImg = ({ code, url }) =>
@@ -8,9 +9,10 @@ export const EmojiImg = ({ code, url }) =>
 
 /** `text` with each :shortcode: `map` has a picture for drawn as that picture. -> a string, or an array of nodes. */
 export function emojiNodes(text, map, key = "e") {
+  // Clean mode masks the words between pictures (net/clean-mode.js), never a shortcode.
   const parts = splitShortcodes(text, map)
-  if (parts.length === 1) return parts[0]
-  return parts.map((s, i) => i % 2 === 0 ? s : <EmojiImg key={`${key}:${i}`} code={s} url={map.get(s)} />)
+  if (parts.length === 1) return clean(parts[0])
+  return parts.map((s, i) => i % 2 === 0 ? clean(s) : <EmojiImg key={`${key}:${i}`} code={s} url={map.get(s)} />)
 }
 
 /** Re-renders when a reaction brings a new emoji picture. -> Map shortcode -> url */

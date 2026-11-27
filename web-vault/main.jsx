@@ -2,6 +2,7 @@
 // owned by that npub -> the app.
 // Every screen reads from Haven; the network only fills Haven. See PLANS/NV_WEB_CLIENT.md.
 import { render } from "preact"
+import "./src/net/clean-words.js"
 import { useEffect, useRef, useState } from "preact/hooks"
 import { loadSession, saveSession } from "./src/session.js"
 import { signerFor } from "./src/signer/index.js"
