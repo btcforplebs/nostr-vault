@@ -107,13 +107,16 @@ class FollowMajorityTest {
     }
 
     /** PUBLISHED, or the pill a follow tap would show. */
-    private fun follow(): String {
-        feed._followedPubkeys.value = listOf(bob, alice)
-        feed.publishContactList(listOf(bob, alice), ContactManager.FollowEdit(add = listOf(alice)), rollback = listOf(bob)) { why ->
+    private fun follow(before: List<String> = listOf(bob)): String {
+        feed._followedPubkeys.value = before + alice
+        feed.publishContactList(before + alice, ContactManager.FollowEdit(add = listOf(alice)), rollback = before) { why ->
             outcomes.add(followFailedMessage(true, why))
         }
         return outcomes.poll(5, TimeUnit.SECONDS) ?: error("neither published nor refused")
     }
+
+    private val notEnough = "Couldn't follow: not enough relays answered, so your newest follow list can't be checked. " +
+        "Nothing changed. Try again in a moment."
 
     private fun short(answered: Int, of: Int) = "Couldn't follow: only $answered of your $of relays answered, so your newest " +
         "follow list can't be checked. Nothing changed. Remove dead relays in Settings › Relays, then try again."
@@ -173,6 +176,20 @@ class FollowMajorityTest {
         // Old rule: "none" needed every relay asked to answer.
         own = seven.take(3)
         onRelays = lookup(answered = own.take(2), reached = own.take(2), found = false)
+        assertEquals(PUBLISHED, follow(before = emptyList()))
+    }
+
+    @Test fun `no list found while the screen shows follows is refused, not a wipe`() {
+        // Tron #2612: after a relaunch the snapshot shows 300 follows but no copy is held yet. 5 of 7 dead, the 2 that
+        // connect say "none": signing would publish a list of 1 follow.
+        val shown = (1..300).map { it.toString().padStart(64, 'c') }
+        onRelays = lookup(answered = seven.take(2), reached = seven.take(2), found = false)
+        assertEquals(notEnough, follow(before = shown))
+    }
+
+    @Test fun `no list found with a held copy builds on the copy`() {
+        feed.knownContactList = ContactManager.ListCopy(alice, listOf(listOf("p", bob)), "{}", 100)
+        onRelays = lookup(answered = seven.take(2), reached = seven.take(2), found = false)
         assertEquals(PUBLISHED, follow())
     }
 
@@ -185,11 +202,7 @@ class FollowMajorityTest {
     @Test fun `no list yet with another relay connected but silent is refused`() {
         own = seven.take(2)
         onRelays = lookup(answered = own, reached = own, found = false).let { it.copy(reachedBy = it.reachedBy!! + "wss://inbox") }
-        assertEquals(
-            "Couldn't follow: not enough relays answered, so your newest follow list can't be checked. " +
-                "Nothing changed. Try again in a moment.",
-            follow(),
-        )
+        assertEquals(notEnough, follow(before = emptyList()))
     }
 
     private companion object { const val PUBLISHED = "published" }

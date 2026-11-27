@@ -140,6 +140,8 @@ class FeedServiceFollowListTest {
     fun `a switch during signing neither publishes nor rolls back`() {
         coEvery { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any(), any()) } throws PostingAccount.AccountChangedException()
         var failed = false
+        // A list on the relays: "none" while the screen shows alice is refused before signing (#2612).
+        onRelays = relayCopy(100, listOf(listOf("p", alice)))
         feed._followedPubkeys.value = listOf(alice, bob)
         feed.publishContactList(listOf(alice, bob), ContactManager.FollowEdit(add = listOf(bob)), rollback = listOf(alice)) { failed = true }
         coVerify(timeout = 5_000) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any(), any()) }
