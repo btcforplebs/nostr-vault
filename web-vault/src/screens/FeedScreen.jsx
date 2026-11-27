@@ -296,7 +296,9 @@ export function FeedScreen({ ctx }) {
     // `batch`, `unsaved`: notes Haven didn't save (net/feed-live.js), shown from memory beside what /feed has.
     const show = async (batch = [], { unsaved = false } = {}) => {
       if (!notesNow.current) return // the first read is still coming and will have them
-      const read = await readFeed(vault, follows, { limit: PAGE }).catch(e => { if (unsaved) return []; throw e })
+      // A live batch is already the follows' feed kinds (watchFollowing keeps only those) and is saved: it goes in as
+      // it is, without reading Haven's page again per note (Feed perf review 11-27, #2). A catch-up (no batch) reads.
+      const read = batch.length ? [] : await readFeed(vault, follows, { limit: PAGE }).catch(e => { if (unsaved) return []; throw e })
       // A note the subscription just handed us is new to this screen whatever its `created_at` (freshNotes): relays
       // deliver late and a sender's clock can be behind, and the watermark was dropping those in silence ("the posts
       // are not dropping in", Logen 2026-11-10). The watermark still guards the page a reload reads back.

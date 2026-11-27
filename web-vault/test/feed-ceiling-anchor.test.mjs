@@ -20,6 +20,9 @@ const attrSel = sel => /^\[([\w-]+)(?:="([^"]*)")?\]$/.exec(sel)
 class Node {
   constructor(nodeType, localName) { this.nodeType = nodeType; this.localName = localName; this.childNodes = []; this.parentNode = null; this.style = {}; this.attributes = {} }
   get firstChild() { return this.childNodes[0] ?? null }
+  // Preact places a node after the one it just drew by its nextSibling; a card that skipped its redraw (a memo card)
+  // is placed from there, so without this the fake DOM put new cards after it instead of before.
+  get nextSibling() { const s = this.parentNode?.childNodes; return s ? s[s.indexOf(this) + 1] ?? null : null }
   get isConnected() { let n = this; while (n.parentNode) n = n.parentNode; return n === mounted }
   insertBefore(n, ref) { n.parentNode?.removeChild(n); const i = ref ? this.childNodes.indexOf(ref) : -1; i < 0 ? this.childNodes.push(n) : this.childNodes.splice(i, 0, n); n.parentNode = this; return n }
   appendChild(n) { return this.insertBefore(n, null) }
@@ -101,6 +104,9 @@ test("Following's Older keeps the note being read where it is when the ceiling d
     // The reader near the bottom of what is drawn, at a card's edge.
     globalThis.scrollY = Math.max(0, (count - 4) * H)
     const reading = before[count - 4].attributes["data-note-id"]
+    // A real IntersectionObserver calls back as soon as it observes; this one only on fireOlder, so wait until Older
+    // is watching again (OlderButton watches only while no page is loading) before saying it came into view.
+    await until(() => observers.size > 0, `Older watching before page ${step + 1}`)
     fireOlder()
     await until(() => cards(el).length !== count || cards(el)[0].attributes["data-note-id"] !== head, `Older page ${step + 1}`)
     // The layout effect's pin and the draw window catching up: wait for the note being read to be drawn again (a

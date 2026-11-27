@@ -5,18 +5,20 @@
 // (useOutside, useBlocked) still reaches it, as Preact updates context readers past a skipped parent.
 import { Component, createElement } from "preact"
 
-const sameNote = (a, b) => a === b || (!!a && !!b && a.id === b.id && a.kind === b.kind)
+export const sameNote = (a, b) => a === b || (!!a && !!b && a.id === b.id && a.kind === b.kind)
 
-/** `Inner` wrapped to skip a redraw while `noteProps` match by id and every other prop is the same value. */
-export function memoCard(Inner, noteProps = ["event"]) {
-  const notes = new Set(noteProps)
+/**
+ * `Inner` wrapped to skip a redraw while every prop is the same: by `compare[prop](a, b)` where given (`false`: not
+ * compared, a callback whose old copy still works), else as the same value. The default compares `event` by note id.
+ */
+export function memoCard(Inner, compare = { event: sameNote }) {
   class MemoCard extends Component {
     shouldComponentUpdate(next) {
       const prev = this.props
-      const keys = new Set([...Object.keys(prev), ...Object.keys(next)])
-      for (const k of keys) {
-        if (k === "children" && !prev.children && !next.children) continue
-        if (notes.has(k) ? !sameNote(prev[k], next[k]) : prev[k] !== next[k]) return true
+      for (const k of new Set([...Object.keys(prev), ...Object.keys(next)])) {
+        const same = compare[k]
+        if (same === false) continue
+        if (same ? !same(prev[k], next[k]) : prev[k] !== next[k]) return true
       }
       return false
     }

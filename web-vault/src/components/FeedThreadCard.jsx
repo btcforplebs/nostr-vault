@@ -4,6 +4,7 @@
 // Past COLLAPSED_REPLIES the fold shows only the newest replies, since a new reply is what lifted the thread; it opens
 // in place. "Open thread" under a conversation goes straight to it. A root still being fetched says so above the
 // replies; a root no relay has gets no line at all, so the replies read as posts.
+import { memoCard } from "./memo-card.js"
 import { useState } from "preact/hooks"
 import { CondensedNote } from "./CondensedNote.jsx"
 import { NoteCard } from "./NoteCard.jsx"
@@ -68,3 +69,17 @@ const BubblesIcon = () => (
   <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h12v8H8l-4 3v-3H3zM18 9h3v8h-1v3l-4-3h-5v-2" /></svg>
 )
 
+
+/** A thread's shape for FeedThreadCardMemo: its root and every line, by id and depth. buildThreads makes new thread
+ *  objects whenever the feed's list changes; a card whose thread is the same shape needn't draw again. */
+const threadShape = t => `${t?.rootId}|${t?.root?.id ?? ""}|${(t?.entries ?? []).map(e => `${e.note.id}:${e.depth}`).join(",")}`
+export const sameThread = (a, b) => a === b || threadShape(a) === threadShape(b)
+
+/** FeedThreadCard for the Feed's list (FeedRows): drawn again only when its thread's shape, the note open in it
+ *  (`openId`, null unless it is this card's), or another prop changed. `setOpenId` isn't compared: an older copy
+ *  opens the same way (feed-tap.js keeps the open id outside the render). Feed perf review 11-27, #2 and #7. */
+export const FeedThreadCardMemo = memoCard(FeedThreadCard, { thread: sameThread, setOpenId: false })
+
+/** `openId` when the open note is one of this thread's lines, else null, so only that card draws when it changes. */
+export const openIn = (thread, openId) =>
+  openId && ((thread.root && shownId(thread.root) === openId) || thread.entries.some(e => shownId(e.note) === openId)) ? openId : null

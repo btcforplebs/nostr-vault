@@ -102,21 +102,38 @@ export async function trustSet(me, follows, { relays = PROFILE_RELAYS, query = (
   return set
 }
 
+/** Read relays asked for the whole network's engagement (the follows' own go to all of them). */
+export const GLOBAL_RELAYS = 2
+/** A recheck asks from this long before the last ask: a relay may store an event dated a little earlier late. */
+export const TALLY_SLACK_S = 120
+const KEEP_TALLIES = 4
+// Engagement this page load holds, per account, window, relays and follow count: { at (the last ask), byId }.
+const tallies = new Map()
+
 /**
  * The engagement Popular (and Underrated, net/underrated.js) rank: the `window` up to `now` on these relays, asked
  * once for everyone (as the iPhone does) and once for the follows' own, since a busy relay's 5,000 can miss them.
  * Blocked people's likes, reposts and zaps don't count. A zap receipt counts only if the payee's own zap service
  * published it and its signed request holds up (`trust`, zaps.js trustedReceipts). -> { t: tally, trusted: Set }.
  */
-export async function trustedTally({ me, follows, relays, blocked = new Set(), now, window = WINDOW, trust, query }) {
+export async function trustedTally({ me, follows, relays, blocked = new Set(), now, window = WINDOW, trust, query, kept = tallies }) {
   const urls = uniq(relays)
   const since = now - window, kinds = [7, 6, 9735]
+  // Ranked again (the 10-minute recheck, a return to Popular): what this page load already holds for the same window,
+  // and from the relays only what came after the last ask (Feed perf review 11-27, #5: 2.6 MB an open, every recheck).
+  const key = `${me}|${window}|${urls.join()}|${follows.length}`, held = kept.get(key)
+  const from = held ? Math.max(since, held.at - TALLY_SLACK_S) : since
+  // The whole network's likes, reposts and zaps from GLOBAL_RELAYS of the read relays only: every relay sent its own
+  // copy of the same 5,000. The follows' own go to all of them, since a busy relay's 5,000 can miss those.
   // The trust set and the engagement don't depend on each other, so they are asked at the same time.
-  const asks = [query(urls, { kinds, since, limit: 5000 }, { maxWait: 10000 })]
-  for (let i = 0; i < follows.length; i += 250) asks.push(query(urls, { kinds: [7, 6], authors: follows.slice(i, i + 250), since, limit: 2000 }, { maxWait: 10000 }))
+  const asks = [query(urls.slice(0, GLOBAL_RELAYS), { kinds, since: from, limit: 5000 }, { maxWait: 10000 })]
+  for (let i = 0; i < follows.length; i += 250) asks.push(query(urls, { kinds: [7, 6], authors: follows.slice(i, i + 250), since: from, limit: 2000 }, { maxWait: 10000 }))
   const [trusted, answers] = await Promise.all([trustSet(me, follows, { query }), Promise.all(asks)])
   const byId = new Map()
+  if (held) for (const [id, ev] of held.byId) if (ev.created_at >= since) byId.set(id, ev)
   for (const evs of answers) for (const ev of evs) if (ev?.id) byId.set(ev.id, ev)
+  kept.set(key, { at: now, byId })
+  while (kept.size > KEEP_TALLIES) kept.delete(kept.keys().next().value)
   // A receipt is anyone's event, so it is filtered before it can vote: only the payee's zap service's own, with a
   // signed request (`trust`, which looks each payee's zap service up). Only receipts that could vote are sent to it:
   // a trusted, unblocked zapper's verified request for this very note (reactorOf, the same test tally applies), so
