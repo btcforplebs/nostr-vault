@@ -82,7 +82,7 @@ final class DeleteHereGateTests: XCTestCase {
     /// S1: a cache's answer proves nothing; the probe always misses the cache.
     func testCachedAnswerProvesNothing() {
         var a = DeleteHereGate.Answer(status: 206, contentType: "image/jpeg", contentLength: "1",
-                                      contentRange: "bytes 0-0/100", finalURL: nil)
+                                      contentRange: "bytes 0-0/100", finalURL: URL(string: "https://a.example/\(sha)?nv=1"))
         XCTAssertTrue(DeleteHereGate.proves(a, sha256: sha, localSize: 100))
         a.cacheStatus = "HIT"
         XCTAssertFalse(DeleteHereGate.proves(a, sha256: sha, localSize: 100))
@@ -105,5 +105,18 @@ final class DeleteHereGateTests: XCTestCase {
         let c = DeleteHereGate.candidates(["https://vault.example.com", "https://a.example"],
                                           ownHosts: [DeleteHereGate.relayHost("vault.example.com/relay")!])
         XCTAssertEqual(c, ["https://a.example"])
+    }
+
+    /// An https probe redirected to http, or with no final URL, proves nothing.
+    func testOnlyAnHttpsAnswerProves() {
+        func answer(_ url: String?) -> DeleteHereGate.Answer {
+            .init(status: 206, contentType: "image/jpeg", contentLength: "1", contentRange: "bytes 0-0/100",
+                  finalURL: url.flatMap(URL.init(string:)))
+        }
+        XCTAssertTrue(DeleteHereGate.proves(answer("https://a.example/\(sha)?nv=1"), sha256: sha, localSize: 100))
+        XCTAssertTrue(DeleteHereGate.proves(answer("HTTPS://a.example/\(sha)"), sha256: sha, localSize: 100))
+        XCTAssertFalse(DeleteHereGate.proves(answer("http://a.example/\(sha)?nv=1"), sha256: sha, localSize: 100))
+        XCTAssertFalse(DeleteHereGate.proves(answer("http://192.168.4.20:3355/\(sha)"), sha256: sha, localSize: 100))
+        XCTAssertFalse(DeleteHereGate.proves(answer(nil), sha256: sha, localSize: 100))
     }
 }
