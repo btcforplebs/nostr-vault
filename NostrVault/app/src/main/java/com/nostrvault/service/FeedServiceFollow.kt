@@ -26,7 +26,7 @@ import com.nostrvault.ui.notification.FollowKind
         shown: List<String>,
         edit: ContactManager.FollowEdit,
         rollback: List<String>? = null,
-        onFailed: ((why: String?) -> Unit)? = null,
+        onFailed: ((why: FollowPublishFailure?) -> Unit)? = null,
     ) {
         // Discovery's follows-of-follows tally is an hour-long cache of the
         // old list: after an unfollow it kept everyone that follow brought
@@ -39,7 +39,7 @@ import com.nostrvault.ui.notification.FollowKind
         // Signed as the account this list belongs to: a switch while a signer
         // prompt is open must not put A's follows under B's key.
         val lock = nostrService.lockPostingAccount()
-        var refusal: String? = null
+        var refusal: FollowPublishFailure? = null
         val fail: (refusedAt: Long?) -> Unit = { refusedAt ->
             scope.launch(Dispatchers.Main.immediate) {
                 val restore = followRollback(_followedPubkeys.value, shown, rollback)
@@ -81,7 +81,8 @@ import com.nostrvault.ui.notification.FollowKind
                         else ListMerge.unknownWhy(own, lookup.answeredBy, fetched != null || knownContactList?.owner == owner, lookup.ahead)
                     val base = ContactManager.saveBase(owner, fetched, lookup?.confirmedNone == true, freshKey, knownContactList, why)
                     if (base == null) {
-                        refusal = why
+                        refusal = if (why == ListMerge.NO_RELAY_LIST) FollowPublishFailure.NoRelayList
+                            else FollowPublishFailure.notKnown(own, lookup?.answeredBy)
                         Log.w(TAG, "contact list not signed: ${why ?: "relays didn't answer"} (${lookup?.answered ?: 0}/${lookup?.asked ?: 0}, ${own.size} own)")
                         return@withLock null
                     }
@@ -107,7 +108,10 @@ import com.nostrvault.ui.notification.FollowKind
                             // The list is the previous account's: nothing to roll back here.
                             if (e is PostingAccount.AccountChangedException) return@launch
                             null
-                        } ?: return@withLock null
+                        } ?: run {
+                            refusal = FollowPublishFailure.SignerDidNotSign
+                            return@withLock null
+                        }
                     lastContactListCreatedAt.updateAndGet { maxOf(it, event.createdAt) }
                     ContactManager.ListCopy(owner, tags, base.content, event.createdAt).also {
                         knownContactList = it
@@ -126,7 +130,10 @@ import com.nostrvault.ui.notification.FollowKind
                             // Not at sign: refused everywhere and the app restarted, a still-fresh key
                             // would need every relay to answer "none" first (Tron, 3.3.1 ship check §2).
                             if (outcome == BroadcastTally.Outcome.ACCEPTED) FreshAccountKeys.clear(appContext, owner, 3)
-                            else fail(event.createdAt)
+                            else {
+                                refusal = FollowPublishFailure.AllRefused
+                                fail(event.createdAt)
+                            }
                         }
                     }
                 }
@@ -162,17 +169,6 @@ import com.nostrvault.ui.notification.FollowKind
      */
     internal fun followRollback(current: List<String>, published: List<String>, rollback: List<String>?): List<String>? =
         rollback?.takeIf { current == published }
-
-    /**
-     * The pill when a follow or unfollow didn't go out and the button snapped
-     * back: says which, and that another tap may work. Never silent.
-     */
-    /** With no relay list ([ListMerge.NO_RELAY_LIST]) "try again" never helps: say why instead. */
-    internal fun followFailedMessage(follow: Boolean, why: String? = null): String = when {
-        why == ListMerge.NO_RELAY_LIST -> (if (follow) "Couldn't follow. " else "Couldn't unfollow. ") + why
-        follow -> "Couldn't follow, try again"
-        else -> "Couldn't unfollow, try again"
-    }
 
     /**
      * A read-only account (no key here, no outside signer) can't sign a follow
