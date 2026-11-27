@@ -248,6 +248,9 @@ class BlossomDeleteHereTest {
         val p = BlobPresence.PRESENT
         assertTrue(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5))
         assertTrue(deleteHereHolds(p, 200, null, "5", 5))
+        // A redirect that ended on http proves nothing: anyone on that network could answer.
+        assertTrue(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, finalUrl = "https://cdn.example.com/$sha"))
+        assertFalse(deleteHereHolds(p, 206, "bytes 0-0/5", "1", 5, finalUrl = "http://cdn.example.com/$sha"))
         // A different size is another file (or a placeholder).
         assertFalse(deleteHereHolds(p, 206, "bytes 0-0/9", "1", 5))
         assertFalse(deleteHereHolds(p, 200, null, "9", 5))

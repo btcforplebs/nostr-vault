@@ -187,6 +187,7 @@ internal fun BlossomService.askServerHolds(server: String, hash: String, length:
             blobPresence(r.code, r.header("Content-Type"), r.header("Content-Length"), sha256 = hash, finalUrl = r.request.url.toString()),
             r.code, r.header("Content-Range"), r.header("Content-Length"), length,
             cacheStatus = r.header("cf-cache-status"), age = r.header("Age"),
+            finalUrl = r.request.url.toString(),
         )
     }
 } catch (e: Exception) {
@@ -209,8 +210,11 @@ internal fun deleteHereHolds(
     cacheStatus: String? = null,
     /** `Age` over 0: a cache answered. */
     age: String? = null,
+    /** Where redirects ended: an http hop could be answered by anyone on that network (Tron, #2658). */
+    finalUrl: String? = null,
 ): Boolean {
     if (presence != BlobPresence.PRESENT) return false
+    if (finalUrl != null && !finalUrl.startsWith("https://", ignoreCase = true)) return false
     if (cacheStatus?.trim()?.uppercase() in setOf("HIT", "STALE", "UPDATING")) return false
     if ((age?.trim()?.toLongOrNull() ?: 0L) > 0L) return false
     val total = when (code) {
