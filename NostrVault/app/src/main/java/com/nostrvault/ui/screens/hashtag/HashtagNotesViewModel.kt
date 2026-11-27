@@ -11,6 +11,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.TopicFeedFilter
 import com.nostrvault.data.model.WotUnlock
+import com.nostrvault.data.model.muteRulesForActiveAccount
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.service.TopicFeedScreener
 import com.nostrvault.service.FeedFilterEngine
@@ -611,6 +612,7 @@ abstract class HashtagNotesViewModel(
             val note = FeedNote.fromEvent(id, pubkey, content, tags, createdAt, kind)
             note.takeIf {
                 !FeedFilterEngine.involvesBlocked(it, blocked) { ref -> feedService.findNote(ref)?.pubkey } &&
+                    !FeedFilterEngine.mutedFor(it, configStore.config.value.muteRulesForActiveAccount(), setOf(nostrService.activeHexPubkey)) &&
                     VerifiedEvents.verify(event)
             }
         }

@@ -50,6 +50,10 @@ data class HavenConfig(
     // account's kind 10000, set in another client. They hide notes like any
     // block but are never written into the public "p" tags.
     val privateBlockedNpubsPerAccount: Map<String, List<String>> = emptyMap(),
+    // Per-account muted words, hashtags and threads from the kind 10000:
+    // public tags, and the private part when this device could open it.
+    val mutedPerAccount: Map<String, com.nostrvault.data.model.MutedThings> = emptyMap(),
+    val privateMutedPerAccount: Map<String, com.nostrvault.data.model.MutedThings> = emptyMap(),
 
     // Private Relay
     val privateRelayName: String = "Nostr Vault Private",

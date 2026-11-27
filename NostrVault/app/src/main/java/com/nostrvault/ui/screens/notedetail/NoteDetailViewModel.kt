@@ -124,6 +124,11 @@ class NoteDetailViewModel @Inject constructor(
         .map { feedService.blockedHexForActiveAccount() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.blockedHexForActiveAccount())
 
+    /** The active account's muted words, hashtags and threads: replies and quotes they hide stay out. */
+    val muteRules: StateFlow<com.nostrvault.data.model.MuteRules> = configStore.config
+        .map { it.muteRulesForActiveAccount() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, configStore.config.value.muteRulesForActiveAccount())
+
     /**
      * Who passes [TrustGate] here: the feed's web, whatever Global's Everyone
      * shield says ([threadTrustSet]). Empty = web not loaded yet (nobody but you and the author).

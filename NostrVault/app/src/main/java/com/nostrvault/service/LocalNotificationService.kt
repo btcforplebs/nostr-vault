@@ -27,6 +27,7 @@ import com.nostrvault.R
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.BlockedPeople
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.muteRulesFor
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.PushPrefs
 import com.nostrvault.ui.components.NostrMentions
@@ -445,6 +446,8 @@ class LocalNotificationService @Inject constructor(
                 while (NotificationNote.EVENT_EXTRA !in found) { delay(250); found = carriedNotes(type, id) }
                 found
             } ?: emptyMap()
+            val rules = configStore.config.value.muteRulesFor(npub)
+            if (NotificationMutes.hides(rules, NotificationNote.decode(carried[NotificationNote.EVENT_EXTRA]), preview, recipientHex)) return@launch
             val profile = awaitAuthor(author)
             val shown = notePreview(type, preview, nostrService.get().profiles.value)
             val (title, text) = buildContent(type, profile?.bestName, shown)

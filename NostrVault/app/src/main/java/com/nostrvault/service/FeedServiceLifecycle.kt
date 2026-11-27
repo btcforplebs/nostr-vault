@@ -415,12 +415,12 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
                     reconcileOutboxRelays()
                 }
         }
-        // Blocking someone (from a menu, Settings, or a mute list synced from
-        // another client) must drop their posts now, not when some unrelated
+        // Blocking someone or muting a word (from a menu, Settings, or a mute
+        // list synced from another client) must drop their posts now, not when some unrelated
         // note next arrives.
         scope.launch {
             configStore.config
-                .map { it.blockedForActiveAccount() }
+                .map { it.blockedForActiveAccount() to it.mutedFor(it.activeOrOwnerNpub()) }
                 .distinctUntilChanged()
                 .drop(1)
                 .collect { recomputeFilteredNotes() }

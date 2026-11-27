@@ -4,6 +4,7 @@ import com.nostrvault.data.model.DiscoveryReach
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.isLocalDvm
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.MuteRules
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.poll
 import com.nostrvault.data.model.RecipeTopics
@@ -98,6 +99,8 @@ object FeedFilterEngine {
         ownPubkeys: Set<String> = emptySet(),
         /** Who the Discovery reach bar lets in (Underrated and Discover only, [DiscoveryReach]). */
         discovery: DiscoveryReach.Admitted = DiscoveryReach.Admitted.NONE,
+        /** The account's muted words, hashtags and threads; never your own notes. */
+        mutes: MuteRules = MuteRules.NONE,
     ): List<FeedNote> {
         val (ranked, rankedLoose) = if (mode in DiscoveryReach.modes) DiscoveryReach.gateSets(discovery) else emptySet<String>() to emptySet()
         // Built only for a feed that reads it (Underrated, Discover's ranked people): it scans the web and the loose set.
@@ -113,6 +116,7 @@ object FeedFilterEngine {
         var filtered = notes.filter { note ->
             // Always exclude blocked people, wherever the row would show them
             if (involvesBlocked(note, blocked, authorOf)) return@filter false
+            if (mutedFor(note, mutes, ownPubkeys)) return@filter false
 
             // Exclude kind-6 reposts if disabled
             if (!showReposts && note.kind == 6) return@filter false
@@ -203,6 +207,10 @@ object FeedFilterEngine {
         return filtered
     }
 
+    /** [note] is hidden by a muted word, hashtag or thread, and isn't one of your own accounts' posts. */
+    fun mutedFor(note: FeedNote, mutes: MuteRules, ownPubkeys: Set<String>): Boolean =
+        !mutes.isEmpty && note.pubkey.lowercase() !in ownPubkeys && mutes.hides(note)
+
     /** [signer] is one of the Discovery reach bar's people (the gate's sets are lowercase). */
     private fun isRanked(signer: String, ranked: Set<String>, rankedLoose: Set<String>): Boolean {
         if (ranked.isEmpty() && rankedLoose.isEmpty()) return false
@@ -232,9 +240,12 @@ object FeedFilterEngine {
         isGlobalMedia: Boolean,
         globalRequiresTrust: Boolean = true,
         authorOf: (String) -> String? = { null },
+        mutes: MuteRules = MuteRules.NONE,
+        ownPubkeys: Set<String> = emptySet(),
     ): List<FeedNote> {
         var filtered = notes.filter { note ->
             if (involvesBlocked(note, blocked, authorOf)) return@filter false
+            if (mutedFor(note, mutes, ownPubkeys)) return@filter false
             // Web-of-trust scoping applies only to Global media (matches iOS
             // FeedFilterEngine.filterMediaNotes). Following media is already scoped
             // to followed authors by the subscription, so it shows all media here —

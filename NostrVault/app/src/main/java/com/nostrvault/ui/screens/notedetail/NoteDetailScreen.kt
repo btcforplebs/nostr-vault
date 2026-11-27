@@ -131,6 +131,8 @@ fun NoteDetailScreen(
     var reportTarget by remember { mutableStateOf<FeedNote?>(null) }
 
     val blockedPubkeys by viewModel.blockedPubkeys.collectAsState()
+    val muteRules by viewModel.muteRules.collectAsState()
+    val ownHex = setOfNotNull(viewModel.activeHexPubkey.ifEmpty { null })
     val trustedPubkeys by viewModel.trustedPubkeys.collectAsState()
     // Replies from outside your web stay folded until opened (TrustGate).
     var showOutsideReplies by rememberSaveable(noteId) { mutableStateOf(false) }
@@ -188,15 +190,16 @@ fun NoteDetailScreen(
 
     // Every reply under the opened note, at any depth, through the feed's
     // block rule and spam check; nothing else is folded (iOS #1085).
-    val threadReplies = remember(replyTargetId, allReplies, parentNotes, note, blockedPubkeys) {
+    val threadReplies = remember(replyTargetId, allReplies, parentNotes, note, blockedPubkeys, muteRules) {
         val byId = (parentNotes + listOfNotNull(note) + allReplies).associateBy { it.id }
         ThreadReplyVisibility.shown(
             targetId = replyTargetId,
             pool = allReplies,
             hidden = { n ->
-                n.isNoise || FeedFilterEngine.involvesBlocked(n, blockedPubkeys) { id ->
-                    byId[id]?.pubkey ?: viewModel.findNote(id)?.pubkey
-                }
+                n.isNoise || FeedFilterEngine.mutedFor(n, muteRules, ownHex) ||
+                    FeedFilterEngine.involvesBlocked(n, blockedPubkeys) { id ->
+                        byId[id]?.pubkey ?: viewModel.findNote(id)?.pubkey
+                    }
             },
         )
     }
@@ -215,9 +218,10 @@ fun NoteDetailScreen(
         showOutsideReplies -> threadReplies
         else -> insideReplies
     }
-    val (insideResponses, outsideResponses) = remember(otherResponses, blockedPubkeys, showsBlockedPlaceholder, trustedPubkeys, threadAlways) {
+    val (insideResponses, outsideResponses) = remember(otherResponses, blockedPubkeys, muteRules, showsBlockedPlaceholder, trustedPubkeys, threadAlways) {
         if (showsBlockedPlaceholder) emptyList<FeedNote>() to emptyList()
-        else TrustGate.split(BlockedPeople.visibleNotes(otherResponses, blockedPubkeys) { it.pubkey }, trustedPubkeys, threadAlways) { it.pubkey }
+        else TrustGate.split(BlockedPeople.visibleNotes(otherResponses, blockedPubkeys) { it.pubkey }
+            .filterNot { FeedFilterEngine.mutedFor(it, muteRules, ownHex) }, trustedPubkeys, threadAlways) { it.pubkey }
     }
     val shownResponses = if (showOutsideReplies) insideResponses + outsideResponses else insideResponses
     val outsideCount = if (showsBlockedPlaceholder) 0 else outsideReplies.size + outsideResponses.size
