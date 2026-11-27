@@ -125,6 +125,7 @@ extension MediaGalleryView {
                                     aspect: aspect,
                                     onDeleteFromMirrors: { deleteMediaFromMirrors(item: $0) },
                                     onDeleteEverywhere: { deleteMediaEverywhere(item: $0) },
+                                    onDeleteHere: { deleteMediaHere(item: $0) },
                                     onMirrorComplete: { loadLocalMedia(force: true) }
                                 ) {
                                     withAnimation(Motion.pick) { selectedMedia = item }
@@ -153,6 +154,7 @@ extension MediaGalleryView {
                                     item: item,
                                     onDeleteFromMirrors: { deleteMediaFromMirrors(item: $0) },
                                     onDeleteEverywhere: { deleteMediaEverywhere(item: $0) },
+                                    onDeleteHere: { deleteMediaHere(item: $0) },
                                     onMirrorComplete: { loadLocalMedia(force: true) }
                                 ) {
                                     withAnimation(Motion.pick) { selectedMedia = item }

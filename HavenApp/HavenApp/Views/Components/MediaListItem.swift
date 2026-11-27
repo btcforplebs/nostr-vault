@@ -7,12 +7,15 @@ struct MediaListItem: View {
     let item: MediaItem
     var onDeleteFromMirrors: ((MediaItem) -> Void)? = nil
     var onDeleteEverywhere: ((MediaItem) -> Void)? = nil
+    /// "Delete from this device" (A3): only offered for a file on this device.
+    var onDeleteHere: ((MediaItem) -> Void)? = nil
     var onMirrorComplete: (() -> Void)? = nil
     let onSelect: () -> Void
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @State private var showingReportDialog = false
     @State private var pendingDelete: MediaDeleteScope?
+    @State private var confirmDeleteHere = false
     @State private var showingBlockConfirm = false
     @State private var isMirroringToLocal = false
     @State private var isPushingToMirrors = false
@@ -174,8 +177,15 @@ struct MediaListItem: View {
                 .disabled(isPushingToMirrors)
             }
 
-            if onDeleteFromMirrors != nil || onDeleteEverywhere != nil {
+            if onDeleteFromMirrors != nil || onDeleteEverywhere != nil || (onPhone && onDeleteHere != nil) {
                 Menu {
+                    if onPhone, onDeleteHere != nil {
+                        Button(role: .destructive, action: {
+                            confirmDeleteHere = true
+                        }) {
+                            Label("Delete from this device", systemImage: "minus.circle")
+                        }
+                    }
                     if onDeleteFromMirrors != nil {
                         Button(role: .destructive, action: {
                             pendingDelete = .mirrors
@@ -232,6 +242,7 @@ struct MediaListItem: View {
             case .everywhere: onDeleteEverywhere?(item)
             }
         }
+        .confirmDeleteHere($confirmDeleteHere) { onDeleteHere?(item) }
         .confirmBlockUser(isPresented: $showingBlockConfirm) {
             guard let pubkey = item.pubkey,
                   let data = Bech32.hexToData(pubkey),

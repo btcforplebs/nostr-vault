@@ -361,6 +361,8 @@ extension MediaGalleryView {
                     MediaUploadNotificationManager.shared.add(filename: filename)
                 }
 
+                // A pasted link is saved on purpose: off the "removed here" list (A3).
+                if let hash = MediaCacheService.blossomHash(in: url) { await blossom.clearRemovedHere(hash) }
                 // Use existing BlossomService.downloadFromURL
                 success = await blossom.downloadFromURL(url: url, fromMediaTab: true)
             }

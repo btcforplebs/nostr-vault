@@ -49,7 +49,10 @@ extension BlossomService {
         var inVault = Set<String>()
         var toStore: [StreamingBlobDownload.File] = []
         let local = await vaultBlobHashes()
+        let removed = DeviceRemovedStore.shared.list(relayDataDir: await removedHereDir())
         for file in files {
+            // Removed from this device by the owner (A3): never put back on its own.
+            if removed.contains(file.sha256) { continue }
             switch AutoMirrorSave.decide(sha256: file.sha256, localHashes: local.union(inVault)) {
             case .alreadyHere: inVault.insert(file.sha256.lowercased())
             case .store:
