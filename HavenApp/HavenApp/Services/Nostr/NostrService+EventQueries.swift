@@ -17,8 +17,10 @@ extension NostrService {
 
     /// Requests a quoted event this relay does not hold, from the local relay and
     /// the configured feed relays. Safe to call from a view's `onAppear`: each
-    /// identifier is requested once per session.
-    func fetchQuotedEvent(_ identifier: String) {
+    /// identifier is requested once per session. `content` is the quoting
+    /// note's text: still missing after a few seconds, the note is asked of
+    /// its nevent's relay hint and its author's write relays (QuoteFetchRelays).
+    func fetchQuotedEvent(_ identifier: String, content: String = "") {
         guard storedEvent(matching: identifier) == nil,
               !quotedEventsInFlight.contains(identifier) else { return }
         quotedEventsInFlight.insert(identifier)
@@ -33,6 +35,24 @@ extension NostrService {
             fetchAddressableEvent(kind: kind, pubkey: pubkey, dTag: dTag, from: urls)
         } else {
             fetchNotesByIds([identifier], from: urls)
+            askQuoteOutbox(identifier, content: content, asked: urls.map(\.absoluteString))
+        }
+    }
+
+    /// The second round of `fetchQuotedEvent`: the relays only the quote and
+    /// its author name. The author's relay list is requested now so it has
+    /// come by the time the first round has had its chance.
+    private func askQuoteOutbox(_ id: String, content: String, asked: [String]) {
+        let hints = QuoteFetchRelays.hints(for: id, in: content)
+        let author = QuoteFetchRelays.author(for: id, in: content)
+        if let author, outboxRelays[author] == nil { FeedService.shared.requestRelayLists(for: [author]) }
+        guard !hints.isEmpty || author != nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+            guard let self, self.storedEvent(matching: id) == nil,
+                  FeedService.shared.findNote(id: id) == nil else { return }
+            let extra = QuoteFetchRelays.relays(hints: hints, authorWrite: author.flatMap { self.outboxRelays[$0] },
+                                                asked: asked)
+            self.fetchNotesByIds([id], from: extra.compactMap { URL(string: $0) })
         }
     }
 

@@ -53,7 +53,7 @@ private struct PendingQuotedEventView: View {
         } else {
             QuotedNoteSkeleton()
                 .onAppear {
-                    nostrService.fetchQuotedEvent(identifier)
+                    nostrService.fetchQuotedEvent(identifier, content: content)
                     feedService.rememberQuoteHints(in: content)
                     feedService.fetchMissingNote(id: identifier)
                 }
