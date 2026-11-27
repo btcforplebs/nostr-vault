@@ -17,7 +17,7 @@ import { WotButton } from "./PersonScreen.jsx"
 import { EditProfile } from "./EditProfile.jsx"
 import { readOwn, storeAll, syncOwn } from "../net/sync.js"
 import { markOwnAsked, ownSince, watchProfile } from "../net/profile-live.js"
-import { NOTE_KINDS, fetchTagged, ownOlder, syncOwnPage } from "../net/person.js"
+import { NOTE_KINDS, anyConnected, fetchTagged, ownOlder, syncOwnPage } from "../net/person.js"
 import { fetchShop } from "../net/profile-tabs.js"
 import { parseHash } from "../desktop/routes.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
@@ -54,7 +54,7 @@ export function ProfileScreen({ ctx }) {
       const since = ownSince(me, held), startedAt = Math.floor(Date.now() / 1000)
       const draw = async () => show(await readOwn(vault, me, NOTE_KINDS, OPENING))
       await Promise.all([syncOwn(vault, me, writeRelays, { on: draw, since }), syncOwnPage(vault, me, writeRelays, { kinds: [6], limit: OPENING, since })]).catch(() => {})
-      markOwnAsked(me, startedAt)
+      if (anyConnected(writeRelays)) markOwnAsked(me, startedAt) // no relay connected: keep the old mark, ask the gap again
     }
     const all = await readOwn(vault, me, NOTE_KINDS, OPENING)
     setArticles(await readOwn(vault, me, [30023], 50))

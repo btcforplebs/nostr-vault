@@ -9,7 +9,7 @@ import { queryMany } from "../src/net/query-many.js"
 import { ownSince, markOwnAsked, forgetOwnAsked, watchProfile } from "../src/net/profile-live.js"
 import { memoCard } from "../src/components/memo-card.js"
 import { lookInFront } from "../src/components/auto-look.js"
-import { fetchTagged, syncOwnPage, SINCE_SLACK_S } from "../src/net/person.js"
+import { anyConnected, fetchTagged, syncOwnPage, SINCE_SLACK_S } from "../src/net/person.js"
 import { syncOwn } from "../src/net/sync.js"
 
 const read = f => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")
@@ -89,8 +89,8 @@ test("#2: syncOwn, syncOwnPage and Tagged pass `since` on to the relays", async 
   const P = key(7), note = { id: key(8), kind: 1, pubkey: key(9), created_at: 4000, tags: [["p", P]] }
   const tq = []
   const before = Math.floor(Date.now() / 1000)
-  await fetchTagged(P, [], { newerOnly: true, query: async (r, f) => { tq.push(f); return [note] } })
-  await fetchTagged(P, [], { newerOnly: true, query: async (r, f) => { tq.push(f); return [] } })
+  await fetchTagged(P, [], { newerOnly: true, connected: () => true, query: async (r, f) => { tq.push(f); return [note] } })
+  await fetchTagged(P, [], { newerOnly: true, connected: () => true, query: async (r, f) => { tq.push(f); return [] } })
   assert.equal(tq[0].since, undefined)
   assert.ok(tq[1].since >= before - SINCE_SLACK_S && tq[1].since <= Math.floor(Date.now() / 1000) - SINCE_SLACK_S)
   assert.equal((await fetchTagged(P, [], { newerOnly: true, query: async () => [] })).length, 1, "the kept note stays in the list")
@@ -100,11 +100,29 @@ test("#2 review: a stranger's note dated in 2100 doesn't freeze the Tagged tab",
   const P = key(10), future = { id: key(11), kind: 1, pubkey: key(9), created_at: 4102444800, tags: [["p", P]] }
   const now = Math.floor(Date.now() / 1000), real = { id: key(12), kind: 1, pubkey: key(9), created_at: now, tags: [["p", P]] }
   const tq = []
-  await fetchTagged(P, [], { newerOnly: true, query: async (r, f) => { tq.push(f); return [future] } })
+  await fetchTagged(P, [], { newerOnly: true, connected: () => true, query: async (r, f) => { tq.push(f); return [future] } })
   const relay = [future, real]
-  const got = await fetchTagged(P, [], { newerOnly: true, query: async (r, f) => { tq.push(f); return relay.filter(e => !f.since || e.created_at >= f.since) } })
+  const got = await fetchTagged(P, [], { newerOnly: true, connected: () => true, query: async (r, f) => { tq.push(f); return relay.filter(e => !f.since || e.created_at >= f.since) } })
   assert.ok(tq[1].since <= now, `since ${tq[1].since} must not pass now`)
   assert.ok(got.some(e => e.id === real.id), "the real mention shows")
+})
+
+test("#2 follow-up: an ask with no relay connected doesn't move the mark", async () => {
+  const status = new Map([["wss://a.example/", false], ["wss://b.example/", true]])
+  assert.equal(anyConnected(["wss://a.example"], status), false)
+  assert.equal(anyConnected(["wss://a.example", "wss://b.example"], status), true)
+  assert.equal(anyConnected(["not a url"], status), false)
+  const P = key(13), tq = []
+  const realNow = Date.now
+  const ask = (ok, at) => { Date.now = () => at * 1000; return fetchTagged(P, [], { newerOnly: true, connected: () => ok, query: async (r, f) => { tq.push(f); return [] } }) }
+  try {
+    await ask(true, 10_000) // first: the whole page, the mark set at 10000
+    await ask(false, 20_000) // every relay dead: asks from 10000 and leaves the mark there
+    await ask(true, 30_000)
+  } finally { Date.now = realNow }
+  assert.equal(tq[0].since, undefined)
+  assert.equal(tq[1].since, 10_000 - SINCE_SLACK_S)
+  assert.equal(tq[2].since, 10_000 - SINCE_SLACK_S, "the dead ask did not move the mark")
 })
 
 test("#6: a profile keeps one live subscription for its owner's notes and reposts; others' notes are dropped", () => {
