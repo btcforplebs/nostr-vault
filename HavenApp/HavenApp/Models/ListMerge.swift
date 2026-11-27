@@ -223,15 +223,18 @@ enum ListMerge {
         }
     }
 
-    /// `editBase` for the follow list (kind 3) only: an own relay that never
-    /// connected drops out of the count (`followMajority`). Every other list
-    /// keeps `ownMajority`. "None" still needs every own relay answering.
+    /// `editBase` for the follow list (kind 3) only: an own relay that was
+    /// dialled and failed to connect (`lookup.unreachable`) drops out of the
+    /// count (`followMajority`). One not dialled or that timed out still
+    /// counts. Every other list keeps `ownMajority`. "None" (a first follow
+    /// with no list found) still needs every own relay answering, dead ones
+    /// included (Tron, web #2611).
     static func followEditBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String],
                                       now: Int64 = Int64(Date().timeIntervalSince1970),
                                       createdAt: (Event) -> Int64) -> EditBase<Event> {
-        let reached = Set(lookup.reached.union(lookup.answeredBy).map(relayKey))
+        let unreachable = Set(lookup.unreachable.subtracting(lookup.answeredBy).map(relayKey))
         return editBase(lookup, held: held, own: own, now: now, createdAt: createdAt) { mine, ownAnswered in
-            followMajority(ownAnswered: ownAnswered, ownReached: mine.intersection(reached).count)
+            followMajority(ownAnswered: ownAnswered, ownReached: mine.subtracting(unreachable).count)
         }
     }
 
@@ -283,10 +286,11 @@ enum ListMerge {
     }
 
     /// Whether enough relays answered to edit the follow list (Logen
-    /// 2026-11-27): own relays that never connected drop out, at least two
+    /// 2026-11-27): own relays whose dial failed to connect drop out, at least two
     /// own relays answered (an indexer such as purplepag.es doesn't count),
-    /// and more than half of the `ownReached` ones that did connect answered
-    /// (a connected relay that was too slow counts as not answering). A
+    /// and more than half of the other `ownReached` ones answered (a relay
+    /// that was slow, timed out connecting, or was not dialled at all counts
+    /// as not answering). A
     /// relay list of one relay never passes. Same rule as web
     /// followListKnown and Android FollowListKnown:
     /// - 7 own, 3 never connect, 4 answer: yes.

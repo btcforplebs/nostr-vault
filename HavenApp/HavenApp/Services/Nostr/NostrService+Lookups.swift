@@ -51,17 +51,17 @@ extension NostrService {
             // this used to open a socket per call per relay.
             var lookups: [LookupSocketPool.Lookup] = []
 
-            // Main queue only (the pool is): every caller is an onEnd or
-            // onMessage callback, or the timeout below.
+            // Relays dialled whose socket failed before connecting.
+            var unreachable = Set<Int>()
+
             func finish() {
-                let reached = Set(targets.filter { LookupSocketPool.shared.isConnected($0) }.map(\.absoluteString))
                 lock.lock()
                 guard !resumed else { lock.unlock(); return }
                 resumed = true
                 let from = newestBy.filter { $0.value.id == best?.id }.keys.map { targets[$0].absoluteString }
                 let result = ReplaceableLookup(event: best, asked: targets.count, answered: answered.count,
                                                answeredBy: Set(answered.map { targets[$0].absoluteString }),
-                                               from: Set(from), reached: reached, ahead: ahead)
+                                               from: Set(from), unreachable: Set(unreachable.map { targets[$0].absoluteString }), ahead: ahead)
                 lock.unlock()
                 DispatchQueue.main.async {
                     lookups.forEach { $0.cancel() }
@@ -114,6 +114,11 @@ extension NostrService {
                         },
                         onEnd: { outcome in
                             // A relay that can't be reached is done, not answered.
+                            // Only a dial that failed to connect is unreachable:
+                            // skipped (never dialled) and timeouts still count.
+                            if outcome == .failed, LookupSocketPool.shared.failedToConnect(url) {
+                                lock.lock(); unreachable.insert(index); lock.unlock()
+                            }
                             if outcome == .failed || outcome == .skipped { relayDone(index, answered: false) }
                         })
                     if let lookup { lookups.append(lookup) }

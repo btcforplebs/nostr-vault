@@ -9,12 +9,15 @@ final class FollowMajorityTests: XCTestCase {
     private let own = (1...7).map { "wss://r\($0).example" }
     private let indexer = "wss://purplepag.es"
 
-    /// A lookup where `answering` own relays answered, `slow` more connected
-    /// but sent nothing in time, and the rest of the 7 never connected.
-    private func lookup(answering: [String], slow: [String] = [], indexer: Bool = false) -> ReplaceableLookup<Int64> {
+    /// A lookup where `answering` own relays answered, `slow` more were
+    /// reached (or not dialled, or timed out) but sent nothing in time, and
+    /// the rest of the 7 were dialled and failed to connect.
+    private func lookup(answering: [String], slow: [String] = [], indexer: Bool = false,
+                        event: Int64? = 100) -> ReplaceableLookup<Int64> {
         let answeredBy = Set(answering + (indexer ? [self.indexer] : []))
-        return ReplaceableLookup(event: answeredBy.isEmpty ? nil : 100 as Int64, asked: own.count + 1, answered: answeredBy.count,
-                                 answeredBy: answeredBy, from: answeredBy, reached: answeredBy.union(slow))
+        let dead = Set(own).subtracting(answering).subtracting(slow)
+        return ReplaceableLookup(event: answeredBy.isEmpty ? nil : event, asked: own.count + 1, answered: answeredBy.count,
+                                 answeredBy: answeredBy, from: event == nil ? [] : answeredBy, unreachable: dead)
     }
 
     private func base(_ lookup: ReplaceableLookup<Int64>, own: [String]? = nil) -> Int64? {
@@ -76,10 +79,46 @@ final class FollowMajorityTests: XCTestCase {
         XCTAssertEqual(FollowPublishFailure.didNotAnswer(slow, own: own), .relaysDidNotAnswer(ownAnswered: 2, own: 7))
     }
 
+    func testARelayNotDialledOrTimedOutStillCounts() {
+        // Tron on web #2611: 4 own relays, 2 answer with a stale list, and the
+        // other 2 hold the newer one but were cooling down / over the socket
+        // cap / hit the connect timeout. They are not "never connected", so
+        // 2 of 4 is not most and the stale list is not edited.
+        let four = Array(own.prefix(4))
+        var notDialled = lookup(answering: Array(four.prefix(2)), slow: Array(four.suffix(2)))
+        XCTAssertNil(ListMerge.followEditBase(notDialled, held: nil, own: four, createdAt: { $0 }).listValue)
+        // Only a dial that really failed to connect drops out: then 2 of 2.
+        notDialled = ReplaceableLookup(event: 100, asked: 4, answered: 2, answeredBy: Set(four.prefix(2)),
+                                       from: Set(four.prefix(2)), unreachable: Set(four.suffix(2)))
+        XCTAssertEqual(ListMerge.followEditBase(notDialled, held: nil, own: four, createdAt: { $0 }).listValue, 100)
+    }
+
+    func testAFirstFollowWithNoListFoundStillNeedsEveryOwnRelay() {
+        // Tron on web #2611: 2 empty relays answer, the list holder is
+        // unreachable. "No list" would let a 1-follow list replace 300.
+        let three = Array(own.prefix(3))
+        let empty = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 2, answeredBy: Set(three.prefix(2)),
+                                             unreachable: [three[2]])
+        guard case .unknown = ListMerge.followEditBase(empty, held: nil, own: three, createdAt: { $0 }) else {
+            return XCTFail("no list found needs every own relay, dead ones included")
+        }
+        let all = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 3, answeredBy: Set(three))
+        guard case .none = ListMerge.followEditBase(all, held: nil, own: three, createdAt: { $0 }) else {
+            return XCTFail("every own relay answered with no list: none")
+        }
+    }
+
     func testOtherListsKeepTheOldRule() {
         let three = lookup(answering: Array(own.prefix(3)))
         guard case .unknown = ListMerge.editBase(three, held: nil, own: own, createdAt: { $0 }) else {
             return XCTFail("editBase (interests, vault lists) still counts every own relay")
         }
+    }
+}
+
+private extension ListMerge.EditBase where Event == Int64 {
+    var listValue: Int64? {
+        if case .list(let at) = self { return at }
+        return nil
     }
 }
