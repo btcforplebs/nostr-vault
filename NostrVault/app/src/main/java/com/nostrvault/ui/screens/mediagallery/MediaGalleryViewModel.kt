@@ -71,6 +71,10 @@ class MediaGalleryViewModel @Inject constructor(
     /** Files that landed while a full load ran, put back on its result so the load can't hide them. */
     private val landedDuringLoad = java.util.concurrent.ConcurrentHashMap<String, BlossomMediaItem>()
 
+    /** Which full load may publish (MediaLoadGate.kt), and the one running. */
+    private val loadGate = MediaLoadGate()
+    private var loadJob: Job? = null
+
     /** A delete's full reload (a server may still have the file), a moment after the last one. */
     private var reloadJob: Job? = null
 
@@ -174,7 +178,10 @@ class MediaGalleryViewModel @Inject constructor(
     }
 
     private fun loadBlossomMedia() {
-        viewModelScope.launch {
+        // A newer load replaces the one running: the last to finish used to win.
+        loadJob?.cancel()
+        val load = loadGate.begin()
+        loadJob = viewModelScope.launch {
             _isLoading.value = true
             try {
                 withContext(Dispatchers.IO) {
@@ -219,10 +226,11 @@ class MediaGalleryViewModel @Inject constructor(
                         .toList()
                     for (item in landedDuringLoad.values) loaded = MediaLiveRules.landed(loaded, item)
                     for (tile in noteTiles) MediaLiveRules.noteItem(tile)?.let { loaded = MediaLiveRules.noteLanded(loaded, it) }
-                    _mediaItems.value = loaded
+                    ensureActive()
+                    loadGate.result(load, loaded)?.let { _mediaItems.value = it }
                 }
             } finally {
-                _isLoading.value = false
+                if (loadGate.isCurrent(load)) _isLoading.value = false
             }
         }
     }
@@ -259,6 +267,7 @@ class MediaGalleryViewModel @Inject constructor(
             }
             is MediaLiveRules.Change.Removed -> {
                 landedDuringLoad.remove(change.sha256)
+                loadGate.removed(change.sha256)
                 _mediaItems.update { MediaLiveRules.removed(it, change.sha256) }
                 // A server may still hold it: the full load brings that tile back.
                 reloadJob?.cancel()
@@ -291,8 +300,10 @@ class MediaGalleryViewModel @Inject constructor(
                 val item = noteTiles.firstOrNull { it.sha256 == change.sha256 }?.let(MediaLiveRules::noteItem) ?: return
                 _mediaItems.update { MediaLiveRules.noteLanded(it, item) }
             }
-            is com.nostrvault.fips.FileNotesState.Change.Removed ->
+            is com.nostrvault.fips.FileNotesState.Change.Removed -> {
+                loadGate.removed(change.sha256)
                 _mediaItems.update { MediaLiveRules.noteRemoved(it, change.sha256) }
+            }
             com.nostrvault.fips.FileNotesState.Change.None -> Unit
         }
     }
