@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.service.ownSearchPubkeys
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -387,12 +389,23 @@ internal fun TrustWebContent(
     val keyboard = LocalSoftwareKeyboardController.current
     val pasted = remember(query) { TrustMap.pastedKey(query, HavenBridge::decodeNpub) }
     val rankCopy = rememberRankCopy()
-    val hits = remember(query, pasted, profiles, myFollows, web, rankCopy) {
-        if (pasted != null) {
-            val circle = com.nostrvault.data.model.PeopleSearchRank.Circle(setOf(me), myFollows, web, rankCopy)
-            listOf(TrustMap.PersonHit(pasted, rowTier(pasted, circle)))
-        } else {
-            findSomeone(query, profiles.values, me, myFollows, web, rankCopy, feedService.blockedHexForActiveAccount())
+    // Off the main thread: it ranks the whole profile cache, on every
+    // keystroke and every time the globe's taps fetch more profiles. The
+    // last hits stay up until the new ones are ready.
+    val own = remember(me) { nostrService.ownSearchPubkeys() + me.lowercase() }
+    val hits by produceState(emptyList<TrustMap.PersonHit>(), query, pasted, profiles, myFollows, web, rankCopy, own) {
+        if (pasted == null && query.isBlank()) {
+            value = emptyList()
+            return@produceState
+        }
+        val blocked = feedService.blockedHexForActiveAccount()
+        value = withContext(Dispatchers.Default) {
+            if (pasted != null) {
+                val circle = com.nostrvault.data.model.PeopleSearchRank.Circle(own, myFollows, web, rankCopy)
+                listOf(TrustMap.PersonHit(pasted, rowTier(pasted, circle)))
+            } else {
+                findSomeone(query, profiles.values, own, myFollows, web, rankCopy, blocked)
+            }
         }
     }
 

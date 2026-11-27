@@ -15,7 +15,7 @@ class WotFindSomeoneTest {
 
     private fun find(query: String, people: List<FeedProfile>, follows: Set<String> = emptySet(), web: Set<String> = emptySet(),
                      copy: TrustRankCopy? = null, blocked: Set<String> = emptySet(), limit: Int = FIND_SOMEONE_LIMIT) =
-        findSomeone(query, people, me, follows, web, copy, blocked, limit)
+        findSomeone(query, people, setOf(me), follows, web, copy, blocked, limit)
 
     @Test fun matchesDisplayNameNameAndNip05IgnoringCase() {
         val people = listOf(person("1", display = "Alice Smith"), person("2", name = "bob"), person("3", nip05 = "carol@ALICE.com"), person("4", display = "Dave"))

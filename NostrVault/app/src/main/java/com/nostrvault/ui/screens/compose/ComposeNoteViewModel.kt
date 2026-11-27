@@ -203,6 +203,8 @@ class ComposeNoteViewModel @Inject constructor(
     /** The query of the mention currently being edited, and its debounced relay search. */
     internal var currentMentionQuery: String? = null
     internal var mentionSearchJob: Job? = null
+    /** The off-main ranking of the cache for the current @query. */
+    internal var mentionFilterJob: Job? = null
 
     /**
      * Maps an inserted display token (e.g. "@Alice") → hex pubkey. The editor shows

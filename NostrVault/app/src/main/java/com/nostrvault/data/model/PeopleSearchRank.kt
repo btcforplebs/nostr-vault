@@ -121,21 +121,44 @@ object PeopleSearchRank {
     /** How well [person] matches the folded query; null for no match at all. */
     fun match(folded: String, person: Person): Int? {
         if (folded.isEmpty()) return null
+        val f = folds(person)
         var best: Int? = null
-        for (raw in person.names) {
-            val name = fold(raw)
+        for (i in f.names.indices) {
+            val name = f.names[i]
             val m = when {
                 name == folded -> Match.EXACT
                 name.startsWith(folded) -> Match.PREFIX
-                words(name).any { it.startsWith(folded) } -> Match.WORD_PREFIX
+                f.words[i].any { it.startsWith(folded) } -> Match.WORD_PREFIX
                 name.contains(folded) -> Match.CONTAINS
                 else -> null
             }
             if (m != null && m < (best ?: Int.MAX_VALUE)) best = m
             if (best == Match.EXACT) break
         }
-        if (best == null && person.about?.let { fold(it).contains(folded) } == true) best = Match.ABOUT_ONLY
+        if (best == null && f.about?.contains(folded) == true) best = Match.ABOUT_ONLY
         return best
+    }
+
+    // ── Fold cache ──
+    // Find someone and mentions rank the whole profile cache on every
+    // keystroke; NFKD-folding every name and bio each time cost 7 ms at 2k
+    // profiles and 43 ms at 20k (Tron, post-merge read of #2690). Each
+    // person's folds are kept by pubkey and reused while their names and
+    // about are unchanged, so a keystroke only compares strings.
+
+    private class Folds(val source: Person, val names: List<String>, val words: List<List<String>>, val about: String?)
+
+    private const val FOLD_CACHE_MAX = 50_000
+    private val foldCache = java.util.concurrent.ConcurrentHashMap<String, Folds>()
+
+    private fun folds(person: Person): Folds {
+        val cached = foldCache[person.pubkey]
+        if (cached != null && cached.source == person) return cached
+        val names = person.names.map(::fold)
+        val made = Folds(person, names, names.map(::words), person.about?.let(::fold))
+        if (foldCache.size >= FOLD_CACHE_MAX) foldCache.clear()
+        foldCache[person.pubkey] = made
+        return made
     }
 
     private fun words(name: String): List<String> =

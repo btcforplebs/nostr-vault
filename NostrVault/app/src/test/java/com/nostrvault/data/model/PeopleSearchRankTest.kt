@@ -184,4 +184,13 @@ class PeopleSearchRankTest {
         assertEquals(listOf("m"), out.inside.notes.map { it.id })
         assertEquals(listOf("a"), out.outside.notes.map { it.id })
     }
+
+    @Test fun aRenamedPersonIsFoldedAgain() {
+        // The fold cache is kept by pubkey; a changed name or about must not reuse old folds.
+        val k = "ab".repeat(32)
+        assertEquals(PeopleSearchRank.Match.EXACT, PeopleSearchRank.match("zoe", PeopleSearchRank.Person(k, displayName = "Zoë")))
+        assertEquals(null, PeopleSearchRank.match("zoe", PeopleSearchRank.Person(k, displayName = "Alice")))
+        assertEquals(PeopleSearchRank.Match.ABOUT_ONLY, PeopleSearchRank.match("zoe", PeopleSearchRank.Person(k, displayName = "Alice", about = "friend of Zoë")))
+        assertEquals(PeopleSearchRank.Match.WORD_PREFIX, PeopleSearchRank.match("ali", PeopleSearchRank.Person(k, displayName = "Big Alice")))
+    }
 }
