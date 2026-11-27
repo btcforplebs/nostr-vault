@@ -445,13 +445,25 @@ class Checker:
         self.log(f"the window draws (mode {mode})")
         if os.environ.pop(nv_heal.RESET, None) == "done":
             self.log("it draws with a fresh WebKit cache (the old one is kept in " + nv_heal.cache_dir() + ".bak-*)")
+        safe_last = False
         if os.environ.pop(nv_heal.SAFE, None) == "done":
             self.log("it draws after a safe start (the saved data moved aside is kept in " + nv_heal.data_dir() + ".safe-*)")
+            safe_last = bool(tried)  # it started safe at the end of the ladder: the saved data, not the mode, was it
         os.environ[TRIED] = ""
         tried = []
         if mode == "user":
             return
         st = load_state()
+        if safe_last:
+            # Don't keep a lower rung (compositing off, the slow way) for good: the next start begins at the top of
+            # the ladder again (Tron, PR 2653 review).
+            if "works" in st or "failed" in st:
+                st.pop("works", None)
+                st.pop("failed", None)
+                save_state(st)
+            self.log(f"not remembering drawing mode {mode}: it drew once the saved data was moved aside, so the next "
+                     "start tries the first mode again")
+            return
         if st.get("works") != mode or "failed" in st:
             st.pop("failed", None)
             st["works"] = mode

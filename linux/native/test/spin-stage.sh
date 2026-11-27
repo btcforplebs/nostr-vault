@@ -253,6 +253,9 @@ safe_run() { # <name> <seed: 1 = this mode drew before>
     [ -n "$lad" ] && [ -n "$sf" ] && [ "$lad" -lt "$sf" ] && grep -q "no other drawing mode drew" "$L" \
       && ok "$1: with no mode that drew before, every drawing mode was tried first ($(grep -c 'trying the window again with mode' "$L") of them), then the safe start" \
       || no "$1: the safe start came before the drawing ladder ran out (ladder line $lad, safe line $sf)"
+    waitlog "$L" "not remembering drawing mode" 20 && [ -z "$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1])).get("works", ""))' "$RJ" 2>/dev/null)" ] \
+      && ok "$1: the last rung isn't remembered, so the next start tries the first mode again" \
+      || no "$1: after a safe start at the end of the ladder, renderer.json remembers: $(cat "$RJ" 2>/dev/null)"
   fi
   waitlog "$L" "it draws after a safe start" 20 && ok "$1: and says the safe start fixed it" || no "$1: it never passed its check after the safe start"
   stop; unserve

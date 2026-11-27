@@ -24,7 +24,8 @@ refillable IndexedDB caches moved aside, and nothing else:
     every drawing mode failed too (nv_paint.Checker.failed). Tron, PR 2653 review. And only when there is something
     to move (movable): a hung web process with no saved caches (the blank stage, the setup page) goes straight on.
   - Moved: only the databases MOVE_DBS names, the caches the vault and the relays fill again: haven:<pk>:feed,
-    inbox, private, chat, lists, blossom and wotlists, and nv-napplet-apps:<pk> (installed apps' pages, by hash).
+    inbox, private, chat, lists, blossom and wotlists, and nv-napplet-apps:<pk> (installed apps' pages, by hash:
+    fetched again only while the app's server is up; until then, the copy in the .safe folder is the one there is).
     Each database's folder as it is, into <data>.safe-<time> under the same path, which is kept. Nothing is deleted
     or written over: a fresh folder, os.rename (one file system).
   - Kept in place, everything else: localStorage (nv-session, nv-accounts, a key's ncryptsec, the device key, paired
@@ -75,7 +76,8 @@ OWN_VARS = ("NV_DESKTOP_RENDERER", "NV_DESKTOP_TRIED", RESET, "NV_DESKTOP_SAFE_S
 PROGRAM = "nostr-vault-desktop"
 SAFE = "NV_DESKTOP_SAFE_START"  # "pending": move the saved data aside before WebKit loads; "done": this chain did
 IDB_FILE = "IndexedDB.sqlite3"  # one per database, in its own folder (with its -wal, -shm and blob files)
-# The only databases a safe start moves: refillable caches. Everything else stays (see the top of this file).
+# The only databases a safe start moves: caches the vault, the relays or an app's server fill again. Everything else
+# stays (see the top of this file).
 MOVE_DBS = re.compile(r"haven:[0-9a-f]{64}:(feed|inbox|private|chat|lists|blossom|wotlists)|nv-napplet-apps:[0-9a-f]{64}")
 KEEP_BAKS = 3  # reset_cache keeps the newest this many old caches (at most one a day), and deletes the rest
 
