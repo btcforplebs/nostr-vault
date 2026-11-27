@@ -474,6 +474,8 @@ fun NostrVaultNavHost(
         // it was opened with, and a route argument would mean re-resolving a
         // replaceable event that may already be gone.
         com.nostrvault.ui.components.LiveStreamHost()
+        // A minimized video clip, opened again from the mini player.
+        com.nostrvault.ui.components.SharedVideoHost()
 
         // Hold-the-account-picture list: over everything, the bar included.
         if (showBottomBar) {

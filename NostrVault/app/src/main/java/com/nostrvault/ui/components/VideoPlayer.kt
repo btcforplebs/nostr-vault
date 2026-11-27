@@ -80,7 +80,8 @@ class VideoControls {
  * Features:
  * - Auto-play with looping (matches iOS FullScreenVideoPlayer behaviour)
  * - Tap to toggle the control rail; auto-hides after 3s while playing
- * - Bottom rail: play/pause · elapsed · scrubber · duration · mute · PiP
+ * - Bottom rail: play/pause · elapsed · scrubber · duration · mute · Minimize · PiP
+ *   (Minimize only when the viewer passes [VideoMinimize]: the clip goes to the mini player)
  *   (same layout as the iOS VideoControlBar)
  * - Picture-in-Picture: registers with [VideoPiPBridge] so MainActivity can
  *   auto-enter PiP on home-press; the rail's PiP button enters it on demand.
@@ -95,10 +96,12 @@ fun VideoPlayer(
     modifier: Modifier = Modifier,
     autoplay: Boolean = true,
     controls: MutableState<Boolean>? = null,
+    /** Offers Minimize to the mini player (SharedVideoPlayer); never for a locked DM video. */
+    minimize: VideoMinimize? = null,
 ) {
     // A blossom: link plays from its checked file, once there is one.
     when (val playable = rememberPlayable(uri).value) {
-        is Playable.Ready -> UrlVideoPlayer(playable.uri, modifier, autoplay, controls)
+        is Playable.Ready -> UrlVideoPlayer(playable.uri, modifier, autoplay, controls, minimize = minimize)
         // A locked DM video plays from its opened bytes, never from a file.
         is Playable.Opened -> UrlVideoPlayer(uri, modifier, autoplay, controls, bytes = playable.bytes)
         else -> PlayableStatus(playable, modifier)
@@ -119,6 +122,7 @@ private fun UrlVideoPlayer(
     controls: MutableState<Boolean>? = null,
     /** The video itself, already opened (a locked DM video): played from memory, [uri] only names it. */
     bytes: ByteArray? = null,
+    minimize: VideoMinimize? = null,
 ) {
     val context = LocalContext.current
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
@@ -323,6 +327,10 @@ private fun UrlVideoPlayer(
                         )
                     }
 
+                    if (minimize != null && bytes == null) {
+                        MinimizeVideoButton { minimizeToBar(context, exoPlayer, uri, minimize) }
+                    }
+
                     if (supportsPiP) {
                         IconButton(
                             onClick = {
@@ -481,7 +489,7 @@ private val VideoAudioAttributes: AudioAttributes = AudioAttributes.Builder()
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 internal fun VideoSurface(
-    player: ExoPlayer,
+    player: Player,
     modifier: Modifier = Modifier,
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
 ) {
@@ -518,7 +526,7 @@ internal fun VideoSurface(
                 if (aspect > 0f) frame.setAspectRatio(aspect)
                 // One view, possibly a new player (a reels page reuses its slot).
                 val texture = frame.getChildAt(0) as TextureView
-                val bound = frame.tag as? ExoPlayer
+                val bound = frame.tag as? Player
                 if (bound !== player) {
                     bound?.clearVideoTextureView(texture)
                     player.setVideoTextureView(texture)

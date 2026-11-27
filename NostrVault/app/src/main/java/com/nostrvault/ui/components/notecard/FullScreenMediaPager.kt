@@ -301,7 +301,12 @@ internal fun FullScreenMediaPager(
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             } else {
-                                VideoPlayer(uri = url, modifier = Modifier.fillMaxSize(), controls = videoControls.shown)
+                                VideoPlayer(
+                                    uri = url,
+                                    modifier = Modifier.fillMaxSize(),
+                                    controls = videoControls.shown,
+                                    minimize = remember(url) { VideoMinimize(authors.getOrNull(page), onMinimized = close) },
+                                )
                             }
                         }
                     }

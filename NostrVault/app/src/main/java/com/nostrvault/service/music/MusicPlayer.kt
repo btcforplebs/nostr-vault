@@ -13,13 +13,14 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
 import com.nostrvault.data.model.LiveStream
 import com.nostrvault.data.music.WavlakeTrack
+import com.nostrvault.ui.components.setSoundOnly
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Something the app-wide player can play: a Wavlake song, or a live stream's
- * sound. iOS: PlayerTrack in MusicPlayerService.swift.
+ * Something the app-wide player can play: a Wavlake song, a live stream's
+ * sound, or a minimized video clip's sound. iOS: PlayerTrack in MusicPlayerService.swift.
  */
 data class PlayerTrack(
     val id: String,
@@ -33,10 +34,17 @@ data class PlayerTrack(
     val pageUrl: String? = null,
     /** The song behind this item, for Share and the artist's profile. */
     val wavlake: WavlakeTrack? = null,
-    /** A live stream's host, for opening their profile. */
+    /** A live stream's host, or a minimized clip's author, for opening their profile. */
     val hostPubkey: String? = null,
+    /** A video clip minimized from a full-screen viewer: plays once, sound only, from the video cache. */
+    val isVideo: Boolean = false,
 ) {
     companion object {
+        private const val VIDEO_ID_PREFIX = "video:"
+
+        fun videoId(uri: String) = VIDEO_ID_PREFIX + uri
+        fun isVideoId(id: String) = id.startsWith(VIDEO_ID_PREFIX)
+
         fun of(t: WavlakeTrack) = PlayerTrack(
             id = t.id, title = t.title, artist = t.artist, artworkUrl = t.albumArtUrl,
             audioUrl = t.mediaUrl, durationSec = t.duration, albumTitle = t.albumTitle,
@@ -105,6 +113,18 @@ object MusicPlayer {
         return c
     }
 
+    /**
+     * The player behind the minimized video clip, while one is what the mini
+     * player is playing; null otherwise. The clip's viewer (SharedVideoPlayer)
+     * shows this player's picture, so opening the clip again carries on at the
+     * bar's time with no second copy.
+     */
+    fun videoPlayer(): Player? {
+        val c = controller ?: return null
+        if (_current.value?.isVideo != true) return null
+        return c
+    }
+
     fun init(context: Context) {
         appContext = context.applicationContext
     }
@@ -130,7 +150,18 @@ object MusicPlayer {
     }
 
     private val listener = object : Player.Listener {
-        override fun onEvents(player: Player, events: Player.Events) = sync()
+        override fun onEvents(player: Player, events: Player.Events) {
+            // A minimized clip plays once: at its end the mini player goes,
+            // rather than sitting on a finished clip.
+            if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) &&
+                player.playbackState == Player.STATE_ENDED &&
+                queue.getOrNull(player.currentMediaItemIndex)?.isVideo == true
+            ) {
+                stop()
+                return
+            }
+            sync()
+        }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             pausedByInterruption = !playWhenReady &&
@@ -179,7 +210,7 @@ object MusicPlayer {
         _index.value = idx
         _isPlaying.value = c.isPlaying
         _isBuffering.value = c.playbackState == Player.STATE_BUFFERING
-        _hasNext.value = c.hasNextMediaItem() && queue.getOrNull(idx)?.isLive != true
+        _hasNext.value = c.hasNextMediaItem() && queue.getOrNull(idx)?.let { it.isLive || it.isVideo } != true
         _positionMs.value = c.currentPosition.coerceAtLeast(0)
         _durationMs.value = c.duration.takeIf { it > 0 }
             ?: ((queue.getOrNull(idx)?.durationSec ?: 0) * 1000L)
@@ -212,6 +243,28 @@ object MusicPlayer {
     fun playLive(stream: LiveStream, track: PlayerTrack) {
         playTracks(listOf(track), 0)
         _liveStream.value = stream
+    }
+
+    /**
+     * Carries a full-screen video on in the mini player from [positionMs]:
+     * sound only (the video track is off, as for a minimized live stream),
+     * played once, from the same cache the viewer filled. Replaces whatever
+     * was queued. The viewer must have paused its own player first, so the
+     * sound never plays twice. iOS: MusicPlayerService.playVideo.
+     */
+    fun playVideo(track: PlayerTrack, positionMs: Long) {
+        _liveStream.value = null
+        queue = listOf(track)
+        _isShuffled.value = false
+        unshuffledQueue = emptyList()
+        _current.value = track
+        withController { c ->
+            c.setSoundOnly(true)
+            c.setMediaItems(listOf(item(track)), 0, positionMs.coerceAtLeast(0))
+            applyRepeat(c)
+            c.prepare()
+            c.play()
+        }
     }
 
     fun playTracks(tracks: List<PlayerTrack>, startIndex: Int = 0) {
@@ -284,10 +337,14 @@ object MusicPlayer {
         withController { c -> applyRepeat(c); sync() }
     }
 
-    /** The owner's repeat choice, except on a live stream, which has no end to go round from. */
+    /**
+     * The owner's repeat choice, except on a live stream, which has no end to
+     * go round from, and on a minimized clip, which plays once (a looping clip
+     * would play on for ever with the screen off).
+     */
     private fun applyRepeat(c: MediaController) {
-        val live = queue.getOrNull(c.currentMediaItemIndex)?.isLive == true
-        c.repeatMode = if (live) Player.REPEAT_MODE_OFF else when (_repeatMode.value) {
+        val once = queue.getOrNull(c.currentMediaItemIndex)?.let { it.isLive || it.isVideo } == true
+        c.repeatMode = if (once) Player.REPEAT_MODE_OFF else when (_repeatMode.value) {
             MusicRepeatMode.OFF -> Player.REPEAT_MODE_OFF
             MusicRepeatMode.ALL -> Player.REPEAT_MODE_ALL
             MusicRepeatMode.ONE -> Player.REPEAT_MODE_ONE

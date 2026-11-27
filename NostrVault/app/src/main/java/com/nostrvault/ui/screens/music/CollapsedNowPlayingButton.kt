@@ -51,11 +51,17 @@ fun CollapsedNowPlayingButton(actions: MusicActions) {
             .clip(CircleShape)
             .combinedClickable(
                 onClickLabel = if (playing) "Pause" else "Play",
-                onLongClickLabel = if (minimizedStream != null) "Open the live stream" else "Open the player",
+                onLongClickLabel = when {
+                    minimizedStream != null -> "Open the live stream"
+                    t.isVideo -> "Open the video"
+                    else -> "Open the player"
+                },
                 onClick = MusicPlayer::togglePlayPause,
                 onLongClick = {
                     if (minimizedStream != null) {
                         com.nostrvault.ui.components.LiveStreamRouter.open(minimizedStream)
+                    } else if (t.isVideo) {
+                        com.nostrvault.ui.components.SharedVideoRouter.open()
                     } else {
                         showFull = true
                     }

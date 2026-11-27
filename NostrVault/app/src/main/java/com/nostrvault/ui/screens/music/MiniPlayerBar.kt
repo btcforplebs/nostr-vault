@@ -34,7 +34,8 @@ import com.nostrvault.ui.theme.lightOr
  * Sits above the bottom bar on every tab while a song or live stream is
  * loaded: artwork, title, play/pause, next and ✕, with a thin progress line.
  * Tap it for the full player, or, for a minimized live stream, to pop the
- * stream's own window back out (video, chat and all). iOS: MiniPlayerBar,
+ * stream's own window back out (video, chat and all); a minimized video clip
+ * opens full screen again at the bar's time (SharedVideoPlayer). iOS: MiniPlayerBar,
  * PlayerSheet.
  */
 @Composable
@@ -69,9 +70,18 @@ fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
             .clip(RoundedCornerShape(26.dp))
             .background(lightOr(Surface1, Color(0xFF1E1E22)).copy(alpha = 0.96f))
             .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(26.dp))
-            .clickable(onClickLabel = if (minimizedStream != null) "Open the live stream" else "Open the player") {
+            .clickable(
+                onClickLabel = when {
+                    minimizedStream != null -> "Open the live stream"
+                    t.isVideo -> "Open the video"
+                    else -> "Open the player"
+                },
+            ) {
                 if (minimizedStream != null) {
                     com.nostrvault.ui.components.LiveStreamRouter.open(minimizedStream)
+                } else if (t.isVideo) {
+                    // A minimized clip opens full screen again at the bar's time.
+                    com.nostrvault.ui.components.SharedVideoRouter.open()
                 } else {
                     showFull = true
                 }
@@ -100,7 +110,7 @@ fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
             }
             // Sharing the row with a floating button leaves no room for skip;
             // play and ✕ stay, and skip lives in the full player. iOS: compact.
-            if (!t.isLive && com.nostrvault.ui.navigation.FloatingButtonRow.reservedWidth == 0.dp) {
+            if (!t.isLive && !t.isVideo && com.nostrvault.ui.navigation.FloatingButtonRow.reservedWidth == 0.dp) {
                 IconButton(onClick = MusicPlayer::next, enabled = hasNext, modifier = Modifier.size(44.dp)) {
                     Icon(Icons.Filled.SkipNext, contentDescription = "Next song", tint = if (hasNext) PrimaryText else SecondaryText.copy(alpha = 0.35f))
                 }

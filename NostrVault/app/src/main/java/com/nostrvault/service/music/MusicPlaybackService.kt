@@ -7,12 +7,13 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
 /**
- * Plays Wavlake songs (and minimized live-stream audio) app-wide. As a
+ * Plays Wavlake songs (and minimized live-stream and video-clip sound) app-wide. As a
  * Media3 MediaSessionService it runs as a mediaPlayback foreground service
  * while playing, so music keeps going with the screen off or the app in the
  * background, and Media3 draws the notification and lock-screen controls.
  * iOS: MusicPlayerService.swift.
  */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class MusicPlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
 
@@ -30,6 +31,8 @@ class MusicPlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             // Keep the CPU and Wi-Fi awake while streaming with the screen off.
             .setWakeMode(C.WAKE_MODE_NETWORK)
+            // A minimized video clip plays from the viewers' cache.
+            .setMediaSourceFactory(MusicMediaSources(this))
             .build()
         // A live stream rejoins the broadcast on Play, from the app, the
         // notification or the lock screen alike, and an item that fell behind
