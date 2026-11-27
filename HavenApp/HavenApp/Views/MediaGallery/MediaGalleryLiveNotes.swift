@@ -33,7 +33,7 @@ extension FileNoteTile {
         else { type = .unknown }
         return MediaItem(id: Self.stableID(sha256), url: url, type: type,
                          dateAdded: Date(timeIntervalSince1970: TimeInterval(createdAt)),
-                         pubkey: owner, tags: nil, mimeType: mime)
+                         pubkey: owner, tags: nil, mimeType: mime, size: size > 0 ? size : nil)
     }
 
     /// The same id for the same hash on every redraw, so the grid keeps its cell.

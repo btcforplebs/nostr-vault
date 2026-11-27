@@ -44,6 +44,8 @@ enum MediaSortOption: String, CaseIterable, Identifiable {
     case oldestFirst
     case mediaType
     case onRelayFirst
+    case largestFirst
+    case smallestFirst
 
     var id: String { rawValue }
 
@@ -53,6 +55,8 @@ enum MediaSortOption: String, CaseIterable, Identifiable {
         case .oldestFirst:  return "Oldest first"
         case .mediaType:    return "Media type"
         case .onRelayFirst: return "On relay first"
+        case .largestFirst: return "Largest first"
+        case .smallestFirst: return "Smallest first"
         }
     }
 
@@ -62,6 +66,8 @@ enum MediaSortOption: String, CaseIterable, Identifiable {
         case .oldestFirst:  return "arrow.up"
         case .mediaType:    return "square.grid.3x3"
         case .onRelayFirst: return "externaldrive"
+        case .largestFirst: return "arrow.down.circle"
+        case .smallestFirst: return "arrow.up.circle"
         }
     }
 
@@ -77,7 +83,9 @@ enum MediaSortOption: String, CaseIterable, Identifiable {
 
     /// Orders `items` for this option. Every branch falls back to date so the
     /// result is fully determined and does not shuffle between runs.
-    func sorted(_ items: [MediaItem], isOnRelay: (MediaItem) -> Bool) -> [MediaItem] {
+    /// `sizeOf` is for the size sorts: by default what the item and its note know.
+    func sorted(_ items: [MediaItem], sizeOf: (MediaItem) -> Int64? = { $0.knownSize },
+                isOnRelay: (MediaItem) -> Bool) -> [MediaItem] {
         switch self {
         case .newestFirst:
             return items.sorted(by: Self.newer)
@@ -95,6 +103,11 @@ enum MediaSortOption: String, CaseIterable, Identifiable {
                 if a != b { return a }
                 return Self.newer($0, $1)
             }
+        case .largestFirst, .smallestFirst:
+            let largest = self == .largestFirst
+            return items.map { ($0, sizeOf($0)) }.sorted {
+                MediaSizeOrder.before($0.1, $1.1, largestFirst: largest) ?? Self.newer($0.0, $1.0)
+            }.map(\.0)
         }
     }
 
@@ -126,4 +139,9 @@ extension MediaDateSection {
         MediaDateGrouping.runs(of: items, date: \.dateAdded, now: now, calendar: calendar)
             .map { MediaDateSection(id: $0.title, title: $0.title, items: $0.items) }
     }
+}
+
+extension MediaItem {
+    /// The size known without asking a server: the item's own, else its note's tags.
+    var knownSize: Int64? { MediaItemSize.first(size, MediaItemSize.fromTags(tags, url: url)) }
 }

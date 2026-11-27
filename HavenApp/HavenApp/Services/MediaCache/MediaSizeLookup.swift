@@ -23,6 +23,9 @@ final class MediaSizeLookup {
         cache = saved
     }
 
+    /// Every learned size by hash, for a sort that runs off the main actor.
+    func snapshot() -> [String: Int64] { cache.entries.mapValues(\.size) }
+
     /// The size already known for `hash`, without asking anyone.
     func cached(hash: String) -> Int64? { cache.size(hash) }
 

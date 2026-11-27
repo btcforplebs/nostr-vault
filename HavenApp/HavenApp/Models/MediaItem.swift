@@ -8,6 +8,9 @@ struct MediaItem: Identifiable, Codable, Hashable, Equatable {
     let pubkey: String? // Author of the event containing this media
     let tags: [[String]]? // Tags of the event containing this media
     let mimeType: String?
+    /// Bytes, when a local source knows it (A1): this device's file, or the
+    /// file note's `size`. nil is unknown, never empty. See `knownSize`.
+    var size: Int64? = nil
 
     enum MediaType: String, Codable, Hashable, Equatable {
         case image
