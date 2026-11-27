@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -111,6 +112,10 @@ class MirrorDeleteParityTest {
     @Test
     fun `the confirmation text is the iOS text`() {
         assertEquals("Removes this file from all your media servers. Your vault keeps its copy.", deleteBlobConfirmBody(DeleteScope.MIRRORS))
+        // Delete from this device names where the copy stays: an outside server that proved it, never the vault.
+        val here = deleteBlobConfirmBody(DeleteScope.THIS_DEVICE)
+        assertTrue(here.contains("outside media server that confirms"))
+        assertFalse(here.contains("vault keeps"))
         assertEquals(
             "Permanently removes this file from your vault and all your media servers. This cannot be undone.",
             deleteBlobConfirmBody(DeleteScope.EVERYWHERE),
