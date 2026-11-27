@@ -38,19 +38,19 @@ object VaultSearchLogic {
 
     /**
      * Hashtags on the matched notes that contain any word of the query, from the
-     * text (`#word`) and from `t` tags, lowercased, deduplicated and sorted. `#`
-     * in the query is ignored, so "#bitcoin" and "bitcoin" find the same tags.
+     * text (`#word`) and from `t` tags, lowercased and deduplicated, in
+     * [HashtagSearchRank] order (the tag typed, then the most used, then A-Z).
+     * `#` in the query is ignored, so "#bitcoin" and "bitcoin" find the same tags.
      */
     fun hashtags(contents: List<Pair<String, List<List<String>>>>, query: String): List<String> {
-        val words = query.lowercase().replace("#", " ").split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val words = HashtagSearchRank.words(query)
         if (words.isEmpty()) return emptyList()
-        val found = HashSet<String>()
-        for ((content, tags) in contents) {
-            val all = hashtagsInText(content) +
-                tags.filter { it.size >= 2 && it[0] == "t" && it[1].isNotEmpty() }.map { it[1].lowercase() }
-            for (tag in all) if (words.any { tag.contains(it) }) found += tag
+        val counts = HashtagSearchRank.counts(contents) { (content, tags) ->
+            (hashtagsInText(content) +
+                tags.filter { it.size >= 2 && it[0] == "t" && it[1].isNotEmpty() }.map { it[1].lowercase() })
+                .filter { tag -> words.any { tag.contains(it) } }
         }
-        return found.sorted()
+        return HashtagSearchRank.order(counts, query)
     }
 
     /** `#word` hashtags in a note's text, lowercased, without the `#`. */
