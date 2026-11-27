@@ -3,7 +3,7 @@ import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "./Avatar.jsx"
 import { Badges } from "./Badges.jsx"
 import { useProfile } from "./useProfile.js"
-import { fetchFollowers, keptFollowers } from "../net/followers.js"
+import { fetchFollowersInWeb, keptFollowers, webKey } from "../net/followers.js"
 import { MediaLightbox } from "./MediaLightbox.jsx"
 import { imageItem } from "../net/note-media.js"
 import { NoteText } from "./NoteText.jsx"
@@ -15,10 +15,12 @@ if (import.meta.env) import("../styles/profile.css")
 /** The iOS profile header (ProfileContent+Header): banner a third of the width fading to black, a 72 ringed avatar
  *  half over it, name + the seal (on a NIP-05, as on note rows and the iPhone) with the YOU / MUTUAL / FOLLOWING /
  *  FOLLOWS YOU badge at the right edge, bio, chips, counts, then `children` (Edit Profile or Follow, and WoT).
- *  Followers is asked for after the header is drawn (net/followers.js) and shows "—" until a relay counts it. */
-export function ProfileHeader({ pubkey, follows, you = true, relation = "", children }) {
+ *  Following and Followers count only people inside your web (Logen 2026-11-27, your own profile and everyone
+ *  else's): `follows` is the caller's in-web count, and `webKeys` (the gate's web, webKeysOf) are who Followers counts,
+ *  asked for after the header is drawn (net/followers.js fetchFollowersInWeb); "—" until a relay counts it. */
+export function ProfileHeader({ pubkey, follows, webKeys = [], you = true, relation = "", children }) {
   const p = useProfile(pubkey)
-  const followers = useFollowers(pubkey)
+  const followers = useFollowers(pubkey, webKeys)
   const npub = npubEncode(pubkey)
   // Offline, the banner URL fails: drop the img so the gradient shows, not a broken-image icon. Keyed on the URL so a newer one gets its chance.
   const [badBanner, setBadBanner] = useState("")
@@ -73,17 +75,19 @@ function Relation({ kind }) {
   return null
 }
 
-/** The relays' Followers count for pk, filled in once they answer; a count kept from a recent open shows at once. */
-function useFollowers(pk) {
-  const [n, setN] = useState(() => keptFollowers(pk) ?? null)
+/** pk's followers inside your web, filled in once the relays answer; a count kept from a recent open shows at once.
+ *  Asked again when the web grows (the follows' lists coming in), keeping the last number up meanwhile. */
+function useFollowers(pk, webKeys) {
+  const web = webKey(webKeys)
+  const [n, setN] = useState(() => keptFollowers(pk, Date.now(), web) ?? null)
   useEffect(() => {
-    const kept = keptFollowers(pk)
-    setN(kept ?? null)
-    if (kept != null) return
+    const kept = keptFollowers(pk, Date.now(), web)
+    if (kept != null) { setN(kept); return }
     let live = true
-    fetchFollowers(pk, c => { if (live) setN(c) })
+    fetchFollowersInWeb(pk, webKeys, c => { if (live) setN(c) })
     return () => { live = false }
-  }, [pk])
+  }, [pk, web])
+  useEffect(() => { setN(keptFollowers(pk, Date.now(), web) ?? null) }, [pk])
   return n
 }
 

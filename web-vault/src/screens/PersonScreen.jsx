@@ -3,6 +3,8 @@
 // come from their write relays and Haven /feed (net/person.js keeps fetched ones in memory); follows: net/follows.js.
 import { useEffect, useMemo, useState } from "preact/hooks"
 import { ProfileHeader } from "../components/ProfileHeader.jsx"
+import { webKeysOf } from "../net/followers.js"
+import { OutsideWeb, profileOutside } from "../components/outside-web.js"
 import { ProfileTabs, useNoteStream } from "./ProfileTabs.jsx"
 import { ZapButton, useWallet } from "../components/ZapButton.jsx"
 import { MoreMenu, UnblockDialog } from "../components/Moderation.jsx"
@@ -38,6 +40,9 @@ export function PersonScreen({ ctx, pubkey }) {
   const [unblocking, setUnblocking] = useState(false)
   const { blocked } = useBlocks(ctx)
   const web = useWebTrust(ctx)
+  // Following, Followers and whoever the page brings in count or show only inside your web (outside-web.js).
+  const webKeys = useMemo(() => webKeysOf(web.gate), [web.gate])
+  const outside = useMemo(() => profileOutside(web.inside, pubkey), [web.gate, pubkey])
   const isBlocked = blocked.has(pubkey)
   const p = useProfile(pubkey)
   const wallet = useWallet()
@@ -113,8 +118,9 @@ export function PersonScreen({ ctx, pubkey }) {
   const waiting = busy && ctx.signer.method === "nip46" ? "Waiting for your signer…" : want != null && !account.loaded ? "Waiting for your follow list…" : ""
 
   return (
+    <OutsideWeb.Provider value={outside}>
     <main class="screen">
-      <ProfileHeader pubkey={pubkey} you={false} relation={relation(iFollow, followsMe)} follows={lists?.contacts ? followsOf(lists.contacts).length : null}>
+      <ProfileHeader pubkey={pubkey} you={false} relation={relation(iFollow, followsMe)} follows={lists?.contacts ? followsOf(lists.contacts).filter(pk => web.inside(pk)).length : null} webKeys={webKeys}>
         <div class="person-actions">
           {/* Until the user's own list has been read there is nothing safe to build a new one on. */}
           <button class={shown ? "follow-btn on" : "follow-btn"} disabled={busy || ctx.signer?.readOnly} onClick={toggle} aria-busy={busy || want != null || undefined} aria-pressed={shown}>
@@ -147,5 +153,6 @@ export function PersonScreen({ ctx, pubkey }) {
             {status && !isBlocked && <div class="status-line">{status}</div>}
       {!isBlocked && <ProfileTabs notes={notes} tagged={tagged} articles={articles} shop={shop} pubkey={pubkey} blocked={blocked} inside={web.inside} />}
     </main>
+    </OutsideWeb.Provider>
   )
 }
