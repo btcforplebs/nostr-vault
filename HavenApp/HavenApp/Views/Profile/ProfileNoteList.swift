@@ -2,22 +2,19 @@ import SwiftUI
 
 /// The rows under a profile's Notes, Replies, Reposts and Tagged tabs.
 ///
-/// Its own view so the likes, reposts and zap counts under each post redraw
-/// only the list. `ProfileEngagementStore` publishes as each relay answers,
-/// and while it was observed by the whole page every answer rebuilt the
-/// banner, header and tab bar too.
-///
-/// The page redraws only for its own person's profile, so the list watches
-/// the people its rows show (tagged authors, reposted and replied-to people)
-/// and redraws itself when one of theirs arrives.
+/// Observes nothing. Each row is a `ProfileNoteRowHost`, which redraws on
+/// its own for the likes, numbers and profiles it shows, so this list's
+/// body (and the page around it) runs only when the tab's notes change.
 struct ProfileNoteList<Footer: View>: View {
     let notes: [FeedNote]
     let section: ProfileSection
     /// Whose profile this is.
     let pubkey: String
     let profile: FeedProfile?
+    /// The loader's hash of this tab's note ids, worked out once per change
+    /// to the notes (`ProfileFeedLoader.idsHash(for:)`).
+    let idsHash: Int
     let feedService: FeedService
-    let nostrService: NostrService
     let onReply: (FeedNote) -> Void
     let onQuote: (FeedNote) -> Void
     let onProfile: (String) -> Void
@@ -25,15 +22,8 @@ struct ProfileNoteList<Footer: View>: View {
     let onOpen: (FeedNote) -> Void
     @ViewBuilder let footer: () -> Footer
 
-    @ObservedObject private var engagementStore = ProfileEngagementStore.shared
-    /// Bumped when a profile one of the rows shows arrives.
-    @State private var profilesSeen = 0
-
     var body: some View {
-        let _ = profilesSeen
         let firstID = notes.first?.id
-        // Counts under each post are from people inside your web only.
-        let isInside = GateInsideKeys.shared.predicate(for: feedService.feedGate)
         LazyVStack(spacing: 0) {
             ForEach(notes) { note in
                 if note.id != firstID {
@@ -42,7 +32,8 @@ struct ProfileNoteList<Footer: View>: View {
                         .frame(height: 0.5)
                         .padding(.leading, 16)
                 }
-                row(note, isInside: isInside)
+                ProfileNoteRowHost(note: note, section: section, profile: profile,
+                                   onReply: onReply, onQuote: onQuote, onProfile: onProfile, onMedia: onMedia)
                     .contentShape(Rectangle())
                     .onTapGesture { onOpen(note) }
             }
@@ -54,50 +45,9 @@ struct ProfileNoteList<Footer: View>: View {
         // the ids, so a redraw does not copy the list to compare it.
         .task(id: section == .tagged ? 0 : idsHash) {
             guard section != .tagged else { return }
-            await engagementStore.load(ids: notes.map { feedService.originalNote(for: $0).id }, author: pubkey)
-        }
-        .onReceive(nostrService.$profileUpdates.dropFirst()) { signal in
-            if !signal.pubkeys.isDisjoint(with: rowPeople) { profilesSeen &+= 1 }
+            await ProfileEngagementStore.shared.load(ids: notes.map { feedService.originalNote(for: $0).id }, author: pubkey)
         }
         .scrollTargetLayout()
         .padding(.top, 4)
-    }
-
-    private var idsHash: Int {
-        var hasher = Hasher()
-        for note in notes { hasher.combine(note.id) }
-        return hasher.finalize()
-    }
-
-    /// Everyone whose name or picture a row draws.
-    private var rowPeople: Set<String> {
-        var people = Set<String>()
-        for note in notes {
-            people.insert(note.pubkey)
-            if let reposter = note.repostedBy { people.insert(reposter) }
-            if let repliedTo = note.replyToPubkey { people.insert(repliedTo) }
-            people.insert(feedService.originalNote(for: note).pubkey)
-            if let parent = note.parentEventId.flatMap({ feedService.findNote(id: $0) }) {
-                people.insert(parent.pubkey)
-            }
-        }
-        return people
-    }
-
-    private func row(_ note: FeedNote, isInside: (String) -> Bool) -> some View {
-        FeedNoteRow(
-            note: note,
-            profile: section == .tagged ? nostrService.profiles[note.pubkey] : profile,
-            rowData: FeedNoteRowData.resolve(
-                for: note,
-                feedService: feedService,
-                nostrService: nostrService
-            ).with(engagement: engagementStore.engagement(for: feedService.originalNote(for: note).id, isInside: isInside)),
-            onReply: { onReply(note) },
-            onQuote: { onQuote(note) },
-            onProfile: onProfile,
-            onMedia: onMedia,
-            showParent: false
-        )
     }
 }

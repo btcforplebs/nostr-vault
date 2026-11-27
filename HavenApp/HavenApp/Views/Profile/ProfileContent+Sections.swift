@@ -275,8 +275,8 @@ extension ProfileContent {
                 section: selectedSection,
                 pubkey: pubkey,
                 profile: profile,
+                idsHash: loader.idsHash(for: selectedSection),
                 feedService: feedService,
-                nostrService: nostrService,
                 onReply: { note in
                     if note.kind == 6, let refId = note.repostedEventId,
                        let original = feedService.findNote(id: refId) {

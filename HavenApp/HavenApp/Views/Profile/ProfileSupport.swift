@@ -106,10 +106,12 @@ final class ProfileExtrasLoader: ObservableObject {
 
 // MARK: - Feed changes the profile shows
 
-/// Redraws the profile for the main-feed state it reads: who you follow,
-/// your likes, reactions, reposts and zaps on its notes, and fetched
-/// originals of reposted or replied-to notes. Not for the feed's own notes,
-/// paging or connection state, which change constantly and are not shown.
+/// Redraws the profile page for the little it reads from app-wide state:
+/// who you follow (your own Following count) and whether outside-web notes
+/// fold (the Tagged tab). Everything a row shows (likes, reposts, zaps,
+/// parents, numbers, zap settings) redraws that row alone
+/// (`ProfileRowSignals`), and the rest of the config is read when used, not
+/// observed (Profile perf review 11-27 #5).
 @MainActor
 final class ProfileFeedWatch: ObservableObject {
     private var cancellable: AnyCancellable?
@@ -119,15 +121,11 @@ final class ProfileFeedWatch: ObservableObject {
         // dropFirst: each @Published sends its current value on subscribe.
         let changes: [AnyPublisher<Void, Never>] = [
             feed.$followedPubkeys.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            feed.$likedEventIds.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            feed.$myReactions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            feed.$repostedEventIds.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            feed.$zappedEventIds.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            feed.$parentNotesCache.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            ConfigService.shared.$config.map(\.showsOutsideUnderPosts).removeDuplicates()
+                .dropFirst().map { _ in () }.eraseToAnyPublisher(),
         ]
         // @Published fires before the value is stored; the throttle delivers
-        // on the next run loop pass, after it is. The first change in a burst
-        // goes through at once, so a like still shows straight away.
+        // on the next run loop pass, after it is.
         cancellable = Publishers.MergeMany(changes)
             .throttle(for: .milliseconds(150), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] in self?.objectWillChange.send() }

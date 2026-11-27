@@ -41,7 +41,9 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
     /// redraws for this profile's own metadata.
     var nostrService: NostrService { .shared }
     @StateObject private var metadataWatch = ProfileMetadataWatch()
-    @EnvironmentObject var configService: ConfigService
+    /// Not observed: any settings change redrew the whole page. The one
+    /// setting the page draws from comes through `feedWatch`.
+    var configService: ConfigService { .shared }
     /// Not observed: the main feed changes many times a second while it
     /// loads, and observing all of it redrew this page each time.
     /// `feedWatch` redraws only for the parts this page shows.
