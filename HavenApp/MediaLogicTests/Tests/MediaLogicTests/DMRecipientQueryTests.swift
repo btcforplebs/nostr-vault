@@ -11,7 +11,8 @@ final class DMRecipientQueryTests: XCTestCase {
     private var names: [String: String] { [alice: "Alice", bob: "Bob Alison", me: "Me Alias"] }
 
     private func resolve(_ text: String, blocked: Set<String> = []) -> DMRecipientQuery.Outcome {
-        DMRecipientQuery.resolve(text, names: names, blocked: blocked, own: me)
+        DMRecipientQuery.resolve(text, people: names.map { PeopleSearchRank.Person(pubkey: $0.key, displayName: $0.value) },
+                                 blocked: blocked, own: me)
     }
 
     private func npub(_ hex: String) -> String {
@@ -40,6 +41,14 @@ final class DMRecipientQueryTests: XCTestCase {
         XCTAssertEqual(resolve("ali"), .matches([alice, bob]), "prefix match first; never yourself")
         XCTAssertEqual(resolve("zz"), .noMatch)
         XCTAssertEqual(resolve("a"), .idle)
+    }
+
+    /// Search plan A4: the shared order, so someone you follow comes first.
+    func testFollowsComeFirst() {
+        let people = names.map { PeopleSearchRank.Person(pubkey: $0.key, displayName: $0.value) }
+        let circle = PeopleSearchRank.Circle(own: [], follows: [bob], web: [])
+        XCTAssertEqual(DMRecipientQuery.resolve("ali", people: people, circle: circle, blocked: [], own: me),
+                       .matches([bob, alice]))
     }
 
     func testBlockedPeopleNeverComeUp() {

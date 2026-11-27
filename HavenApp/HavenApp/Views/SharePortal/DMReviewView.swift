@@ -82,20 +82,27 @@ struct DMReviewView: View {
     }
 
     /// Empty search: recent share recipients, then recent conversations.
-    /// Otherwise names on this device, or the pasted npub.
+    /// Otherwise names on this device in the shared people order
+    /// (`PeopleSearchRank`), or the pasted npub. Blocked people never come up.
     private var candidates: [String] {
+        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
         if q.lowercased().hasPrefix("npub1") {
             guard let d = Bech32.decode(q), d.hrp == "npub" else { return [] }
-            return [d.hexString]
+            return BlockedPeople.isBlocked(d.hexString, in: blocked) ? [] : [d.hexString]
         }
         if q.count >= 2 {
-            let lower = q.lowercased()
-            return Array(nostr.profiles.filter { ($0.value.bestName).lowercased().contains(lower) }.keys.sorted().prefix(10))
+            let circle = PeopleSearchRank.Circle(own: [], follows: Set(FeedService.shared.followedPubkeys),
+                                                 web: FeedService.shared.webOfTrustForRanking,
+                                                 copy: DiscoveryReachStore.shared.copy)
+            return PeopleSearchRank.rank(Array(nostr.profiles.values), query: q, circle: circle,
+                                         blocked: blocked, limit: 10, person: PeopleSearchRank.person)
+                .map(\.pubkey)
         }
         let recent = (NVShareContactsSnapshot.read()?.contacts(for: npub) ?? []).compactMap { Bech32.decode($0.npub)?.hexString }
         var seen = Set<String>()
-        return (recent + dm.visibleConversations.prefix(8).map(\.id)).filter { seen.insert($0).inserted }
+        return (recent + dm.visibleConversations.prefix(8).map(\.id))
+            .filter { seen.insert($0).inserted && !BlockedPeople.isBlocked($0, in: blocked) }
     }
 
     private func person(_ hex: String) -> some View {

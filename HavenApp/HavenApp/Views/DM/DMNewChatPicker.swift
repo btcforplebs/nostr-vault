@@ -13,7 +13,10 @@ struct DMNewChatPicker: View {
     @FocusState private var focused: Bool
 
     private var outcome: DMRecipientQuery.Outcome {
-        DMRecipientQuery.resolve(typed, names: nostrService.profiles.compactMapValues { $0.bestName },
+        DMRecipientQuery.resolve(typed, people: nostrService.profiles.values.map(PeopleSearchRank.person),
+                                 circle: PeopleSearchRank.Circle(own: [], follows: Set(FeedService.shared.followedPubkeys),
+                                                                 web: FeedService.shared.webOfTrustForRanking,
+                                                                 copy: DiscoveryReachStore.shared.copy),
                                  blocked: configService.activeAccountBlockedHexPubkeys,
                                  own: configService.activeAccountHexPubkey)
     }
