@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nostrvault.service.*
-import com.nostrvault.ui.screens.dashboard.formatSize
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -49,8 +48,17 @@ internal fun MediaListRow(
     moderationTarget: String?,
     onReport: (String) -> Unit,
     onBlock: (String) -> Unit,
+    sizeLookup: BlobSizeLookup? = null,
 ) {
     val context = LocalContext.current
+    // Z1: a size no list, note or file gave is asked of the server once the row shows.
+    var learnedSize by remember(item.sha256) { mutableStateOf<Long?>(null) }
+    if (sizeLookup != null && (item.size ?: 0L) <= 0L) {
+        LaunchedEffect(item.sha256, item.displayUrl) {
+            learnedSize = withContext(Dispatchers.IO) { sizeLookup.cached(item.sha256) }
+                ?: sizeLookup.size(item.sha256, item.displayUrl)
+        }
+    }
     val colors = LocalNostrVaultColors.current
 
     Row(
@@ -108,26 +116,22 @@ internal fun MediaListRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(2.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Type badge
-                Text(
-                    text = when {
-                        item.isVideo -> "Video"
-                        item.isImage -> "Image"
-                        item.isAudio -> "Audio"
-                        else -> "Other"
-                    },
-                    color = SecondaryText,
-                    fontSize = 12.sp,
-                )
-                if (item.size != null && item.size > 0) {
-                    Text(
-                        text = " \u00B7 ${formatSize(item.size)}",
-                        color = TertiaryText,
-                        fontSize = 12.sp,
-                    )
-                }
-            }
+            // "2.4 MB · Video · 3 Nov", as iOS MediaRowDetailLine; "—" for an unknown size.
+            Text(
+                text = MediaRowLine.text(item.size?.takeIf { it > 0 } ?: learnedSize, MediaRowLine.typeLabel(item), item.sortTime),
+                color = SecondaryText,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // Where it is: this phone's vault, or the link's host (iOS MediaListItem's location line).
+            Text(
+                text = if (item.isLocal) "On this device" else MediaRowLine.host(item.displayUrl) ?: "Link only",
+                color = if (item.isLocal) Color(0xFF34C759) else TertiaryText,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
 
         // Quick backup actions, as iOS MediaListItem: upload what this phone
