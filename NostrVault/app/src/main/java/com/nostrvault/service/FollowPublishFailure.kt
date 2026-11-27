@@ -67,11 +67,11 @@ internal fun followFailedMessage(follow: Boolean, failure: FollowPublishFailure?
             "Couldn't $verb: your relay list has only one relay, and your newest follow list needs two of your relays " +
                 "to answer before it can be checked. Nothing changed. Add a relay in Settings › Relays, then try again."
         FollowPublishFailure.NoneAnswered ->
-            "Couldn't $verb: no relay answered, so your newest follow list can't be checked. Nothing changed. " +
+            "Couldn't $verb: none of your relays answered, so your newest follow list can't be checked. Nothing changed. " +
                 "Check your connection, then try again."
         FollowPublishFailure.OneAnswered ->
-            "Couldn't $verb: only 1 relay answered, and it takes 2 to check your newest follow list. Nothing changed. " +
-                "Try again in a moment."
+            "Couldn't $verb: only 1 of your relays answered, and it takes 2 of them to check your newest follow list. " +
+                "Nothing changed. Try again in a moment."
         FollowPublishFailure.NotEnoughAnswered ->
             "Couldn't $verb: not enough relays answered, so your newest follow list can't be checked. " +
                 "Nothing changed. Try again in a moment."

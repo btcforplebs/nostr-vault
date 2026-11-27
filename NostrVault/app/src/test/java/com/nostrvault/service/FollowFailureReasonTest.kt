@@ -119,16 +119,16 @@ class FollowFailureReasonTest {
     @Test fun `one own relay answering says it takes two`() {
         onRelays = copy(setOf("wss://one", "wss://purplepag.es"))
         assertEquals(
-            "Couldn't follow: only 1 relay answered, and it takes 2 to check your newest follow list. Nothing changed. " +
-                "Try again in a moment.",
+            "Couldn't follow: only 1 of your relays answered, and it takes 2 of them to check your newest follow list. " +
+                "Nothing changed. Try again in a moment.",
             pill(),
         )
     }
 
-    @Test fun `no answer at all says no relay answered`() {
+    @Test fun `no answer at all says none of your relays answered`() {
         coEvery { nostr.lookupNewestReplaceable(3, alice, any(), any(), any()) } throws RuntimeException("offline")
         assertEquals(
-            "Couldn't unfollow: no relay answered, so your newest follow list can't be checked. Nothing changed. " +
+            "Couldn't unfollow: none of your relays answered, so your newest follow list can't be checked. Nothing changed. " +
                 "Check your connection, then try again.",
             pill(follow = false),
         )
