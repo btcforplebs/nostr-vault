@@ -23,7 +23,7 @@ const { imageItem } = await import("../src/net/note-media.js")
 const { mediaUrls, mediaTiles } = await import("../src/net/media.js")
 const { mediaFor, activityRows } = await import("../src/net/vault-lists.js")
 const { MediaImage } = await import("../src/components/MediaImage.jsx")
-const { MediaGrid } = await import("../src/components/MediaGrid.jsx")
+const { MediaGrid, GridPhoto } = await import("../src/components/MediaGrid.jsx")
 const { Thumb, ThumbPicture } = await import("../src/components/CondensedNote.jsx")
 const { ActivityRow, ActivityThumb } = await import("../src/screens/VaultScreen.jsx")
 
@@ -60,11 +60,12 @@ test("mediaUrls keeps a NIP-F1 photo link (as an image tile) and still drops any
   assert.equal(mediaTiles([note([], FIPS)])[0].type, "image")
 })
 
-test("Media grid: each photo tile is a MediaImage with the note's imeta hash and author", () => {
+test("Media grid: each photo tile hands MediaImage (via GridPhoto) the note's imeta hash and author", () => {
   const n = note([imeta(PHOTO, HASH)])
   const [tile] = MediaGrid({ tiles: mediaTiles([n]) }).props.children
-  const [img] = find(tile, MediaImage)
-  assert.ok(img, "MediaImage, not a plain <img>")
+  // GridPhoto draws an imeta `thumb` first and MediaImage with this item when there is none or it fails (grid-thumb.js).
+  const [img] = find(tile, GridPhoto)
+  assert.ok(img, "GridPhoto, not a plain <img>")
   assert.equal(img.props.author, AUTHOR)
   assert.equal(img.props.item.x, HASH)
 })
