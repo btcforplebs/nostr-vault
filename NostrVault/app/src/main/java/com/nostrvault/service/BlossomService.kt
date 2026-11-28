@@ -844,6 +844,7 @@ class BlossomService @Inject constructor(
         homeVault.forgetBlob(sha256)
         val config = configStore.config.value
         val dir = config.relayDataDir?.let { File(it, config.blossomPath) } ?: return false
+        VaultVideoFrameFetcher.forget(dir, sha256)
         // Bare-hash file (how the relay stores blobs) is the common case.
         val exact = File(dir, sha256)
         if (exact.exists()) return exact.delete()

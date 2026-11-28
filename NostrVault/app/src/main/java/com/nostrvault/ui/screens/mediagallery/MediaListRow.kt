@@ -84,7 +84,7 @@ internal fun MediaListRow(
             } else {
                 AsyncImage(
                     model = ImageRequest.Builder(context)
-                        .data(item.localFile ?: item.displayUrl)
+                        .data(com.nostrvault.service.VaultVideoFrameFetcher.tileData(item.sha256, item.isVideo, item.localFile, item.displayUrl))
                         .size(160, 160)
                         .crossfade(false) // Instant rendering for list thumbnails
                         .build(),

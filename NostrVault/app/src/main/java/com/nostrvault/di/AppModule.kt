@@ -96,6 +96,8 @@ object AppModule {
                 // Before the built-in HTTP fetcher, which would download a whole
                 // video to read one frame of it.
                 add(com.nostrvault.service.RemoteVideoFrameFetcher.Factory())
+                // Media tiles' videos: blobs have no extension, so the gallery says which are videos.
+                add(com.nostrvault.service.VaultVideoFrameFetcher.Factory())
                 // BUD-10 blossom: links, drawn only from bytes that hash to the link.
                 add(com.nostrvault.service.BlossomUriLoader.Fetcher.Factory())
                 // htree:// (Iris hashtree) photos, drawn only once decrypted and checked.
