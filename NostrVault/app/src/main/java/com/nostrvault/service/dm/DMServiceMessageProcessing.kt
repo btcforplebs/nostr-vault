@@ -225,9 +225,7 @@ import com.nostrvault.service.DMService.Companion.TAG
                 )
 
                 recordOpened(counterparty, message)
-                withContext(Dispatchers.Main.immediate) {
-                    addMessageToConversation(counterparty, message)
-                }
+                mergeMessage(counterparty, message)
                 true
             } catch (e: Exception) {
                 Log.w(TAG, "NIP-04 decrypt failed: ${e.message}")

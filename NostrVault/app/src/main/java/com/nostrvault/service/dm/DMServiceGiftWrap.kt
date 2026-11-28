@@ -123,9 +123,7 @@ import com.nostrvault.service.DMService.Companion.TAG
                 )
 
                 recordOpened(counterparty, message)
-                withContext(Dispatchers.Main.immediate) {
-                    addMessageToConversation(counterparty, message)
-                }
+                mergeMessage(counterparty, message)
                 onGiftWrapOpened?.invoke(eventId)
                 true
             } catch (e: Exception) {
