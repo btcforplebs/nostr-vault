@@ -15,7 +15,9 @@ struct BottomTabBar: View {
     /// The news dot, read through relayManager; observed here so it stays live.
     @ObservedObject private var vaultNews = VaultNewsState.shared
     @ObservedObject var nostrService: NostrService
-    @ObservedObject var dmService: DMService
+    /// The unread total only: observing all of DMService redrew the bar on
+    /// every change to any conversation (Messages perf review 2026-11-28 #2).
+    @ObservedObject private var dmUnread = DMUnreadBadge.shared
     @ObservedObject var feedService: FeedService
     /// iPad landscape: the same items stacked down a slim sidebar, no fold.
     var vertical = false
@@ -50,7 +52,7 @@ struct BottomTabBar: View {
             if vertical { sidebar } else { dock.environment(\.colorScheme, selectedTab == 3 ? .dark : scheme) }
         }
         // Reading DMs lowers what the dashboard saw, so the next one dots.
-        .onChange(of: dmService.totalUnreadCount) { _, unread in
+        .onChange(of: dmUnread.count) { _, unread in
             let seen = VaultNewsDot.seen(relayManager.dmUnreadSeen, afterUnread: unread)
             if seen != relayManager.dmUnreadSeen { relayManager.dmUnreadSeen = seen }
         }
@@ -253,7 +255,7 @@ struct BottomTabBar: View {
     /// The Vault tab's dot: something came in, a new message included.
     private var vaultHasNews: Bool {
         VaultNewsDot.isShown(newActivity: relayManager.hasNewRelayActivity,
-                             dmUnread: dmService.totalUnreadCount, dmUnreadSeen: relayManager.dmUnreadSeen)
+                             dmUnread: dmUnread.count, dmUnreadSeen: relayManager.dmUnreadSeen)
     }
 
 
