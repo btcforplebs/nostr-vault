@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Devices — Nostr Vault Docs</title>
-    <meta name="description" content="Link your iPhone, iPad, Android phone, Mac, mobile vault and browser vault over the mesh with two scans, so they share your posts and media.">
+    <meta name="description" content="Link your iPhone, iPad, Android phone, Mac, mobile vault and browser vault over the mesh with two scans, so they share your posts and media, and what to do if a device shows Offline.">
     <link rel="canonical" href="https://nostrvault.app/docs/mesh/my-devices/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/mesh/my-devices/">
     <meta property="og:title" content="My Devices — Nostr Vault Docs">
-    <meta property="og:description" content="Link your iPhone, iPad, Android phone, Mac, mobile vault and browser vault over the mesh with two scans, so they share your posts and media.">
+    <meta property="og:description" content="Link your iPhone, iPad, Android phone, Mac, mobile vault and browser vault over the mesh with two scans, so they share your posts and media, and what to do if a device shows Offline.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -137,7 +137,7 @@
         <main class="docs-main">
             <p class="eyebrow">Mesh and your devices</p>
             <h1>My Devices</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#your-devices">Your Devices</a></li><li><a href="#find-mesh-settings">Find Mesh settings</a></li><li><a href="#add">Link a device</a></li><li><a href="#copy">Copy your vault to a new device</a></li><li><a href="#list">The list</a></li><li><a href="#next">Next</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#your-devices">Your Devices</a></li><li><a href="#find-mesh-settings">Find Mesh settings</a></li><li><a href="#add">Link a device</a></li><li><a href="#copy">Copy your vault to a new device</a></li><li><a href="#list">The list</a></li><li><a href="#offline">If your device shows Offline</a></li><li><a href="#next">Next</a></li></ul></div>
 
             <article class="docs-article">
                 <p><strong>My Devices</strong> is the list of your own phones, iPads, Macs, mobile vault and browser vault that reach
@@ -232,6 +232,60 @@
                         (you confirm first). Android also shows when it was <span class="ui">Last seen</span>.</li>
                     <li>Once a device is on the list, only the devices on the list learn this phone's address. Anyone else on the mesh
                         gets public photos only.</li>
+                </ul>
+
+                <h2 id="offline">If your device shows Offline</h2>
+                <p>A device that is linked but shows <span class="ui">Offline</span> or <span class="ui">Not in reach</span> under
+                    Your Devices may simply be off, or Nostr Vault may be closed on it. If it is on and running, the usual cause is a
+                    <strong>firewall blocking the mesh</strong>. For now the app says Offline for both, so check the network before
+                    anything else.</p>
+                <ul>
+                    <li><strong>The mesh runs on UDP.</strong> Your phone and the vault send UDP to each other, directly on the same
+                        Wi-Fi, and through your router when you're out. A firewall that lets web pages through but blocks UDP stops
+                        the mesh, even though linking worked.</li>
+                    <li><strong>Your phone and the vault must be able to reach each other.</strong> A guest Wi-Fi, a network that keeps
+                        devices apart (common on hotel, school and office Wi-Fi), or a VPN on one side can stop them, even on the same
+                        network.</li>
+                    <li><strong>What the vault needs going out:</strong> secure web connections (TCP 443) to the mesh relays, and UDP
+                        to port 51820 at <code>fips1.iris.to</code> and <code>fips2.iris.to</code>. Most home networks allow both.</li>
+                </ul>
+
+                <h3>Linux box (Ubuntu, Zorin, Debian, Fedora and others)</h3>
+                <p>The box picks a different UDP port each time it starts, so first give it a fixed one, then open that port.
+                    We use <strong>47821</strong>, the same port the Start9 package uses.</p>
+                <ol class="steps">
+                    <li>Add this line to <code>/etc/nostr-vault/vault.env</code> (for example with
+                        <code>sudo nano /etc/nostr-vault/vault.env</code>). <code>nostr-vault-setup</code> keeps it when you change
+                        other settings.
+                <pre><code>NV_MESH_UDP_PORT=47821</code></pre></li>
+                    <li>Restart the mesh: <code>sudo systemctl restart nostr-vault-mesh</code></li>
+                    <li>Open the port in your firewall.
+                        <ul>
+                            <li><strong>ufw</strong> (Ubuntu, Zorin, Linux Mint):
+                                <code>sudo ufw allow 47821/udp</code></li>
+                            <li><strong>firewalld</strong> (Fedora, CentOS, openSUSE):
+                                <code>sudo firewall-cmd --permanent --add-port=47821/udp</code> then
+                                <code>sudo firewall-cmd --reload</code></li>
+                        </ul></li>
+                </ol>
+                <p>On NixOS set <code>services.nostr-vault.mesh.udpPort = 47821;</code> and, with <code>openFirewall = true;</code>, the module opens it for you. On
+                    Start9 the port is already fixed at 47821. On Umbrel there is no firewall to change.</p>
+
+                <h3>Mac</h3>
+                <p>The Mac firewall works per app, not per port. Open <span class="path">System Settings &rarr; Network &rarr;
+                    Firewall &rarr; Options</span>, make sure <strong>Block all incoming connections</strong> is off, and set Nostr
+                    Vault to <strong>Allow incoming connections</strong> (add it with <strong>+</strong> if it isn't listed). Another
+                    firewall app, such as Little Snitch or Lulu, needs Nostr Vault allowed for UDP too.</p>
+
+                <h3>Still Offline?</h3>
+                <ul>
+                    <li>Check Mesh is on, on both devices, and that each one lists the other under My Devices.</li>
+                    <li>On the phone, turn Wi-Fi off and try on mobile data. If it connects there, the Wi-Fi network is the problem.</li>
+                    <li>Turn off any VPN on the phone or the vault, and try again.</li>
+                    <li>On a Linux box, check the mesh is running: <code>systemctl status nostr-vault-mesh</code>. Its log is
+                        <code>journalctl -fu nostr-vault-mesh</code>.</li>
+                    <li>Still stuck? Open an issue on <a href="https://github.com/btcforplebs/nostr-vault/issues">GitHub</a> and say
+                        which devices, which network, and what the firewall is.</li>
                 </ul>
 
                 <h2 id="next">Next</h2>

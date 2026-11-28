@@ -137,7 +137,7 @@
         <main class="docs-main">
             <p class="eyebrow">Get started</p>
             <h1>Get started on Linux</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#needs">What you need</a></li><li><a href="#install">Install the .deb (Debian, Ubuntu, Raspberry Pi OS)</a></li><li><a href="#other">Fedora, Arch and Alpine</a></li><li><a href="#flatpak">Flatpak, for desktops (no mesh)</a></li><li><a href="#nix">NixOS (flake and module)</a></li><li><a href="#desktop">On a desktop: the window</a></li><li><a href="#open">Open your vault and link it</a></li><li><a href="#day-to-day">Day to day</a></li><li><a href="#beta">What works, and what's not there yet</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#needs">What you need</a></li><li><a href="#install">Install the .deb (Debian, Ubuntu, Raspberry Pi OS)</a></li><li><a href="#other">Fedora, Arch and Alpine</a></li><li><a href="#flatpak">Flatpak, for desktops (no mesh)</a></li><li><a href="#nix">NixOS (flake and module)</a></li><li><a href="#desktop">On a desktop: the window</a></li><li><a href="#open">Open your vault and link it</a></li><li><a href="#offline">If your phone shows the box Offline</a></li><li><a href="#day-to-day">Day to day</a></li><li><a href="#beta">What works, and what's not there yet</a></li></ul></div>
 
             <article class="docs-article">
                 <p>Nostr Vault for Linux turns a Linux machine into your always-on vault: a Raspberry Pi, a mini PC, a home server
@@ -285,6 +285,20 @@
                 </ol>
                 <div class="done"><p><strong>You're done when</strong> your phone shows the box in reach under Your Devices, and the
                     box's page lists your phone as <strong>Approved</strong>.</p></div>
+
+                <h2 id="offline">If your phone shows the box Offline</h2>
+                <p>Linked, but your phone shows the box <span class="ui">Offline</span> or <span class="ui">Not in reach</span>?
+                    The mesh runs on <strong>UDP</strong>, and a firewall on the box that blocks UDP stops it, even though linking
+                    worked. For now the app says Offline for a blocked network too. Give the mesh a fixed port and open it:</p>
+                <ol class="steps">
+                    <li>Add <code>NV_MESH_UDP_PORT=47821</code> to <code>/etc/nostr-vault/vault.env</code>, then run
+                        <code>sudo systemctl restart nostr-vault-mesh</code>. (Without it the box picks a new port each start.)</li>
+                    <li>Open the port: <code>sudo ufw allow 47821/udp</code> on Ubuntu, Zorin and Mint, or
+                        <code>sudo firewall-cmd --permanent --add-port=47821/udp</code> and
+                        <code>sudo firewall-cmd --reload</code> on Fedora.</li>
+                </ol>
+                <p>Your phone and the box also need to be able to reach each other: a guest Wi-Fi or a VPN can stop them. More
+                    checks are on <a href="/docs/mesh/my-devices/#offline">My Devices: If your device shows Offline</a>.</p>
 
                 <h2 id="day-to-day">Day to day</h2>
                 <ul>
