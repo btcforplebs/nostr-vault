@@ -39,7 +39,7 @@ class DMService: ObservableObject {
     /// every read: ~30-40 full scans of every message per incoming DM, and
     /// 36 a minute with the inbox idle (Messages perf review 2026-11-28 #2).
     private var trustSplit: DMTrustSplitMemo.Split {
-        trustMemo.split(DMTrustSplitMemo.Key(
+        return trustMemo.split(DMTrustSplitMemo.Key(
             blocked: ConfigService.shared.activeAccountBlockedHexPubkeys,
             mutes: MuteListStore.shared.active,
             showsMuted: showsMutedWordConversations,
