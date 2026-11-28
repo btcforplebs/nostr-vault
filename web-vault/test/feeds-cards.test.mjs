@@ -101,5 +101,6 @@ test("Media shows the grid, or says why it's empty, and always offers Older", as
   assert.match(elements(Media({ tiles: [], blockedAll: true, onOlder }))[0].props.children, /someone you blocked/)
   const [img, vid] = elements(MediaGrid({ tiles: [...tiles, { id: "2", url: "https://x.example/v.mp4", type: "video", count: 1 }] }))
   assert.equal(img.props.href, "#/thread/1", "a tap opens the note")
-  assert.equal(elements(vid)[0].type, "video"); assert.equal(elements(vid)[0].props.preload, "metadata", "only enough to show a frame")
+  assert.notEqual(elements(vid)[0].type, "video", "a video tile reads no video bytes until the note is opened (perf review 2026-11-28)")
+  assert.equal(elements(vid)[0].props.src, undefined, "no imeta poster: a plain tile")
 })

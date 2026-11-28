@@ -23,9 +23,9 @@ const { imageItem } = await import("../src/net/note-media.js")
 const { mediaUrls, mediaTiles } = await import("../src/net/media.js")
 const { mediaFor, activityRows } = await import("../src/net/vault-lists.js")
 const { MediaImage } = await import("../src/components/MediaImage.jsx")
-const { MediaGrid } = await import("../src/components/MediaGrid.jsx")
+const { MediaGrid, GridPhoto, GridVideo } = await import("../src/components/MediaGrid.jsx")
 const { Thumb, ThumbPicture } = await import("../src/components/CondensedNote.jsx")
-const { ActivityRow, ActivityThumb } = await import("../src/screens/VaultScreen.jsx")
+const { ActivityRow, ActivityThumb, List } = await import("../src/screens/VaultScreen.jsx")
 
 const HASH = "e40a76df2e154784d6d159ddca808c295eb514274b965d53e1f27575a6c8ee0e"
 const OTHER = "ab".repeat(32)
@@ -60,11 +60,12 @@ test("mediaUrls keeps a NIP-F1 photo link (as an image tile) and still drops any
   assert.equal(mediaTiles([note([], FIPS)])[0].type, "image")
 })
 
-test("Media grid: each photo tile is a MediaImage with the note's imeta hash and author", () => {
+test("Media grid: each photo tile hands MediaImage (via GridPhoto) the note's imeta hash and author", () => {
   const n = note([imeta(PHOTO, HASH)])
   const [tile] = MediaGrid({ tiles: mediaTiles([n]) }).props.children
-  const [img] = find(tile, MediaImage)
-  assert.ok(img, "MediaImage, not a plain <img>")
+  // GridPhoto draws an imeta `thumb` first and MediaImage with this item when there is none or it fails (grid-thumb.js).
+  const [img] = find(tile, GridPhoto)
+  assert.ok(img, "GridPhoto, not a plain <img>")
   assert.equal(img.props.author, AUTHOR)
   assert.equal(img.props.item.x, HASH)
 })
@@ -99,4 +100,22 @@ test("Vault: the media grid and activity thumbnails use MediaImage, with whose n
     assert.equal(img.props.author, by, kind)
     assert.equal(img.props.item.x, HASH, kind)
   }
+})
+
+test("Vault › Media › In your notes: each tile is a GridPhoto with the row's item and thumb (List draws, not throws)", () => {
+  const n = note([imeta(PHOTO, HASH)])
+  const row = { url: PHOTO, noteId: n.id, item: { url: PHOTO, type: "image", x: HASH }, thumb: "https://t.example/small.webp" }
+  const paged = List({ mode: "media", filter: "notes", items: [row], me: AUTHOR, page: { shown: 10, onMore: () => {} } })
+  const tile = paged.props.render(row)
+  const [img] = find(tile, GridPhoto)
+  assert.equal(img.props.thumb, row.thumb)
+  assert.equal(img.props.item.x, HASH)
+  assert.equal(img.props.author, AUTHOR)
+})
+
+test("Vault › In your notes: a video row is a GridVideo (poster + play mark), not a MediaImage of the video", () => {
+  const row = { url: "https://x.example/clip.mp4", noteId: "n", item: { url: "https://x.example/clip.mp4", type: "video" }, poster: "https://x.example/p.jpg" }
+  const tile = List({ mode: "media", filter: "notes", items: [row], me: AUTHOR, page: { shown: 10, onMore: () => {} } }).props.render(row)
+  assert.equal(find(tile, GridPhoto).length, 0)
+  assert.equal(find(tile, GridVideo)[0].props.poster, row.poster)
 })

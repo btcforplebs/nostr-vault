@@ -107,7 +107,7 @@ a.settings-row:hover { background: var(--s2); }
 .vault-thumbs { display: flex; gap: 6px; margin-top: 10px; }
 .vault-thumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; background: var(--s2); }
 .vault-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 0 var(--gutter); }
-.vault-thumb { display: block; aspect-ratio: 1; overflow: hidden; border-radius: 6px; background: var(--s1); }
+.vault-thumb { position: relative; display: block; aspect-ratio: 1; overflow: hidden; border-radius: 6px; background: var(--s1); }
 .vault-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .vault-quote { margin: 10px 0 6px; padding: 2px 0 2px 12px; border-left: 3px solid var(--accent); font: var(--t-body); white-space: pre-wrap; overflow-wrap: anywhere; }
 .highlight .person-sub { margin-top: 6px; }

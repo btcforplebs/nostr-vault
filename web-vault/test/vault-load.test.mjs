@@ -144,7 +144,7 @@ test("itemsFor builds the mode's rows, follow lines included; peopleOf names who
 
 test("the screen asks names once for everyone its rows name, on-screen rows first, and builds rows in a memo", () => {
   const src = readFileSync(new URL("../src/screens/VaultScreen.jsx", import.meta.url), "utf8")
-  assert.match(src, /const items = useMemo\(\(\) => itemsFor\(/)
+  assert.match(src, /const items = useMemo\(\(\) => withThumbs\(mode, filter, itemsFor\(/) // grid-thumb.js adds Media tiles' thumbs
   assert.match(src, /peopleOf\(mode, items\.slice\(0, shown\)\)/)
   assert.match(src, /asked\.current\.add\(pk\)/)
   assert.doesNotMatch(src, /activityRows\(inbound, me\)/, "the old names pass left likers, zappers and follows out")
