@@ -12,7 +12,6 @@ struct iPhoneTabView: View {
     // 2026-11-27 #1). The dock (`BottomTabBar`) observes them itself.
     private let nostrService = NostrService.shared
     private let feedService = FeedService.shared
-    private let dmService = DMService.shared
 
     @State private var searchPath = NavigationPath()
     @State private var profilePath = NavigationPath()
@@ -145,7 +144,6 @@ struct iPhoneTabView: View {
                 configService: configService,
                 relayManager: relayManager,
                 nostrService: nostrService,
-                dmService: dmService,
                 feedService: feedService
             )
             .background(
@@ -272,7 +270,6 @@ struct iPhoneTabView: View {
             configService: configService,
             relayManager: relayManager,
             nostrService: nostrService,
-            dmService: dmService,
             feedService: feedService,
             vertical: true,
             railOnRight: onRight,

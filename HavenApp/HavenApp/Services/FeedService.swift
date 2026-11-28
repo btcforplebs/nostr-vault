@@ -244,11 +244,14 @@ class FeedService: ObservableObject {
     // One client per relay URL
     var feedClients: [String: WebSocketClient] = [:]
 
-    /// Each feed relay's own socket state, keyed by `relayStateKey(_:)`. The
-    /// dashboard rows and the dot read this; `connectionStatus` alone only
-    /// says whether the feed has notes. Watched outside `cancellables`, which
-    /// mode and account switches clear while the sockets stay open.
-    @Published var relayStates: [String: WebSocketClient.ConnectionState] = [:]
+    /// Each feed relay's own socket state, keyed by `relayStateKey(_:)`;
+    /// `connectionStatus` alone only says whether the feed has notes. Watched
+    /// outside `cancellables`, which mode and account switches clear while the
+    /// sockets stay open. Not published: no screen draws it since the feed
+    /// dot went (9fe6bde11), and every socket state change woke each view
+    /// that observes FeedService — the tab bar ~every 3 s while idle with a
+    /// relay reconnecting (Messages perf review 2026-11-28 #8).
+    var relayStates: [String: WebSocketClient.ConnectionState] = [:]
     var relayStateSinks: [String: AnyCancellable] = [:]
 
     /// Relay keys whose messageSubject/connectionState sinks are currently live.

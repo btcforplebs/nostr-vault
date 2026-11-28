@@ -12,7 +12,9 @@ import Combine
 class DMService: ObservableObject {
     static let shared = DMService()
 
-    @Published var conversations: [DMConversation] = []
+    @Published var conversations: [DMConversation] = [] {
+        didSet { trustMemo.conversationsChanged() }
+    }
     @Published var isLoading: Bool = false
     /// Messages that arrived but the signer could not open yet (remote signer
     /// offline, slow or refused). Shown on the Messages screen, retried on
@@ -32,13 +34,24 @@ class DMService: ObservableObject {
     /// never answered. Never in the unread badge, never notified.
     var requestConversations: [DMConversation] { trustSplit.requests }
 
-    private var trustSplit: (inbox: [DMConversation], requests: [DMConversation]) {
-        let unblocked = withoutMutedWords(
-            BlockedPeople.visibleConversations(conversations, blocked: ConfigService.shared.activeAccountBlockedHexPubkeys) { $0.id })
-        return DMTrust.split(unblocked, trusted: dmTrusted, own: [loadedAccountPubkey],
-                             counterparty: { $0.id },
-                             youWrote: { $0.messages.contains(where: \.isFromMe) })
+    /// Worked out once per change to the conversations, the trust graph,
+    /// blocks or muted words (`DMTrustSplitMemo`). It used to be worked out on
+    /// every read: ~30-40 full scans of every message per incoming DM, and
+    /// 36 a minute with the inbox idle (Messages perf review 2026-11-28 #2).
+    private var trustSplit: DMTrustSplitMemo.Split {
+        return trustMemo.split(DMTrustSplitMemo.Key(
+            blocked: ConfigService.shared.activeAccountBlockedHexPubkeys,
+            mutes: MuteListStore.shared.active,
+            showsMuted: showsMutedWordConversations,
+            own: loadedAccountPubkey)) { [self] in
+            let unblocked = withoutMutedWords(
+                BlockedPeople.visibleConversations(conversations, blocked: ConfigService.shared.activeAccountBlockedHexPubkeys) { $0.id })
+            return DMTrust.split(unblocked, trusted: dmTrusted, own: [loadedAccountPubkey],
+                                 counterparty: { $0.id },
+                                 youWrote: { $0.messages.contains(where: \.isFromMe) })
+        }
     }
+    let trustMemo = DMTrustSplitMemo()
 
     /// Whether a conversation with `counterparty` belongs in the inbox.
     func isInboxConversation(_ counterparty: String) -> Bool {
@@ -52,12 +65,10 @@ class DMService: ObservableObject {
     /// now. Followers are not in it. Kept here, not read per render, because
     /// the graph is thousands of keys.
     var dmTrusted: Set<String> = [] {
-        didSet { if dmTrusted != oldValue { objectWillChange.send() } }
+        didSet { if dmTrusted != oldValue { trustMemo.trustChanged(); objectWillChange.send() } }
     }
 
-    var totalUnreadCount: Int {
-        visibleConversations.reduce(0) { $0 + $1.unreadCount }
-    }
+    var totalUnreadCount: Int { trustSplit.unread }
 
     var inboxClient: WebSocketClient?       // /chat (NIP-17 gift wraps)
     var nip04Client: WebSocketClient?        // /inbox (NIP-04 legacy DMs)
@@ -166,6 +177,7 @@ class DMService: ObservableObject {
         loadedAccountPubkey = NostrService.shared.activeHexPubkey
         setupThrottling()
         loadConversations()
+        followUnreadBadge()
 
         // React to account switches only (not every config save). Keyed on the
         // resolved hex key, not `activeAccountNpub`: a new account finishes setup

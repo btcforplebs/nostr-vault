@@ -119,6 +119,7 @@ struct DMThreadView: View {
                                         },
                                         onRemove: { dmService.removeFailed(message.id, in: counterpartyPubkey) }
                                     )
+                                    .equatable()
                                     .id(message.id)
                                 }
 
@@ -688,6 +689,11 @@ struct MessageBubbleView: View {
     var canRetry: Bool = false
     var onRetry: (() -> Void)? = nil
     var onRemove: (() -> Void)? = nil
+    /// Settings the bubble draws with (clean mode is read again in the body),
+    /// taken when it is made so `==`
+    /// (MessageBubbleView+Equatable) sees a change to them.
+    var masked = CleanMode.isOn
+    var outlined = ConfigService.shared.config.useOLED
 
     /// The text with its links marked; on a sent (purple) bubble they are
     /// underlined white rather than tinted, so they still read as links.
@@ -816,7 +822,7 @@ struct MessageBubbleView: View {
                 .opacity(message.sendState == nil ? 1 : 0.6)
                 .overlay(
                     Group {
-                        if !message.isFromMe && ConfigService.shared.config.useOLED {
+                        if !message.isFromMe && outlined {
                             receivedCorners
                                 .stroke(Color.platformSeparator, lineWidth: 0.8)
                         }
