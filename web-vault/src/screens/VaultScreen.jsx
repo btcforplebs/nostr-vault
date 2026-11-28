@@ -12,7 +12,7 @@ import { Mention, NoteText, TapImage } from "../components/NoteText.jsx"
 import { parseRef } from "../net/quotes.js"
 import { MediaImage } from "../components/MediaImage.jsx"
 import { GridPhoto } from "../components/MediaGrid.jsx"
-import { photoThumb } from "../components/grid-thumb.js"
+import { withThumbs } from "../components/grid-thumb.js"
 import { imageItem } from "../net/note-media.js"
 import { fipsRef } from "../net/fips-ref.js"
 import { ago } from "../components/time.js"
@@ -243,7 +243,7 @@ export function useVault(ctx, root) {
   const fresh = loaded && seen ? newModes(newest, seen, { current: mode, followersAt: webFollowers[0]?.at, followersSeen: followersSeen || Infinity }) : new Set()
 
   // The current list's rows, sorted once per change of what they're built from, not on every render.
-  const items = useMemo(() => itemsFor(mode, filter, { own, inbound, given, followers, me, blocked, trusted: network }), [mode, filter, own, inbound, given, followers, blocked, network])
+  const items = useMemo(() => withThumbs(mode, filter, itemsFor(mode, filter, { own, inbound, given, followers, me, blocked, trusted: network }), own), [mode, filter, own, inbound, given, followers, blocked, network])
   // Likes and Zaps rows name the note they were about.
   const wanted = mode === "likes" || mode === "zaps" ? items.map(r => r.noteId).filter(id => id && !notes.has(id)) : []
   useEffect(() => { if (wanted.length) fetchNotes(vault, wanted, relays).then(found => setNotes(prev => new Map([...prev, ...found]))).catch(() => {}) }, [wanted.join()])
@@ -305,7 +305,7 @@ export function VaultScreen({ ctx, desk = false }) {
       </header>
       {searching ? <VaultSearch ctx={ctx} onClose={() => setSearching(false)} /> : <>
       <div class="status-line keep">{status}</div>
-      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} items={items} me={me} followers={followers} notes={notes} own={own} trusted={trusted} unreadSince={unreadSince} refreshes={refreshes} fetched={ready} page={{ shown, onMore, busy: paging, older: older.own || older.inbound }} onFollowers={() => pick("followers")} />}
+      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} items={items} me={me} followers={followers} notes={notes} trusted={trusted} unreadSince={unreadSince} refreshes={refreshes} fetched={ready} page={{ shown, onMore, busy: paging, older: older.own || older.inbound }} onFollowers={() => pick("followers")} />}
       </>}
       <VaultButton desk={desk} />
     </main>
@@ -358,7 +358,7 @@ function merge(prev, fresh) {
 
 const Grid = ({ children }) => <div class="vault-grid">{children}</div>
 
-export function List({ ctx, mode, filter, items, me, followers, notes, own = [], trusted, unreadSince = Infinity, refreshes = 0, fetched = true, page = { shown: Infinity, onMore: () => {} }, onFollowers }) {
+export function List({ ctx, mode, filter, items, me, followers, notes, trusted, unreadSince = Infinity, refreshes = 0, fetched = true, page = { shown: Infinity, onMore: () => {} }, onFollowers }) {
   // Nothing in this browser's relay yet, but the relays are still being asked: placeholders, not "nothing here".
   const Empty = ({ text }) => fetched ? <p class="empty">{text}</p> : <VaultSkeleton mode={mode} />
   // A call, not a component made here: a new component type each render would draw every row again.
@@ -384,10 +384,10 @@ export function List({ ctx, mode, filter, items, me, followers, notes, own = [],
     case "media": {
       // The napplet switch on: the Media napplet (plan P5); "In your notes" stays here either way.
       if (filter !== "notes") return nappletsOn() ? <MediaPane ctx={ctx} filter={filter} /> : <BlossomGallery ctx={ctx} filter={filter} refreshes={refreshes} />
-      // A note's imeta `thumb` when it names one (grid-thumb.js), else the original.
-      const list = items, tagsOf = new Map(own.map(e => [e.id, e.tags]))
+      // `p.thumb`: the note's imeta thumb when it names one (withThumbs), else the original.
+      const list = items
       return (list.length || page.older)
-        ? paged(list, p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb"><GridPhoto item={p.item} thumb={photoThumb(p.url, tagsOf.get(p.noteId))} author={me} /></a>, Grid)
+        ? paged(list, p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb"><GridPhoto item={p.item} thumb={p.thumb} author={me} /></a>, Grid)
         : <Empty text="Pictures from your notes show here." />
     }
     case "likes": return (items.length || page.older) ? paged(items, r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "You haven't liked anything from here yet." : "No likes on your notes yet."} />

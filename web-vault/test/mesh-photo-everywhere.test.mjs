@@ -25,7 +25,7 @@ const { mediaFor, activityRows } = await import("../src/net/vault-lists.js")
 const { MediaImage } = await import("../src/components/MediaImage.jsx")
 const { MediaGrid, GridPhoto } = await import("../src/components/MediaGrid.jsx")
 const { Thumb, ThumbPicture } = await import("../src/components/CondensedNote.jsx")
-const { ActivityRow, ActivityThumb } = await import("../src/screens/VaultScreen.jsx")
+const { ActivityRow, ActivityThumb, List } = await import("../src/screens/VaultScreen.jsx")
 
 const HASH = "e40a76df2e154784d6d159ddca808c295eb514274b965d53e1f27575a6c8ee0e"
 const OTHER = "ab".repeat(32)
@@ -100,4 +100,15 @@ test("Vault: the media grid and activity thumbnails use MediaImage, with whose n
     assert.equal(img.props.author, by, kind)
     assert.equal(img.props.item.x, HASH, kind)
   }
+})
+
+test("Vault › Media › In your notes: each tile is a GridPhoto with the row's item and thumb (List draws, not throws)", () => {
+  const n = note([imeta(PHOTO, HASH)])
+  const row = { url: PHOTO, noteId: n.id, item: { url: PHOTO, type: "image", x: HASH }, thumb: "https://t.example/small.webp" }
+  const paged = List({ mode: "media", filter: "notes", items: [row], me: AUTHOR, page: { shown: 10, onMore: () => {} } })
+  const tile = paged.props.render(row)
+  const [img] = find(tile, GridPhoto)
+  assert.equal(img.props.thumb, row.thumb)
+  assert.equal(img.props.item.x, HASH)
+  assert.equal(img.props.author, AUTHOR)
 })

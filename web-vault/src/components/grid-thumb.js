@@ -42,3 +42,11 @@ export function videoPoster(url, tags) {
   const p = imetaPreview(url, tags)
   return p.thumb ?? p.image
 }
+
+/** Vault › Media "In your notes" rows ({ url, noteId, item }, net/vault-lists.js mediaFor) with each one's imeta
+ *  `thumb` from the note it came from (`own`: your events). Other lists pass through as they are. */
+export function withThumbs(mode, filter, items, own) {
+  if (mode !== "media" || filter !== "notes" || !items.length) return items
+  const tags = new Map(own.map(e => [e.id, e.tags]))
+  return items.map(p => { const thumb = photoThumb(p.url, tags.get(p.noteId)); return thumb ? { ...p, thumb } : p })
+}

@@ -3,7 +3,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { imetaPreview, photoThumb, videoPoster } from "../src/components/grid-thumb.js"
+import { imetaPreview, photoThumb, videoPoster, withThumbs } from "../src/components/grid-thumb.js"
 
 const P = "https://b.example/" + "a".repeat(64) + ".jpg"
 const V = "https://b.example/" + "b".repeat(64) + ".mp4"
@@ -45,5 +45,14 @@ test("the grid never draws a <video> tile, and both grids go through GridPhoto",
   assert.doesNotMatch(grid, /<video/)
   assert.match(grid, /<GridPhoto item=\{imageItem\(t\.url, t\.note\?\.tags\)\} thumb=\{photoThumb\(/)
   const vault = readFileSync(new URL("../src/screens/VaultScreen.jsx", import.meta.url), "utf8")
-  assert.match(vault, /class="vault-thumb"><GridPhoto item=\{p\.item\} thumb=\{photoThumb\(p\.url, tagsOf\.get\(p\.noteId\)\)\}/)
+  assert.match(vault, /class="vault-thumb"><GridPhoto item=\{p\.item\} thumb=\{p\.thumb\}/)
+  assert.match(vault, /withThumbs\(mode, filter, itemsFor\(/, "useVault adds the thumbs, where `own` is in scope")
+})
+
+test("withThumbs: In your notes rows get their note's thumb; other lists and thumbless rows are left alone", () => {
+  const own = [{ id: "n1", tags: [["imeta", `url ${P}`, `thumb ${T}`]] }, { id: "n2", tags: [] }]
+  const rows = [{ url: P, noteId: "n1" }, { url: I, noteId: "n2" }, { url: P, noteId: "gone" }]
+  assert.deepEqual(withThumbs("media", "notes", rows, own), [{ url: P, noteId: "n1", thumb: T }, rows[1], rows[2]])
+  assert.equal(withThumbs("media", "", rows, own), rows)
+  assert.equal(withThumbs("notes", "notes", rows, own), rows)
 })
