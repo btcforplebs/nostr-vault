@@ -207,8 +207,10 @@ export function resetMessages(pubkey) {
 /** Wraps opened per round: each costs two signer calls, so a first load of hundreds shows the newest ones first. */
 export const OPEN_BATCH = 8
 /** How many messages one load (or one "Open more") asks the signer to open, newest first. Each is two requests, and
- *  through a bunker each request is a relay round trip and maybe a prompt, so a bunker gets a lower ceiling. */
-export const OPEN_LIMIT = { nip46: 40, other: 200 }
+ *  through a bunker each request is a relay round trip and maybe a prompt, so a bunker gets a lower ceiling. An
+ *  extension or a key in this browser opens one in ~2 ms, so it opens a real inbox whole: at 200, chats showed 20 of
+ *  their 50 messages until Open more (perf review 2026-11-28 #7). */
+export const OPEN_LIMIT = { nip46: 40, other: 1000 }
 export const openLimit = session => (session?.method === "nip46" ? OPEN_LIMIT.nip46 : OPEN_LIMIT.other)
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`
