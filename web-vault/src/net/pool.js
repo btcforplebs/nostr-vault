@@ -6,6 +6,7 @@ import { setNostrWasm, verifyEvent as verifyInWasm } from "nostr-tools/wasm"
 import { normalizeURL } from "nostr-tools/utils"
 import { blocklist } from "./never-connect.js"
 import { relayBudget } from "./relay-budget.js"
+import { HIDDEN_PARK_MS, hiddenSockets } from "./hidden-sockets.js"
 
 // Hosts the iPhone app strips from saved lists because they stopped answering (HavenConfig.deadRelayHosts).
 export const DEAD_RELAY_HOSTS = new Set(["nos.lol", "nostr.mom", "offchain.pub"])
@@ -89,6 +90,8 @@ export class LivePool extends SimplePool {
   quickOpen = null // the open one-shot ask ({ open, onOpen }) while subscribeMap opens its relays, read synchronously by ensureRelay
   writeOpen = false // set while publish opens its relays, read synchronously by ensureRelay
   isHidden = () => globalThis.document?.visibilityState === "hidden"
+  hiddenParkMs = HIDDEN_PARK_MS // hidden-sockets.js: a hidden tab puts its sockets down after this
+  hidden = hiddenSockets(this)
   isOffline = () => globalThis.navigator?.onLine === false
   pageProtocol = () => globalThis.location?.protocol ?? ""
   /**
@@ -104,10 +107,17 @@ export class LivePool extends SimplePool {
     // at all (attemptReconnect leaves it to this event), so a flapping link spends no budget on connects that can't open.
     this.onOnline = () => { this.coolDowns.clear(); this.retryAllNow() }
     globalThis.addEventListener?.("online", this.onOnline)
+    this.onVisibility = () => this.visibilityChanged()
+    globalThis.document?.addEventListener?.("visibilitychange", this.onVisibility)
   }
+
+  /** The tab was hidden or shown: hidden-sockets.js parks the relays after a while hidden, and reconnects them. */
+  visibilityChanged() { this.hidden.changed() }
 
   destroy() {
     globalThis.removeEventListener?.("online", this.onOnline)
+    globalThis.document?.removeEventListener?.("visibilitychange", this.onVisibility)
+    this.hidden.stop()
     for (const t of this.retryTimers.values()) clearTimeout(t)
     this.retryTimers.clear()
     this.retryCounts.clear()
@@ -269,6 +279,7 @@ export class LivePool extends SimplePool {
     this.retryCounts.delete(key)
     this.lastUsed.set(relay, Date.now())
     this.listen(relay)
+    this.hidden.used()
     return relay
   }
   /** Keeps each socket a relay closes (by us, by its idle timer, or on a failed connect) in `closing`. */
@@ -322,6 +333,7 @@ export class LivePool extends SimplePool {
   attemptReconnect(r) {
     const key = normalizeURL(r.url)
     if (this.relays.get(key) !== r) return // dropped, replaced or closed meanwhile: nothing left to reconnect
+    if (this.hidden.holds(r)) return // parked in a hidden tab: reconnected when the tab is seen (hidden-sockets.js)
     const connect = this.rawConnect.get(r)
     if (!connect) return
     // Offline: `online` calls retryAllNow, so waiting costs nothing and a connect that can't open spends no budget.
