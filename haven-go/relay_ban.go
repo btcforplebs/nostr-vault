@@ -79,14 +79,30 @@ func isRelayRefusal(err error) bool {
 	return false
 }
 
-// poolDialGate is the pool's WithDialGate option for the refused-relay cache.
+// poolDialGate is the pool's WithDialGate option for the refused-relay cache
+// and the unreachable-relay holds (relay_unreachable.go).
 func poolDialGate() nostr.PoolOption {
 	return nostr.WithDialGate(func(url string) error {
 		if relayBanned(url) {
 			return fmt.Errorf("%s refused us, skipped for 24 h", url)
 		}
-		return nil
-	}, noteRelayRefusal)
+		return unreachableGateErr(url)
+	}, noteDialFailure)
+}
+
+// poolDialSucceeded clears an unreachable hold once a pool dial gets through.
+func poolDialSucceeded() nostr.PoolOption {
+	return nostr.WithDialSucceeded(relayUnreachable.reached)
+}
+
+// noteDialFailure sorts a failed pool dial: a refusal is banned, anything
+// else (no route, DNS, timeout) holds the relay on the unreachable ladder.
+func noteDialFailure(url string, err error) {
+	if isRelayRefusal(err) {
+		noteRelayRefusal(url, err)
+		return
+	}
+	relayUnreachable.failed(url)
 }
 
 // ─── One retry inside an import ─────────────────────────────────────────────
