@@ -183,6 +183,10 @@ export function chatStore(vault) {
 let state = { pubkey: null, messages: new Map(), note: "", trouble: "", more: 0, loaded: false }
 const opened = new Set() // wrap ids opened, or found not to be the user's, so a refresh doesn't ask the signer again
 const waiting = new Map() // id -> event, not asked yet
+// Inbox relays already read in full for this account: url -> { at, newest } (seconds: when that read began, and the
+// newest message it returned). A later look asks only for what is newer (inboxSince), so coming back to Messages
+// doesn't download the whole inbox again (perf review 2026-11-28 #1: 3.9 MB a visit). Refresh asks in full.
+const readFrom = new Map()
 const listeners = new Set()
 let kept = null // this account's sealed cache (dm-cache.js), once opened
 export const getMessages = () => state
@@ -193,6 +197,7 @@ export function resetMessages(pubkey) {
   state = { pubkey, messages: new Map(), note: "", trouble: "", more: 0, loaded: false }
   opened.clear()
   waiting.clear()
+  readFrom.clear()
   kept?.close(); kept = null
   refusals.clear()
   forgetDeclinedAuth() // another account's declines aren't this one's
@@ -301,6 +306,11 @@ let lastLoaded = -Infinity
 /** A load for this account finished in the last `within`: a screen opening (the list, then a conversation, then
  *  back) shows what's held and keeps listening instead of asking every relay again. Refresh still asks. */
 export const loadedRecently = (pubkey, { clock = Date.now, within = 60_000 } = {}) => state.pubkey === pubkey && state.loaded && clock() - lastLoaded < within
+/** What a look at a relay already read in full asks for: messages from WATCH_SINCE before the earlier read began
+ *  (or before the newest message it held, if that is earlier: a sender's clock ahead of ours), since a wrap sent after
+ *  that read is dated at most two days back (NIP-59). -> a `since`, or undefined for a full read. */
+export const inboxSince = prev => (prev ? Math.min(prev.at, prev.newest ?? prev.at) - WATCH_SINCE : undefined)
+
 /** Coming back: true (and the look counted as begun) when no load began in the last `after`; false otherwise, so
  *  two screens coming back together look once. `clock` is for tests. */
 export function claimResync({ clock = Date.now, after = RESYNC_AFTER } = {}) {
@@ -321,7 +331,7 @@ export function loadMessages(ctx, relays, opts = {}) {
 
 // The DM reads answer AUTH (dm-read-auth.js): a Haven inbox hands its wraps only to its owner. `net` is for tests.
 const readSigning = ctx => ({ sign: (url, template) => authFor(ctx, url)(template), who: ctx.session?.pubkey, authWait: ctx.session?.method === "nip46" ? AUTH_WAIT.nip46 : AUTH_WAIT.other })
-async function load({ vault, session, signer }, relays, { crypto, net = pool, wait = 8000, chat, clock = Date.now, cache = {},
+async function load({ vault, session, signer }, relays, { crypto, net = pool, wait = 8000, chat, clock = Date.now, cache = {}, full = false,
   query = (r, f, o) => queryWithAuth(net, r, f, { ...o, ...readSigning({ session, signer }) }) } = {}) {
   const me = session.pubkey
   lastLoad = clock()
@@ -358,14 +368,24 @@ async function load({ vault, session, signer }, relays, { crypto, net = pool, wa
       spend(await take(evs, c, me, { limit: Math.max(0, budget) }))
     }))
     const watch = settleWatch(urls.length, () => { if (state.pubkey === me && !state.loaded) { state = { ...state, loaded: true }; changed() } })
+    const began = Math.floor(clock() / 1000)
     await Promise.all(urls.map(async url => {
+      const prev = full ? null : readFrom.get(url)
+      const since = inboxSince(prev)
+      const f = filter => (since == null ? filter : { ...filter, since })
       const got = await Promise.all([
-        query([url], { kinds: [1059], "#p": [me], limit: 500 }, { maxWait: wait }),
-        query([url], { kinds: [4], "#p": [me], limit: 200 }, { maxWait: wait }),
-        query([url], { kinds: [4], authors: [me], limit: 200 }, { maxWait: wait }),
+        query([url], f({ kinds: [1059], "#p": [me], limit: 500 }), { maxWait: wait }),
+        query([url], f({ kinds: [4], "#p": [me], limit: 200 }), { maxWait: wait }),
+        query([url], f({ kinds: [4], authors: [me], limit: 200 }), { maxWait: wait }),
       ].map(p => Promise.resolve(p).catch(() => null)))
       if (got.every(g => g === null)) return watch.failed()
-      await open(got.flatMap(g => g ?? []))
+      const evs = got.flatMap(g => g ?? [])
+      // Counted as read only when all three asks answered: a relay that missed one is read in full next time.
+      if (state.pubkey === me && got.every(g => g !== null)) {
+        const newest = evs.reduce((n, e) => Math.max(n, e.created_at ?? 0), prev?.newest ?? 0)
+        readFrom.set(url, { at: began, newest: newest || undefined })
+      }
+      await open(evs)
       watch.answered()
     }))
   }
