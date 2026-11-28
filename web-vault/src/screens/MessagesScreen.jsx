@@ -11,7 +11,7 @@ import { AuthorName } from "../components/NoteCard.jsx"
 import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { MentionPicker } from "../components/MentionPicker.jsx"
-import { fetchProfiles } from "../net/profiles.js"
+import { askDmProfiles } from "../net/dm-profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { markRead, onRead, unreadCounts } from "../net/dm-read.js"
 import { forgetDeclinedAuth, getAuthProblems, onAuthProblems } from "../net/dm-read-auth.js"
@@ -186,7 +186,7 @@ export function MessagesScreen({ ctx, vaultMenu = false }) {
 
   useEffect(() => {
     const relays = uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
-    fetchProfiles(ctx.vault, all.map(c => c.peer), relays).catch(() => {})
+    askDmProfiles(ctx.vault, all.map(c => c.peer), relays)
   }, [all.map(c => c.peer).join()])
 
   const open = e => {
