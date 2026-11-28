@@ -47,7 +47,7 @@ func (evt Event) CheckSignature() (bool, error) {
 func (evt *Event) Sign(secretKey string) error {
 	s, err := hex.DecodeString(secretKey)
 	if err != nil {
-		return fmt.Errorf("Sign called with invalid secret key '%s': %w", secretKey, err)
+		return fmt.Errorf("Sign called with a secret key that is not hex: %w", err)
 	}
 
 	if evt.Tags == nil {

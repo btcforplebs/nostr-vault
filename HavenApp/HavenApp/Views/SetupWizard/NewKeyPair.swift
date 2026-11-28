@@ -8,6 +8,8 @@ enum NewKeyPair {
     /// nil when the engine could not make one.
     static func generate() -> (npub: String, nsec: String)? {
         guard let resultCStr = GenerateKeyPairC() else { return nil }
+        // The engine's C string (malloc'd, holds the secret key): ours to free.
+        defer { free(resultCStr) }
         let parts = String(cString: resultCStr).split(separator: ":")
         guard parts.count == 2,
               let secData = Bech32.hexToData(String(parts[0])),

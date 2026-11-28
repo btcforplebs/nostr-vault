@@ -91,6 +91,15 @@ func Decrypt(content string, key []byte) (string, error) {
 		return "", fmt.Errorf("error decoding iv from base64: %w", err)
 	}
 
+	// NewCBCDecrypter and CryptBlocks panic on a wrong IV size or a partial
+	// block, and the content comes from whoever sent the event: check first.
+	if len(iv) != aes.BlockSize {
+		return "", fmt.Errorf("invalid iv length %d", len(iv))
+	}
+	if len(ciphertext) == 0 || len(ciphertext)%aes.BlockSize != 0 {
+		return "", fmt.Errorf("invalid ciphertext length %d", len(ciphertext))
+	}
+
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", fmt.Errorf("error creating block cipher: %w", err)
@@ -106,7 +115,7 @@ func Decrypt(content string, key []byte) (string, error) {
 	)
 	if plaintextLen > 0 {
 		padding := int(plaintext[plaintextLen-1]) // the padding amount is encoded in the padding bytes themselves
-		if padding > plaintextLen {
+		if padding == 0 || padding > aes.BlockSize || padding > plaintextLen {
 			return "", fmt.Errorf("invalid padding amount: %d", padding)
 		}
 		message = string(plaintext[0 : plaintextLen-padding])

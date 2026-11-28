@@ -82,7 +82,7 @@ func (evt Event) CheckSignature() (bool, error) {
 func (evt *Event) Sign(secretKey string, signOpts ...schnorr.SignOption) error {
 	sk, err := hex.DecodeString(secretKey)
 	if err != nil {
-		return fmt.Errorf("Sign called with invalid secret key '%s': %w", secretKey, err)
+		return fmt.Errorf("Sign called with a secret key that is not hex: %w", err)
 	}
 	// haven: the C code reads 32 bytes from &sk[0].
 	if len(sk) != 32 {
