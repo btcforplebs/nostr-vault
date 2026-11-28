@@ -11,7 +11,7 @@ import { ArticleCard } from "../components/ArticleCard.jsx"
 import { Mention, NoteText, TapImage } from "../components/NoteText.jsx"
 import { parseRef } from "../net/quotes.js"
 import { MediaImage } from "../components/MediaImage.jsx"
-import { GridPhoto } from "../components/MediaGrid.jsx"
+import { GridPhoto, GridVideo } from "../components/MediaGrid.jsx"
 import { withThumbs } from "../components/grid-thumb.js"
 import { imageItem } from "../net/note-media.js"
 import { fipsRef } from "../net/fips-ref.js"
@@ -384,10 +384,10 @@ export function List({ ctx, mode, filter, items, me, followers, notes, trusted, 
     case "media": {
       // The napplet switch on: the Media napplet (plan P5); "In your notes" stays here either way.
       if (filter !== "notes") return nappletsOn() ? <MediaPane ctx={ctx} filter={filter} /> : <BlossomGallery ctx={ctx} filter={filter} refreshes={refreshes} />
-      // `p.thumb`: the note's imeta thumb when it names one (withThumbs), else the original.
+      // `p.thumb`: the note's imeta thumb when it names one (withThumbs), else the original; a video, its poster.
       const list = items
       return (list.length || page.older)
-        ? paged(list, p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb"><GridPhoto item={p.item} thumb={p.thumb} author={me} /></a>, Grid)
+        ? paged(list, p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb">{p.item?.type === "video" ? <GridVideo poster={p.poster} /> : <GridPhoto item={p.item} thumb={p.thumb} author={me} />}</a>, Grid)
         : <Empty text="Pictures from your notes show here." />
     }
     case "likes": return (items.length || page.older) ? paged(items, r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "You haven't liked anything from here yet." : "No likes on your notes yet."} />

@@ -31,6 +31,9 @@ export function GridPhoto({ item, thumb, author }) {
   return <MediaImage item={item} author={author} loading="lazy" decoding="async" />
 }
 
+/** A video in a grid that isn't the Media feed's (Vault › In your notes): its poster and the play mark, no video. */
+export const GridVideo = ({ poster }) => <><VideoPoster src={poster} /><span class="media-mark" aria-hidden="true"><PlayIcon /></span></>
+
 /** A video tile's still, or nothing (the tile's own background and the play mark) when there is none or it fails. */
 function VideoPoster({ src }) {
   const [ok, setOk] = useState(true)

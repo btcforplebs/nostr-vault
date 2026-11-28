@@ -45,7 +45,7 @@ test("the grid never draws a <video> tile, and both grids go through GridPhoto",
   assert.doesNotMatch(grid, /<video/)
   assert.match(grid, /<GridPhoto item=\{imageItem\(t\.url, t\.note\?\.tags\)\} thumb=\{photoThumb\(/)
   const vault = readFileSync(new URL("../src/screens/VaultScreen.jsx", import.meta.url), "utf8")
-  assert.match(vault, /class="vault-thumb"><GridPhoto item=\{p\.item\} thumb=\{p\.thumb\}/)
+  assert.match(vault, /<GridPhoto item=\{p\.item\} thumb=\{p\.thumb\} author=\{me\} \/>/)
   assert.match(vault, /withThumbs\(mode, filter, itemsFor\(/, "useVault adds the thumbs, where `own` is in scope")
 })
 
@@ -55,4 +55,14 @@ test("withThumbs: In your notes rows get their note's thumb; other lists and thu
   assert.deepEqual(withThumbs("media", "notes", rows, own), [{ url: P, noteId: "n1", thumb: T }, rows[1], rows[2]])
   assert.equal(withThumbs("media", "", rows, own), rows)
   assert.equal(withThumbs("notes", "notes", rows, own), rows)
+})
+
+test("withThumbs: an imeta video row gets its poster, never a thumb (the tile must not be an <img> of the video)", () => {
+  const own = [{ id: "v", tags: [["imeta", `url ${V}`, "m video/mp4", `image ${I}`]] }, { id: "w", tags: [] }]
+  const rows = [{ url: V, noteId: "v", item: { url: V, type: "video" } }, { url: V + "?2", noteId: "w", item: { url: V + "?2", type: "video" } }]
+  const out = withThumbs("media", "notes", rows, own)
+  assert.equal(out[0].poster, I); assert.equal(out[0].thumb, undefined)
+  assert.equal(out[1], rows[1])
+  const vault = readFileSync(new URL("../src/screens/VaultScreen.jsx", import.meta.url), "utf8")
+  assert.match(vault, /p\.item\?\.type === "video" \? <GridVideo poster=\{p\.poster\} \/>/)
 })

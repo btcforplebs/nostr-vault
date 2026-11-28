@@ -23,7 +23,7 @@ const { imageItem } = await import("../src/net/note-media.js")
 const { mediaUrls, mediaTiles } = await import("../src/net/media.js")
 const { mediaFor, activityRows } = await import("../src/net/vault-lists.js")
 const { MediaImage } = await import("../src/components/MediaImage.jsx")
-const { MediaGrid, GridPhoto } = await import("../src/components/MediaGrid.jsx")
+const { MediaGrid, GridPhoto, GridVideo } = await import("../src/components/MediaGrid.jsx")
 const { Thumb, ThumbPicture } = await import("../src/components/CondensedNote.jsx")
 const { ActivityRow, ActivityThumb, List } = await import("../src/screens/VaultScreen.jsx")
 
@@ -111,4 +111,11 @@ test("Vault › Media › In your notes: each tile is a GridPhoto with the row's
   assert.equal(img.props.thumb, row.thumb)
   assert.equal(img.props.item.x, HASH)
   assert.equal(img.props.author, AUTHOR)
+})
+
+test("Vault › In your notes: a video row is a GridVideo (poster + play mark), not a MediaImage of the video", () => {
+  const row = { url: "https://x.example/clip.mp4", noteId: "n", item: { url: "https://x.example/clip.mp4", type: "video" }, poster: "https://x.example/p.jpg" }
+  const tile = List({ mode: "media", filter: "notes", items: [row], me: AUTHOR, page: { shown: 10, onMore: () => {} } }).props.render(row)
+  assert.equal(find(tile, GridPhoto).length, 0)
+  assert.equal(find(tile, GridVideo)[0].props.poster, row.poster)
 })

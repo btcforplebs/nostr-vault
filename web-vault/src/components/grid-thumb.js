@@ -43,10 +43,16 @@ export function videoPoster(url, tags) {
   return p.thumb ?? p.image
 }
 
-/** Vault › Media "In your notes" rows ({ url, noteId, item }, net/vault-lists.js mediaFor) with each one's imeta
- *  `thumb` from the note it came from (`own`: your events). Other lists pass through as they are. */
+/** Vault › Media "In your notes" rows ({ url, noteId, item }, net/vault-lists.js mediaFor) with what each tile draws,
+ *  from the note it came from (`own`: your events): a photo's imeta `thumb`, a video's `poster` (the rows include
+ *  imeta videos, and an <img> of one read the whole file: 10 MB for 6 clips). Other lists pass through as they are. */
 export function withThumbs(mode, filter, items, own) {
   if (mode !== "media" || filter !== "notes" || !items.length) return items
   const tags = new Map(own.map(e => [e.id, e.tags]))
-  return items.map(p => { const thumb = photoThumb(p.url, tags.get(p.noteId)); return thumb ? { ...p, thumb } : p })
+  return items.map(p => {
+    const t = tags.get(p.noteId)
+    if (p.item?.type === "video") { const poster = videoPoster(p.url, t); return poster ? { ...p, poster } : p }
+    const thumb = photoThumb(p.url, t)
+    return thumb ? { ...p, thumb } : p
+  })
 }
