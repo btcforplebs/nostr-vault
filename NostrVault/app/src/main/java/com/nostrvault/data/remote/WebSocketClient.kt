@@ -49,6 +49,12 @@ class WebSocketClient(
     private val lendable: Boolean = false,
     private val watchdogIdleMs: Long = WATCHDOG_IDLE_MS,
     private val watchdogReplyMs: Long = WATCHDOG_REPLY_MS,
+    /**
+     * Redial while the app is in the background: the DM live sockets. Other
+     * clients to public relays park when they drop in the background and
+     * redial when the app is back on screen ([parkedForBackground]).
+     */
+    private val keepUpInBackground: Boolean = false,
 ) : RelayConnection {
     companion object {
         private const val TAG = "WebSocketClient"
@@ -77,6 +83,16 @@ class WebSocketClient(
         fun blocklistChanged() {
             val clients = synchronized(live) { live.toList() }
             clients.forEach { it.applyBlocklist() }
+        }
+
+        init {
+            AppOnScreen.addListener { on -> if (on) resumeParked() }
+        }
+
+        /** Back on screen: every parked client dials again, from a fresh backoff. */
+        internal fun resumeParked() {
+            val clients = synchronized(live) { live.toList() }
+            clients.forEach { it.resumeIfParked() }
         }
         private const val MAX_RECONNECT_ATTEMPTS = 10
         private const val INITIAL_BACKOFF_MS = 1000L
@@ -200,6 +216,10 @@ class WebSocketClient(
     @Volatile private var refusedByBlocklist = false
     @Volatile private var lastInboundMs = 0L
 
+    /** Dropped in the background and not redialled; [resumeParked] dials it again. */
+    @Volatile internal var parkedForBackground = false
+        private set
+
     /** Counts opened sockets, so a borrower can tell its socket was replaced. */
     private val _generation = MutableStateFlow(0)
     override val generation: StateFlow<Int> = _generation.asStateFlow()
@@ -233,6 +253,7 @@ class WebSocketClient(
 
     override fun connect() {
         shouldReconnect = true
+        parkedForBackground = false
         // Already open or dialling: a second socket would orphan the first
         // (it used to overwrite [webSocket] and leave the old one running).
         if (synchronized(socketLock) { webSocket != null }) return
@@ -243,6 +264,7 @@ class WebSocketClient(
 
     override fun disconnect() {
         shouldReconnect = false
+        parkedForBackground = false
         refusedByBlocklist = false
         reconnectJob?.cancel()
         watchdogJob?.cancel()
@@ -295,12 +317,7 @@ class WebSocketClient(
             downAtConnect = RateLimitBackoff.heldForFailure(url)
             _connectionState.value = ConnectionState.DISCONNECTED
             reconnectJob?.cancel()
-            if (shouldReconnect && autoReconnect) {
-                reconnectJob = scope.launch(Dispatchers.IO) {
-                    delay(heldMs)
-                    doConnect()
-                }
-            }
+            if (shouldReconnect && autoReconnect) reconnectAfter(heldMs)
             return
         }
 
@@ -334,6 +351,7 @@ class WebSocketClient(
                     return
                 }
                 opened = true
+                RateLimitBackoff.reached(url)
                 if (BuildConfig.DEBUG) Log.d(TAG, "Connected to $url")
                 _generation.value++
                 _connectionState.value = ConnectionState.CONNECTED
@@ -377,6 +395,11 @@ class WebSocketClient(
                 val code = response?.code
                 // A timeout says nothing about the relay; a 429 means it is up.
                 if (!opened && code != 429 && t !is java.io.InterruptedIOException) downAtConnect = true
+                // Never reached the relay: every client to this host waits
+                // out one shared, growing hold ([RateLimitBackoff.unreachable]).
+                if (!opened && response == null) {
+                    RateLimitBackoff.unreachable(url, down = t !is java.io.InterruptedIOException)
+                }
                 _connectionState.value = ConnectionState.DISCONNECTED
                 // 429 = rate-limited by the relay; retrying soon makes it worse
                 // (damus bans and lists the IP). Every socket to this host
@@ -447,25 +470,52 @@ class WebSocketClient(
             // (every 2 minutes) so the connection can recover if the relay comes
             // back or the network changes.
             Log.w(TAG, "Max fast-reconnect attempts reached for $url, switching to slow retry")
-            reconnectJob?.cancel()
-            reconnectJob = scope.launch(Dispatchers.IO) {
-                delay(SLOW_RETRY_INTERVAL_MS)
-                reconnectAttempts = MAX_RECONNECT_ATTEMPTS // keep in slow mode
-                if (BuildConfig.DEBUG) Log.d(TAG, "Slow-retry reconnecting to $url")
-                doConnect()
-            }
+            reconnectAfter(SLOW_RETRY_INTERVAL_MS)
             return
         }
 
         val backoffMs = INITIAL_BACKOFF_MS * (1L shl reconnectAttempts.coerceAtMost(6))
         reconnectAttempts++
+        reconnectAfter(backoffMs)
+    }
 
+    /**
+     * Whether this client stays down while the app is in the background: a
+     * socket to a public relay that is not a DM live socket. This device's
+     * relay and LAN relays are loopback/LAN traffic and keep redialling.
+     */
+    private fun parksInBackground(): Boolean =
+        !keepUpInBackground && !AppOnScreen.onScreen && !isLocalOrLanHost(url)
+
+    /** Dials again after [delayMs], or parks when the app is in the background by then. */
+    private fun reconnectAfter(delayMs: Long) {
         reconnectJob?.cancel()
+        if (parksInBackground()) {
+            park()
+            return
+        }
         reconnectJob = scope.launch(Dispatchers.IO) {
-            delay(backoffMs)
+            delay(delayMs)
+            if (parksInBackground()) {
+                park()
+                return@launch
+            }
             if (BuildConfig.DEBUG) Log.d(TAG, "Reconnecting to $url (attempt $reconnectAttempts)")
             doConnect()
         }
+    }
+
+    private fun park() {
+        if (!parkedForBackground && BuildConfig.DEBUG) Log.d(TAG, "In the background, not redialling $url until the app is back")
+        parkedForBackground = true
+    }
+
+    private fun resumeIfParked() {
+        if (!parkedForBackground || !shouldReconnect) return
+        parkedForBackground = false
+        reconnectAttempts = 0
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch(Dispatchers.IO) { doConnect() }
     }
 
 }

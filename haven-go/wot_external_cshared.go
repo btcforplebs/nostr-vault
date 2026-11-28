@@ -67,6 +67,7 @@ func startExternalWotRefresh(relayURL string) bool {
 	p := nostr.NewSimplePool(ctx,
 		nostr.WithPenaltyBox(),
 		poolDialGate(),
+		poolDialSucceeded(),
 		nostr.WithRelayOptions(
 			nostr.WithRequestHeader{
 				"User-Agent": []string{userAgent},

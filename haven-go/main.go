@@ -44,6 +44,7 @@ func main() {
 	pool = nostr.NewSimplePool(mainCtx,
 		nostr.WithPenaltyBox(),
 		poolDialGate(),
+		poolDialSucceeded(),
 		nostr.WithRelayOptions(
 			nostr.WithRequestHeader{
 				"User-Agent": []string{config.UserAgent},
