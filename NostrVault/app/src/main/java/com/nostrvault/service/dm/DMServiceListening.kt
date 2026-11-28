@@ -13,6 +13,7 @@ import com.nostrvault.service.DMService.Companion.TAG
     /** Saves the old account's inbox under its own key, then starts the new one's. */
     internal fun DMService.switchAccount() {
         saveJob?.cancel()
+        unsavedSince = 0L
         pendingSaveJob?.cancel()
         val conversations = _conversations.value
         val pending = pendingDecryptQueue.toList()

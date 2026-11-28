@@ -65,7 +65,9 @@ class DMService @Inject constructor(
         internal const val GIFT_WRAP_BACKDATE_SECONDS = 2 * 24 * 60 * 60L + 60
         internal const val OPTIMISTIC_DEDUP_THRESHOLD_MS = 30_000L
         internal const val MAX_INJECTED_DM_IDS = 5_000
-        internal const val CACHE_SAVE_DEBOUNCE_MS = 500L
+        internal const val CACHE_SAVE_DEBOUNCE_MS = 3_000L
+        /** A burst of asks still writes at least this often (DMServicePersistence). */
+        internal const val CACHE_SAVE_MAX_WAIT_MS = 10_000L
         private const val MAX_OPENED_MESSAGES = 200
         internal const val MAX_SENT_SELF_WRAP_IDS = 500
 
@@ -255,6 +257,10 @@ class DMService @Inject constructor(
     internal val externalFetchRunning = java.util.concurrent.atomic.AtomicBoolean(false)
     internal var hasStarted = false
     internal var saveJob: Job? = null
+    /** Monotonic ms of the first cache-save ask not yet written, 0 when none. */
+    @Volatile internal var unsavedSince = 0L
+    /** The account and list last written to its cache file, to skip rewriting an unchanged one. */
+    @Volatile internal var lastWrittenCache: Pair<String, List<DMConversation>>? = null
 
     /**
      * Publishes one DM event to one relay and answers "accepted" or why not

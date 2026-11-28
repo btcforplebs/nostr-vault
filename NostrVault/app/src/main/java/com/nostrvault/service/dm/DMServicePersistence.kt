@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import java.io.File
 import com.nostrvault.service.DMService.Companion.CACHE_SAVE_DEBOUNCE_MS
+import com.nostrvault.service.DMService.Companion.CACHE_SAVE_MAX_WAIT_MS
 import com.nostrvault.service.DMService.Companion.TAG
 
     // ══════════════════════════════════════════════════════════════════
@@ -69,23 +70,34 @@ import com.nostrvault.service.DMService.Companion.TAG
     }
 
     /**
-     * Debounced cache save. addMessageToConversation() fires this on every
-     * message add; during a backlog burst that would otherwise serialize the
-     * ENTIRE conversation history to disk N times. Coalesce into a single write
-     * ~500 ms after the burst settles. Cancelling the prior job is safe — the
-     * write always serializes the latest _conversations snapshot.
+     * Debounced cache save. Every message add, markRead and status change asks
+     * for one, and each write serializes the WHOLE inbox (146 kB at ~500
+     * messages), so they coalesce: one write [CACHE_SAVE_DEBOUNCE_MS] after
+     * the last ask, but no later than [CACHE_SAVE_MAX_WAIT_MS] after the first
+     * unsaved one, so a long catch-up still lands on disk. A message lost to a
+     * kill inside that window comes back from the relays. Cancelling the prior
+     * job is safe — the write always serializes the latest snapshot.
      */
     internal fun DMService.saveCachedConversations() {
+        val now = System.nanoTime() / 1_000_000
+        val firstAsk = unsavedSince.takeIf { it > 0L } ?: now.also { unsavedSince = it }
+        val wait = minOf(CACHE_SAVE_DEBOUNCE_MS, (firstAsk + CACHE_SAVE_MAX_WAIT_MS - now).coerceAtLeast(0L))
         saveJob?.cancel()
         saveJob = scope.launch(Dispatchers.IO) {
-            delay(CACHE_SAVE_DEBOUNCE_MS)
+            delay(wait)
             writeCacheNow()
         }
     }
 
     private fun DMService.writeCacheNow() {
+        unsavedSince = 0L
         val key = loadedCacheKey ?: return
-        writeCache(key, _conversations.value)
+        val snapshot = _conversations.value
+        // Nothing changed since the last write of this inbox (e.g. a status set back).
+        if (lastWrittenCache.let { it != null && it.first == key && it.second === snapshot }) return
+        writeCache(key, snapshot)
+        lastWrittenCache = key to snapshot
+        if (BuildConfig.DEBUG) Log.w(TAG, "DBG: writeCache msgs=${snapshot.sumOf { it.messages.size }}")
     }
 
     internal fun DMService.writeCache(key: String, conversations: List<DMConversation>) {

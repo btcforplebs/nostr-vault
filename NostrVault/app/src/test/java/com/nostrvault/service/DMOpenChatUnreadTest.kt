@@ -98,4 +98,13 @@ class DMOpenChatUnreadTest {
         service.addMessageToConversation(alice, from(alice))
         assertEquals(1, unread(alice))
     }
+
+    @Test
+    fun `a received message merged off main lands and counts`() = kotlinx.coroutines.runBlocking {
+        service.addMessageToConversation(bob, from(bob))
+        service.mergeMessage(alice, from(alice))
+        service.mergeMessage(alice, from(alice))
+        assertEquals(listOf(alice, bob), service._conversations.value.map { it.id })
+        assertEquals(2, unread(alice))
+    }
 }
