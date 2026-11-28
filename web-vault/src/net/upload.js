@@ -53,9 +53,11 @@ export async function sha256Hex(bytes) {
 }
 
 /** BUD-02 upload authorisation for one blob: scoped to the hash, good for an hour, reused for every server. */
-export const uploadAuthTemplate = (sha256, now = Math.floor(Date.now() / 1000)) => ({
+/** `also`: more hashes the same authorisation covers (BUD-02 lets one name several x), a photo's thumb, so it costs no
+ *  second signer prompt. The file's own hash stays first, for a server that only reads the first x. */
+export const uploadAuthTemplate = (sha256, now = Math.floor(Date.now() / 1000), also = []) => ({
   kind: 24242, created_at: now, content: `Upload blob ${sha256.slice(0, 8)}...`,
-  tags: [["t", "upload"], ["x", sha256], ["expiration", String(now + 3600)]],
+  tags: [["t", "upload"], ["x", sha256], ...also.filter(x => x && x !== sha256).map(x => ["x", x]), ["expiration", String(now + 3600)]],
 })
 
 const base64 = s => btoa(String.fromCharCode(...new TextEncoder().encode(s)))
@@ -101,13 +103,18 @@ export async function precheck(server, { sha256, size, mime, auth, fetch, signal
  * and a change to it would break its hash and its seal).
  * `linkOk(url)`: whether the server's link is one to keep (default serverUrl: https only). Vault › Media in box mode
  * also takes the box's own link (box/box-media.js), which is plain http on the LAN.
+ * `preview(file)`: its small copy (upload-preview.js previewOf -> { field: "thumb" | "image", file } or null). It goes up
+ * after the file, to the server that took the file, under the same authorisation, and its link comes back as
+ * `thumb` / `image`. Any failure of it is dropped: the file's upload never waits on it or fails because of it.
  */
-export async function uploadPhoto(file, { ctx, servers, fetch, signal, onProgress, raw = false, linkOk = serverUrl }) {
+export async function uploadPhoto(file, { ctx, servers, fetch, signal, onProgress, raw = false, linkOk = serverUrl, preview }) {
   const stopped = () => { if (signal?.aborted) throw abortError() }
   const bytes = raw ? new Uint8Array(await file.arrayBuffer()) : withoutLocation(new Uint8Array(await file.arrayBuffer()))
   const sha256 = await sha256Hex(bytes)
   stopped() // removed before its turn came: no signer prompt for it
-  const template = uploadAuthTemplate(sha256)
+  const small = preview ? await smallCopy(preview, file) : null
+  stopped()
+  const template = uploadAuthTemplate(sha256, undefined, small ? [small.sha256] : [])
   const auth = authHeader(checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey))
   const mime = file.type || "application/octet-stream"
   // With a progress callback (the composer's ring) the PUT goes through XMLHttpRequest, which reports progress;
@@ -129,13 +136,42 @@ export async function uploadPhoto(file, { ctx, servers, fetch, signal, onProgres
       if (d?.sha256 !== sha256) { errors.push(`${hostOf(server)}: ${d?.sha256 ? "sent back a different file" : "didn't confirm the file's hash"}`); continue }
       const url = typeof d?.url === "string" && linkOk(d.url) ? d.url : null
       if (!url) { errors.push(`${hostOf(server)}: no link in its answer`); continue }
-      return { url, sha256, mime: d.type || mime, size: bytes.length, server }
+      const out = { url, sha256, mime: d.type || mime, size: bytes.length, server }
+      if (small) {
+        const link = await putSmall(server, small, { auth, linkOk, signal, fetch: fetch ?? ((u, o) => globalThis.fetch(u, o)) })
+        if (link) out[small.field] = link
+      }
+      return out
     } catch (e) {
       if (e?.name === "AbortError") throw e
       errors.push(`${hostOf(server)}: ${e?.message ?? e}`)
     }
   }
   throw new Error(`No media server took it. ${errors.join(" · ")}`)
+}
+
+/** The preview's bytes and hash, or null: a preview that fails to be made is no preview. */
+async function smallCopy(preview, file) {
+  try {
+    const p = await preview(file)
+    if (!p?.file || !(p.field === "thumb" || p.field === "image")) return null
+    const bytes = new Uint8Array(await p.file.arrayBuffer())
+    if (!bytes.length) return null
+    return { field: p.field, bytes, sha256: await sha256Hex(bytes), mime: p.file.type || "image/jpeg" }
+  } catch { return null }
+}
+
+/** PUTs the preview to `server`. -> its link, or null for any failure (only a stop is passed on). */
+async function putSmall(server, small, { auth, linkOk, signal, fetch }) {
+  try {
+    const res = await fetch(`${server}/upload`, { method: "PUT", signal, headers: { Authorization: auth, "Content-Type": small.mime }, body: small.bytes })
+    if (!res?.ok) return null
+    const d = await res.json()
+    return d?.sha256 === small.sha256 && typeof d?.url === "string" && linkOk(d.url) ? d.url : null
+  } catch (e) {
+    if (e?.name === "AbortError") throw e
+    return null
+  }
 }
 
 /** NIP-92 imeta for one uploaded photo, fields left out when unknown (NoteTagging.imetaTag). */
@@ -146,6 +182,9 @@ export function imetaTag(m) {
   if (m.sha256) f.push(`x ${m.sha256}`)
   if (m.width > 0 && m.height > 0) f.push(`dim ${m.width}x${m.height}`)
   if (m.size > 0) f.push(`size ${m.size}`)
+  // NIP-94's small copies (upload-preview.js): what Media grids draw instead of the file (components/grid-thumb.js).
+  if (typeof m.thumb === "string" && m.thumb && m.thumb !== m.url) f.push(`thumb ${m.thumb}`)
+  if (typeof m.image === "string" && m.image && m.image !== m.url) f.push(`image ${m.image}`)
   const alt = m.alt?.replace(/\s*\n\s*/g, " ").trim()
   if (alt) f.push(`alt ${alt}`)
   return ["imeta", ...f]

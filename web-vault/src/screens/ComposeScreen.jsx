@@ -11,6 +11,7 @@ import { publishNote, republish, sameUnsent } from "../net/sync.js"
 import { NOTE_SENT_EVENT, composeTarget, findNote, quoteOf, replyTags } from "../net/actions.js"
 import { MAX_PHOTOS, imetaTag, mediaServers, uploadPhoto } from "../net/upload.js"
 import { compressImage } from "../net/image-compress.js"
+import { previewOf } from "../net/upload-preview.js" // a photo's thumb / a video's poster for Media grids
 import { uploadQuality } from "../net/upload-quality.js"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { NoteText } from "../components/NoteText.jsx"
@@ -96,7 +97,7 @@ const keptEmojis = (text, emojis, d) => { const t = emojiTags(text, emojis); ret
 export const draftOf = (text, mentions, photos, emojis = {}) => keptEmojis(text, emojis, {
   // Placeholders of photos still going up aren't kept: read back, they'd have nothing behind them.
   text: withoutTokens(text, photos.filter(p => !p.url).map(p => p.id)), mentions: Object.fromEntries(Object.entries(mentions).filter(([t]) => text.includes(t))),
-  photos: photos.filter(p => p.url).map(({ url, sha256, mime, size, width, height, alt }) => ({ url, sha256, mime, size, width, height, ...(alt?.trim() ? { alt } : {}) })),
+  photos: photos.filter(p => p.url).map(({ url, sha256, mime, size, width, height, alt, thumb, image }) => ({ url, sha256, mime, size, width, height, ...(thumb ? { thumb } : {}), ...(image ? { image } : {}), ...(alt?.trim() ? { alt } : {}) })),
 })
 
 export { isMedia, isVideo } from "./compose/media-kind.js"
@@ -241,7 +242,7 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
         servers.current ??= await mediaServers(ctx)
         const onProgress = progress => update(id, { progress })
         const ready = await compressImage(file, { quality: uploadQuality() }) // Standard: 2048 px JPEG, no metadata; a video as it is
-        const [size, up] = await Promise.all([pixelSize(ready), uploadPhoto(ready, { ctx, servers: servers.current, signal: stop.signal, onProgress })])
+        const [size, up] = await Promise.all([pixelSize(ready), uploadPhoto(ready, { ctx, servers: servers.current, signal: stop.signal, onProgress, preview: previewOf })])
         if (!stop.signal.aborted) { keepCaret(photoToken(id), up.url); update(id, { ...size, ...up, status: "done", file: null, progress: undefined }) }
       } catch (e) { if (!stop.signal.aborted) update(id, { status: "failed", error: String(e?.message ?? e), progress: undefined }) }
       finally { if (stops.current.get(id) === stop) stops.current.delete(id) }
