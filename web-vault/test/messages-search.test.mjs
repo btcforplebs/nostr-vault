@@ -45,7 +45,7 @@ test("the search never leaves the page: no relay, fetch or signer in it", () => 
   assert.match(src("screens/MessagesTools.jsx"), /getProfile\(pk\)/, "names come from profiles already loaded")
   const ms = src("screens/MessagesScreen.jsx")
   assert.match(ms, /const list = searchChats\(all, messages, query, searchName\)/)
-  assert.match(ms, /fetchProfiles\(ctx\.vault, all\.map\(c => c\.peer\), relays\)/, "profile lookups follow the whole list, not the search")
+  assert.match(ms, /askDmProfiles\(ctx\.vault, all\.map\(c => c\.peer\), relays\)/, "profile lookups follow the whole list, not the search")
 })
 
 test("Requests is a tray button at the top right with no count, not a row under the list", () => {

@@ -11,7 +11,7 @@ import { AuthorName } from "../components/NoteCard.jsx"
 import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { MentionPicker } from "../components/MentionPicker.jsx"
-import { fetchProfiles } from "../net/profiles.js"
+import { askDmProfiles } from "../net/dm-profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { markRead, onRead, unreadCounts } from "../net/dm-read.js"
 import { forgetDeclinedAuth, getAuthProblems, onAuthProblems } from "../net/dm-read-auth.js"
@@ -57,6 +57,8 @@ export function useMessages(ctx) {
   const [m, setM] = useState(getMessages)
   const [round, setRound] = useState(0)
   const [syncing, setSyncing] = useState(false)
+  // Refresh and Try again read every inbox relay in full; any other look asks only for what is newer (dms.js inboxSince).
+  const full = useRef(false)
   useEffect(() => {
     const off = onMessages(() => setM(getMessages()))
     let stop = () => {}
@@ -66,8 +68,10 @@ export function useMessages(ctx) {
       // Opening a screen right after a load (list -> conversation -> back) keeps what's held and only listens.
       if (round === 0 && loadedRecently(ctx.session.pubkey)) { const r = await relays; if (live) stop = watchMessages(ctx, r); return }
       setSyncing(true)
+      const whole = full.current
+      full.current = false
       try {
-        await loadMessages(ctx, relays).catch(() => {})
+        await loadMessages(ctx, relays, { full: whole }).catch(() => {})
         if (live) stop = watchMessages(ctx, await relays)
       } finally { if (live) setSyncing(false) }
     })()
@@ -88,8 +92,8 @@ export function useMessages(ctx) {
   // `refresh` (AuthTrouble's Sign in again) looks again without forgetting what was settled: wraps found not to be the user's, and ones refused past
   // MAX_REFUSALS, stay settled, so a routine tap never costs a bunker user a run of prompts. Only "Try again" does.
   // Both also ask again about an inbox whose AUTH was declined; a return to the tab doesn't (dm-read-auth.js).
-  const retry = () => { forgetUnopened(); forgetDeclinedAuth(); setRound(r => r + 1) }
-  return { ...m, syncing, retry, refresh: () => { forgetDeclinedAuth(); setRound(r => r + 1) } }
+  const retry = () => { forgetUnopened(); forgetDeclinedAuth(); full.current = true; setRound(r => r + 1) }
+  return { ...m, syncing, retry, refresh: () => { forgetDeclinedAuth(); full.current = true; setRound(r => r + 1) } }
 }
 
 /** Unread counts per conversation, re-counted as messages land or are read. `total` leaves Requests out (they are
@@ -182,7 +186,7 @@ export function MessagesScreen({ ctx, vaultMenu = false }) {
 
   useEffect(() => {
     const relays = uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
-    fetchProfiles(ctx.vault, all.map(c => c.peer), relays).catch(() => {})
+    askDmProfiles(ctx.vault, all.map(c => c.peer), relays)
   }, [all.map(c => c.peer).join()])
 
   const open = e => {
