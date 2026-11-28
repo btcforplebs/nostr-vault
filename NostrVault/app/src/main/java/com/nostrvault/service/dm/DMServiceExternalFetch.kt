@@ -297,7 +297,8 @@ import com.nostrvault.service.DMService.Companion.TAG
         Log.d(TAG, "Opening live DM subscriptions on ${relays.size} external relays")
 
         for (relayUrl in relays) {
-            val client = WebSocketClient(url = relayUrl, scope = scope)
+            // The DM live socket: keeps redialling in the background.
+            val client = WebSocketClient(url = relayUrl, scope = scope, keepUpInBackground = true)
             liveExternalClients.add(client)
             val subId = "dm-live-${UUID.randomUUID().toString().take(8)}"
 

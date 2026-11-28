@@ -64,10 +64,63 @@ object RateLimitBackoff {
         return until - nowMs
     }
 
+    /**
+     * Holds for a host the device could not reach at all (no route, DNS, a
+     * connect timeout). Every client to that host shares one ladder, doubling
+     * from [UNREACHABLE_FIRST_HOLD_MS] up to [UNREACHABLE_MAX_FG_MS] on screen
+     * and [UNREACHABLE_MAX_BG_MS] in the background. With the network down,
+     * each client redialled on its own backoff and the app started about a
+     * connect a second in the background (launch/background perf review
+     * 2026-11-28, finding 1). The cap is read on each check, so coming back
+     * on screen cuts a long background hold to the on-screen cap at once.
+     */
+    internal const val UNREACHABLE_FIRST_HOLD_MS = 5_000L
+    internal const val UNREACHABLE_MAX_FG_MS = 2 * 60_000L
+    internal const val UNREACHABLE_MAX_BG_MS = 10 * 60_000L
+
+    /** A failure this long after the last one starts the ladder over. */
+    internal const val UNREACHABLE_FORGET_MS = 30 * 60_000L
+
+    /** [down]: the socket failed, not a timeout ([WebSocketClient.downAtConnect]). */
+    private class Unreachable(val failedAtMs: Long, val strikes: Int, val down: Boolean)
+    private val unreachable = HashMap<String, Unreachable>()
+
+    private fun unreachableUntil(u: Unreachable): Long {
+        val cap = if (AppOnScreen.onScreen) UNREACHABLE_MAX_FG_MS else UNREACHABLE_MAX_BG_MS
+        val hold = (UNREACHABLE_FIRST_HOLD_MS shl (u.strikes - 1).coerceIn(0, 16)).coerceAtMost(cap)
+        return u.failedAtMs + hold
+    }
+
+    /**
+     * Record a dial to [url] that never reached the relay; -> how long its
+     * host is held, in ms. [down] is false for a timeout. Local and LAN hosts
+     * are not held: this device's relay restarting says nothing about the
+     * network.
+     */
+    @Synchronized
+    fun unreachable(url: String, down: Boolean, nowMs: Long = System.currentTimeMillis()): Long {
+        if (WebSocketClient.isLocalOrLanHost(url)) return 0L
+        val host = hostOf(url)
+        val old = unreachable[host]
+        val strikes = if (old == null || nowMs - old.failedAtMs > UNREACHABLE_FORGET_MS) 1 else old.strikes + 1
+        val entry = Unreachable(nowMs, strikes, down)
+        unreachable[host] = entry
+        return unreachableUntil(entry) - nowMs
+    }
+
+    /** A socket to [url] opened: the host is reachable again. Refusal and 429 holds stay. */
+    @Synchronized
+    fun reached(url: String) {
+        unreachable.remove(hostOf(url))
+    }
+
     /** Ms until [url]'s host may be dialled again; 0 when it isn't held. */
     @Synchronized
-    fun remainingMs(url: String, nowMs: Long = System.currentTimeMillis()): Long =
-        ((holds[hostOf(url)]?.untilMs ?: 0L) - nowMs).coerceAtLeast(0L)
+    fun remainingMs(url: String, nowMs: Long = System.currentTimeMillis()): Long {
+        val host = hostOf(url)
+        val until = maxOf(holds[host]?.untilMs ?: 0L, unreachable[host]?.let(::unreachableUntil) ?: 0L)
+        return (until - nowMs).coerceAtLeast(0L)
+    }
 
     /**
      * Whether [url]'s host is held now because it refused the upgrade (a failed connect), not for a 429. The follow
@@ -75,18 +128,24 @@ object RateLimitBackoff {
      */
     @Synchronized
     fun heldForFailure(url: String, nowMs: Long = System.currentTimeMillis()): Boolean {
-        val hold = holds[hostOf(url)] ?: return false
-        return hold.failed && hold.untilMs > nowMs
+        val host = hostOf(url)
+        val down = unreachable[host]?.takeIf { it.down && unreachableUntil(it) > nowMs } != null
+        val hold = holds[host] ?: return down
+        return down || (hold.failed && hold.untilMs > nowMs)
     }
 
     /** A connection to [url] stayed up: its host starts over. */
     @Synchronized
     fun recovered(url: String) {
         holds.remove(hostOf(url))
+        unreachable.remove(hostOf(url))
     }
 
     @Synchronized
-    internal fun clearForTest() = holds.clear()
+    internal fun clearForTest() {
+        holds.clear()
+        unreachable.clear()
+    }
 }
 
 /** relay.damus.io, which bans busy IPs: asked last, and only when others didn't answer. */

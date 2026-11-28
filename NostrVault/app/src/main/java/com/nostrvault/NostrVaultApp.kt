@@ -88,6 +88,8 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         // The relay pauses its screen-only work while no activity is visible.
         androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
             com.nostrvault.relay.AppForegroundReporter { on ->
+                // Relay sockets park in the background and redial on return.
+                com.nostrvault.data.remote.AppOnScreen.set(on)
                 if (com.nostrvault.relay.HavenBridge.isLoaded) {
                     runCatching { com.nostrvault.relay.HavenBridge.setAppForeground(on) }
                 }
@@ -179,6 +181,15 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
             com.nostrvault.relay.HavenBridge.isLoaded
             com.nostrvault.relay.StartupMarks.mark("go loaded")
         }, "nv-startup-warmup").start()
+        // The relay clients' TLS context and OkHttp clients read every system
+        // CA once per process; the first connect() (a ViewModel, on main)
+        // used to pay it (launch/background perf review 2026-11-28 #4).
+        Thread({
+            runCatching {
+                com.nostrvault.data.remote.WebSocketClient.sharedLocalhostClient
+                com.nostrvault.data.remote.WebSocketClient.sharedClient
+            }
+        }, "nv-tls-warmup").start()
     }
 
     override fun newImageLoader(): ImageLoader = imageLoaderProvider.get()
