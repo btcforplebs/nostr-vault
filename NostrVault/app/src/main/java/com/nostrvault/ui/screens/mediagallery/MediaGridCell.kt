@@ -79,7 +79,7 @@ internal fun vaultGridImageRequest(
     moderationTarget: String?,
     ownerHex: String,
 ): ImageRequest = ImageRequest.Builder(context)
-    .data(item.localFile ?: item.displayUrl)
+    .data(com.nostrvault.service.VaultVideoFrameFetcher.tileData(item.sha256, item.isVideo, item.localFile, item.displayUrl))
     .meshAuthor(vaultTileMeshAuthor(moderationTarget, ownerHex))
     .size(360, 360)
     .crossfade(false) // Instant rendering for grid thumbnails
