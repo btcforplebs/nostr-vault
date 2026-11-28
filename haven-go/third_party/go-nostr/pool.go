@@ -40,6 +40,7 @@ type SimplePool struct {
 	// HAVEN PATCH: see WithDialGate.
 	dialBlocked func(url string) error
 	dialFailed  func(url string, err error)
+	dialOK      func(url string)
 }
 
 // DirectedFilter combines a Filter with a specific relay URL.
@@ -115,6 +116,14 @@ func (h withDialGateOpt) ApplyPoolOption(pool *SimplePool) {
 	pool.dialBlocked = h.blocked
 	pool.dialFailed = h.failed
 }
+
+// HAVEN PATCH: WithDialSucceeded tells the host about every dial EnsureRelay
+// completed, so a hold the gate keeps for the relay can start over.
+func WithDialSucceeded(ok func(url string)) PoolOption { return withDialOKOpt(ok) }
+
+type withDialOKOpt func(url string)
+
+func (h withDialOKOpt) ApplyPoolOption(pool *SimplePool) { pool.dialOK = h }
 
 // WithPenaltyBox just sets the penalty box mechanism so relays that fail to connect
 // or that disconnect will be ignored for a while and we won't attempt to connect again.
@@ -231,6 +240,9 @@ func (pool *SimplePool) EnsureRelay(url string) (*Relay, error) {
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
 
+	if pool.dialOK != nil {
+		pool.dialOK(nm)
+	}
 	pool.Relays.Store(nm, relay)
 	return relay, nil
 }

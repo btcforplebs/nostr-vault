@@ -31,3 +31,10 @@ Changes from upstream are listed below. Keep every other file byte-identical to 
   only, no longer also `r.ConnectionError`. The read loop writes that field as it hits the read
   error, which raced the write loop's read when our own `Close` cancelled first (`go test -race`,
   haven-go `mesh_query_caps_test.go`, 2026-11-12). The read loop's error is the cause it closes with.
+- `connection_options.go`: the per-connection `http.Transport` (used whenever a request header
+  or TLS config is set, which Haven always does) bounds the TCP dial and TLS handshake at 10 s
+  and drops idle conns after 1 s. net/http keeps dialling after the request's context ends, and
+  the zero Dialer has no timeout, so each failed connect to an unreachable relay held a
+  SYN_SENT socket for ~127 s (Android emulator, relays dropped: ~146 at once, 2026-11-28).
+- `pool.go`: `WithDialSucceeded` reports each dial `EnsureRelay` completed, so the host's
+  dial gate can clear its hold on that relay.
